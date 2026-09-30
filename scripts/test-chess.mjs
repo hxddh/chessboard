@@ -5851,7 +5851,7 @@ for (const lang of CONTENT_LANGS) {
   const appSrc = allAppSource;
   for (const [what, re] of [
     // 6.0: one exportText() serves PGN and the learning file; only a PGN is a document
-    ["the export dialog", /Host\.saveText\(\{ title, name, text, recent \}\)/], // v8-1-plan N2: main.zig adds it
+    ["the export dialog", /Host\.saveText\(\{ title, name, text, recent, onStaged \}\)/], // v8-1-plan N2: main.zig adds it; onStaged: v8-2-plan F5
     // 7.0: the picker takes a sink (the library import reuses it), so what
     // this looks for is the call, not the one destination it used to have
     ["the open dialog", /Host\.openPgn\(\{ title: t\("dlg\.openPgn"\), recent: true \}\)/],

@@ -489,3 +489,5 @@
   - `--dry-run` 的赛程：`strongplus:extreme:300,master:masterplus:200` 在 1/64 片分到 8 盘；不带 `pairs` 时仍是 210 对、3,198 盘，与原来相同。
   - 真下了 `--pairs=strongplus:extreme:2`：2 盘，1.2 分钟。再对这个目录跑 `fit`（不带 `--record`）：「2 盘新对局 + 5,441 盘沿用」，也就是 5,505 − 64。这说明这一对原来的 64 盘被替换，其余 19 对照旧沿用。
 - 没有派发工作流。
+- **F5 导出全部数据的「正在准备…」**：侧栏「全部数据」一节的按钮下面多了一行 `#alldata-status`（`role=status`、`aria-live=polite`，读屏会念），点「导出」起写「正在准备导出的文件…」，最后一块过桥之前清空——那一块发出去 main.zig 就弹保存框，从那以后保存框就是回应；取消、失败、退回下载或剪贴板时也在 `finally` 里清空。这一行只清空、不隐藏（空着时 `margin: 0`，不占地方），因为连同文字一起出现的 live region 常常不被念。钩子是 `Host.saveText` 的 `onStaged`（`sendBytes` 在最后一块之前调用），代码在 `io.js`，app.js 没动（5873 行）。新键 `msg.allData.preparing` 三语，界面键 1279 → 1280。test-persist-e2e 第 11 节记下每一块过桥时那一行写着什么：改之前 2 MB 档案 17 块全是空（2 项失败），改之后前 16 块都是「正在准备导出的文件…」、最后一块与导出完都是空。
+- **F5 文档**：README「路线」补上 [v8.1](v8-1-plan.md) 链接，「跨版本还没做的」补一条「Lichess 对 `sort=dateAsc` 的应答顺序还没在真站核对（V2）」；v8-1-plan §9「发布」补上 `v8.1.0` → `168acc2`。

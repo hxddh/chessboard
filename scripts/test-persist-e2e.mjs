@@ -1121,7 +1121,14 @@ function fakeNative(opts) {
     // is staged like any write and lands once the last piece is in, an open
     // hands the file over piece by piece, later pieces asked for by token
     if (cmd === "chess.saveText") {
+      // v8-2-plan F5: what the line under 导出 said when this piece came in —
+      // 「正在准备…」 while pieces are still to come, nothing once the last
+      // one (the one that opens the dialog) is on its way
+      const st = document.getElementById("alldata-status");
+      const seen = { offset: a.offset || 0, text: st ? st.textContent : null, live: st ? st.getAttribute("aria-live") : null };
+      (window.__prep = window.__prep || []).push(seen);
       const r = receive("dialog:save", a);
+      seen.last = !r.answer || r.answer.pending !== true;
       if (r.answer) return r.answer;
       files.set(PICKED, r.done);
       return { ok: true, name: "all.json", revealed: true };
@@ -1376,6 +1383,21 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
     `「导出全部数据」写成了一个 ≥ 2 MB 的文件,没有退回剪贴板(${exp.size} 字节${exp.clip ? ",进了剪贴板" : ""})`);
   assert(exp.size > 0 && !exp.pretty, "……而且是紧凑 JSON,不是缩进两格的那种");
   const doc = exp.text ? JSON.parse(exp.text) : { keys: {} };
+  // v8-2-plan F5: the pieces cross before main.zig can show the dialog (ten
+  // thousand games: ~56 of them, seconds). Before this nothing on screen said
+  // the click had been taken; now the line under the button does, in a live
+  // region, and it is gone once the dialog is the answer.
+  const prep = await page.evaluate(() => {
+    const st = document.getElementById("alldata-status");
+    return { seen: window.__prep || [], after: st ? st.textContent : null };
+  });
+  const pending = prep.seen.filter((p) => !p.last);
+  const lastPiece = prep.seen.find((p) => p.last);
+  console.log(`  导出全部数据:${prep.seen.length} 块过桥,前 ${pending.length} 块时那一行是 ${JSON.stringify([...new Set(pending.map((p) => p.text))])},最后一块 ${JSON.stringify(lastPiece && lastPiece.text)},之后 ${JSON.stringify(prep.after)}`);
+  assert(pending.length >= 2 && pending.every((p) => p.text && /准备/.test(p.text) && p.live === "polite"),
+    `导出全部数据:块还在过桥时,按钮下一行写着「正在准备…」,而且是 aria-live 区(${pending.length} 块)`);
+  assert(!!lastPiece && lastPiece.text === "" && prep.after === "",
+    "……最后一块(它打开保存框)发出之前这一行就清空了,导出完也是空的");
 
   // (c) a typical save — one move's worth, on top of the 2 MB profile. Before
   // F3 this re-serialised and re-encoded all 2 MB, byte by byte.
