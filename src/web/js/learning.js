@@ -108,27 +108,48 @@ function mergeLearn(cur, inc) {
     }
     out.eg = Object.assign({}, ce, { done: unionKeys(ce.done, ie.done), srs });
   }
+  // v8-2-plan T3 (M2 review): 名局猜着's last result per game and side, the
+  // later one (`at`) winning — it is a record of the last try, not a best
+  if (c.gs || i.gs) {
+    const gs = Object.assign({}, obj(c.gs));
+    for (const [id, r] of Object.entries(obj(i.gs))) {
+      const m = gs[id] = Object.assign({}, obj(gs[id]));
+      for (const [side, x] of Object.entries(obj(r))) if (!m[side] || num(obj(x).at) > num(m[side].at)) m[side] = x;
+    }
+    out.gs = gs;
+  }
   return out;
+}
+
+/** Review queues by id: the entry further up the ladder wins, a tie keeps the local one. */
+function mergeQueue(cur, inc) {
+  const q = Object.assign({}, obj(cur));
+  // M3 评审: srs.js entries are {s, n, due, ivl} — the old compare read a
+  // `streak` no entry has, so the local entry always won
+  for (const [id, e] of Object.entries(obj(inc))) if (!q[id] || further(e, q[id])) q[id] = e;
+  return q;
 }
 
 function mergePuzzles(cur, inc) {
   const c = obj(cur), i = obj(inc);
-  const missed = Object.assign({}, obj(c.missed));
-  for (const [id, e] of Object.entries(obj(i.missed))) {
-    const mine = missed[id];
-    // the entry further along the review ladder wins; a tie keeps the local
-    // one. M3 评审: srs.js entries are {s, n, due, ivl} — the old compare read
-    // a `streak` no entry has, so the local entry always won
-    if (!mine || further(e, mine)) missed[id] = e;
-  }
   const out = Object.assign({}, c, {
     solved: unionKeys(c.solved, i.solved),
-    missed,
+    missed: mergeQueue(c.missed, i.missed),
     tally: maxCounters(c.tally, i.tally),
   });
   // v8-1-plan T6: a queued bank puzzle's band travels with its entry
   // (trainer/bank-review.js); without it the review can only guess the band
   if (c.bank || i.bank) out.bank = unionKeys(c.bank, i.bank);
+  // v8-2-plan T2 (M2 review): 看 N 步 / 盲走 per mode — the rating of the
+  // later record (`at`), the larger counts, and the review queue as `missed`
+  if (c.vis || i.vis) {
+    const vis = out.vis = Object.assign({}, obj(c.vis));
+    for (const [k, b] of Object.entries(obj(i.vis))) {
+      const a = obj(vis[k]), bb = obj(b);
+      vis[k] = Object.assign({}, num(bb.at) > num(a.at) ? bb : a,
+        { solve: Math.max(num(a.solve), num(bb.solve)), miss: Math.max(num(a.miss), num(bb.miss)), q: mergeQueue(a.q, bb.q) });
+    }
+  }
   return out;
 }
 
