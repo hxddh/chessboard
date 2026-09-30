@@ -4913,6 +4913,58 @@ if (scenario()) {
     await ctx.close();
   }
 }
+// --- v8-1-plan T5: the diagnosis's source row, the filters' ruler -----------
+// 导入的 / 本机 / 全部 is a segmented control like the list's five: a label you
+// can see, one line tall, segments equal to the raw pixel, no word out of its
+// button — in three languages, at the widest window and the narrowest. And
+// the note it adds under 本机 does not push the dialog sideways.
+if (scenario()) {
+  for (const lang of LANGS) {
+    for (const viewport of [{ width: 1400, height: 900 }, { width: 520, height: 700 }]) {
+      const { ctx, page, errs } = await open(lang, "ai", "library", "wood", viewport);
+      await page.evaluate(() => {
+        const games = [];
+        for (let i = 0; i < 20; i++) {
+          games.push({ id: "t5-" + i, t: Date.now() - (i + 1) * 36e5, diff: "normal", color: i % 2 ? "b" : "w",
+            result: i % 2 ? "loss" : "win", moves: 4, acc: 50 + i, pgn: i % 2 ? "1. d4 d5 2. c4 e6" : "1. e4 e5 2. Nf3 Nc6", ending: "resigned" });
+        }
+        localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 2, games }));
+      });
+      await page.reload();
+      await page.waitForFunction(() => window.__chess && window.__chess.library && window.__chess.library().ready, null, { timeout: 20000 }).catch(() => {});
+      await page.waitForTimeout(600);
+      await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+      await page.click('#rail button[data-view="library"]', { timeout: 1500 }).catch(() => {});
+      await page.click("#lib-diagnose", { timeout: 2500 }).catch(() => {});
+      await page.waitForTimeout(500);
+      await page.click('#diag-src-seg [data-dsrc="local"]', { timeout: 1500 }).catch(() => {});
+      await page.waitForTimeout(500);
+      const r = await page.evaluate(() => {
+        const seg = document.getElementById("diag-src-seg");
+        const label = document.getElementById(seg.getAttribute("aria-labelledby"));
+        const bs = [...seg.querySelectorAll("button")];
+        const modal = document.querySelector("#lib-modal .modal");
+        return { open: document.getElementById("lib-modal").classList.contains("show"),
+          label: label && label.offsetParent ? label.textContent.trim() : null, stray: seg.getAttribute("aria-label"),
+          heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+          widths: bs.map((b) => b.getBoundingClientRect().width),
+          spill: bs.filter((b) => b.scrollHeight > b.clientHeight + 1 || b.scrollWidth > b.clientWidth + 1).map((b) => b.textContent.trim()),
+          sideways: modal.scrollWidth - modal.clientWidth,
+          past: bs.filter((b) => b.getBoundingClientRect().right > modal.getBoundingClientRect().right + 0.5).length,
+          diag: /\d/.test(document.getElementById("lib-diag").textContent) };
+      });
+      const tag = `T5 诊断来源 (${lang}, ${viewport.width}×${viewport.height})`;
+      assert(r.open && r.diag, `${tag}: 对话框开着，读的是本机的棋`);
+      assert(r.label && !r.stray, `${tag}: 有一个看得见的标签「${r.label}」，没有第二份 aria-label`);
+      assert(r.heights.length === 1 && r.heights[0] < 40, `${tag}: 每一段一行高 (${r.heights.join(", ")})`);
+      assert(Math.max(...r.widths) - Math.min(...r.widths) < 0.1, `${tag}: 每一段等宽 (${r.widths.map((w) => w.toFixed(2)).join(", ")})`);
+      assert(r.spill.length === 0 && r.past === 0 && r.sideways <= 0,
+        `${tag}: 文字不出按钮，按钮不出对话框，对话框不横向滚动 (${r.spill.join(", ") || "—"}; ${r.sideways}px)`);
+      assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
 const { shard, total } = scenario.done();
 console.log(`shard ${shard.index}/${shard.count}: ${Math.ceil((total - shard.index + 1) / shard.count)} of ${total} scenarios`);
 await browser.close();

@@ -1895,6 +1895,7 @@ import { loadChunk } from "./chunk.js";
   // --- two-player clock (base + Fischer increment; flag fall is terminal) ---
   /** time control id → {base, inc} seconds or null: presets and c<min>+<inc> (time-control.js) */
   const parseTc = TimeControl.parse;
+  const tcTag = () => { const tc = parseTc(store.game.timeControl); return tc ? tc.base + (tc.inc ? "+" + tc.inc : "") : "-"; }; // PGN's TimeControl: the export's tag, a record's `tc` (v8-1-plan T5)
 
   function resetClocks() {
     const tc = parseTc(store.game.timeControl);
@@ -2490,7 +2491,7 @@ import { loadChunk } from "./chunk.js";
     SCAN_BUDGET, evalScalar, importPgnText, invalidateEngine, judgeColours,
     leaveTrainer, plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setViewIndex, stopLiveAnalysis, withMotifs, recallAnalysis,
-    renderRecordEntry, loadStats, copyText, exportText, loadHistoryRecord: (rec) => loadHistoryRecord(rec),
+    renderRecordEntry, loadStats, saveStats, copyText, exportText, loadHistoryRecord: (rec) => loadHistoryRecord(rec),
     boardFen: () => viewGame().fen(), onLibraryLoaded: () => { renderStats(); sync(); },
   });
   const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;
@@ -4233,7 +4234,7 @@ import { loadChunk } from "./chunk.js";
     const id = newRecordId();
     store.game.recordedId = id;
     // #89 review: diff and style are the game's own opponent; an `unrated` one is recorded, not rated
-    const rec = Object.assign({ id, t: Date.now(), color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending }, OppUI.opponent());
+    const rec = Object.assign({ id, t: Date.now(), color: store.session.humanColor, result, moves: sanHistory().length, pgn: game.pgn(), ending, tc: tcTag() }, OppUI.opponent());
     // v8-0-plan B4: every rated game moves the rating (a late one is saved by OppUI); the card repaints after this task
     if (!rec.unrated) OppUI.file(s, rec, (f, late) => { store.session.filed = f; if (late) store.commit("game", "action"); else queueMicrotask(() => store.commit("game", "action")); });
     s.games.push(rec);
@@ -4429,8 +4430,7 @@ import { loadChunk } from "./chunk.js";
       ["Black", black],
       ["Result", result],
     ];
-    const tc = parseTc(store.game.timeControl);
-    tagPairs.push(["TimeControl", tc ? tc.base + (tc.inc ? "+" + tc.inc : "") : "-"]);
+    tagPairs.push(["TimeControl", tcTag()]);
     if (result !== "*") {
       tagPairs.push(["Termination", store.game.flagFall ? "time forfeit" : "normal"]);
     }

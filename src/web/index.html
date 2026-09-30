@@ -1208,6 +1208,16 @@
     <div class="modal-bg page-sheet" id="lib-modal" role="dialog" aria-labelledby="lib-modal-title">
       <div class="modal wide">
         <h3 id="lib-modal-title" data-i18n="diag.title">棋谱库诊断</h3>
+        <!-- v8-1-plan T5: which games it reads. 导入的 is 7.x's diagnosis and
+             stays the default; library-page.js wires the row. -->
+        <div class="hist-filters">
+          <span class="setting-k" id="diag-src-k" data-i18n="lib.bySrc">来源</span>
+          <div class="theme-row" id="diag-src-seg" role="group" aria-labelledby="diag-src-k">
+            <button type="button" data-dsrc="import" class="active" aria-pressed="true" data-i18n="diag.srcImport">导入的</button>
+            <button type="button" data-dsrc="local" aria-pressed="false" data-i18n="lib.srcLocal">本机</button>
+            <button type="button" data-dsrc="all" aria-pressed="false" data-i18n="hist.any">全部</button>
+          </div>
+        </div>
         <div class="stats-body" id="lib-diag"></div>
         <div class="close-row"><button type="button" class="tool-btn" id="lib-modal-close" data-i18n="act.close">关闭</button></div>
       </div>
