@@ -337,7 +337,7 @@ const gosOf = (w) => w.cmds.filter((c) => /^(go|stop|ucinewgame|position)\b/.tes
   const w = state.last();
   assert(w.searching && w.cmds.filter((c) => /^go nodes/.test(c)).length === 2, "a background pass is on its second position");
   let mv = null;
-  const move = E.bestMove(FEN3, "normal").then((m) => { mv = m; });
+  const move = E.bestMove(FEN3, "extreme").then((m) => { mv = m; });
   await settle();
   const stopAt = w.cmds.lastIndexOf("stop");
   assert(stopAt > w.cmds.lastIndexOf("go nodes " + E.nodesFor(100)), "a game move arriving mid-pass stops the running background search at once");
@@ -394,10 +394,10 @@ const gosOf = (w) => w.cmds.filter((c) => /^(go|stop|ucinewgame|position)\b/.tes
   const stop = E.analyzeInfinite(FEN, {}, (u) => updates.push(u));
   await clock.advance(10);
   const w = state.last();
-  const move = E.bestMove(FEN2, "normal");
+  const move = E.bestMove(FEN2, "extreme");
   await clock.advance(1000); await move;
   const gos = w.cmds.filter((c) => /^go\b/.test(c));
-  assert(gos.join(",") === "go infinite,go movetime 700,go infinite", "a game move preempts 持续分析, which re-arms on its position afterwards (" + gos.join(", ") + ")");
+  assert(gos.join(",") === "go infinite,go movetime 1200,go infinite", "a game move preempts 持续分析, which re-arms on its position afterwards (" + gos.join(", ") + ")");
   await stop();
   assert(w.cmds[w.cmds.length - 1] === "stop", "…and stop() still ends it");
   // a background pass under 持续分析
@@ -417,7 +417,7 @@ const gosOf = (w) => w.cmds.filter((c) => /^(go|stop|ucinewgame|position)\b/.tes
   const x1 = E.analyze(FEN, 150);
   await clock.advance(10);
   const n0 = w.cmds.length;
-  const x2 = E.bestMove(FEN2, "normal");
+  const x2 = E.bestMove(FEN2, "extreme");
   await clock.advance(10);
   assert(!w.cmds.slice(n0).includes("stop"), "a game move does not preempt a hint or coach search — same level, arrival order");
   await clock.advance(2000); await Promise.all([x1, x2]);
@@ -435,7 +435,7 @@ const gosOf = (w) => w.cmds.filter((c) => /^(go|stop|ucinewgame|position)\b/.tes
   const b = E.analyze(FEN2, 100, { bg: true }).then((x) => { r = x; });
   await clock.advance(50);
   assert(state.workers.length === 2 && state.last().cmds.some((c) => /^go nodes/.test(c)), "on: a pass boots a second worker and searches there");
-  const m = E.bestMove(FEN3, "normal");
+  const m = E.bestMove(FEN3, "extreme");
   await clock.advance(10);
   assert(!state.workers[0].cmds.includes("stop") && !state.workers[1].cmds.includes("stop") && state.workers[0].searching,
     "…a game move runs on the first at the same time, nobody stopped");
@@ -490,6 +490,34 @@ const gosOf = (w) => w.cmds.filter((c) => /^(go|stop|ucinewgame|position)\b/.tes
   const v = vendored[0];
   assert(v && read.length && read.every((x) => x === v) && said.length && said.every((x) => x === v),
     "gen-engine-src.mjs reads and names the vendored Stockfish " + v + " (reads " + read.join("/") + ", header says " + said.join("/") + ")");
+}
+
+// --- v8-1-plan T1: the re-stepped rungs, as the worker sees them -------------
+// A UCI_Elo rung searches to its pick depth and holds the reply like a depth
+// rung; a longer list is sent as MultiPV and the pick left to Stockfish; a
+// node rung searches its count, drawn ±15%, and fewer nodes short of time.
+{
+  const { E, clock, state } = boot();
+  const p = E.init(); await clock.advance(1); await p;
+  const w = state.last();
+  const since = () => w.cmds.slice(w.cmds.lastIndexOf("isready"));
+  let done = false;
+  const m1 = E.bestMove(FEN, "easyplus").then((m) => { done = true; return m; });
+  await clock.advance(10);
+  const c1 = since();
+  assert(c1.includes("setoption name MultiPV value 6") && c1.includes("setoption name UCI_Elo value 1500") && c1.includes("go depth 2"),
+    "T1: 初级+ is UCI_Elo 1500 searched to depth 2 over six lines (" + c1.filter((c) => /MultiPV|UCI_Elo|^go/.test(c)).join(", ") + ")");
+  assert(!done, "T1: …and its instant reply is held, like a depth rung's");
+  await clock.advance(600);
+  const mv1 = await m1;
+  assert(done && mv1 && mv1.from === "e2" && mv1.to === "e4", "T1: …then it plays Stockfish's own pick");
+  const nodesOf = () => Number((/^go nodes (\d+)/.exec(w.cmds.filter((c) => /^go/.test(c)).pop()) || [])[1]);
+  const seen = [];
+  for (let i = 0; i < 6; i++) { const m = E.bestMove(FEN, "strongplus"); await clock.advance(1200); await m; seen.push(nodesOf()); }
+  assert(seen.every((n) => n >= 2125 && n <= 2875) && new Set(seen).size > 1,
+    "T1: 强力+ searches about 2,500 nodes, a different count each move (" + seen.join(", ") + ")");
+  const short = E.bestMove(FEN, "strongplus", { search: 2, pace: 0 }); await clock.advance(10); await short;
+  assert(nodesOf() <= E.nodesFor(2) * 1.15, "T1: …and on a nearly flagged clock only what the time buys (" + nodesOf() + ")");
 }
 
 if (failed) {

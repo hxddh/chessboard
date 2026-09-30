@@ -70,18 +70,21 @@ export async function startPlayer({ Chess, ChessEngine, ChessPersona }) {
     send("position fen " + fen);
     const cands = new Map();
     let own = null;
+    let nodes = 0; // what the search actually covered: a movetime rung's depends on the machine
     const collect = (line) => {
       if (typeof line !== "string" || !/^info\b/.test(line)) return;
       const mv = line.match(/\bmultipv (\d+)\b/);
       const sc = scoreOf(line);
       if (sc != null && (!mv || mv[1] === "1") && !/\b(lower|upper)bound\b/.test(line)) own = sc;
+      const nd = line.match(/\bnodes (\d+)\b/);
+      if (nd) nodes = Number(nd[1]);
       if (!tier.multipv) return;
       const pv = line.match(/\bpv\s+([a-h][1-8][a-h][1-8][qrbn]?)/);
       if (mv && pv) cands.set(Number(mv[1]), { uci: pv[1], score: sc });
     };
     listeners.push(collect);
     const done = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), (tier.movetime || 2000) + 60000);
-    send(tier.depth ? "go depth " + tier.depth : "go movetime " + tier.movetime);
+    send(ChessEngine.searchCmd(tier, rng));
     let line;
     try { line = await done; } finally { listeners.splice(listeners.indexOf(collect), 1); }
     let uci = line.split(/\s+/)[1];
@@ -95,9 +98,9 @@ export async function startPlayer({ Chess, ChessEngine, ChessPersona }) {
         const own = list.find((c) => c.uci === uci);
         uci = (own && ChessPersona.pick(fen, list, style, Chess, own.score)) || uci;
       }
-      else if (!tier.worstBias) uci = ChessEngine.pickCandidate(list, tier, rng) || uci;
+      else if (!tier.worstBias && tier.elo == null) uci = ChessEngine.pickCandidate(list, tier, rng) || uci;
     }
-    return uci && uci !== "(none)" ? { uci, score: own } : null;
+    return uci && uci !== "(none)" ? { uci, score: own, nodes } : null;
   }
 
   return { newGame, move };
