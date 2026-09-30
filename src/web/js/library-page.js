@@ -349,6 +349,7 @@ async function bootLibrary(d) {
   // --- the list page -------------------------------------------------------
   const listModal = () => doc.getElementById("lib-list-modal");
   const listOpen = () => { const m = listModal(); return !!m && m.classList.contains("show"); };
+  const diagOpen = () => { const m = doc.getElementById("lib-modal"); return !!m && m.classList.contains("show"); };
   const f = store.ui.libFilter = Object.assign({ result: "all", color: "all", sort: "t", src: "all", tc: "all",
     q: "", from: "", to: "", pos: false }, store.ui.libFilter);
   let shown = PAGE;
@@ -558,7 +559,9 @@ async function bootLibrary(d) {
         }
       }
       filling = null;
-      if (n) { save(); if (listOpen()) renderList(); }
+      // the diagnosis too: its 本机 rows counted only the games that had an
+      // opening when it was drawn (8.1 M2, CI's WebKit — see diagView)
+      if (n) { save(); if (listOpen()) renderList(); if (diagOpen()) d.renderDiagnosis(); }
     })();
     return filling;
   }
@@ -830,6 +833,12 @@ async function bootLibrary(d) {
       b.setAttribute("aria-pressed", b.dataset.dsrc === src ? "true" : "false");
     });
     const local = src === "import" ? [] : localDiag();
+    // A 本机 entry made before the ECO table arrived has no opening
+    // (localEntry). Drawn like that, an opening row counted the games that
+    // had one — 2 on CI's WebKit — and its pick opened all 5, the list
+    // having filled the rest (openList → fillOpenings). The same fill, asked
+    // for here; it draws the diagnosis again when it has filled any.
+    if (local.some((g) => typeof g.eco !== "string" && g.sans)) fillOpenings();
     const deep = local.filter((g) => g.an.tags.length).length;
     return { games: LibraryLocal.diagGames(src, store.session.library, local),
       note: src === "import" ? "" : tf("diag.localNote", [deep]) };

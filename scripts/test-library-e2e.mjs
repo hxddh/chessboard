@@ -2425,20 +2425,34 @@ let t5Export = "";
   assert(all.on.join() === "all:true" && /21 局已分析的棋/.test(all.text) && /11 胜 10 负 0 和/.test(all.text) && /平均精准度 60\.5%/.test(all.text),
     `T5 选「全部」：21 局、11 胜 10 负、平均精准度 60.5%((1190 + 81.2) / 21)(${all.text.slice(0, 120)})`);
   // an opening row read from 本机 opens the list on the 本机 games of that opening
-  await page.click('#diag-src-seg [data-dsrc="local"]');
-  await page.waitForTimeout(300);
-  const ecoRow = await page.$('#lib-diag [data-diag-pick*="\\"eco\\""]');
-  const want = await page.evaluate(() => {
-    const b = document.querySelector('#lib-diag [data-diag-pick*="\\"eco\\""]');
-    if (!b) return null;
-    const pick = JSON.parse(b.dataset.diagPick);
-    return window.__chess.libDb().all().filter((g) => g.src === "local" && g.eco === pick.value && typeof g.acc === "number").map((g) => g.ref).sort().join();
+  // (7.x's rule, now for 本机 too: the row's count is the games its pick
+  // opens. Red at the M2 merge on WebKit — the diagnosis was drawn while
+  // three of the five C44 games had no opening yet, said 2, and opened 5.)
+  // CI's WebKit at the M2 merge: the ECO table arrived while the 本机 games
+  // were being made, so some of them had no opening yet (library-page.js
+  // localEntry) — three of the five C44 games, here as there
+  const eco = await page.evaluate(() => {
+    const all = window.__chess.libDb().all();
+    for (const g of all) if (["t5-0", "t5-4", "t5-8"].includes(g.ref)) delete g.eco;
+    return (all.find((g) => g.ref === "t5-16") || {}).eco || "";
   });
-  if (ecoRow) await ecoRow.click();
-  await page.waitForTimeout(500);
+  await page.click('#diag-src-seg [data-dsrc="local"]');
+  const rowOf = (e) => [...document.querySelectorAll('#lib-diag [data-diag-pick]')].find((b) => JSON.parse(b.dataset.diagPick).value === e) || null;
+  await page.waitForFunction(([e, f]) => window.__chess.libDb().all().every((g) => g.src !== "local" || typeof g.eco === "string") &&
+    !!new Function("return " + f)()(e), [eco, rowOf.toString()], { timeout: 15000 }).catch(() => {});
+  const row = await page.evaluate(([e, f]) => {
+    const b = new Function("return " + f)()(e);
+    if (!b) return null;
+    b.dataset.t5 = "row";
+    return { n: Number((/(\d+) 局/.exec(b.querySelector(".stat-v").textContent) || [])[1]),
+      want: window.__chess.libDb().all().filter((g) => g.src === "local" && g.eco === e && typeof g.acc === "number").map((g) => g.ref).sort().join() };
+  }, [eco, rowOf.toString()]);
+  if (row) await page.click('#lib-diag [data-t5="row"]');
+  await page.waitForFunction(() => document.getElementById("lib-list-modal").classList.contains("show"), null, { timeout: 5000 }).catch(() => {});
   const picked = await page.$$eval("#lib-list [data-loc]", (b) => b.map((x) => x.dataset.loc).sort().join());
   const libs = await page.$$eval("#lib-list [data-lib]", (b) => b.length);
-  assert(!!ecoRow && !!want && picked === want && libs === 0, `T5 本机诊断里点一个开局：列表里是这个开局的本机棋(${picked} = ${want})`);
+  assert(!!eco && !!row && !!row.want && picked === row.want && picked.split(",").length === row.n && libs === 0,
+    `T5 本机诊断里点一个开局：列表里是这个开局的本机棋，和那一行说的局数一样(${picked} = ${row && row.want}；行上 ${row && row.n} 局)`);
   await page.click("#lib-list-close");
   // restart: the row is back on 导入的
   await page.reload();
