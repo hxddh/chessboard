@@ -368,12 +368,60 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   await ctx.close();
 }
 
-// --- 3d. v8-1-plan N1: a sync that takes 3 s leaves the board to the player ---
+// --- 3c'. 8.1 M2 review P1-1: a pass begun while the games are on their way --
+// The import used to turn them away with a toast — and the sync's mark moved
+// on regardless, so they were never asked for again. Now they wait for the
+// pass, said in the dialog, and go in when it is over; nothing else records
+// how far a sync got, so a sync closed before that simply asks again.
+{
+  const { ctx, page, errs } = await open({ seedSync: { v: 1, on: true } });
+  await page.evaluate(() => localStorage.setItem("chess.v1.library", JSON.stringify({ v: 1, names: ["me"], games: [
+    { id: "lib:p1", t: 1, white: "me", black: "x", date: "?", event: "", result: "1-0", plies: 2, sans: "e4 e5", fen: "", side: "w", outcome: "win", an: null }] })));
+  await page.reload();
+  await page.waitForTimeout(900);
+  await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+  await toLibrary(page);
+  await libView(page);
+  // an engine the test lets go of: the pass stays on its first game until then
+  await page.evaluate(() => {
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.analyze = () => new Promise((ok) => { window.__free = () => ok(null); });
+  });
+  await openSync(page);
+  await page.click('#sync-site [data-v="chesscom"]');
+  await page.fill("#sync-user", "Sync_Tester");
+  await page.evaluate((pgn) => { window.__answer = { pgn, count: 2 }; window.__delay = 1500; }, TWO_GAMES);
+  await page.click("#sync-go");
+  await page.waitForTimeout(200);
+  // the pass starts while the games are out (its button is under the dialog)
+  await page.evaluate(() => document.getElementById("lib-analyse").click());
+  await page.waitForFunction(() => window.__answeredAt > 0, null, { timeout: 5000 });
+  await page.waitForTimeout(1200);
+  let d = await dlg(page);
+  let lib = await libView(page);
+  assert(d.shown && d.note.includes("引擎正忙") && lib.games.length === 1,
+    "P1-1: 应答到时分析在跑：对话框说引擎正忙，棋先等着、还没进库（" + JSON.stringify({ shown: d.shown, note: d.note, games: lib.games.length }) + "）");
+  // stop the pass: 暂停, and the engine's search comes back
+  await page.evaluate(() => { document.getElementById("lib-analyse").click(); if (window.__free) window.__free(); });
+  await page.waitForFunction(() => !document.getElementById("sync-modal").classList.contains("show"), null, { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  lib = await libView(page);
+  d = await dlg(page);
+  assert(!d.shown && lib.games.length === 3 && lib.names.includes("Sync_Tester"),
+    "P1-1: 分析一停，两局就进了库，对话框关上（" + JSON.stringify({ shown: d.shown, games: lib.games.length, names: lib.names }) + "）");
+  assert(errs.length === 0, "P1-1: 没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 3d. v8-1-plan N1: a sync that takes 8 s leaves the board to the player ---
 // The native side answers after its network work, off the shell's loop; the
 // page's side of that is one Promise, and nothing on the page may wait on it.
-// The bridge holds its answer 3 s. Meanwhile the dialog is closed, the move
+// The bridge holds its answer 8 s. Meanwhile the dialog is closed, the move
 // list is scrolled and a move is made on the board — each stamped by the page
-// when it happened, and every stamp has to come before the answer's.
+// when it happened, and every stamp has to come before the answer's. 8.1 M2
+// review P2-4: 8 s rather than the plan's 3, so that a slow CI runner (the
+// board's first click alone is a 0.6–1.6 s long task here) has seconds of
+// margin, not hundreds of milliseconds.
 {
   // a 48-ply game in progress (two players), White to move: the move list overflows
   const moves = "e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7 Re1 b5 Bb3 d6 c3 O-O h3 Nb8 d4 Nbd7 Nbd2 Bb7 Bc2 Re8 Nf1 Bf8 Ng3 g6 a4 c5 d5 c4 Bg5 h6 Be3 Nc5 Qd2 h5 Bg5 Be7 Ra3 Kg7 Rea1 Rh8 Qe2 Qc7 Bd2 Rab8".split(" ");
@@ -392,7 +440,7 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   await page.fill("#sync-user", "sync_tester");
   await page.evaluate(({ pgn, before }) => {
     window.__answer = { pgn, count: 2, last: 1790000000000 };
-    window.__delay = 3000;
+    window.__delay = 8000;
     // the page's own stamps: the move landing in the list, the list scrolling
     window.__movedAt = 0;
     window.__scrolledAt = 0;
@@ -413,8 +461,8 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   await page.mouse.move(box.x, box.y);
   await page.mouse.wheel(0, 400);
   for (const s of ["b2", "b3"]) { const p = await at(s); await page.mouse.click(p.x, p.y); }
-  // …then the answer lands: imported, and the mark kept for next time
-  await page.waitForFunction(() => window.__answeredAt > 0, null, { timeout: 8000 });
+  // …then the answer lands, and is imported
+  await page.waitForFunction(() => window.__answeredAt > 0, null, { timeout: 15000 });
   await page.waitForTimeout(600);
   const st = await page.evaluate(() => ({ moved: window.__movedAt, scrolled: window.__scrolledAt, answered: window.__answeredAt }));
   const rel = (x) => (x ? x - t0 : "—");
@@ -423,11 +471,11 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
     "N1: 同步进行中在棋盘上走了一步（b3 落进着法列表于 " + rel(st.moved) + " ms，应答于 " + rel(st.answered) + " ms）");
   assert(box.over && st.scrolled > 0 && st.scrolled < st.answered,
     "N1: 同步进行中着法列表滚得动（滚动于 " + rel(st.scrolled) + " ms，应答于 " + rel(st.answered) + " ms）");
-  assert(st.answered - t0 >= 2900, "N1: 应答确实晚了 3 秒（" + rel(st.answered) + " ms）");
+  assert(st.answered - t0 >= 7900, "N1: 应答确实晚了 8 秒（" + rel(st.answered) + " ms）");
   const lib = await libView(page);
-  assert(lib.games.length === 2, "N1: 3 秒后应答到了，两局照常进库（" + lib.games.length + "）");
+  assert(lib.games.length === 2, "N1: 8 秒后应答到了，两局照常进库（" + lib.games.length + "）");
   const s = await stored(page, "chess.v1.sync");
-  assert(s && s.last && s.last["lichess:sync_tester"] === 1790000000000, "T4: 记下这个网站、这个名字最新一局的时间（" + JSON.stringify(s && s.last) + "）");
+  assert(s && !("last" in s), "T4（评审 P2-2）：不再另记「上次」——下次从哪里开始看棋谱库（" + JSON.stringify(s) + "）");
   assert(errs.length === 0, "N1: 没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
@@ -445,6 +493,7 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   });
   const syncWith = async (answer, max) => {
     await openSync(page);
+    await page.click('#sync-site [data-v="chesscom"]');
     if (max) await page.click(`#sync-max [data-v="${max}"]`);
     await page.fill("#sync-user", "Sync_Tester");
     await page.evaluate((a) => { window.__answer = a; }, answer);
@@ -476,22 +525,25 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   })();
   await syncWith({ pgn: TWO_GAMES, count: 2, last: 1790000000000 }, 50);
   await watching;
-  assert(JSON.stringify(progressSeen) === '["正在从 Lichess 取棋…已取到 2 局","正在从 Lichess 取棋…已取到 5 局"]',
+  assert(JSON.stringify(progressSeen) === '["正在从 Chess.com 取棋…已取到 2 局","正在从 Chess.com 取棋…已取到 5 局"]',
     "T4: 取棋时对话框说「已取到 k 局」，数字跟着原生层走（" + JSON.stringify(progressSeen) + "）");
   const asks = await page.evaluate(() => window.__progressAsks);
   await page.waitForTimeout(900);
   assert(asks > 0 && await page.evaluate(() => window.__progressAsks) === asks, "T4: 应答到了就不再问进度（问过 " + asks + " 次）");
   await page.evaluate(() => { window.__delay = 0; window.__progress = { busy: false, count: 0 }; });
   assert(await page.evaluate(() => window.__analysed) === 0, "T4: 同步后分析关着：进库之后没有开始分析");
-  // second: since = the mark + 1 ms, the same name in another case is the same account
+  // second: since comes from the library — its newest Chess.com game of this
+  // name (2026.09.20, the name in another case is the same account) less 14
+  // days, and the one game of theirs already inside that asked for on top
   await syncWith({ pgn: "", count: 0 }, 100);
   d = await dlg(page);
-  assert(d.shown && d.note.includes("Lichess 上没有 Sync_Tester 的新对局"), "T4: 增量同步没有新棋：说「没有新对局」（" + d.note + "）");
+  assert(d.shown && d.note.includes("Chess.com 上没有 Sync_Tester 的新对局"), "T4: 增量同步没有新棋：说「没有新对局」（" + d.note + "）");
   const calls = await page.evaluate(() => window.__calls);
-  assert(JSON.stringify(calls) === '[{"site":"lichess","user":"Sync_Tester","max":50},{"site":"lichess","user":"Sync_Tester","max":100,"since":1790000000001}]',
-    "T4: 第二次只要上次以来的：since = 上次最新一局 + 1 ms，局数跟着选项（" + JSON.stringify(calls) + "）");
+  const since1 = Date.UTC(2026, 8, 20) - 14 * 86400000;
+  assert(JSON.stringify(calls) === JSON.stringify([{ site: "chesscom", user: "Sync_Tester", max: 50 }, { site: "chesscom", user: "Sync_Tester", max: 101, since: since1 }]),
+    "T4（评审 P2-2/P2-3）: 第二次 since = 库里最新一局那天 − 14 天，局数 = 选的 100 + 重叠里已有的 1（" + JSON.stringify(calls) + "）");
   let s = await stored(page, "chess.v1.sync");
-  assert(s.max === 100 && s.last["lichess:sync_tester"] === 1790000000000, "T4: 选项存下了；没有新棋时记号不动（" + JSON.stringify(s) + "）");
+  assert(s.max === 100 && !("last" in s), "T4: 选项存下了，没有另记的记号（" + JSON.stringify(s) + "）");
   // analyse after sync, on; the next sync's new game starts the library's pass
   await page.click("#sync-analyse");
   await page.keyboard.press("Escape");
@@ -502,8 +554,9 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   assert(lib.games.length === 3 && run.n > 0 && run.label.includes("暂停"), "T4: 同步后分析开着：新的一局进库后，棋谱库的批量分析开始了（" + JSON.stringify({ games: lib.games.length, run }) + "）");
   s = await stored(page, "chess.v1.sync");
   const calls3 = await page.evaluate(() => window.__calls);
-  assert(s.analyse === true && s.last["lichess:sync_tester"] === 1790100000000 && calls3[2].since === 1790000000001,
-    "T4: 开关存下了，记号往前走到新的一局（" + JSON.stringify({ s, call: calls3[2] }) + "）");
+  assert(s.analyse === true && calls3[2].since === since1 && calls3[2].max === 101,
+    "T4: 开关存下了；第三次仍从库里推（since 不变，100 + 1）（" + JSON.stringify({ s, call: calls3[2] }) + "）");
+
   // a reload: the choices come back
   await page.reload();
   await page.waitForTimeout(900);
@@ -515,6 +568,13 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
     analyse: document.getElementById("sync-analyse").getAttribute("aria-pressed"),
   }));
   assert(d.max === "100" && d.analyse === "true", "T4: 重启后记得最多 100 局、同步后分析开着（" + JSON.stringify(d) + "）");
+  await page.keyboard.press("Escape");
+  // the new game (2026.09.29) is in the library now: after the restart the
+  // next sync starts from it — nothing but the library says how far it got
+  await syncWith({ pgn: "", count: 0 });
+  const calls4 = await page.evaluate(() => window.__calls);
+  assert(calls4.length === 1 && calls4[0].since === Date.UTC(2026, 8, 29) - 14 * 86400000 && calls4[0].max === 102,
+    "T4（评审 P2-2）: 新的一局进库后（重启之后），since 跟着库走到它那天 − 14 天，100 + 重叠里已有的 2（" + JSON.stringify(calls4) + "）");
   assert(errs.length === 0, "T4: 没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
