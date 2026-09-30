@@ -60,10 +60,16 @@ const BUILTIN_COMMANDS = [_][]const u8{
 /// The exact function-pointer type the SDK's BridgeHandler carries, so the
 /// table below cannot drift from it.
 const InvokeFn = @FieldType(native_sdk.BridgeHandler, "invoke_fn");
+/// v8-1-plan N1: the SDK's asynchronous handler (bridge.AsyncHandler, SDK
+/// 0.10.1 src/bridge/root.zig) — it is handed an AsyncResponder instead of an
+/// output buffer, and answers whenever it likes.
+const AsyncInvokeFn = @FieldType(native_sdk.bridge.AsyncHandler, "invoke_fn");
 
+/// Exactly one of the two is set (a test below holds that).
 const AppCommand = struct {
     name: []const u8,
-    invoke_fn: InvokeFn,
+    invoke_fn: ?InvokeFn = null,
+    async_fn: ?AsyncInvokeFn = null,
 };
 
 /// The app's own bridge commands (host.js: `zero.invoke("chess.X", …)`).
@@ -80,6 +86,12 @@ const AppCommand = struct {
 /// system — and since the dialogs run here nothing needs it. It is not kept
 /// "for older pages" either: the page is always the frontend bundled into
 /// this same binary, so no older page can reach this shell.
+///
+/// v8-1-plan N1: chess.checkUpdate and chess.fetchGames are asynchronous —
+/// the network runs on a thread of its own and the answer comes back through
+/// the loop (see "async bridge" below), so the page's Promise is unchanged
+/// while the shell's thread stays free. chess.fetchProgress is how the sync
+/// dialog reads 已取到 k 局 meanwhile.
 const APP_COMMANDS = [_]AppCommand{
     .{ .name = "chess.writeTextFile", .invoke_fn = writeTextFile },
     .{ .name = "chess.readTextFile", .invoke_fn = readTextFile },
@@ -89,8 +101,9 @@ const APP_COMMANDS = [_]AppCommand{
     .{ .name = "chess.appdataWrite", .invoke_fn = appdataWrite },
     .{ .name = "chess.appdataPath", .invoke_fn = appdataPath },
     .{ .name = "chess.setMenuLanguage", .invoke_fn = setMenuLanguage },
-    .{ .name = "chess.checkUpdate", .invoke_fn = checkUpdate },
-    .{ .name = "chess.fetchGames", .invoke_fn = fetchGames },
+    .{ .name = "chess.checkUpdate", .async_fn = checkUpdate },
+    .{ .name = "chess.fetchGames", .async_fn = fetchGames },
+    .{ .name = "chess.fetchProgress", .invoke_fn = fetchProgress },
     .{ .name = "chess.selftestMode", .invoke_fn = selftestMode },
     .{ .name = "chess.selftestReport", .invoke_fn = selftestReport },
 };
@@ -115,6 +128,7 @@ const App = struct {
     env_map: *std.process.Environ.Map,
     io: std.Io,
     handlers: [APP_COMMANDS.len]native_sdk.BridgeHandler = undefined,
+    async_handlers: [APP_COMMANDS.len]native_sdk.bridge.AsyncHandler = undefined,
     policies: [APP_COMMANDS.len]native_sdk.BridgeCommandPolicy = undefined,
     builtin_policies: [BUILTIN_COMMANDS.len]native_sdk.BridgeCommandPolicy = undefined,
     /// The per-user data directory, resolved once in main() from the
@@ -135,6 +149,9 @@ const App = struct {
     runtime: ?*native_sdk.Runtime = null,
     /// v8-1-plan N2 — the file chess.openPgn is handing over in pieces.
     opened: Opened = .{},
+    /// v8-1-plan N1 — the sync and the update check in flight, and what
+    /// their threads have finished, waiting for the loop to answer it.
+    pending: Pending = .{},
     /// v8-0-plan F3 — writes arriving in pieces, until their last piece.
     stages: Stages = .{},
     /// Q1.6 — localized copies of the manifest menus, when the launch
@@ -150,6 +167,7 @@ const App = struct {
             .source = native_sdk.frontend.productionSource(.{ .dist = "frontend/dist" }),
             .source_fn = source,
             .event_fn = onEvent,
+            .stop_fn = onStop,
         };
     }
 
@@ -162,12 +180,19 @@ const App = struct {
     }
 
     fn bridge(self: *@This()) native_sdk.BridgeDispatcher {
+        var sync_count: usize = 0;
+        var async_count: usize = 0;
         for (APP_COMMANDS, 0..) |cmd, index| {
-            self.handlers[index] = .{
-                .name = cmd.name,
-                .context = self,
-                .invoke_fn = cmd.invoke_fn,
-            };
+            // v8-1-plan N1: the SDK looks a command up in the async registry
+            // first (runtime/flow.zig handleAsyncBridgeMessage) and checks the
+            // same policy there, so both kinds share the one policy table
+            if (cmd.async_fn) |invoke| {
+                self.async_handlers[async_count] = .{ .name = cmd.name, .context = self, .invoke_fn = invoke };
+                async_count += 1;
+            } else {
+                self.handlers[sync_count] = .{ .name = cmd.name, .context = self, .invoke_fn = cmd.invoke_fn.? };
+                sync_count += 1;
+            }
             self.policies[index] = .{
                 .name = cmd.name,
                 .origins = runner.manifestOrigins(),
@@ -178,7 +203,8 @@ const App = struct {
                 .enabled = true,
                 .commands = self.policies[0..],
             },
-            .registry = .{ .handlers = self.handlers[0..] },
+            .registry = .{ .handlers = self.handlers[0..sync_count] },
+            .async_registry = .{ .handlers = self.async_handlers[0..async_count] },
         };
     }
 
@@ -288,6 +314,11 @@ const App = struct {
 fn onEvent(context: *anyopaque, runtime: *native_sdk.Runtime, event: native_sdk.Event) anyerror!void {
     const self: *App = @ptrCast(@alignCast(context));
     switch (event) {
+        // v8-1-plan N1: a worker called PlatformServices.wake_fn; the SDK
+        // delivers the platform's `.wake` here as `.effects_wake`, on the loop
+        // thread (runtime/flow.zig dispatchPlatformEvent), which is the one
+        // thread that may answer the bridge
+        .effects_wake => self.pending.drain(),
         .command => |cmd| {
             var buf: [256]u8 = undefined;
             const detail = std.fmt.bufPrint(
@@ -302,6 +333,15 @@ fn onEvent(context: *anyopaque, runtime: *native_sdk.Runtime, event: native_sdk.
     }
     forwardOpenFiles(self, runtime, event);
     issueDroppedPaths(self, event);
+}
+
+/// v8-1-plan N1: the SDK's stop hook runs once, on the loop thread, before the
+/// platform goes away (runtime/flow.zig run: "Teardown ordering contract").
+/// After it no worker calls wake_fn, and what they still bring is dropped.
+fn onStop(context: *anyopaque, runtime: *native_sdk.Runtime) anyerror!void {
+    _ = runtime;
+    const self: *App = @ptrCast(@alignCast(context));
+    self.pending.close();
 }
 
 // -------------------------------------------------------------- drop:files
@@ -1829,6 +1869,355 @@ fn setMenuLanguage(context: *anyopaque, invocation: native_sdk.bridge.Invocation
     return std.fmt.bufPrint(output, "{{\"ok\":true,\"applied\":false,\"restartRequired\":true}}", .{}) catch return error.HandlerFailed;
 }
 
+// ------------------------------------------------------ async bridge (N1)
+//
+// v8-1-plan N1. Until 8.1 chess.checkUpdate and chess.fetchGames were plain
+// handlers that ran std.http on the thread the bridge dispatches on — the
+// platform loop — so a sync of three Chess.com months held the window still
+// for as long as the network took (v8-0-plan §9 C2: "会占住桥所在的线程").
+//
+// Now they are SDK AsyncHandlers (bridge.AsyncHandler, SDK 0.10.1
+// src/bridge/root.zig; the runtime reserves an AsyncBridgeResponseSlot per
+// request, runtime/flow.zig handleAsyncBridgeMessage):
+//   1. the handler, on the loop thread, checks the request and takes this
+//      kind's slot — one sync and one update check at a time; a second of a
+//      kind still running is answered {"error":"busy"} at once;
+//   2. it starts a worker thread for the HTTP and a watcher thread for the
+//      deadline, and returns — the loop is free again;
+//   3. whichever finishes first (the answer, or the deadline's "timeout")
+//      claims the job, puts its text on the completion queue under the lock
+//      and calls PlatformServices.wake_fn — the one platform service that
+//      may be called from any thread (platform/types.zig: macOS
+//      dispatch_async, Win32 PostMessageW, bounded and enqueue-only);
+//   4. the platform delivers `.wake` on the loop thread, the runtime hands
+//      it to onEvent as `.effects_wake`, and drain() answers through the
+//      AsyncResponder the handler kept.
+// The page's side is unchanged: zero.invoke is still one Promise.
+//
+// The deadline is the watcher's, not std.http's: Zig 0.16's client has no
+// per-request timeout, and a stalled read would otherwise hold the answer
+// forever. At the deadline the page is told "timeout" and the slot is free
+// for the next try; the worker is left to finish on its own and whatever it
+// brings is dropped. Such orphans are bounded (Pending.LIVE_MAX).
+//
+// Exit: the SDK's stop hook (onStop) closes the queue — no wake_fn after it,
+// since the platform is about to be freed — and main() leaves with
+// std.process.exit when a worker is still out, rather than returning into
+// std.start's Io.Threaded.deinit, which would wait for it. The network never
+// holds the app open.
+
+const AsyncKind = enum(u1) { sync, update };
+
+const AsyncResponder = native_sdk.bridge.AsyncResponder;
+
+/// What a job's thread runs: its answer as JSON, written into `out` (or any
+/// static text). Tests hand in their own.
+const WorkFn = *const fn (job: *Job, out: []u8) []const u8;
+
+const JobSpec = struct {
+    work: WorkFn,
+    deadline_ms: u64,
+    io: std.Io,
+    sync: ?SyncRequest = null,
+    /// for the tests' work functions only
+    test_ctx: ?*anyopaque = null,
+};
+
+/// A sync fetches at most 1 + SYNC_MONTHS_SINCE_MAX pages; this is generous
+/// for that and still well inside sync-ui.js's own 75 s backstop.
+const SYNC_DEADLINE_MS: u64 = 60_000;
+/// The About panel's check: host.js gives up at 10 s.
+const UPDATE_DEADLINE_MS: u64 = 8_000;
+/// How often the watcher looks at the clock and at the job.
+const WATCH_POLL_MS: u64 = 20;
+/// Room for a sync answer (SyncAnswer caps it at SYNC_ANSWER_MAX) and more.
+const JOB_OUT_BYTES: usize = SYNC_ANSWER_MAX + 1024;
+
+const Job = struct {
+    pending: *Pending,
+    kind: AsyncKind,
+    gen: u32,
+    spec: JobSpec,
+    /// the worker has its answer (the watcher may stop looking)
+    done: std.atomic.Value(bool) = .init(false),
+    /// whoever sets this first — the worker's answer or the watcher's
+    /// timeout — is the one that goes on the queue
+    claimed: std.atomic.Value(bool) = .init(false),
+    /// the worker and the watcher; the last one out frees the job
+    refs: std.atomic.Value(u8) = .init(2),
+
+    /// Progress for chess.fetchProgress (sync only): how many games are in.
+    fn report(job: *Job, count: usize) void {
+        if (job.kind != .sync) return;
+        job.pending.setProgress(job.gen, count);
+    }
+
+    fn release(job: *Job) void {
+        if (job.refs.fetchSub(1, .acq_rel) != 1) return;
+        const pending = job.pending;
+        std.heap.page_allocator.destroy(job);
+        // last: once live is back to 0 nothing of this job touches `pending`
+        _ = pending.live.fetchSub(1, .acq_rel);
+    }
+};
+
+/// One finished job, from its thread to the loop. `owned` is the buffer
+/// `text` may point into, freed once the answer is written.
+const Completion = struct {
+    kind: AsyncKind,
+    gen: u32,
+    text: []const u8,
+    owned: ?[]u8 = null,
+
+    fn free(c: Completion) void {
+        if (c.owned) |buf| std.heap.page_allocator.free(buf);
+    }
+};
+
+/// The request a slot is answering: what the loop needs to answer it later.
+const AsyncSlot = struct {
+    busy: bool = false,
+    gen: u32 = 0,
+    id_buf: [native_sdk.bridge.max_id_bytes]u8 = undefined,
+    id_len: usize = 0,
+    responder: AsyncResponder = undefined,
+
+    fn id(self: *const AsyncSlot) []const u8 {
+        return self.id_buf[0..self.id_len];
+    }
+};
+
+/// The spin lock the SDK's own effects queue uses (runtime/effects.zig
+/// SpinMutex): Zig 0.16 has no blocking mutex outside Io, and every section
+/// under it is a few words of copying plus the enqueue-only wake_fn.
+const SpinLock = struct {
+    inner: std.atomic.Mutex = .unlocked,
+
+    fn lock(self: *SpinLock) void {
+        while (!self.inner.tryLock()) std.atomic.spinLoopHint();
+    }
+
+    fn unlock(self: *SpinLock) void {
+        self.inner.unlock();
+    }
+};
+
+const Begin = enum { started, busy, failed };
+
+const Pending = struct {
+    /// a timed-out job's worker may still be out: this many jobs at most,
+    /// counting those, so a network that never answers cannot pile threads up
+    const LIVE_MAX: u32 = 4;
+    /// every live job posts at most once
+    const QUEUE_MAX: usize = LIVE_MAX;
+
+    // shared with the job threads, under `lock`
+    lock: SpinLock = .{},
+    closed: bool = false,
+    queue: [QUEUE_MAX]Completion = undefined,
+    queued: usize = 0,
+    wake_ctx: ?*anyopaque = null,
+    wake_fn: ?*const fn (context: ?*anyopaque) anyerror!void = null,
+    // shared, lock-free
+    live: std.atomic.Value(u32) = .init(0),
+    /// the running sync's generation (high half) and games so far (low half)
+    progress: std.atomic.Value(u64) = .init(0),
+    // the loop thread's alone
+    slots: [2]AsyncSlot = .{ .{}, .{} },
+    next_gen: u32 = 1,
+
+    /// The platform's wake service, from the Runtime runner.zig published.
+    fn bindWake(self: *Pending, context: ?*anyopaque, wake_fn: ?*const fn (context: ?*anyopaque) anyerror!void) void {
+        self.lock.lock();
+        defer self.lock.unlock();
+        self.wake_ctx = context;
+        self.wake_fn = wake_fn;
+    }
+
+    /// Loop thread: take `kind`'s slot and start the job, or say why not.
+    fn begin(self: *Pending, kind: AsyncKind, id: []const u8, responder: AsyncResponder, spec: JobSpec) Begin {
+        const slot = &self.slots[@intFromEnum(kind)];
+        if (slot.busy) return .busy;
+        if (id.len > slot.id_buf.len) return .failed;
+        {
+            self.lock.lock();
+            defer self.lock.unlock();
+            // nothing could ever answer it: no wake, or the app is stopping
+            if (self.closed or self.wake_fn == null) return .failed;
+        }
+        if (self.live.load(.acquire) >= LIVE_MAX) return .busy;
+        const job = std.heap.page_allocator.create(Job) catch return .failed;
+        const gen = self.next_gen;
+        self.next_gen +%= 1;
+        if (self.next_gen == 0) self.next_gen = 1;
+        job.* = .{ .pending = self, .kind = kind, .gen = gen, .spec = spec };
+        if (kind == .sync) self.progress.store(@as(u64, gen) << 32, .release);
+        _ = self.live.fetchAdd(1, .acq_rel);
+        const worker = std.Thread.spawn(.{}, workerMain, .{job}) catch {
+            std.heap.page_allocator.destroy(job);
+            _ = self.live.fetchSub(1, .acq_rel);
+            return .failed;
+        };
+        worker.detach();
+        if (std.Thread.spawn(.{ .stack_size = 256 * 1024 }, watcherMain, .{job})) |watcher| {
+            watcher.detach();
+        } else |_| {
+            // no deadline for this one; the worker alone owns the job
+            job.release();
+        }
+        @memcpy(slot.id_buf[0..id.len], id);
+        slot.id_len = id.len;
+        slot.responder = responder;
+        slot.gen = gen;
+        slot.busy = true;
+        return .started;
+    }
+
+    /// Any thread: one finished job for the loop. Under the lock, so that
+    /// once close() has returned no thread is inside wake_fn — the platform
+    /// it points into is freed right after the stop hook.
+    fn post(self: *Pending, c: Completion) void {
+        self.lock.lock();
+        if (self.closed or self.queued == QUEUE_MAX) {
+            self.lock.unlock();
+            c.free();
+            return;
+        }
+        self.queue[self.queued] = c;
+        self.queued += 1;
+        // bounded and enqueue-only by contract (PlatformServices.wake_fn)
+        if (self.wake_fn) |wake| wake(self.wake_ctx) catch {};
+        self.lock.unlock();
+    }
+
+    /// Loop thread (`.effects_wake`): answer what has finished. A result for
+    /// a request already answered — its deadline passed first — is dropped.
+    fn drain(self: *Pending) void {
+        var taken: [QUEUE_MAX]Completion = undefined;
+        self.lock.lock();
+        const n = self.queued;
+        @memcpy(taken[0..n], self.queue[0..n]);
+        self.queued = 0;
+        self.lock.unlock();
+        for (taken[0..n]) |c| {
+            defer c.free();
+            const slot = &self.slots[@intFromEnum(c.kind)];
+            if (!slot.busy or slot.gen != c.gen) continue;
+            slot.busy = false;
+            respondNow(slot.responder, slot.id(), c.text);
+        }
+    }
+
+    /// Loop thread (the stop hook): stop answering, forget the requests —
+    /// their responders belong to a Runtime that is about to go — and drop
+    /// what has arrived. Returns at once whatever the workers are doing.
+    fn close(self: *Pending) void {
+        var taken: [QUEUE_MAX]Completion = undefined;
+        self.lock.lock();
+        self.closed = true;
+        const n = self.queued;
+        @memcpy(taken[0..n], self.queue[0..n]);
+        self.queued = 0;
+        self.lock.unlock();
+        for (taken[0..n]) |c| c.free();
+        for (&self.slots) |*slot| slot.busy = false;
+    }
+
+    fn isClosed(self: *Pending) bool {
+        self.lock.lock();
+        defer self.lock.unlock();
+        return self.closed;
+    }
+
+    /// Whether a worker is still out — main() then exits without waiting.
+    fn workersOut(self: *Pending) bool {
+        return self.live.load(.acquire) > 0;
+    }
+
+    fn setProgress(self: *Pending, gen: u32, count: usize) void {
+        const next = (@as(u64, gen) << 32) | @min(count, std.math.maxInt(u32));
+        var current = self.progress.load(.acquire);
+        // only the sync the page is waiting on: a timed-out one's worker
+        // may still be counting
+        while (current >> 32 == gen) {
+            current = self.progress.cmpxchgWeak(current, next, .acq_rel, .acquire) orelse return;
+        }
+    }
+
+    /// Loop thread: games in so far for the sync in flight, or null.
+    fn syncProgress(self: *Pending) ?u32 {
+        const slot = &self.slots[@intFromEnum(AsyncKind.sync)];
+        if (!slot.busy) return null;
+        const v = self.progress.load(.acquire);
+        if (v >> 32 != slot.gen) return 0;
+        return @truncate(v);
+    }
+};
+
+/// The answer as the bridge frames it — built on the heap, not with
+/// AsyncResponder.success, which puts a 1 MiB buffer on the stack.
+fn respondNow(responder: AsyncResponder, id: []const u8, text: []const u8) void {
+    const gpa = std.heap.page_allocator;
+    // the id is at most 64 bytes, and JSON-escaped at most six times longer
+    const buf = gpa.alloc(u8, text.len + native_sdk.bridge.max_id_bytes * 6 + 64) catch return;
+    defer gpa.free(buf);
+    const frame = native_sdk.bridge.writeSuccessResponse(buf, id, text);
+    if (frame.len == 0) return;
+    responder.respond(frame) catch {};
+}
+
+fn failText(kind: AsyncKind) []const u8 {
+    return switch (kind) {
+        .sync => "{\"error\":\"offline\"}",
+        .update => "{\"error\":\"network\"}",
+    };
+}
+
+fn workerMain(job: *Job) void {
+    const gpa = std.heap.page_allocator;
+    const out: ?[]u8 = gpa.alloc(u8, JOB_OUT_BYTES) catch null;
+    const text = if (out) |buf| job.spec.work(job, buf) else failText(job.kind);
+    job.done.store(true, .release);
+    if (job.claimed.cmpxchgStrong(false, true, .acq_rel, .acquire) == null) {
+        job.pending.post(.{ .kind = job.kind, .gen = job.gen, .text = text, .owned = out });
+    } else if (out) |buf| {
+        gpa.free(buf);
+    }
+    job.release();
+}
+
+fn watcherMain(job: *Job) void {
+    var waited: u64 = 0;
+    while (!job.done.load(.acquire)) {
+        if (waited >= job.spec.deadline_ms) {
+            if (job.claimed.cmpxchgStrong(false, true, .acq_rel, .acquire) == null) {
+                job.pending.post(.{ .kind = job.kind, .gen = job.gen, .text = "{\"error\":\"timeout\"}" });
+            }
+            break;
+        }
+        // the app is leaving: there is no one left to tell
+        if (job.pending.isClosed()) break;
+        std.Io.sleep(job.spec.io, std.Io.Duration.fromMilliseconds(WATCH_POLL_MS), .awake) catch {};
+        waited += WATCH_POLL_MS;
+    }
+    job.release();
+}
+
+/// A handler's answer when no job was started.
+fn beginAnswer(responder: AsyncResponder, id: []const u8, kind: AsyncKind, began: Begin) void {
+    switch (began) {
+        .started => {},
+        .busy => respondNow(responder, id, "{\"error\":\"busy\"}"),
+        .failed => respondNow(responder, id, failText(kind)),
+    }
+}
+
+fn bindWakeFrom(self: *App) void {
+    const rt = self.runtime orelse return;
+    const services = rt.options.platform.services;
+    self.pending.bindWake(services.context, services.wake_fn);
+}
+
 // --------------------------------------------------------- update check (Q1.5)
 //
 // The minimum viable channel from the plan: ask GitHub for the latest release
@@ -1836,36 +2225,40 @@ fn setMenuLanguage(context: *anyopaque, invocation: native_sdk.bridge.Invocation
 // version (app.zon's, which it already shows in About) and decides whether to
 // say anything — this side does no comparison and no download, and it runs
 // only when the page asks (a "check for updates" action, never at startup on
-// its own). The answer is {tag,url} or {error:"network"|"http_NNN"|"parse"}.
+// its own). The answer is {tag,url} or {error:"network"|"http_NNN"|"parse"|
+// "timeout"|"busy"}.
 //
-// Note on the 5 s budget: std.http.Client.fetch in this Zig has no per-call
-// timeout option this file can name with confidence, so none is set here;
-// host.js races the call against a 5 s timer instead, which is what the page
-// needs anyway (the native call may still complete in the background).
+// v8-1-plan N1: asynchronous, with its own deadline (UPDATE_DEADLINE_MS);
+// host.js still races it, now as a backstop.
 const RELEASES_LATEST_URL = "https://api.github.com/repos/hxddh/chessboard/releases/latest";
 
-fn checkUpdate(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+fn checkUpdate(context: *anyopaque, invocation: native_sdk.bridge.Invocation, responder: AsyncResponder) anyerror!void {
     const self: *App = @ptrCast(@alignCast(context));
-    _ = invocation;
+    const id = invocation.request.id;
+    bindWakeFrom(self);
+    beginAnswer(responder, id, .update, self.pending.begin(.update, id, responder, .{
+        .work = updateWork,
+        .deadline_ms = UPDATE_DEADLINE_MS,
+        .io = self.io,
+    }));
+}
+
+fn updateWork(job: *Job, out: []u8) []const u8 {
     const gpa = std.heap.page_allocator;
-    var client: std.http.Client = .{ .allocator = gpa, .io = self.io };
+    var client: std.http.Client = .{ .allocator = gpa, .io = job.spec.io };
     defer client.deinit();
     var body: std.Io.Writer.Allocating = .init(gpa);
     defer body.deinit();
-    const result = client.fetch(.{
-        .location = .{ .url = RELEASES_LATEST_URL },
-        .method = .GET,
-        // GitHub refuses requests without a User-Agent
-        .headers = .{ .user_agent = .{ .override = "chessboard (+https://github.com/hxddh/chessboard)" } },
-        .extra_headers = &.{.{ .name = "accept", .value = "application/vnd.github+json" }},
-        .response_writer = &body.writer,
-    }) catch {
-        return std.fmt.bufPrint(output, "{{\"error\":\"network\"}}", .{}) catch return error.HandlerFailed;
-    };
-    if (result.status != .ok) {
-        return std.fmt.bufPrint(output, "{{\"error\":\"http_{d}\"}}", .{@intFromEnum(result.status)}) catch return error.HandlerFailed;
-    }
-    return formatLatestRelease(body.written(), output);
+    // GitHub refuses requests without a User-Agent
+    const status = httpGet(&client, RELEASES_LATEST_URL, "application/vnd.github+json", &body, null);
+    return updateReply(status, body.written(), out);
+}
+
+/// The page's answer for GitHub's: the status first, then the body.
+fn updateReply(status: u32, body: []const u8, output: []u8) []const u8 {
+    if (status == 0) return "{\"error\":\"network\"}";
+    if (status != 200) return std.fmt.bufPrint(output, "{{\"error\":\"http_{d}\"}}", .{status}) catch "{\"error\":\"network\"}";
+    return formatLatestRelease(body, output) catch "{\"error\":\"parse\"}";
 }
 
 /// {tag,url} out of the releases/latest JSON, or {error:"parse"}. Kept apart
@@ -1896,6 +2289,76 @@ fn safeUrl(s: []const u8) bool {
     return true;
 }
 
+// ------------------------------------------------------------- HTTP GET (N1)
+
+/// A body larger than this is not an answer either site gives for N ≤ 100.
+const HTTP_BODY_MAX: usize = 16 * 1024 * 1024;
+
+/// Called as a body grows, with all of it so far (Lichess's game count).
+const Tick = struct {
+    context: *anyopaque,
+    tick_fn: *const fn (context: *anyopaque, written: []const u8) void,
+};
+
+/// Where the sync's GETs go: the network, or a test's canned answers.
+const Getter = struct {
+    context: *anyopaque,
+    get_fn: *const fn (context: *anyopaque, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) u32,
+
+    fn get(self: Getter, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) u32 {
+        return self.get_fn(self.context, url, accept, body, tick);
+    }
+};
+
+/// One GET into `body`, read as it arrives: the HTTP status, or 0 when
+/// nothing came back. std.http.Client.fetch's own steps (Client.zig fetch),
+/// with the read in pieces so `tick` can count what is in.
+fn httpGet(client: *std.http.Client, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) u32 {
+    const uri = std.Uri.parse(url) catch return 0;
+    var req = client.request(.GET, uri, .{
+        .keep_alive = false,
+        .headers = .{ .user_agent = .{ .override = SYNC_USER_AGENT } },
+        .extra_headers = &.{.{ .name = "accept", .value = accept }},
+    }) catch return 0;
+    defer req.deinit();
+    req.sendBodiless() catch return 0;
+    var redirect_buffer: [8 * 1024]u8 = undefined;
+    var response = req.receiveHead(&redirect_buffer) catch return 0;
+    const status: u32 = @intFromEnum(response.head.status);
+    const gpa = client.allocator;
+    const decompress_buffer: []u8 = switch (response.head.content_encoding) {
+        .identity => &.{},
+        .zstd => gpa.alloc(u8, std.compress.zstd.default_window_len) catch return 0,
+        .deflate, .gzip => gpa.alloc(u8, std.compress.flate.max_window_len) catch return 0,
+        .compress => return 0,
+    };
+    defer if (decompress_buffer.len > 0) gpa.free(decompress_buffer);
+    var transfer_buffer: [4096]u8 = undefined;
+    var decompress: std.http.Decompress = undefined;
+    const reader = response.readerDecompressing(&transfer_buffer, &decompress, decompress_buffer);
+    while (body.written().len < HTTP_BODY_MAX) {
+        _ = reader.stream(&body.writer, .limited(16 * 1024)) catch |err| switch (err) {
+            error.EndOfStream => break,
+            else => return 0,
+        };
+        if (tick) |t| t.tick_fn(t.context, body.written());
+    }
+    return status;
+}
+
+const NetGetter = struct {
+    client: *std.http.Client,
+
+    fn getter(self: *NetGetter) Getter {
+        return .{ .context = self, .get_fn = get };
+    }
+
+    fn get(context: *anyopaque, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) u32 {
+        const self: *NetGetter = @ptrCast(@alignCast(context));
+        return httpGet(self.client, url, accept, body, tick);
+    }
+};
+
 // ------------------------------------------------ online sync (v8-0-plan C2)
 //
 // The player's recent games from Lichess or Chess.com, fetched here because
@@ -1908,25 +2371,38 @@ fn safeUrl(s: []const u8) bool {
 // the URL and a User-Agent naming the app (both sites ask callers to say what
 // software they are) — nothing else about the person.
 //
-// The answer is {"pgn":"…","count":N}: the games as one PGN text, newest
-// first, whole games only, at most SYNC_ANSWER_MAX bytes. Or {"error":code},
-// code being one the page words for the player — offline, rate_limited,
-// not_found, bad_request, parse — or "http" with the "status".
+// The answer is {"pgn":"…","count":N,"last":ms}: the games as one PGN text,
+// newest first, whole games only, at most SYNC_ANSWER_MAX bytes, and the time
+// of the newest (absent with no games). Or {"error":code}, code being one the
+// page words for the player — offline, rate_limited, not_found, bad_request,
+// parse, timeout, busy — or "http" with the "status".
 //
-// Like checkUpdate this holds the calling thread for the length of the
-// requests, and host.js races it against a timer. Everything but the
-// requests themselves is a function the tests below run on canned answers.
+// v8-1-plan T4, incremental: the page sends back `since` = the last sync's
+// `last` + 1 ms (its "sync" key, per site and name). Lichess is asked with
+// since= and anything the page already has is dropped here too (a PGN's
+// UTCTime is whole seconds, so the newest game comes back once more); Chess.com
+// walks only the archive months from the one `since` falls in, and keeps the
+// games that ended after it.
+//
+// Asynchronous since v8-1-plan N1 (see "async bridge" above). Everything but
+// the requests themselves is a function the tests below run on canned
+// answers, the requests included — through a Getter.
 
 const SYNC_GAMES_DEFAULT: usize = 20;
-const SYNC_GAMES_MAX: usize = 50;
+/// T4: the dialog offers 20 / 50 / 100.
+const SYNC_GAMES_MAX: usize = 100;
 /// Lichess names are 2–30 characters and Chess.com's 3–25, both of
 /// [A-Za-z0-9_-] — so a name is also safe in a URL path as it stands.
 const SYNC_NAME_MIN: usize = 2;
 const SYNC_NAME_MAX: usize = 30;
 /// A full piece's base64 is what the frame is proven to carry (see the test).
 const SYNC_ANSWER_MAX: usize = WRITE_B64_MAX;
-/// Chess.com files games by month: this many months back, at most, to find N.
+/// Chess.com files games by month: this many months back, at most, to find N
+/// on a first sync…
 const SYNC_MONTHS_MAX: usize = 3;
+/// …and on a later one, the months since the last (a player back after two
+/// years gets the newest N of them, not 24 requests' worth past the deadline).
+const SYNC_MONTHS_SINCE_MAX: usize = 24;
 const SYNC_USER_AGENT = "chessboard (+https://github.com/hxddh/chessboard)";
 
 const SyncSite = enum { lichess, chesscom };
@@ -1936,13 +2412,25 @@ const SyncRequest = struct {
     name_buf: [SYNC_NAME_MAX]u8 = undefined,
     name_len: usize = 0,
     max: usize = SYNC_GAMES_DEFAULT,
+    /// ms since the epoch; games from before it are not wanted (0: all)
+    since: u64 = 0,
 
     fn user(self: *const SyncRequest) []const u8 {
         return self.name_buf[0..self.name_len];
     }
 };
 
-/// {site, user, max} from the page, or null when any of it is not usable.
+/// A millisecond timestamp field: jsonUintField stops at 12 digits, a
+/// timestamp has 13.
+fn jsonMsField(payload: []const u8, key: []const u8) ?u64 {
+    const start = jsonFieldValue(payload, key) orelse return null;
+    var i = start;
+    while (i < payload.len and std.ascii.isDigit(payload[i])) : (i += 1) {}
+    if (i == start or i - start > 15) return null;
+    return std.fmt.parseInt(u64, payload[start..i], 10) catch null;
+}
+
+/// {site, user, max, since} from the page, or null when any of it is not usable.
 fn syncRequest(payload: []const u8) ?SyncRequest {
     var site_buf: [16]u8 = undefined;
     const site_name = jsonStringField(payload, "site", &site_buf) orelse return null;
@@ -1957,14 +2445,19 @@ fn syncRequest(payload: []const u8) ?SyncRequest {
     if (given.len < SYNC_NAME_MIN or !tokenValid(given, SYNC_NAME_MAX)) return null;
     req.name_len = given.len;
     if (jsonUintField(payload, "max")) |m| req.max = std.math.clamp(m, 1, SYNC_GAMES_MAX);
+    if (jsonMsField(payload, "since")) |s| req.since = s;
     return req;
 }
 
 /// Standard chess only (the perf types are Lichess's names for its speeds;
 /// a variant would not replay in the library), with the clock comments B5's
-/// time-pressure figure reads, and no engine evaluations.
-fn lichessUrl(buf: []u8, name: []const u8, max: usize) ?[]const u8 {
-    return std.fmt.bufPrint(buf, "https://lichess.org/api/games/user/{s}?max={d}&perfType=ultraBullet,bullet,blitz,rapid,classical,correspondence&clocks=true&evals=false&opening=false", .{ name, max }) catch null;
+/// time-pressure figure reads, and no engine evaluations. `since` (T4) is
+/// Lichess's own parameter: games created at or after it.
+fn lichessUrl(buf: []u8, name: []const u8, max: usize, since: u64) ?[]const u8 {
+    const base = std.fmt.bufPrint(buf, "https://lichess.org/api/games/user/{s}?max={d}&perfType=ultraBullet,bullet,blitz,rapid,classical,correspondence&clocks=true&evals=false&opening=false", .{ name, max }) catch return null;
+    if (since == 0) return base;
+    const tail = std.fmt.bufPrint(buf[base.len..], "&since={d}", .{since}) catch return null;
+    return buf[0 .. base.len + tail.len];
 }
 
 /// Chess.com's paths take the name in lower case.
@@ -1996,6 +2489,78 @@ fn syncErrorAnswer(output: []u8, code: []const u8, status: u32) anyerror![]const
         return std.fmt.bufPrint(output, "{{\"error\":\"http\",\"status\":{d}}}", .{status}) catch return error.HandlerFailed;
     }
     return std.fmt.bufPrint(output, "{{\"error\":\"{s}\"}}", .{code}) catch return error.HandlerFailed;
+}
+
+// ---- times (T4): a game's, and a month's --------------------------------
+
+/// Days from 1970-01-01 to a proleptic Gregorian date (days_from_civil,
+/// H. Hinnant) — std.time.epoch goes the other way only.
+fn daysFromCivil(year: i64, month: u32, day: u32) i64 {
+    const y = if (month <= 2) year - 1 else year;
+    const era = @divFloor(y, 400);
+    const yoe = y - era * 400;
+    const mp: i64 = @intCast((month + 9) % 12);
+    const doy = @divFloor(153 * mp + 2, 5) + @as(i64, day) - 1;
+    const doe = yoe * 365 + @divFloor(yoe, 4) - @divFloor(yoe, 100) + doy;
+    return era * 146097 + doe - 719468;
+}
+
+/// A tag's value from a game's header (the lines before its first blank one).
+fn pgnTag(game: []const u8, comptime name: []const u8) ?[]const u8 {
+    const key = "[" ++ name ++ " \"";
+    const head = game[0..(std.mem.indexOf(u8, game, "\n\n") orelse game.len)];
+    var from: usize = 0;
+    while (std.mem.indexOfPos(u8, head, from, key)) |at| {
+        if (at == 0 or head[at - 1] == '\n') {
+            const start = at + key.len;
+            const end = std.mem.indexOfScalarPos(u8, head, start, '"') orelse return null;
+            return head[start..end];
+        }
+        from = at + 1;
+    }
+    return null;
+}
+
+fn digits(s: []const u8) ?u32 {
+    return std.fmt.parseInt(u32, s, 10) catch null;
+}
+
+/// When a Lichess game started, from its UTCDate / UTCTime tags, in ms — the
+/// clock Lichess's since= reads (createdAt), to the second.
+fn pgnUtcMs(game: []const u8) ?u64 {
+    const date = pgnTag(game, "UTCDate") orelse return null;
+    const time = pgnTag(game, "UTCTime") orelse return null;
+    if (date.len != 10 or date[4] != '.' or date[7] != '.') return null;
+    if (time.len != 8 or time[2] != ':' or time[5] != ':') return null;
+    const y = digits(date[0..4]) orelse return null;
+    const mo = digits(date[5..7]) orelse return null;
+    const d = digits(date[8..10]) orelse return null;
+    const h = digits(time[0..2]) orelse return null;
+    const mi = digits(time[3..5]) orelse return null;
+    const s = digits(time[6..8]) orelse return null;
+    if (y < 1970 or mo < 1 or mo > 12 or d < 1 or d > 31 or h > 23 or mi > 59 or s > 60) return null;
+    const days = daysFromCivil(y, mo, d);
+    const secs: u64 = @as(u64, @intCast(days)) * 86400 + @as(u64, h) * 3600 + @as(u64, mi) * 60 + s;
+    return secs * 1000;
+}
+
+/// Months since year 0 — comparable across years — for a ms timestamp.
+fn monthOfMs(ms: u64) u32 {
+    const es: std.time.epoch.EpochSeconds = .{ .secs = ms / 1000 };
+    const yd = es.getEpochDay().calculateYearDay();
+    const md = yd.calculateMonthDay();
+    return @as(u32, yd.year) * 12 + (@as(u32, md.month.numeric()) - 1);
+}
+
+/// The month a Chess.com archive URL is for (…/games/YYYY/MM), or null.
+fn archiveMonth(url: []const u8) ?u32 {
+    if (url.len < 8) return null;
+    const tail = url[url.len - 8 ..];
+    if (tail[0] != '/' or tail[5] != '/') return null;
+    const y = digits(tail[1..5]) orelse return null;
+    const m = digits(tail[6..8]) orelse return null;
+    if (m < 1 or m > 12) return null;
+    return y * 12 + (m - 1);
 }
 
 /// The length of `s` once JSON-escaped (see jsonEscapeInto).
@@ -2043,19 +2608,21 @@ fn jsonEscapeInto(buf: []u8, n: *usize, s: []const u8) void {
     }
 }
 
-/// The answer as it is written: {"pgn":"<game>\n\n<game>…","count":N}.
-/// Games arrive newest first; the first that does not fit ends it, since
-/// everything after it is older still.
+/// The answer as it is written: {"pgn":"<game>\n\n<game>…","count":N}, and
+/// ,"last":ms when a game's time was known. Games arrive newest first; the
+/// first that does not fit ends it, since everything after it is older still.
 const SyncAnswer = struct {
     out: []u8,
     n: usize = 0,
     count: usize = 0,
     max: usize,
     full: bool = false,
+    /// the newest kept game's time, ms (0: none known)
+    last: u64 = 0,
 
     const HEAD = "{\"pgn\":\"";
-    /// `","count":` and the number and `}`, with room to spare
-    const TAIL_MAX: usize = 32;
+    /// `","count":` and the number, `,"last":` and a timestamp, and `}`
+    const TAIL_MAX: usize = 48;
 
     fn init(output: []u8, max: usize) SyncAnswer {
         var a: SyncAnswer = .{ .out = output[0..@min(output.len, SYNC_ANSWER_MAX)], .max = max };
@@ -2068,23 +2635,32 @@ const SyncAnswer = struct {
     }
 
     /// One game's PGN text; skipped when blank, refused whole when too big.
-    fn add(self: *SyncAnswer, game: []const u8) void {
-        if (self.done()) return;
+    /// true when it went in.
+    fn add(self: *SyncAnswer, game: []const u8) bool {
+        if (self.done()) return false;
         const pgn = std.mem.trim(u8, game, " \t\r\n");
-        if (pgn.len == 0) return;
+        if (pgn.len == 0) return false;
         const sep: []const u8 = if (self.count > 0) "\\n\\n" else "";
         if (self.n + sep.len + jsonEscapedLen(pgn) + TAIL_MAX > self.out.len) {
             self.full = true;
-            return;
+            return false;
         }
         @memcpy(self.out[self.n..][0..sep.len], sep);
         self.n += sep.len;
         jsonEscapeInto(self.out, &self.n, pgn);
         self.count += 1;
+        return true;
+    }
+
+    fn noteTime(self: *SyncAnswer, ms: u64) void {
+        self.last = @max(self.last, ms);
     }
 
     fn finish(self: *SyncAnswer) anyerror![]const u8 {
-        const tail = std.fmt.bufPrint(self.out[self.n..], "\",\"count\":{d}}}", .{self.count}) catch return error.HandlerFailed;
+        const tail = if (self.last > 0)
+            std.fmt.bufPrint(self.out[self.n..], "\",\"count\":{d},\"last\":{d}}}", .{ self.count, self.last }) catch return error.HandlerFailed
+        else
+            std.fmt.bufPrint(self.out[self.n..], "\",\"count\":{d}}}", .{self.count}) catch return error.HandlerFailed;
         return self.out[0 .. self.n + tail.len];
     }
 };
@@ -2099,13 +2675,19 @@ fn pgnGameStart(body: []const u8, from: usize) ?usize {
     return null;
 }
 
-/// Lichess answers with the games as one PGN text, newest first.
-fn lichessAnswer(body: []const u8, max: usize, output: []u8) anyerror![]const u8 {
+/// Lichess answers with the games as one PGN text, newest first. With a
+/// `since`, a game that started before it is one the page has (T4).
+fn lichessAnswer(body: []const u8, max: usize, since: u64, output: []u8) anyerror![]const u8 {
     var answer = SyncAnswer.init(output, max);
     var at = pgnGameStart(body, 0);
     while (at) |start| {
         const next = pgnGameStart(body, start + 1);
-        answer.add(body[start..(next orelse body.len)]);
+        const game = body[start..(next orelse body.len)];
+        const ms = pgnUtcMs(game);
+        const known = if (ms) |t| since > 0 and t < since else false;
+        if (!known and answer.add(game)) {
+            if (ms) |t| answer.noteTime(t);
+        }
         if (answer.done()) break;
         at = next;
     }
@@ -2116,13 +2698,36 @@ fn lichessAnswer(body: []const u8, max: usize, output: []u8) anyerror![]const u8
 /// missing player is a 404 with Lichess's HTML error page as the body
 /// (src/sync-fixtures/lichess-missing.body), which read as PGN would be
 /// "no games" rather than "no such user".
-fn lichessReply(status: u32, body: []const u8, max: usize, output: []u8) anyerror![]const u8 {
+fn lichessReply(status: u32, body: []const u8, max: usize, since: u64, output: []u8) anyerror![]const u8 {
     if (syncStatusError(status)) |code| return syncErrorAnswer(output, code, status);
-    return lichessAnswer(body, max, output);
+    return lichessAnswer(body, max, since, output);
 }
 
+/// T4 progress for Lichess: its answer is a stream of PGN, and each game
+/// that has begun arriving is counted as the bytes come in.
+const GameCounter = struct {
+    job: ?*Job,
+    max: usize,
+    from: usize = 0,
+    count: usize = 0,
+
+    fn tick(self: *GameCounter) Tick {
+        return .{ .context = self, .tick_fn = onBytes };
+    }
+
+    fn onBytes(context: *anyopaque, written: []const u8) void {
+        const self: *GameCounter = @ptrCast(@alignCast(context));
+        const before = self.count;
+        while (pgnGameStart(written, self.from)) |at| {
+            self.count += 1;
+            self.from = at + 1;
+        }
+        if (self.count != before) if (self.job) |job| job.report(@min(self.count, self.max));
+    }
+};
+
 const ChesscomArchives = struct { archives: []const []const u8 };
-const ChesscomGame = struct { pgn: []const u8 = "", rules: []const u8 = "chess" };
+const ChesscomGame = struct { pgn: []const u8 = "", rules: []const u8 = "chess", end_time: u64 = 0 };
 const ChesscomMonth = struct { games: []const ChesscomGame };
 
 /// The monthly archive URLs, oldest first as Chess.com lists them, or null
@@ -2152,43 +2757,34 @@ fn chesscomList(arena: std.mem.Allocator, status: u32, body: []const u8, output:
 
 /// One month's games into the answer, newest first (the month lists them
 /// oldest first). Other rules — Chess960, bughouse… — are skipped: the
-/// library replays standard chess. false when the body is not a month.
-fn chesscomMonth(arena: std.mem.Allocator, body: []const u8, answer: *SyncAnswer) bool {
+/// library replays standard chess. So is a game that ended before `since`
+/// (T4). false when the body is not a month.
+fn chesscomMonth(arena: std.mem.Allocator, body: []const u8, since: u64, answer: *SyncAnswer) bool {
     const parsed = std.json.parseFromSliceLeaky(ChesscomMonth, arena, body, .{ .ignore_unknown_fields = true }) catch return false;
     var i = parsed.games.len;
     while (i > 0 and !answer.done()) {
         i -= 1;
-        if (std.mem.eql(u8, parsed.games[i].rules, "chess")) answer.add(parsed.games[i].pgn);
+        const g = parsed.games[i];
+        if (!std.mem.eql(u8, g.rules, "chess")) continue;
+        const ended = g.end_time *| 1000;
+        if (since > 0 and ended < since) continue;
+        if (answer.add(g.pgn) and g.end_time > 0) answer.noteTime(ended);
     }
     return true;
 }
 
-/// One GET into `body`: the HTTP status, or 0 when nothing came back.
-fn syncGet(client: *std.http.Client, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating) u32 {
-    const result = client.fetch(.{
-        .location = .{ .url = url },
-        .method = .GET,
-        .headers = .{ .user_agent = .{ .override = SYNC_USER_AGENT } },
-        .extra_headers = &.{.{ .name = "accept", .value = accept }},
-        .response_writer = &body.writer,
-    }) catch return 0;
-    return @intFromEnum(result.status);
-}
-
-fn fetchGames(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
-    const self: *App = @ptrCast(@alignCast(context));
-    const req = syncRequest(invocation.request.payload) orelse return syncErrorAnswer(output, "bad_request", 0);
-    const gpa = std.heap.page_allocator;
-    var client: std.http.Client = .{ .allocator = gpa, .io = self.io };
-    defer client.deinit();
-    var url_buf: [512]u8 = undefined;
+/// A whole sync: every request through `getter`, in the order the tests
+/// below read back. `job` (null in tests) hears the progress.
+fn syncFetch(gpa: std.mem.Allocator, getter: Getter, req: SyncRequest, output: []u8, job: ?*Job) anyerror![]const u8 {
+    var url_buf: [640]u8 = undefined;
     switch (req.site) {
         .lichess => {
-            const url = lichessUrl(&url_buf, req.user(), req.max) orelse return syncErrorAnswer(output, "bad_request", 0);
+            const url = lichessUrl(&url_buf, req.user(), req.max, req.since) orelse return syncErrorAnswer(output, "bad_request", 0);
             var body: std.Io.Writer.Allocating = .init(gpa);
             defer body.deinit();
-            const status = syncGet(&client, url, "application/x-chess-pgn", &body);
-            return lichessReply(status, body.written(), req.max, output);
+            var counter: GameCounter = .{ .job = job, .max = req.max };
+            const status = getter.get(url, "application/x-chess-pgn", &body, counter.tick());
+            return lichessReply(status, body.written(), req.max, req.since, output);
         },
         .chesscom => {
             var arena_state = std.heap.ArenaAllocator.init(gpa);
@@ -2197,32 +2793,70 @@ fn fetchGames(context: *anyopaque, invocation: native_sdk.bridge.Invocation, out
             const url = chesscomArchivesUrl(&url_buf, req.user()) orelse return syncErrorAnswer(output, "bad_request", 0);
             var list_body: std.Io.Writer.Allocating = .init(gpa);
             defer list_body.deinit();
-            const status = syncGet(&client, url, "application/json", &list_body);
+            const status = getter.get(url, "application/json", &list_body, null);
             const months = switch (try chesscomList(arena, status, list_body.written(), output)) {
                 .months => |m| m,
                 .reply => |r| return r,
             };
+            const since_month: ?u32 = if (req.since > 0) monthOfMs(req.since) else null;
+            const months_max = if (since_month != null) SYNC_MONTHS_SINCE_MAX else SYNC_MONTHS_MAX;
             var answer = SyncAnswer.init(output, req.max);
             var i = months.len;
             var walked: usize = 0;
-            while (i > 0 and walked < SYNC_MONTHS_MAX and !answer.done()) : (walked += 1) {
+            while (i > 0 and walked < months_max and !answer.done()) : (walked += 1) {
                 i -= 1;
+                // T4: nothing before the month of the last sync
+                if (since_month) |from| {
+                    if (archiveMonth(months[i])) |m| if (m < from) break;
+                }
                 var month_body: std.Io.Writer.Allocating = .init(gpa);
                 defer month_body.deinit();
-                const month_status = syncGet(&client, months[i], "application/json", &month_body);
+                const month_status = getter.get(months[i], "application/json", &month_body, null);
                 // games already in hand are worth more than an error about the rest
                 if (syncStatusError(month_status)) |code| {
                     if (answer.count > 0) break;
                     return syncErrorAnswer(output, code, month_status);
                 }
-                if (!chesscomMonth(arena, month_body.written(), &answer)) {
+                if (!chesscomMonth(arena, month_body.written(), req.since, &answer)) {
                     if (answer.count > 0) break;
                     return syncErrorAnswer(output, "parse", 0);
                 }
+                // T4 progress: Chess.com's is month by month
+                if (job) |j| j.report(answer.count);
             }
             return answer.finish();
         },
     }
+}
+
+fn syncWork(job: *Job, out: []u8) []const u8 {
+    const gpa = std.heap.page_allocator;
+    var client: std.http.Client = .{ .allocator = gpa, .io = job.spec.io };
+    defer client.deinit();
+    var net: NetGetter = .{ .client = &client };
+    return syncFetch(gpa, net.getter(), job.spec.sync.?, out, job) catch failText(.sync);
+}
+
+fn fetchGames(context: *anyopaque, invocation: native_sdk.bridge.Invocation, responder: AsyncResponder) anyerror!void {
+    const self: *App = @ptrCast(@alignCast(context));
+    const id = invocation.request.id;
+    const req = syncRequest(invocation.request.payload) orelse return respondNow(responder, id, "{\"error\":\"bad_request\"}");
+    bindWakeFrom(self);
+    beginAnswer(responder, id, .sync, self.pending.begin(.sync, id, responder, .{
+        .work = syncWork,
+        .deadline_ms = SYNC_DEADLINE_MS,
+        .io = self.io,
+        .sync = req,
+    }));
+}
+
+/// T4: 已取到 k 局 — the page asks while its sync is out. {"busy":false}
+/// when none is.
+fn fetchProgress(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    const self: *App = @ptrCast(@alignCast(context));
+    _ = invocation;
+    const count = self.pending.syncProgress() orelse return std.fmt.bufPrint(output, "{{\"busy\":false,\"count\":0}}", .{}) catch return error.HandlerFailed;
+    return std.fmt.bufPrint(output, "{{\"busy\":true,\"count\":{d}}}", .{count}) catch return error.HandlerFailed;
 }
 
 // ------------------------------------------------------------ self-test (7.5)
@@ -2281,7 +2915,7 @@ pub fn main(init: std.process.Init) !void {
     // launch (the Runtime builds the menu bar once, from what it is handed).
     app_state.resolveAppDataDir();
     const lang = app_state.launchLanguage();
-    try runner.runWithOptions(app_state.app(), .{
+    const ran = runner.runWithOptions(app_state.app(), .{
         .app_name = windowTitleFor(lang),
         .window_title = windowTitleFor(lang),
         .bundle_id = "dev.hxddh.chessboard",
@@ -2292,6 +2926,11 @@ pub fn main(init: std.process.Init) !void {
         .menus = app_state.localizedMenus(lang),
         .runtime_slot = &app_state.runtime,
     }, init);
+    // v8-1-plan N1: a sync or update check still on the network. Returning
+    // would reach std.start's Io.Threaded.deinit while its thread is inside
+    // that Io, so leave here instead — the answer has nobody to go to.
+    if (app_state.pending.workersOut()) std.process.exit(if (ran) |_| 0 else |_| 1);
+    return ran;
 }
 
 test "the builtin bridge grants exactly the SDK commands the page calls" {
@@ -2327,8 +2966,26 @@ test "every app command has a chess. name and no two share one" {
         for (APP_COMMANDS[i + 1 ..]) |other| {
             try std.testing.expect(!std.mem.eql(u8, cmd.name, other.name));
         }
+        // a handler of one kind or the other, never both, never neither
+        try std.testing.expect((cmd.invoke_fn == null) != (cmd.async_fn == null));
     }
-    try std.testing.expectEqual(@as(usize, 12), APP_COMMANDS.len);
+    try std.testing.expectEqual(@as(usize, 13), APP_COMMANDS.len);
+}
+
+test "the network commands are asynchronous and reach the SDK's async registry" {
+    // v8-1-plan N1: the two that talk to another host never run on the loop
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    var app_state = App{ .env_map = &env, .io = undefined };
+    const d = app_state.bridge();
+    for ([_][]const u8{ "chess.fetchGames", "chess.checkUpdate" }) |name| {
+        try std.testing.expect(d.async_registry.find(name) != null);
+        try std.testing.expect(d.registry.find(name) == null);
+    }
+    try std.testing.expect(d.registry.find("chess.fetchProgress") != null);
+    try std.testing.expectEqual(APP_COMMANDS.len, d.registry.handlers.len + d.async_registry.handlers.len);
+    // …and every one of them, of either kind, has its origin policy
+    for (APP_COMMANDS) |cmd| try std.testing.expect(d.policy.find(cmd.name) != null);
 }
 
 test "one piece each way fits the SDK's bridge frame" {
@@ -3034,7 +3691,7 @@ const CHESSCOM_MONTH_SAMPLE =
 ;
 
 /// The answer as the page reads it.
-const SyncAnswerJson = struct { pgn: []const u8, count: usize };
+const SyncAnswerJson = struct { pgn: []const u8, count: usize, last: u64 = 0 };
 
 test "a sync request is a site, a plain user name and a bounded count" {
     const a = syncRequest("{\"site\":\"lichess\",\"user\":\"sync_tester\",\"max\":20}").?;
@@ -3061,12 +3718,12 @@ test "the sync URLs carry the name and nothing else about the person" {
     var buf: [512]u8 = undefined;
     try std.testing.expectEqualStrings(
         "https://lichess.org/api/games/user/Sync_Tester?max=20&perfType=ultraBullet,bullet,blitz,rapid,classical,correspondence&clocks=true&evals=false&opening=false",
-        lichessUrl(&buf, "Sync_Tester", 20).?,
+        lichessUrl(&buf, "Sync_Tester", 20, 0).?,
     );
     try std.testing.expectEqualStrings("https://api.chess.com/pub/player/sync_tester/games/archives", chesscomArchivesUrl(&buf, "Sync_Tester").?);
     var tiny: [16]u8 = undefined;
     try std.testing.expect(chesscomArchivesUrl(&tiny, "sync_tester") == null);
-    try std.testing.expect(lichessUrl(&tiny, "sync_tester", 20) == null);
+    try std.testing.expect(lichessUrl(&tiny, "sync_tester", 20, 0) == null);
 }
 
 test "offline, rate-limited and no-such-user each have their own answer" {
@@ -3090,7 +3747,7 @@ test "Lichess: the PGN comes back as whole games, newest first, at most N" {
     const arena = arena_state.allocator();
     var out: [8192]u8 = undefined;
     {
-        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessAnswer(LICHESS_SAMPLE, 20, &out), .{});
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessAnswer(LICHESS_SAMPLE, 20, 0, &out), .{});
         try std.testing.expectEqual(@as(usize, 3), parsed.count);
         const pgn = parsed.pgn;
         try std.testing.expect(std.mem.startsWith(u8, pgn, "[Event \"Rated blitz game\"]\n"));
@@ -3103,12 +3760,12 @@ test "Lichess: the PGN comes back as whole games, newest first, at most N" {
         try std.testing.expect(std.mem.indexOf(u8, pgn, "[White \"Someone \\\"quoted\\\"\"]") != null);
     }
     {
-        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessAnswer(LICHESS_SAMPLE, 2, &out), .{});
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessAnswer(LICHESS_SAMPLE, 2, 0, &out), .{});
         try std.testing.expectEqual(@as(usize, 2), parsed.count);
         try std.testing.expect(std.mem.indexOf(u8, parsed.pgn, "Rated bullet game") == null);
     }
     // a player with no games: an empty text, not an error
-    try std.testing.expectEqualStrings("{\"pgn\":\"\",\"count\":0}", try lichessAnswer("", 20, &out));
+    try std.testing.expectEqualStrings("{\"pgn\":\"\",\"count\":0}", try lichessAnswer("", 20, 0, &out));
 }
 
 test "Lichess: a game that does not fit is dropped whole, with everything older" {
@@ -3116,8 +3773,8 @@ test "Lichess: a game that does not fit is dropped whole, with everything older"
     const first = "[Event \"a\"]\n\n1. e4 *";
     var buf: [256]u8 = undefined;
     const room = SyncAnswer.HEAD.len + jsonEscapedLen(first) + SyncAnswer.TAIL_MAX;
-    try std.testing.expectEqualStrings("{\"pgn\":\"[Event \\\"a\\\"]\\n\\n1. e4 *\",\"count\":1}", try lichessAnswer(body, 20, buf[0..room]));
-    try std.testing.expectEqualStrings("{\"pgn\":\"\",\"count\":0}", try lichessAnswer(body, 20, buf[0 .. room - 1]));
+    try std.testing.expectEqualStrings("{\"pgn\":\"[Event \\\"a\\\"]\\n\\n1. e4 *\",\"count\":1}", try lichessAnswer(body, 20, 0, buf[0..room]));
+    try std.testing.expectEqualStrings("{\"pgn\":\"\",\"count\":0}", try lichessAnswer(body, 20, 0, buf[0 .. room - 1]));
 }
 
 test "Chess.com: the archive list is read, and only its own API is followed" {
@@ -3141,7 +3798,7 @@ test "Chess.com: a month's games come back newest first, standard chess only" {
     const arena = arena_state.allocator();
     var out: [8192]u8 = undefined;
     var answer = SyncAnswer.init(&out, 20);
-    try std.testing.expect(chesscomMonth(arena, CHESSCOM_MONTH_SAMPLE, &answer));
+    try std.testing.expect(chesscomMonth(arena, CHESSCOM_MONTH_SAMPLE, 0, &answer));
     try std.testing.expectEqual(@as(usize, 2), answer.count);
     const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try answer.finish(), .{});
     const pgn = parsed.pgn;
@@ -3152,11 +3809,11 @@ test "Chess.com: a month's games come back newest first, standard chess only" {
     try std.testing.expect(std.mem.endsWith(u8, pgn, "4. Qxf7# {[%clk 0:02:55]} 1-0"));
     // N stops the walk inside a month: the newest one only
     var one = SyncAnswer.init(&out, 1);
-    try std.testing.expect(chesscomMonth(arena, CHESSCOM_MONTH_SAMPLE, &one));
+    try std.testing.expect(chesscomMonth(arena, CHESSCOM_MONTH_SAMPLE, 0, &one));
     try std.testing.expectEqual(@as(usize, 1), one.count);
     try std.testing.expect(one.done());
     var other = SyncAnswer.init(&out, 20);
-    try std.testing.expect(!chesscomMonth(arena, CHESSCOM_ARCHIVES_SAMPLE, &other));
+    try std.testing.expect(!chesscomMonth(arena, CHESSCOM_ARCHIVES_SAMPLE, 0, &other));
 }
 
 test "a PGN's control bytes cross the bridge escaped" {
@@ -3210,7 +3867,7 @@ test "real Lichess answer: five whole games, newest first, as the site sent them
     const out = try std.testing.allocator.alloc(u8, SYNC_ANSWER_MAX);
     defer std.testing.allocator.free(out);
     {
-        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(200, LICHESS_REAL, 20, out), .{});
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(200, LICHESS_REAL, 20, 0, out), .{});
         try std.testing.expectEqual(@as(usize, 5), parsed.count);
         const pgn = parsed.pgn;
         try std.testing.expectEqual(@as(usize, 5), std.mem.count(u8, pgn, "[Event "));
@@ -3224,7 +3881,7 @@ test "real Lichess answer: five whole games, newest first, as the site sent them
         try std.testing.expect(std.mem.endsWith(u8, pgn, "h5 { [%clk 0:04:49] } 0-1"));
     }
     {
-        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(200, LICHESS_REAL, 2, out), .{});
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(200, LICHESS_REAL, 2, 0, out), .{});
         try std.testing.expectEqual(@as(usize, 2), parsed.count);
         try std.testing.expect(std.mem.endsWith(u8, parsed.pgn, "b5 { [%clk 0:05:08] } 1-0"));
         try std.testing.expect(std.mem.indexOf(u8, parsed.pgn, "CzvAH3q1") == null);
@@ -3234,9 +3891,9 @@ test "real Lichess answer: five whole games, newest first, as the site sent them
 test "real Lichess 404: its HTML page means no such user, not an empty list" {
     var out: [256]u8 = undefined;
     try std.testing.expect(std.mem.startsWith(u8, LICHESS_MISSING_REAL, "<!DOCTYPE html>"));
-    try std.testing.expectEqualStrings("{\"error\":\"not_found\"}", try lichessReply(404, LICHESS_MISSING_REAL, 20, &out));
+    try std.testing.expectEqualStrings("{\"error\":\"not_found\"}", try lichessReply(404, LICHESS_MISSING_REAL, 20, 0, &out));
     // what the status going first saves the player from: the page read as PGN is "no games yet"
-    try std.testing.expectEqualStrings("{\"pgn\":\"\",\"count\":0}", try lichessAnswer(LICHESS_MISSING_REAL, 20, &out));
+    try std.testing.expectEqualStrings("{\"pgn\":\"\",\"count\":0}", try lichessAnswer(LICHESS_MISSING_REAL, 20, 0, &out));
 }
 
 test "real Chess.com archives: every month passes the URL checks, the last is walked first" {
@@ -3281,7 +3938,7 @@ test "real Chess.com month: nine standard games newest first, the four Chess960 
     defer std.testing.allocator.free(out);
     {
         var answer = SyncAnswer.init(out, 20);
-        try std.testing.expect(chesscomMonth(arena, CHESSCOM_MONTH_REAL, &answer));
+        try std.testing.expect(chesscomMonth(arena, CHESSCOM_MONTH_REAL, 0, &answer));
         try std.testing.expectEqual(@as(usize, 9), answer.count);
         const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try answer.finish(), .{});
         const pgn = parsed.pgn;
@@ -3301,11 +3958,449 @@ test "real Chess.com month: nine standard games newest first, the four Chess960 
     {
         // N stops inside the month: past the two newest (Chess960) to the newest standard game
         var one = SyncAnswer.init(out, 1);
-        try std.testing.expect(chesscomMonth(arena, CHESSCOM_MONTH_REAL, &one));
+        try std.testing.expect(chesscomMonth(arena, CHESSCOM_MONTH_REAL, 0, &one));
         try std.testing.expectEqual(@as(usize, 1), one.count);
         const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try one.finish(), .{});
         try std.testing.expect(std.mem.indexOf(u8, parsed.pgn, "/daily/1029050366\"]") != null);
     }
+}
+
+// ---- v8-1-plan N1: the async path, with a stand-in for the platform --------
+//
+// The Pending queue is driven the way the runtime drives it: begin() from the
+// handler, drain() from `.effects_wake`, close() from the stop hook. The wake
+// is counted instead of posted, and the job's work waits on a gate the test
+// opens, so "still on the network" is a state the test can hold.
+
+const TestWake = struct {
+    count: std.atomic.Value(u32) = .init(0),
+
+    fn wake(context: ?*anyopaque) anyerror!void {
+        const self: *TestWake = @ptrCast(@alignCast(context.?));
+        _ = self.count.fetchAdd(1, .acq_rel);
+    }
+};
+
+/// What the SDK's AsyncResponder would have handed the page.
+const TestAnswers = struct {
+    frames: [8][512]u8 = undefined,
+    lens: [8]usize = .{0} ** 8,
+    n: usize = 0,
+
+    fn respond(context: *anyopaque, source: native_sdk.bridge.Source, response: []const u8) anyerror!void {
+        _ = source;
+        const self: *TestAnswers = @ptrCast(@alignCast(context));
+        const len = @min(response.len, 512);
+        @memcpy(self.frames[self.n][0..len], response[0..len]);
+        self.lens[self.n] = len;
+        self.n += 1;
+    }
+
+    fn responder(self: *TestAnswers) AsyncResponder {
+        return .{ .context = self, .source = .{}, .respond_fn = respond };
+    }
+
+    fn frame(self: *const TestAnswers, i: usize) []const u8 {
+        return self.frames[i][0..self.lens[i]];
+    }
+};
+
+const TestGate = struct {
+    open: std.atomic.Value(bool) = .init(false),
+    /// games to report before waiting (fetchProgress)
+    games: usize = 0,
+};
+
+/// A job that holds until the test opens its gate.
+fn gatedWork(job: *Job, out: []u8) []const u8 {
+    const gate: *TestGate = @ptrCast(@alignCast(job.spec.test_ctx.?));
+    if (gate.games > 0) job.report(gate.games);
+    while (!gate.open.load(.acquire)) std.Io.sleep(job.spec.io, std.Io.Duration.fromMilliseconds(1), .awake) catch {};
+    return std.fmt.bufPrint(out, "{{\"done\":{d}}}", .{job.gen}) catch "{}";
+}
+
+fn gatedSpec(gate: *TestGate, deadline_ms: u64) JobSpec {
+    return .{ .work = gatedWork, .deadline_ms = deadline_ms, .io = std.testing.io, .test_ctx = gate };
+}
+
+/// Wait, bounded, for the job threads — they run on their own time.
+fn waitUntil(comptime cond: anytype, args: anytype) !void {
+    var tries: usize = 0;
+    while (!@call(.auto, cond, args)) : (tries += 1) {
+        if (tries > 10_000) return error.TestTimedOut;
+        std.Io.sleep(std.testing.io, std.Io.Duration.fromMilliseconds(1), .awake) catch {};
+    }
+}
+
+fn wokenAtLeast(w: *TestWake, n: u32) bool {
+    return w.count.load(.acquire) >= n;
+}
+
+fn allBack(p: *Pending) bool {
+    return !p.workersOut();
+}
+
+fn progressIs(p: *Pending, n: u32) bool {
+    return (p.syncProgress() orelse return false) == n;
+}
+
+fn has(hay: []const u8, needle: []const u8) bool {
+    return std.mem.indexOf(u8, hay, needle) != null;
+}
+
+test "N1: one sync and one update check at a time; a third concurrent request is refused" {
+    var wake: TestWake = .{};
+    var p: Pending = .{};
+    p.bindWake(&wake, TestWake.wake);
+    var answers: TestAnswers = .{};
+    var gate: TestGate = .{};
+    try std.testing.expectEqual(Begin.started, p.begin(.sync, "1", answers.responder(), gatedSpec(&gate, 60_000)));
+    try std.testing.expectEqual(Begin.started, p.begin(.update, "2", answers.responder(), gatedSpec(&gate, 60_000)));
+    // the third, of either kind, while the two run
+    try std.testing.expectEqual(Begin.busy, p.begin(.sync, "3", answers.responder(), gatedSpec(&gate, 60_000)));
+    try std.testing.expectEqual(Begin.busy, p.begin(.update, "4", answers.responder(), gatedSpec(&gate, 60_000)));
+    // …is answered at once, and the two running are not disturbed
+    beginAnswer(answers.responder(), "3", .sync, .busy);
+    try std.testing.expectEqual(@as(usize, 1), answers.n);
+    try std.testing.expect(has(answers.frame(0), "{\"id\":\"3\",\"ok\":true,\"result\":{\"error\":\"busy\"}}"));
+    try std.testing.expect(p.slots[0].busy and p.slots[1].busy);
+    gate.open.store(true, .release);
+    try waitUntil(allBack, .{&p});
+    try std.testing.expectEqual(@as(u32, 2), wake.count.load(.acquire));
+    p.drain();
+    try std.testing.expectEqual(@as(usize, 3), answers.n);
+    // each to its own id, in whichever order the two finished
+    const a = answers.frame(1);
+    const b = answers.frame(2);
+    const id1 = "\"id\":\"1\",\"ok\":true,\"result\":{\"done\":";
+    const id2 = "\"id\":\"2\",\"ok\":true,\"result\":{\"done\":";
+    try std.testing.expect((has(a, id1) and has(b, id2)) or (has(a, id2) and has(b, id1)));
+    // both slots free again
+    try std.testing.expectEqual(Begin.started, p.begin(.sync, "5", answers.responder(), gatedSpec(&gate, 60_000)));
+    try waitUntil(allBack, .{&p});
+    p.drain();
+    try std.testing.expectEqual(@as(usize, 4), answers.n);
+}
+
+test "N1: a worker's result is answered after its wake, on the loop — never by the worker" {
+    var wake: TestWake = .{};
+    var p: Pending = .{};
+    p.bindWake(&wake, TestWake.wake);
+    var answers: TestAnswers = .{};
+    var gate: TestGate = .{};
+    try std.testing.expectEqual(Begin.started, p.begin(.sync, "7", answers.responder(), gatedSpec(&gate, 60_000)));
+    try std.testing.expectEqual(@as(u32, 0), wake.count.load(.acquire));
+    gate.open.store(true, .release);
+    try waitUntil(wokenAtLeast, .{ &wake, 1 });
+    try waitUntil(allBack, .{&p});
+    // done and woken, and still nothing has gone to the page
+    try std.testing.expectEqual(@as(usize, 0), answers.n);
+    try std.testing.expect(p.slots[0].busy);
+    p.drain();
+    try std.testing.expectEqual(@as(usize, 1), answers.n);
+    try std.testing.expect(has(answers.frame(0), "{\"id\":\"7\",\"ok\":true,\"result\":{\"done\":"));
+    // answered once: another wake finds nothing
+    p.drain();
+    try std.testing.expectEqual(@as(usize, 1), answers.n);
+    // no wake service, no job: nothing could ever answer it
+    var bare: Pending = .{};
+    try std.testing.expectEqual(Begin.failed, bare.begin(.sync, "8", answers.responder(), gatedSpec(&gate, 60_000)));
+}
+
+test "N1: the deadline answers timeout by itself, frees the slot, and drops the late result" {
+    var wake: TestWake = .{};
+    var p: Pending = .{};
+    p.bindWake(&wake, TestWake.wake);
+    var answers: TestAnswers = .{};
+    var gate: TestGate = .{};
+    try std.testing.expectEqual(Begin.started, p.begin(.update, "1", answers.responder(), gatedSpec(&gate, 30)));
+    try waitUntil(wokenAtLeast, .{ &wake, 1 });
+    p.drain();
+    try std.testing.expectEqual(@as(usize, 1), answers.n);
+    try std.testing.expect(has(answers.frame(0), "{\"id\":\"1\",\"ok\":true,\"result\":{\"error\":\"timeout\"}}"));
+    // its worker is still out, and a retry may start beside it
+    try std.testing.expect(p.workersOut());
+    try std.testing.expectEqual(Begin.started, p.begin(.update, "2", answers.responder(), gatedSpec(&gate, 60_000)));
+    gate.open.store(true, .release);
+    try waitUntil(allBack, .{&p});
+    p.drain();
+    try std.testing.expectEqual(@as(usize, 2), answers.n);
+    try std.testing.expect(has(answers.frame(1), "\"id\":\"2\",\"ok\":true,\"result\":{\"done\":"));
+    // the first worker's own answer never went anywhere: two wakes, not three
+    try std.testing.expectEqual(@as(u32, 2), wake.count.load(.acquire));
+}
+
+test "N1: stopping with a request out neither waits for it nor wakes the platform after" {
+    var wake: TestWake = .{};
+    var p: Pending = .{};
+    p.bindWake(&wake, TestWake.wake);
+    var answers: TestAnswers = .{};
+    var gate: TestGate = .{};
+    try std.testing.expectEqual(Begin.started, p.begin(.sync, "1", answers.responder(), gatedSpec(&gate, 60_000)));
+    // the stop hook returns with the worker still held at its gate…
+    p.close();
+    // …and main() sees it and leaves with std.process.exit instead of
+    // returning into std.start's wait for the Io's threads
+    try std.testing.expect(p.workersOut());
+    try std.testing.expect(!p.slots[0].busy);
+    try std.testing.expectEqual(Begin.failed, p.begin(.update, "2", answers.responder(), gatedSpec(&gate, 60_000)));
+    const woke = wake.count.load(.acquire);
+    gate.open.store(true, .release);
+    try waitUntil(allBack, .{&p});
+    // it finished after the stop: no wake (the platform is gone), no answer
+    try std.testing.expectEqual(woke, wake.count.load(.acquire));
+    p.drain();
+    try std.testing.expectEqual(@as(usize, 0), answers.n);
+}
+
+test "T4: chess.fetchProgress reads the running sync's count, and nothing once it is answered" {
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    var app_state = App{ .env_map = &env, .io = std.testing.io };
+    var wake: TestWake = .{};
+    app_state.pending.bindWake(&wake, TestWake.wake);
+    var answers: TestAnswers = .{};
+    var gate: TestGate = .{ .games = 3 };
+    var out: [128]u8 = undefined;
+    const ask: native_sdk.bridge.Invocation = .{ .request = .{ .id = "p", .command = "chess.fetchProgress" }, .source = .{} };
+    try std.testing.expectEqualStrings("{\"busy\":false,\"count\":0}", try fetchProgress(&app_state, ask, &out));
+    try std.testing.expectEqual(Begin.started, app_state.pending.begin(.sync, "1", answers.responder(), gatedSpec(&gate, 60_000)));
+    try waitUntil(progressIs, .{ &app_state.pending, 3 });
+    try std.testing.expectEqualStrings("{\"busy\":true,\"count\":3}", try fetchProgress(&app_state, ask, &out));
+    gate.open.store(true, .release);
+    try waitUntil(allBack, .{&app_state.pending});
+    app_state.pending.drain();
+    try std.testing.expectEqualStrings("{\"busy\":false,\"count\":0}", try fetchProgress(&app_state, ask, &out));
+    // an update check is not a sync: it reports nothing
+    try std.testing.expectEqual(Begin.started, app_state.pending.begin(.update, "2", answers.responder(), gatedSpec(&gate, 60_000)));
+    try std.testing.expectEqualStrings("{\"busy\":false,\"count\":0}", try fetchProgress(&app_state, ask, &out));
+    try waitUntil(allBack, .{&app_state.pending});
+    app_state.pending.drain();
+}
+
+test "N1: the update check's answer — status first, then the body" {
+    var out: [256]u8 = undefined;
+    try std.testing.expectEqualStrings("{\"error\":\"network\"}", updateReply(0, "", &out));
+    try std.testing.expectEqualStrings("{\"error\":\"http_403\"}", updateReply(403, "{}", &out));
+    try std.testing.expectEqualStrings("{\"error\":\"parse\"}", updateReply(200, "<html>", &out));
+    try std.testing.expectEqualStrings(
+        "{\"tag\":\"v8.1.0\",\"url\":\"https://github.com/hxddh/chessboard/releases/tag/v8.1.0\"}",
+        updateReply(200, "{\"tag_name\":\"v8.1.0\",\"html_url\":\"https://github.com/hxddh/chessboard/releases/tag/v8.1.0\"}", &out),
+    );
+}
+
+// ---- v8-1-plan T4: incremental sync, with every request read back ----------
+
+/// Canned answers by exact URL, and the URLs asked, in order. Bodies go out
+/// in 1000-byte pieces, the way a stream arrives.
+const StubGetter = struct {
+    const Route = struct { url: []const u8, status: u32 = 200, body: []const u8 };
+    routes: []const Route = &.{},
+    asked_buf: [8][256]u8 = undefined,
+    asked_len: [8]usize = .{0} ** 8,
+    asked: usize = 0,
+    /// the progress seen after each piece (a change is recorded once)
+    pending: ?*Pending = null,
+    seen: [16]u32 = undefined,
+    seen_n: usize = 0,
+
+    fn getter(self: *StubGetter) Getter {
+        return .{ .context = self, .get_fn = get };
+    }
+
+    fn url(self: *const StubGetter, i: usize) []const u8 {
+        return self.asked_buf[i][0..self.asked_len[i]];
+    }
+
+    fn get(context: *anyopaque, url_: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) u32 {
+        _ = accept;
+        const self: *StubGetter = @ptrCast(@alignCast(context));
+        @memcpy(self.asked_buf[self.asked][0..url_.len], url_);
+        self.asked_len[self.asked] = url_.len;
+        self.asked += 1;
+        for (self.routes) |r| {
+            if (!std.mem.eql(u8, r.url, url_)) continue;
+            var at: usize = 0;
+            while (at < r.body.len) {
+                const end = @min(at + 1000, r.body.len);
+                body.writer.writeAll(r.body[at..end]) catch return 0;
+                at = end;
+                if (tick) |t| t.tick_fn(t.context, body.written());
+                self.note();
+            }
+            return r.status;
+        }
+        return 404;
+    }
+
+    fn note(self: *StubGetter) void {
+        const p = self.pending orelse return;
+        const n: u32 = @truncate(p.progress.load(.acquire));
+        if (self.seen_n > 0 and self.seen[self.seen_n - 1] == n) return;
+        if (self.seen_n == self.seen.len) return;
+        self.seen[self.seen_n] = n;
+        self.seen_n += 1;
+    }
+};
+
+const LICHESS_URL_THIBAULT = "https://lichess.org/api/games/user/thibault?max=20&perfType=ultraBullet,bullet,blitz,rapid,classical,correspondence&clocks=true&evals=false&opening=false";
+
+/// A game thibault played after the fixture was fetched.
+const LICHESS_NEW_GAME =
+    \\[Event "rated blitz game"]
+    \\[Site "https://lichess.org/NewGame1"]
+    \\[Date "2026.09.29"]
+    \\[White "thibault"]
+    \\[Black "newer_opp"]
+    \\[Result "1-0"]
+    \\[UTCDate "2026.09.29"]
+    \\[UTCTime "08:00:00"]
+    \\[Variant "Standard"]
+    \\
+    \\1. e4 { [%clk 0:03:00] } 1... e5 { [%clk 0:03:00] } 2. Qh5 { [%clk 0:03:01] } 2... Nc6 { [%clk 0:02:59] } 3. Bc4 { [%clk 0:03:00] } 3... Nf6 { [%clk 0:02:57] } 4. Qxf7# { [%clk 0:03:00] } 1-0
+    \\
+    \\
+    \\
+;
+
+fn syncOnce(getter: Getter, payload: []const u8, out: []u8, job: ?*Job) ![]const u8 {
+    return syncFetch(std.testing.allocator, getter, syncRequest(payload).?, out, job);
+}
+
+test "T4: times — a PGN's UTC tags, a month, an archive's month" {
+    try std.testing.expectEqual(@as(i64, 0), daysFromCivil(1970, 1, 1));
+    try std.testing.expectEqual(@as(i64, 11017), daysFromCivil(2000, 3, 1));
+    try std.testing.expectEqual(@as(i64, 20724), daysFromCivil(2026, 9, 28));
+    // the real fixture's newest game: 2026.09.28 17:52:38 UTC
+    try std.testing.expectEqual(@as(?u64, 1790617958000), pgnUtcMs(LICHESS_REAL));
+    try std.testing.expectEqual(@as(?u64, 1790668800000), pgnUtcMs(LICHESS_NEW_GAME));
+    try std.testing.expect(pgnUtcMs("[Event \"x\"]\n[UTCDate \"2026.13.01\"]\n[UTCTime \"00:00:00\"]\n\n1. e4 *") == null);
+    try std.testing.expect(pgnUtcMs("[Event \"x\"]\n\n1. e4 { [UTCDate \"2026.09.01\"] } *") == null);
+    try std.testing.expectEqual(@as(u32, 2026 * 12 + 8), monthOfMs(1790355872000));
+    try std.testing.expectEqual(@as(u32, 2026 * 12 + 0), monthOfMs(1767225600000)); // 2026-01-01T00:00:00Z
+    try std.testing.expectEqual(@as(?u32, 2026 * 12 + 8), archiveMonth("https://api.chess.com/pub/player/erik/games/2026/09"));
+    try std.testing.expectEqual(@as(?u32, 2007 * 12 + 6), archiveMonth("https://api.chess.com/pub/player/erik/games/2007/07"));
+    try std.testing.expect(archiveMonth("https://api.chess.com/pub/player/erik/games/archives") == null);
+    // the request carries the timestamp whole (13 digits), and N up to 100
+    const r = syncRequest("{\"site\":\"lichess\",\"user\":\"thibault\",\"max\":100,\"since\":1790617958001}").?;
+    try std.testing.expectEqual(@as(u64, 1790617958001), r.since);
+    try std.testing.expectEqual(@as(usize, 100), r.max);
+    try std.testing.expectEqual(@as(u64, 0), syncRequest("{\"site\":\"lichess\",\"user\":\"thibault\"}").?.since);
+}
+
+test "T4: Lichess, second sync asks since the last game and brings only the new one" {
+    const alloc = std.testing.allocator;
+    const out = try alloc.alloc(u8, SYNC_ANSWER_MAX);
+    defer alloc.free(out);
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // the site answers the second request with the new game on top, and — as
+    // since= reads milliseconds and a PGN's time only seconds — the old ones
+    const second_body = try std.mem.concat(alloc, u8, &.{ LICHESS_NEW_GAME, LICHESS_REAL });
+    defer alloc.free(second_body);
+    var stub: StubGetter = .{ .routes = &.{
+        .{ .url = LICHESS_URL_THIBAULT, .body = LICHESS_REAL },
+        .{ .url = LICHESS_URL_THIBAULT ++ "&since=1790617958001", .body = second_body },
+    } };
+    const first = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(stub.getter(), "{\"site\":\"lichess\",\"user\":\"thibault\",\"max\":20}", out, null), .{});
+    try std.testing.expectEqual(@as(usize, 5), first.count);
+    try std.testing.expectEqual(@as(u64, 1790617958000), first.last);
+    // the page keeps `last` and sends it back + 1 ms (sync-ui.js)
+    var payload_buf: [128]u8 = undefined;
+    const payload = try std.fmt.bufPrint(&payload_buf, "{{\"site\":\"lichess\",\"user\":\"thibault\",\"max\":20,\"since\":{d}}}", .{first.last + 1});
+    const second = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(stub.getter(), payload, out, null), .{});
+    try std.testing.expectEqual(@as(usize, 1), second.count);
+    try std.testing.expect(has(second.pgn, "NewGame1") and !has(second.pgn, "JNUpaHZT"));
+    try std.testing.expectEqual(@as(u64, 1790668800000), second.last);
+    // exactly these requests, in this order
+    try std.testing.expectEqual(@as(usize, 2), stub.asked);
+    try std.testing.expectEqualStrings(LICHESS_URL_THIBAULT, stub.url(0));
+    try std.testing.expectEqualStrings(LICHESS_URL_THIBAULT ++ "&since=1790617958001", stub.url(1));
+    // nothing new: an empty answer, and no `last` to move the mark
+    var stub2: StubGetter = .{ .routes = &.{.{ .url = LICHESS_URL_THIBAULT ++ "&since=1790668800001", .body = second_body }} };
+    try std.testing.expectEqualStrings("{\"pgn\":\"\",\"count\":0}", try syncOnce(stub2.getter(), "{\"site\":\"lichess\",\"user\":\"thibault\",\"max\":20,\"since\":1790668800001}", out, null));
+}
+
+test "T4: Chess.com, second sync walks only the months since, and keeps only newer standard games" {
+    const alloc = std.testing.allocator;
+    const out = try alloc.alloc(u8, SYNC_ANSWER_MAX);
+    defer alloc.free(out);
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // the month as it reads a day later: one more standard game, and a newer
+    // Chess960 one that must still stay out
+    const close_at = std.mem.lastIndexOf(u8, CHESSCOM_MONTH_REAL, "]}").?;
+    const later = try std.mem.concat(alloc, u8, &.{
+        CHESSCOM_MONTH_REAL[0..close_at],
+        ",{\"url\":\"https://www.chess.com/game/live/9001\",\"pgn\":\"[Event \\\"Live Chess\\\"]\\n[Site \\\"Chess.com\\\"]\\n[White \\\"erik\\\"]\\n[Black \\\"newer_opp\\\"]\\n[Result \\\"1-0\\\"]\\n\\n1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0\\n\",\"end_time\":1790668800,\"rules\":\"chess\"}",
+        ",{\"url\":\"https://www.chess.com/game/daily/9002\",\"pgn\":\"[Event \\\"Let's Play! - Chess960\\\"]\\n[Result \\\"0-1\\\"]\\n\\n1. e4 e5 0-1\\n\",\"end_time\":1790668900,\"rules\":\"chess960\"}",
+        CHESSCOM_MONTH_REAL[close_at..],
+    });
+    defer alloc.free(later);
+    const base = "https://api.chess.com/pub/player/erik/games/";
+    var stub: StubGetter = .{ .routes = &.{
+        .{ .url = base ++ "archives", .body = CHESSCOM_ARCHIVES_REAL },
+        .{ .url = base ++ "2026/09", .body = CHESSCOM_MONTH_REAL },
+        .{ .url = base ++ "2026/08", .body = "{\"games\":[]}" },
+        .{ .url = base ++ "2026/07", .body = "{\"games\":[]}" },
+    } };
+    const first = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(stub.getter(), "{\"site\":\"chesscom\",\"user\":\"Erik\",\"max\":20}", out, null), .{});
+    try std.testing.expectEqual(@as(usize, 9), first.count);
+    // the newest standard game's end (the two Chess960 games after it are not the mark)
+    try std.testing.expectEqual(@as(u64, 1790355872000), first.last);
+    // a first sync: the last three months
+    try std.testing.expectEqual(@as(usize, 4), stub.asked);
+    stub.routes = &.{
+        .{ .url = base ++ "archives", .body = CHESSCOM_ARCHIVES_REAL },
+        .{ .url = base ++ "2026/09", .body = later },
+    };
+    var payload_buf: [128]u8 = undefined;
+    const payload = try std.fmt.bufPrint(&payload_buf, "{{\"site\":\"chesscom\",\"user\":\"Erik\",\"max\":20,\"since\":{d}}}", .{first.last + 1});
+    const second = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(stub.getter(), payload, out, null), .{});
+    try std.testing.expectEqual(@as(usize, 1), second.count);
+    try std.testing.expect(has(second.pgn, "newer_opp") and !has(second.pgn, "Chess960"));
+    try std.testing.expectEqual(@as(u64, 1790668800000), second.last);
+    // every request of both syncs, in order: the second one stops at the
+    // month the last sync fell in
+    const want = [_][]const u8{ base ++ "archives", base ++ "2026/09", base ++ "2026/08", base ++ "2026/07", base ++ "archives", base ++ "2026/09" };
+    try std.testing.expectEqual(want.len, stub.asked);
+    for (want, 0..) |w, i| try std.testing.expectEqualStrings(w, stub.url(i));
+}
+
+test "T4: progress — Lichess counts games as the stream arrives, Chess.com month by month" {
+    const alloc = std.testing.allocator;
+    const out = try alloc.alloc(u8, SYNC_ANSWER_MAX);
+    defer alloc.free(out);
+    var p: Pending = .{};
+    var job: Job = .{ .pending = &p, .kind = .sync, .gen = 7, .spec = undefined };
+    p.progress.store(@as(u64, 7) << 32, .release);
+    var stub: StubGetter = .{ .pending = &p, .routes = &.{
+        .{ .url = LICHESS_URL_THIBAULT, .body = LICHESS_REAL },
+        .{ .url = "https://lichess.org/api/games/user/thibault?max=2&perfType=ultraBullet,bullet,blitz,rapid,classical,correspondence&clocks=true&evals=false&opening=false", .body = LICHESS_REAL },
+    } };
+    _ = try syncOnce(stub.getter(), "{\"site\":\"lichess\",\"user\":\"thibault\",\"max\":20}", out, &job);
+    // one step per game, while the body was still coming in
+    try std.testing.expectEqualSlices(u32, &.{ 1, 2, 3, 4, 5 }, stub.seen[0..stub.seen_n]);
+    // never past N
+    p.progress.store(@as(u64, 7) << 32, .release);
+    stub.seen_n = 0;
+    _ = try syncOnce(stub.getter(), "{\"site\":\"lichess\",\"user\":\"thibault\",\"max\":2}", out, &job);
+    try std.testing.expectEqual(@as(u32, 2), @as(u32, @truncate(p.progress.load(.acquire))));
+    // Chess.com: after each month
+    const base = "https://api.chess.com/pub/player/erik/games/";
+    p.progress.store(@as(u64, 7) << 32, .release);
+    var cc: StubGetter = .{ .routes = &.{
+        .{ .url = base ++ "archives", .body = CHESSCOM_ARCHIVES_REAL },
+        .{ .url = base ++ "2026/09", .body = CHESSCOM_MONTH_REAL },
+    } };
+    _ = try syncOnce(cc.getter(), "{\"site\":\"chesscom\",\"user\":\"erik\",\"max\":20}", out, &job);
+    try std.testing.expectEqual(@as(u32, 9), @as(u32, @truncate(p.progress.load(.acquire))));
+    // a timed-out sync's worker, still counting, does not move a newer one's
+    p.progress.store(@as(u64, 8) << 32, .release);
+    job.report(4);
+    try std.testing.expectEqual(@as(u64, 8) << 32, p.progress.load(.acquire));
 }
 
 // `zig build test` roots the test binary at this file, and a test build never

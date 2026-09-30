@@ -57,26 +57,39 @@ const TWO_GAMES = "[Event \"Let's Play!\"]\n[Site \"Chess.com\"]\n[Date \"2026.0
  * window.__calls and answered with window.__answer; everything else the app
  * asks the bridge gets `true`, as in the other suites.
  */
-async function open({ bridge = true, lang = "zh-CN", seedSync = null } = {}) {
+async function open({ bridge = true, lang = "zh-CN", seedSync = null, mode = "ai", seedSave = null } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: lang });
-  await ctx.addInitScript(({ bridge, lang, seedSync }) => {
+  await ctx.addInitScript(({ bridge, lang, seedSync, mode, seedSave }) => {
     if (!sessionStorage.getItem("seeded")) {
       sessionStorage.setItem("seeded", "1");
-      localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "ai", langId: lang, sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.v1.settings", JSON.stringify({ mode, langId: lang, sideTab: "play", soundOn: false, themeId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
       if (seedSync) localStorage.setItem("chess.v1.sync", JSON.stringify(seedSync));
+      if (seedSave) localStorage.setItem("chess.v1.save", JSON.stringify(seedSave));
     }
     window.__calls = [];
     window.__answer = { error: "offline" };
+    // v8-1-plan N1 / T4: an answer can be held back (__delay ms), as the
+    // native side's is while the network works, and chess.fetchProgress
+    // answers meanwhile with __progress
+    window.__delay = 0;
+    window.__progress = { busy: false, count: 0 };
+    window.__progressAsks = 0;
+    window.__answeredAt = 0;
     if (!bridge) return;
     window.zero = {
       invoke: (cmd, payload) => {
         // v8-1-plan N2: the file dialogs are chess.openPgn / chess.saveText now
         if (cmd === "chess.openPgn" || cmd === "chess.saveText") return Promise.resolve({ cancelled: true });
+        if (cmd === "chess.fetchProgress") { window.__progressAsks++; return Promise.resolve(window.__progress); }
         if (cmd !== "chess.fetchGames") return Promise.resolve(true);
         window.__calls.push(payload);
         const a = window.__answer;
-        return a === "reject" ? Promise.reject(new Error("permission_denied")) : Promise.resolve(a);
+        const settle = (ok, no) => {
+          window.__answeredAt = Date.now();
+          if (a === "reject") no(new Error("permission_denied")); else ok(a);
+        };
+        return new Promise((ok, no) => { if (window.__delay > 0) setTimeout(() => settle(ok, no), window.__delay); else settle(ok, no); });
       },
       on: () => () => {},
       off: () => {},
@@ -85,7 +98,7 @@ async function open({ bridge = true, lang = "zh-CN", seedSync = null } = {}) {
         showNotification: () => Promise.resolve(true), revealPath: () => Promise.resolve(true) },
       clipboard: { readText: () => Promise.resolve(""), writeText: () => Promise.resolve(true) },
     };
-  }, { bridge, lang, seedSync });
+  }, { bridge, lang, seedSync, mode, seedSave });
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));
@@ -355,6 +368,157 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   await ctx.close();
 }
 
+// --- 3d. v8-1-plan N1: a sync that takes 3 s leaves the board to the player ---
+// The native side answers after its network work, off the shell's loop; the
+// page's side of that is one Promise, and nothing on the page may wait on it.
+// The bridge holds its answer 3 s. Meanwhile the dialog is closed, the move
+// list is scrolled and a move is made on the board — each stamped by the page
+// when it happened, and every stamp has to come before the answer's.
+{
+  // a 48-ply game in progress (two players), White to move: the move list overflows
+  const moves = "e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7 Re1 b5 Bb3 d6 c3 O-O h3 Nb8 d4 Nbd7 Nbd2 Bb7 Bc2 Re8 Nf1 Bf8 Ng3 g6 a4 c5 d5 c4 Bg5 h6 Be3 Nc5 Qd2 h5 Bg5 Be7 Ra3 Kg7 Rea1 Rh8 Qe2 Qc7 Bd2 Rab8".split(" ");
+  const pgn = '[Event "n1"]\n[Result "*"]\n\n' + moves.map((m, i) => (i % 2 ? m : (i / 2 + 1) + ". " + m)).join(" ") + " *";
+  const { ctx, page, errs } = await open({ mode: "pvp", seedSync: { v: 1, on: true }, seedSave: { v: 1, pgn, savedAt: Date.now() } });
+  const plies = () => page.evaluate(() => document.querySelectorAll("#move-list .mlmove:not(.mlgap)").length);
+  const before = await plies();
+  assert(before === 48, "N1: 一盘 48 步的对局摆在棋盘上（" + before + "）");
+  const at = (s) => page.evaluate((n) => {
+    const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
+    const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, s);
+  await toLibrary(page);
+  await openSync(page);
+  await page.fill("#sync-user", "sync_tester");
+  await page.evaluate(({ pgn, before }) => {
+    window.__answer = { pgn, count: 2, last: 1790000000000 };
+    window.__delay = 3000;
+    // the page's own stamps: the move landing in the list, the list scrolling
+    window.__movedAt = 0;
+    window.__scrolledAt = 0;
+    const list = document.getElementById("move-list");
+    new MutationObserver(() => {
+      if (!window.__movedAt && list.querySelectorAll(".mlmove:not(.mlgap)").length > before) window.__movedAt = Date.now();
+    }).observe(list, { childList: true, subtree: true });
+    list.addEventListener("scroll", () => { if (!window.__scrolledAt && list.scrollTop > 0) window.__scrolledAt = Date.now(); });
+  }, { pgn: TWO_GAMES, before });
+  const t0 = await page.evaluate(() => Date.now());
+  await page.click("#sync-go");
+  const busyNote = (await dlg(page)).note;
+  // straight to the board, no waiting on anything the sync does
+  await page.keyboard.press("Escape");
+  await page.click('#rail [data-view="play"]');
+  await page.evaluate(() => { document.getElementById("move-list").scrollTop = 0; });
+  const box = await page.evaluate(() => { const m = document.getElementById("move-list"); const r = m.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, over: m.scrollHeight > m.clientHeight + 20 }; });
+  await page.mouse.move(box.x, box.y);
+  await page.mouse.wheel(0, 400);
+  for (const s of ["b2", "b3"]) { const p = await at(s); await page.mouse.click(p.x, p.y); }
+  // …then the answer lands: imported, and the mark kept for next time
+  await page.waitForFunction(() => window.__answeredAt > 0, null, { timeout: 8000 });
+  await page.waitForTimeout(600);
+  const st = await page.evaluate(() => ({ moved: window.__movedAt, scrolled: window.__scrolledAt, answered: window.__answeredAt }));
+  const rel = (x) => (x ? x - t0 : "—");
+  assert(busyNote.includes("正在从 Lichess 取棋"), "N1: 按下同步，对话框说正在取棋（" + busyNote + "）");
+  assert(await plies() === before + 1 && st.moved > 0 && st.moved < st.answered,
+    "N1: 同步进行中在棋盘上走了一步（b3 落进着法列表于 " + rel(st.moved) + " ms，应答于 " + rel(st.answered) + " ms）");
+  assert(box.over && st.scrolled > 0 && st.scrolled < st.answered,
+    "N1: 同步进行中着法列表滚得动（滚动于 " + rel(st.scrolled) + " ms，应答于 " + rel(st.answered) + " ms）");
+  assert(st.answered - t0 >= 2900, "N1: 应答确实晚了 3 秒（" + rel(st.answered) + " ms）");
+  const lib = await libView(page);
+  assert(lib.games.length === 2, "N1: 3 秒后应答到了，两局照常进库（" + lib.games.length + "）");
+  const s = await stored(page, "chess.v1.sync");
+  assert(s && s.last && s.last["lichess:sync_tester"] === 1790000000000, "T4: 记下这个网站、这个名字最新一局的时间（" + JSON.stringify(s && s.last) + "）");
+  assert(errs.length === 0, "N1: 没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 3e. v8-1-plan T4: incremental, how many, analyse after — and they stick ---
+{
+  const { ctx, page, errs } = await open({ seedSync: { v: 1, on: true } });
+  await toLibrary(page);
+  await libView(page);
+  // an engine that never answers, so a started pass shows (and stays on its first game)
+  await page.evaluate(() => {
+    window.__analysed = 0;
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.analyze = () => { window.__analysed++; return new Promise(() => {}); };
+  });
+  const syncWith = async (answer, max) => {
+    await openSync(page);
+    if (max) await page.click(`#sync-max [data-v="${max}"]`);
+    await page.fill("#sync-user", "Sync_Tester");
+    await page.evaluate((a) => { window.__answer = a; }, answer);
+    await page.click("#sync-go");
+    await page.waitForFunction(() => !document.getElementById("sync-go").disabled || !document.getElementById("sync-modal").classList.contains("show"), null, { timeout: 5000 });
+    await page.waitForTimeout(500);
+  };
+  let d;
+  await openSync(page);
+  d = await page.evaluate(() => ({
+    max: [...document.querySelectorAll("#sync-max button")].map((b) => b.textContent + (b.getAttribute("aria-pressed") === "true" ? "*" : "")).join(" "),
+    analyse: document.getElementById("sync-analyse").getAttribute("aria-pressed"),
+    label: document.getElementById("sync-max-k").textContent,
+  }));
+  assert(d.max === "20* 50 100" && d.analyse === "false" && d.label.includes("最多"), "T4: 局数 20 / 50 / 100，默认 20；同步后分析默认关（" + JSON.stringify(d) + "）");
+  await page.keyboard.press("Escape");
+  // first sync: no since; 50 chosen. The answer is held 2 s, and the dialog
+  // reads 已取到 k 局 off chess.fetchProgress meanwhile, following the count
+  await page.evaluate(() => { window.__delay = 2000; window.__progress = { busy: true, count: 2 }; });
+  const note = () => page.evaluate(() => document.getElementById("sync-note").textContent);
+  const progressSeen = [];
+  const watching = (async () => {
+    for (let i = 0; i < 60; i++) {
+      const n = await note();
+      if (!progressSeen.includes(n) && n.includes("已取到")) progressSeen.push(n);
+      if (n.includes("已取到 2 局")) await page.evaluate(() => { window.__progress = { busy: true, count: 5 }; });
+      await page.waitForTimeout(50);
+    }
+  })();
+  await syncWith({ pgn: TWO_GAMES, count: 2, last: 1790000000000 }, 50);
+  await watching;
+  assert(JSON.stringify(progressSeen) === '["正在从 Lichess 取棋…已取到 2 局","正在从 Lichess 取棋…已取到 5 局"]',
+    "T4: 取棋时对话框说「已取到 k 局」，数字跟着原生层走（" + JSON.stringify(progressSeen) + "）");
+  const asks = await page.evaluate(() => window.__progressAsks);
+  await page.waitForTimeout(900);
+  assert(asks > 0 && await page.evaluate(() => window.__progressAsks) === asks, "T4: 应答到了就不再问进度（问过 " + asks + " 次）");
+  await page.evaluate(() => { window.__delay = 0; window.__progress = { busy: false, count: 0 }; });
+  assert(await page.evaluate(() => window.__analysed) === 0, "T4: 同步后分析关着：进库之后没有开始分析");
+  // second: since = the mark + 1 ms, the same name in another case is the same account
+  await syncWith({ pgn: "", count: 0 }, 100);
+  d = await dlg(page);
+  assert(d.shown && d.note.includes("Lichess 上没有 Sync_Tester 的新对局"), "T4: 增量同步没有新棋：说「没有新对局」（" + d.note + "）");
+  const calls = await page.evaluate(() => window.__calls);
+  assert(JSON.stringify(calls) === '[{"site":"lichess","user":"Sync_Tester","max":50},{"site":"lichess","user":"Sync_Tester","max":100,"since":1790000000001}]',
+    "T4: 第二次只要上次以来的：since = 上次最新一局 + 1 ms，局数跟着选项（" + JSON.stringify(calls) + "）");
+  let s = await stored(page, "chess.v1.sync");
+  assert(s.max === 100 && s.last["lichess:sync_tester"] === 1790000000000, "T4: 选项存下了；没有新棋时记号不动（" + JSON.stringify(s) + "）");
+  // analyse after sync, on; the next sync's new game starts the library's pass
+  await page.click("#sync-analyse");
+  await page.keyboard.press("Escape");
+  const ONE = "[Event \"Live Chess\"]\n[Site \"Chess.com\"]\n[Date \"2026.09.29\"]\n[White \"sync_tester\"]\n[Black \"newer\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7# 1-0";
+  await syncWith({ pgn: ONE, count: 1, last: 1790100000000 });
+  const lib = await libView(page);
+  const run = await page.evaluate(() => ({ n: window.__analysed, label: (document.getElementById("lib-analyse") || {}).textContent || "" }));
+  assert(lib.games.length === 3 && run.n > 0 && run.label.includes("暂停"), "T4: 同步后分析开着：新的一局进库后，棋谱库的批量分析开始了（" + JSON.stringify({ games: lib.games.length, run }) + "）");
+  s = await stored(page, "chess.v1.sync");
+  const calls3 = await page.evaluate(() => window.__calls);
+  assert(s.analyse === true && s.last["lichess:sync_tester"] === 1790100000000 && calls3[2].since === 1790000000001,
+    "T4: 开关存下了，记号往前走到新的一局（" + JSON.stringify({ s, call: calls3[2] }) + "）");
+  // a reload: the choices come back
+  await page.reload();
+  await page.waitForTimeout(900);
+  await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+  await toLibrary(page);
+  await openSync(page);
+  d = await page.evaluate(() => ({
+    max: [...document.querySelectorAll("#sync-max button")].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.textContent).join(),
+    analyse: document.getElementById("sync-analyse").getAttribute("aria-pressed"),
+  }));
+  assert(d.max === "100" && d.analyse === "true", "T4: 重启后记得最多 100 局、同步后分析开着（" + JSON.stringify(d) + "）");
+  assert(errs.length === 0, "T4: 没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
 // --- 4. no bridge (a browser): it says so and asks nothing ---------------------
 {
   const { ctx, page, errs } = await open({ bridge: false, seedSync: { v: 1, on: true } });
@@ -377,9 +541,15 @@ for (const lang of ["en", "ja"]) {
   // Japanese uses kanji; what must not appear is a Chinese-only string
   const leak = lang === "en" ? han : (d.text.includes("联网") || d.text.includes("用户名") ? "zh" : "");
   assert(!leak, lang + ": 对话框里没有中文（" + leak + "）");
-  const fits = await page.evaluate(() => [...document.querySelectorAll("#sync-modal button, #sync-modal .setting-k")]
-    .filter((b) => b.offsetParent).every((b) => b.scrollWidth <= b.clientWidth + 1));
-  assert(fits, lang + ": 按钮和标签的字没有被截断");
+  // words only: the switch (T4's 同步后分析) has none, and its hit area
+  // reaches past its box on purpose (styles.css .switch::after)
+  const cut = await page.evaluate(() => [...document.querySelectorAll("#sync-modal button, #sync-modal .setting-k")]
+    .filter((b) => b.offsetParent && b.textContent.trim() && b.scrollWidth > b.clientWidth + 1).map((b) => b.textContent));
+  assert(cut.length === 0, lang + ": 按钮和标签的字没有被截断（" + cut.join(" / ") + "）");
+  // …and T4's words are there, in this language
+  const t4 = await page.evaluate(() => ({ limit: document.getElementById("sync-max-k").textContent, an: document.getElementById("sync-analyse-k").textContent }));
+  const want = lang === "en" ? ["New games since last time, at most", "Analyse the games after syncing"] : ["前回以降の新しい対局（最大）", "同期したら解析を始める"];
+  assert(t4.limit === want[0] && t4.an === want[1], lang + ": T4 的两个选项说的是这种语言（" + JSON.stringify(t4) + "）");
   assert(errs.length === 0, lang + ": 没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
