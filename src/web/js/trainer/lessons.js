@@ -37,12 +37,7 @@ export function createLessonsUI(d) {
   // --- learn mode: zero-basis interactive lessons (data in lessons.js) ---
   // v8-2-plan T1: the advanced part 3 follows as placeholders over its chunk;
   // one asked for before the chunk is here opens when it arrives
-  let advWanted = -1;
-  const Adv = createAdvLessons(() => {
-    const i = advWanted;
-    advWanted = -1;
-    if (i >= 0 && store.session.mode === "learn") startLesson(i); else sync();
-  });
+  const Adv = createAdvLessons((i) => { if (i >= 0 && store.session.mode === "learn") startLesson(i); else sync(); });
   const LESSONS = (CHESS_LESSONS || []).concat(Adv.stubs);
 
   function loadLearnState() {
@@ -154,7 +149,7 @@ export function createLessonsUI(d) {
     store.session.study = null;
     store.session.learnState.last = i;
     saveLearnState();
-    if (!LESSONS[i].tasks.length) { advWanted = i; Adv.ensure(); return; }
+    if (!LESSONS[i].tasks.length) { Adv.want(i); return; }
     store.session.learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !store.session.learnState.done[LESSONS[i].id] };
     startLearnTask();
   }

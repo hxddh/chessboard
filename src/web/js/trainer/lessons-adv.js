@@ -29,12 +29,14 @@ export const ADV_IDS = [
 ];
 
 /**
- * @param {() => void} onReady the chunk arrived — repaint whoever asked
- * @returns {{stubs: object[], ensure: () => void, ready: () => boolean}}
+ * @param {(wanted: number) => void} onReady the chunk arrived — repaint, or
+ *   open lesson `wanted` (a course index, -1 for none) that was asked for early
+ * @returns {{stubs: object[], ensure: () => void, want: (i: number) => void, ready: () => boolean}}
  */
 export function createAdvLessons(onReady) {
   let byId = null;
   let asked = null;
+  let wanted = -1;
   /**
    * Start the fetch once. After the frame that asked, not during it — the
    * endgame camp's rule (trainer/endgames.js): a session restored into 学习
@@ -48,7 +50,9 @@ export function createAdvLessons(onReady) {
       .then(() => loadChunk(ADV_CHUNK.file, ADV_CHUNK.global))
       .then((m) => {
         byId = new Map(m.lessons.map((L) => [L.id, L]));
-        onReady();
+        const i = wanted;
+        wanted = -1;
+        onReady(i);
       }, () => { asked = null; }); // a failed load is retried next time something asks
   }
   const src = (id) => (byId ? byId.get(id) : (ensure(), null));
@@ -59,5 +63,7 @@ export function createAdvLessons(onReady) {
     get text() { const L = src(id); return L ? L.text : []; },
     get tasks() { const L = src(id); return L ? L.tasks : []; },
   });
-  return { stubs: ADV_IDS.map(stub), ensure, ready: () => !!byId };
+  /** open course lesson `i` once the chunk is here */
+  const want = (i) => { wanted = i; ensure(); };
+  return { stubs: ADV_IDS.map(stub), ensure, want, ready: () => !!byId };
 }

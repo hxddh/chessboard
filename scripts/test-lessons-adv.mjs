@@ -112,8 +112,8 @@ const IDS = shell.ADV_IDS;
 
 // ------------------------------------------------------------------ 4 占位课
 {
-  let ready = 0;
-  const adv = shell.createAdvLessons(() => { ready++; });
+  let ready = 0, opened = null;
+  const adv = shell.createAdvLessons((i) => { ready++; opened = i; });
   const s0 = adv.stubs[0];
   assert(adv.stubs.length === 24 && adv.stubs.every((s, i) => s.id === IDS[i]), "24 个占位课，id 与目录相同");
   assert(s0.title === "" && s0.part === "" && s0.tasks.length === 0 && s0.text.length === 0 && !adv.ready(),
@@ -124,7 +124,15 @@ const IDS = shell.ADV_IDS;
   shell.CHESS_LESSONS_ADV = ADV;
   void s0.title; // reading the words is what asks for it
   await new Promise((r) => setTimeout(r, 20));
-  assert(adv.ready() && ready === 1, "读到占位课的文字就去取分块；到了以后通知重画一次");
+  assert(adv.ready() && ready === 1 && opened === -1, "读到占位课的文字就去取分块；到了以后通知重画一次");
+  // a lesson started before the chunk was here opens when it arrives
+  {
+    let got = null;
+    const late = shell.createAdvLessons((i) => { got = i; });
+    late.want(100);
+    await new Promise((r) => setTimeout(r, 20));
+    assert(got === 100 && late.ready(), "分块没到就要开的课（第 101 课），分块一到就开它", got);
+  }
   assert(s0.title === LESSONS[0].title && s0.tasks === LESSONS[0].tasks && s0.part === "计算",
     "分块到了以后，占位课的标题、课文和步都来自分块");
   assert(adv.stubs[23].part === "局面型" && adv.stubs[23].tasks.length === LESSONS[23].tasks.length, "最后一课也读得到");

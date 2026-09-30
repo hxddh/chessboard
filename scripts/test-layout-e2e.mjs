@@ -568,6 +568,11 @@ if (scenario()) for (const [when, mode, setup] of [
       items[items.length - 1].click();
     });
     await page.waitForTimeout(800);
+    // v8-2-plan T1: the last lesson is 预防 now (lesson 120), whose first task
+    // is a move, so a first visit plays its answer once; 演示 is disabled only
+    // while that plays (trainer/lessons.js syncLearnUI). Measure the lesson as
+    // it stands once the demo is over, as a player sees it.
+    await page.waitForFunction(() => !document.getElementById("lesson-demo").disabled, null, { timeout: 6000 }).catch(() => {});
   }],
   ["人机·进行中", "ai", async (page) => {
     // two plies, played through the board like a person would
@@ -5145,6 +5150,76 @@ if (scenario()) {
       assert(me.tall.length === 0, `${tag}: 五个主题各一行` + (me.tall.length ? " — " + me.tall.join(", ") : ""));
       assert(me.heights.length === 1 && me.spill.length === 0 && me.sideways <= 0,
         `${tag}: 按钮一样高、字不出框，页面不横向滚动 (${me.heights.join(", ")}; ${me.spill.join(", ") || "—"}; ${me.sideways}px)`);
+      assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
+// --- v8-2-plan T1: the advanced course part 3 — its parts in 目录, its card ---
+// In three languages, at the widest window and the narrowest: once the chunk
+// is here, 目录 lists 计算 and 局面型 with their 24 lessons numbered 97–120 in
+// course order and no row cut off; the advanced lesson with the longest title
+// opens to a card whose title, text, task and buttons cut nothing off, its
+// buttons one row of one height, and the page does not scroll sideways.
+if (scenario()) {
+  for (const lang of LANGS) {
+    for (const viewport of [{ width: 1400, height: 900 }, { width: 520, height: 800 }]) {
+      const tag = `T1 进阶课程 (${lang}, ${viewport.width}×${viewport.height})`;
+      const { ctx, page, errs } = await open(lang, "learn", "play", "wood", viewport);
+      await page.waitForFunction(() => !!window.CHESS_LESSONS_ADV &&
+        document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg])").length === 120, null, { timeout: 8000 }).catch(() => {});
+      const list = await page.evaluate((l) => {
+        const d = document.querySelector("#sec-learn details.reading-index");
+        if (d) d.open = true;
+        const A = window.CHESS_LESSONS_ADV;
+        if (!A) return { n: 0, titles: [], want: [], parts: [], cut: [], longest: 0 };
+        const word = (L) => (l === "zh-CN" ? L : A[l][L.id]);
+        const items = [...document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg])")];
+        const box = document.getElementById("sec-learn").getBoundingClientRect();
+        const adv = items.slice(96);
+        let longest = 0;
+        A.lessons.forEach((L, i) => { if (word(L).title.length > word(A.lessons[longest]).title.length) longest = i; });
+        const heads = [...document.querySelectorAll("#lesson-list .lesson-part")];
+        return {
+          n: items.length,
+          titles: adv.map((b) => b.textContent),
+          want: A.lessons.map((L, i) => (97 + i) + ". " + word(L).title),
+          parts: [word(A.lessons[0]).part, word(A.lessons[23]).part].map((p) => heads.some((h) => h.textContent === p && h.offsetParent)),
+          cut: adv.concat(heads).filter((b) => b.offsetParent && (b.scrollWidth > b.clientWidth + 1 || b.getBoundingClientRect().right > box.right + 1))
+            .map((b) => b.textContent.slice(0, 18)),
+          longest,
+        };
+      }, lang);
+      assert(list.n === 120 && list.titles.length === 24 && list.titles.every((t, i) => t === list.want[i]),
+        `${tag}: 目录里是 120 课，进阶的 24 课按顺序排在第 97–120 课（${list.titles[0] || "—"} … ${list.titles[23] || "—"}）`);
+      assert(list.parts.length === 2 && list.parts.every(Boolean), `${tag}: 「计算」「局面型」两个部分的标题都在目录里`);
+      assert(list.cut.length === 0, `${tag}: 目录里进阶课程的行没有被裁掉的字` + (list.cut.length ? " — " + list.cut.join(", ") : ""));
+      await page.evaluate((i) => {
+        const items = document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg])");
+        if (items[96 + i]) items[96 + i].click();
+      }, list.longest);
+      await page.waitForTimeout(600);
+      const card = await page.evaluate((i) => {
+        const sec = document.getElementById("sec-learn"), box = sec.getBoundingClientRect();
+        const out = [];
+        for (const e of sec.querySelectorAll("button, .lesson-title, .lesson-task, .lesson-part, #lesson-text p")) {
+          if (!e.offsetParent) continue;
+          if (e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > box.right + 1) out.push(e.textContent.trim().slice(0, 18));
+        }
+        const strip = document.getElementById("task-strip-text");
+        if (strip && strip.offsetParent && strip.scrollWidth > strip.clientWidth + 1) out.push("task strip: " + strip.textContent.slice(0, 18));
+        const row = sec.querySelector(".lesson-controls");
+        const bs = [...row.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent);
+        return { cut: out, title: document.getElementById("lesson-title").textContent, n: bs.length,
+          heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+          tops: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().top)))],
+          lesson: 97 + i, sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+      }, list.longest);
+      assert(card.title.includes(String(card.lesson)), `${tag}: 卡片是第 ${card.lesson} 课（${card.title}）`);
+      assert(card.cut.length === 0, `${tag}: 卡片的标题、课文、任务与按钮没有被裁掉的字` + (card.cut.length ? " — " + card.cut.join(", ") : ""));
+      assert(card.n >= 2 && card.heights.length === 1 && card.tops.length === 1,
+        `${tag}: 课程按钮一排、一样高 (${card.n}; ${card.heights.join(", ")}; ${card.tops.length} 行)`);
+      assert(card.sideways <= 0, `${tag}: 页面不横向滚动 (${card.sideways}px)`);
       assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
       await ctx.close();
     }
