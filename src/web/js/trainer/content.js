@@ -47,8 +47,8 @@ export function createTrainerContent(d) {
     const out = [];
     if (store.ui.langId === "zh-CN") return out;
     for (const id of [store.ui.langId, "en"]) {
-      const tbl = ChessLazy.langTables(id)[kind];
-      if (tbl && out.indexOf(tbl) < 0) out.push(tbl);
+      const tbs = ChessLazy.langTables(id);
+      for (const tbl of [tbs[kind], kind === "lessons" && tbs.lessonsAdv]) if (tbl && out.indexOf(tbl) < 0) out.push(tbl);
     }
     return out;
   }
