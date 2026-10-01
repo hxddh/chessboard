@@ -497,6 +497,16 @@
         "jobs": 32,
         "green": true,
         "label": "8.2 PR #99（M3，V4 第二次拆组后，无并发彩排）"
+      },
+      {
+        "run": 36848838739,
+        "sha": "cecb21d",
+        "wall": 16.6,
+        "critical": "browser (webkit, engine)",
+        "criticalMin": 10.3,
+        "jobs": 32,
+        "green": true,
+        "label": "PR #100"
       }
     ]
   },
