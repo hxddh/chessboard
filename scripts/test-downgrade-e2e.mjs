@@ -231,6 +231,8 @@ const repertoirePgn = (n) => repertoireLines(n).map((l, i) => {
  * the lines past them reach — 8.1 indexes the header alone and drops its
  * record, so its schedule comes back from chessboard.replines' copy.
  */
+/** The White line the old build adds to its full 400-line header (M3 评审 P3). */
+const OLD_W = "g4 d5 g5 e5";
 const PRACTISED = ["e4 Nc6", repertoireLines(REP_LINES)[REP_LINES - 1].split(" ").slice(0, 2).join(" ")];
 
 const LIB_PGN = [1, 2, 3, 4, 5].map((i) => `[Event "Rated blitz"]\n[Site "lichess"]\n[Date "2026.09.0${i}"]\n` +
@@ -356,13 +358,17 @@ function fields(s1) {
     "library.games": (s) => pick(libGames(s), libIds),
     "library.names": (s) => lsOf(s, "library").names,
     "library.sum": (s) => lsOf(s, "library").sum,
-    // the header: the first 400 lines a side (what 8.0 / 8.1 read) and `ln`
-    // and `ln`, the stored count of both sides — less Black's, which (b) adds to
+    // the header: the first 400 lines a side (what 8.0 / 8.1 read) and `ln`,
+    // the stored count of both sides — whether it is there and says what
+    // the store holds ((b) adds to both sides)
     "repertoire.head": (s) => ({ w: (lsOf(s, "repertoire").w || []).map((l) => l.id),
-      ln: lsOf(s, "repertoire").ln == null ? null : lsOf(s, "repertoire").ln - (lsOf(s, "repertoire").b || []).length }),
-    // the whole book, in chessboard.replines
-    "repertoire.lines": (s) => lineRows(s, "w"),
-    "repertoire.records": (s) => pick(repRows(s), Object.keys(repRows(s1))),
+      ln: lsOf(s, "repertoire").ln == null ? null : lsOf(s, "repertoire").ln === lineRows(s, "w").length + lineRows(s, "b").length }),
+    // the whole book, in chessboard.replines — the lines (a) imported, in
+    // their places ((b)'s White line comes after them)
+    "repertoire.lines": (s) => lineRows(s, "w").slice(0, REP_LINES),
+    // (b)'s White line adds its first move to the start position's record: not counted
+    "repertoire.records": (s) => Object.fromEntries(Object.entries(pick(repRows(s), Object.keys(repRows(s1))))
+      .map(([id, x]) => [id, Object.assign({}, x, { moves: (x.moves || []).filter((m) => m.san !== OLD_W.split(" ")[0]) })])),
     "repertoire.cards": (s) => pick(cardRows(s), Object.keys(cardRows(s1))),
   };
 }
@@ -506,14 +512,14 @@ for (const tag of TAGS) {
   await view(page, "library");
   await importFile(page, "old-" + tag + ".pgn", OLD_LIB_PGN(tag), "#lib-import");
   await importFile(page, "rep-b.pgn", `[Event "b"]\n[Result "*"]\n\n1. d4 Nf6 2. c4 e6 *\n`, "#rep-import-b");
+  // M3 评审 P3: one White line into the full 400-line header — the old
+  // build's cap drops the oldest, which is not a deletion
+  await importFile(page, "rep-w.pgn", `[Event "w"]\n[Result "*"]\n\n1. g4 d5 2. g5 e5 *\n`, "#rep-import-w");
   await page.waitForTimeout(1500);
   const s2 = await snapshot(page);
   await page.close();
   fs.writeFileSync(path.join(SCRATCH, tag + "-2.json"), JSON.stringify(s2, null, 1));
   assert(errs.length === 0, tag + " (b): 旧版读 8.2 的档案没有页面异常", errs.join(" / "));
-  // 8.0 / 8.1 read the header: the first 400 lines, the whole of what they can hold
-  assert((lsOf(s2, "repertoire").w || []).map((l) => l.sans).join("|") === wantLines.slice(0, REP_HEAD).join("|"),
-    tag + " (b): 旧版的书是头上的前 " + REP_HEAD + " 条执白的线", (lsOf(s2, "repertoire").w || []).length);
   // 8.1 opens chessboard.repertoire at its own version 1 (a VersionError
   // would leave it on its memory backend: no records written there at all)
   if (tag === "v8.1.0") {
@@ -527,6 +533,10 @@ for (const tag of TAGS) {
   const oldLib = Object.values(libGames(s2)).find((g) => g.event === tag);
   assert(!!oldLib, tag + " (b): 旧版往棋谱库导入了一局");
   assert((lsOf(s2, "repertoire").b || []).length === 1, tag + " (b): 旧版导入了一条执黑的线");
+  // 8.0 / 8.1 read the header — the first 400 lines, the whole of what they
+  // can hold — and a White line imported into it pushes out the oldest
+  assert((lsOf(s2, "repertoire").w || []).map((l) => l.sans).join("|") === wantLines.slice(1, REP_HEAD).concat(OLD_W).join("|"),
+    tag + " (b): 旧版的书是头上的前 " + REP_HEAD + " 条执白的线；往里加一条，它的上限挤掉最早的一条", (lsOf(s2, "repertoire").w || []).length);
 
   // (c) back to 8.2
   ({ page, errs } = await open(ctx, CURRENT));
@@ -556,11 +566,13 @@ for (const tag of TAGS) {
   const ids3 = Object.keys(libGames(s3)), rows3 = sumRows(s3);
   assert(ids3.length === 8 && ids3.every((id) => rows3[id]) && Object.keys(rows3).length === 8,
     tag + " (c): 摘要行覆盖棋谱库的全部 8 局", ids3.length + " / " + Object.keys(rows3).length);
-  assert(lineRows(s3, "w").map((l) => l.sans).join("|") === wantLines.join("|") &&
+  // M3 评审 P3: the line the old build's cap pushed out of its header is not taken out of the book
+  assert(lineRows(s3, "w").map((l) => l.sans).join("|") === wantLines.concat(OLD_W).join("|") &&
     lineRows(s3, "b").map((l) => l.sans).join("|") === "d4 Nf6 c4 e6",
-    tag + " (c): 执白的 " + REP_LINES + " 条线都还在，旧版加的执黑线也进了 chessboard.replines", lineRows(s3, "w").length + " / " + JSON.stringify(lineRows(s3, "b")));
-  assert((lsOf(s3, "repertoire").w || []).length === REP_HEAD && lsOf(s3, "repertoire").ln === REP_LINES + 1,
-    tag + " (c): 头上又是前 " + REP_HEAD + " 条、ln 补回（" + (REP_LINES + 1) + "）", (lsOf(s3, "repertoire").w || []).length + " / " + lsOf(s3, "repertoire").ln);
+    tag + " (c): 执白的 " + REP_LINES + " 条线都还在（旧版上限挤掉的第一条也在），旧版加的执白、执黑线也进了 chessboard.replines",
+    lineRows(s3, "w").length + " / " + JSON.stringify(lineRows(s3, "w")[0]) + " / " + JSON.stringify(lineRows(s3, "b")));
+  assert((lsOf(s3, "repertoire").w || []).length === REP_HEAD && lsOf(s3, "repertoire").ln === REP_LINES + 2,
+    tag + " (c): 头上又是前 " + REP_HEAD + " 条、ln 补回（" + (REP_LINES + 2) + "）", (lsOf(s3, "repertoire").w || []).length + " / " + lsOf(s3, "repertoire").ln);
   assert(practised(s3).length === 2, tag + " (c): 两张练过的卡排期照旧", JSON.stringify(practised(s3)));
   assert((lsOf(s3, "repertoire").b || []).length === 1 &&
     Object.values(repRows(s3)).some((r) => r.side === "b" && r.path === "d4 Nf6 c4"),

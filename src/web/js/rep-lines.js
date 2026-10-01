@@ -23,6 +23,9 @@
  * copy and is not in the header any more was taken out, a line in the header
  * that the copy did not have was added. Lines past the copy are kept — unless
  * the header has none left on that side: an older build emptied it (清空).
+ * A header that is missing or could not be read takes nothing out (M3 评审
+ * P2); a full one from an older build that lacks only the oldest lines lost
+ * them to that build's 400-line cap, and they stay (M3 评审 P3).
  *
  * Pure: lines and rows in, lines and rows out. No storage, no DOM.
  * @module rep-lines
@@ -94,22 +97,39 @@ const sameIds = (a, b) => a.length === b.length && a.every((l, i) => l.id === b[
  *   the shorter one it extends, wherever that one is in the book)
  * @param {{w, b}} full
  * @param {{w, b}} head
+ * @param {object|null} [hdr] the header as stored. null: there was none, or
+ *   it could not be read (M3 评审 P2) — the lines `head` holds then are what
+ *   the main bundle could see, not what anyone took out, so nothing leaves
+ *   the book; a line `head` has that the store does not is still added.
+ *   A header without one of the sides is, for that side, no header.
+ *   Omitted: a readable header that has both sides.
  * @returns {{book: {w, b}, gone: string[]}} `gone`: line ids that left the
  *   book here (their drills' queue entries go with them)
  */
-function mergeHead(R, full, head) {
+function mergeHead(R, full, head, hdr) {
   const book = {}, gone = [];
   for (const side of ["w", "b"]) {
     const f = (full && full[side]) || [];
     const h = ((head && head[side]) || []).filter(isLine);
     const copy = f.slice(0, HEAD);
     if (sameIds(copy, h)) { book[side] = f; continue; }
+    // no header, or none of this side in it: nothing to take out (M3 评审 P2)
+    const lost = hdr === null || (!!hdr && !Array.isArray(hdr[side]));
     // every line it could see taken out: that side was emptied (清空 in an
-    // older build), not trimmed to what it could not see
-    if (!h.length) { book[side] = []; gone.push(...f.map((l) => l.id)); continue; }
+    // older build), not trimmed to what it could not see — only when the
+    // header says so, `[]` on a header that could be read
+    if (!h.length && !lost) { book[side] = []; gone.push(...f.map((l) => l.id)); continue; }
     const inHead = new Set(h.map((l) => l.id)), inCopy = new Set(copy.map((l) => l.id));
+    // M3 评审 P3: 7.2–8.1 keep 400 lines a side by dropping the oldest. An
+    // older build's header (no `ln`) that is full and lacks only the copy's
+    // first lines lost them to that cap, not to an edit: they stay
+    let cap = 0;
+    if (hdr && !hdr.ln && h.length >= HEAD) {
+      while (cap < copy.length && !inHead.has(copy[cap].id)) cap++;
+      if (copy.slice(cap).some((l) => !inHead.has(l.id))) cap = 0;
+    }
     // taken out where the header could see it; kept past the copy
-    const kept = f.filter((l, i) => i >= HEAD || inHead.has(l.id));
+    const kept = f.filter((l, i) => lost || i < cap || i >= HEAD || inHead.has(l.id));
     const named = new Map(h.map((l) => [l.sans, l]));
     const r = R.addLines(kept, h.filter((l) => !inCopy.has(l.id)).map((l) => l.sans), (sans) => {
       const l = named.get(sans);
@@ -135,7 +155,9 @@ function mergeHead(R, full, head) {
  *     header says the store held more (`ln`): the lines past the copy are
  *     not in reach this launch.
  * @param {object} R ChessRepertoire
- * @param {{header: object|null, head: {w, b}, stored: object[], shards: object[], newer?: boolean}} o
+ * @param {{header: object|null, head: {w, b}, stored: object[], shards: object[], newer?: boolean, lost?: boolean}} o
+ *   `lost`: the main bundle could not read the header this session (persist.js
+ *   quarantined it) — the lines it holds are not the header's (M3 评审 P2)
  * @returns {{book: {w, b}, gone: string[], from: "head"|"idb"|"shards", short: boolean}}
  */
 function pick(R, o) {
@@ -148,7 +170,7 @@ function pick(R, o) {
     const n = head.w.length + head.b.length;
     return { book: head, gone: [], from, short: Number(h.ln) > n };
   }
-  const r = mergeHead(R, bookOf([...(from === "idb" ? st : sh).values()]), head);
+  const r = mergeHead(R, bookOf([...(from === "idb" ? st : sh).values()]), head, o.lost || !o.header ? null : h);
   return { book: r.book, gone: r.gone, from, short: false };
 }
 

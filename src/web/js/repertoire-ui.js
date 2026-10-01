@@ -302,7 +302,14 @@ export function createRepertoireUI(d) {
       names: () => (ctrl ? ctrl.shardNames() : null),
       read: (name) => (ctrl ? ctrl.shardText(name) : null),
       restore: (texts) => ready.then((c) => c && c.restoreShards(texts)),
-      clear: () => { if (ctrl) ctrl.clear(); },
+      // 清除全部存档: the session's book too (the library's rule), and before
+      // the chunk has booted its two databases by name — left alone, the
+      // boot would read them back (M3 评审 P2)
+      clear: () => {
+        store.session.repertoire = { w: [], b: [] };
+        if (ctrl) ctrl.clear();
+        else try { for (const n of ["chessboard.repertoire", "chessboard.replines"]) indexedDB.deleteDatabase(n); } catch (_) { /* none here */ }
+      },
     }, "rep");
   }
   if (typeof window !== "undefined" && window.__chess) window.__chess.rep = () => ctrl;

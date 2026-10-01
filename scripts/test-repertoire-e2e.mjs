@@ -883,6 +883,55 @@ let big = null;
   await ctx.close();
 }
 
+// --- 13. M3 评审 P2：头读不出来不丢线；分块还没启动时「清除全部存档」也清两个库 -------------------
+{
+  const LINES = treeLines(450, 9);
+  const ctx = await context({ view: "library", book: null });
+  const { page, errs } = await open(ctx);
+  await importWhite(page, cacheFile("rep-e2e-450.pgn", pgnOfLines(LINES)));
+  let h = await waitFor(page, header, (x) => x && x.ln === 450, 20000);
+  const lines450 = async () => { const x = await waitFor(page, idbRecords, (v) => v && v.lines && v.lines.length >= 450, 5000); return bookOfRows(x && x.lines).w; };
+  assert(h && h.w.length === 400 && (await lines450()).length === 450, "导入 450 条：头上 400 条，库里 450 条");
+  const good = JSON.stringify(h);
+  // the header becomes unreadable (a truncated write): persist.js quarantines it
+  await page.evaluate((g) => localStorage.setItem("chess.v1.repertoire", g.slice(0, 200)), good);
+  await page.reload();
+  await ready(page);
+  h = await waitFor(page, header, (x) => x && x.ln === 450, 5000);
+  let got = await lines450();
+  const quarantined = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.quarantine") || "[]").some((e) => e.name === "repertoire"));
+  assert(got.length === 450 && got.map((l) => l.sans).join("|") === LINES.join("|") && /450/.test(await page.textContent("#rep-meta")),
+    "头读不出来（被隔离）重启：库里 450 条一条不删，书里也是 450 条", JSON.stringify({ idb: got.length, meta: await page.textContent("#rep-meta"), quarantined }));
+  assert(quarantined && h && h.ln === 450 && h.w.length === 400, "……坏的头进了隔离区，头按库里的书重写（400 条、ln 450）", JSON.stringify(h && { ln: h.ln, w: h.w.length }));
+  // the old header put back (from the quarantine): nothing changes
+  await page.evaluate((g) => localStorage.setItem("chess.v1.repertoire", g), good);
+  await page.reload();
+  await ready(page);
+  got = await lines450();
+  assert(got.length === 450 && (await header(page)).ln === 450, "把原来的头放回去再重启：还是 450 条", String(got.length));
+  // 清除全部存档 while chunk-rep.js is still on its way: the two databases go by name
+  let release;
+  const held = new Promise((r) => { release = r; });
+  await page.route("**/js/chunk-rep.js", async (route) => { await held; await route.continue(); });
+  await page.reload();
+  await page.waitForFunction(() => window.__chess && window.__chess.rep, null, { timeout: 20000 });
+  await page.click("#pick-cancel", { timeout: 1000 }).catch(() => {});
+  const booted = await page.evaluate(() => !!window.__chess.rep());
+  await clickHidden(page, "clear-save");
+  await page.click("#confirm-ok");
+  await page.waitForTimeout(500);
+  const dbs = await page.evaluate(async () => (await indexedDB.databases()).map((x) => x.name).filter((n) => /^chessboard\.rep/.test(n)));
+  assert(!booted && dbs.length === 0, "分块还没启动时清除全部存档：chessboard.repertoire 与 chessboard.replines 都删掉了", JSON.stringify({ booted, dbs }));
+  release();
+  await ready(page);
+  const after = await idbRecords(page);
+  assert(after && !(after.rows || []).length && !(after.lines || []).length && !(await page.evaluate(() => window.__chess.rep().records().size)),
+    "……分块随后启动：没有线、没有记录（不从库里读回来）", JSON.stringify(after && { rows: (after.rows || []).length, lines: (after.lines || []).length }));
+  await page.unroute("**/js/chunk-rep.js");
+  assert(errs.length === 0, "没有页面异常", errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }

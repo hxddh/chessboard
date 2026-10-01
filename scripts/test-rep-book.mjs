@@ -398,6 +398,35 @@ const book = (w, b) => ({ w: R.addLines([], w || [], null).lines, b: R.addLines(
   assert(L.pick(R, { header: { v: 1 }, head: copy, stored: [], shards: [] }).short === false, "8.1 / 8.0 的头（没有 ln）：头就是整本书");
   const lfp = L.pick(R, { header: { lf: 1 }, head: cut, stored: rows0, shards: [] });
   assert(lfp.from === "head" && lfp.book === cut, "没有 IndexedDB 的会话把整本书写在头上（lf）：以头为准，不叠旧的 IndexedDB");
+  // M3 评审 P2：头读不出来 / 没有了——主包看到的空书不是谁清空了它
+  const none = { w: [], b: [] };
+  for (const [what, o] of [["头读不出来（null）", { header: null }], ["头没了（undefined）", { header: undefined }],
+    ["persist.js 隔离了头（lost），分块启动前又写了一份没有 ln 的", { header: { v: 1, w: [], b: [] }, lost: true }]]) {
+    const r = L.pick(R, Object.assign({ head: none, stored: rows0, shards: [] }, o));
+    assert(r.from === "idb" && r.book.w.length === 1000 && r.book.b.length === 3 && !r.gone.length, what + "：存着的 1003 条一条不删",
+      JSON.stringify({ from: r.from, w: r.book.w.length, b: r.book.b.length, gone: r.gone.length }));
+  }
+  const lostAdd = L.pick(R, { header: null, lost: true, head: { w: R.addLines([], ["d4 d5 c4"], null).lines, b: [] }, stored: rows0, shards: [] });
+  assert(lostAdd.book.w.length === 1001 && lostAdd.book.w.some((l) => l.sans === "d4 d5 c4") && lostAdd.book.b.length === 3 && !lostAdd.gone.length,
+    "头读不出来时分块启动前加的一条：加进去，别的不删", JSON.stringify({ w: lostAdd.book.w.length, gone: lostAdd.gone.length }));
+  const noSide = L.mergeHead(R, many, { w: [], b: copy.b }, { v: 1, b: copy.b });
+  assert(noSide.book.w.length === 1000 && !noSide.gone.length, "头上根本没有执白这一项（不是 []）：不算清空");
+  assert(!L.mergeHead(R, many, { w: [], b: copy.b }, { v: 1, w: [], b: copy.b }).book.w.length, "头上明写着执白 []：照旧算清空（老版本的清空、8.2 分块启动前的清空）");
+  // M3 评审 P3：8.1 的 400 条上限挤掉最早的线，不是删
+  const evict = (k, hdr) => {
+    const h = { w: copy.w.slice(k).concat(R.addLines([], Array.from({ length: k }, (_, i) => "c4 e5 Nc3 N" + i), null).lines), b: copy.b };
+    return L.mergeHead(R, many, h, Object.assign({ v: 1, db: 2 }, hdr, h));
+  };
+  const ev1 = evict(1);
+  assert(ev1.book.w.length === 1001 && ev1.book.w[0].id === many.w[0].id && !ev1.gone.length, "8.1 往满了的 400 条里加一条：被上限挤掉的第一条还在（gone 为空）",
+    JSON.stringify({ n: ev1.book.w.length, gone: ev1.gone }));
+  const ev3 = evict(3);
+  assert(ev3.book.w.length === 1003 && !ev3.gone.length, "加三条、挤掉最早的三条：三条都还在");
+  const ev8 = evict(1, { ln: 1003 });
+  assert(ev8.gone.length === 1 && ev8.gone[0] === many.w[0].id, "8.2 自己写的头（有 ln）：少了第一条就是拿掉了");
+  const mid = { w: copy.w.slice(1).filter((l) => l.id !== many.w[50].id).concat(R.addLines([], ["c4 e5 Nc3 Nf6", "c4 e5 Nc3 Nc6"], null).lines), b: copy.b };
+  const evm = L.mergeHead(R, many, mid, Object.assign({ v: 1 }, mid));
+  assert(JSON.stringify(evm.gone) === JSON.stringify([many.w[0].id, many.w[50].id]), "少的不只是最前面的（中间也拿掉了一条）：照旧都算拿掉", JSON.stringify(evm.gone));
 
   // 启动（rep-page.js）：真的 boot，假的 IndexedDB / 本机存储
   const boot2 = async (o) => {

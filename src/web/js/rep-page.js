@@ -87,6 +87,11 @@ async function bootRepertoire(d) {
   let backend = d.repBackend || (await openRepDb(typeof indexedDB !== "undefined" ? indexedDB : null)) || memoryRep();
   const raw = Persist.get("repertoire");
   const header = readHeader(raw);
+  // M3 评审 P2: the main bundle could not read the header (persist.js
+  // quarantined it), so its lines are not the book's — they take nothing
+  // out of the stored lines (rep-lines.js pick), and the header is written
+  // afresh from the store once this boot is done
+  const lost = (!header && !!raw) || !!(Persist.corruptKeys && Persist.corruptKeys().includes("repertoire"));
   const book = () => ({ w: store.session.repertoire.w || [], b: store.session.repertoire.b || [] });
   let warned = false;
   const warnOnce = (e) => { if (warned) return; warned = true; toast(tf("rep.saveFailed", [(e && e.name) || ""]), "fault"); };
@@ -109,7 +114,7 @@ async function bootRepertoire(d) {
   let shards = null, shardLines = [];
   let hold = false;
   if ((header && header.db === 2 && (memory || newer || stored.length < Number(header.n))) ||
-      (header && !header.lf && Number(header.ln) > storedLines.length)) {
+      (header && !header.lf && Number(header.ln) > storedLines.length) || (lost && !storedLines.length)) {
     const texts = await Persist.readBulk("rep");
     // M3 评审: a native store that is there but could not be read this time
     // (not "there is none"): the cards may be exactly what it holds. Nothing
@@ -134,7 +139,7 @@ async function bootRepertoire(d) {
   // awaits: an edit made while the reads above were out went into the
   // header's lines (book(), the main bundle's) and is laid over the stored
   // book with them (rep-lines.js mergeHead).
-  const picked = L.pick(R, { header, head: book(), stored: storedLines, shards: shardLines, newer });
+  const picked = L.pick(R, { header, head: book(), stored: storedLines, shards: shardLines, newer, lost });
   if (picked.from !== "head") {
     store.session.repertoire.w = picked.book.w;
     store.session.repertoire.b = picked.book.b;
