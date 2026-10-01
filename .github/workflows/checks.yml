@@ -325,7 +325,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # src/main.zig and src/runner.zig, compiled and their tests run, on every
+  # src/*.zig (main.zig, the files it imports since v8-2-plan F2, and
+  # runner.zig), compiled and their tests run, on every
   # PR — not only at release time. Until 6.0 the Zig side had no PR-time
   # CI at all, and 5.0–5.2 shipped three versions with dead file dialogs and
   # a dead Escape key from exactly that blind spot (v6-plan §1.2, Q0.2).

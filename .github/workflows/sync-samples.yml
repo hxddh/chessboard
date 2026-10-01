@@ -1,6 +1,6 @@
 # Real responses for the C2 sync parsers (v8-0-plan C2, v8-1-plan T4).
 #
-# The app's native layer (src/main.zig chess.fetchGames) talks to two public
+# The app's native layer (src/sync.zig chess.fetchGames) talks to two public
 # endpoints; its unit tests parse samples written from the sites' docs. This
 # workflow fetches the same URLs, with the same User-Agent, once, so the
 # samples can be checked against — and replaced by — what the sites really
@@ -48,7 +48,7 @@ jobs:
             echo "$1: $(cat "out/$1.status") $(wc -c < "out/$1.body" 2>/dev/null || echo 0) bytes"
             sleep 2 # both sites ask for requests one at a time
           }
-          # the exact URL chess.fetchGames builds (src/main.zig lichessUrl)
+          # the exact URL chess.fetchGames builds (src/sync.zig lichessUrl)
           get lichess "https://lichess.org/api/games/user/${LI_USER}?max=${MAX}&perfType=ultraBullet,bullet,blitz,rapid,classical,correspondence&clocks=true&evals=false&opening=false"
           # an incremental sync's URL (8.1 M2 review P2-3): since= a month ago,
           # oldest first — the answer should run in ascending UTCDate/UTCTime
