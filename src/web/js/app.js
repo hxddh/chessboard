@@ -5313,7 +5313,7 @@ import { loadChunk } from "./chunk.js";
     setFlipped: (v) => setFlipped(v),
     togglePanel: () => togglePanel(),
     setViewIndex: (n) => setViewIndex(n),
-    escapeKey: () => escapeKey(),
+    escapeKey: () => escapeKey(), go: (v) => Shell.go(v),   // v8-2-plan T4: 开局书 → the 棋谱库 page
   });
   const keysModal = NativeCmds.keysModal;
   const openKeyHelp = () => NativeCmds.openKeyHelp();

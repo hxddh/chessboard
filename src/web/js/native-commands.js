@@ -67,6 +67,8 @@ export const KEY_HELP = [
   { keys: ["Tab"], k: "keys.tab", in: ANY },
   { keys: ["Esc"], k: "keys.esc", in: ANY, cmd: ["view.escape"] },
   { keys: ["?"], k: "keys.help", in: ANY, cmd: ["help.keys"] },
+  // v8-2-plan T4: a menu item with no letter — the row is its accelerator and the gate's modes
+  { keys: [], k: "rep.title", in: ANY, cmd: ["view.repertoire"] },
 ];
 
 /**
@@ -95,6 +97,7 @@ export const MENU_ACCEL = {
   "game.hint": { key: "H", mods: ["primary", "shift"] },
   "game.flip": { key: "F", mods: ["primary"] },
   "view.panel": { key: "\\", mods: ["primary"] },
+  "view.repertoire": { key: "O", mods: ["primary", "shift"] },
   "view.prev": { key: "[", mods: ["primary"] },
   "view.next": { key: "]", mods: ["primary"] },
   "help.keys": { key: "/", mods: ["primary"] },
@@ -210,6 +213,12 @@ export function createNativeCommands(d) {
     "view.next": () => d.setViewIndex(store.game.viewIndex + 1),
     "view.escape": () => d.escapeKey(),
     "help.keys": () => openKeyHelp(),
+    // v8-2-plan T4: the 棋谱库 page, at its 我的开局书 section
+    "view.repertoire": () => {
+      d.go("library");
+      const sec = doc.getElementById("sec-rep");
+      if (sec) sec.scrollIntoView({ block: "start" });
+    },
   };
   /**
    * The gate the letter keys pass through, in front of the menu as well.
@@ -230,8 +239,9 @@ export function createNativeCommands(d) {
     }
     if (dialogOpen()) return;
     // …nor behind a page of the top level (v8-0-plan A1), as the letter keys
-    // are not: the board and its panel are inert under it (Codex on #86)
-    if (d.pageShown && d.pageShown()) return;
+    // are not: the board and its panel are inert under it (Codex on #86).
+    // 开局书 goes to a page itself (v8-2-plan T4), so a page is no obstacle
+    if (d.pageShown && d.pageShown() && id !== "view.repertoire") return;
     if (!commandModes(id).has(store.session.mode)) return;
     NATIVE_COMMANDS[id]();
   }
