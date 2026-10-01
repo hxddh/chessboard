@@ -22,15 +22,27 @@
  *     `.join(…)`ed (directly or after `.filter(…)` and the like), and an
  *     array that is `.push(…)`ed an i18n call and joined later in the block
  *     that declares it — "translated fragments joined".
- * An i18n call is `t(`, `tf(`, `tdot(`, `I18n.t(` / `ChessI18n.tf(`, and the
- * wrappers that only ever return a translation (CALLEES below).
+ *   · M3 评审: `+` next to a parenthesised expression with an i18n call in
+ *     it — `(a ? tf(x) : tf(y)) + " · "`, `n + " · " + (foe || t(x))`;
+ *     `.concat(` on an i18n call or with one among its arguments; and `+`
+ *     next to a name the same block declared straight from an i18n call —
+ *     `const res = won ? t("w") : t("l")` … `res + " · "`.
+ * An i18n call is `t(`, `tf(`, `tdot(`, `I18n.t(` / `ChessI18n.tf(`, the
+ * wrappers that only ever return a translation (CALLEES below), and a
+ * module's own: a function whose every `return` — or an arrow whose body —
+ * starts with an i18n call (M3 评审: app.js historyLabel, visual-modes.js
+ * sideW; "starts with", so a wrapper glued onto is still one).
+ * What the guard still cannot see: a translation that reaches the `+`
+ * through anything else — a parameter, a property, a name assigned later
+ * or from something that merely contains one (v8-2-plan §9 M3).
  *
  * It is a text check, so it errs towards reporting: a `+` next to t() that is
  * arithmetic would be flagged too — there is none, and there should not be.
  */
 
 /** names whose call returns translated interface text */
-export const CALLEES = new Set(["t", "tf", "tdot", "sideName", "otherSideName", "diffName", "themeName"]);
+// `w`: trainer/visual-modes.js's table of its own sentences (M3 评审)
+export const CALLEES = new Set(["t", "tf", "tdot", "sideName", "otherSideName", "diffName", "themeName", "w"]);
 const I18N_OBJECTS = new Set(["I18n", "ChessI18n"]);
 const REGEX_AFTER_WORD = new Set(["return", "typeof", "case", "do", "else", "in", "of", "new", "delete", "void", "throw", "instanceof", "yield", "await"]);
 
@@ -140,12 +152,12 @@ function closer(toks, open) {
   return -1;
 }
 
-/** the [start, end] token span of every i18n call in `toks` */
-function i18nCalls(toks) {
+/** the [start, end] token span of every i18n call in `toks`; `own`: the module's own wrappers */
+function i18nCalls(toks, own) {
   const calls = [];
   for (let k = 0; k < toks.length - 1; k++) {
     const tk = toks[k];
-    if (tk.k !== "id" || !CALLEES.has(tk.v) || toks[k + 1].v !== "(") continue;
+    if (tk.k !== "id" || !(CALLEES.has(tk.v) || (own && own.has(tk.v))) || toks[k + 1].v !== "(") continue;
     const before = toks[k - 1];
     let start = k;
     if (before && before.k === "p" && (before.v === "." || before.v === "?.")) {
@@ -162,6 +174,70 @@ function i18nCalls(toks) {
 
 const lineOf = (src, at) => src.slice(0, at).split("\n").length;
 
+/** Is toks[j] the start of an i18n call (in `calls`) that spans exactly to `e` (or to anything, e omitted)? */
+const callAt = (calls, j, e) => calls.some(([s, ce]) => s === j && (e == null || ce === e));
+
+/**
+ * The module's own wrappers (M3 评审): `function f(…) { … return t(…); }`
+ * with every `return` of its own starting with an i18n call, and
+ * `const f = (…) => t(…)`.
+ * Found again with each one known, until no more turn up (sideW calls w).
+ */
+function ownCallees(toks) {
+  const own = new Set();
+  for (let grew = true; grew;) {
+    grew = false;
+    const calls = i18nCalls(toks, own);
+    for (let k = 0; k < toks.length - 3; k++) {
+      const tk = toks[k];
+      if (tk.k !== "id" || own.has(tk.v) || CALLEES.has(tk.v)) continue;
+      let body = -1;
+      if (toks[k - 1] && toks[k - 1].v === "function" && toks[k + 1].v === "(") {
+        const pe = closer(toks, k + 1);
+        if (pe > 0 && toks[pe + 1] && toks[pe + 1].v === "{") body = pe + 1;
+      } else if (toks[k - 1] && /^(const|let|var)$/.test(toks[k - 1].v) && toks[k + 1].v === "=") {
+        let j = k + 2;
+        if (toks[j] && toks[j].v === "(") j = closer(toks, j) + 1;
+        else if (toks[j] && toks[j].k === "id") j++;
+        if (!(j > k + 2 && toks[j] && toks[j].v === "=>")) continue;
+        // an expression body: the call is the whole of it
+        if (toks[j + 1] && toks[j + 1].v !== "{") {
+          if (callAt(calls, j + 1)) { own.add(tk.v); grew = true; }
+          continue;
+        }
+        body = j + 1;
+      }
+      if (body < 0) continue;
+      const be = closer(toks, body);
+      let returns = 0, all = true;
+      for (let j = body + 1, depth = 0; j < be; j++) {
+        const v = toks[j].k === "p" ? toks[j].v : "";
+        if (v === "(" || v === "[" || v === "{" || v === "${") depth++;
+        else if (v === ")" || v === "]" || v === "}" || v === "}$") depth--;
+        // a nested function's returns are its own
+        if (toks[j].v === "function" || v === "=>") { all = false; break; }
+        if (toks[j].k === "id" && toks[j].v === "return") {
+          returns++;
+          if (!callAt(calls, j + 1)) { all = false; break; }
+        }
+      }
+      if (returns && all) { own.add(tk.v); grew = true; }
+    }
+  }
+  return own;
+}
+
+/** Does the span (a, b) hold an i18n call at its own top level (not inside another call's brackets)? */
+function topCall(toks, calls, a, b) {
+  for (let j = a, depth = 0; j < b; j++) {
+    const v = toks[j].k === "p" ? toks[j].v : "";
+    if (depth === 0 && callAt(calls, j)) return true;
+    if (v === "(" || v === "[" || v === "{" || v === "${") depth++;
+    else if (v === ")" || v === "]" || v === "}" || v === "}$") depth--;
+  }
+  return false;
+}
+
 /**
  * Every place in `src` (one module's text) where translated text is glued.
  * @returns {Array<{line:number, kind:string, text:string}>}
@@ -174,12 +250,53 @@ export function findConcats(src) {
     const line = lineOf(src, at);
     hits.push({ line, kind, text: src.split("\n")[line - 1].trim() });
   };
-  const calls = i18nCalls(toks);
+  const calls = i18nCalls(toks, ownCallees(toks));
+  const plus = (tk) => tk && tk.k === "p" && (tk.v === "+" || tk.v === "+=");
   for (const [s, e] of calls) {
     const before = toks[s - 1], after = toks[e + 1];
     if (before && before.k === "p" && (before.v === "+" || before.v === "+=")) report(toks[s].at, "+");
     else if (after && after.k === "p" && after.v === "+") report(toks[s].at, "+");
     else if (toks[s].tpl) report(toks[s].at, "${}");
+  }
+  // M3 评审: `(… t(…) …) + x` / `x + (… t(…) …)` — a group, not a call's
+  // own parentheses — and `.concat(` with an i18n call on either side
+  for (let k = 0; k < toks.length; k++) {
+    const tk = toks[k];
+    if (tk.k === "p" && tk.v === "(") {
+      const p = toks[k - 1];
+      const grouping = !p || (p.k === "p" && !/^[)\]}]$/.test(p.v) && p.v !== "}$") || (p.k === "id" && REGEX_AFTER_WORD.has(p.v));
+      if (!grouping) continue;
+      const e = closer(toks, k);
+      if (e > 0 && (plus(p) || (toks[e + 1] && toks[e + 1].v === "+")) && topCall(toks, calls, k + 1, e)) report(tk.at, "+");
+    }
+    if (tk.k === "p" && tk.v === "." && toks[k + 1] && toks[k + 1].v === "concat" && toks[k + 2] && toks[k + 2].v === "(") {
+      const e = closer(toks, k + 2);
+      if (calls.some(([, ce]) => ce === k - 1) || (e > 0 && topCall(toks, calls, k + 3, e))) report(tk.at, "concat");
+    }
+  }
+  // M3 评审: a name the block declared straight from an i18n call, glued:
+  // `const res = won ? t("w") : t("l")` … `res + " · "`. The initializer's
+  // own top level has the call (`f(t(x))` is f's business); the name is
+  // followed until its block closes
+  for (let k = 1; k < toks.length - 2; k++) {
+    if (!/^(const|let|var)$/.test(toks[k - 1].v) || toks[k].k !== "id" || toks[k + 1].v !== "=") continue;
+    let ie = k + 2;
+    for (let depth = 0; ie < toks.length; ie++) {
+      const v = toks[ie].k === "p" ? toks[ie].v : "";
+      if (depth === 0 && (v === ";" || v === "," || v === ")" || v === "}" || v === "]")) break;
+      if (v === "(" || v === "[" || v === "{" || v === "${") depth++;
+      else if (v === ")" || v === "]" || v === "}" || v === "}$") depth--;
+    }
+    if (toks[k + 2].v === "(" || !topCall(toks, calls, k + 2, ie)) continue;
+    const name = toks[k].v;
+    for (let j = ie, depth = 0; j < toks.length; j++) {
+      const v = toks[j].k === "p" ? toks[j].v : "";
+      if (v === "(" || v === "[" || v === "{" || v === "${") depth++;
+      else if (v === ")" || v === "]" || v === "}" || v === "}$") { if (--depth < 0) break; }
+      if (toks[j].k !== "id" || toks[j].v !== name || (toks[j - 1] && /^\.|\?\.$/.test(toks[j - 1].v))) continue;
+      if (toks[j + 1] && /^[.([]$|^\?\.$/.test(toks[j + 1].v)) continue;
+      if (plus(toks[j - 1]) || plus(toks[j + 1])) report(toks[j].at, "+");
+    }
   }
   // [ …t(…)… ].join(  and  xs.push(…t(…)…) … xs.join(  — also through a
   // chain in between: `[t("a"), x].filter(Boolean).join(" · ")`. A join
@@ -246,5 +363,5 @@ export function findConcats(src) {
 export function callEnds(src) {
   src = src.replace(/\r\n/g, "\n");
   const toks = lex(src);
-  return i18nCalls(toks).map(([, e]) => toks[e].at + 1);
+  return i18nCalls(toks, ownCallees(toks)).map(([, e]) => toks[e].at + 1);
 }

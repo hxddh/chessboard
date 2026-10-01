@@ -4492,7 +4492,7 @@ import { loadChunk } from "./chunk.js";
     const games = st.games || [];
     const last = games[games.length - 1];
     if (last) {
-      line(t("idle.last"), historyLabel(last) + " · " + historyWhen(last.t));
+      line(t("idle.last"), tdot(historyLabel(last), historyWhen(last.t)));
       const mine = games.filter((g) => g.diff === store.session.difficulty);
       const w = mine.filter((g) => g.result === "win").length;
       const l = mine.filter((g) => g.result === "loss").length;

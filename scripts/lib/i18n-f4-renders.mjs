@@ -139,6 +139,18 @@ export const F4_RENDERS = [
     "我的开局书 · 执黑", "My repertoire · Black", "自分の定跡書 · 黒"],
   ["lib.analysedQueued", (t, tf, tdot, diff) => tdot(tf("lib.analysed", [5]), tf("lib.queued", [2])),
     "已分析 5 局 · 待分析 2 局", "5 analysed · 2 queued", "解析済み 5 局 · 解析待ち 2 局"],
+  // M3 评审: the four sites F4's guard did not see (library-ui.js libraryLabel,
+  // app.js 「上一盘」, trainer/puzzles.js's solved card, repertoire-ui.js drills)
+  ["lib.label", (t, tf, tdot, diff) => tdot(t("hist.win"), "rival" || t("lib.unknownFoe"), !"w" && "me"),
+    "胜 · rival", "Win · rival", "勝ち · rival"],
+  ["lib.labelNoSide", (t, tf, tdot, diff) => tdot(t("hist.draw"), "" || t("lib.unknownFoe"), !"" && "hxddh"),
+    "和 · 对手不详 · hxddh", "Draw · unknown opponent · hxddh", "引分 · 対戦相手不明 · hxddh"],
+  ["idle.last", (t, tf, tdot, diff) => tdot(tdot(t("hist.win"), t("diff.normal"), t("hist.black")), tf("hist.todayAt", ["09:41"])),
+    "胜 · 中级 · 执黑 · 今天 09:41", "Win · Intermediate · as Black · today 09:41", "勝ち · 中級 · 黒番 · 今日 09:41"],
+  ["pz.fb.sub", (t, tf, tdot, diff) => tdot(t("pz.doneMate"), "#12", ""),
+    "解出 · #12", "Solved · #12", "正解 · #12"],
+  ["rep.drillName", (t, tf, tdot, diff) => tf("ui.pair", ["C20", t("rep.unnamed")]),
+    "C20 自己的线", "C20 Your own line", "C20 自分の変化"],
   // the review picture's wider separator (report.js)
   ["rv.dot", (t, tf, tdot, diff) => ["Italian Game", tf("mm.plies", [40])].join(t("rv.dot")),
     "Italian Game  ·  40 着", "Italian Game  ·  40 moves", "Italian Game  ·  40 手"],

@@ -342,14 +342,18 @@ export function createRepertoireUI(d) {
    */
   function drills(side) {
     const key = side === "b" ? "b" : "w";
-    return linesOf(key).map((l) => ({
-      id: l.id + (key === "b" ? ":b" : ""),
-      cat: "rep",
-      side: key === "b" ? "b" : undefined,
-      eco: l.eco || "",
-      name: (l.eco ? l.eco + " " : "") + (localName(l.eco, l.name) || t("rep.unnamed")),
-      line: l.sans.split(" "),
-    }));
+    return linesOf(key).map((l) => {
+      const nm = localName(l.eco, l.name) || t("rep.unnamed");
+      return {
+        id: l.id + (key === "b" ? ":b" : ""),
+        cat: "rep",
+        side: key === "b" ? "b" : undefined,
+        eco: l.eco || "",
+        // the ECO code before the name (M3 评审: a pair, not glued)
+        name: l.eco ? tf("ui.pair", [l.eco, nm]) : nm,
+        line: l.sans.split(" "),
+      };
+    });
   }
 
   /**

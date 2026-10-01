@@ -4606,8 +4606,13 @@ for (const lang of CONTENT_LANGS) {
     const { findConcats, callEnds } = await import("./lib/i18n-concat.mjs");
     const { F4_RENDERS } = await import("./lib/i18n-f4-renders.mjs");
     // Every entry here is a place that may still glue translated text, with
-    // the reason it may. There are none: keep it that way, or say why.
-    const ALLOWED = [];
+    // the reason it may. Keep it short, and say why.
+    const ALLOWED = [
+      // the row's memo key (reconcile): compared, never shown
+      'library-page.js: (g) => [store.ui.langId, g.src === "local" ? localLabel(g) : d.libraryLabel(g) + LibraryQuery.siteOf(g), subOf(g),',
+      // a list entry's tick, number and length around the puzzle's name: marks, not words
+      'trainer/puzzles.js: b.textContent = (store.session.puzzleState.solved[p.id] ? "✓ " : "") + (i + 1) + ". " + puzzleName(p) + (len && "  " + len);',
+    ];
     const hits = [];
     for (const [file, text] of WEB_MODULES) {
       for (const h of findConcats(text)) {
@@ -4625,11 +4630,19 @@ for (const lang of CONTENT_LANGS) {
       'x = [t("a"), n].join(" · ");', 'x = [n, tf("a", [1])].filter(Boolean).join(" · ");',
       'const ps = [];\nps.push(t("a"));\nx = ps.join(" · ");', 'x = I18n.t("a") + n;',
       'x = sideName(s) + " · " + n;', 'x = tdot(a, b) + "…";',
+      // M3 评审: a group with a translation in it, .concat, a name taken
+      // straight from one, a module's own wrapper (and trainer/visual-modes.js's w)
+      'x = (a ? tf("a", [1]) : tf("b", [2])) + " · " + n;', 'x = res + " · " + (foe || t("a"));', 'x = t("a").concat(n);',
+      'x = n.concat(" · ", t("a"));', 'function f() { const res = won ? t("w") : t("l");\n  return res + " · " + n; }',
+      'function lab(r) { return tdot(t("a"), r); }\nx = lab(r) + " · " + n;', 'const sw = (c) => w(c);\nx = sw("b") + " " + n;',
+      'x = w("nth", [1, 2]) + " · " + n;',
     ];
     const green = [
       'x = "t(\\"a\\") + n";', '// t("a") + n', 'x = /t\\("a"\\) \\+/.test(s);', 'x = tf("a", [n + 1]);',
       'x = o.t("a") + n;', 'x = tdot(t("a"), n);', 'x = [t("a"), n].join(t("ui.dot"));',
       'function f() { const ls = [t("a")]; g(ls); }\nfunction g(ls) { return ls.join("\\n"); }',
+      'x = (n + 1) + " · " + m;', 'const res = f(t("a"));\nx = res + n;', 'const res = t("a");\nx = res.length + 1;',
+      'function f() { const res = t("a"); }\nfunction g() { return res + n; }', 'x = [a].concat(b);',
     ];
     const crlf = (s) => s.replace(/\n/g, "\r\n");
     assert(red.every((s) => findConcats(s).length > 0 && findConcats(crlf(s)).length > 0),

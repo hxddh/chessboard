@@ -795,7 +795,7 @@ export function createLibraryUI(d) {
       : (g.result || "*");
     const me = g.side === "b" ? g.black : g.white;
     const foe = g.side === "b" ? g.white : g.black;
-    return res + " · " + (foe || t("lib.unknownFoe")) + (g.side ? "" : " · " + (me || ""));
+    return tdot(res, foe || t("lib.unknownFoe"), !g.side && me);
   }
 
   /**

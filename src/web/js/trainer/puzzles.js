@@ -94,7 +94,7 @@ export function createPuzzlesUI(d) {
   // v8-2-plan T2: 看 N 步后 and 盲走收官, beside the modes above — the door
   // (trainer/visual.js); the modes themselves are chunk-visual.js
   const Vis = createVisual({
-    ...Book, ...Rating, store, t, tf, el, avail, setText, sync, toast, Audio2, Chess, ChessRating,
+    ...Book, ...Rating, store, t, tf, tdot, el, avail, setText, sync, toast, Audio2, Chess, ChessRating,
     seatPuzzle, puzzleMove, puzzleHumanSide, startRun: Modes.startRun, finishRun: Modes.finishRun,
   });
 
@@ -554,7 +554,7 @@ export function createPuzzlesUI(d) {
     const clean = store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer;
     store.session.pzStreak = clean ? store.session.pzStreak + 1 : 0;
     store.session.puzzle.fb = { ok: true, head: clean ? t("pz.fb.best") : verb,
-      sub: (clean ? verb + " · " : "") + puzzleName(sp) + (why ? " · " + why : "") };
+      sub: tdot(clean ? verb : "", puzzleName(sp), why) };
     sync();
   }
 
