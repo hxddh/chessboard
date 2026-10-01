@@ -79,6 +79,17 @@
    "KRvKP.rtbz": "83c8d5a129868fbcfd61ff46c5c10d5a",
    "KRvKR.rtbw": "88cb37a24802cd708120e91569710667",
    "KRvKR.rtbz": "1f1e820be4700fcba83b900c231c1098"
+  },
+  "lichessTablebase": {
+   "endpoint": "https://tablebase.lichess.ovh/standard",
+   "checkedAt": "2026-09-30",
+   "asked": 59,
+   "over7": [
+    "kp-breakthrough"
+   ],
+   "rule": "category from the side to move; cursed-win and blessed-loss count as draws (fifty-move rule); maybe-* and unknown settle nothing",
+   "run": "github.com/hxddh/chessboard/actions/runs/36771239680 (verify-endgames.yml on main 1875072)",
+   "fromLog": "each lichess record is the run's log line (category, DTZ, moves; verdict read from the category); the run's artifact was not downloadable where this was written, and the log does not print precise_dtz or dtm, so they are left out. The next --online run replaces this block and the records whole."
   }
  },
  "items": [
@@ -94,7 +105,17 @@
     "Kc4",
     "Kd4",
     "Ke4"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 5,
+    "good": [
+     "Kc4",
+     "Kd4",
+     "Ke4"
+    ]
+   }
   },
   {
    "id": "kp-sixth",
@@ -107,7 +128,16 @@
    "good": [
     "Kc6",
     "Ke6"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 3,
+    "good": [
+     "Kc6",
+     "Ke6"
+    ]
+   }
   },
   {
    "id": "kp-tempo",
@@ -121,7 +151,17 @@
     "Kc5",
     "Ke5",
     "d4"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 1,
+    "good": [
+     "Kc5",
+     "Ke5",
+     "d4"
+    ]
+   }
   },
   {
    "id": "kp-far",
@@ -134,7 +174,16 @@
    "good": [
     "Kd2",
     "Kf2"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 9,
+    "good": [
+     "Kd2",
+     "Kf2"
+    ]
+   }
   },
   {
    "id": "kp-square",
@@ -146,7 +195,15 @@
    "verdict": "win",
    "good": [
     "a6"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 1,
+    "good": [
+     "a6"
+    ]
+   }
   },
   {
    "id": "kp-rookpawn",
@@ -159,7 +216,16 @@
    "good": [
     "Kb8",
     "a6"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 1,
+    "good": [
+     "Kb8",
+     "a6"
+    ]
+   }
   },
   {
    "id": "kp-opposition",
@@ -171,7 +237,15 @@
    "verdict": "win",
    "good": [
     "Ke6"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 3,
+    "good": [
+     "Ke6"
+    ]
+   }
   },
   {
    "id": "kp-race",
@@ -183,7 +257,15 @@
    "verdict": "win",
    "good": [
     "a6"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 1,
+    "good": [
+     "a6"
+    ]
+   }
   },
   {
    "id": "kp-outside",
@@ -206,7 +288,20 @@
      "mate": null,
      "pv": "1. Ke4 Ke6 2. a5 Kd6 3. Kf5 Kc7 4. Kxg5 Kd6 5. a6 Kc7"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 1,
+    "good": [
+     "Kc3",
+     "Kc4",
+     "Kd3",
+     "Ke3",
+     "Ke4",
+     "a5"
+    ]
+   }
   },
   {
    "id": "kp-protected",
@@ -229,7 +324,22 @@
      "mate": null,
      "pv": "1. Kg3 Kc7 2. Kh4 Kb8 3. Kxh5 Kc7 4. e5 Kd7 5. d6 Ke6"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 5,
+    "good": [
+     "Kf1",
+     "Kf2",
+     "Kf3",
+     "Kg1",
+     "Kg3",
+     "Kh1",
+     "Kh2",
+     "Kh3"
+    ]
+   }
   },
   {
    "id": "kp-breakthrough",
@@ -275,7 +385,20 @@
      "mate": null,
      "pv": "1. Ke4 Ke6 2. g5 Kf7 3. Kd5 Ke7 4. Ke5 Kf7 5. Kd6 Kg8"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 7,
+    "good": [
+     "Ke2",
+     "Ke3",
+     "Ke4",
+     "Kf2",
+     "Kg2",
+     "Kg3"
+    ]
+   }
   },
   {
    "id": "rp-krk",
@@ -301,7 +424,29 @@
     "Rb1",
     "Rc1",
     "Rd1"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 23,
+    "good": [
+     "Kd1",
+     "Kd2",
+     "Ke2",
+     "Kf1",
+     "Kf2",
+     "Ra2",
+     "Ra3",
+     "Ra4",
+     "Ra5",
+     "Ra6",
+     "Ra7",
+     "Ra8+",
+     "Rb1",
+     "Rc1",
+     "Rd1"
+    ]
+   }
   },
   {
    "id": "rp-lucena",
@@ -324,7 +469,26 @@
      "mate": null,
      "pv": "1. Rd1+ Ke7 2. Rd4 Ke6 3. Kc7 Rc2+ 4. Kb6 Rb2+ 5. Kc6 Rb3"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 15,
+    "good": [
+     "Rb1",
+     "Rc3",
+     "Rc4",
+     "Rc5",
+     "Rc6",
+     "Rc7",
+     "Rc8+",
+     "Rd1+",
+     "Re1",
+     "Rf1",
+     "Rg1",
+     "Rh1"
+    ]
+   }
   },
   {
    "id": "rp-lucena2",
@@ -347,7 +511,28 @@
      "mate": null,
      "pv": "1. Ke8 Rd2 2. d8=Q Rxd8+"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 3,
+    "good": [
+     "Ke7",
+     "Ke8",
+     "Ra1",
+     "Rb1",
+     "Rd1",
+     "Re3",
+     "Re4",
+     "Re5",
+     "Re6",
+     "Re7+",
+     "Re8",
+     "Rf1",
+     "Rg1+",
+     "Rh1"
+    ]
+   }
   },
   {
    "id": "rp-cutoff",
@@ -370,7 +555,24 @@
      "mate": null,
      "pv": "1. d6 Kf6 2. Kc5 Ra7 3. Kb6 Rg7 4. Kc6 Rg2 5. Kc7 Rd2"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 1,
+    "good": [
+     "Kc4",
+     "Kc5",
+     "Re2",
+     "Re3",
+     "Re5",
+     "Re6+",
+     "Re7",
+     "Rf1",
+     "Rh1",
+     "d6"
+    ]
+   }
   },
   {
    "id": "rp-skewer",
@@ -393,7 +595,20 @@
      "mate": null,
      "pv": "1. Rh8 Ra2+ 2. Kf3 Ra3+ 3. Ke4 Ra4+ 4. Kd5 Ra5+ 5. Kc6 Ra6+"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 13,
+    "good": [
+     "Kf2",
+     "Kf3",
+     "Kg3",
+     "Kh2",
+     "Rg8",
+     "Rh8"
+    ]
+   }
   },
   {
    "id": "rp-behind",
@@ -405,7 +620,15 @@
    "verdict": "win",
    "good": [
     "Rd8"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 3,
+    "good": [
+     "Rd8"
+    ]
+   }
   },
   {
    "id": "rp-check",
@@ -417,7 +640,15 @@
    "verdict": "win",
    "good": [
     "Rc5+"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 9,
+    "good": [
+     "Rc5+"
+    ]
+   }
   },
   {
    "id": "rp-front",
@@ -429,7 +660,15 @@
    "verdict": "win",
    "good": [
     "Rf3"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 3,
+    "good": [
+     "Rf3"
+    ]
+   }
   },
   {
    "id": "rp-pin",
@@ -441,7 +680,15 @@
    "verdict": "win",
    "good": [
     "Ra2"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 3,
+    "good": [
+     "Ra2"
+    ]
+   }
   },
   {
    "id": "rp-dominate",
@@ -453,7 +700,15 @@
    "verdict": "win",
    "good": [
     "Rc5"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 21,
+    "good": [
+     "Rc5"
+    ]
+   }
   },
   {
    "id": "rp-skewer-b",
@@ -465,7 +720,15 @@
    "verdict": "win",
    "good": [
     "Rf6+"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 3,
+    "good": [
+     "Rf6+"
+    ]
+   }
   },
   {
    "id": "rp-pawns",
@@ -488,7 +751,16 @@
      "mate": null,
      "pv": "1. Kb4 Rb7+ 2. Kc5 Rc7+ 3. Kd6 Ra7 4. f7 Ra6+ 5. Kc5 Ra5+"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 7,
+    "good": [
+     "Kb3",
+     "Kb4"
+    ]
+   }
   },
   {
    "id": "mi-bb",
@@ -512,7 +784,27 @@
     "Bh7",
     "Ka2",
     "Kb2"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 33,
+    "good": [
+     "Ba2",
+     "Ba3",
+     "Bb2+",
+     "Bc2",
+     "Bd2",
+     "Bd3",
+     "Be3",
+     "Bg5",
+     "Bg6",
+     "Bh6",
+     "Bh7",
+     "Ka2",
+     "Kb2"
+    ]
+   }
   },
   {
    "id": "mi-bn",
@@ -534,7 +826,25 @@
     "Nb3",
     "Nd3+",
     "Ne2"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 59,
+    "good": [
+     "Ba2",
+     "Bc2",
+     "Bd3",
+     "Bg6",
+     "Bh7",
+     "Ka2",
+     "Kb2",
+     "Na2",
+     "Nb3",
+     "Nd3+",
+     "Ne2"
+    ]
+   }
   },
   {
    "id": "mi-bn-corner",
@@ -562,7 +872,31 @@
     "Ne2",
     "Nf3",
     "Nh3"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 43,
+    "good": [
+     "Ba6",
+     "Bb5",
+     "Bc4",
+     "Bd3",
+     "Be2",
+     "Bg2",
+     "Bh3",
+     "Ke5",
+     "Ke6",
+     "Ke7",
+     "Kf5",
+     "Kf7",
+     "Kg5",
+     "Kg6",
+     "Ne2",
+     "Nf3",
+     "Nh3"
+    ]
+   }
   },
   {
    "id": "mi-bp",
@@ -588,7 +922,29 @@
     "Kh1",
     "Kh2",
     "h6"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 1,
+    "good": [
+     "Ba5",
+     "Bb4",
+     "Bc1",
+     "Bc3+",
+     "Be1",
+     "Be3",
+     "Bf4",
+     "Bg5",
+     "Bh6",
+     "Kf1",
+     "Kf2",
+     "Kg2",
+     "Kh1",
+     "Kh2",
+     "h6"
+    ]
+   }
   },
   {
    "id": "mi-bp-run",
@@ -600,7 +956,15 @@
    "verdict": "win",
    "good": [
     "h5"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 1,
+    "good": [
+     "h5"
+    ]
+   }
   },
   {
    "id": "mi-np",
@@ -623,7 +987,26 @@
     "Nd1",
     "Nd5",
     "Ne2"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 7,
+    "good": [
+     "Kd1",
+     "Kd2",
+     "Ke2",
+     "Kf1",
+     "Kf2",
+     "Na2",
+     "Na4",
+     "Nb1",
+     "Nb5",
+     "Nd1",
+     "Nd5",
+     "Ne2"
+    ]
+   }
   },
   {
    "id": "mi-np-guard",
@@ -635,7 +1018,15 @@
    "verdict": "win",
    "good": [
     "Nf1"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 5,
+    "good": [
+     "Nf1"
+    ]
+   }
   },
   {
    "id": "mi-np-king",
@@ -647,7 +1038,15 @@
    "verdict": "win",
    "good": [
     "Ke4"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 5,
+    "good": [
+     "Ke4"
+    ]
+   }
   },
   {
    "id": "mi-n-stop",
@@ -659,7 +1058,15 @@
    "verdict": "draw",
    "good": [
     "Ne3+"
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Ne3+"
+    ]
+   }
   },
   {
    "id": "mi-n-stop2",
@@ -671,7 +1078,15 @@
    "verdict": "draw",
    "good": [
     "Kg2"
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Kg2"
+    ]
+   }
   },
   {
    "id": "mi-b-stop",
@@ -683,7 +1098,15 @@
    "verdict": "draw",
    "good": [
     "Ba3"
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Ba3"
+    ]
+   }
   },
   {
    "id": "mi-b-stop2",
@@ -695,7 +1118,15 @@
    "verdict": "draw",
    "good": [
     "Bd3"
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Bd3"
+    ]
+   }
   },
   {
    "id": "qu-kqk",
@@ -728,7 +1159,36 @@
     "Qf6",
     "Qg7",
     "Qh8+"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 13,
+    "good": [
+     "Kd1",
+     "Kd2",
+     "Ke2",
+     "Kf1",
+     "Kf2",
+     "Qa2",
+     "Qa3",
+     "Qa4+",
+     "Qa5",
+     "Qa6",
+     "Qa7",
+     "Qa8+",
+     "Qb1",
+     "Qb2",
+     "Qc1",
+     "Qc3",
+     "Qd1",
+     "Qd4",
+     "Qe5+",
+     "Qf6",
+     "Qg7",
+     "Qh8+"
+    ]
+   }
   },
   {
    "id": "qu-epawn",
@@ -741,7 +1201,16 @@
    "good": [
     "Qa6",
     "Qf8+"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 27,
+    "good": [
+     "Qa6",
+     "Qf8+"
+    ]
+   }
   },
   {
    "id": "qu-dpawn",
@@ -754,7 +1223,16 @@
    "good": [
     "Qa2+",
     "Qa4+"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 34,
+    "good": [
+     "Qa2+",
+     "Qa4+"
+    ]
+   }
   },
   {
    "id": "qu-apawn",
@@ -767,7 +1245,16 @@
    "good": [
     "Qb7+",
     "Qb8+"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 10,
+    "good": [
+     "Qb7+",
+     "Qb8+"
+    ]
+   }
   },
   {
    "id": "qu-cpawn",
@@ -779,7 +1266,15 @@
    "verdict": "win",
    "good": [
     "Qa1"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 7,
+    "good": [
+     "Qa1"
+    ]
+   }
   },
   {
    "id": "qu-fpawn",
@@ -791,7 +1286,15 @@
    "verdict": "win",
    "good": [
     "Qc4"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 10,
+    "good": [
+     "Qc4"
+    ]
+   }
   },
   {
    "id": "qu-qvr",
@@ -820,7 +1323,32 @@
     "Qg8",
     "Qh3",
     "Qh8+"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 51,
+    "good": [
+     "Ke2",
+     "Kf1",
+     "Kf2",
+     "Qa8",
+     "Qb7",
+     "Qb8",
+     "Qc1",
+     "Qc2",
+     "Qc3+",
+     "Qc4",
+     "Qc5+",
+     "Qc7",
+     "Qe8+",
+     "Qf8",
+     "Qg4",
+     "Qg8",
+     "Qh3",
+     "Qh8+"
+    ]
+   }
   },
   {
    "id": "qu-qvr-quiet",
@@ -832,7 +1360,15 @@
    "verdict": "win",
    "good": [
     "Qe8"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 53,
+    "good": [
+     "Qe8"
+    ]
+   }
   },
   {
    "id": "qu-qvb",
@@ -862,7 +1398,33 @@
     "Qg7",
     "Qh1",
     "Qh2+"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 21,
+    "good": [
+     "Kb1",
+     "Kb2",
+     "Qa7",
+     "Qb1",
+     "Qb6+",
+     "Qc1",
+     "Qd1+",
+     "Qd4+",
+     "Qe1",
+     "Qe3",
+     "Qf1",
+     "Qf2",
+     "Qg2",
+     "Qg3+",
+     "Qg5",
+     "Qg6",
+     "Qg7",
+     "Qh1",
+     "Qh2+"
+    ]
+   }
   },
   {
    "id": "qu-qvn",
@@ -892,7 +1454,33 @@
     "Qg8",
     "Qh1",
     "Qh2+"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 31,
+    "good": [
+     "Ka2",
+     "Kb1",
+     "Kb2",
+     "Qa7",
+     "Qb1",
+     "Qb6+",
+     "Qc1",
+     "Qd1+",
+     "Qe1",
+     "Qe3",
+     "Qf1",
+     "Qf2",
+     "Qg2",
+     "Qg3+",
+     "Qg4",
+     "Qg6",
+     "Qg8",
+     "Qh1",
+     "Qh2+"
+    ]
+   }
   },
   {
    "id": "qu-skewer",
@@ -905,7 +1493,16 @@
    "good": [
     "Qa1+",
     "Qb2+"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 3,
+    "good": [
+     "Qa1+",
+     "Qb2+"
+    ]
+   }
   },
   {
    "id": "qu-skewer2",
@@ -917,7 +1514,15 @@
    "verdict": "win",
    "good": [
     "Qa3+"
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 3,
+    "good": [
+     "Qa3+"
+    ]
+   }
   },
   {
    "id": "dr-philidor",
@@ -940,7 +1545,29 @@
      "mate": null,
      "pv": "1. Rb7 Kf4 2. Rb3 Ra1+ 3. Kf2 Ra2+ 4. Kf1 Rh2 5. Ke1 Rh1+"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Kd1",
+     "Kd2",
+     "Ke2",
+     "Kf1",
+     "Kf2",
+     "Rb1",
+     "Rb2",
+     "Rb4",
+     "Rb5+",
+     "Rb6",
+     "Rb7",
+     "Rc3",
+     "Re3",
+     "Rg3",
+     "Rh3"
+    ]
+   }
   },
   {
    "id": "dr-reti",
@@ -952,7 +1579,15 @@
    "verdict": "draw",
    "good": [
     "Kg7"
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Kg7"
+    ]
+   }
   },
   {
    "id": "dr-opposition",
@@ -964,7 +1599,15 @@
    "verdict": "draw",
    "good": [
     "Ke3"
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Ke3"
+    ]
+   }
   },
   {
    "id": "dr-corner",
@@ -976,7 +1619,15 @@
    "verdict": "draw",
    "good": [
     "Kc1"
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Kc1"
+    ]
+   }
   },
   {
    "id": "dr-wrongbishop",
@@ -990,7 +1641,17 @@
     "Kg1",
     "Kg2",
     "Kh2"
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Kg1",
+     "Kg2",
+     "Kh2"
+    ]
+   }
   },
   {
    "id": "dr-rvb",
@@ -1004,7 +1665,17 @@
     "Kf2",
     "Kg2",
     "Kh2"
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Kf2",
+     "Kg2",
+     "Kh2"
+    ]
+   }
   },
   {
    "id": "dr-rvn",
@@ -1017,7 +1688,16 @@
    "good": [
     "Kg1",
     "Nh2"
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Kg1",
+     "Nh2"
+    ]
+   }
   },
   {
    "id": "dr-qc",
@@ -1029,7 +1709,15 @@
    "verdict": "draw",
    "good": [
     "Kd7"
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Kd7"
+    ]
+   }
   },
   {
    "id": "dr-qa",
@@ -1041,7 +1729,15 @@
    "verdict": "draw",
    "good": [
     "Kb7"
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Kb7"
+    ]
+   }
   },
   {
    "id": "dr-kpvr",
@@ -1053,7 +1749,15 @@
    "verdict": "draw",
    "good": [
     "e5"
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "e5"
+    ]
+   }
   },
   {
    "id": "dr-apawn",
@@ -1076,7 +1780,20 @@
      "mate": null,
      "pv": "1. Ra6 Kf7 2. Kh2 Ke7 3. Ra8 Kf6 4. Ra6+ Ke5 5. Kg2 Kd5"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Kh2",
+     "Ra3",
+     "Ra4",
+     "Ra5",
+     "Ra6",
+     "Ra7+"
+    ]
+   }
   },
   {
    "id": "dr-vancura",
@@ -1099,7 +1816,24 @@
      "mate": null,
      "pv": "1. Rf5 Kg6 2. Rd5 Kf6 3. Ra5 Ke6 4. Rc5 Kd6 5. Rf5 Kc6"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Kh2",
+     "Rb3",
+     "Rc3",
+     "Rd3",
+     "Re3",
+     "Rf2",
+     "Rf4",
+     "Rf5",
+     "Rg3+",
+     "Rh3"
+    ]
+   }
   }
  ]
 }

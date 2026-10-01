@@ -110,6 +110,8 @@ import { LANG_IDS, FALLBACK_LANG, detectLang } from "./lang-ids.js";
       lessons: g["CHESS_LESSONS_" + sfx], puzzles: g["CHESS_PUZZLES_" + sfx],
       openings: g["CHESS_OPENINGS_" + sfx], ideas: g["CHESS_OPENING_IDEAS_" + sfx],
       classics: g["CHESS_CLASSICS_" + sfx],
+      // v8-2-plan T1: the advanced lessons carry their own words (trainer/lessons-adv.js)
+      lessonsAdv: g.CHESS_LESSONS_ADV && g.CHESS_LESSONS_ADV[id],
     };
   }
 

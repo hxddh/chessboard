@@ -2111,7 +2111,7 @@ import { loadChunk } from "./chunk.js";
     draw, el, gameLoadPgn, invalidateEngine, kingSquare, lessonText, moveSound, resetClocks,
     sanHistory, selectSquare, setSideTab, store, sync, t, taskText, tf, toast,
     confirmNative, maybeEngineTurn, puzzleMotif, saveSettings, syncAutoFlip,
-    practiceLeft: (L) => practiceLeft(L),
+    practiceLeft: (L) => practiceLeft(L), evalScalar: (e) => evalScalar(e), scanBudget: () => SCAN_BUDGET, sideName,
     puzzlesInCat: (cat) => puzzlesInCat(cat), startPuzzleAt: (cat, idx) => startPuzzleAt(cat, idx),
   });
   const {
@@ -2808,7 +2808,7 @@ import { loadChunk } from "./chunk.js";
   }
 
   // v8-0-plan F4/B5: the 我的 page's renderers (me-page.js)
-  const MePage = createMePage({ ACH, Icons, Progress, evalAch, libPlayedAt, loadStats, setSideTab, store, switchMode, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n), Endgames: LessonsUI.Endgames, startEndgame: (id) => LessonsUI.startEndgame(id) });
+  const MePage = createMePage({ ACH, Icons, Progress, evalAch, libPlayedAt, loadStats, setSideTab, store, switchMode, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n), Endgames: LessonsUI.Endgames, startEndgame: (id) => LessonsUI.startEndgame(id), Vis: PuzzlesUI.Vis });
   function renderTrends() { MePage.renderTrends(); }
   function renderAchievements() { MePage.renderAchievements(); }
   function renderRecordEntry() { MePage.renderRecordEntry(); }
@@ -2843,7 +2843,7 @@ import { loadChunk } from "./chunk.js";
       // wanting 463px of a 418px chip. The title is already spelled out on the
       // lesson card two centimetres away, in full, in a box that wraps. What
       // the chip can say without lying is which lesson you are in.
-      return store.session.learn.eg ? t("eg.camp") : t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost");
+      return store.session.learn.gs ? t("gs.part") : store.session.learn.eg ? t("eg.camp") : t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost");
     }
     if (store.session.mode === "puzzle") {
       if (!store.session.puzzle) return t("st.puzzle");
@@ -3301,7 +3301,7 @@ import { loadChunk } from "./chunk.js";
    */
   function renderStrips() {
     const people = stripPeople();
-    const bottom = store.game.flipped ? "b" : "w";
+    const bottom = BoardView.screenCell("a1").row ? "w" : "b"; // as drawn: a puzzle faces its side
     const mode = store.session.mode;
     // whose move: the trainer's position in the two teaching modes, the
     // position on the board otherwise
@@ -4649,7 +4649,7 @@ import { loadChunk } from "./chunk.js";
       return !!p && p.color === "w" && store.session.learn.g.turn() === "w" && (!task.only || p.type === task.only);
     }
     if (store.session.mode === "puzzle") {
-      if (!store.session.puzzle || store.session.puzzle.done) return false;
+      if (!store.session.puzzle || store.session.puzzle.done || store.session.puzzle.hidden) return false; // 盲走: no hint of the men
       const p = store.session.puzzle.g.get(sq);
       return !!p && p.color === puzzleHumanSide() && store.session.puzzle.g.turn() === p.color; // v8-0-plan B1: a black solver too
     }
@@ -4783,7 +4783,7 @@ import { loadChunk } from "./chunk.js";
   // wrapped so that the ones declared further down this file resolve when
   // they are called rather than when this runs.
   const A11y = createA11y({
-    doc: document, t, store, draw,
+    doc: document, t, store, draw, boardFlipped: () => BoardView.screenCell("a1").row === 0,
     viewGame: () => viewGame(),
     sanHistory: () => sanHistory(),
     statusText: () => statusText(),

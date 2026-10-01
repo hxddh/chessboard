@@ -156,8 +156,21 @@ class Online(unittest.TestCase):
         spec.loader.exec_module(mod)
         return mod
 
+    def unasked(self, V):
+        # the records as they were before any online run (M2: the file on
+        # disk now carries run 36771239680's answers), so that what this run
+        # wrote is told apart from what was there
+        with open(V.OUT, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        doc["tools"].pop("lichessTablebase", None)
+        for r in doc["items"]:
+            r.pop("lichess", None)
+        V.OUT = os.path.join(tempfile.mkdtemp(), "before.json")
+        V.write_doc(doc, V.OUT)
+
     def test_answers_are_written_as_they_come(self):
         V = self.load()
+        self.unasked(V)
         out = os.path.join(tempfile.mkdtemp(), "out.json")
         seen = []
 
@@ -201,6 +214,36 @@ class Online(unittest.TestCase):
         self.assertEqual(doc["tools"]["lichessTablebase"]["asked"], 2)
         self.assertNotIn("partial", doc["tools"]["lichessTablebase"])
 
+
+class OnFile(unittest.TestCase):
+    """What the offline run holds an item to (M2, v8-2-plan V2): a 5–7-man `tb` rests on the online answer."""
+
+    def test_the_basis_an_item_names(self):
+        V = Online.load(self)
+        it = lambda v, key=None, goal="win": {"id": "x", "goal": goal, "v": v, "key": key}
+        local = {"men": 4, "method": "tb", "verdict": "win", "good": ["Rc5+"]}
+        deep = {"men": 5, "method": "sf", "verdict": "win"}
+        told = dict(deep, lichess={"category": "win", "verdict": "win", "dtz": 15, "good": ["Rb1", "Rc3"]})
+        eight = {"men": 8, "method": "sf", "verdict": "win"}
+        self.assertEqual(V.on_file(it("tb"), local), [])
+        self.assertEqual(V.on_file(it("tb", ["Rc5+"]), local), [])
+        self.assertEqual(len(V.on_file(it("tb", ["Rc4"]), local)), 1)
+        self.assertEqual(len(V.on_file(it("sf"), local)), 1)          # ≤ 4 men: the local table, never the search
+        self.assertEqual(V.on_file(it("sf"), deep), [])
+        self.assertEqual(len(V.on_file(it("tb"), deep)), 1)           # 5 men, no answer: not `tb`
+        self.assertEqual(V.on_file(it("tb"), told), [])
+        self.assertEqual(V.on_file(it("sf"), told), [])               # an answer on file does not force the label
+        self.assertEqual(len(V.on_file(it("tb", ["Rb1"]), told)), 1)  # an only move is held to the online moves
+        self.assertEqual(len(V.on_file(it("tb", goal="draw"), told)), 2)
+        self.assertEqual(len(V.on_file(it("tb"), dict(told, lichess={"category": "maybe-win", "verdict": "unresolved"}))), 1)
+        self.assertEqual(len(V.on_file(it("tb"), dict(eight, lichess=told["lichess"]))), 1)   # over 7 men: no table
+        self.assertEqual(V.on_file(it("sf"), eight), [])
+
+    def test_the_file_on_disk(self):
+        # every item as recorded passes the check the offline run makes
+        V = Online.load(self)
+        for it in V.items():
+            self.assertEqual(V.on_file(it, RECORDS[it["id"]]), [], it["id"])
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

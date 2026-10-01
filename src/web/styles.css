@@ -3853,6 +3853,12 @@ span[data-icon] { display: inline-grid; place-items: center; }
    of its own; and a run's numbers sit in one row */
 #sec-puzzle > #pz-rating-curve { height: 40px; }
 .pz-run-stats { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+/* v8-2-plan T2: the answer field and its button, one row */
+.pz-vis-row { display: flex; gap: 8px; margin-top: 8px; }
+.pz-vis-row .text-input { flex: 1 1 0; min-width: 0; min-height: var(--ctl-h); }
+.pz-vis-row .tool-btn { height: var(--ctl-h); white-space: nowrap; }
+#pz-vis .lesson-controls { margin: 8px 0 0; }
+#pz-vis .lesson-controls:not(:has(> :not([hidden]))) { display: none; }
 /* the nudge's row with its one button hidden is still a box, and a flex
    gap is paid for every box — an empty one is not a block of the page */
 #sec-puzzle > .link-row:not(:has(> :not([hidden]))) { display: none; }

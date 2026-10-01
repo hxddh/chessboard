@@ -24,7 +24,7 @@ import { ChessProgressMetrics as Metrics } from "./progress-metrics.js";
 export function createMePage(d) {
   const {
     ACH, Icons, Progress, evalAch, libPlayedAt, loadStats, setSideTab, store, switchMode, t, tf,
-    Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName, Endgames, startEndgame,
+    Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName, Endgames, startEndgame, Vis,
   } = d;
 
   /**
@@ -479,6 +479,7 @@ export function createMePage(d) {
   return {
     renderTrends, renderAchievements, renderRecordEntry, renderEndgames,
     /** The page is opening (shell.js): draw it at the size it opens at. */
-    onShow: () => { invalidate(true); renderEndgames(); },
+    // …and v8-2-plan T2's 计算专项, once either mode has an answer filed
+    onShow: () => { invalidate(true); renderEndgames(); if (Vis) Vis.renderMe(); },
   };
 }

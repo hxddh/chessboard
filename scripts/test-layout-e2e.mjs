@@ -564,10 +564,15 @@ if (scenario()) for (const [when, mode, setup] of [
   // that it is not offered here; being *drawn* and not offered is the defect.
   ["教学·最后一课(没做过)", "learn", async (page) => {
     await page.evaluate(() => {
-      const items = [...document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg])")];
+      const items = [...document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg]):not([data-gs])")];
       items[items.length - 1].click();
     });
     await page.waitForTimeout(800);
+    // v8-2-plan T1: the last lesson is 预防 now (lesson 120), whose first task
+    // is a move, so a first visit plays its answer once; 演示 is disabled only
+    // while that plays (trainer/lessons.js syncLearnUI). Measure the lesson as
+    // it stands once the demo is over, as a player sees it.
+    await page.waitForFunction(() => !document.getElementById("lesson-demo").disabled, null, { timeout: 6000 }).catch(() => {});
   }],
   ["人机·进行中", "ai", async (page) => {
     // two plies, played through the board like a person would
@@ -2498,9 +2503,10 @@ if (scenario()) {
     const { ctx, page } = await open(lang, "learn", "play");
     // 6.0: the list ends with the ten classic games (data-c), which are read,
     // not answered — no button row, and v8-1-plan T2 put the endgame camp
-    // (data-eg) after them. The probes stay on the lessons proper, and
+    // (data-eg) after them — and v8-2-plan T3 the same ten games to guess
+    // (data-gs) between the two. The probes stay on the lessons proper, and
     // the last of those is still the one with the graduation button.
-    const n = await page.evaluate(() => document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg])").length);
+    const n = await page.evaluate(() => document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg]):not([data-gs])").length);
     assert(n > 60, lang + ": the course is loaded (" + n + " lessons)");
     // the lessons that show all four, plus the last one — its label is the
     // longest in the file and it appears in a two-button row
@@ -5145,6 +5151,247 @@ if (scenario()) {
       assert(me.tall.length === 0, `${tag}: 五个主题各一行` + (me.tall.length ? " — " + me.tall.join(", ") : ""));
       assert(me.heights.length === 1 && me.spill.length === 0 && me.sideways <= 0,
         `${tag}: 按钮一样高、字不出框，页面不横向滚动 (${me.heights.join(", ")}; ${me.spill.join(", ") || "—"}; ${me.sideways}px)`);
+      assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
+// --- v8-2-plan T3: 名局猜着 — its card mid-game and at the end -------------
+// In three languages, at the widest window and the narrowest (one game per
+// language, the window narrowed and widened again around each look): the card's
+// lines (the verdict, the running figures, the biggest deviation) and the
+// task strip cut nothing off, its three buttons are one row of one height
+// with their words inside, and the page does not scroll sideways. The engine
+// is scripted (engine-src.js is a stub here): 1.d4 for Morphy's 1.e4 costs
+// 200 cp, every other position is level.
+if (scenario()) {
+  const OPERA_UCI = ["e2e4", "e7e5", "g1f3", "d7d6", "d2d4", "c8g4", "d4e5", "g4f3", "d1f3", "d6e5", "f1c4", "g8f6",
+    "f3b3", "d8e7", "b1c3", "c7c6", "c1g5", "b7b5", "c3b5", "c6b5", "c4b5", "b8d7", "e1c1", "a8d8", "d1d7", "d8d7",
+    "h1d1", "e7e6", "b5d7", "f6d7", "b3b8", "d7b8", "d1d8"];
+  const xy = (page, sq) => page.evaluate((q) => {
+    const r = document.getElementById("board").getBoundingClientRect();
+    const f = q.charCodeAt(0) - 97, rk = 8 - Number(q[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, sq);
+  const probe = (page) => page.evaluate(() => {
+    const sec = document.getElementById("sec-learn"), box = sec.getBoundingClientRect();
+    const out = [];
+    for (const e of sec.querySelectorAll("button, .lesson-title, .lesson-task, #gs-panel p")) {
+      if (!e.offsetParent) continue;
+      if (e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > box.right + 1) out.push(e.textContent.trim().slice(0, 18));
+    }
+    const strip = document.getElementById("task-strip-text");
+    if (strip && strip.offsetParent && strip.scrollWidth > strip.clientWidth + 1) out.push("strip:" + strip.textContent.slice(0, 18));
+    const bs = [...document.querySelectorAll("#gs-panel .lesson-controls button")].filter((b) => !b.hidden && b.offsetParent);
+    const tops = new Set(bs.map((b) => Math.round(b.getBoundingClientRect().top)));
+    return { cut: out, n: bs.length, rows: tops.size,
+      heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+      spill: bs.filter((b) => b.scrollHeight > b.clientHeight + 1).map((b) => b.textContent.trim()),
+      say: (document.getElementById("gs-say") || {}).textContent || "",
+      worst: (document.getElementById("gs-worst") || {}).textContent || "",
+      sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+  });
+  const WIDE = { width: 1400, height: 900 }, NARROW = { width: 520, height: 800 };
+  /** probe at both sizes, back to the wide one after */
+  const both = async (page) => {
+    const out = [];
+    for (const v of [WIDE, NARROW]) {
+      await page.setViewportSize(v);
+      await page.waitForTimeout(300);
+      out.push([v, await probe(page)]);
+    }
+    await page.setViewportSize(WIDE);
+    await page.waitForTimeout(200);
+    return out;
+  };
+  for (const lang of LANGS) {
+    {
+      const { ctx, page, errs } = await open(lang, "learn", "play", "wood", WIDE);
+      await page.evaluate(() => {
+        window.__chess.engine.isReady = () => true;
+        window.__chess.engine.analyze = async (fen) => {
+          const turn = fen.split(" ")[1];
+          const cpW = fen.startsWith("rnbqkbnr/pppppppp/8/8/3P4/") ? -200 : 0;
+          return { cp: turn === "w" ? cpW : -cpW, mate: null, turn, best: null, pv: [], lines: [] };
+        };
+        document.querySelector("#sec-learn details.reading-index").open = true;
+        document.querySelector('#lesson-list button[data-gs="0"]').click();
+      });
+      const at = (ply, phase = "guess") => page.waitForFunction(([p, ph]) => {
+        const e = document.getElementById("gs-panel");
+        return !!e && e.dataset.at === String(p) && e.dataset.phase === ph;
+      }, [ply, phase], { timeout: 10000 }).then(() => true, () => false);
+      let ok = await at(0);
+      for (let ply = 0; ok && ply < OPERA_UCI.length; ply += 2) {
+        const u = ply === 0 ? "d2d4" : OPERA_UCI[ply];
+        for (const sq of [u.slice(0, 2), u.slice(2, 4)]) { const c = await xy(page, sq); await page.mouse.click(c.x, c.y); }
+        ok = ply + 2 < OPERA_UCI.length ? await at(ply + 2) : await at(OPERA_UCI.length, "done");
+        if (ply === 0 && ok) {
+          for (const [v, mid] of await both(page)) {
+            const tag = `T3 猜着 (${lang}, ${v.width}×${v.height})`;
+            assert(/1\. d4/.test(mid.say), `${tag}: 猜错一步后，判语在卡片上（${mid.say}）`);
+            assert(mid.cut.length === 0 && mid.sideways <= 0, `${tag}: 猜到一半，卡片、任务行与任务条没有被裁掉的字，页面不横向滚动` + (mid.cut.length ? " — " + mid.cut.join(", ") : ""));
+            assert(mid.n === 2 && mid.rows === 1 && mid.heights.length === 1 && mid.spill.length === 0,
+              `${tag}: 猜到一半，换一方 / 读棋 一排、一样高、字在框里 (${mid.n}; ${mid.rows} 行; ${mid.heights.join(", ")})`);
+          }
+        }
+      }
+      assert(ok, `T3 猜着 (${lang}): 一局猜完`);
+      for (const [v, end] of await both(page)) {
+        const tag = `T3 猜着 (${lang}, ${v.width}×${v.height})`;
+        assert(/1\. d4/.test(end.worst), `${tag}: 终局卡有最大偏差（${end.worst}）`);
+        assert(end.cut.length === 0 && end.sideways <= 0, `${tag}: 终局卡没有被裁掉的字，页面不横向滚动` + (end.cut.length ? " — " + end.cut.join(", ") : ""));
+        assert(end.n === 3 && end.rows === 1 && end.heights.length === 1 && end.spill.length === 0,
+          `${tag}: 看这一步 / 换一方 / 读棋 一排、一样高、字在框里 (${end.n}; ${end.rows} 行; ${end.heights.join(", ")}; ${end.spill.join(", ") || "—"})`);
+      }
+      assert(errs.length === 0, `T3 猜着 (${lang}): 没有页面异常 — ` + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
+// --- v8-2-plan T2: 看 N 步 / 盲走 — the two doors, the card, 「我的」's section ---
+// In three languages, at the widest window and the narrowest: the 玩法 row
+// with its five segments one height and their words inside; the question
+// card's field and buttons inside the panel, the field and 确定 on one line;
+// the block rhythm of 做题 still 8 / 20; 「我的」's 计算专项 one line a mode,
+// its two buttons one height; nothing past the page's edge.
+if (scenario()) {
+  const seed = JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "m1", runs: { look: { best: 6, at: 1 } },
+    vis: { look: { rating: { r: 1310, rd: 120, vol: 0.06 }, solve: 7, miss: 3, q: { "m2-corner-h8|2|12345": { s: 0, n: 1, due: 1, ivl: 0 } } },
+      blind: { rating: { r: 1450, rd: 200, vol: 0.06 }, solve: 2, miss: 1, q: {} } } });
+  const cardFits = (page) => page.evaluate(() => {
+    const sec = document.getElementById("sec-puzzle"), box = sec.getBoundingClientRect();
+    const seg = [...document.querySelectorAll("#pz-mode-seg button")];
+    const card = document.getElementById("pz-vis");
+    const ctl = [...card.querySelectorAll("button, input")].filter((b) => !b.hidden && b.offsetParent);
+    const spill = seg.concat(ctl).filter((b) => b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1 ||
+      b.getBoundingClientRect().right > box.right + 1 || b.getBoundingClientRect().left < box.left - 1).map((b) => b.id || b.textContent.trim());
+    const text = [...card.querySelectorAll("p:not(.sr-only)")].filter((p) => p.offsetParent && p.scrollWidth > p.clientWidth + 1).map((p) => p.id);
+    const inp = document.getElementById("pz-vis-in"), go = document.getElementById("pz-vis-go");
+    const row = !inp.offsetParent || Math.abs(inp.getBoundingClientRect().top - go.getBoundingClientRect().top) < 6;
+    const kids = [...sec.children].filter((e) => e.getClientRects().length && e.getBoundingClientRect().height > 0);
+    const gaps = [];
+    for (let i = 1; i < kids.length; i++) gaps.push(Math.round((kids[i].getBoundingClientRect().top - kids[i - 1].getBoundingClientRect().bottom) * 10) / 10);
+    return { shown: !card.hidden && !!card.offsetParent, spill, text, row, gaps,
+      segH: [...new Set(seg.map((b) => Math.round(b.getBoundingClientRect().height)))],
+      ctlH: [...new Set(ctl.filter((b) => b.tagName === "BUTTON").map((b) => Math.round(b.getBoundingClientRect().height)))],
+      sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+  });
+  for (const lang of LANGS) {
+    for (const viewport of [{ width: 1400, height: 900 }, { width: 520, height: 800 }]) {
+      const tag = `T2 看 N 步 / 盲走 (${lang}, ${viewport.width}×${viewport.height})`;
+      const { ctx, page, errs } = await open(lang, "puzzle", "play", "wood", viewport);
+      await page.evaluate((s) => localStorage.setItem("chess.v1.puzzles", s), seed);
+      await page.reload();
+      await page.waitForTimeout(900);
+      await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+      for (const kind of ["look", "blind"]) {
+        await page.click(`#pz-mode-seg button[data-run="${kind}"]`);
+        await page.waitForFunction(() => !document.getElementById("pz-vis").hidden, null, { timeout: 6000 }).catch(() => {});
+        await page.waitForTimeout(300);
+        for (const when of ["asked", "answered"]) {
+          if (when === "answered") {
+            // 答案 (H) gives the question up: the card shows the answer and 下一题
+            await page.evaluate(() => document.activeElement && document.activeElement.blur());
+            await page.keyboard.press("h");
+            await page.waitForTimeout(400);
+          }
+          const r = await cardFits(page);
+          const at = `${tag} ${kind}/${when}`;
+          assert(r.shown, `${at}: 卡片出现`);
+          assert(r.segH.length === 1 && r.ctlH.length <= 1, `${at}: 玩法五段一样高、卡片的按钮一样高 (${r.segH.join(", ")}; ${r.ctlH.join(", ")})`);
+          assert(r.spill.length === 0 && r.text.length === 0 && r.row, `${at}: 字不出框、输入框和「确定」一行 (${r.spill.join(", ") || "—"}; ${r.text.join(", ") || "—"})`);
+          assert(r.gaps.every((g) => Math.abs(g - 8) <= 0.5 || Math.abs(g - 20) <= 0.5), `${at}: 做题页的间距仍只有 8 / 20 (${r.gaps.join(", ")})`);
+          assert(r.sideways <= 0, `${at}: 页面不横向滚动 (${r.sideways}px)`);
+        }
+      }
+      await page.click('#rail button[data-view="me"]', { timeout: 1500 }).catch(() => {});
+      await page.waitForFunction(() => !document.getElementById("sec-vis").hidden, null, { timeout: 6000 }).catch(() => {});
+      const me = await page.evaluate(() => {
+        const sec = document.getElementById("sec-vis"), box = sec.getBoundingClientRect();
+        const rows = [...sec.querySelectorAll(".stat-row")];
+        const bs = [...sec.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent);
+        const line = (e) => parseFloat(getComputedStyle(e).lineHeight) || 20;
+        return { shown: !sec.hidden, n: rows.length, h: document.getElementById("vis-h").textContent,
+          tall: rows.filter((r) => r.getBoundingClientRect().height > line(r) * 1.6).map((r) => r.textContent.trim()),
+          heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+          spill: bs.filter((b) => b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1 || b.getBoundingClientRect().right > box.right + 1).map((b) => b.textContent.trim()),
+          nb: bs.length, sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+      });
+      assert(me.shown && me.n === 2 && me.nb === 2 && me.h, `${tag}: 「我的」有计算专项一节，两行两个按钮（${me.h}）`);
+      assert(me.tall.length === 0, `${tag}: 每个模式一行` + (me.tall.length ? " — " + me.tall.join(", ") : ""));
+      assert(me.heights.length === 1 && me.spill.length === 0 && me.sideways <= 0,
+        `${tag}: 按钮一样高、字不出框，页面不横向滚动 (${me.heights.join(", ")}; ${me.spill.join(", ") || "—"}; ${me.sideways}px)`);
+      assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
+// --- v8-2-plan T1: the advanced course part 3 — its parts in 目录, its card ---
+// In three languages, at the widest window and the narrowest: once the chunk
+// is here, 目录 lists 计算 and 局面型 with their 24 lessons numbered 97–120 in
+// course order and no row cut off; the advanced lesson with the longest title
+// opens to a card whose title, text, task and buttons cut nothing off, its
+// buttons one row of one height, and the page does not scroll sideways.
+if (scenario()) {
+  for (const lang of LANGS) {
+    for (const viewport of [{ width: 1400, height: 900 }, { width: 520, height: 800 }]) {
+      const tag = `T1 进阶课程 (${lang}, ${viewport.width}×${viewport.height})`;
+      const { ctx, page, errs } = await open(lang, "learn", "play", "wood", viewport);
+      await page.waitForFunction(() => !!window.CHESS_LESSONS_ADV &&
+        document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg]):not([data-gs])").length === 120, null, { timeout: 8000 }).catch(() => {});
+      const list = await page.evaluate((l) => {
+        const d = document.querySelector("#sec-learn details.reading-index");
+        if (d) d.open = true;
+        const A = window.CHESS_LESSONS_ADV;
+        if (!A) return { n: 0, titles: [], want: [], parts: [], cut: [], longest: 0 };
+        const word = (L) => (l === "zh-CN" ? L : A[l][L.id]);
+        const items = [...document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg]):not([data-gs])")];
+        const box = document.getElementById("sec-learn").getBoundingClientRect();
+        const adv = items.slice(96);
+        let longest = 0;
+        A.lessons.forEach((L, i) => { if (word(L).title.length > word(A.lessons[longest]).title.length) longest = i; });
+        const heads = [...document.querySelectorAll("#lesson-list .lesson-part")];
+        return {
+          n: items.length,
+          titles: adv.map((b) => b.textContent),
+          want: A.lessons.map((L, i) => (97 + i) + ". " + word(L).title),
+          parts: [word(A.lessons[0]).part, word(A.lessons[23]).part].map((p) => heads.some((h) => h.textContent === p && h.offsetParent)),
+          cut: adv.concat(heads).filter((b) => b.offsetParent && (b.scrollWidth > b.clientWidth + 1 || b.getBoundingClientRect().right > box.right + 1))
+            .map((b) => b.textContent.slice(0, 18)),
+          longest,
+        };
+      }, lang);
+      assert(list.n === 120 && list.titles.length === 24 && list.titles.every((t, i) => t === list.want[i]),
+        `${tag}: 目录里是 120 课，进阶的 24 课按顺序排在第 97–120 课（${list.titles[0] || "—"} … ${list.titles[23] || "—"}）`);
+      assert(list.parts.length === 2 && list.parts.every(Boolean), `${tag}: 「计算」「局面型」两个部分的标题都在目录里`);
+      assert(list.cut.length === 0, `${tag}: 目录里进阶课程的行没有被裁掉的字` + (list.cut.length ? " — " + list.cut.join(", ") : ""));
+      await page.evaluate((i) => {
+        const items = document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg]):not([data-gs])");
+        if (items[96 + i]) items[96 + i].click();
+      }, list.longest);
+      await page.waitForTimeout(600);
+      const card = await page.evaluate((i) => {
+        const sec = document.getElementById("sec-learn"), box = sec.getBoundingClientRect();
+        const out = [];
+        for (const e of sec.querySelectorAll("button, .lesson-title, .lesson-task, .lesson-part, #lesson-text p")) {
+          if (!e.offsetParent) continue;
+          if (e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > box.right + 1) out.push(e.textContent.trim().slice(0, 18));
+        }
+        const strip = document.getElementById("task-strip-text");
+        if (strip && strip.offsetParent && strip.scrollWidth > strip.clientWidth + 1) out.push("task strip: " + strip.textContent.slice(0, 18));
+        const row = sec.querySelector(".lesson-controls");
+        const bs = [...row.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent);
+        return { cut: out, title: document.getElementById("lesson-title").textContent, n: bs.length,
+          heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+          tops: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().top)))],
+          lesson: 97 + i, sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+      }, list.longest);
+      assert(card.title.includes(String(card.lesson)), `${tag}: 卡片是第 ${card.lesson} 课（${card.title}）`);
+      assert(card.cut.length === 0, `${tag}: 卡片的标题、课文、任务与按钮没有被裁掉的字` + (card.cut.length ? " — " + card.cut.join(", ") : ""));
+      assert(card.n >= 2 && card.heights.length === 1 && card.tops.length === 1,
+        `${tag}: 课程按钮一排、一样高 (${card.n}; ${card.heights.join(", ")}; ${card.tops.length} 行)`);
+      assert(card.sideways <= 0, `${tag}: 页面不横向滚动 (${card.sideways}px)`);
       assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
       await ctx.close();
     }

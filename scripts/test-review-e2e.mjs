@@ -27,14 +27,17 @@ import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { heldClick } from "./lib/held-click.mjs";
 import { OPERA, playOpera, analyseOpera } from "./lib/opera-fixture.mjs";
 import { Chess } from "../src/web/js/chess.js";
+import { ChessReview } from "../src/web/js/review.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
 
 const MIME = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript" };
+const served = []; // v8-2-plan T3: which chunks a page asked for
 const server = http.createServer((req, res) => {
   let p = req.url.split("?")[0];
   if (p === "/") p = "/index.html";
+  served.push(p);
   // the 9MB engine is generated, not committed; this test scripts its own
   if (p === "/js/engine-src.js") { res.writeHead(200, { "content-type": "text/javascript" }); res.end("// stub"); return; }
   try {
@@ -1599,6 +1602,302 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   }
   assert(errsA.length === 0, "A4：全程没有页面异常 — " + errsA.join(" / "));
   await ctxA.close();
+}
+
+// --- v8-2-plan T3: 名局猜着 — a whole classic guessed, scored, and again ---
+// Morphy's Opera game as White, 17 guesses, against a scripted engine keyed
+// by position: every position after one of the master's moves is level (50%),
+// and the two deliberate deviations are worth known numbers — so the loss,
+// the grade and the card's figures can be asserted exactly, with review.js's
+// own curve. Three passes: all the master's moves (full marks, no engine
+// call at all), two deviations (a 失误 and a 良好), and the same again (the
+// same scores, and not one more engine call: the verdicts are kept).
+{
+  const ctxG = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctxG.addInitScript(() => {
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "learn", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  const pg = await ctxG.newPage();
+  const errsG = [];
+  pg.on("pageerror", (e) => errsG.push(e.message));
+  const from = served.length;
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(900);
+  await pg.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+  assert(!served.slice(from).includes("/js/chunk-guess.js"), "T3：首屏不取 chunk-guess.js");
+  const entries = await pg.evaluate(() => [...document.querySelectorAll("#lesson-list button[data-gs]")].map((b) => b.textContent));
+  assert(entries.length === 10, "T3：学习目录里 10 局名局都能猜（" + entries.length + "）");
+
+  // the scripted engine: White-view cp by position (the first four FEN fields)
+  const master = [];
+  const dev = {};
+  {
+    const g = new Chess();
+    for (const san of OPERA) { const m = g.move(san); master.push(m.from + m.to + (m.promotion || "")); }
+    const at = (ply, uci) => {
+      const p = new Chess();
+      for (const san of OPERA.slice(0, ply)) p.move(san);
+      p.move({ from: uci.slice(0, 2), to: uci.slice(2, 4) });
+      return p.fen().split(" ").slice(0, 4).join(" ");
+    };
+    // 3.Nc3 for 3.d4: 200 cp worse — 17.6 points, a 失误; 7.Nc3 for 7.Qb3: 30 cp — 2.8, 良好
+    dev[4] = { uci: "b1c3", cp: -200, fen: at(4, "b1c3"), san: "3. Nc3", mSan: "3. d4" };
+    dev[12] = { uci: "b1c3", cp: -30, fen: at(12, "b1c3"), san: "7. Nc3", mSan: "7. Qb3" };
+  }
+  const table = Object.fromEntries(Object.values(dev).map((x) => [x.fen, x.cp]));
+  await pg.evaluate((tb) => {
+    window.__gsCalls = [];
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.analyze = async (fen, budget, opts) => {
+      window.__gsCalls.push({ budget, bg: !!(opts && opts.bg) });
+      const turn = fen.split(" ")[1];
+      const cpW = tb[fen.split(" ").slice(0, 4).join(" ")] || 0;
+      return { cp: turn === "w" ? cpW : -cpW, mate: null, turn, best: null, pv: [], lines: [] };
+    };
+  }, table);
+
+  const loss = (cp) => ChessReview.winPctDrop(0, cp, "w");
+  const l1 = loss(dev[4].cp), l2 = loss(dev[12].cp);
+  const r1 = (x) => (Math.round(x * 10) / 10).toFixed(1);
+  assert(l1 >= ChessReview.WIN_MISTAKE && l1 < ChessReview.WIN_BLUNDER && l2 >= 2 && l2 < ChessReview.WIN_INACCURACY,
+    "T3：两处偏差的胜率差落在失误（" + r1(l1) + "）与良好（" + r1(l2) + "）两档");
+
+  const xy = (sq, flipped) => pg.evaluate(([q, f]) => {
+    const r = document.getElementById("board").getBoundingClientRect();
+    let fi = q.charCodeAt(0) - 97, rk = 8 - Number(q[1]);
+    if (f) { fi = 7 - fi; rk = 7 - rk; }
+    return { x: r.left + (fi + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, [sq, flipped]);
+  const tap = async (sq, flipped) => { const c = await xy(sq, flipped); await pg.mouse.click(c.x, c.y); };
+  const panel = () => pg.evaluate(() => {
+    const p = document.getElementById("gs-panel");
+    const txt = (id) => { const e = document.getElementById(id); return e && !e.hidden ? e.textContent : ""; };
+    return p ? { phase: p.dataset.phase, at: Number(p.dataset.at), view: p.dataset.view, say: txt("gs-say"), sum: txt("gs-sum"),
+      worst: txt("gs-worst"), jump: !document.getElementById("gs-jump").hidden, task: document.getElementById("lesson-task").textContent,
+      title: document.getElementById("lesson-title").textContent } : null;
+  });
+  const waitGs = (pred, arg) => pg.waitForFunction(pred, arg, { timeout: 10000 }).then(() => true, () => false);
+  const waitAt = (ply, phase = "guess") => waitGs(([p, ph]) => {
+    const e = document.getElementById("gs-panel");
+    return !!e && e.dataset.at === String(p) && e.dataset.phase === ph;
+  }, [ply, phase]);
+
+  /** One pass as White; `devs` names the plies guessed differently. @returns the verdict lines */
+  const playWhite = async (devs) => {
+    const says = [];
+    for (let ply = 0; ply < OPERA.length; ply += 2) {
+      if (!(await waitAt(ply))) { says.push("stuck at " + ply); break; }
+      const u = devs[ply] ? devs[ply].uci : master[ply];
+      await tap(u.slice(0, 2)); await tap(u.slice(2, 4));
+      // the verdict is in once the ply has moved on
+      await waitGs((p) => { const e = document.getElementById("gs-panel"); return Number(e.dataset.at) > p; }, ply);
+      says.push((await panel()).say);
+    }
+    await waitAt(OPERA.length, "done");
+    return says;
+  };
+
+  // (1) the master's moves throughout: full marks, and the engine never asked
+  await pg.evaluate(() => {
+    document.querySelector("#sec-learn details.reading-index").open = true;
+    document.querySelector('#lesson-list button[data-gs="0"]').click();
+  });
+  assert(await waitAt(0), "T3：点开第一局，轮到白方猜第 1 手");
+  assert(served.slice(from).includes("/js/chunk-guess.js"), "T3：第一次开始时才取 chunk-guess.js");
+  let p = await panel();
+  assert(/猜白方的着法/.test(p.title) && /1858/.test(p.title), "T3：卡片标题是这一局、猜白方（" + p.title + "）");
+  assert(/轮到你猜 1\./.test(p.task), "T3：任务行说轮到你猜第 1 手（" + p.task + "）");
+  const live = await pg.evaluate(() => { const e = document.getElementById("gs-say"); return e.getAttribute("aria-live") + "/" + e.getAttribute("role"); });
+  assert(live === "polite/status", "T3：「你走的 / 大师走的 / 得分」是读屏会读的 live 区域（" + live + "）");
+  // (0) the other side, by keyboard alone: 1.e4 is played for you, then 1…e5
+  // on the cursor of the turned board (before any click has put a cursor anywhere)
+  await pg.evaluate(() => document.getElementById("gs-swap").click());
+  assert(await waitAt(1), "T3：换一方后白方先走 1.e4，轮到黑方猜");
+  p = await panel();
+  assert(/猜黑方的着法/.test(p.title), "T3：标题改成猜黑方（" + p.title + "）");
+  await pg.focus("#board");
+  const key = async (k) => { await pg.keyboard.press(k); await pg.waitForTimeout(150); };
+  await key("ArrowDown"); await key("ArrowDown");
+  const onE7 = await pg.evaluate(() => (document.getElementById("board-live") || {}).textContent || "");
+  assert(/e7/.test(onE7), "T3：棋盘翻过来，↓↓ 把光标从 e5 带到 e7（「" + onE7 + "」）");
+  await key("Enter"); await key("ArrowUp"); await key("ArrowUp"); await key("Enter");
+  await waitGs(() => Number(document.getElementById("gs-panel").dataset.at) > 1);
+  p = await panel();
+  assert(/1… e5：和大师一样，满分/.test(p.say), "T3：只用键盘走 1…e5，满分（" + p.say + "）");
+  await pg.evaluate(() => document.getElementById("gs-swap").click());
+  assert(await waitAt(0), "T3：再换回白方，从第 1 手猜起");
+  const run1 = await playWhite({});
+  p = await panel();
+  assert(run1.length === 17 && run1.every((x) => /和大师一样，满分/.test(x)), "T3：17 步都和原着一样，每步都是满分");
+  assert(p.sum === "与大师相同 17/17 · 平均扣分 0.0 · 得分 100.0", "T3：终局卡 17/17、扣 0、100 分（" + p.sum + "）");
+  assert(!p.worst && !p.jump, "T3：没有偏差，就没有「最大偏差」和跳转按钮");
+  assert((await pg.evaluate(() => window.__gsCalls.length)) === 0, "T3：和原着一样的着法不必问引擎");
+  const saved = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.learn") || "{}"));
+  assert(saved.gs && saved.gs["morphy-opera-1858"] && saved.gs["morphy-opera-1858"].w.same === 17, "T3：结果记进学习进度（learn 键的 gs）");
+  assert(/^✓ /.test(await pg.evaluate(() => document.querySelector('#lesson-list button[data-gs="0"]').textContent)), "T3：猜完的名局在目录里打 ✓");
+
+  // (2) two deviations, through 重来
+  await pg.click("#lesson-restart");
+  assert(await waitAt(0), "T3：重来回到第 1 手");
+  const run2 = await playWhite(dev);
+  p = await panel();
+  const want1 = "你走 " + dev[4].san + "，大师走 " + dev[4].mSan + " · 失误 · 扣 " + r1(l1) + " 分";
+  const want2 = "你走 " + dev[12].san + "，大师走 " + dev[12].mSan + " · 良好 · 扣 " + r1(l2) + " 分";
+  assert(run2[2] === want1, "T3：3.Nc3 按胜率差扣分，分级是失误（" + run2[2] + "）");
+  assert(run2[6] === want2, "T3：7.Nc3 扣得少，分级是良好（" + run2[6] + "）");
+  const avg = (l1 + l2) / 17;
+  const wantSum = "与大师相同 15/17 · 平均扣分 " + r1(avg) + " · 得分 " + r1(100 - avg);
+  assert(p.sum === wantSum, "T3：终局卡 15/17、平均扣分与得分（" + p.sum + "）");
+  assert(p.worst === "最大偏差：你走 3. Nc3，大师走 3. d4，扣 " + r1(l1) + " 分（失误）" && p.jump, "T3：最大偏差是 3.Nc3，带跳转按钮（" + p.worst + "）");
+  const calls = await pg.evaluate(() => window.__gsCalls);
+  assert(calls.length === 4 && calls.every((c) => c.budget === 200 && !c.bg),
+    "T3：每处偏差问引擎两次（大师的着、你的着），都是复盘的 200 预算、不走后台批量（" + JSON.stringify(calls) + "）");
+  await pg.click("#gs-jump");
+  await pg.waitForTimeout(200);
+  assert((await panel()).view === "4", "T3：「看这一步」跳到 3.d4 之前的局面");
+
+  // (3) the same guesses again: the same scores, and no new engine call
+  await pg.keyboard.press("r");
+  assert(await waitAt(0), "T3：R 键重来");
+  const run3 = await playWhite(dev);
+  const p3 = await panel();
+  assert(JSON.stringify(run3) === JSON.stringify(run2) && p3.sum === p.sum && p3.worst === p.worst, "T3：同一局同一种走法，两次计分相同");
+  assert((await pg.evaluate(() => window.__gsCalls.length)) === 4, "T3：第二次没有再问引擎（按局面与着法记住了）");
+
+  // (4) the card in three languages
+  for (const [lang, sum, worst, han] of [
+    ["en", "Same as the master 15/17 · average deduction " + r1(avg) + " · score " + r1(100 - avg), "Biggest deviation: you 3. Nc3, master 3. d4, −" + r1(l1) + " (Mistake)", false],
+    ["ja", "名手と同じ 15/17 · 平均減点 " + r1(avg) + " · 得点 " + r1(100 - avg), "最大のずれ：あなた 3. Nc3、名手 3. d4、−" + r1(l1) + "（悪手）", true],
+    ["zh-CN", wantSum, p.worst, true],
+  ]) {
+    await pg.evaluate((l) => document.querySelector('#lang-seg button[data-lang="' + l + '"]').click(), lang);
+    await pg.waitForTimeout(900);
+    const q = await panel();
+    assert(q.sum === sum && q.worst === worst, "T3：" + lang + " 的终局卡（" + q.sum + " / " + q.worst + "）");
+    if (!han) {
+      const zh = await pg.evaluate(() => (document.getElementById("gs-panel").textContent + document.getElementById("lesson-task").textContent + document.getElementById("lesson-title").textContent).match(/[一-鿿]/g));
+      assert(!zh, "T3：英文下猜着卡片里没有中文（" + (zh || []).join("") + "）");
+    }
+  }
+
+  // (5) quitting mid-game reads the game instead; a reload mid-game is harmless,
+  // and so is a learn key whose gs is not an object
+  await pg.click("#gs-quit");
+  await pg.waitForTimeout(400);
+  const quit = await pg.evaluate(() => ({ panel: !!document.getElementById("gs-panel") && !!document.getElementById("gs-panel").offsetParent, title: document.getElementById("lesson-title").textContent }));
+  assert(!quit.panel && /1858/.test(quit.title), "T3：「读棋」离开猜着，读这一局（" + quit.title + "）");
+  await pg.evaluate(() => document.querySelector('#lesson-list button[data-gs="8"]').click());
+  assert(await waitAt(1), "T3：黑胜的一局默认猜黑方");
+  await pg.evaluate(() => { const l = JSON.parse(localStorage.getItem("chess.v1.learn")); l.gs = 7; localStorage.setItem("chess.v1.learn", JSON.stringify(l)); });
+  await pg.reload();
+  await pg.waitForTimeout(1200);
+  await pg.evaluate(() => {
+    document.querySelector("#sec-learn details.reading-index").open = true;
+    document.querySelector('#lesson-list button[data-gs="0"]').click();
+  });
+  assert(await waitAt(0), "T3：重新载入之后（gs 被改坏）照样能开始猜");
+  assert(errsG.length === 0, "T3：全程没有页面异常 — " + errsG.join(" / "));
+  await ctxG.close();
+}
+
+// --- M2 评审：名局猜着不改下棋的棋盘方向；读库被取消后猜着接着走 ----------------
+{
+  const lib = JSON.stringify({ v: 1, names: ["me"], games: [{ id: "g1", t: 1758000000000, white: "me", black: "rival",
+    date: "2026.09.01", event: "Casual", result: "1-0", plies: 4, sans: "e4 e5 Nf3 Nc6", fen: "", side: "w", outcome: "win" }] });
+  const ctxM = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctxM.addInitScript((lb) => {
+    if (sessionStorage.getItem("seeded")) return; // a reload keeps what the app wrote
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "learn", view: "learn", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", flipped: false }));
+    localStorage.setItem("chess.panelOpen", "1");
+    localStorage.setItem("chess.v1.library", lb);
+    localStorage.setItem("chess.v1.save", JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }));
+  }, lib);
+  const pg = await ctxM.newPage();
+  const errsM = [];
+  pg.on("pageerror", (e) => errsM.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(900);
+  await pg.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+  const settings = () => pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings") || "{}"));
+  const gsAt = (ply, phase = "guess") => pg.waitForFunction(([p, ph]) => {
+    const e = document.getElementById("gs-panel");
+    return !!e && !!e.offsetParent && e.dataset.at === String(p) && e.dataset.phase === ph;
+  }, [ply, phase], { timeout: 10000 }).then(() => true, () => false);
+  const liveText = () => pg.evaluate(() => (document.getElementById("board-live") || {}).textContent || "");
+  // P2-1: the default-black guess, then 下棋 and a reload: the saved setting is untouched
+  await pg.evaluate(() => {
+    document.querySelector("#sec-learn details.reading-index").open = true;
+    document.querySelector('#lesson-list button[data-gs="8"]').click();
+  });
+  assert(await gsAt(1), "M2：黑胜的一局默认猜黑方，轮到黑方");
+  await pg.focus("#board");
+  await pg.keyboard.press("ArrowUp");
+  await pg.waitForTimeout(150);
+  const up = await liveText();
+  assert(/^e4 /.test(up), "M2：猜黑方时棋盘翻着，↑ 把光标从 e5 带到 e4（「" + up + "」）");
+  assert((await settings()).flipped === false, "M2：猜黑方不把下棋的棋盘方向写进设置");
+  await pg.click('.rail-btn[data-view="play"]');
+  await pg.waitForTimeout(600);
+  const inPlay = await settings();
+  const bodyFlipped = await pg.evaluate(() => document.body.classList.contains("flipped"));
+  assert(inPlay.flipped === false && !bodyFlipped, "M2：回到下棋，棋盘方向还是原来的（settings.flipped " + inPlay.flipped + "）");
+  await pg.reload();
+  await pg.waitForTimeout(1200);
+  assert((await settings()).flipped === false, "M2：重新载入之后也还是原来的方向");
+
+  // P3-5: a library game opened mid-guess and 取消 — the run goes on
+  await pg.click('.rail-btn[data-view="learn"]');
+  await pg.waitForTimeout(500);
+  await pg.evaluate(() => {
+    // a slow scripted engine: every position level, each answer 1.5 s away
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.analyze = (fen) => new Promise((r) => setTimeout(() => r({ cp: 0, mate: null, turn: fen.split(" ")[1], best: null, pv: [], lines: [] }), 1500));
+    document.querySelector("#sec-learn details.reading-index").open = true;
+    document.querySelector('#lesson-list button[data-gs="0"]').click();
+  });
+  assert(await gsAt(0), "M2：开始猜第一局（白方）");
+  const tapSq = async (sq) => {
+    const c = await pg.evaluate((q) => { const r = document.getElementById("board").getBoundingClientRect(); return { x: r.left + (q.charCodeAt(0) - 96.5) * r.width / 8, y: r.top + (8.5 - Number(q[1])) * r.height / 8 }; }, sq);
+    await pg.mouse.click(c.x, c.y);
+    await pg.waitForTimeout(120);
+  };
+  const refuseLoad = async () => {
+    // the whole path inside the page, so it lands within the other side's 0.7 s
+    const t = await pg.evaluate(async () => {
+      const t0 = performance.now();
+      const wait = async (sel) => { for (let i = 0; i < 60 && !document.querySelector(sel); i++) await new Promise((r) => setTimeout(r, 10)); return document.querySelector(sel); };
+      document.querySelector('#rail button[data-view="library"]').click();
+      (await wait("#lib-open")).click();
+      (await wait("#lib-list button[data-lib]")).click();
+      return performance.now() - t0;
+    });
+    await pg.waitForTimeout(300);
+    const asked = await pg.isVisible("#confirm-cancel");
+    return { t, asked };
+  };
+  // (a) a guess the engine has to judge (1.d4 for 1.e4), refused while it is judged
+  await tapSq("d2"); await tapSq("d4");
+  const a = await refuseLoad();
+  await pg.waitForTimeout(3600); // both of the check's searches (1.5 s each) come back while the run is set aside
+  if (a.asked) await pg.click("#confirm-cancel");
+  await pg.click('.rail-btn[data-view="learn"]');
+  const resumedCheck = await gsAt(2);
+  assert(a.asked && resumedCheck, "M2：猜着判分时读库被取消，回来之后判完、对方走、轮到第 2 手（问了替换：" + a.asked + "）");
+  const say = await pg.evaluate(() => document.getElementById("gs-say").textContent);
+  assert(/1\. d4/.test(say) && /1\. e4/.test(say), "M2：判分的结果照常写出（" + say + "）");
+  // (b) the master's move, refused while the other side's move waits
+  await tapSq("g1"); await tapSq("f3");
+  const b = await refuseLoad();
+  await pg.waitForTimeout(1000); // the other side's 0.7 s pass while the run is set aside
+  if (b.asked) await pg.click("#confirm-cancel");
+  await pg.click('.rail-btn[data-view="learn"]');
+  assert(b.asked && await gsAt(4), "M2：对方要走时读库被取消，回来之后对方照走、轮到第 3 手（" + Math.round(b.t) + " ms 内问了替换）");
+  assert(errsM.length === 0, "M2：全程没有页面异常 — " + errsM.join(" / "));
+  await ctxM.close();
 }
 
 await browser.close();

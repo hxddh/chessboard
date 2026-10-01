@@ -990,7 +990,29 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
     assert(mp.p1.s === 1 && mp.p1.due === 7 && mp.p2.s === 2 && mp.p2.due === 9,
       "M3: importing learning data keeps the queue entry further up the ladder, from either side", JSON.stringify(mp));
   }
-  // M3 评审: the repertoire's card schedules ride along in the learning file
+  // M2 review (v8-2-plan T2/T3): 名局猜着's results (learn.gs) and 看 N 步 / 盲走's
+  // records (puzzles.vis) travel in the learning file — they used to be dropped
+  {
+    const lc = { learn: JSON.stringify({ v: 1, done: {}, last: 3, gs: { g1: { w: { same: 5, n: 20, avg: 9, at: 100 } }, g2: { b: { same: 1, n: 9, avg: 20, at: 300 } } } }) };
+    const li = { kind: L.LEARNING_KIND, v: 1, data: { learn: { v: 1, done: {}, last: 1,
+      gs: { g1: { w: { same: 7, n: 20, avg: 4, at: 200 }, b: { same: 2, n: 18, avg: 12, at: 50 } }, g2: { b: { same: 3, n: 9, avg: 8, at: 250 } }, g3: { w: { same: 0, n: 1, avg: 30, at: 9 } } } } } };
+    const gs = L.merge(lc, li, 100).learn.gs;
+    assert(gs && gs.g1.w.at === 200 && gs.g1.b.at === 50 && gs.g2.b.at === 300 && gs.g3.w.at === 9,
+      "M2: learn.gs merges per game and side, the later result winning, from either side", JSON.stringify(gs));
+    assert(!("gs" in L.merge({ learn: JSON.stringify({ v: 1, done: {}, last: 0 }) }, { kind: L.LEARNING_KIND, v: 1, data: { learn: { v: 1, done: {}, last: 0 } } }, 100).learn),
+      "M2: …and adds no gs to a state that had none");
+    const pc = { puzzles: JSON.stringify({ solved: {}, missed: {}, vis: { look: { rating: { r: 1400 }, solve: 5, miss: 2, at: 100, q: { "a|2|1": { s: 0, n: 1, due: 5, ivl: 0 }, "b|3|2": { s: 2, n: 3, due: 9, ivl: 3 } } } } }) };
+    const pi = { kind: L.LEARNING_KIND, v: 1, data: { puzzles: { solved: {}, missed: {}, vis: {
+      look: { rating: { r: 1600 }, solve: 3, miss: 4, at: 200, q: { "a|2|1": { s: 1, n: 2, due: 7, ivl: 1 }, "b|3|2": { s: 1, n: 5, due: 1, ivl: 1 }, "c|4|3": { s: 0, n: 1, due: 2, ivl: 0 } } },
+      blind: { rating: { r: 1300 }, solve: 1, miss: 1, at: 150, q: { m1: { s: 0, n: 1, due: 3, ivl: 0 } } } } } } };
+    const vis = L.merge(pc, pi, 100).puzzles.vis;
+    assert(vis && vis.look.rating.r === 1600 && vis.look.at === 200 && vis.look.solve === 5 && vis.look.miss === 4,
+      "M2: puzzles.vis takes the later rating and the larger counts per mode", JSON.stringify(vis && vis.look));
+    assert(vis.look.q["a|2|1"].s === 1 && vis.look.q["b|3|2"].s === 2 && vis.look.q["c|4|3"] && vis.blind && vis.blind.q.m1,
+      "M2: …and its review queues merge as `missed` does (further up the ladder wins); a mode only the file has comes in whole", JSON.stringify(vis.look.q));
+    const again = L.merge({ puzzles: JSON.stringify(L.merge(pc, pi, 100).puzzles) }, pi, 100).puzzles.vis;
+    assert(JSON.stringify(again) === JSON.stringify(vis), "M2: the same file imported twice is a no-op for vis");
+  }
   {
     const repCur = { repertoire: JSON.stringify({ v: 1, w: [], b: [], db: 2, n: 0, sig: "x" }) };
     const repInc = { kind: L.LEARNING_KIND, v: 1, data: { repertoire: { v: 1, w: [{ id: "rep-a", sans: "e4 e5" }], b: [], cards: { "w|k": { s: 3, n: 3, due: 9, ivl: 7 } } } } };

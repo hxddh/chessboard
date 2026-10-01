@@ -147,7 +147,7 @@ const allSourceExcept = (...owners) =>
 // written for.
 const APP_MODULES = ["app.js", "appearance-ui.js", "settings-ui.js", "shell.js", "prefs-ui.js", "review-pass.js", "review/eval-graph.js", "review/retry.js", "review/panel.js", "review/lines.js", "review/analysis.js", "review/board-marks.js",
   "trainer/content.js", "trainer/lessons.js", "trainer/puzzles.js", "trainer/today.js", "trainer/puzzle-modes.js",
-  "trainer/puzzle-book.js", "trainer/puzzle-rating.js", "trainer/puzzle-openings.js", "trainer/puzzle-mine.js",
+  "trainer/puzzle-book.js", "trainer/puzzle-rating.js", "trainer/puzzle-openings.js", "trainer/puzzle-mine.js", "trainer/guess.js",
   "me-page.js", "game-end.js", "review/moments.js", "opponents-ui.js", "io.js", "game-controller.js"];
 const appModuleEntries = () => APP_MODULES.map((f) => [f, WEB_MODULES.get(f) || ""]);
 
@@ -527,7 +527,10 @@ function checkJapanese(label, table, kanaMin, minStrings) {
 
 {
   loadModule(ctx, "src/web/js/lessons.js");
-  const lessons = ctx.CHESS_LESSONS;
+  // v8-2-plan T1: the advanced part 3 is a chunk of its own, words and all;
+  // every check below holds it to the same rules as the rest of the course
+  for (const f of ["lessons-adv.js", "lessons-adv-en.js", "lessons-adv-ja.js"]) loadModule(ctx, "src/web/js/" + f);
+  const lessons = ctx.CHESS_LESSONS.concat(ctx.CHESS_LESSONS_ADV_ZH);
   assert(Array.isArray(lessons) && lessons.length >= 28, "lessons loaded (" + (lessons ? lessons.length : 0) + ")");
   const ids = new Set();
   let bad = 0;
@@ -753,7 +756,7 @@ for (const lang of CONTENT_LANGS) {
   assert(fs.existsSync(path.join(root, file)), file + " exists");
   if (!fs.existsSync(path.join(root, file))) continue;
   loadModule(ctx, file);
-  const en = ctx["CHESS_LESSONS_" + sfx(lang)];
+  const en = Object.assign({}, ctx["CHESS_LESSONS_" + sfx(lang)], ctx["CHESS_LESSONS_ADV_" + sfx(lang)]);
   const uncovered = lessons.filter((L) => !en || !en[L.id]).map((L) => L.id);
   for (const id of uncovered) console.error("FAIL: lesson has no " + lang + " text: " + id);
   assert(uncovered.length === 0, "all " + lessons.length + " lessons have " + lang + " text");
@@ -838,9 +841,9 @@ for (const lang of CONTENT_LANGS) {
     if (Array.isArray(o)) o.forEach((x, i) => walk(x, where + "[" + i + "]"));
     else if (o && typeof o === "object") for (const k of Object.keys(o)) walk(o[k], where + "." + k);
   };
-  for (const L of ctx.CHESS_LESSONS) walk(L, "zh:" + L.id);
+  for (const L of ctx.CHESS_LESSONS.concat(ctx.CHESS_LESSONS_ADV_ZH)) walk(L, "zh:" + L.id);
   for (const lang of CONTENT_LANGS) {
-    for (const [id, tr] of Object.entries(ctx["CHESS_LESSONS_" + sfx(lang)] || {})) walk(tr, lang + ":" + id);
+    for (const [id, tr] of Object.entries(Object.assign({}, ctx["CHESS_LESSONS_" + sfx(lang)], ctx["CHESS_LESSONS_ADV_" + sfx(lang)]))) walk(tr, lang + ":" + id);
   }
   assert(stray.length === 0, "课文里的 ** 只出现在会被渲染成粗体的段落里" +
     (stray.length ? " — " + stray.join(", ") : ""));
@@ -2103,7 +2106,9 @@ for (const lang of CONTENT_LANGS) {
     const writes = [...app.matchAll(/store\.game\.flipped\s*=(?!=)/g)].length;
     // the assignments that remain are: the initial state, two authored-view
     // resets (lesson, puzzle), the loaded-record restore, the editor reset,
-    // and setFlipped itself
+    // and setFlipped itself. 名局猜着 (v8-2-plan T3) faces the side being
+    // guessed through its board model, as a puzzle does: writing the flag
+    // turned the play board's saved setting over for good (M2 review)
     assert(/function setFlipped\(/.test(app), "setFlipped is the one place the view turns");
     // Two of the three doors are still spelled in app.js; the third is the
     // native View menu, which moved to native-commands.js in 6.1 and is
@@ -3065,8 +3070,9 @@ for (const lang of CONTENT_LANGS) {
   // checkmate must not render as an ordinary check
   const boardSrc = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
   assert(/m\.mated/.test(boardSrc), "the board draws checkmate differently from check");
-  // four models: the game, the puzzle, the lesson, and 再试一次 (v7-8-plan §3)
-  assert((appSrc.match(/mated: g\.in_checkmate\(\)/g) || []).length === 4,
+  // five models: the game, the puzzle, the lesson, 再试一次 (v7-8-plan §3)
+  // and 名局猜着 (v8-2-plan T3, trainer/guess.js)
+  assert((appSrc.match(/mated: g\.in_checkmate\(\)/g) || []).length === 5,
     "every board model says whether the check is mate");
 
   // the analyser must not carry a fifth copy of the numbers
@@ -4896,12 +4902,14 @@ for (const lang of CONTENT_LANGS) {
 
   // The first thing a newcomer reads is "N interactive lessons" — in three
   // languages, none of which knows how many there actually are.
+  // v8-2-plan T1: the course is lessons.js and the advanced part 3's chunk
+  const courseSize = ctx.CHESS_LESSONS.length + ctx.CHESS_LESSONS_ADV_ZH.length;
   let miscounted = 0;
   for (const id of langs) {
     const m = /(\d+)/.exec(I.DICT[id]["ob.newSub"] || "");
-    if (!m || Number(m[1]) !== ctx.CHESS_LESSONS.length) {
+    if (!m || Number(m[1]) !== courseSize) {
       miscounted++;
-      console.error("FAIL: " + id + " promises " + (m ? m[1] : "?") + " lessons, there are " + ctx.CHESS_LESSONS.length);
+      console.error("FAIL: " + id + " promises " + (m ? m[1] : "?") + " lessons, there are " + courseSize);
     }
   }
   assert(miscounted === 0, "every language's onboarding blurb counts the lessons correctly");
@@ -6205,7 +6213,9 @@ for (const lang of CONTENT_LANGS) {
     return mctx.MINED_PUZZLES.length;
   })();
   const claims = [
-    [/零基础 (\d+) 课/, lessons, "the course size in the teaching row"],
+    // v8-2-plan T1: the whole course — lessons.js plus the advanced part 3's chunk
+    [/零基础 (\d+) 课/, lessons + ctx.CHESS_LESSONS_ADV_ZH.length, "the course size in the teaching row"],
+    [/lessons-adv\.js\s+# 进阶课程第三部 (\d+) 课/, ctx.CHESS_LESSONS_ADV_ZH.length, "the advanced part 3 in the file map"],
     [/教学课程 (\d+) 课/, lessons, "the course size in the file map"],
     [/英文全译 (\d+) 课/, lessons, "the English course size"],
     [/(\d+) 个界面键三语齐备/, keys, "the interface-key count"],
@@ -7204,7 +7214,7 @@ for (const lang of CONTENT_LANGS) {
     catch (err) { why = "threw: " + err.message; }
     if (why) { bad++; console.error("FAIL: " + where + " 的局面不合法 (" + why + "): " + fen); }
   };
-  for (const L of ctx.CHESS_LESSONS || []) {
+  for (const L of (ctx.CHESS_LESSONS || []).concat(ctx.CHESS_LESSONS_ADV_ZH || [])) {
     for (const t of L.tasks || []) vet(t.fen, "课程 " + L.id);
   }
   for (const p of ctx.CHESS_PUZZLES || []) vet(p.fen, "题目 " + p.id);

@@ -572,10 +572,13 @@ function mainlineSans(root) {
     `${N} 局：解析中让出线程 ${pauses} 次，最长一段同步 ${worst.toFixed(1)}ms（< 50ms）`);
   // splitting stays linear: it looked for the move number in all the text
   // before every boundary, so 4× the games cost ~16× the time (8000 局 9.4s)
+  // Best of five on 3000 / 12000 games: at 1500 games the split took ~19ms on
+  // a shared macOS runner, where one GC pause read the ratio as 8.1 (CI,
+  // PR #98). A quadratic split still reads ~16× here; linear ~4×.
   const time = (n) => { const t = big(n); let best = Infinity;
-    for (let r = 0; r < 3; r++) { const t0 = now(); P.splitGames(t); best = Math.min(best, now() - t0); } return best; };
-  const s1 = time(1500), s4 = time(6000);
-  assert(s4 / s1 < 8, `切分是线性的：1500 局 ${s1.toFixed(0)}ms，6000 局 ${s4.toFixed(0)}ms（比值 ${(s4 / s1).toFixed(1)} < 8）`);
+    for (let r = 0; r < 5; r++) { const t0 = now(); P.splitGames(t); best = Math.min(best, now() - t0); } return best; };
+  const s1 = time(3000), s4 = time(12000);
+  assert(s4 / s1 < 8, `切分是线性的：3000 局 ${s1.toFixed(0)}ms，12000 局 ${s4.toFixed(0)}ms（比值 ${(s4 / s1).toFixed(1)} < 8）`);
 }
 
 // --- v8-0-plan F2: the index and the per-node facts ----------------------------

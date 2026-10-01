@@ -12,11 +12,13 @@
  *
  * `v` is how the verdict was checked when this file was written, never at
  * run time (no tablebase ships):
- *   - "tb": ≤ 4 men, the Syzygy WDL table (3–4-piece files; the 5-piece set
- *     could not be fetched from here — v8-1-plan §9 M3);
- *   - "sf": 5 men or more, a deep native Stockfish search with the 3–4-piece
- *     tables attached, the verdict (mate / tablebase score for a win, 0.00
- *     for a draw) the same at two depths.
+ *   - "tb": the Syzygy tables. ≤ 4 men, the local 3–4-piece WDL files (the
+ *     5-piece set could not be fetched from here — v8-1-plan §9 M3); 5–7
+ *     men, the full set's answer from tablebase.lichess.ovh, asked in CI
+ *     (v8-2-plan §9 M2) — their Stockfish rows stay on file beside it;
+ *   - "sf": more than 7 men, no table anywhere: a deep native Stockfish
+ *     search with the 3–4-piece tables attached, the verdict (mate /
+ *     tablebase score for a win, 0.00 for a draw) the same at two depths.
  * scripts/verify-endgames.py writes docs/endgames-verified.json from this
  * file; test-endgames.mjs holds each `goal` and `v` to that record — and
  * `key`, where a tip names the moves that work, to the table's list of the
@@ -92,13 +94,13 @@
         "Both pawns run and yours queens first. Black's will queen too — but your new queen on a8 watches h1 down the long diagonal. Only a6 wins.",
         "両者ポーンを突き合い、こちらが先に昇格する。黒も昇格するが、a8 の新クイーンが長い対角線で h1 を見ている。勝ちは a6 だけ。"],
       src: ONE },
-    { id: "kp-outside", g: "kp", fen: "8/8/3k4/6p1/P2K2P1/8/8/8 w - - 0 1", goal: "win", v: "sf",
+    { id: "kp-outside", g: "kp", fen: "8/8/3k4/6p1/P2K2P1/8/8/8 w - - 0 1", goal: "win", v: "tb",
       n: ["外线通路兵", "The outside passed pawn", "外側のパスポーン"],
       tip: ["a 兵离黑王最远。用它把黑王引到棋盘另一边，你的王趁机去吃 g5，再回来。",
         "The a-pawn is far from Black's king. Use it to drag the king across the board, and let your own king take g5 meanwhile.",
         "a ポーンは黒キングから最も遠い。それで相手キングを反対側へ引きつけ、その間にこちらのキングが g5 を取りに行く。"],
       src: THEORY },
-    { id: "kp-protected", g: "kp", fen: "8/8/3k4/3P3p/4P3/8/6K1/8 w - - 0 1", goal: "win", v: "sf",
+    { id: "kp-protected", g: "kp", fen: "8/8/3k4/3P3p/4P3/8/6K1/8 w - - 0 1", goal: "win", v: "tb",
       n: ["受保护的通路兵", "The protected passed pawn", "守られたパスポーン"],
       tip: ["d5 有 e4 保护，黑王既吃不掉它，也不敢离开它。你的王可以放心去吃 h 兵，再回来护送。",
         "e4 guards d5, so Black's king can neither take it nor leave it. Your king is free to go and win the h-pawn, then come back.",
@@ -110,7 +112,7 @@
         "Three against three: b6! However Black captures, one pawn gets through, and Black's king is too far away to catch it.",
         "3 対 3：b6！ 黒がどう取っても 1 本は抜けていき、黒キングは遠すぎて間に合わない。"],
       src: THEORY },
-    { id: "kp-majority", g: "kp", fen: "8/8/5kp1/8/5PP1/5K2/8/8 w - - 0 1", goal: "win", v: "sf",
+    { id: "kp-majority", g: "kp", fen: "8/8/5kp1/8/5PP1/5K2/8/8 w - - 0 1", goal: "win", v: "tb",
       n: ["二打一", "Two against one", "2 対 1"],
       tip: ["用两个兵换掉对方唯一的兵，留下一个通路兵；王走在兵的前面护送。",
         "Trade one of your two pawns for Black's only one and keep a passed pawn, with your king walking in front of it.",
@@ -124,25 +126,25 @@
         "The rook fences off a line. When your king faces Black's, a rook check pushes it back a rank — all the way to the edge, and mate.",
         "ルークで 1 列を仕切る。キング同士が向かい合った瞬間にルークでチェックして 1 段下げ、端まで追い詰めてメイト。"],
       src: THEORY },
-    { id: "rp-lucena", g: "rp", fen: "1K1k4/1P6/8/8/8/8/r7/2R5 w - - 0 1", goal: "win", v: "sf",
+    { id: "rp-lucena", g: "rp", fen: "1K1k4/1P6/8/8/8/8/r7/2R5 w - - 0 1", goal: "win", v: "tb",
       n: ["卢塞纳：搭桥", "Lucena: building a bridge", "ルセナ：橋をかける"],
       tip: ["车放到第 4 横线准备「搭桥」，王从兵前走出来；黑车从侧面将军时，用车挡住，兵就能升变。",
         "Put your rook on the fourth rank to build a bridge, then walk the king out from in front of the pawn; when the black rook checks from the side, block with your rook.",
         "ルークを 4 段目に置いて「橋」を準備し、キングをポーンの前から出す。黒ルークが横からチェックしてきたらルークで遮る。"],
       src: ["卢塞纳局面（Salvio 1634 年书中记载）", "The Lucena position (recorded by Salvio, 1634)", "ルセナ・ポジション（サルヴィオ、1634 年）"] },
-    { id: "rp-lucena2", g: "rp", fen: "3K4/3P2k1/8/8/8/8/2r5/4R3 w - - 0 1", goal: "win", v: "sf",
+    { id: "rp-lucena2", g: "rp", fen: "3K4/3P2k1/8/8/8/8/2r5/4R3 w - - 0 1", goal: "win", v: "tb",
       n: ["卢塞纳：王被困在兵前", "Lucena: the king in front", "ルセナ：ポーンの前のキング"],
       tip: ["你的车在 e 线挡住黑王。王先从兵前走出来，躲开侧面的将军；需要时照样用车搭桥。",
         "Your rook on the e-file keeps Black's king away. Get your king out from in front of the pawn, dodge the side checks, and bridge with the rook when you must.",
         "e ファイルのルークが黒キングを遮っている。まずキングをポーンの前から出し、横からのチェックをかわす。必要なら同じく橋をかける。"],
       src: ["卢塞纳局面的变体", "A variant of the Lucena position", "ルセナ・ポジションの変形"] },
-    { id: "rp-cutoff", g: "rp", fen: "r7/8/6k1/3P4/3K4/8/8/4R3 w - - 0 1", goal: "win", v: "sf",
+    { id: "rp-cutoff", g: "rp", fen: "r7/8/6k1/3P4/3K4/8/8/4R3 w - - 0 1", goal: "win", v: "tb",
       n: ["用车切断王", "Cutting off the king", "キングを遮断する"],
       tip: ["车在 e 线把黑王关在王翼。王护着兵往前走；黑车从后面将军时，王往车那边靠着躲。",
         "The rook on the e-file shuts Black's king out on the kingside. Advance king and pawn together; when the black rook checks from behind, hide towards it.",
         "e ファイルのルークが黒キングをキングサイドに閉じ込める。キングとポーンで前進し、後ろからのチェックはルークの方へ寄ってかわす。"],
       src: THEORY },
-    { id: "rp-skewer", g: "rp", fen: "R7/P3k3/8/8/8/8/6K1/r7 w - - 0 1", goal: "win", v: "sf",
+    { id: "rp-skewer", g: "rp", fen: "R7/P3k3/8/8/8/8/6K1/r7 w - - 0 1", goal: "win", v: "tb",
       n: ["七线兵的串击", "The seventh-rank skewer", "7 段目のスキュア"],
       tip: ["Rh8！ 黑车吃 a7 的话，Rh7+ 串击把车赢回来。黑王不在 g7、h7，这一招就成立。",
         "Rh8! If the black rook takes on a7, Rh7+ skewers it. With Black's king off g7 and h7, the trick works.",
@@ -184,7 +186,7 @@
         "Rf6+! The check also hits the bishop on f5; once the king steps aside, the rook takes it.",
         "Rf6+！ チェックと同時に f5 のビショップを狙う。キングがよければビショップを取れる。"],
       src: ONE },
-    { id: "rp-pawns", g: "rp", fen: "8/r7/5PP1/8/8/K7/8/2k5 w - - 0 1", goal: "win", v: "sf",
+    { id: "rp-pawns", g: "rp", fen: "8/r7/5PP1/8/8/K7/8/2k5 w - - 0 1", goal: "win", v: "tb",
       n: ["连兵胜车", "Two pawns beat the rook", "連結ポーンがルークに勝つ"],
       tip: ["两个连着的兵到了第 6 横线，车一个人挡不住。先让王躲开车的将军（往兵那边走），兵再推。",
         "Two connected pawns on the sixth are too much for a lone rook. Escape the checks first — walk towards your pawns — then push.",
@@ -340,7 +342,7 @@
       src: ONE },
 
     // —— 理论和棋 ——
-    { id: "dr-philidor", g: "dr", fen: "r7/8/8/4k3/4p3/1R6/8/4K3 w - - 0 1", goal: "draw", v: "sf",
+    { id: "dr-philidor", g: "dr", fen: "r7/8/8/4k3/4p3/1R6/8/4K3 w - - 0 1", goal: "draw", v: "tb",
       n: ["菲利多尔防守", "The Philidor defence", "フィリドールの守り"],
       tip: ["车守住你的第 3 横线，不让黑王过来；黑兵一推到第 3 横线，车立刻回到底线，从后面不停将军。",
         "Keep your rook on your third rank so Black's king cannot come forward; the moment the pawn reaches that rank, drop the rook to the back and check from behind.",
@@ -400,13 +402,13 @@
         "Only e5 at once holds: king and pawn go forward together, Black's king is far, and in the end the rook has to give itself for the pawn.",
         "引き分けにできるのはすぐ e5 だけ。キングとポーンで前進し、黒キングは遠く、最後はルークを捨ててポーンを取るしかない。"],
       src: ONE },
-    { id: "dr-apawn", g: "dr", fen: "R7/6k1/8/8/8/8/p5K1/r7 w - - 0 1", goal: "draw", v: "sf",
+    { id: "dr-apawn", g: "dr", fen: "R7/6k1/8/8/8/8/p5K1/r7 w - - 0 1", goal: "draw", v: "tb",
       n: ["车在兵前：王守 g2、h2", "Rook in front: king on g2/h2", "兵の前のルーク：キングは g2・h2"],
       tip: ["对方的车堵在自己兵的前面。你的车留在 a 线从后面盯着兵，王只在 g2、h2 两格之间来回走：王离开这两格，就可能吃到串击。",
         "Black's rook is stuck in front of its own pawn. Keep your rook behind the pawn on the a-file and shuffle the king between g2 and h2 — anywhere else invites a skewer.",
         "黒ルークは自分のポーンの前に詰まっている。ルークは a ファイルで後ろから見張り、キングは g2・h2 の間だけを往復する。他のマスではスキュアを食う。"],
       src: FLIP(THEORY) },
-    { id: "dr-vancura", g: "dr", fen: "8/6k1/8/8/8/p4R2/6K1/r7 w - - 0 1", goal: "draw", v: "sf",
+    { id: "dr-vancura", g: "dr", fen: "8/6k1/8/8/8/p4R2/6K1/r7 w - - 0 1", goal: "draw", v: "tb",
       n: ["万丘拉防守", "The Vančura defence", "ヴァンチュラの守り"],
       tip: ["车从侧面（f3）盯住 a 兵，王守在 g2、h2 一带。对方的王过来护兵时，从侧面将军把它赶开。",
         "The rook watches the a-pawn from the side (f3) while your king stays near g2/h2. When Black's king comes to help the pawn, check it away from the side.",

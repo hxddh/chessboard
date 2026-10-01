@@ -14,7 +14,10 @@ For every position in src/web/js/endgames.js:
 
 The 5-piece Syzygy set (~1 GB with the 3–4-piece files) could not be fetched
 here — tablebase.lichess.ovh is refused by this machine's proxy — so 5+ men
-are the Stockfish rows. v8-1-plan §9 M3 has the whole story.
+are the Stockfish rows. v8-1-plan §9 M3 has the whole story. An item of 5–7
+men may still be marked `tb` in endgames.js: then it rests on the online
+table's answer recorded beside the search (`lichess`, see --online), and the
+search stays on file as a second opinion (v8-2-plan §9 M2).
 
 Writes docs/endgames-verified.json; scripts/test-endgames.mjs holds endgames.js
 to it (goal, method, FEN, the only moves).
@@ -28,7 +31,8 @@ to 7 men — about every position the file already records, one request a
 second, and write its answer beside the record as `lichess` (category,
 verdict, DTZ, the moves that keep the verdict). Nothing else in the record
 changes: whether a 5-man item's method becomes `tb` is decided by a person,
-after reading the answers. Exits 1 if the table disagrees with an item's goal,
+after reading the answers (M2: the eleven 5-man items were, from run
+36771239680). Exits 1 if the table disagrees with an item's goal,
 with a 3–4-man record's moves or with an item's only move; the positions over
 7 men are listed and skipped. Needs no engine and no local tables. Run by
 .github/workflows/verify-endgames.yml; scripts/lib/tablebase_api.py has the API.
@@ -86,6 +90,32 @@ def by_engine(eng, b, depths):
     seen = {cls(r) for r in rows}
     verdict = seen.pop() if len(seen) == 1 else "unstable"
     return {"method": "sf", "verdict": verdict, "search": rows}
+
+
+def on_file(it, rec):
+    """
+    Where the record on file does not back the item, in words; empty when it
+    does. The verdict must be the goal. The method must be the one the item
+    names — except that a 5–7-man item marked `tb` (v8-2-plan §9 M2) rests on
+    the online table's answer: `lichess` must be there and give the goal. An
+    only move (`key`) is held to the moves that keep the result, from the
+    table the item names.
+    """
+    why = []
+    online = rec.get("lichess") or {}
+    if rec["verdict"] != it["goal"]:
+        why.append("verdict %s, goal %s" % (rec["verdict"], it["goal"]))
+    if it["v"] == "tb" and rec["method"] == "sf" and 4 < rec["men"] <= 7:
+        if online.get("verdict") != it["goal"]:
+            why.append("tb on %d men needs the online table's answer, and it is %s" % (rec["men"], online.get("verdict")))
+        good = online.get("good")
+    else:
+        if rec["method"] != it["v"]:
+            why.append("method %s, marked %s" % (rec["method"], it["v"]))
+        good = rec.get("good")
+    if it["key"] is not None and good != sorted(it["key"]):
+        why.append("only move %s, table %s" % (sorted(it["key"]), good))
+    return why
 
 
 def write_doc(doc, path):
@@ -187,8 +217,7 @@ def main():
         # v8-2-plan V2: the online table's answer for this same position stays
         was = prev.get(it["id"])
         if was and was["fen"] == it["fen"] and "lichess" in was: rec["lichess"] = was["lichess"]
-        ok = rec["verdict"] == it["goal"] and rec["method"] == it["v"]
-        if it["key"] is not None and rec.get("good") != sorted(it["key"]): ok = False
+        ok = not on_file(it, rec)
         print(("ok  " if ok else "BAD ") + it["id"], rec["verdict"], rec.get("good") or [r["score"] for r in rec.get("search", [])],
               "%.0fs" % (time.time() - t0), flush=True)
         if not ok: bad.append(it["id"])
