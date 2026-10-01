@@ -1882,7 +1882,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   // (a) a guess the engine has to judge (1.d4 for 1.e4), refused while it is judged
   await tapSq("d2"); await tapSq("d4");
   const a = await refuseLoad();
-  await pg.waitForTimeout(1800); // the check comes back while the run is set aside
+  await pg.waitForTimeout(3600); // both of the check's searches (1.5 s each) come back while the run is set aside
   if (a.asked) await pg.click("#confirm-cancel");
   await pg.click('.rail-btn[data-view="learn"]');
   const resumedCheck = await gsAt(2);
