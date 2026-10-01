@@ -9,6 +9,10 @@
   {
    "ours": "build.zig",
    "upstream": "build/app.zig"
+  },
+  {
+   "ours": "src/window_placement.zig",
+   "upstream": "src/app_runner/window_placement.zig"
   }
  ],
  "groups": [
@@ -99,8 +103,8 @@
   {
    "id": "R15",
    "file": "src/runner.zig",
-   "kind": "lag",
-   "title": "恢复窗口位置：我们只恢复 frame，上游经 window_placement 还标记 initial_placement = .restored"
+   "kind": "ours",
+   "title": "恢复窗口位置：8.2 M4 起照上游（window_placement.applySavedWindow，文件原样抄入），多出的只有我们自己的端到端测试"
   },
   {
    "id": "B01",
@@ -153,8 +157,8 @@
   {
    "id": "B09",
    "file": "build.zig",
-   "kind": "lag",
-   "title": "Windows exe 没有嵌 SDK 的应用清单（assets/native-sdk.manifest：通用控件 v6、按显示器 DPI 感知）"
+   "kind": "ours",
+   "title": "Windows 应用清单：8.2 M4 起照上游嵌入 assets/native-sdk.manifest，差异只剩 SDK 路径写法（同 B01）"
   },
   {
    "id": "B10",
@@ -173,6 +177,12 @@
    "file": "build.zig",
    "kind": "lag",
    "title": "x86_64 强制 LLVM 后端的规避（useLlvmWorkaround）没有抄"
+  },
+  {
+   "id": "B13",
+   "file": "build.zig",
+   "kind": "ours",
+   "title": "runner.zig 是独立模块，zig build test 另跑它的测试（R15 的测试与 window_placement.zig 自带的测试）"
   }
  ],
  "hunks": [
@@ -185,13 +195,12 @@
     "const app_manifest = @import(\"app_manifest_zon\");"
    ],
    "up": [
-    "const built_relational_migrations = @import(\"relational_migrations\");",
-    "const window_placement = @import(\"window_placement.zig\");"
+    "const built_relational_migrations = @import(\"relational_migrations\");"
    ],
    "ours": [],
    "after": [
-    "const manifest_commands = if (@hasField(@TypeOf(app_manifest), \"commands\")) app_manifest.commands else .{};",
-    "const manifest_shortcuts = if (@hasField(@TypeOf(app_manifest), \"shortcuts\")) app_manifest.shortcuts else .{};"
+    "const window_placement = @import(\"window_placement.zig\");",
+    "const manifest_commands = if (@hasField(@TypeOf(app_manifest), \"commands\")) app_manifest.commands else .{};"
    ]
   },
   {
@@ -3232,47 +3241,68 @@
   {
    "group": "R15",
    "file": "src/runner.zig",
-   "at": 1386,
+   "at": 1397,
    "before": [
-    "        for (restored_windows, 0..) |*window, index| {",
-    "            if (!window.restore_state) continue;"
-   ],
-   "up": [
-    "            if (window_placement.applySavedWindow(window, store.loadWindow(window.label, &buffers.read) catch null)) {",
-    "                if (index == 0) {",
-    "                    app_info.main_window.default_frame = window.default_frame;",
-    "                    app_info.main_window.initial_placement = .restored;",
-    "                }"
-   ],
-   "ours": [
-    "            if (store.loadWindow(window.label, &buffers.read) catch null) |saved| {",
-    "                window.default_frame = saved.frame;",
-    "                if (index == 0) app_info.main_window.default_frame = saved.frame;"
-   ],
-   "after": [
-    "            }",
-    "        }"
-   ]
-  },
-  {
-   "group": "R15",
-   "file": "src/runner.zig",
-   "at": 1394,
-   "before": [
-    "        }",
-    "    } else if (app_info.main_window.restore_state) {"
-   ],
-   "up": [
-    "        _ = window_placement.applySavedWindow(&app_info.main_window, store.loadWindow(app_info.main_window.label, &buffers.read) catch null);"
-   ],
-   "ours": [
-    "        if (store.loadWindow(app_info.main_window.label, &buffers.read) catch null) |saved| {",
-    "            app_info.main_window.default_frame = saved.frame;",
-    "        }"
-   ],
-   "after": [
     "    }",
     "    return store;"
+   ],
+   "up": [],
+   "ours": [
+    "}",
+    "",
+    "// v8-2-plan M4 (docs/sdk-fork-notes.md R15): through 8.1 the restore above",
+    "// swapped the saved frame in but left initial_placement at `.default`. The SDK",
+    "// then guesses: a non-zero origin is read as an authored one (`.explicit`,",
+    "// AppInfo.inferLegacyExplicitOrigin), so the position mostly came back by",
+    "// accident — but a window saved at (0,0) stayed `.default`, and the macOS host",
+    "// centres those (appkit_host.m centerOnPrimary). What the host is handed is",
+    "// the platform's app_info; the null platform keeps it readable.",
+    "test \"a saved window comes back where it was: the host is told .restored, not .default\" {",
+    "    var tmp = std.testing.tmpDir(.{});",
+    "    defer tmp.cleanup();",
+    "    var root_buffer: [256]u8 = undefined;",
+    "    const root = try std.fmt.bufPrint(&root_buffer, \".zig-cache/tmp/{s}\", .{tmp.sub_path[0..]});",
+    "    var env = std.process.Environ.Map.init(std.testing.allocator);",
+    "    defer env.deinit();",
+    "    // each platform's state root (app_dirs: HOME on macOS, XDG on Linux,",
+    "    // LOCALAPPDATA on Windows), all inside the throwaway directory",
+    "    for ([_][]const u8{ \"HOME\", \"XDG_STATE_HOME\", \"LOCALAPPDATA\", \"APPDATA\" }) |name| try env.put(name, root);",
+    "    const options: RunOptions = .{ .app_name = \"chessboard\", .bundle_id = \"dev.chessboard.test-restore\" };",
+    "",
+    "    // first launch: nothing saved, the host places the window itself",
+    "    var first_buffers: StateBuffers = undefined;",
+    "    var first = options.appInfo(&first_buffers);",
+    "    const store = prepareStateStore(std.testing.io, &env, &first, &first_buffers) orelse return error.NoStateStore;",
+    "    const fresh = native_sdk.NullPlatform.initWithOptions(.{}, webEngine(), first).app_info.resolvedStartupWindow(0);",
+    "    try std.testing.expectEqual(native_sdk.WindowInitialPlacement.default, fresh.initial_placement);",
+    "",
+    "    // the window was moved and resized, then the app quit; next launch",
+    "    const saved = [_]native_sdk.geometry.RectF{",
+    "        native_sdk.geometry.RectF.init(140, 90, 1000, 760),",
+    "        native_sdk.geometry.RectF.init(0, 0, 1000, 760),",
+    "    };",
+    "    for (saved) |frame| {",
+    "        try store.saveWindow(.{ .label = fresh.label, .frame = frame });",
+    "        var buffers: StateBuffers = undefined;",
+    "        var app_info = options.appInfo(&buffers);",
+    "        _ = prepareStateStore(std.testing.io, &env, &app_info, &buffers) orelse return error.NoStateStore;",
+    "        const host = native_sdk.NullPlatform.initWithOptions(.{}, webEngine(), app_info);",
+    "        // the hosts create the first window from resolvedMainWindow; the",
+    "        // startup-window list (and the null platform) reads",
+    "        // resolvedStartupWindow (SDK 0.10.1 platform/*/root.zig)",
+    "        for ([_]native_sdk.WindowOptions{ host.app_info.resolvedMainWindow(), host.app_info.resolvedStartupWindow(0) }) |window| {",
+    "            try std.testing.expectEqual(frame, window.default_frame);",
+    "            try std.testing.expectEqual(native_sdk.WindowInitialPlacement.restored, window.initial_placement);",
+    "        }",
+    "    }",
+    "}",
+    "",
+    "// src/window_placement.zig is the SDK's file verbatim; its own tests run here.",
+    "test {",
+    "    _ = window_placement;"
+   ],
+   "after": [
+    "}"
    ]
   },
   {
@@ -5618,6 +5648,27 @@
    ]
   },
   {
+   "group": "B13",
+   "file": "build.zig",
+   "at": 1859,
+   "before": [
+    "    const test_step = b.step(\"test\", \"Run tests\");",
+    "    test_step.dependOn(&b.addRunArtifact(tests).step);"
+   ],
+   "up": [],
+   "ours": [
+    "    // src/runner.zig is a module of its own, so the app's test binary never",
+    "    // runs its tests: the window-restore one (v8-2-plan M4, sdk-fork-notes R15)",
+    "    // and those of the SDK's window_placement.zig it imports.",
+    "    const runner_tests = b.addTest(.{ .root_module = runner_mod });",
+    "    test_step.dependOn(&b.addRunArtifact(runner_tests).step);"
+   ],
+   "after": [
+    "",
+    "    // `native test` must surface the app's compile-time teaching errors,"
+   ]
+  },
+  {
    "group": "B02",
    "file": "build.zig",
    "at": 1859,
@@ -6686,21 +6737,17 @@
   {
    "group": "B09",
    "file": "build.zig",
-   "at": 2546,
+   "at": 2552,
    "before": [
-    "        if (web_engine == .chromium) app_mod.linkSystemLibrary(\"stdc++\", .{});",
-    "    } else if (platform == .windows) {"
+    "        // canvas rasterizes at real device scale instead of Windows",
+    "        // bitmap-stretching a 96-DPI surface on scaled displays."
    ],
    "up": [
-    "        // Common-controls v6 side-by-side dependency: without this",
-    "        // manifest the loader binds the system-default v5 assembly, which",
-    "        // renders classic-styled controls and lacks the v6-only exports.",
-    "        // The manifest also declares per-monitor-v2 DPI awareness so the",
-    "        // canvas rasterizes at real device scale instead of Windows",
-    "        // bitmap-stretching a 96-DPI surface on scaled displays.",
     "        exe.win32_manifest = dep.path(\"assets/native-sdk.manifest\");"
    ],
-   "ours": [],
+   "ours": [
+    "        exe.win32_manifest = nativeSdkPath(b, native_sdk_path, \"assets/native-sdk.manifest\");"
+   ],
    "after": [
     "        switch (web_engine) {",
     "            .system => if (web_layer) {"

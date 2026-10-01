@@ -516,7 +516,16 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
       check(ourFw.has(f),
         `SDK 交叉检查: SDK 链接框架 ${f},build.zig 不链接 —— 手抄件的第三张面孔`);
     }
-    notes.push(`SDK 交叉检查: 平台源文件 ${sdkSrc.size} 个、系统库 ${sdkLib.size} 个、框架 ${sdkFw.size} 个,build.zig 全都有`);
+    // v8-2-plan M4（sdk-fork-notes B09）：第四张面孔是 Windows 应用清单。它缺了
+    // 不报任何错 —— exe 照样链接、照样启动，只是对 DPI 不感知，150% 缩放下整窗
+    // 被按位图拉伸发虚。8.1 及以前就是这样，所以只能在这里查。
+    const sdkMf = pick(sdkBuild, /win32_manifest = dep\.path\("([^"]+)"\)/g);
+    const ourMf = pick(ourBuild, /win32_manifest = nativeSdkPath\(b, native_sdk_path, "([^"]+)"\)/g);
+    for (const f of sdkMf) {
+      check(ourMf.has(f),
+        `SDK 交叉检查: SDK 给 Windows exe 嵌应用清单 ${f},build.zig 不嵌 —— 进程对 DPI 不感知,缩放不是 100% 时整窗发虚`);
+    }
+    notes.push(`SDK 交叉检查: 平台源文件 ${sdkSrc.size} 个、系统库 ${sdkLib.size} 个、框架 ${sdkFw.size} 个、应用清单 ${sdkMf.size} 个,build.zig 全都有`);
   } else {
     notes.push("SDK 交叉检查: 找不到 build/app.zig，源文件清单这一项跳过");
   }

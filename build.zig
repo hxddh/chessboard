@@ -234,6 +234,11 @@ pub fn build(b: *std.Build) void {
     const tests = b.addTest(.{ .root_module = app_mod });
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
+    // src/runner.zig is a module of its own, so the app's test binary never
+    // runs its tests: the window-restore one (v8-2-plan M4, sdk-fork-notes R15)
+    // and those of the SDK's window_placement.zig it imports.
+    const runner_tests = b.addTest(.{ .root_module = runner_mod });
+    test_step.dependOn(&b.addRunArtifact(runner_tests).step);
 }
 
 /// Everything src/runner.zig reads from `build_options`, in one place so the
@@ -452,6 +457,13 @@ fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.B
         app_mod.linkSystemLibrary("c", .{});
         if (web_engine == .chromium) app_mod.linkSystemLibrary("stdc++", .{});
     } else if (platform == .windows) {
+        // Common-controls v6 side-by-side dependency: without this
+        // manifest the loader binds the system-default v5 assembly, which
+        // renders classic-styled controls and lacks the v6-only exports.
+        // The manifest also declares per-monitor-v2 DPI awareness so the
+        // canvas rasterizes at real device scale instead of Windows
+        // bitmap-stretching a 96-DPI surface on scaled displays.
+        exe.win32_manifest = nativeSdkPath(b, native_sdk_path, "assets/native-sdk.manifest");
         switch (web_engine) {
             .system => if (web_layer) {
                 // The vendored WebView2 SDK header (third_party/webview2)
