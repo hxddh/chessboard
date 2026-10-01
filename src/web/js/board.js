@@ -221,6 +221,16 @@ import { easeFromCss } from "./motion.js";
 
   let _canvas = null;
   let _model = null;
+  // v8-2-plan F3: until the shell shows its first view, and while a page
+  // lies over the stage, draw() owes the frame instead of making it. Each
+  // frame with a board in it is a raster of the whole canvas — 0.35–0.85 s
+  // in Chromium without a GPU — and a launch onto the library drew ten
+  // boards nobody could see, the library's reads waiting behind them.
+  let _covered = true, _owed = false;
+  function cover(on) {
+    _covered = on;
+    if (!on && _owed) { _owed = false; draw(); }
+  }
   /** live drag ghost: {from, x, y} in canvas pixels | null */
   // The drag lives in the model, not in a variable here — see draw(). It used
   // to be pushed in through setDrag(), which made the board hold a second copy
@@ -623,6 +633,7 @@ import { easeFromCss } from "./motion.js";
 
   function draw() {
     if (!_canvas || !_model) return;
+    if (_covered) { _owed = true; return; }
     const m = _model();
     const _drag = m.drag || null;
     const now = typeof performance !== "undefined" ? performance.now() : 0;
@@ -631,6 +642,9 @@ import { easeFromCss } from "./motion.js";
     const ctx = _canvas.getContext("2d");
     const w = _canvas.width;
     const step = w / 8;
+    // v8-2-plan F3: the whole canvas cleared first lets Chromium drop what
+    // earlier draws of the same frame queued, so a frame rasters one board
+    ctx.clearRect(0, 0, w, w);
     // integer cell edges: fractional fillRect boundaries land between device
     // pixels and antialias into soft seams at some board sizes
     const edge = (i) => Math.round(i * step);
@@ -1049,5 +1063,5 @@ import { easeFromCss } from "./motion.js";
    *   hit test   cellAt() — the inverse of paint, and the only reason the app
    *              needs to know the board's geometry at all.
    */
-  export const ChessBoardView = { draw, attach, resizeCanvas, invalidatePaint,
+  export const ChessBoardView = { draw, cover, attach, resizeCanvas, invalidatePaint,
     animateMove, reboundDrag, cancelAnim, cellAt, setPieceSet, setSvgs, pieceSrc, screenCell, stats };
