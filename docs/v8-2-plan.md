@@ -800,4 +800,5 @@
     - 试过、没留：每次 `draw()` 先 `clearRect` 整块画布让 Chromium 丢掉同一帧里前面几遍的绘制——滤镜去掉之后量不出差别（同一帧五遍和一遍都是 33 ms），省下 23 字节。
   - **验收**（`docs/measured.json libraryDb.coldStart`，`node scripts/test-library-e2e.mjs --record`，五次中位数，从导航开始；`coldStartBefore82` 是同一套测量跑在 dab3e66 的 src/web 上，`--record --before=dab3e66`）：「经过这个局面」可用（整局和索引到齐）**2,739 → 526 ms**（线 1.5 s；同一天另一次全套运行 699 ms）；列表可见 1,451 → 230 ms；按摘要搜索可用 1,477 → 244 ms。不用摘要的启动（头里去掉 `sum`）：索引 2,715 → 429 ms。停在下棋页的启动（剖析脚本，五次中位数）：整库可用约 2.9 → 1.1 s，棋盘照常画 10 遍，但每遍只要一帧的零头。
   - **测试**：test-library-e2e 冷启动改为五次取中位数（8.1 是列表取三次最快、索引取三次最慢），「经过这个局面」可用断言 ≤ 1.5 s（dab3e66 上 2,739 ms，红），另留 max(1.5 s, 不用摘要 × 1.25) 给更慢的机器；test-board-e2e 新增一段：开在棋谱库页上棋盘一遍不画、回到棋盘画出来、一遍棋盘不在 `#board` 上跑 blur 滤镜（dab3e66 上 9 遍 / 32 个，红）；test-chess 渲染遍历加「盖着不画、揭开就画」（dab3e66 上没有 `cover`，红）。
+  - 本机 Chromium，一次一个：test:static、test-board-e2e、test-library-e2e（`--record`）、test-persist-e2e、test-shell-e2e、test-layout-e2e 全过；perf-e2e 一次「回放一步 ≤ 5 ms」得 5.1 ms，重跑 4.9 / 5.0 ms 过，dab3e66 上同样是 4.7–5.0 ms（这台机器上本来就贴着线，不是这一条带来的）。
   - **主包** 909,756 → 909,949（+193）。
