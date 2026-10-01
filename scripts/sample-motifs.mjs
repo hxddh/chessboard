@@ -36,6 +36,7 @@
  *                                           seeded) against the deep search
  *   report --in=judged.jsonl [--record] [--doc=docs/motif-audit-8.1.md]
  *                                           [--fixture=scripts/fixtures/motif-sample.json]
+ *                                           [--doc-motifs=perpetual,trapped]  only these motifs' cases in --doc
  *
  * The app's pass, reproduced: a mistake's two positions are what the review
  * deepens (review-grade.js deepTargets: a drop of ≥ 5 points), so both are
@@ -541,7 +542,7 @@ async function report() {
   if (process.argv.includes("--record")) {
     const prev = readMeasured().motifPrecision || {};
     record("motifPrecision", Object.assign(prev, {
-      what: "教练说明里每个母题说对的比例（v8-1-plan T6）：真实对局的失误，按 app 的复盘预算重跑引擎与 explain.js，再用 3.7 倍节点（1,000,000）的深搜按判定规则逐条核对",
+      what: "教练说明里每个母题说对的比例（v8-1-plan T6）：真实对局的失误，按 app 的复盘预算重跑引擎与 explain.js，再用 3.7 倍节点（1,000,000）的深搜按判定规则逐条核对；长将、困子在 v8-2-plan T5 改了检测之后重抽（docs/motif-audit-8.2.md）",
       script: "scripts/sample-motifs.mjs（scan → app / games → judge → report）",
       sources: "Lichess 谜题库（database.lichess.org，每行是真实对局里走出的失着）+ scripts/fixtures/corpus.mjs + coach-games.mjs + src/sync-fixtures",
       appNodes: APP_NODES, deepNodes: DEEP_NODES, minPerMotif: MIN_PER_MOTIF, perMotif: PER_MOTIF, rule: "错误率 > 5% 的母题回退到只说子力得失（explain.js MATERIAL_ONLY）",
@@ -562,9 +563,12 @@ function writeDoc(file, all, res, order, rubric) {
     const x = res[m];
     parts.push(`| ${m} | ${x.n} | ${x.wrong} | ${x.errPct == null ? "—" : x.errPct + "%"} | ${x.fallback ? "**回退到只说子力**" : x.fallback == null ? "样本不足" : "保留"} |`);
   }
+  // --doc-motifs: the cases of these only (v8-2-plan T5 re-sampled two; the
+  // other seventeen are listed in the 8.1 document)
+  const listed = arg("doc-motifs") ? arg("doc-motifs").split(",") : order;
   for (const m of order) {
     const rs = all.filter((r) => r.motif === m);
-    if (!rs.length) continue;
+    if (!rs.length || !listed.includes(m)) continue;
     parts.push("", `### ${m}`, "", "判定规则：" + (rubric[m] || ""), "",
       "| # | 来源 | 标 | FEN（走之前） | 走的 | 说明（中文） | 判定 | 依据 |", "|---|---|---|---|---|---|---|---|");
     rs.forEach((r, i) => {

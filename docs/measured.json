@@ -2657,7 +2657,7 @@
     }
   },
   "motifPrecision": {
-    "what": "教练说明里每个母题说对的比例（v8-1-plan T6）：真实对局的失误，按 app 的复盘预算重跑引擎与 explain.js，再用 3.7 倍节点（1,000,000）的深搜按判定规则逐条核对",
+    "what": "教练说明里每个母题说对的比例（v8-1-plan T6）：真实对局的失误，按 app 的复盘预算重跑引擎与 explain.js，再用 3.7 倍节点（1,000,000）的深搜按判定规则逐条核对；长将、困子在 v8-2-plan T5 改了检测之后重抽（docs/motif-audit-8.2.md）",
     "script": "scripts/sample-motifs.mjs（scan → app / games → judge → report）",
     "sources": "Lichess 谜题库（database.lichess.org，每行是真实对局里走出的失着）+ scripts/fixtures/corpus.mjs + coach-games.mjs + src/sync-fixtures",
     "appNodes": 270000,
@@ -2666,24 +2666,24 @@
     "perMotif": 25,
     "rule": "错误率 > 5% 的母题回退到只说子力得失（explain.js MATERIAL_ONLY）",
     "tried": {
-      "rows": 3970,
-      "mistakes": 3812,
-      "named": 1606
+      "rows": 4419,
+      "mistakes": 4260,
+      "named": 1675
     },
     "byMotif": {
       "hanging": {
         "n": 25,
         "wrong": 0,
         "errPct": 0,
-        "found": 310,
+        "found": 336,
         "fallback": false
       },
       "perpetual": {
         "n": 25,
-        "wrong": 3,
-        "errPct": 12,
-        "found": 42,
-        "fallback": true
+        "wrong": 0,
+        "errPct": 0,
+        "found": 32,
+        "fallback": false
       },
       "double": {
         "n": 25,
@@ -2696,28 +2696,28 @@
         "n": 25,
         "wrong": 0,
         "errPct": 0,
-        "found": 50,
+        "found": 53,
         "fallback": false
       },
       "discoveredAttack": {
         "n": 25,
         "wrong": 0,
         "errPct": 0,
-        "found": 187,
+        "found": 193,
         "fallback": false
       },
       "fork": {
         "n": 25,
         "wrong": 1,
         "errPct": 4,
-        "found": 174,
+        "found": 241,
         "fallback": false
       },
       "zwischenzug": {
         "n": 25,
         "wrong": 0,
         "errPct": 0,
-        "found": 115,
+        "found": 117,
         "fallback": false
       },
       "desperado": {
@@ -2731,70 +2731,70 @@
         "n": 25,
         "wrong": 0,
         "errPct": 0,
-        "found": 76,
+        "found": 78,
         "fallback": false
       },
       "overload": {
         "n": 22,
         "wrong": 0,
         "errPct": 0,
-        "found": 22,
+        "found": 26,
         "fallback": false
       },
       "deflection": {
         "n": 25,
         "wrong": 1,
         "errPct": 4,
-        "found": 74,
+        "found": 75,
         "fallback": false
       },
       "decoy": {
         "n": 23,
         "wrong": 0,
         "errPct": 0,
-        "found": 30,
+        "found": 32,
         "fallback": false
       },
       "pin": {
         "n": 25,
         "wrong": 0,
         "errPct": 0,
-        "found": 47,
+        "found": 50,
         "fallback": false
       },
       "skewer": {
         "n": 25,
         "wrong": 1,
         "errPct": 4,
-        "found": 47,
+        "found": 50,
         "fallback": false
       },
       "xray": {
         "n": 25,
         "wrong": 0,
         "errPct": 0,
-        "found": 25,
+        "found": 29,
         "fallback": false
       },
       "trapped": {
         "n": 25,
-        "wrong": 3,
-        "errPct": 12,
-        "found": 100,
-        "fallback": true
+        "wrong": 0,
+        "errPct": 0,
+        "found": 50,
+        "fallback": false
       },
       "mateThreat": {
         "n": 25,
         "wrong": 0,
         "errPct": 0,
-        "found": 85,
+        "found": 90,
         "fallback": false
       },
       "promotion": {
         "n": 25,
         "wrong": 0,
         "errPct": 0,
-        "found": 32,
+        "found": 33,
         "fallback": false
       },
       "backRank": {
