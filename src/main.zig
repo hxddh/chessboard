@@ -321,11 +321,7 @@ fn onEvent(context: *anyopaque, runtime: *native_sdk.Runtime, event: native_sdk.
         .effects_wake => self.pending.drain(),
         .command => |cmd| {
             var buf: [256]u8 = undefined;
-            const detail = std.fmt.bufPrint(
-                &buf,
-                "{{\"id\":\"{s}\",\"command\":\"{s}\",\"key\":\"\",\"windowId\":{d},\"modifiers\":{{\"primary\":false,\"command\":false,\"control\":false,\"option\":false,\"shift\":false}}}}",
-                .{ cmd.name, cmd.name, if (cmd.window_id == 0) @as(u64, 1) else cmd.window_id },
-            ) catch return;
+            const detail = commandDetail(&buf, cmd.name, cmd.window_id) catch return;
             const wid: native_sdk.WindowId = if (cmd.window_id == 0) 1 else cmd.window_id;
             runtime.emitWindowEvent(wid, "shortcut", detail) catch {};
         },
@@ -333,6 +329,18 @@ fn onEvent(context: *anyopaque, runtime: *native_sdk.Runtime, event: native_sdk.
     }
     forwardOpenFiles(self, runtime, event);
     issueDroppedPaths(self, event);
+}
+
+/// The "shortcut" event a menu command becomes for the page (host.js →
+/// native-commands.js run): the command name as both `id` and `command`,
+/// window 0 (no window said) as the main window. Split out of onEvent so a
+/// test can read what the page is handed (v8-2-plan T4).
+fn commandDetail(buf: []u8, name: []const u8, window_id: native_sdk.WindowId) ![]const u8 {
+    return std.fmt.bufPrint(
+        buf,
+        "{{\"id\":\"{s}\",\"command\":\"{s}\",\"key\":\"\",\"windowId\":{d},\"modifiers\":{{\"primary\":false,\"command\":false,\"control\":false,\"option\":false,\"shift\":false}}}}",
+        .{ name, name, if (window_id == 0) @as(u64, 1) else window_id },
+    );
 }
 
 /// v8-1-plan N1: the SDK's stop hook runs once, on the loop thread, before the
@@ -1822,6 +1830,8 @@ const MENU_TEXT = [_]MenuText{
     .{ .key = "game.hint", .en = "Engine Hint", .ja = "エンジンのヒント" },
     .{ .key = "game.flip", .en = "Flip Board", .ja = "盤を反転" },
     .{ .key = "view.panel", .en = "Side Panel", .ja = "サイドパネル" },
+    // v8-2-plan T4: the page's 我的开局书 section (rep.title in i18n-en / i18n-ja)
+    .{ .key = "view.repertoire", .en = "My Repertoire", .ja = "自分の定跡書" },
     .{ .key = "view.prev", .en = "Previous Move", .ja = "前の手" },
     .{ .key = "view.next", .en = "Next Move", .ja = "次の手" },
     .{ .key = "help.keys", .en = "Keyboard Shortcuts", .ja = "キーボードショートカット" },
@@ -3691,6 +3701,33 @@ test "the menu table covers every menu and item app.zon declares" {
     try std.testing.expectEqualStrings("Game", menuText("对局", "en", "对局"));
     try std.testing.expectEqualStrings("対局", menuText("对局", "ja", "对局"));
     try std.testing.expectEqualStrings("", menuText("", "en", ""));
+}
+
+test "开局书 is a View menu item, and its command reaches the page (v8-2-plan T4)" {
+    var storage: runner.MenuStorage = .{};
+    const menus = storage.fromManifest();
+    var found = false;
+    for (menus) |menu| {
+        if (!std.mem.eql(u8, menu.title, "视图")) continue;
+        for (menu.items) |item| {
+            if (!std.mem.eql(u8, item.command, "view.repertoire")) continue;
+            found = true;
+            try std.testing.expectEqualStrings("开局书", item.label);
+            try std.testing.expectEqualStrings("o", item.key);
+            try std.testing.expect(item.modifiers.primary and item.modifiers.shift);
+        }
+    }
+    try std.testing.expect(found);
+    try std.testing.expectEqualStrings("My Repertoire", menuText("view.repertoire", "en", "开局书"));
+    try std.testing.expectEqualStrings("自分の定跡書", menuText("view.repertoire", "ja", "开局书"));
+    // what host.js hands native-commands.js run(): the command, on the main window
+    var buf: [256]u8 = undefined;
+    const detail = try commandDetail(&buf, "view.repertoire", 0);
+    try std.testing.expect(std.mem.indexOf(u8, detail, "\"command\":\"view.repertoire\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, detail, "\"id\":\"view.repertoire\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, detail, "\"windowId\":1,") != null);
+    const other = try commandDetail(&buf, "view.repertoire", 3);
+    try std.testing.expect(std.mem.indexOf(u8, other, "\"windowId\":3,") != null);
 }
 
 test "language tags are the page's three and nothing else" {

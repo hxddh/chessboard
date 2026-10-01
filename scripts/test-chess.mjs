@@ -1501,7 +1501,7 @@ for (const lang of CONTENT_LANGS) {
     dialogOpen: () => false,
     requestNewGame: rec("game.new"), undo: rec("game.undo"), requestHint: rec("game.hint"),
     setFlipped: rec("setFlipped"), togglePanel: rec("view.panel"),
-    setViewIndex: rec("setViewIndex"), escapeKey: rec("escapeKey"),
+    setViewIndex: rec("setViewIndex"), escapeKey: rec("escapeKey"), go: rec("go"),
   }, over || {});
   const dead = [];
   for (const c of commands) {
@@ -1516,6 +1516,14 @@ for (const lang of CONTENT_LANGS) {
   }
   assert(dead.length === 0,
     "every menu item does something" + (dead.length ? " — dead: " + dead.join(", ") : ""));
+  // v8-2-plan T4: 开局书 goes to the 棋谱库 page — from in front of a page too,
+  // where the board's commands stay inert
+  {
+    fired.length = 0;
+    NC.create(menuApp({ pageShown: () => true, store: { session: { mode: "puzzle" }, game: { flipped: false, viewIndex: 3 } } })).run("view.repertoire");
+    NC.create(menuApp({ pageShown: () => true })).run("game.flip");
+    assert(fired.join() === "go:library", "the 开局书 menu item opens the 棋谱库 page from any view (fired: " + (fired.join() || "nothing") + ")");
+  }
   assert(/handlers\.shortcut/.test(fs.readFileSync(path.join(root, "src/web/js/host.js"), "utf8")),
     "the host bridge forwards the shortcut event");
   assert(/shortcut: \(detail\)/.test(appSrc), "app.js subscribes to it");

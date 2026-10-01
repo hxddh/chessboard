@@ -1060,6 +1060,10 @@ export function createPersist(host, onWriteFailure) {
   return { load, get, read, set, setJson, remove, clearAll, isBroken, swapSelftestMarker, wasEmpty, corruptKeys,
     recover, flushMirror, exportAll, restoreAll, isProfileDoc, migrateStats, freeze, releaseMirror,
     attachBulk, touchBulk, touchUnlisted, readBulk, bulkSettled, ACCEPT, KEYS, SCHEMA,
-    /** is there a native per-key store (readBulk's null then means a failed read, not "none") */
-    hasStore: () => perKey };
+    /**
+     * is there a native per-key store (readBulk's null then means a failed read, not "none").
+     * v8-2-plan T4: host.js always has the two functions; without the native
+     * shell they answer null — no store at all, which a reader must not wait on
+     */
+    hasStore: () => perKey && !!(host.hasZero && host.hasZero()) };
 }
