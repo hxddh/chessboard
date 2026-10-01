@@ -23,6 +23,7 @@ import { ChessHost } from "./host.js";
 import { ChessLearning } from "./learning.js";
 import { ChessPgnParser } from "./pgn-parser.js";
 import { ChessPgn } from "./pgn.js";
+import { tdot } from "./tdot.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -126,8 +127,8 @@ export function createIO(d) {
    * receipt to ignore.
    */
   function savedToast(name, path, revealed) {
-    if (revealed) toast(t("msg.export.done") + name);
-    else toast(t("msg.export.doneAt") + path, "fix");
+    if (revealed) toast(tf("msg.export.doneN", [name]));
+    else toast(tf("msg.export.doneAtN", [path]), "fix");
   }
 
   /**
@@ -176,7 +177,7 @@ export function createIO(d) {
       a.download = name;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      toast(t("msg.export.done") + name + t("msg.export.inDownloads"), "fix");
+      toast(tf("msg.export.doneDl", [name]), "fix");
     } catch (_) {
       copyText(text, t("msg.export.restrictedCopied"));
     }
@@ -246,7 +247,7 @@ export function createIO(d) {
         const s = ChessPgn.summary(g);
         return {
           label: (i + 1) + ". " + s.white + " — " + s.black + "  " + s.result,
-          sub: [s.event, s.date, s.plies ? tf("mm.plies", [s.plies]) : ""].filter(Boolean).join(" · "),
+          sub: tdot(s.event, s.date, s.plies ? tf("mm.plies", [s.plies]) : ""),
         };
       });
       const pick = await pickFromList(tf("dlg.pickGame", [games.length]), items);
@@ -319,7 +320,7 @@ export function createIO(d) {
     if (store.session.mode === "learn" || store.session.mode === "puzzle") switchMode(store.ui.playMode === "pvp" ? "pvp" : "ai");
     Shell.toBoard(); store.commit("game", "action"); saveGame();
     toast(sanHistory().length
-      ? t("msg.import.donePrefix") + moveCount(Math.ceil(sanHistory().length / 2))
+      ? tf("msg.import.doneN", [moveCount(Math.ceil(sanHistory().length / 2))])
       : t("mm.positionLoaded"));
     maybeEngineTurn();
     return true;

@@ -20,6 +20,7 @@
  * @module a11y
  */
 import { ChessEditor } from "./editor.js";
+import { tdot } from "./tdot.js";
 
 /**
  * @param {object} d what this module reads of the app: `doc`, `t`, `store`,
@@ -28,7 +29,7 @@ import { ChessEditor } from "./editor.js";
  *   `confirmOpen`, `keyHelpOpen`) and the action each key stands for.
  */
 export function createA11y(d) {
-  const { t, store, draw, doc } = d;
+  const { t, tf, store, draw, doc } = d;
 
   const FILE_CHARS = "abcdefgh";
   // which way the board is drawn: a puzzle or 名局猜着 faces its own side
@@ -56,8 +57,8 @@ export function createA11y(d) {
       const { r, c } = ChessEditor.indexOf(sq);
       piece = store.session.editor.board[r][c];
     }
-    if (!piece) return sq + " · " + t("live.empty");
-    return sq + " · " + t(piece.color === "w" ? "vs.white" : "vs.black") + t("piece." + piece.type);
+    if (!piece) return tdot(sq, t("live.empty"));
+    return tdot(sq, tf(piece.color === "w" ? "live.pieceW" : "live.pieceB", [t("piece." + piece.type)]));
   }
 
   function moveCursor(df, dr) {
@@ -92,7 +93,7 @@ export function createA11y(d) {
     store.ui.boardFocused = true;
     store.ui.cursorShown = focusIsVisible(ev && ev.target);
     if (!store.ui.keyboardCursor) store.ui.keyboardCursor = flipped() ? "e5" : "e4";
-    announce(t("live.focused") + " · " + describeSquare(store.ui.keyboardCursor));
+    announce(tdot(t("live.focused"), describeSquare(store.ui.keyboardCursor)));
     draw();
   }
   function onBoardBlur() { store.ui.boardFocused = false; draw(); }
@@ -161,7 +162,7 @@ export function createA11y(d) {
         const before = store.game.selection ? store.game.selection.sq : null;
         d.onSquareClick(store.ui.keyboardCursor);
         if (store.game.selection && store.game.selection.sq === store.ui.keyboardCursor && before !== store.ui.keyboardCursor) {
-          announce(t("live.selected") + " " + describeSquare(store.ui.keyboardCursor) + " · " + store.game.selection.targets.length + " " + t("live.targets"));
+          announce(tf("live.selectedN", [describeSquare(store.ui.keyboardCursor), store.game.selection.targets.length]));
         } else if (!store.game.selection && before) {
           announce(d.statusText());
         }

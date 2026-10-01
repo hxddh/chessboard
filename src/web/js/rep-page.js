@@ -80,7 +80,7 @@ function memoryRep() {
  * @returns {Promise<object>} the controller
  */
 async function bootRepertoire(d) {
-  const { store, Persist, t, tf, toast, R } = d;
+  const { store, Persist, t, tf, tdot, toast, R } = d;
   const c = d.libDb || null;
   const LQ = d.LibraryQuery || null;
   // its own database (rep-db.js): the library's stays at version 1, which 8.0 opens (M3 评审)
@@ -401,8 +401,8 @@ async function bootRepertoire(d) {
       const li = doc.createElement("li");
       li.className = "hint";
       li.dataset.key = x.key;
-      li.textContent = t(x.side === "b" ? "color.black" : "color.white") + " · " +
-        tf("rep.cross", [B.pathText(x.path) || "—", x.usual, x.n, x.of, x.book.join(" / ")]);
+      li.textContent = tdot(t(x.side === "b" ? "color.black" : "color.white"),
+        tf("rep.cross", [B.pathText(x.path) || "—", x.usual, x.n, x.of, x.book.join(" / ")]));
       list.appendChild(li);
     }
     body.appendChild(list);
@@ -498,7 +498,7 @@ async function bootRepertoire(d) {
     exportPgn: (event) => ["w", "b"].map((s) => B.toPgn(records, s, event(s))).filter(Boolean).join("\n"),
     /** 导出 PGN: both books, one game each, variations and all (rep-book.js toPgn). */
     exportBook() {
-      const text = this.exportPgn((s) => t("rep.title") + " · " + t(s === "b" ? "color.black" : "color.white"));
+      const text = this.exportPgn((s) => tdot(t("rep.title"), t(s === "b" ? "color.black" : "color.white")));
       return text ? d.exportText("chessboard-repertoire.pgn", text, "application/x-chess-pgn", t("lib.exportPgn")) : null;
     },
     // persist.js's port for the "rep" shards

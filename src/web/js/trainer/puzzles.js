@@ -55,6 +55,7 @@ import { createPuzzleModes, isThemeCat, THEME_CAT } from "./puzzle-modes.js";
 import { createPuzzleOpenings } from "./puzzle-openings.js";
 import { createPuzzleRating } from "./puzzle-rating.js";
 import { createVisual } from "./visual.js";
+import { tdot } from "../tdot.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -221,8 +222,7 @@ export function createPuzzlesUI(d) {
     // an opening drill is titled by the line the board is on (7.6)
     const p = opCurrent(store.session.puzzle);
     if (p.cat === "mine") {
-      const cost = p.loss != null ? " · " + tf("pz.mineCost", [(p.loss / 100).toFixed(1)]) : "";
-      return tf("pz.goalMine", [p.played]) + cost;
+      return tdot(tf("pz.goalMine", [p.played]), p.loss != null && tf("pz.mineCost", [(p.loss / 100).toFixed(1)]));
     }
     if (p.card) return tf("rep.goalCard", [puzzleName(p)]);
     if (isOpeningCat(p.cat)) return tf(p.side === "b" ? "pz.goalOpB" : "pz.goalOp", [puzzleName(p), Math.ceil(p.line.length / 2)]);
@@ -303,12 +303,11 @@ export function createPuzzlesUI(d) {
         mv.san !== store.session.puzzle.p.solution[0]) {
       const p = store.session.puzzle.p;
       if (Mistakes.isAccepted(p, mv.san)) { puzzleSolved(); return; }
-      if (mv.san === p.played) { puzzleWrong(t("pz.mine.repeat") + " —— " + mineWhy(p)); return; }
+      if (mv.san === p.played) { puzzleWrong(tf("pz.mine.repeatWhy", [mineWhy(p)])); return; }
       verifyMineAlt(mv).then((v) => {
         if (store.session.puzzle !== undefined && store.session.puzzle && store.session.puzzle.p === p) {
           if (v && v.ok) { toast(tf("pz.mine.alsoFine", [mv.san, (v.loss / 100).toFixed(1)])); puzzleSolved(); return; }
-          const cost = v ? " —— " + tf("pz.mine.altCost", [(v.loss / 100).toFixed(1)]) : "";
-          puzzleWrong(t("pz.mine.stronger") + cost);
+          puzzleWrong(v ? tf("pz.mine.strongerCost", [(v.loss / 100).toFixed(1)]) : t("pz.mine.stronger"));
         }
       });
       return;
@@ -463,7 +462,7 @@ export function createPuzzlesUI(d) {
       parts.push(pz.rating.now + (pz.rating.provisional ? "?" : "") + " " + (d > 0 ? "+" + d : d < 0 ? "−" + -d : "±0"));
     }
     avail(meta, parts.length > 0);
-    setText(meta, parts.join(" · "));
+    setText(meta, tdot(...parts));
     if (meta) meta.classList.toggle("up", !!(pz.rating && pz.rating.delta > 0));
     // the way to the answer, after a miss, while there is still a question
     avail(el("puzzle-fb-hint"), !fb.ok && !pz.done && !pz.helpArrow);
@@ -814,7 +813,7 @@ export function createPuzzlesUI(d) {
     document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.cat === store.session.puzzle.cat || (b.dataset.cat === "rep" && store.session.puzzle.cat === "repdue"));
       // surface how many are queued for review right on the tab
-      if (b.dataset.cat === "review") b.textContent = t("pz.cat.review") + (missedCount ? "·" + missedCount : "");
+      if (b.dataset.cat === "review") b.textContent = missedCount ? tf("pz.reviewN", [missedCount]) : t("pz.cat.review");
       if (b.dataset.cat === "mine") b.hidden = !store.session.mines.length;
       if (b.dataset.cat === "rep") b.hidden = !RepUI.total();
     });
@@ -824,9 +823,7 @@ export function createPuzzlesUI(d) {
       // the detail and, where there is one, the puzzle's rating
       task.textContent = store.session.puzzle.done
         ? t("pz.solvedNext")
-        : puzzleGoalText()
-          + (puzzleRatingOf(store.session.puzzle.p) != null
-            ? " · " + tf("pz.ratingOf", [puzzleRatingOf(store.session.puzzle.p)]) : "");
+        : tdot(puzzleGoalText(), puzzleRatingOf(store.session.puzzle.p) != null && tf("pz.ratingOf", [puzzleRatingOf(store.session.puzzle.p)]));
     }
     renderPuzzleLine();
     renderPuzzleFeedback();
@@ -835,7 +832,7 @@ export function createPuzzlesUI(d) {
     if (ideaEl) {
       const idea = puzzleIdea(opCurrent(store.session.puzzle));
       ideaEl.hidden = !idea;
-      ideaEl.textContent = idea ? t("pz.idea") + " · " + idea : "";
+      ideaEl.textContent = idea ? tdot(t("pz.idea"), idea) : "";
     }
     // a finished opening line offers the game it was drilled for; that is the
     // reward, so it takes the primary emphasis from "next puzzle"
@@ -872,8 +869,8 @@ export function createPuzzlesUI(d) {
         b.dataset.i = String(i);
         // opening drills carry their length: "how much is there to remember"
         // is the first thing anyone wants to know before starting one
-        const len = isOpeningCat(p.cat) ? "  " + Math.ceil(p.line.length / 2) + t("pz.moveUnit") : "";
-        b.textContent = (store.session.puzzleState.solved[p.id] ? "✓ " : "") + (i + 1) + ". " + puzzleName(p) + len;
+        const len = isOpeningCat(p.cat) ? tf("pz.moveN", [Math.ceil(p.line.length / 2)]) : "";
+        b.textContent = (store.session.puzzleState.solved[p.id] ? "✓ " : "") + (i + 1) + ". " + puzzleName(p) + (len && "  " + len);
         listEl.appendChild(b);
       });
     }

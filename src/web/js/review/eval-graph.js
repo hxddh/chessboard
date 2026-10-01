@@ -13,6 +13,7 @@
  * @module review/eval-graph
  */
 import { ChessReview } from "../review.js";
+import { tdot } from "../tdot.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -124,8 +125,7 @@ export function createEvalGraph(d) {
       cv.setAttribute("aria-valuemin", "0");
       cv.setAttribute("aria-valuemax", String(a.scalars.length - 1));
       cv.setAttribute("aria-valuenow", String(store.game.viewIndex));
-      cv.setAttribute("aria-valuetext", tf("curve.at", [store.game.viewIndex]) +
-        " · " + (frac == null ? t("rv.evalNone") : evalText(cp)));
+      cv.setAttribute("aria-valuetext", tdot(tf("curve.at", [store.game.viewIndex]), frac == null ? t("rv.evalNone") : evalText(cp)));
     }
     if (frac == null) {
       // measured and level is not the same thing as never measured
@@ -349,7 +349,7 @@ export function createEvalGraph(d) {
         const vh = verboseHistory();
         const mv = i > 0 ? vh[i - 1] : null;
         const head = mv ? tf("curve.hover", [boardMoveNo(i - 1), (mv.color === "b" ? "…" : "") + mv.san, score])
-          : tf("curve.at", [0]) + " " + score;
+          : tf("curve.atScore", [0, score]);
         const hint = tipEl.lastElementChild;
         if (!hint) {
           const main = document.createElement("span");

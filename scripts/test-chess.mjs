@@ -1654,7 +1654,7 @@ for (const lang of CONTENT_LANGS) {
   const fakeGame = { get: (sq) => (sq === "e4" ? { color: "w", type: "p" } : null) };
   const a11yApp = (over) => Object.assign({
     doc: { body: {}, getElementById: (id) => (id === "board-live" ? live : null) },
-    t: (k) => k, draw: () => {},
+    t: (k) => k, tf: (k, v) => k + "(" + v.join(",") + ")", draw: () => {},
     store: { session: { mode: "ai" }, ui: {}, game: { flipped: false, viewIndex: 4, selection: null } },
     viewGame: () => fakeGame,
     sanHistory: () => ["e4", "e5"],
@@ -1715,7 +1715,7 @@ for (const lang of CONTENT_LANGS) {
     const A = createA11y(app);
     A.announce("hello");
     assert(live.textContent === "hello", "announce() writes the live region");
-    assert(A.describeSquare("e4") === "e4 · vs.whitepiece.p", "a square is named with what stands on it");
+    assert(A.describeSquare("e4") === "e4 · live.pieceW(piece.p)", "a square is named with what stands on it");
     assert(A.describeSquare("d4") === "d4 · live.empty", "…and an empty one says so");
     app.store.ui.keyboardCursor = "e4";
     A.moveCursor(1, 0);
@@ -3256,7 +3256,7 @@ for (const lang of CONTENT_LANGS) {
   loadModule(ctx, "src/web/js/i18n.js");
   const dicts = ctx.ChessI18n.DICT;
   for (const lang of ["zh-CN", "en", "ja"]) {
-    for (const k of keys.concat("lm.tipSep")) {
+    for (const k of keys.concat("lm.tip2")) {
       assert(dicts[lang] && dicts[lang][k], k + " is written in " + lang);
     }
   }
@@ -3266,7 +3266,9 @@ for (const lang of CONTENT_LANGS) {
   // the wiring: the outcome line must actually carry the advice, and the
   // wording must live in the dictionary rather than being pasted into app.js
   assert(/ChessDrills\.drillAdvice\(/.test(appSrc), "drillOutcome asks drills.js for the technique");
-  assert(/t\(key\) \+ t\("lm\.tipSep"\) \+ t\(tip\)/.test(appSrc),
+  // (v8-2-plan F4: one template with both sentences in it, no longer a
+  // separator key glued between them)
+  assert(/tf\("lm\.tip2", \[t\(key\), t\(tip\)\]\)/.test(appSrc),
     "the joining punctuation is translated too, not hard-coded");
   assert(!/lmTip\./.test(appSrc.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "")),
     "app.js names no technique itself — it prints whatever the position derives");
@@ -4592,6 +4594,95 @@ for (const lang of CONTENT_LANGS) {
     assert(unused.length === 0, "every one of the " + baseKeys.length + " keys is read by some control");
   }
 
+  // --- v8-2-plan F4: a sentence is one key, never glued from pieces ---------
+  // `t("learn.lessonPre") + n + t("learn.lessonPost")` only reads right in a
+  // language that puts the number where Chinese does. v8-0-plan §6 counted 25
+  // of them; F4 made each a whole-sentence key read with tf(), and labels side
+  // by side go through tdot() (src/web/js/tdot.js), whose separator is a key
+  // too. scripts/lib/i18n-concat.mjs is the scanner: `+` / `+=` touching an
+  // i18n call, an i18n call inside a template's `${}`, translated fragments
+  // `.join()`ed. Sources are CRLF on a Windows checkout; it normalises first.
+  {
+    const { findConcats, callEnds } = await import("./lib/i18n-concat.mjs");
+    const { F4_RENDERS } = await import("./lib/i18n-f4-renders.mjs");
+    // Every entry here is a place that may still glue translated text, with
+    // the reason it may. There are none: keep it that way, or say why.
+    const ALLOWED = [];
+    const hits = [];
+    for (const [file, text] of WEB_MODULES) {
+      for (const h of findConcats(text)) {
+        if (!ALLOWED.includes(file + ": " + h.text)) hits.push(file + ":" + h.line + " [" + h.kind + "] " + h.text);
+      }
+    }
+    for (const h of hits) console.error("  glued: " + h);
+    assert(hits.length === 0, "8.2 F4: no interface text is glued together from translations (" + hits.length + " places)");
+
+    // …and it does catch them. The shapes it has to see, and the ones it must
+    // not (a "+" in a message, a comment or a regex; arithmetic in tf's own
+    // values; a method that only shares the name), in LF and in CRLF.
+    const red = [
+      'x = t("a") + n;', 'x = n + t("a");', 'x += tf("a", [1]);', 'x = `${t("a")} ${n}`;',
+      'x = [t("a"), n].join(" · ");', 'x = [n, tf("a", [1])].filter(Boolean).join(" · ");',
+      'const ps = [];\nps.push(t("a"));\nx = ps.join(" · ");', 'x = I18n.t("a") + n;',
+      'x = sideName(s) + " · " + n;', 'x = tdot(a, b) + "…";',
+    ];
+    const green = [
+      'x = "t(\\"a\\") + n";', '// t("a") + n', 'x = /t\\("a"\\) \\+/.test(s);', 'x = tf("a", [n + 1]);',
+      'x = o.t("a") + n;', 'x = tdot(t("a"), n);', 'x = [t("a"), n].join(t("ui.dot"));',
+      'function f() { const ls = [t("a")]; g(ls); }\nfunction g(ls) { return ls.join("\\n"); }',
+    ];
+    const crlf = (s) => s.replace(/\n/g, "\r\n");
+    assert(red.every((s) => findConcats(s).length > 0 && findConcats(crlf(s)).length > 0),
+      "8.2 F4: the guard goes red on each way of gluing (" + red.filter((s) => !findConcats(s).length).join(" | ") + ")");
+    assert(green.every((s) => findConcats(s).length === 0 && findConcats(crlf(s)).length === 0),
+      "8.2 F4: …and stays green on what is not (" + green.filter((s) => findConcats(s).length).join(" | ") + ")");
+    // The real sources: put `+ " · "` back after every translated call in
+    // every module, the way 8.1 wrote them, and every one is reported.
+    let calls = 0, caught = 0;
+    for (const [, text] of WEB_MODULES) {
+      const src = text.replace(/\r\n/g, "\n");
+      const ends = callEnds(src).sort((a, b) => a - b);   // an outer call ends after its inner ones
+      if (!ends.length) continue;
+      let glued = "";
+      ends.forEach((at, i) => { glued += src.slice(i ? ends[i - 1] : 0, at) + ' + " · "'; });
+      glued += src.slice(ends[ends.length - 1]);
+      calls += ends.length;
+      caught += Math.min(ends.length, findConcats(crlf(glued)).length);
+    }
+    assert(calls > 500 && caught === calls,
+      "8.2 F4: putting a `+` after any of the " + calls + " translated calls turns the guard red (" + caught + " caught)");
+
+    // A fragment key is the dictionary's half of a concatenation — 「已导出 」
+    // waiting for a name, " 局精准度" for what comes before it. None is left:
+    // no value starts or ends with a space, in any language (the separators
+    // are the exception they look like).
+    const SEPARATORS = new Set(["ui.dot", "rv.dot"]);
+    const frags = [];
+    for (const id of langs) {
+      for (const [k, v] of Object.entries(I.DICT[id])) {
+        if (!SEPARATORS.has(k) && typeof v === "string" && (v === "" || /^\s|\s$/.test(v))) frags.push(id + " " + k + ": " + JSON.stringify(v));
+      }
+    }
+    for (const f of frags) console.error("  fragment key: " + f);
+    assert(frags.length === 0, "8.2 F4: no dictionary entry is a sentence fragment (" + frags.length + ")");
+
+    // What people read did not change: every converted site's new expression,
+    // in all three languages, against what the old concatenation rendered.
+    loadModule(ctx, "src/web/js/tdot.js");
+    const diff = (id) => I.t("diff." + id);
+    const changed = [];
+    ["zh-CN", "en", "ja"].forEach((id, li) => {
+      I.setLang(id);
+      for (const row of F4_RENDERS) {
+        const got = row[1](I.t, I.tf, ctx.tdot, diff);
+        if (got !== row[2 + li]) changed.push(id + " " + row[0] + ": " + JSON.stringify(got) + " (was " + JSON.stringify(row[2 + li]) + ")");
+      }
+    });
+    I.setLang("zh-CN");
+    for (const c of changed) console.error("  changed: " + c);
+    assert(changed.length === 0, "8.2 F4: the " + F4_RENDERS.length + " converted sentences read exactly as before in zh-CN, en and ja");
+  }
+
   // Coordinates belong on the frame, not on a1/h1 where they were painted over
   // the rooks. The gutters are DOM, so the canvas must not draw them any more.
   {
@@ -4873,16 +4964,21 @@ for (const lang of CONTENT_LANGS) {
     // v8-0-plan B4 gave the player a rating, and the ratings shown beside it
     // are the measured ones on the persona cards, not these.) The two rungs
     // B4 added between 1320 and 1700 are the same kind of tooltip.
-    // `lm.tipSep` is the punctuation between a drill's outcome and the
-    // technique it teaches. Japanese and Chinese both end a sentence with 。 —
-    // it is translated, and the translation is the same mark.
+    // `lm.tip2` is a drill's outcome and the technique it teaches, two
+    // sentences. Japanese and Chinese both end a sentence with 。 — it is
+    // translated, and the translation is the same mark.
+    // v8-2-plan F4's templates that hold no words, only placeholders and the
+    // marks around them: `ui.dot` / `rv.dot` (the separator between labels,
+    // on screen and, wider, on the review picture), `ui.pair`
+    // (a label and its number), `pz.catNo` (「战术 #12」), `lib.sfPlayer`
+    // (a PGN player name), and `live.pieceW` — 「白{0}」, the colour of a
+    // piece as the screen reader says it, one character in both.
     // `rv.marks` is 「?! · ? · ??」 — the move marks themselves, which are the
     // same three symbols in every chess-playing language. They label the row
     // whose value is 「3 · 2 · 1」, term lining up with term; spelling them out
     // as words is what the row is getting away from.
-    ja: new Set(["act.fen", "hist.pgn", "vs.white", "stats.gamesSuffix",
-      "learn.lessonPre", "ed.crK", "ed.crQ", "rv.marks",
-      "tip.diffNormal", "tip.diffHard", "lm.tipSep",
+    ja: new Set(["act.fen", "hist.pgn", "live.pieceW", "ed.crK", "ed.crQ", "rv.marks",
+      "tip.diffNormal", "tip.diffHard", "lm.tip2", "ui.dot", "rv.dot", "ui.pair", "pz.catNo", "lib.sfPlayer",
       "tip.diff.easyplus", "tip.diff.normalminus"]),
   };
   let untranslated = 0;

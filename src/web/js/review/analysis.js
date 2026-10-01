@@ -30,6 +30,7 @@ import { ChessReview } from "../review.js";
 import { ChessReviewGrade as Grade } from "../review-grade.js";
 import { ChessReviewPass } from "../review-pass.js";
 import { motifOf } from "../motif.js";
+import { tdot } from "../tdot.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -139,7 +140,7 @@ export function createAnalysis(d) {
       // keep whatever was already measured — a partial curve still helps
       if (p.at > 1) {
         store.session.analysis = { sig, scalars, tags: h.map(() => null), pvs, bests };
-        toast(t("msg.analysis.keptPrefix") + (p.at - 1) + t("msg.analysis.keptSuffix"));
+        toast(tf("msg.analysis.kept", [p.at - 1]));
       } else toast(t("msg.analysis.stopped"));
       sync();
       return;
@@ -208,12 +209,9 @@ export function createAnalysis(d) {
     }
     sync();
     const bad = tags.filter((tag) => tag === "?" || tag === "??").length;
-    let done = bad ? t("msg.analysis.donePrefix") + bad + t("msg.analysis.doneSuffix") : t("msg.analysis.doneClean");
-    if (mined) done += " · " + tf("msg.mined", [mined]);
-    if (revised) done += " · " + tf("msg.minesRevised", [revised]);
-    if (withdrawn) done += " · " + tf("msg.minesWithdrawn", [withdrawn]);
-    if (p.deepCut) done += " · " + t("msg.analysis.deepStopped");   // Stop while deepening: graded and filed all the same (review of PR #87)
-    toast(done);
+    // Stop while deepening (p.deepCut): graded and filed all the same (review of PR #87)
+    toast(tdot(bad ? tf("msg.analysis.doneBad", [bad]) : t("msg.analysis.doneClean"), mined ? tf("msg.mined", [mined]) : "",
+      revised ? tf("msg.minesRevised", [revised]) : "", withdrawn ? tf("msg.minesWithdrawn", [withdrawn]) : "", p.deepCut && t("msg.analysis.deepStopped")));
     // A deep pass is 400ms a ply — over half a minute on a long game, which is
     // long enough that people go and do something else. A toast behind another
     // window is a message that was never delivered.

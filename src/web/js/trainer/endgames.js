@@ -20,6 +20,7 @@
  */
 import { loadChunk } from "../chunk.js";
 import { ChessSrs } from "../srs.js";
+import { tdot } from "../tdot.js";
 
 /** chunk file and global — scripts/bundle.mjs builds endgames.js into it */
 export const EG_CHUNK = { file: "chunk-endgames.js", global: "CHESS_ENDGAMES" };
@@ -72,11 +73,11 @@ export function createEndgames(d) {
     if (!it) return null;
     const key = id + "|" + store.ui.langId;
     if (cache.key === key) return cache.L;
-    const src = tf("eg.src", [word(it.src)]) + " · " + t(it.v === "tb" ? "eg.verTb" : "eg.verSf");
+    const src = tdot(tf("eg.src", [word(it.src)]), t(it.v === "tb" ? "eg.verTb" : "eg.verSf"));
     cache.key = key;
     cache.L = {
       id: "eg:" + id, eg: id,
-      part: t("eg.camp") + " · " + word(group(it.g).n),
+      part: tdot(t("eg.camp"), word(group(it.g).n)),
       title: word(it.n),
       text: [word(it.tip), src],
       tasks: [{ type: "drill", eg: true, fen: it.fen, goal: it.goal, engine: "extreme",
@@ -135,7 +136,7 @@ export function createEndgames(d) {
     for (const gr of data.GROUPS) {
       const h = document.createElement("div");
       h.className = "lesson-part";
-      h.textContent = t("eg.camp") + " · " + word(gr.n) + " " + doneCount(gr.id) + "/" + data.ITEMS.filter((x) => x.g === gr.id).length;
+      h.textContent = tdot(t("eg.camp"), tf("ui.pair", [word(gr.n), doneCount(gr.id) + "/" + data.ITEMS.filter((x) => x.g === gr.id).length]));
       list.appendChild(h);
       for (const x of data.ITEMS) {
         if (x.g !== gr.id) continue;
@@ -145,7 +146,7 @@ export function createEndgames(d) {
         b.className = "lesson-item" + (x.id === curId ? " current" : "");
         b.dataset.eg = x.id;
         const mark = soon.has(x.id) ? "↻ " : eg.done[x.id] ? "✓ " : "";
-        b.textContent = mark + n + ". " + word(x.n) + " · " + t(x.goal === "draw" ? "eg.draw" : "eg.win");
+        b.textContent = tdot(mark + n + ". " + word(x.n), t(x.goal === "draw" ? "eg.draw" : "eg.win"));
         if (soon.has(x.id)) b.title = t("eg.dueTip");
         list.appendChild(b);
       }

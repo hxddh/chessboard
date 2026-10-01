@@ -29,6 +29,7 @@ import { ChessEco } from "./eco-lookup.js";
 import { ChessOpeningTree } from "./opening-tree.js";
 import { ChessPgnParser } from "./pgn-parser.js";
 import { ChessRepertoire } from "./repertoire.js";
+import { tdot } from "./tdot.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -157,7 +158,7 @@ export function createRepertoireUI(d) {
     // one replaced — take their solved/missed entries with them
     commit(r.dropped.concat(r.replaced));
     if (!r.added) toast(tf("rep.addedNone", [r.dup]), "fix");
-    else toast(tf("rep.added", [r.added, r.dup]) + (label ? " · " + label : ""));
+    else toast(tdot(tf("rep.added", [r.added, r.dup]), label));
     // only the cap is news: a short line a deeper one grew out of did not
     // leave the book, it got longer (7.4 D3)
     if (r.dropped.length) toast(tf("rep.dropped", [Rep.MAX_LINES, r.dropped.length]), "fix");
@@ -282,7 +283,7 @@ export function createRepertoireUI(d) {
   // on a Map for the session and the native shards.
   const ready = !(d.library && d.library.ready) ? Promise.resolve(null)
     : d.library.ready().then((c) => loadChunk("chunk-rep.js", "CHESS_REP").then((m) => m.bootRepertoire({
-      store, Persist, t, tf, toast, doc, R: Rep, libDb: c, cardName, onChange: () => render(), forget: forgetDrills, exportText: d.exportText,
+      store, Persist, t, tf, tdot, toast, doc, R: Rep, libDb: c, cardName, onChange: () => render(), forget: forgetDrills, exportText: d.exportText,
       LibraryQuery: typeof window !== "undefined" && window.CHESS_LIBDB ? window.CHESS_LIBDB.LibraryQuery : null,
     }))).then((c) => {
       ctrl = c;

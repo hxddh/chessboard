@@ -71,7 +71,7 @@ function sigOf(g) {
  * @returns {Promise<object>} the controller
  */
 async function bootLibrary(d) {
-  const { doc, store, Persist, t, tf, toast, Library, Dlg, reconcile } = d;
+  const { doc, store, Persist, t, tf, tdot, toast, Library, Dlg, reconcile } = d;
   const header = readHeader(Persist.get("library")) || {};
   let claimAsked = !!header.claimAsked;
   let claim = null;   // the offer on screen (renderClaim)
@@ -160,12 +160,12 @@ async function bootLibrary(d) {
       if (LibraryQuery.tcClass(g.tc)) bits.push(t("lib.tc." + LibraryQuery.tcClass(g.tc)));
     }
     if (g.eco) bits.push(g.eco + " " + d.libEcoName(g.eco, g.ecoName));
-    return bits.join(" · ");
+    return tdot(...bits);
   }
   /** A 本机 game's headline: the history's own words (result · level · colour). */
   function localLabel(g) {
     const res = t(g.outcome === "win" ? "hist.win" : g.outcome === "loss" ? "hist.loss" : "hist.draw");
-    return [res, t("diff." + g.diff), t(g.side === "b" ? "hist.black" : "hist.white")].join(" · ");
+    return tdot(res, t("diff." + g.diff), t(g.side === "b" ? "hist.black" : "hist.white"));
   }
   function rowOf(g) {
     const row = doc.createElement("div");
@@ -750,7 +750,7 @@ async function bootLibrary(d) {
       if (!rec) return "";
       let headers = [];
       try { headers = d.PgnParser.parsePgn(rec.pgn).games[0].headers; } catch (_) { headers = []; }
-      return LibraryLocal.localPgn(g, rec, headers, "Stockfish (" + t("diff." + g.diff) + ")", LibraryQuery.entryPgn);
+      return LibraryLocal.localPgn(g, rec, headers, tf("lib.sfPlayer", [t("diff." + g.diff)]), LibraryQuery.entryPgn);
     }).filter(Boolean).join("\n");
     await d.exportText("chessboard-library.pgn", text, "application/x-chess-pgn", t("lib.exportPgn"));
   }
@@ -832,7 +832,7 @@ async function bootLibrary(d) {
     d.renderLibrary();
     const added = r.added + loc.added, dup = r.dup + loc.dup;
     if (!added) toast(tf("lib.addedNone", [dup]), "fix");
-    else toast(tf("lib.added", [added, dup]) + (label ? " · " + label : ""));
+    else toast(tdot(tf("lib.added", [added, dup]), label));
     if (r.dropped.length) toast(tf("lib.dropped", [Library.MAX_GAMES, r.dropped.length]), "fix");
     renderClaim();
     fillOpenings();

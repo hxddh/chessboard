@@ -25,6 +25,7 @@ import { ChessI18n } from "./i18n.js";
 import { ChessLazy } from "./lazy-content.js";
 import { lookAttrs } from "./look.js";
 import { TimeControl } from "./time-control.js";
+import { tdot } from "./tdot.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -177,7 +178,7 @@ export function createSettingsUI(d) {
       if (store.session.mode === "ai" || store.session.mode === "pvp") {
         parts.push(store.game.timeControl === "off" ? t("clock.off") : store.game.timeControl);
       }
-      sum.textContent = parts.join(" · ");
+      sum.textContent = tdot(...parts);
     }
     // the reading modes get a wider column — see styles.css [data-mode]
     appEl.setAttribute("data-mode", store.session.mode);

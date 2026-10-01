@@ -42,7 +42,7 @@ const REPLY_MS = 700;
  */
 export function createGuess(d) {
   const {
-    store, t, tf, Chess, Engine, Review, Grade, CLASSICS, classicText, carryToken, saveLearnState,
+    store, t, tf, tdot, Chess, Engine, Review, Grade, CLASSICS, classicText, carryToken, saveLearnState,
     startClassic, sync, BoardView, animateReply, moveSound, selectSquare, clearSelection, choosePromotion,
     kingSquare, cursorSquare, evalScalar, scanBudget, sideName,
   } = d;
@@ -261,7 +261,7 @@ export function createGuess(d) {
   function lesson() {
     const s = run();
     const c = CLASSICS[s.ci], tx = classicText(c);
-    return { id: "gs:" + c.id, part: t("gs.part"), title: tx.white + " – " + tx.black + " · " + c.year + " · " + tf("gs.as", [sideName(s.side)]),
+    return { id: "gs:" + c.id, part: t("gs.part"), title: tdot(tx.white + " – " + tx.black, c.year, tf("gs.as", [sideName(s.side)])),
       text: [], tasks: [{ type: "guess" }] };
   }
 
