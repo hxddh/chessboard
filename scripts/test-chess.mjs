@@ -6097,6 +6097,14 @@ for (const lang of CONTENT_LANGS) {
   const base = () => ({ position, flipped: false, selected: null, legalTargets: [],
     lastMove: null, checkSquare: null, hintMove: null, stars: [],
     flashSquare: null, cursor: null });
+  // v8-2-plan F3: until the shell shows a view, and while a page lies over
+  // the board, a draw is owed, not made; uncovered, the board draws
+  View.attach(canvas, base);
+  View.draw();
+  const owed = calls.length;
+  View.cover(false);
+  assert(owed === 0 && calls.length > 0, `F3: a covered board draws nothing, uncovered it draws (${owed} / ${calls.length} calls)`);
+  calls.length = 0;
   const opts = {
     flipped: [true],
     selected: ["e4"],

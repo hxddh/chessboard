@@ -2180,6 +2180,64 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     `A5 选子：正常时抬起与淡入要画几帧，减少动态效果时一帧不多画（${counts.normal} 帧 / ${counts.reduce} 帧）`);
 }
 
+// --- v8-2-plan F3：启动时棋盘出几帧 -----------------------------------------
+//
+// 没有 GPU 的 Chromium 里，一帧带棋盘的画布要栅格化 0.35–0.85 s，而这一条之前
+// 一次启动要画十遍棋盘：开在棋谱库页上时一遍都看不见（页面盖在棋盘上），棋谱
+// 库的读取却排在这些帧后面。现在：页面盖着的时候不画，回到棋盘时画一遍；每个
+// 棋子脚下的接触阴影是一张模糊过一次的小图，不再每个棋子跑一次 blur 滤镜（32
+// 个滤镜就是那 0.35–0.85 s 的几乎全部）。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    if (!sessionStorage.getItem("f3.seeded")) {
+      sessionStorage.setItem("f3.seeded", "1");
+      localStorage.setItem("chess.v1.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+    }
+    window.__paints = 0;
+    window.__blurs = 0;
+    const real = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (...a) {
+      if (this.id === "board") window.__paints++;
+      return real.apply(this, a);
+    };
+    const f = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, "filter");
+    if (f && f.set) {
+      Object.defineProperty(CanvasRenderingContext2D.prototype, "filter", { get: f.get, configurable: true,
+        set(v) { if (this.canvas && this.canvas.id === "board" && /blur/.test(v)) window.__blurs++; f.set.call(this, v); } });
+    }
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1500);
+  const under = await page.evaluate(() => ({ paints: window.__paints, page: !document.getElementById("page-library").hidden }));
+  assert(under.page && under.paints === 0, `F3 开在棋谱库页上：被盖住的棋盘一遍都不画（画了 ${under.paints} 遍）`);
+  await page.click('#rail button[data-view="play"]');
+  await page.waitForTimeout(300);
+  const back = await page.evaluate(() => window.__paints);
+  // the e1 king's square: the board under it is drawn, and so is the king
+  const px = await page.evaluate(() => {
+    const c = document.getElementById("board");
+    const s = c.width / 8;
+    return [...c.getContext("2d").getImageData(Math.round(4.5 * s), Math.round(7.5 * s), 1, 1).data];
+  });
+  assert(back >= 1 && px[3] === 255, `F3 回到棋盘：画出来了（${back} 遍，e1 ${px}）`);
+  // a launch on the board (the view was saved); the sprites are in by now,
+  // so one more draw has every man on it
+  await page.reload();
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => { window.__blurs = 0; window.dispatchEvent(new Event("resize")); });
+  await page.waitForTimeout(300);
+  const blurs = await page.evaluate(() => window.__blurs);
+  assert(blurs === 0, `F3 棋子的接触阴影不在棋盘画布上逐个跑 blur 滤镜（一遍画了 ${blurs} 个）`);
+  assert(errs.length === 0, `F3 棋盘帧：没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " test(s) failed"); process.exit(1); }
