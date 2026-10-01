@@ -977,3 +977,16 @@
   - `manifest-check.mjs --sdk`（0.10.1）通过；
   - `npm run test:static` 通过；
   - `node scripts/sdk-diff.mjs`（`NATIVE_SDK_PATH` = 0.10.1）无输出、退出码 0。
+
+#### R15 / B09 两处落后上游的修正（分支 m24-fix，接在 m24-f2 后面）
+
+- **R15 窗口位置**：`prepareStateStore` 改成与上游逐行相同，恢复时经 `window_placement.applySavedWindow` 把 `initial_placement` 标成 `.restored`；`src/window_placement.zig` 是 SDK 文件原样抄入。
+  - 更正 F2 的判断：8.1 并不是「每次居中」。SDK 的 `AppInfo.inferLegacyExplicitOrigin` 把原点不为 (0,0) 的 `.default` 当成写死的位置（`.explicit`），位置多半碰巧回来了；只有存在 (0,0) 的窗口仍是 `.default`，被 macOS 主机居中。修了以后走的是上游测过的 `.restored` 那条路。Windows 主机不读 `initial_placement`，不受影响。
+  - 测试（`src/runner.zig` 末尾，新加的 runner 测试二进制里跑）：null 平台上「首次启动 → 存一个 frame → 再启动」，原点 (140,90) 与 (0,0) 各一次，断言 `resolvedMainWindow` 与 `resolvedStartupWindow` 都是 `.restored`、frame 是存的那个。旧代码下红（拿到 `.explicit`），新代码绿；`window_placement.zig` 自带的 5 个测试一并跑。
+  - `zig build test -Dplatform=null`：64/64 → 64/64 + runner 7/7。
+- **B09 Windows 应用清单**：`linkPlatform` 的 Windows 分支加 `exe.win32_manifest = nativeSdkPath(…, "assets/native-sdk.manifest")`，注释与上游逐字相同。开发 exe 与打包 exe 都经过这里。
+  - x86_64-windows ReleaseFast 完整链接（本机能链），用一个小 PE 解析脚本看资源：修之前没有资源目录（也就没有图标、版本信息可挤掉，图标是包里的 `app-icon.ico`）；修之后多一个 `.rsrc` 节，只有 `RT_MANIFEST` #1，1,752 字节，与 SDK 文件逐字节相同，`dpiAware = true/pm`、`dpiAwareness = PerMonitorV2, PerMonitor`、通用控件 v6。exe 4,313,600 → 4,315,648 字节，子系统仍是 GUI。
+  - `manifest-check.mjs --sdk` 加第四张面孔：SDK 的 `build/app.zig` 嵌的应用清单，build.zig 也得嵌。拿旧 build.zig 跑是红的。
+- **登记**：R15、B09 由 lag 改为 ours（剩下的差异是我们的测试和 SDK 路径写法），新开 B13（runner 测试二进制）；`window_placement.zig` 作为第三对文件登记，差异为零。28 组、174 块（ours 17、unused 4、lag 7）。`sdk-diff` 对 v0.10.1 的标签与 npm 包都无输出、退出码 0。
+- **验证**：`zig build test -Dplatform=null` 71/71；Windows 目标的两个测试二进制交叉编译、链接通过，macOS 目标的 runner 测试二进制链接通过（应用测试二进制在本机缺框架，和以前一样）；aarch64-macos object 构建通过；`npm run test:static` 通过（`NATIVE_SDK_PATH` = 0.10.1，test-sdk-diff 16 条）。
+- **只有真机能确认的**：`docs/manual-check.md`「8.2 修正，需真机确认」X1（macOS 退出再开回到原处，含第二块显示器）、X2（Windows 150% 缩放不发虚，任务管理器「DPI 感知」是 Per-Monitor v2，跨显示器拖动）。PerMonitorV2 下 WebView2 主机自己处理 DPI 变化，那条路这个应用以前没走过。
