@@ -122,7 +122,7 @@ async function bootRepertoire(d) {
   // v8-2-plan T4: the lines move from the header into the store — the header
   // as found is kept here too, and the header itself keeps the first 400 a
   // side for 7.2–8.1 (rep-lines.js)
-  if (raw && header && !header.ln && !header.lf && !storedLines.length && !memory) {
+  if (raw && header && !header.ln && !header.lf && !storedLines.length && !memory && !hold) {
     try { await backend.setMeta("rep-v2:" + Date.now(), { raw }); } catch (_) { /* the header keeps it anyway */ }
   }
   // Which lines this launch holds. From here to the assignment nothing
