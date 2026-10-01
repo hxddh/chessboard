@@ -211,7 +211,7 @@ const FIXED = fenAfter("e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5 Nxd5 Nxf7 Kxf7 Qf3+ Ke
     ["升变", "8/P6k/8/8/8/8/8/K7 w - - 0 1", "a8=Q Kg6 Qb7 Kf5", "promotion"],
     ["…兵没走：不说升变", "8/P6k/8/8/8/8/8/K7 w - - 0 1", "Kb2 Kg6 Kc3 Kf5", null],
     // v8-2-plan T5: a real one (Lichess 1VSCb, 47.Kg3??): the king has
-    // nowhere to go from h1/h2 but back. 7.x's made-up one here was no
+    // nowhere to go from h1/h2 but back. B3's made-up one here was no
     // perpetual at all — 6k1/5pp1 with a lone queen, …Kg6 walks out
     ["长将：原本白优，引擎 0.00，后在 f3 / f2 / f1 来回将", "8/2RQ1pk1/5qp1/3P4/6pP/4P1K1/5P2/8 b - - 1 47", "Qf3+ Kh2 Qxf2+ Kh1 Qf1+", "perpetual",
       { evalBefore: 776, evalAfter: 0 }],
