@@ -174,7 +174,7 @@ jobs:
             suites: scripts/test-library-e2e.mjs
             timeout: 30
           - name: explorer + sync + repertoire
-            suites: scripts/test-explorer-e2e.mjs scripts/test-sync-e2e.mjs scripts/test-repertoire-e2e.mjs
+            suites: scripts/test-explorer-e2e.mjs scripts/test-sync-e2e.mjs scripts/test-repertoire-e2e.mjs scripts/test-selftest-e2e.mjs
             timeout: 20
           # v8-0-plan F1: the layout suite in four shards. As one job it was
           # 31m51s on Chromium, the critical path of every PR by 18 minutes;
@@ -325,7 +325,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # src/main.zig and src/runner.zig, compiled and their tests run, on every
+  # src/*.zig (main.zig, the files it imports since v8-2-plan F2, and
+  # runner.zig), compiled and their tests run, on every
   # PR — not only at release time. Until 6.0 the Zig side had no PR-time
   # CI at all, and 5.0–5.2 shipped three versions with dead file dialogs and
   # a dead Escape key from exactly that blind spot (v6-plan §1.2, Q0.2).
@@ -382,7 +383,23 @@ jobs:
         run: node scripts/gen-manifest.mjs macos
       - name: manifest keys are actually read (with the SDK on disk)
         run: node scripts/manifest-check.mjs --sdk "$SDK_PATH"
+      # v8-2-plan F2: every difference of src/runner.zig / build.zig from the
+      # pinned SDK's own files is registered (docs/sdk-fork.json) and explained
+      # (docs/sdk-fork-notes.md); silent when so, and the upgrade's to-do list
+      # when the pin moves
+      - name: runner.zig / build.zig differ from the SDK only where registered
+        run: node scripts/sdk-diff.mjs "$SDK_PATH"
       - name: zig build test
         run: zig build test ${{ matrix.flags }} -Dnative-sdk-path="$SDK_PATH"
       - name: zig build
         run: zig build ${{ matrix.flags }} -Dnative-sdk-path="$SDK_PATH"
+      # v8-2-plan V1: the self-test seams bridge.zig / sync.zig read in self-test mode only
+      # (CHESS_SELFTEST_SCENARIO, the report that does not exit), through the
+      # automation server itself, on the null platform: one frame, one command.
+      # The live runs are build-macos.yml / build-windows.yml's automation jobs.
+      - name: automation seams (null platform)
+        if: matrix.os == 'macos-latest'
+        run: |
+          zig build -Dplatform=null -Dautomation=true -Dnative-sdk-path="$SDK_PATH" --prefix zig-out-null
+          node scripts/automation-smoke.mjs zig-out-null/bin/chessboard --null
+          node scripts/automation-scenarios.mjs zig-out-null/bin/chessboard --null

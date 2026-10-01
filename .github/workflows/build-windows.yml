@@ -141,3 +141,71 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release_tag }}
         run: gh release upload "$TAG" dist/Chessboard-Windows-x64.zip --clobber
+
+  # v8-2-plan V1 step 2: the automation build, driven from outside — see the
+  # same job in build-macos.yml for what it is and why it is never released
+  # (scripts/test-chess.mjs holds that it produces no Chessboard-* artifact).
+  #
+  # Not a gate yet. On macOS the SDK's own CI runs WKWebView with automation
+  # on macos-14; on Windows nobody has run WebView2 with it (§9 M1: the SDK
+  # only runs its canvas smoke test there, under wine). The job runs and says
+  # plainly what failed, and a red does not stop a release; once two runs are
+  # green on a real runner it becomes a gate like macOS (§9 M4).
+  # The smoke and scenario steps carry their own limits: the job's limit
+  # ends a job "cancelled", which continue-on-error does not cover and which
+  # skips release.yml's `publish` (the first rehearsal, §9 M4); a step's
+  # limit ends it "failed", which it does.
+  automation:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    name: automation (not released, not a gate yet)
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: install build deps
+        run: npm ci
+      - name: install Native SDK CLI
+        env:
+          SDK_VERSION: ${{ inputs.sdk_version || '0.10.1' }}
+        run: |
+          npm install -g "@native-sdk/cli@${SDK_VERSION}"
+          echo "resolved: $(npm ls -g --depth=0 @native-sdk/cli || true)"
+          echo "SDK_PATH=$(npm root -g)/@native-sdk/cli" >> "$GITHUB_ENV"
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: sync frontend dist
+        run: node scripts/sync-dist.mjs
+      - name: zig build (automation)
+        run: zig build -Doptimize=ReleaseFast -Dautomation=true -Dplatform=windows -Dnative-sdk-path="$SDK_PATH" --prefix zig-out-auto
+      - name: package (automation build, never uploaded)
+        run: |
+          native package --target windows --output dist-auto/Chessboard --binary zig-out-auto/bin/chessboard.exe
+          exe="$(find dist-auto/Chessboard -name chessboard.exe | head -n1)"
+          [ -n "$exe" ] || exe=zig-out-auto/bin/chessboard.exe
+          echo "AUTO_EXE=$exe" >> "$GITHUB_ENV"
+      - name: automation smoke
+        timeout-minutes: 3
+        run: node scripts/automation-smoke.mjs "$AUTO_EXE"
+      - name: automation scenarios
+        timeout-minutes: 12
+        run: node scripts/automation-scenarios.mjs "$AUTO_EXE" --out automation-windows.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: automation-report-Windows
+          path: automation-windows.json
+          if-no-files-found: ignore
+      # a red job is easy to miss when it does not fail the run: say it on
+      # the run's summary page
+      - name: say what happened
+        if: failure()
+        run: |
+          echo "::warning::Windows automation (WebView2 + -Dautomation) failed — not a gate yet (v8-2-plan §9 M4). See the smoke / scenarios steps above."
+          echo "### Windows automation: failed (not a gate yet)" >> "$GITHUB_STEP_SUMMARY"

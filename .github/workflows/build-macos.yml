@@ -145,3 +145,68 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release_tag }}
         run: gh release upload "$TAG" dist/Chessboard-macOS-arm64.zip dist/Chessboard-macOS-arm64.dmg --clobber
+
+  # v8-2-plan V1 step 2: the packaged app driven from outside (§9 M1 "第 2 步
+  # 设计", §9 M4). A second build of the same commit, the same manifest and the
+  # same packaging command, with -Dautomation=true: the SDK's automation
+  # server, a file dropbox under the app's working directory through which
+  # any local process could call chess.*. That is why it is its own job and
+  # its own package (dist-auto/), and why nothing here is uploaded as a
+  # Chessboard-* artifact or to a release: release.yml takes the packages
+  # from the `build` job above, and scripts/test-chess.mjs holds that this
+  # job never produces one.
+  #
+  # It runs beside `build`, not after it, so the release package does not
+  # wait for it; a release still needs it green (release.yml's publish needs
+  # this whole workflow).
+  automation:
+    runs-on: macos-14
+    timeout-minutes: 20
+    name: automation (not released)
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: install build deps
+        run: npm ci
+      - name: install Native SDK CLI
+        env:
+          SDK_VERSION: ${{ inputs.sdk_version || '0.10.1' }}
+        run: |
+          npm install -g "@native-sdk/cli@${SDK_VERSION}"
+          echo "resolved: $(npm ls -g --depth=0 @native-sdk/cli || true)"
+          echo "SDK_PATH=$(npm root -g)/@native-sdk/cli" >> "$GITHUB_ENV"
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: sync frontend dist
+        run: node scripts/sync-dist.mjs
+      - name: derive the macOS manifest
+        run: node scripts/gen-manifest.mjs macos
+      - name: zig build (automation)
+        run: zig build -Doptimize=ReleaseFast -Dautomation=true -Dmanifest=build/app.macos.zon -Dnative-sdk-path="$SDK_PATH" --prefix zig-out-auto
+      - name: package (automation build, never uploaded)
+        run: |
+          native package --target macos --signing adhoc --manifest build/app.macos.zon --output dist-auto/Chessboard.app --binary zig-out-auto/bin/chessboard
+          exe="$(find dist-auto/Chessboard.app/Contents/MacOS -type f -perm -u+x | head -n1)"
+          echo "AUTO_EXE=$exe" >> "$GITHUB_ENV"
+      # first the channel itself (ready, menus, bridge, the loop turning) —
+      # a red here says automation does not work on this runner at all
+      - name: automation smoke
+        timeout-minutes: 3
+        run: node scripts/automation-smoke.mjs "$AUTO_EXE" --manifest build/app.macos.zon
+      # then the scenarios (scripts/automation-scenarios.mjs header): the
+      # repertoire's databases across restarts, sync against a local fake
+      # server with the main loop timed meanwhile, the library prefetch, the
+      # menu commands
+      - name: automation scenarios
+        timeout-minutes: 12
+        run: node scripts/automation-scenarios.mjs "$AUTO_EXE" --manifest build/app.macos.zon --out automation-macos.json
+      # the numbers §9 M4's provisional thresholds are to be replaced with
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: automation-report-macOS
+          path: automation-macos.json
+          if-no-files-found: ignore

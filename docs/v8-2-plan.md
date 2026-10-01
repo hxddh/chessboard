@@ -429,7 +429,24 @@
 
 ## 9 · 落地记录
 
-（发布前补。）
+### 总结（8.2.0 发布时写）
+
+四个里程碑（M1 CI 与余量、M2 三项训练、M3 开局书 / 母题 / 冷启动 / 整句 / 降级、M4 自动化验证 / main.zig 拆分 / 收尾）都已合入。下面按 §0 的三个主题说做到了什么、没做到什么；每一条的数字与偏离见各里程碑的记录。
+
+**V · 验证**
+
+- **做到**：V1 第 2–3 步——`build-macos.yml` / `build-windows.yml` 各一个 `automation` 作业，用打开 automation server 的第二份构建（从不发布，test-chess 守着）跑冒烟和七个自检场景，R1–R19 里 9 条改由 CI 覆盖，剩下的收成 `docs/manual-check.md`「8.2 真机路线」。V2 两件都在真站上做了：Lichess `sort=dateAsc` 按时间正序成立（run 36751390621），5 子 11 个残局查 Lichess 在线 Syzygy 全表 0 个不一致、改标 `tb`（run 36771239680）。V3 降级测试进了 CI 的 persistence 组，并修了学习书签被旧版夹到第 96 课。V4 每个作业都有超时，浏览器组 17 → 25 个，墙钟 20.2–33.8 → 15.9 分钟（PR #99，`measured.json ciWallClock`）。
+- **没做到的**：automation 作业只在发布彩排里跑过一次：macOS 绿，阈值仍是暂定值；Windows 页面在 runner 上没有跑起来，原因没查清，作业不挡发布。M1 归给 CI 的 R10（Windows runner 真取 lichess.org）与 R16（导出导入全部数据）没做，留给人；`CHESS_DIALOG_PATH` 没做。8.2 真机路线（§8 第 8 条）没有人走过，8.2.0 带着未记录的条目发布。V4 的验收「连续三个 PR ≤ 15 分钟」没达到（最近一次 15.9）；布局分片偶发不出帧的根因没查。
+
+**T · 计算与看棋**
+
+- **做到**：T1 进阶课程第三部 24 课（96 → 120 课），73 步全部经 Stockfish 深度 20 核对；T2「看 N 步」「盲走」两个模式都做了（§8 第 2 条），各有评级与复习队列；T3 名局猜着，计分按 §8 第 6 条；T4 开局书每方 400 → 5,000 条，线进新库 `chessboard.replines`（偏离计划：`chessboard.repertoire` 没升版本，否则 8.1 打不开），加视图菜单「开局书」；T5 长将、困子的错误率 12% → 0%（各 25 条），`MATERIAL_ONLY` 清空。
+- **没做到的**：判长将最坏 260–340 ms，评审要的 ≤ 150 ms 没达到；新的长将比 oracle 严，8.1 判对的大多数现在只说子力。看 N 步 / 盲走没接 Lichess 题库分块，看 N 步的接续着法是简单规则；名局猜着执黑时悬停光标仍按白方判断。§8 第 5 条「不限档只补盘数」：`ladder.yml` 的 `pairs` 输入做好了，补盘没有派发，顶一级仍是 64 盘、区间 50–71%。
+
+**F · 地基**
+
+- **做到**：F1 新内容一律分块（课程、看 N 步 / 盲走、名局猜着、打包自检各一个分块），`trainer/puzzles.js` 拆成六个文件；主包 900,972 → 907,245 字节，在 8.2 的上限 910,972 以内。F2 `main.zig` 4,785 行拆成五个文件，代码段逐字节相同；与上游的差异逐块登记（`sdk-fork.json`、`sdk-diff.mjs`），并照上游修了 R15（窗口按 `.restored` 恢复）与 B09（Windows 嵌入应用清单）。F3「经过这个局面」冷启动 2,739 → 526 ms（线 1.5 s）。F4 26 个碎片键换成整句模板，三语文字逐字不变，拼接守卫进 test-chess。F5 导出全部数据的「正在准备…」、阶梯 `pairs`。`app.js` 5,873 → 5,754 行。
+- **没做到的**：SDK 0.10.2 到发布时仍没有发布（npm 上最新是 0.10.1，2026-10-01 查），没有 SDK 升级（§7 M4 的条件没成立）。R15、B09 的效果只有真机能确认（8.2 真机路线 X1、X2）。整句守卫看不见经参数、属性、后来才赋值的名字流到 `+` 的译文；英文原有的 "1 games" 没改。开局书的「头坏过一次、分块整次会话都没起来」那条缝仍在（M3 评审修正）。
 
 ### M1
 
@@ -936,3 +953,146 @@
   - 仍看不见的：译文经参数、属性、后来才赋值的名字、或「含有」译文的表达式赋的名字流到 `+`。
 - **主包** 909,765 → 910,148（+383：P2 +145、P3 长将 +247、整句 −9；上限 910,972）。
 - 本机 Chromium，一个一个跑：test:static 通过；rep-book 118、explain 111、repertoire-e2e 133、downgrade 95、library 313、trainer 128、review 228 条 ok，coach、motif 通过，0 条失败。评审的 zz-probe-cover（各页切回棋盘都画满）照旧全对，没有要改的。评审的探针只在本地跑过，没有入库。
+
+### M4
+
+#### F2 `src/main.zig` 拆分与上游差异登记（分支 m24-f2）
+
+- **拆分**：`main.zig` 4,785 行按职责拆成五个文件，代码和测试都原样搬移，测试跟着各自的代码走。
+  - `main.zig` 319 行（2 个测试）：入口与装配，即 `App`、`onEvent` / `onStop`、`main()`。
+  - `bridge.zig` 1,564 行（17）：命令表与内建命令放行、分块传输、签发路径（信任模型，含拖放与系统打开的文件）、appdata 存储、自检。
+  - `dialogs.zig` 733 行（14）：`chess.openPgn` / `chess.saveText` 与原生文件对话框。
+  - `menus.zig` 163 行（3）：菜单语言、菜单命令交给页面的 `shortcut` 事件。
+  - `sync.zig` 2,113 行（28）：异步桥、检查更新、HTTP、Lichess / Chess.com 取棋。
+  - 新增的只有三样：各文件头的说明、按名字逐个 `@import` 的别名、跨文件用到的声明加 `pub`（顶层 48 个、方法 12 个）。两处注释里写死的文件位置改了。
+  - 逐行核对：原文件 4,419 个非空行都在，多出来的只有上面三样。
+  - `build.zig` 不用改：同目录的 `@import` 属于同一个模块。
+- **行为零改动的证据**：
+  - `zig build test -Dplatform=null`：拆分前 64/64，拆分后 64/64，测试名逐个相同。
+  - aarch64-macos 与 x86_64-windows 的 ReleaseFast object 构建（M1 V1 的只编 object 的做法），拆分前后**代码段逐字节相同**：macOS `__text` 2,093,632 字节，Windows `.text` 2,520,098 字节。
+- **读 main.zig 的脚本**：
+  - `manifest-check.mjs` 第 2、5、6 节改为读 `src/` 下除 runner.zig 外的全部 `.zig`，目录现读，以后新加文件不会漏。另加两条：`BUILTIN_COMMANDS`、`APP_COMMANDS` 各只有一份。改之前跑是红的（13 个命令都「没注册」）。
+  - `test-sync.mjs` 的 `SYNC_GAMES_MAX` 改读 `sync.zig`。
+  - 脚本和 workflow 注释里点名的取棋函数改指 `sync.zig`。
+- **上游差异**：
+  - `docs/sdk-fork.json` 登记 runner.zig ↔ `src/app_runner/root.zig`、build.zig ↔ `build/app.zig` 的全部差异：**27 组、174 块**（ours 14 组、unused 4 组、lag 9 组），按内容加上下文定位，不靠行号。
+  - `docs/sdk-fork-notes.md` 逐组写理由，以及 0.10.2 升级的步骤。
+  - `scripts/sdk-diff.mjs` 把登记过的差异套到上游上再比，只报没登记的块，以及原文已变的登记项（给出上游前后的变化）。对 v0.10.1 的标签与 npm 包，输出都是空的，退出码 0。
+  - `scripts/test-sdk-diff.mjs` 进了 `test:static`，离线，13 条：
+    - 从我们的文件和登记表反推出 0.10.1 上游；有 SDK 时逐字节相同；
+    - 上游多一行时恰好报那一块；
+    - 改登记过的原文时按组报出；
+    - 说明里缺一组时报出。
+  - `checks.yml` 的 zig 作业对 npm 装的 SDK 跑 `sdk-diff`。
+- **登记时发现的 lag 项**（这次没修，F2 要求行为零改动；建议 0.10.2 时一起处理）：
+  - **R15 窗口位置记不住**：恢复时只换了 frame，没把 `initial_placement` 标成 `.restored`，macOS 主机因此把窗口居中。大小能记住，位置每次居中。一行可修，要真机核对。
+  - **B09 Windows exe 没嵌 SDK 的应用清单**：没有按显示器 DPI 感知，缩放不是 100% 时整窗按位图拉伸、发虚。一行可修，要在 150% 缩放的真机上核对。
+  - 其余 7 组（平台对象堆分配、trace 过滤、Runtime 三项设置、`.show` 键名、排版、链接路径位置、x86_64 LLVM 规避）对发布件没有可见影响，影响逐条写在说明里。
+- **验证**：
+  - `zig build test` 64/64；
+  - 双平台 object 交叉编译通过；
+  - `manifest-check.mjs --sdk`（0.10.1）通过；
+  - `npm run test:static` 通过；
+  - `node scripts/sdk-diff.mjs`（`NATIVE_SDK_PATH` = 0.10.1）无输出、退出码 0。
+
+#### R15 / B09 两处落后上游的修正（分支 m24-fix，接在 m24-f2 后面）
+
+- **R15 窗口位置**：`prepareStateStore` 改成与上游逐行相同，恢复时经 `window_placement.applySavedWindow` 把 `initial_placement` 标成 `.restored`；`src/window_placement.zig` 是 SDK 文件原样抄入。
+  - 更正 F2 的判断：8.1 并不是「每次居中」。SDK 的 `AppInfo.inferLegacyExplicitOrigin` 把原点不为 (0,0) 的 `.default` 当成写死的位置（`.explicit`），位置多半碰巧回来了；只有存在 (0,0) 的窗口仍是 `.default`，被 macOS 主机居中。修了以后走的是上游测过的 `.restored` 那条路。Windows 主机不读 `initial_placement`，不受影响。
+  - 测试（`src/runner.zig` 末尾，新加的 runner 测试二进制里跑）：null 平台上「首次启动 → 存一个 frame → 再启动」，原点 (140,90) 与 (0,0) 各一次，断言 `resolvedMainWindow` 与 `resolvedStartupWindow` 都是 `.restored`、frame 是存的那个。旧代码下红（拿到 `.explicit`），新代码绿；`window_placement.zig` 自带的 5 个测试一并跑。
+  - `zig build test -Dplatform=null`：64/64 → 64/64 + runner 7/7。
+- **B09 Windows 应用清单**：`linkPlatform` 的 Windows 分支加 `exe.win32_manifest = nativeSdkPath(…, "assets/native-sdk.manifest")`，注释与上游逐字相同。开发 exe 与打包 exe 都经过这里。
+  - x86_64-windows ReleaseFast 完整链接（本机能链），用一个小 PE 解析脚本看资源：修之前没有资源目录（也就没有图标、版本信息可挤掉，图标是包里的 `app-icon.ico`）；修之后多一个 `.rsrc` 节，只有 `RT_MANIFEST` #1，1,752 字节，与 SDK 文件逐字节相同，`dpiAware = true/pm`、`dpiAwareness = PerMonitorV2, PerMonitor`、通用控件 v6。exe 4,313,600 → 4,315,648 字节，子系统仍是 GUI。
+  - `manifest-check.mjs --sdk` 加第四张面孔：SDK 的 `build/app.zig` 嵌的应用清单，build.zig 也得嵌。拿旧 build.zig 跑是红的。
+- **登记**：R15、B09 由 lag 改为 ours（剩下的差异是我们的测试和 SDK 路径写法），新开 B13（runner 测试二进制）；`window_placement.zig` 作为第三对文件登记，差异为零。28 组、174 块（ours 17、unused 4、lag 7）。`sdk-diff` 对 v0.10.1 的标签与 npm 包都无输出、退出码 0。
+- **验证**：`zig build test -Dplatform=null` 71/71；Windows 目标的两个测试二进制交叉编译、链接通过，macOS 目标的 runner 测试二进制链接通过（应用测试二进制在本机缺框架，和以前一样）；aarch64-macos object 构建通过；`npm run test:static` 通过（`NATIVE_SDK_PATH` = 0.10.1，test-sdk-diff 16 条）。
+- **只有真机能确认的**：`docs/manual-check.md`「8.2 真机路线（30 分钟）」macOS 第 6 步 X1（macOS 退出再开回到原处，含第二块显示器）、Windows 第 6 步 X2（Windows 150% 缩放不发虚，任务管理器「DPI 感知」是 Per-Monitor v2，跨显示器拖动）。PerMonitorV2 下 WebView2 主机自己处理 DPI 变化，那条路这个应用以前没走过。
+
+#### V1 第 2–3 步：automation 驱动打包后的应用（分支 m24-v1）
+
+- **两条通道照 M1 的设计合用**：automation 从外面核菜单、经 bridge 调安全的 `chess.*`、注入 `menu-command`、量主循环；页面里的事由打包自检的场景做（`CHESS_SELFTEST_SCENARIO`），报告经 `chess.selftestReport` 交回。驱动脚本从不经 bridge 调 `chess.openPgn` / `chess.saveText`（模态面板没人能应答，会卡死整次运行）。
+- **构建**：`build-macos.yml`、`build-windows.yml` 各加一个作业 `automation`（`timeout-minutes: 20`），和 `build` 并行，不在它后面排队：
+  - 同一提交、同一清单、同一打包命令，多一个 `-Dautomation=true`，装到 `zig-out-auto/`、打包到 `dist-auto/`；
+  - 先跑 `automation-smoke.mjs` 活模式（就绪、菜单、bridge、20 次 `wait`），再跑新的 `automation-scenarios.mjs`；
+  - 只上传报告 `automation-report-macOS` / `-Windows`（JSON，含每次的时延与帧间隔，供定阈值），**不产出任何 `Chessboard-*` 包，不传 release**。
+- **发布件不带 automation 的守卫**（`test-chess`，先红后绿：把 automation 的报告改名成 `Chessboard-macOS-automation`、给 `build` 作业加 `-Dautomation=true`，各红一组）：
+  - 两个 workflow 里只有 `automation` 作业带 `-Dautomation=true`，只有 `build` 作业上传 `Chessboard-*` 或 `gh release upload`；
+  - `automation` 作业打包进 `dist-auto/`，有 20 分钟超时，跑冒烟和场景；
+  - `release.yml` 只下载 `Chessboard-*`，`gh release create` 挂的正好是那三个文件，全文不出现 `dist-auto` / `-Dautomation`。注释先去掉再比，CRLF 先归一。
+- **Windows 先不挡发布**：WebView2 + automation 没有先例（M1）。Windows 的 `automation` 作业 `continue-on-error: true`，名字里写着「not a gate yet」（`ci-wallclock` 认这几个字），失败时在运行摘要里写一行警告；release 的 `publish` 不会因它变红。macOS 的是门槛：SDK 自己的 CI 在 macos-14 上跑过 WKWebView + automation。**Windows 连续两次跑绿后，去掉 `continue-on-error`，改成门槛。**
+- **Zig（`src/main.zig`，都只在 `CHESS_SELFTEST=1` 时读，发布件行为不变）**：
+  - `CHESS_SYNC_BASE`：只认 `http://127.0.0.1:<端口>`。设了时，同步的 getter 外面套一层 `RebaseGetter`，把 `https://lichess.org` / `https://api.chess.com` 换成它，路径与查询不动。Chess.com 的月份列表仍须在 `api.chess.com/pub/player/` 之下（那条校验没动），取月份时再换主机。
+  - `CHESS_SELFTEST_SCENARIO`：一个记号（`tokenValid`，≤ 32），`chess.selftestMode` 答 `{"on":true,"scenario":"…"}`；设了时 `chess.selftestReport` 写完报告答 `{"written":true}`，不退出，由驱动结束进程。
+  - Zig 测试 4 条：两个变量在非自检模式下都不生效、各种不合格的基址不认、场景名要是记号；`rebaseUrl` 只换两家的主机；经 StubGetter 的整次同步（Lichess 5 局、Chess.com 9 局，4 次请求都去了本地）；一条**真实 http 回环**：起一个只答一次的本地服务器，经 `NetGetter` + `RebaseGetter` 取回 5 局，请求行就是 Lichess 的路径。把 `syncBaseOf` 的自检判断去掉时第一条红。
+  - 没做 M1 设计里的 `CHESS_DIALOG_PATH`（面板换成固定路径）：这次的范围不含原生对话框，R12–R16 的面板留给人，读写那一半已有页面测试。
+- **页面**：
+  - `app.js` 的 `runSelftest` 原样搬进 `selftest-run.js`，和新的 `selftest-scenarios.js` 一起进新分块 `chunk-selftest.js`（16 KB）。app.js 只留一个加载钩子，把它用到的模块交过去；分块加载失败时也交一份 `ok:false` 的报告。
+  - `host.js` 的 `selftestMode` 有场景名时答名字，否则照旧答 `true`。
+  - `selftest-boot.js` 多记一个 `pre`：chunk-boot.js 起的那次预读，以及它答复的时刻与局数。
+  - 场景七个：`rep-seed`、`rep-index`、`rep-read`、`sync`、`prefetch-seed`、`prefetch-read`、`menus`（做什么见 `selftest-scenarios.js` 文件头）。
+  - 页面只判断不是计时的事，计时的阈值在驱动里。会写盘的四个场景在报告 done 之前等 6 s，理由同自检的 `MARKER_SETTLE_MS`：驱动一拿到 done 就结束进程。
+  - 开局书这条（R17）用的是应用自己的路：第一次启动把一本两条线的书写进头部（8.0–8.1 的存法），第二次启动由应用自己的启动搬进 `chessboard.replines`、在 `chessboard.repertoire` 建记录和卡片，第三次读回比对。没有往两个库里塞假记录：启动时的对账会把对不上书的记录删掉。
+- **主包** 910,148 → 907,245（−2,903）：自检搬出主包，钩子与 `pre` 留下。`app.js` 5,871 → 5,754 行（上限 5,873 没改小，留给合并时统一收）。
+- **假服务器** `scripts/fake-sync-server.mjs`（node:http）：
+  - 用 `src/sync-fixtures` 里 25 局真实的 Lichess 对局拼出 100 局，每局有自己的 Site，开始时间相隔一小时；100 ms 一局分块吐出，按 `since` / `sort=dateAsc` 正序，否则新的在前；
+  - Chess.com 的月份列表在 `api.chess.com` 之下，2026/09 用真实的那个月（13 局，4 局 Chess960）；
+  - `missing_user` 回两家真实的 404 页面，`limited_user` 回 429，`offline_user` 不应答直接断开；
+  - 记下每个请求（路径、查询、User-Agent）和每次传输的起止，驱动据此只取传输期间的 `wait` 样本。也能单独起：`node scripts/fake-sync-server.mjs --port 8123`。
+- **驱动** `scripts/automation-scenarios.mjs`：所有启动共用一份 profile（WebView 自己的存储本来就跨启动共用，见 `selftest-app.mjs`）；每次启动前清空投递箱，用 pid 认 ready，两次启动之间等 2 s（WebView2 的子进程要放开用户数据目录）。
+  - 判定：每个场景页面报告里的每一项；菜单目录与清单一致；`chess.selftestMode` / `chess.appdataPath` / `chess.fetchProgress` 经 bridge 应答；空闲时 20 次 `wait`；R5 应用进程没有对外连接（macOS `lsof`，Windows `Get-NetTCPConnection`，查不了就跳过并说明）；R17 重启前后记录与线相同；R6 传输期间的 `wait` 时延与页面帧间隔；R6a 请求带不带 since；R7 请求了哪些月份；User-Agent；R18 预读局数与写入时相同；菜单命令按「armed → next → done」一步步发。
+  - 投递箱的读写抽到 `scripts/lib/automation.mjs`，`automation-smoke.mjs` 改用它。
+- **暂定阈值**（`automation-scenarios.mjs` `THRESHOLDS`，都是没在 runner 上量过之前定的，故意放宽；前两次 runner 运行的数字出来后照实改，记在这里）：
+  - 同步期间 `wait` 确认 p95 < 500 ms、最长 < 2,000 ms；空闲时最长 < 2,000 ms；
+  - 同步期间页面最长帧间隔 < 1,000 ms，页面画不到 10 帧（窗口不在前台）时只记不判；
+  - 每次启动到页面报告 done ≤ 180 s。
+  - 冷启动预读先只报数（R18），不设门槛。
+- **本机验证（Linux，没有 macOS / Windows）**：
+  - `zig build test -Dplatform=null`：68 条全过（新增 4 条）。
+  - null 平台 automation 构建上：`automation-smoke.mjs --null` 全绿；`automation-scenarios.mjs --null` 四项全绿——场景名带回、报告写了不退出、不设场景时 `ok:false` 照旧退出 1、`CHESS_SELFTEST≠1` 时场景名不生效。用改动前的 `main.zig` 构建跑同一脚本：前两项红。`checks.yml` 的 zig 作业（macOS）每个 PR 都跑这两步。
+  - 交叉编译 `-Dautomation=true -Doptimize=ReleaseFast`：`x86_64-windows` 完整链接出 exe；`aarch64-macos` 的 Zig 与 ObjC 都编过，只停在找系统框架（本机没有 macOS SDK），和 M1 一样。
+  - `scripts/test-selftest-e2e.mjs`（新，进 explorer + sync + repertoire 组）：七个场景按驱动的顺序、在同一个浏览器 profile 上跑，桩按 main.zig 的做法连假服务器，Chromium 全绿。
+    - sync：100 局，「已取到 k 局」问了 38 次、38 个不同的数、单调增；页面最长帧间隔 33 ms；
+    - Chess.com 进 9 局；四种错误各是自己那句；
+    - 预读：409 局（同步进的 109 + 300），bundle 开始后 306 ms 拿到；
+    - 菜单：game.new 打开新对局，view.repertoire 到我的开局书；
+    - 未知场景名报告失败。
+  - `test-engine-e2e`（自检搬家后的浏览器回归，含坏引擎、存档被拒、缺 eco 分块、缺文件命令、语言晚到几种）：26 条全过。
+  - `test:static` 全过。
+- **还要 CI 补的**：两个 automation 作业从没在 runner 上跑过。第一次运行（release 彩排或手动派发 build-macos / build-windows）之后：
+  - 把两份报告里的时延、帧间隔、预读时刻记在这里，改掉暂定阈值；
+  - Windows 绿两次就改成门槛，红了照实写原因（WebView2 + automation 起不来、投递箱目录、进程结束方式……）。
+  - 本分支没有派发任何 workflow。
+- **第一次真跑（release 彩排 run 36850688751，cecb21d，2026-10-01 10:41–11:01 UTC）**：
+  - **macOS 绿**，30 项全过（作业 3 分钟）：smoke ready 0.76 s、20 次空命令 p50 17 / 最长 28 ms；空闲 20 次 `wait` p50 18 / p95 26 / 最长 60 ms；同步 100 局 10.2 s 里 151 次 `wait` p50 14 / p95 29 / 最长 32 ms，页面 615 帧、最长帧间隔 23 ms；Lichess 进度问了 99 次、98 个不同的数；预读 409 局、bundle 开始后 1,762 ms 拿到；R5、R6a、R7、R17、User-Agent、菜单三步都过。离暂定阈值都很远，只有一次运行，**阈值暂不收紧**，第二次运行后再定。
+  - **Windows 红**：构建、打包、smoke 都过（ready 1.18 s，空命令 p50 26 / 最长 32 ms；空闲 `wait` p50 27 / p95 42 / 最长 287 ms；R5 过）。但页面一份报告都没写：日志里四次 `bridge.dispatch` 全是驱动发的，页面自己一次也没调，每次启动只发布了第 1 帧。每个场景都等满 180 s，到第四个场景时作业撞上自己的 20 分钟上限，**被取消**。取消不在 `continue-on-error` 的范围里，整个 run 结论是 cancelled，`publish` 被跳过——「Windows 不挡发布」在超时这条路上不成立。
+  - **修正**：驱动里，一次启动页面一份报告都没写，就不再启动其后的场景（报 `page:silent`，列出没启动的场景）；两个平台的 smoke / scenarios 步骤各有自己的时限（3 / 12 分钟），步骤超时是 failed 而不是 cancelled；test-chess 守着这两个步骤时限都小于作业的 20 分钟。
+  - **Windows 页面为什么没跑起来，没有查清**：可能是 runner 的会话里 WebView2 起不来，也可能是应用本身在 Windows 上的问题；CI 分不出来，真机路线（manual-check「8.2 真机路线」Windows 段）开头那一步就是它。
+- **R1–R19 的归属**（`docs/manual-check.md`）：
+  - CI 已覆盖 9 条：R5（部分）、R6、R6a、R7、R8、R9、R11、R17、R18。M1 的表里 R10（Windows runner 上真取 lichess.org）和 R16（导出导入全部数据）这次没做，留给人。
+  - 只能人看的收成「8.2 真机路线（30 分钟）」：图标、原生对话框本身（含中文路径）、60 fps 手感、Windows 顶部拖动区实验（可选）、真账号同步。macOS、Windows 各约 15 分钟。
+  - 菜单（不在 R1–R19 里）：B1 的目录和 B2–B5 的命令路径由 automation 覆盖；按键匹配（⌘N 这类）automation 碰不到，仍是清单 B 节的人工项。
+
+#### 合并（分支 m24int = m24-fix + m24-v1）
+
+- **V1 的 Zig 改动按拆分后的归属重放**（V1 改的是拆分前的 `main.zig`；`main.zig` 仍只是入口与装配）：
+  - `sync.zig`：`JobSpec.sync_base`；`syncWork` 外套 `RebaseGetter`；`SYNC_HOSTS` / `syncBaseOf` / `syncBase`（`pub`）/ `rebaseUrl` / `RebaseGetter` 接在 `syncWork` 后面；`fetchGames` 传 `.sync_base`；`rebaseUrl`、经 StubGetter 的整次同步、真实 http 回环三条测试和 `OneShotServer` 接在 T4 测试后面。
+  - `bridge.zig` 自检一节：`selftestOn` 改 `pub`（`syncBase` 要用）；`selftestScenario`、`selftestModeAnswer` 新增，`selftestMode` 改用后者；`selftestReport` 有场景时答 `{"written":true}` 不退出；「两个变量只在自检模式下生效」那条测试放在 `selftestReport` 后面（它同时查 `syncBase`，从 `sync.zig` 引入）。
+  - `runner.zig`、`build.zig` V1 没动，`docs/sdk-fork.json` 不用加登记；`sdk-diff`（v0.10.1）无输出、退出码 0；`manifest-check.mjs --sdk` 通过（V1 没有按路径读 `main.zig` 的守卫，它读 `src/` 全部 `.zig`）。
+- **真机路线**：m24-fix 的「8.2 修正，需真机确认」X1、X2 并进「8.2 真机路线（30 分钟）」，作 macOS 第 6 步、Windows 第 6 步（拖动区实验顺延为第 7 步），两平台各约 17 分钟，合计略超 30 分钟，标题沿用 §8 第 8 条的说法。
+- **app.js 行数上限** 5,873 → 5,754（现在的行数）。
+- **验证**：`zig build test -Dplatform=null` 75/75（应用 68 = 64 + V1 的 4，runner 7）；x86_64-windows ReleaseFast exe 链接通过（4,318,208 字节，`.rsrc` 仍只有 `RT_MANIFEST` #1，1,752 字节）；aarch64-macos object 构建通过；null 平台 automation 构建上 `automation-smoke.mjs --null` 与 `automation-scenarios.mjs --null`（4 项）全绿；主包 907,245 字节；`test:static`（`NATIVE_SDK_PATH` = 0.10.1）通过；selftest-e2e、engine-e2e（26）、sync-e2e（80）、repertoire-e2e（133）全过。
+
+#### M4 评审修正
+
+- **P2 automation live 模式写进本机真实的 Chessboard 数据**：自动化构建与发布版同一个 bundle id，WKWebView 的存储不跟 `$HOME` 走（WebView2 的在 exe 旁边），`makeWork` 换的 HOME / APPDATA 管不到它：rep-seed 覆盖开局书的头，sync / prefetch-seed 往对局库里导入假对局；冒烟的普通自检也会留下标记，中文启动时把下一次的语言换成英文。改为 `automation-scenarios.mjs`、`automation-smoke.mjs` 的 live 模式只在 CI（设了 `CI` 或 `GITHUB_ACTIONS`，GitHub runner 自带）上跑，本机要加 `--real-profile-ok`，否则在启动任何东西之前退出 1、说明原因（`scripts/lib/automation.mjs liveProfileRefusal`，两个脚本头注释也写了）；`--null` 不碰 WebView，不受影响。test-chess 加 4 条：判断函数两向各一条，两个脚本去掉 `CI` / `GITHUB_ACTIONS` 后各起一次子进程、以 `package.json` 冒充 exe，要求 `REFUSED` 并退出 1（改前冒烟真的去启动了它，场景脚本先起了假同步服务器）。
+- **P3 `CHESS_SYNC_BASE` 的端口**：`syncBaseOf` 只数了位数，`0` 和 `65536`–`99999` 也收。改为按 `u16` 解析、拒绝 0。sync.zig 加一条测试（1、8123、65535 收；0、00000、65536、99999 不收），改前红。
+- **P3 两个接缝编译期也关上**：`CHESS_SELFTEST_SCENARIO`、`CHESS_SYNC_BASE` 原来只要 `CHESS_SELFTEST=1` 就生效。现在还要 `-Dautomation=true`：runner.zig 转出 `pub const automation_build`（应用模块没有 `build_options`；build.zig 不动），bridge.zig `seamsOpen` 在 `comptime !automation_build` 时直接返回 false，`selftestScenario` / `syncBase` 都经它。普通自检（只设 `CHESS_SELFTEST=1`，构建工作流的 selftest 步骤用的发布构建）不变：`{"on":true}`、报告后按 ok 退出。runner.zig 的这一行登记为 R16（ours），`docs/sdk-fork-notes.md` 有理由，数字改为 29 组、175 块；`sdk-diff`（v0.10.1）无输出、退出码 0。bridge.zig 加一条测试：默认（非 automation）测试构建里设了三个变量也读不到 base 和场景名，`seamsOpenFor` 两向都测；改前红（`syncBase` 答 `http://127.0.0.1:8123`）。原来那条接缝测试改为显式按 automation 构建的开关测解析。x86_64-windows 发布 exe 里 `CHESS_SYNC_BASE`、`CHESS_SELFTEST_SCENARIO` 两个字符串由各 1 处变为 0 处（aarch64-macos object 同样 0 处），null 平台 automation 构建里仍在。
+- **P3 manifest-check 文字**：`const NS = {` 的空格；第 5、6 节的标题、注释与报错里「main.zig 放行 / 注册」改为 bridge.zig（两张表在那里），扫全部应用 Zig 的两条改称「应用 Zig」，文件对话框在 dialogs.zig。
+- **验证**：`zig build test -Dplatform=null` 77/77（应用 70 = 68 + 2，runner 7），`-Dautomation=true` 下同样 77/77；null 平台 automation 构建上 `automation-smoke.mjs --null` 与 `automation-scenarios.mjs --null`（4 项）全绿；x86_64-windows ReleaseFast exe 链接通过（4,316,672 字节，`.rsrc` 仍只有 `RT_MANIFEST` #1，1,752 字节）；aarch64-macos object 构建通过；`manifest-check.mjs --sdk` 通过；`test:static`（`NATIVE_SDK_PATH` = 0.10.1）通过；selftest-e2e（29）、engine-e2e（26）全过；主包不变（没有改页面代码）。
+### 发布
+
+- **版本**：8.2.0（app.zon、build.zig.zon、package.json、package-lock.json 一致）。
+- **日期**：2026-10-01（打标签的日期以 tag 为准；标签打在哪个提交，发布后补在这里：`v8.2.0` → `________`）。
+- M1–M4 全部合入后发布，按 §7。发布说明在 `.github/release-notes/v8.2.0.md`，README 的「8.2.0 改了什么」与「怎么玩（v8.2）」已更新，8.0.0 一节移进 `docs/CHANGELOG.md`（README 只留最近两版：8.2.0 与 8.1.0）。
+- **SDK**：仍是 0.10.1；发布当天（2026-10-01）`npm view @native-sdk/cli versions` 最新仍是 0.10.1，0.10.2 未发布。
+- **随版带出的遗留**（照实写进了 README 与发布说明）：没有 SDK 升级；macOS 自动更新、签名与公证、透明标题栏维持 8.1 的状况；automation 只跑过一次（macOS 绿、阈值暂定；Windows 页面在 runner 上没跑起来、不挡发布）；「8.2 真机路线」一步都还没有记录（含 R15 / B09 两处修正的 X1、X2）；阶梯顶一级仍是 64 盘；CI 墙钟 15.9 分钟、未达到连续三次 ≤ 15；判长将最坏约 0.3 s；整句守卫的盲区；降级回 8.0 时对手档位与「第二个引擎」开关会丢。

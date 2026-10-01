@@ -1,7 +1,7 @@
 /**
  * 从 Lichess / Chess.com 同步的页面一侧（v8-0-plan C2）。
  *
- * 取棋在原生层（main.zig chess.fetchGames，两家应答的解析由那里的 Zig 单元
+ * 取棋在原生层（sync.zig chess.fetchGames，两家应答的解析由那里的 Zig 单元
  * 测试盯着）；这里是页面拿到应答之后的事：每种应答说哪句话、用户名在发出去
  * 之前先过一遍、开关默认关、两家网站的 PGN 进得了棋谱库并认出是谁下的。
  * 跑：node scripts/test-sync.mjs
@@ -48,7 +48,7 @@ const assert = (cond, msg, extra) => {
   assert(ctx.syncMessage({ pgn: "[Event \"x\"]\n\n1. e4 *", count: 1 }) === null, "有棋：没有要说的，直接进棋谱库");
 }
 
-// --- 名字先在页面里过一遍：和 main.zig syncRequest 同一条规矩 --------------
+// --- 名字先在页面里过一遍：和 sync.zig syncRequest 同一条规矩 --------------
 {
   const ok = ["ab", "sync_tester", "Opponent-2", "a".repeat(30)];
   const bad = ["", "a", "a b", "../x", "x?max=1", "名字", "a".repeat(31), " ab "];
@@ -102,7 +102,7 @@ const assert = (cond, msg, extra) => {
   const f1 = ctx.syncSince(lib, "lichess", "thibault");
   assert(f1 && f1.since === Date.UTC(2026, 8, 28) - 14 * DAY && f1.known === 3,
     "since = 库里这个网站、这个名字最新一局那天的 0 点 − 14 天；重叠里已有 3 局（名字不分大小写、执黑执白都算）", JSON.stringify(f1));
-  assert(f1.since === 1789344000000, "与 main.zig 的 Lichess 增量测试是同一个 since", String(f1.since));
+  assert(f1.since === 1789344000000, "与 sync.zig 的 Lichess 增量测试是同一个 since", String(f1.since));
   const f2 = ctx.syncSince(lib, "chesscom", "thibault");
   assert(f2 && f2.since === Date.UTC(2026, 8, 30) - 14 * DAY && f2.known === 1, "Chess.com 只看 Site 是 Chess.com 的棋", JSON.stringify(f2));
   assert(ctx.syncSince(lib, "lichess", "nobody") === null && ctx.syncSince([], "lichess", "thibault") === null,
@@ -124,9 +124,9 @@ const assert = (cond, msg, extra) => {
   assert(JSON.stringify(ctx.syncRequest("lichess", "thibault", 50, f1)) === '{"site":"lichess","user":"thibault","max":53,"since":1789344000000}',
     "之后：since 来自棋谱库，局数 50 + 已有的 3", JSON.stringify(ctx.syncRequest("lichess", "thibault", 50, f1)));
   assert(ctx.OVERLAP_DAYS === 14 && ctx.OVERLAP_GAMES === 50 && 100 + ctx.OVERLAP_GAMES <= 150,
-    "最多 100 + 50 局，不超过 main.zig 的 SYNC_GAMES_MAX（150）");
-  const zig = (await import("fs")).readFileSync(path.join(root, "src/main.zig"), "utf8");
-  assert(/const SYNC_GAMES_MAX: usize = 150;/.test(zig), "main.zig SYNC_GAMES_MAX 仍是 150");
+    "最多 100 + 50 局，不超过 sync.zig 的 SYNC_GAMES_MAX（150）");
+  const zig = (await import("fs")).readFileSync(path.join(root, "src/sync.zig"), "utf8"); // v8-2-plan F2: 取棋在 sync.zig
+  assert(/const SYNC_GAMES_MAX: usize = 150;/.test(zig), "sync.zig SYNC_GAMES_MAX 仍是 150");
 
   // 增量时零局说「没有新对局」，第一次零局仍说「还没有对局」
   assert(JSON.stringify(ctx.syncMessage({ pgn: "", count: 0 }, true)) === '{"key":"sync.none"}', "增量同步零局：没有新对局");
@@ -142,7 +142,7 @@ const assert = (cond, msg, extra) => {
 }
 
 // --- 两家网站的 PGN 进得了棋谱库，并认出是谁下的 ----------------------------
-// 形状与 main.zig 的样本一致：Lichess 的时钟注释带空格，Chess.com 的不带，
+// 形状与 sync.zig 的样本一致：Lichess 的时钟注释带空格，Chess.com 的不带，
 // 且带小数秒；原生层交回来的是「一局一段、空行相隔」的一整段文本。
 {
   const LICHESS = "[Event \"Rated blitz game\"]\n[Site \"https://lichess.org/Ab3dEf7h\"]\n[Date \"2026.09.21\"]\n" +
@@ -183,7 +183,7 @@ const assert = (cond, msg, extra) => {
 }
 
 // --- 真实应答（src/sync-fixtures/，2026-09-29 由 sync-samples.yml 取回）---------
-// 原生层交给页面的正是这样的文本（scripts/sync-fixtures.mjs 照 main.zig 的分局
+// 原生层交给页面的正是这样的文本（scripts/sync-fixtures.mjs 照 sync.zig 的分局
 // 规则拼，Zig 测试在同几份文件上钉住了）：Lichess thibault 的 5 局快棋；Chess.com
 // erik 最近一个月的 13 局里 9 局标准棋（其中 8 局每日棋、1 局 10 分钟），
 // Chess960 的 4 局原生层就不给

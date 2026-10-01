@@ -2,6 +2,7 @@ const std = @import("std");
 const build_options = @import("build_options");
 const native_sdk = @import("native_sdk");
 const app_manifest = @import("app_manifest_zon");
+const window_placement = @import("window_placement.zig");
 const manifest_commands = if (@hasField(@TypeOf(app_manifest), "commands")) app_manifest.commands else .{};
 const manifest_shortcuts = if (@hasField(@TypeOf(app_manifest), "shortcuts")) app_manifest.shortcuts else .{};
 const manifest_menus = if (@hasField(@TypeOf(app_manifest), "menus")) app_manifest.menus else .{};
@@ -520,6 +521,11 @@ fn shortcutModifiers(comptime shortcut: anytype) native_sdk.ShortcutModifiers {
     return modifiers;
 }
 
+/// Whether this exe was built with -Dautomation=true, for the app module,
+/// which has no build_options of its own: the automation driver's seams in
+/// bridge.zig / sync.zig compile in only then (v8-2-plan §9 M4 评审修正).
+pub const automation_build = build_options.automation;
+
 pub fn runWithOptions(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {
     if (build_options.debug_overlay) {
         std.debug.print("debug-overlay=true backend={s} web-engine={s} trace={s}\n", .{ build_options.platform, build_options.web_engine, build_options.trace });
@@ -817,15 +823,67 @@ fn prepareStateStore(io: std.Io, env_map: *std.process.Environ.Map, app_info: *n
         const restored_windows = buffers.restored_windows[0..app_info.windows.len];
         for (restored_windows, 0..) |*window, index| {
             if (!window.restore_state) continue;
-            if (store.loadWindow(window.label, &buffers.read) catch null) |saved| {
-                window.default_frame = saved.frame;
-                if (index == 0) app_info.main_window.default_frame = saved.frame;
+            if (window_placement.applySavedWindow(window, store.loadWindow(window.label, &buffers.read) catch null)) {
+                if (index == 0) {
+                    app_info.main_window.default_frame = window.default_frame;
+                    app_info.main_window.initial_placement = .restored;
+                }
             }
         }
     } else if (app_info.main_window.restore_state) {
-        if (store.loadWindow(app_info.main_window.label, &buffers.read) catch null) |saved| {
-            app_info.main_window.default_frame = saved.frame;
-        }
+        _ = window_placement.applySavedWindow(&app_info.main_window, store.loadWindow(app_info.main_window.label, &buffers.read) catch null);
     }
     return store;
+}
+
+// v8-2-plan M4 (docs/sdk-fork-notes.md R15): through 8.1 the restore above
+// swapped the saved frame in but left initial_placement at `.default`. The SDK
+// then guesses: a non-zero origin is read as an authored one (`.explicit`,
+// AppInfo.inferLegacyExplicitOrigin), so the position mostly came back by
+// accident — but a window saved at (0,0) stayed `.default`, and the macOS host
+// centres those (appkit_host.m centerOnPrimary). What the host is handed is
+// the platform's app_info; the null platform keeps it readable.
+test "a saved window comes back where it was: the host is told .restored, not .default" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var root_buffer: [256]u8 = undefined;
+    const root = try std.fmt.bufPrint(&root_buffer, ".zig-cache/tmp/{s}", .{tmp.sub_path[0..]});
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    // each platform's state root (app_dirs: HOME on macOS, XDG on Linux,
+    // LOCALAPPDATA on Windows), all inside the throwaway directory
+    for ([_][]const u8{ "HOME", "XDG_STATE_HOME", "LOCALAPPDATA", "APPDATA" }) |name| try env.put(name, root);
+    const options: RunOptions = .{ .app_name = "chessboard", .bundle_id = "dev.chessboard.test-restore" };
+
+    // first launch: nothing saved, the host places the window itself
+    var first_buffers: StateBuffers = undefined;
+    var first = options.appInfo(&first_buffers);
+    const store = prepareStateStore(std.testing.io, &env, &first, &first_buffers) orelse return error.NoStateStore;
+    const fresh = native_sdk.NullPlatform.initWithOptions(.{}, webEngine(), first).app_info.resolvedStartupWindow(0);
+    try std.testing.expectEqual(native_sdk.WindowInitialPlacement.default, fresh.initial_placement);
+
+    // the window was moved and resized, then the app quit; next launch
+    const saved = [_]native_sdk.geometry.RectF{
+        native_sdk.geometry.RectF.init(140, 90, 1000, 760),
+        native_sdk.geometry.RectF.init(0, 0, 1000, 760),
+    };
+    for (saved) |frame| {
+        try store.saveWindow(.{ .label = fresh.label, .frame = frame });
+        var buffers: StateBuffers = undefined;
+        var app_info = options.appInfo(&buffers);
+        _ = prepareStateStore(std.testing.io, &env, &app_info, &buffers) orelse return error.NoStateStore;
+        const host = native_sdk.NullPlatform.initWithOptions(.{}, webEngine(), app_info);
+        // the hosts create the first window from resolvedMainWindow; the
+        // startup-window list (and the null platform) reads
+        // resolvedStartupWindow (SDK 0.10.1 platform/*/root.zig)
+        for ([_]native_sdk.WindowOptions{ host.app_info.resolvedMainWindow(), host.app_info.resolvedStartupWindow(0) }) |window| {
+            try std.testing.expectEqual(frame, window.default_frame);
+            try std.testing.expectEqual(native_sdk.WindowInitialPlacement.restored, window.initial_placement);
+        }
+    }
+}
+
+// src/window_placement.zig is the SDK's file verbatim; its own tests run here.
+test {
+    _ = window_placement;
 }
