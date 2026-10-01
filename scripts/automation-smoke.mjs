@@ -41,6 +41,10 @@
  *            build-windows.yml run it on the automation build (v8-2-plan V1
  *            step 2), before scripts/automation-scenarios.mjs:
  *              node scripts/automation-smoke.mjs <exe> [--manifest build/app.macos.zon]
+ *            Only on a CI runner (CI or GITHUB_ACTIONS set) unless
+ *            --real-profile-ok is passed: the page's plain self-test writes
+ *            its markers into the real WebView storage, and may switch the
+ *            next launch's language (lib/automation.mjs liveProfileRefusal).
  *
  * Each run gets a fresh working directory and profile (HOME / APPDATA) under
  * the system temp folder, like scripts/selftest-app.mjs. The dropbox itself
@@ -49,7 +53,7 @@
 import fs from "fs";
 import path from "path";
 import { spawn } from "child_process";
-import { makeWork, dropbox, launchApp, declaredMenus, snapshotMenus, latencyStats, sleep } from "./lib/automation.mjs";
+import { makeWork, dropbox, launchApp, declaredMenus, snapshotMenus, latencyStats, sleep, liveProfileRefusal } from "./lib/automation.mjs";
 
 const args = process.argv.slice(2);
 const exe = args.find((a) => !a.startsWith("--") && args[args.indexOf(a) - 1] !== "--manifest");
@@ -57,6 +61,11 @@ const nullMode = args.includes("--null");
 const manifest = args.includes("--manifest") ? args[args.indexOf("--manifest") + 1] : "app.zon";
 if (!exe || !fs.existsSync(exe)) {
   console.error("FAIL: 没有找到要驱动的可执行文件：" + exe);
+  process.exit(1);
+}
+const refusal = nullMode ? null : liveProfileRefusal("automation-smoke.mjs", args, process.env);
+if (refusal) {
+  console.error(refusal);
   process.exit(1);
 }
 const LIMIT_MS = nullMode ? 30000 : 120000;

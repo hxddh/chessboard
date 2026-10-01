@@ -12,7 +12,7 @@ const jsonFieldValue = @import("bridge.zig").jsonFieldValue;
 const jsonStringField = @import("bridge.zig").jsonStringField;
 const jsonStringFieldRaw = @import("bridge.zig").jsonStringFieldRaw;
 const jsonUintField = @import("bridge.zig").jsonUintField;
-const selftestOn = @import("bridge.zig").selftestOn;
+const seamsOpen = @import("bridge.zig").seamsOpen;
 const tokenValid = @import("bridge.zig").tokenValid;
 const App = @import("main.zig").App;
 
@@ -1074,8 +1074,9 @@ fn syncWork(job: *Job, out: []u8) []const u8 {
 
 // v8-2-plan V1 step 2: the automation build's scenarios sync against a fake
 // server on the runner (scripts/fake-sync-server.mjs), never the two sites.
-// CHESS_SYNC_BASE names it, and only a self-test launch reads the variable:
-// a release build launched by a person has CHESS_SELFTEST unset, so its
+// CHESS_SYNC_BASE names it, and only a self-test launch of an automation
+// build reads the variable (bridge.zig seamsOpen): a release build is built
+// without automation and launched by a person without CHESS_SELFTEST, so its
 // syncs go where they always went. Everything above — the URLs, the
 // archive-list check that keeps Chess.com's months under its own API path —
 // is unchanged; only the host of the request that goes out is swapped.
@@ -1083,19 +1084,21 @@ fn syncWork(job: *Job, out: []u8) []const u8 {
 /// The sites' URL prefixes a base stands in for (lichessUrl, chesscomArchivesUrl).
 const SYNC_HOSTS = [_][]const u8{ "https://lichess.org/", "https://api.chess.com/" };
 
-/// CHESS_SYNC_BASE, when this is a self-test launch and it is a loopback
-/// http:// origin ("http://127.0.0.1:<port>", no path); "" otherwise.
-fn syncBaseOf(env: *const std.process.Environ.Map, selftest: bool) []const u8 {
-    if (!selftest) return "";
+/// CHESS_SYNC_BASE, when the seams are open and it is a loopback http://
+/// origin ("http://127.0.0.1:<port>", port 1–65535, no path); "" otherwise.
+pub fn syncBaseOf(env: *const std.process.Environ.Map, open: bool) []const u8 {
+    if (!open) return "";
     const v = env.get("CHESS_SYNC_BASE") orelse return "";
     const head = "http://127.0.0.1:";
     if (!std.mem.startsWith(u8, v, head) or v.len == head.len or v.len > head.len + 5) return "";
     for (v[head.len..]) |c| if (!std.ascii.isDigit(c)) return "";
-    return v;
+    // five digits are not yet a port: 0 and 65536–99999 are none
+    const port = std.fmt.parseInt(u16, v[head.len..], 10) catch return "";
+    return if (port == 0) "" else v;
 }
 
 pub fn syncBase(self: *const App) []const u8 {
-    return syncBaseOf(self.env_map, selftestOn(self));
+    return syncBaseOf(self.env_map, seamsOpen(self));
 }
 
 /// `url` with its site's prefix replaced by `base` (the path and query kept),
@@ -2276,4 +2279,17 @@ test "V1 seams: a rebased sync goes over plain http to the loopback server and r
     const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena_state.allocator(), answer, .{});
     try std.testing.expectEqual(@as(usize, 5), parsed.count);
     try std.testing.expectEqualStrings("GET " ++ LICHESS_URL_THIBAULT["https://lichess.org".len..] ++ " HTTP/1.1", one.line_buf[0..one.line_len]);
+}
+
+test "V1 seams (M4 评审修正): a base's port is 1–65535" {
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    for ([_][]const u8{ "http://127.0.0.1:1", "http://127.0.0.1:8123", "http://127.0.0.1:65535" }) |good| {
+        try env.put("CHESS_SYNC_BASE", good);
+        try std.testing.expectEqualStrings(good, syncBaseOf(&env, true));
+    }
+    for ([_][]const u8{ "http://127.0.0.1:0", "http://127.0.0.1:00000", "http://127.0.0.1:65536", "http://127.0.0.1:99999" }) |bad| {
+        try env.put("CHESS_SYNC_BASE", bad);
+        try std.testing.expectEqualStrings("", syncBaseOf(&env, true));
+    }
 }

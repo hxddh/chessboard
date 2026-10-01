@@ -39,18 +39,24 @@
  *   menus          menu-command game.new → 新对局 opens; view.repertoire →
  *                  the library's 我的开局书 (B1–B5's command path)
  *
- *   node scripts/automation-scenarios.mjs <exe> [--manifest build/app.macos.zon] [--out report.json] [--only sync,menus]
+ *   node scripts/automation-scenarios.mjs <exe> [--manifest build/app.macos.zon] [--out report.json] [--only sync,menus] [--real-profile-ok]
  *   node scripts/automation-scenarios.mjs <null-platform exe> --null
  *
  * --null (Linux, a `-Dplatform=null -Dautomation=true` build, one frame and
  * out): only the native half of the seams — chess.selftestMode names the
  * scenario, and chess.selftestReport writes the report and does not exit.
+ *
+ * Live mode runs only on a CI runner (CI or GITHUB_ACTIONS set) unless
+ * --real-profile-ok is passed: the profile above is the machine's real one —
+ * rep-seed overwrites the repertoire header, sync and prefetch-seed import
+ * fake games into the library. makeWork's HOME does not move it
+ * (lib/automation.mjs liveProfileRefusal; v8-2-plan §9 M4 评审修正).
  */
 import fs from "fs";
 import path from "path";
 import { spawn, execFileSync } from "child_process";
 import { fileURLToPath } from "url";
-import { makeWork, dropbox, launchApp, declaredMenus, snapshotMenus, latencyStats, sleep } from "./lib/automation.mjs";
+import { makeWork, dropbox, launchApp, declaredMenus, snapshotMenus, latencyStats, sleep, liveProfileRefusal } from "./lib/automation.mjs";
 import { startFakeSyncServer } from "./fake-sync-server.mjs";
 
 /**
@@ -94,6 +100,11 @@ function finish(extra) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (!exe || !fs.existsSync(exe)) {
     console.error("FAIL: 没有找到要驱动的可执行文件：" + exe);
+    process.exit(1);
+  }
+  const refusal = nullMode ? null : liveProfileRefusal("automation-scenarios.mjs", args, process.env);
+  if (refusal) {
+    console.error(refusal);
     process.exit(1);
   }
   if (nullMode) await runNull(); else await runLive();

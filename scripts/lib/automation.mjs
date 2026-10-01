@@ -26,6 +26,28 @@ export function makeWork(prefix) {
   return { work, profile };
 }
 
+/**
+ * A live launch writes into the WebView's storage, and that is the real
+ * Chessboard's: the automation build has the release's bundle id, and
+ * WKWebView keeps its data under the real user's ~/Library whatever $HOME
+ * says (WebView2's beside the exe) — makeWork's profile does not reach it.
+ * The scenarios overwrite the repertoire header and import fake games into
+ * the library; the smoke test's plain self-test leaves its markers and may
+ * switch the next launch's language. So a live run goes ahead only on a CI
+ * runner (CI or GITHUB_ACTIONS set), or when the developer says, with
+ * --real-profile-ok, that this machine's Chessboard data may be overwritten
+ * (v8-2-plan §9 M4 评审修正). --null runs touch no WebView and need neither.
+ * @returns {string|null} why the run is refused, or null to go ahead
+ */
+export function liveProfileRefusal(script, argv, env) {
+  const set = (v) => !!v && v !== "0" && v.toLowerCase() !== "false";
+  if (argv.includes("--real-profile-ok") || set(env.CI) || set(env.GITHUB_ACTIONS)) return null;
+  return "REFUSED: " + script + " 的 live 模式会写进本机 Chessboard 的真实 WebView 数据" +
+    "（自动化构建与发布版同一个 bundle id；WKWebView 的存储不跟 $HOME 走，在真实用户的 ~/Library 下，WebView2 的在 exe 旁边）：" +
+    "场景会覆盖开局书、往对局库里导入假对局，冒烟的自检会留下标记、可能把下次启动的语言换成英文。" +
+    "只在 CI（设了 CI 或 GITHUB_ACTIONS）上跑；确实要在本机跑，先备份，再加 --real-profile-ok。";
+}
+
 /** The menu commands a manifest declares, in order (`.command = "…"` appears only inside .menus). */
 export function declaredMenus(zon) {
   const menusSrc = zon.slice(zon.indexOf(".menus"), zon.indexOf(".shortcuts"));

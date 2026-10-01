@@ -585,17 +585,17 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
   if (appVer) notes.push(`版本检查: app.zon、build.zig.zon、package.json、package-lock.json 一致（${appVer}），README 有这一版的一节`);
 }
 
-// ------------------------------------------------ 5. host.js ↔ main.zig 内建桥
+// ----------------------------------------------- 5. host.js ↔ bridge.zig 内建桥
 // （v8-2-plan F2 起列表在 bridge.zig；这里读的是全部应用 Zig 源码 APP_ZIG）
-// SDK 0.8 起，对话框 / 系统 / 剪贴板这些内建命令没有隐含权限：不在 main.zig 的
-// builtin_bridge 策略里的一律拒绝，而 host.js 把拒绝读成「这一构建没有对话框」
-// 走浏览器回退。5.0.0 → 5.2.0 三个版本里没有一次原生文件对话框真的弹出来过，
+// SDK 0.8 起，对话框 / 系统 / 剪贴板这些内建命令没有隐含权限：不在 builtin_bridge
+// 策略（bridge.zig 的 BUILTIN_COMMANDS，main.zig 交给 runner）里的一律拒绝，
+// 而 host.js 把拒绝读成「这一构建没有对话框」走浏览器回退。5.0.0 → 5.2.0 三个版本里没有一次原生文件对话框真的弹出来过，
 // 而 CI 全绿 —— 因为没有任何检查把页面调用的命令和 zig 侧放行的命令对到一起。
-// 这里对：页面用到的每个 `zero.X.Y` 必须在 main.zig 放行，放行的也必须被用到。
+// 这里对：页面用到的每个 `zero.X.Y` 必须在 bridge.zig 放行，放行的也必须被用到。
 {
   const hostSrc = fs.readFileSync(path.join(ROOT, "src/web/js/host.js"), "utf8");
   const mainSrc = appZigSrc;
-  const NS ={ dialogs: "dialog", os: "os", clipboard: "clipboard", platform: "platform" };
+  const NS = { dialogs: "dialog", os: "os", clipboard: "clipboard", platform: "platform" };
   const used = new Set();
   for (const m of hostSrc.matchAll(/global\.zero\.([a-zA-Z]+)\.([a-zA-Z]+)\(/g)) {
     if (m[1] === "on" || m[1] === "off") continue;
@@ -603,18 +603,18 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
     if (ns) used.add("native-sdk." + ns + "." + m[2]);
   }
   const block = /const BUILTIN_COMMANDS = \[_\]\[\]const u8\{([\s\S]*?)\};/.exec(mainSrc);
-  check(!!block, "内建桥: main.zig 里有 BUILTIN_COMMANDS 列表");
+  check(!!block, "内建桥: bridge.zig 里有 BUILTIN_COMMANDS 列表");
   check((mainSrc.match(/const BUILTIN_COMMANDS = \[_\]/g) || []).length === 1, "内建桥: BUILTIN_COMMANDS 只有一份");
   const granted = new Set(block ? [...block[1].matchAll(/"([a-z.-]+)"/gi)].map((m) => m[1]) : []);
-  for (const u of used) check(granted.has(u), `内建桥: host.js 调用了 ${u}，但 main.zig 没有放行 —— 原生构建里它会静默走浏览器回退`);
-  for (const g of granted) check(used.has(g), `内建桥: main.zig 放行了 ${g}，但页面从不调用它`);
+  for (const u of used) check(granted.has(u), `内建桥: host.js 调用了 ${u}，但 bridge.zig 没有放行 —— 原生构建里它会静默走浏览器回退`);
+  for (const g of granted) check(used.has(g), `内建桥: bridge.zig 放行了 ${g}，但页面从不调用它`);
   check(/\.builtin_bridge = app_state\.builtinBridge\(\)/.test(mainSrc), "内建桥: 策略真的传给了 runner（.builtin_bridge）");
-  notes.push(`内建桥: host.js 调用 ${used.size} 个 SDK 命令，main.zig 放行 ${granted.size} 个，一致`);
+  notes.push(`内建桥: host.js 调用 ${used.size} 个 SDK 命令，bridge.zig 放行 ${granted.size} 个，一致`);
 }
 
-// ------------------------------------------------ 6. host.js ↔ main.zig 应用桥
+// ----------------------------------------------- 6. host.js ↔ bridge.zig 应用桥
 // （v8-2-plan F2 起表在 bridge.zig，处理函数分在 bridge / dialogs / menus / sync.zig）
-// 同一个病的另一半。main.zig 自己的 `chess.*` 命令由一张表(APP_COMMANDS)
+// 同一个病的另一半。应用自己的 `chess.*` 命令由一张表(bridge.zig 的 APP_COMMANDS)
 // 同时喂给 handler 注册表和 origin 策略,页面用 `zero.invoke("chess.X")`
 // 调它们。这里对:页面调的每个 chess.X 在表里,表里的每个 chess.X 页面真的调。
 // 少一个是「原生构建里静默走回退」,多一个是没人读的死代码。
@@ -623,11 +623,11 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
   const mainSrc = appZigSrc;
   const used = new Set([...hostSrc.matchAll(/zero\.invoke\(\s*"(chess\.[a-zA-Z]+)"/g)].map((m) => m[1]));
   const block = /const APP_COMMANDS = \[_\]AppCommand\{([\s\S]*?)\n\};/.exec(mainSrc);
-  check(!!block, "应用桥: main.zig 里有 APP_COMMANDS 表");
+  check(!!block, "应用桥: bridge.zig 里有 APP_COMMANDS 表");
   check((mainSrc.match(/const APP_COMMANDS = \[_\]/g) || []).length === 1, "应用桥: APP_COMMANDS 只有一份");
   const registered = new Set(block ? [...block[1].matchAll(/\.name = "(chess\.[a-zA-Z]+)"/g)].map((m) => m[1]) : []);
-  for (const u of used) check(registered.has(u), `应用桥: host.js 调用了 ${u},但 main.zig 的 APP_COMMANDS 没有它 —— 原生构建里它会被拒绝`);
-  for (const r of registered) check(used.has(r), `应用桥: main.zig 注册了 ${r},但页面从不调用它`);
+  for (const u of used) check(registered.has(u), `应用桥: host.js 调用了 ${u},但 bridge.zig 的 APP_COMMANDS 没有它 —— 原生构建里它会被拒绝`);
+  for (const r of registered) check(used.has(r), `应用桥: bridge.zig 注册了 ${r},但页面从不调用它`);
   // v8-1-plan N2: chess.issuePath — the page asking the native side to trust a
   // path the page named — is gone for good, not kept "for older pages": the
   // page is always the frontend bundled into the same binary. Neither the
@@ -639,10 +639,10 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
     const firstTest = src.indexOf('\ntest "');
     return (firstTest < 0 ? src : src.slice(0, firstTest)).replace(/\/\/[^\n]*/g, "");
   }).join("\n");
-  check(!/issuePath/.test(mainCode), "应用桥: main.zig 的代码里又出现了 issuePath(命令、处理函数或兼容列表)—— v8-1-plan N2 已把它删掉");
-  check(!/COMPAT_COMMANDS/.test(mainCode), "应用桥: main.zig 又有了 COMPAT_COMMANDS —— 页面总是同一个二进制里打包的前端,没有「旧页面」要兼容");
+  check(!/issuePath/.test(mainCode), "应用桥: 应用 Zig 的代码里又出现了 issuePath(命令、处理函数或兼容列表)—— v8-1-plan N2 已把它删掉");
+  check(!/COMPAT_COMMANDS/.test(mainCode), "应用桥: 应用 Zig 又有了 COMPAT_COMMANDS —— 页面总是同一个二进制里打包的前端,没有「旧页面」要兼容");
   // …and no page source names it or opens a file dialog itself: the dialogs
-  // run in main.zig (chess.openPgn / chess.saveText), so the path the player
+  // run in dialogs.zig (chess.openPgn / chess.saveText), so the path the player
   // picks never reaches the page
   const webJs = path.join(ROOT, "src/web/js");
   const pageFiles = [];
@@ -692,7 +692,7 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
     const body = new RegExp(`fn ${fn}\\([\\s\\S]*?\\n\\}`).exec(mainSrc);
     check(!!body && /self\.issued\.contains\(path\)/.test(body[0]), `应用桥: ${fn} 没有查签发路径表(issued.contains)—— 任意绝对路径又能读写了`);
   }
-  notes.push(`应用桥: host.js 调用 ${used.size} 个 chess.* 命令,main.zig 注册 ${registered.size} 个,一致`);
+  notes.push(`应用桥: host.js 调用 ${used.size} 个 chess.* 命令,bridge.zig 注册 ${registered.size} 个,一致`);
 }
 
 // ------------------------------------------------------------------------ 结果

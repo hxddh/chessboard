@@ -7,6 +7,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const native_sdk = @import("native_sdk");
 
+const automation_build = @import("runner").automation_build;
 const openPgn = @import("dialogs.zig").openPgn;
 const saveText = @import("dialogs.zig").saveText;
 const App = @import("main.zig").App;
@@ -1149,13 +1150,33 @@ pub fn selftestOn(self: *const App) bool {
     return std.mem.eql(u8, v, "1");
 }
 
+/// v8-2-plan §9 M4 评审修正: the automation driver's seams
+/// (CHESS_SELFTEST_SCENARIO here, CHESS_SYNC_BASE in sync.zig) open only in
+/// a self-test launch of a -Dautomation=true build. A release exe is built
+/// without it, so no environment a person's machine has can point its syncs
+/// elsewhere or keep it up after a report; its plain self-test
+/// (CHESS_SELFTEST=1 alone, the build workflows' selftest step) is unchanged.
+pub fn seamsOpen(self: *const App) bool {
+    if (comptime !automation_build) return false;
+    return seamsOpenFor(true, selftestOn(self));
+}
+
+fn seamsOpenFor(automation: bool, selftest: bool) bool {
+    return automation and selftest;
+}
+
 /// v8-2-plan V1 step 2: CHESS_SELFTEST_SCENARIO names a page-side scenario
 /// (selftest-scenarios.js) for the automation build's driver
-/// (scripts/automation-scenarios.mjs) — a plain token, or null. Only in
-/// self-test mode, like everything here.
+/// (scripts/automation-scenarios.mjs) — a plain token, or null. Only when
+/// the seams are open (seamsOpen).
 fn selftestScenario(self: *const App) ?[]const u8 {
-    if (!selftestOn(self)) return null;
-    const v = self.env_map.get("CHESS_SELFTEST_SCENARIO") orelse return null;
+    if (comptime !automation_build) return null;
+    return selftestScenarioOf(self.env_map, seamsOpen(self));
+}
+
+fn selftestScenarioOf(env: *const std.process.Environ.Map, open: bool) ?[]const u8 {
+    if (!open) return null;
+    const v = env.get("CHESS_SELFTEST_SCENARIO") orelse return null;
     return if (tokenValid(v, 32)) v else null;
 }
 
@@ -1202,28 +1223,63 @@ test "V1 seams: CHESS_SYNC_BASE and CHESS_SELFTEST_SCENARIO are read only in sel
     var env = std.process.Environ.Map.init(std.testing.allocator);
     defer env.deinit();
     var app_state = App{ .env_map = &env, .io = undefined };
+    // as an automation build sees them (the switch itself: the next test)
+    const open = struct {
+        fn of(a: *const App) bool {
+            return seamsOpenFor(true, selftestOn(a));
+        }
+    }.of;
+    const syncBaseOf = @import("sync.zig").syncBaseOf;
     try env.put("CHESS_SYNC_BASE", "http://127.0.0.1:8123");
     try env.put("CHESS_SELFTEST_SCENARIO", "sync");
     // a launch without CHESS_SELFTEST=1 — every release launch — sees neither
     try std.testing.expectEqualStrings("", syncBase(&app_state));
+    try std.testing.expectEqualStrings("", syncBaseOf(&env, open(&app_state)));
     try std.testing.expect(selftestScenario(&app_state) == null);
+    try std.testing.expect(selftestScenarioOf(&env, open(&app_state)) == null);
     var out: [64]u8 = undefined;
-    try std.testing.expectEqualStrings("{\"on\":false}", try selftestModeAnswer(&out, selftestOn(&app_state), selftestScenario(&app_state)));
+    try std.testing.expectEqualStrings("{\"on\":false}", try selftestModeAnswer(&out, selftestOn(&app_state), selftestScenarioOf(&env, open(&app_state))));
     try env.put("CHESS_SELFTEST", "1");
-    try std.testing.expectEqualStrings("http://127.0.0.1:8123", syncBase(&app_state));
-    try std.testing.expectEqualStrings("sync", selftestScenario(&app_state).?);
-    try std.testing.expectEqualStrings("{\"on\":true,\"scenario\":\"sync\"}", try selftestModeAnswer(&out, true, selftestScenario(&app_state)));
+    try std.testing.expectEqualStrings("http://127.0.0.1:8123", syncBaseOf(&env, open(&app_state)));
+    try std.testing.expectEqualStrings("sync", selftestScenarioOf(&env, open(&app_state)).?);
+    try std.testing.expectEqualStrings("{\"on\":true,\"scenario\":\"sync\"}", try selftestModeAnswer(&out, true, selftestScenarioOf(&env, open(&app_state))));
     try std.testing.expectEqualStrings("{\"on\":true}", try selftestModeAnswer(&out, true, null));
     // a base is a loopback http:// origin and nothing else
     for ([_][]const u8{ "http://example.com:80", "https://127.0.0.1:8123", "http://127.0.0.1:", "http://127.0.0.1:80/x", "http://127.0.0.1:123456", "http://127.0.0.10:80" }) |bad| {
         try env.put("CHESS_SYNC_BASE", bad);
-        try std.testing.expectEqualStrings("", syncBase(&app_state));
+        try std.testing.expectEqualStrings("", syncBaseOf(&env, open(&app_state)));
     }
     // a scenario name is a plain token: it goes into JSON unescaped
     try env.put("CHESS_SELFTEST_SCENARIO", "a\"b");
-    try std.testing.expect(selftestScenario(&app_state) == null);
+    try std.testing.expect(selftestScenarioOf(&env, open(&app_state)) == null);
     try env.put("CHESS_SELFTEST_SCENARIO", "");
-    try std.testing.expect(selftestScenario(&app_state) == null);
+    try std.testing.expect(selftestScenarioOf(&env, open(&app_state)) == null);
+}
+
+test "V1 seams (M4 评审修正): a build without -Dautomation=true reads neither, even in self-test mode" {
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    var app_state = App{ .env_map = &env, .io = undefined };
+    try env.put("CHESS_SELFTEST", "1");
+    try env.put("CHESS_SYNC_BASE", "http://127.0.0.1:8123");
+    try env.put("CHESS_SELFTEST_SCENARIO", "sync");
+    // the plain packaged self-test is on in every build
+    try std.testing.expect(selftestOn(&app_state));
+    if (automation_build) {
+        try std.testing.expectEqualStrings("http://127.0.0.1:8123", syncBase(&app_state));
+        try std.testing.expectEqualStrings("sync", selftestScenario(&app_state).?);
+    } else {
+        try std.testing.expectEqualStrings("", syncBase(&app_state));
+        try std.testing.expect(selftestScenario(&app_state) == null);
+        var out: [64]u8 = undefined;
+        try std.testing.expectEqualStrings("{\"on\":true}", try selftestModeAnswer(&out, selftestOn(&app_state), selftestScenario(&app_state)));
+    }
+    // and the switch itself, both ways, whatever this test binary was built with
+    try std.testing.expect(selftestScenarioOf(&env, false) == null);
+    try std.testing.expectEqualStrings("sync", selftestScenarioOf(&env, true).?);
+    try std.testing.expect(!seamsOpenFor(false, true));
+    try std.testing.expect(!seamsOpenFor(true, false));
+    try std.testing.expect(seamsOpenFor(true, true));
 }
 
 test "the builtin bridge grants exactly the SDK commands the page calls" {

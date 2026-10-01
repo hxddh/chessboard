@@ -7173,6 +7173,24 @@ for (const lang of CONTENT_LANGS) {
   assert(!/dist-auto|-Dautomation/.test(rel), "release.yml never names the automation build");
 }
 
+// v8-2-plan §9 M4 评审修正: a live automation run writes into the machine's real
+// WebView storage (same bundle id; WKWebView ignores $HOME), so off a CI
+// runner both drivers refuse unless told --real-profile-ok; --null never asks.
+{
+  const { liveProfileRefusal } = await import("./lib/automation.mjs");
+  assert(liveProfileRefusal("x", [], {}) && liveProfileRefusal("x", [], { CI: "false", GITHUB_ACTIONS: "0" }), "a live automation run off CI is refused");
+  assert(liveProfileRefusal("x", [], { CI: "true" }) === null && liveProfileRefusal("x", [], { GITHUB_ACTIONS: "true" }) === null &&
+    liveProfileRefusal("x", ["--real-profile-ok"], {}) === null, "a live automation run goes ahead on CI or with --real-profile-ok");
+  const env = { ...process.env };
+  delete env.CI;
+  delete env.GITHUB_ACTIONS;
+  for (const s of ["automation-smoke.mjs", "automation-scenarios.mjs"]) {
+    // package.json stands in for the exe: a refusal comes before any launch
+    const r = spawnSync(process.execPath, [path.join(__dirname, s), path.join(root, "package.json")], { cwd: root, env, encoding: "utf8", timeout: 20000 });
+    assert(r.status === 1 && /^REFUSED: .*--real-profile-ok/m.test(r.stderr), s + " live mode refuses off CI without --real-profile-ok (exit " + r.status + ": " + (r.stderr || "").trim().slice(0, 120) + ")");
+  }
+}
+
 // --- 7.0: every suite package.json runs, CI runs too -------------------------
 //
 // 6.1 found that `checks.yml`'s static job named three scripts by hand while

@@ -521,6 +521,11 @@ fn shortcutModifiers(comptime shortcut: anytype) native_sdk.ShortcutModifiers {
     return modifiers;
 }
 
+/// Whether this exe was built with -Dautomation=true, for the app module,
+/// which has no build_options of its own: the automation driver's seams in
+/// bridge.zig / sync.zig compile in only then (v8-2-plan §9 M4 评审修正).
+pub const automation_build = build_options.automation;
+
 pub fn runWithOptions(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {
     if (build_options.debug_overlay) {
         std.debug.print("debug-overlay=true backend={s} web-engine={s} trace={s}\n", .{ build_options.platform, build_options.web_engine, build_options.trace });

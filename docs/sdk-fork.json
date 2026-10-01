@@ -107,6 +107,12 @@
    "title": "恢复窗口位置：8.2 M4 起照上游（window_placement.applySavedWindow，文件原样抄入），多出的只有我们自己的端到端测试"
   },
   {
+   "id": "R16",
+   "file": "src/runner.zig",
+   "kind": "ours",
+   "title": "pub const automation_build：把 -Dautomation 交给应用模块，automation 驱动的两个接缝只在 automation 构建里编进去（8.2 M4 评审修正）"
+  },
+  {
    "id": "B01",
    "file": "build.zig",
    "kind": "ours",
@@ -1398,6 +1404,27 @@
     "}",
     "",
     "fn menuItem(comptime item: anytype) native_sdk.MenuItem {"
+   ]
+  },
+  {
+   "group": "R16",
+   "file": "src/runner.zig",
+   "at": 684,
+   "before": [
+    "}",
+    ""
+   ],
+   "up": [],
+   "ours": [
+    "/// Whether this exe was built with -Dautomation=true, for the app module,",
+    "/// which has no build_options of its own: the automation driver's seams in",
+    "/// bridge.zig / sync.zig compile in only then (v8-2-plan §9 M4 评审修正).",
+    "pub const automation_build = build_options.automation;",
+    ""
+   ],
+   "after": [
+    "pub fn runWithOptions(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {",
+    "    if (build_options.debug_overlay) {"
    ]
   },
   {

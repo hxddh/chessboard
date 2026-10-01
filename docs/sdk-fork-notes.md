@@ -71,6 +71,7 @@ node scripts/sdk-diff.mjs <SDK 目录> --suggest   # 另外把每个没登记的
 | R13 | lag | **辅助函数的先后顺序与措辞**。分叉时的旧排版，没有跟上游重排。<br>`windowLabel` 等函数位置不同、几处注释措辞不同，`manifestStringField` 没有上游的 null 分支（app.zon 没有写 null 的字符串字段）。<br>`dock_visible` 的编译期报错是我们改成中文的。<br>行为相同。 |
 | R14 | ours | **上游自己的两个测试不抄**。它们断言的是 SDK 测试用清单里的值（`example.com` 的更新源、`app.refresh` 命令）；拿我们的 app.zon 编译会失败。<br>web 层的三个判断（`manifestHasWebContent` / `manifestWebDeclaration` / `webLayerEnabled` 与编译期检查）放在文件末尾，内容与上游相同，注释略短。 |
 | R15 | ours | **恢复窗口位置**（8.2 M4 起照上游；F2 登记时是 lag）。<br>上游：`window_placement.applySavedWindow` 换上保存的 frame，同时把 `initial_placement` 标成 `.restored`。8.1 及以前我们只换 frame，`initial_placement` 留在 `.default`。<br>8.1 实际表现：SDK 的 `AppInfo.inferLegacyExplicitOrigin` 把原点不为 (0,0) 的 `.default` 当成写死的位置（`.explicit`），所以位置多半是碰巧回来的；保存在 (0,0) 的窗口仍是 `.default`，macOS 主机把它居中到主屏（`appkit_host.m` 的 `centerOnPrimary`）。F2 登记时写的「每次都居中」漏看了这层推断。另外 `.explicit` 与 `.restored` 在 macOS 上换算外框、夹进屏幕的方式不同（后者按最终标题栏换算），只有走 `.restored` 才是上游测过的那条路。<br>现在：`prepareStateStore` 与上游逐行相同，`window_placement.zig` 原样抄入（`files` 里第三对，`sdk-diff` 同样盯着）。剩下的差异只有文件末尾我们自己的测试：用 null 平台走一遍「首次启动 → 保存 → 再启动」，断言主机拿到 `.restored`（原点 (140,90) 与 (0,0) 各一次），并顺带跑 `window_placement.zig` 自带的测试。修之前这条测试是红的（拿到 `.explicit`）。<br>真机核对：`docs/manual-check.md`「8.2 真机路线（30 分钟）」macOS 第 6 步（X1）。 |
+| R16 | ours | **`pub const automation_build`**（8.2 M4 评审修正）。<br>应用模块（main.zig 及其拆出的文件）没有 `build_options`，`-Dautomation` 只到 runner。automation 驱动的两个接缝（`CHESS_SELFTEST_SCENARIO`、`CHESS_SYNC_BASE`，bridge.zig `seamsOpen`）要在编译期就随它关掉：发布件不带 automation，什么环境变量都打不开；普通自检（只设 `CHESS_SELFTEST=1`）照旧。<br>放在 runner 里转出一行，build.zig 不用动。 |
 
 ## build.zig ↔ build/app.zig
 
@@ -92,8 +93,8 @@ node scripts/sdk-diff.mjs <SDK 目录> --suggest   # 另外把每个没登记的
 
 ## 数字（登记于 0.10.1）
 
-- **28 组，174 块**：ours 17 组、unused 4 组、lag 7 组（8.2 M4 把 R15、B09 两组 lag 修成 ours，加了 B13；F2 登记时是 27 组：ours 14、unused 4、lag 9）。
-- **runner.zig**：15 组，93 块，上游 882 行对我们 369 行。
+- **29 组，175 块**：ours 18 组、unused 4 组、lag 7 组（8.2 M4 把 R15、B09 两组 lag 修成 ours，加了 B13，评审修正加了 R16；F2 登记时是 27 组：ours 14、unused 4、lag 9）。
+- **runner.zig**：16 组，94 块，上游 882 行对我们 374 行。
 - **build.zig**：13 组，81 块，上游 2,539 行对我们 394 行。
 - **window_placement.zig**：没有差异。
   - 其中 B02、B03 两组占了上游的 2,045 行：上游是给所有应用用的构建库，我们只是一个应用。
