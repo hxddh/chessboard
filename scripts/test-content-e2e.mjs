@@ -47,9 +47,13 @@ const OPENING = LESSONS.filter((l) => l.part === "开局入门");
 const REAL = data.CHESS_PUZZLES.filter((p) => p.cat === "real");
 
 const MIME = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript" };
-const server = http.createServer((req, res) => {
+/** M2 review: a file held back (ms) or refused ("fail") — the advanced lessons' chunk */
+const held = {};
+const server = http.createServer(async (req, res) => {
   let p = req.url.split("?")[0];
   if (p === "/") p = "/index.html";
+  if (held[p] === "fail") { res.writeHead(404); res.end(); return; }
+  if (held[p]) await new Promise((r) => setTimeout(r, held[p]));
   if (p === "/js/engine-src.js") { res.writeHead(200, { "content-type": "text/javascript" }); res.end("// stub"); return; }
   try {
     const d = fs.readFileSync(path.join(ROOT, p));
@@ -1555,6 +1559,39 @@ if (hasTab && REAL.length) {
     assert(title.includes("第 97 课") && title.includes(ADV.lessons[0].title), "T1:点「去上课」打开的就是第 97 课", title);
     await c4.close();
   }
+  // M2 review: the bookmark on lesson 101, the chunk slow and then refused —
+  // 学习 used to be a blank page meanwhile, and for good on a 404
+  for (const mode of [2500, "fail"]) {
+    held["/js/chunk-lessons-adv.js"] = mode;
+    const c5 = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
+    await c5.addInitScript(() => {
+      localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, view: "play" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      localStorage.setItem("chess.v1.learn", JSON.stringify({ v: 1, done: {}, last: 100 }));
+    });
+    const pg = await c5.newPage();
+    pg.on("pageerror", (e) => errs.push("adv " + mode + ": " + e.message));
+    await pg.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded" });
+    await pg.waitForTimeout(1000);
+    await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+    await pg.click('.rail-btn[data-view="learn"]');
+    await pg.waitForTimeout(600);
+    const look = () => pg.evaluate(() => ({ title: document.getElementById("lesson-title").textContent,
+      list: document.querySelectorAll("#lesson-list button").length, toast: (document.getElementById("toast") || {}).textContent || "",
+      last: JSON.parse(localStorage.getItem("chess.v1.learn") || "{}").last }));
+    const w = await look();
+    assert(/^第 96 课/.test(w.title) && w.list > 96 && w.last === 100,
+      "M2 T1:书签在第 101 课、分块" + (mode === "fail" ? "取不到" : "还没到") + "时，学习页先开第 96 课和目录，书签不动", JSON.stringify(w).slice(0, 160));
+    if (mode === "fail") {
+      assert(/进阶课程没能载入/.test(w.toast), "M2 T1:分块取不到，提示一句", w.toast);
+    } else {
+      let t = "";
+      for (let i = 0; i < 40 && !t.includes("第 101 课"); i++) { await pg.waitForTimeout(150); t = await pg.evaluate(() => document.getElementById("lesson-title").textContent); }
+      assert(t.includes("第 101 课") && t.includes(ADV.lessons[4].title), "M2 T1:分块一到就开书签上的第 101 课", t);
+    }
+    await c5.close();
+  }
+  delete held["/js/chunk-lessons-adv.js"];
 }
 
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
