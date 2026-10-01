@@ -29,18 +29,9 @@ const VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 /** Squares a piece on `sq` attacks, ignoring whose turn it is. */
 function attacksFrom(Chess, fen, sq) {
   // A side can only be asked for its own moves, so put the mover on move.
-  const parts = fen.split(" ");
-  const g0 = new Chess(fen);
-  const piece = g0.get(sq);
-  if (!piece) return [];
-  parts[1] = piece.color;
-  parts[3] = "-";           // en-passant rights belong to the other position
-  let g;
-  try { g = new Chess(parts.join(" ")); } catch (_) { return []; }
-  if (!g || !g.fen) return [];
-  let moves = [];
-  try { moves = g.moves({ square: sq, verbose: true }) || []; } catch (_) { return []; }
-  return moves;
+  const p = load(Chess, fen).get(sq);
+  const g = p && load(Chess, onMove(fen, p.color));
+  return g ? g.moves({ square: sq, verbose: true }) : [];
 }
 
 /**
@@ -63,13 +54,11 @@ export function motifOf(fen, san, Chess) {
   const them = mv.color === "w" ? "b" : "w";
 
   // --- checks: is the checking piece the one that moved? -------------------
-  if (g.in_check()) {
-    const king = kingSquare(g, them);
-    const givers = attackersOf(Chess, after, king, mv.color);
-    if (givers.length >= 2) return "double";
-    // A discovered check is a check delivered by a piece that did not move.
-    if (givers.length === 1 && givers[0] !== mv.to) return "discovered";
-  }
+  // (a king cannot be captured, so ask which moves would land on its square)
+  const givers = g.in_check() ? takersOf(Chess, after, kingOf(gridOf(g), them), mv.color).map((m) => m.from) : [];
+  if (givers.length >= 2) return "double";
+  // A discovered check is a check delivered by a piece that did not move.
+  if (givers.length === 1 && givers[0] !== mv.to) return "discovered";
 
   // --- fork: the piece that moved now attacks two things worth winning -----
   // The king counts as one of them, and usually is: a knight hitting king and
@@ -79,10 +68,7 @@ export function motifOf(fen, san, Chess) {
     const hits = new Set(attacksFrom(Chess, after, mv.to)
       .filter((m) => m.captured && VALUE[m.captured] >= 3)
       .map((m) => m.to));
-    if (g.in_check()) {
-      const givers = attackersOf(Chess, after, kingSquare(g, them), mv.color);
-      if (givers.includes(mv.to)) hits.add("K");
-    }
+    if (givers.includes(mv.to)) hits.add("K");
     if (hits.size >= 2) return "fork";
   }
 
@@ -109,11 +95,7 @@ export function motifOf(fen, san, Chess) {
  * any move".
  */
 function exploitsPin(Chess, before, after, mv, them) {
-  const parts = after.split(" ");
-  parts[1] = them;
-  parts[3] = "-";
-  let g;
-  try { g = new Chess(parts.join(" ")); } catch (_) { return null; }
+  const g = load(Chess, onMove(after, them));
   if (!g || g.in_check()) return null;    // in check, everything is constrained
   const victims = attacksFrom(Chess, after, mv.to).filter((m) => m.captured);
   for (const v of victims) {
@@ -124,32 +106,6 @@ function exploitsPin(Chess, before, after, mv, them) {
     if (moves.length === 0) return "pin";
   }
   return null;
-}
-
-/** Where `color`'s king stands. */
-function kingSquare(g, color) {
-  const b = g.board();
-  for (let r = 0; r < 8; r++) {
-    for (let f = 0; f < 8; f++) {
-      const p = b[r][f];
-      if (p && p.type === "k" && p.color === color) return "abcdefgh"[f] + (8 - r);
-    }
-  }
-  return null;
-}
-
-/** Squares from which `color` attacks `sq`. */
-function attackersOf(Chess, fen, sq, color) {
-  if (!sq) return [];
-  const parts = fen.split(" ");
-  parts[1] = color;
-  parts[3] = "-";
-  let g;
-  try { g = new Chess(parts.join(" ")); } catch (_) { return []; }
-  let moves = [];
-  try { moves = g.moves({ verbose: true }) || []; } catch (_) { return []; }
-  // a king cannot be captured, so ask which moves would land on that square
-  return moves.filter((m) => m.to === sq).map((m) => m.from);
 }
 
 /**
