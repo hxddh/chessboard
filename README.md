@@ -241,7 +241,9 @@ src/web/
   js/drills.js     # 开局题身份:内容派生 id + 旧位置 id 迁移(纯函数,单测覆盖)
   js/editor.js     # 局面编辑器模型:棋盘→FEN + 可玩性校验(纯函数,单测覆盖)
   js/i18n.js       # 界面文案字典 zh-CN / en / ja 各 1301 条(单测校验键完整、无漏译、
-                   #   tooltip 与 aria-label 全接线、app.js 无中文字面量进 DOM)
+                   #   tooltip 与 aria-label 全接线、app.js 无中文字面量进 DOM;8.2 起句子
+                   #   一律整句模板 tf(),不拼碎片 —— scripts/lib/i18n-concat.mjs 把守)
+  js/tdot.js       # 并列的标签「白方走 · 将军！」:分隔符也是字典里的键(ui.dot)
   js/lessons-en.js # 教学课文英文全译 96 课(仅文案;局面与解法仍只来自 lessons.js)
   js/puzzles-en.js # 题名英文(仅文案;FEN/解法/得分仍只来自 puzzles.js)
   js/openings-en.js# 开局名与开局思路英文(以中文名为键;ECO 与着法序列仍只来自 openings.js)
