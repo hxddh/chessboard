@@ -487,6 +487,16 @@
         "jobs": 30,
         "green": true,
         "label": "8.2 PR #98（M2，无并发彩排）"
+      },
+      {
+        "run": 36828900366,
+        "sha": "3f4544e",
+        "wall": 15.9,
+        "critical": "browser (webkit, engine)",
+        "criticalMin": 10.3,
+        "jobs": 32,
+        "green": true,
+        "label": "8.2 PR #99（M3，V4 第二次拆组后，无并发彩排）"
       }
     ]
   },
