@@ -477,6 +477,16 @@
         "jobs": 28,
         "green": true,
         "label": "8.2 PR #97（V4 拆分后）；queue-bound: rehearsal concurrent（同时跑着发布演练，排队最长 18.7 分钟）"
+      },
+      {
+        "run": 36800690390,
+        "sha": "32aca60",
+        "wall": 16.9,
+        "critical": "browser (chromium, lessons + review)",
+        "criticalMin": 15,
+        "jobs": 30,
+        "green": true,
+        "label": "8.2 PR #98（M2，无并发彩排）"
       }
     ]
   },
