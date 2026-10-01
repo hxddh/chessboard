@@ -907,6 +907,132 @@ for (const [lang, label, head, ask, go] of [["en", "Look ahead", /Look ahead/, /
   await ctx.close();
 }
 
+// --- (i) M2 评审：看 N 步 / 盲走的修正 -------------------------------------------
+{
+  // P2-2: an en-passant capture was asked as 「吃掉 X 上的…」 with X empty —
+  // manW(null) threw in render and the set froze. Every question the book can
+  // give, where the line itself reaches an en-passant chance (the probe's
+  // exhaustive set), over many question seeds: a capture question names a
+  // man of the other side on its square, and each answer is a man of the side to move
+  const epLines = [];
+  for (const p of LOOK_POOL) {
+    const line = p.line || p.solution || [];
+    const g = new Chess(p.fen);
+    for (let n = 1; n <= Math.min(6, line.length); n++) {
+      if (!g.move(line[n - 1]) || g.game_over()) break;
+      if (n >= 2 && g.moves({ verbose: true }).some((m) => m.flags.includes("e"))) epLines.push([p, n]);
+    }
+  }
+  let asked = 0, epSeen = 0;
+  const bad = [];
+  const check = (q) => {
+    if (!q) return;
+    asked++;
+    const g = new Chess(q.fen);
+    if (g.moves({ verbose: true }).some((m) => m.flags.includes("e"))) epSeen++;
+    const ok = q.t === "cap" ? !!g.get(q.sq) && g.get(q.sq).color !== q.side && !!q.target && q.target.type === g.get(q.sq).type
+      && q.answers.length > 0 && q.answers.every((a) => g.get(a) && g.get(a).color === q.side)
+      : q.t === "check" ? q.answers.length > 0 && q.answers.every((a) => g.get(a) && g.get(a).color === q.side)
+      : Array.isArray(q.mates);
+    if (!ok) bad.push(q.key + " " + q.t + " " + q.sq);
+  };
+  for (const [p, n] of epLines) for (let s = 1; s <= 400; s++) check(VIS.buildLook(Chess, p, n, s));
+  // …and the generator the sets use, every level, a spread of set seeds
+  for (let seed = 1; seed < 5; seed++) for (let k = 0; k < 10; k++) for (let n = 2; n <= 6; n++) check(VIS.lookQuestion(Chess, LOOK_POOL, seed * 7919, k, n));
+  assert(epLines.length > 0 && epSeen > 0 && !bad.length,
+    "i/P2-2: 过路兵局面在内，每道「看 N 步」题都有真实的目标子和答案（" + asked + " 道，" + epLines.length + " 个过路兵局面）", bad.slice(0, 3).join(" | "));
+  // P3-7: castling with the digit zero; a promotion without its piece is no move
+  const pf = "r3k2r/1P6/8/8/8/8/8/R3K2R w KQkq - 0 1";
+  const pa = (x, mf) => VIS.parseAnswer(Chess, pf, x, mf) || { none: false, nil: true };
+  assert(pa("0-0", true).san === "O-O" && pa("0-0-0", true).san === "O-O-O" && pa("o-o", true).san === "O-O",
+    "i/P3-7: 0-0 与 0-0-0（数字零）也认作易位");
+  assert(pa("bxa8", true).nil && pa("b8", true).nil && (pa("bxa8=Q", true).move || {}).promotion === "q" && (pa("bxa8Q", true).move || {}).to === "a8",
+    "i/P3-7: 要走子时缺升变子的 bxa8 / b8 不算答案（交给「这步走不了」），bxa8=Q、bxa8Q 照认");
+  assert(pa("b8", false).sq === "b8", "i/P3-7: 问格子的题里 b8 仍是格子");
+}
+{
+  // P2-2 on the page: the review question the reviewer hit opens without an error, the card not blank
+  const before = errs.length;
+  const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { q: { "mn-301-38-72|3|1955526313": { s: 0, n: 1, due: 0, ivl: 0 } } } } });
+  const h = helpers(page);
+  await page.click('#pz-mode-seg button[data-run="look"]');
+  await page.waitForTimeout(1500);
+  assert(errs.length === before && !!(await h.text("#pz-vis-q")) && !!(await h.text("#pz-vis-moves")),
+    "i/P2-2: 出过路兵吃子题的那道复习题：没有异常，卡片有问题可答", (await h.text("#pz-vis-q")) + " | " + errs.slice(before).join(" | "));
+  await ctx.close();
+}
+{
+  // 盲走: P3-1 an answer inside the 3 s stays shown; P3-2 a hidden board says
+  // and shows nothing of its men; P3-6 a refused load keeps the answer card
+  const T = 1790700000000, seed = (T >>> 0) || 1;
+  const lib = JSON.stringify({ v: 1, names: ["me"], games: [{ id: "g1", t: 1758000000000, white: "me", black: "rival",
+    date: "2026.09.01", event: "Casual", result: "1-0", plies: 4, sans: "e4 e5 Nf3 Nc6", fen: "", side: "w", outcome: "win" }] });
+  const { ctx, page } = await open(null, { extra: { "chess.v1.library": lib, "chess.v1.save": JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }) } });
+  const h = helpers(page);
+  await page.clock.setFixedTime(T);
+  await page.click('#pz-mode-seg button[data-run="blind"]');
+  await page.waitForTimeout(600);
+  const p0 = VIS.blindPick(BLIND_POOLS, seed, 0, 0, []);
+  await page.fill("#pz-vis-in", p0.solution[0]);
+  await page.press("#pz-vis-in", "Enter");
+  await page.waitForTimeout(300);
+  const shownAt = (await h.occupied()).length;
+  await page.waitForTimeout(3500);
+  const b = await page.evaluate(() => { const r = document.getElementById("board").getBoundingClientRect(); return { x: r.left + 10, y: r.top + 10 }; });
+  await page.mouse.move(b.x, b.y);
+  await page.mouse.move(b.x + 60, b.y + 60);
+  await page.evaluate(() => window.dispatchEvent(new Event("resize"))); // any redraw shows what the model says
+  await page.waitForTimeout(300);
+  assert(/答对了/.test(await h.feedback()) && shownAt > 0 && (await h.occupied()).length === shownAt,
+    "i/P3-1: 3 秒内答对，3 秒计时到了棋子也不再藏起来", shownAt + " → " + (await h.occupied()).length);
+  await page.click("#pz-vis-next");
+  await page.waitForTimeout(3500);
+  const p1 = VIS.blindPick(BLIND_POOLS, seed, 1, 1, [p0.id]);
+  const g1 = new Chess(p1.fen);
+  h.view.flipped = g1.turn() === "b";
+  assert(await h.occupied() === "", "i: 下一题 3 秒后藏子");
+  await page.focus("#board");
+  const heard = [];
+  for (const k of ["Enter", "ArrowUp", "ArrowLeft", "ArrowRight", "ArrowDown"]) {
+    await page.keyboard.press(k);
+    await page.waitForTimeout(120);
+    heard.push(await page.evaluate(() => document.getElementById("board-live").textContent));
+  }
+  assert(heard.every((x) => /(^|· )[a-h][1-8]$/.test(x)), "i/P3-2: 藏子时键盘光标只读格名，不报子", heard.join(" / "));
+  await page.keyboard.press("Escape");
+  const own = g1.board().flat().find((x) => x && x.color === g1.turn()).square;
+  const hover = async (sq) => {
+    const pt = await page.evaluate(([q, f]) => { const r = document.getElementById("board").getBoundingClientRect(); let fi = q.charCodeAt(0) - 97, rk = 8 - Number(q[1]); if (f) { fi = 7 - fi; rk = 7 - rk; } return { x: r.left + (fi + .5) * r.width / 8, y: r.top + (rk + .5) * r.height / 8 }; }, [sq, h.view.flipped]);
+    await page.mouse.move(pt.x, pt.y);
+    await page.waitForTimeout(100);
+    return page.evaluate(() => document.getElementById("board").style.cursor);
+  };
+  assert(await hover(own) !== "grab", "i/P3-2: 藏子时指针在自己的子上不变成「可抓」", own);
+  // solve it, then a library load answered 取消: the answer card stays, no next question
+  for (const k of [0, 2]) {
+    await page.fill("#pz-vis-in", p1.solution[k]);
+    await page.press("#pz-vis-in", "Enter");
+    await page.waitForTimeout(700);
+  }
+  const head = await h.text("#pz-run-head");
+  assert(/答对了/.test(await h.feedback()) && await h.shown("#pz-vis-next") && /第 2\/10 题/.test(head), "i: 两步杀答完，停在答案卡", head);
+  await page.click('#rail button[data-view="library"]');
+  await page.waitForTimeout(300);
+  await page.click("#lib-open");
+  await page.waitForTimeout(400);
+  await page.click("#lib-list button[data-lib]");
+  await page.waitForTimeout(700);
+  const askedLoad = await page.isVisible("#confirm-cancel");
+  if (askedLoad) await page.click("#confirm-cancel");
+  await page.waitForTimeout(600);
+  await page.click('#rail button[data-view="puzzle"]');
+  await page.waitForTimeout(500);
+  const head2 = await h.text("#pz-run-head");
+  assert(askedLoad && head2 === head && await h.shown("#pz-vis-next") && /答对了/.test(await h.feedback()),
+    "i/P3-6: 读库一局被取消后，盲走还停在这一题的答案卡，没有自己跳到下一题", head + " → " + head2);
+  await ctx.close();
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();

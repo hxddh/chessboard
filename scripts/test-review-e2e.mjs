@@ -1802,6 +1802,104 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await ctxG.close();
 }
 
+// --- M2 评审：名局猜着不改下棋的棋盘方向；读库被取消后猜着接着走 ----------------
+{
+  const lib = JSON.stringify({ v: 1, names: ["me"], games: [{ id: "g1", t: 1758000000000, white: "me", black: "rival",
+    date: "2026.09.01", event: "Casual", result: "1-0", plies: 4, sans: "e4 e5 Nf3 Nc6", fen: "", side: "w", outcome: "win" }] });
+  const ctxM = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctxM.addInitScript((lb) => {
+    if (sessionStorage.getItem("seeded")) return; // a reload keeps what the app wrote
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem("chess.v1.settings", JSON.stringify({
+      mode: "learn", view: "learn", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", flipped: false }));
+    localStorage.setItem("chess.panelOpen", "1");
+    localStorage.setItem("chess.v1.library", lb);
+    localStorage.setItem("chess.v1.save", JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }));
+  }, lib);
+  const pg = await ctxM.newPage();
+  const errsM = [];
+  pg.on("pageerror", (e) => errsM.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(900);
+  await pg.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+  const settings = () => pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings") || "{}"));
+  const gsAt = (ply, phase = "guess") => pg.waitForFunction(([p, ph]) => {
+    const e = document.getElementById("gs-panel");
+    return !!e && !!e.offsetParent && e.dataset.at === String(p) && e.dataset.phase === ph;
+  }, [ply, phase], { timeout: 10000 }).then(() => true, () => false);
+  const liveText = () => pg.evaluate(() => (document.getElementById("board-live") || {}).textContent || "");
+  // P2-1: the default-black guess, then 下棋 and a reload: the saved setting is untouched
+  await pg.evaluate(() => {
+    document.querySelector("#sec-learn details.reading-index").open = true;
+    document.querySelector('#lesson-list button[data-gs="8"]').click();
+  });
+  assert(await gsAt(1), "M2：黑胜的一局默认猜黑方，轮到黑方");
+  await pg.focus("#board");
+  await pg.keyboard.press("ArrowUp");
+  await pg.waitForTimeout(150);
+  const up = await liveText();
+  assert(/^e4 /.test(up), "M2：猜黑方时棋盘翻着，↑ 把光标从 e5 带到 e4（「" + up + "」）");
+  assert((await settings()).flipped === false, "M2：猜黑方不把下棋的棋盘方向写进设置");
+  await pg.click('.rail-btn[data-view="play"]');
+  await pg.waitForTimeout(600);
+  const inPlay = await settings();
+  const bodyFlipped = await pg.evaluate(() => document.body.classList.contains("flipped"));
+  assert(inPlay.flipped === false && !bodyFlipped, "M2：回到下棋，棋盘方向还是原来的（settings.flipped " + inPlay.flipped + "）");
+  await pg.reload();
+  await pg.waitForTimeout(1200);
+  assert((await settings()).flipped === false, "M2：重新载入之后也还是原来的方向");
+
+  // P3-5: a library game opened mid-guess and 取消 — the run goes on
+  await pg.click('.rail-btn[data-view="learn"]');
+  await pg.waitForTimeout(500);
+  await pg.evaluate(() => {
+    // a slow scripted engine: every position level, each answer 1.5 s away
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.analyze = (fen) => new Promise((r) => setTimeout(() => r({ cp: 0, mate: null, turn: fen.split(" ")[1], best: null, pv: [], lines: [] }), 1500));
+    document.querySelector("#sec-learn details.reading-index").open = true;
+    document.querySelector('#lesson-list button[data-gs="0"]').click();
+  });
+  assert(await gsAt(0), "M2：开始猜第一局（白方）");
+  const tapSq = async (sq) => {
+    const c = await pg.evaluate((q) => { const r = document.getElementById("board").getBoundingClientRect(); return { x: r.left + (q.charCodeAt(0) - 96.5) * r.width / 8, y: r.top + (8.5 - Number(q[1])) * r.height / 8 }; }, sq);
+    await pg.mouse.click(c.x, c.y);
+    await pg.waitForTimeout(120);
+  };
+  const refuseLoad = async () => {
+    // the whole path inside the page, so it lands within the other side's 0.7 s
+    const t = await pg.evaluate(async () => {
+      const t0 = performance.now();
+      const wait = async (sel) => { for (let i = 0; i < 60 && !document.querySelector(sel); i++) await new Promise((r) => setTimeout(r, 10)); return document.querySelector(sel); };
+      document.querySelector('#rail button[data-view="library"]').click();
+      (await wait("#lib-open")).click();
+      (await wait("#lib-list button[data-lib]")).click();
+      return performance.now() - t0;
+    });
+    await pg.waitForTimeout(300);
+    const asked = await pg.isVisible("#confirm-cancel");
+    return { t, asked };
+  };
+  // (a) a guess the engine has to judge (1.d4 for 1.e4), refused while it is judged
+  await tapSq("d2"); await tapSq("d4");
+  const a = await refuseLoad();
+  await pg.waitForTimeout(1800); // the check comes back while the run is set aside
+  if (a.asked) await pg.click("#confirm-cancel");
+  await pg.click('.rail-btn[data-view="learn"]');
+  const resumedCheck = await gsAt(2);
+  assert(a.asked && resumedCheck, "M2：猜着判分时读库被取消，回来之后判完、对方走、轮到第 2 手（问了替换：" + a.asked + "）");
+  const say = await pg.evaluate(() => document.getElementById("gs-say").textContent);
+  assert(/1\. d4/.test(say) && /1\. e4/.test(say), "M2：判分的结果照常写出（" + say + "）");
+  // (b) the master's move, refused while the other side's move waits
+  await tapSq("g1"); await tapSq("f3");
+  const b = await refuseLoad();
+  await pg.waitForTimeout(1000); // the other side's 0.7 s pass while the run is set aside
+  if (b.asked) await pg.click("#confirm-cancel");
+  await pg.click('.rail-btn[data-view="learn"]');
+  assert(b.asked && await gsAt(4), "M2：对方要走时读库被取消，回来之后对方照走、轮到第 3 手（" + Math.round(b.t) + " ms 内问了替换）");
+  assert(errsM.length === 0, "M2：全程没有页面异常 — " + errsM.join(" / "));
+  await ctxM.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
