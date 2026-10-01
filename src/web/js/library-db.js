@@ -160,17 +160,22 @@ async function idbBackend(idb, name, open) {
   return {
     kind: "idb",
     // a page at a time: one getAll() of a big library is one long structured
-    // clone on the main thread (tens of ms at 2 MB — v8-0-plan F3's 16 ms line)
+    // clone on the main thread (tens of ms at 2 MB — v8-0-plan F3's 16 ms line).
+    // v8-2-plan F3: the pages are asked for all at once, cut at every 400th
+    // key — one after the other, each reply waited for a gap between frames
+    // before the next page was even asked for. Each range starts where the
+    // last one stops, so a game written between the two reads is not lost.
     async all() {
-      const out = [];
-      let from = null;
-      for (;;) {
-        const range = from == null ? null : IDBKeyRange.lowerBound(from, true);
-        const page = await done(tx(["games"], "readonly").objectStore("games").getAll(range, 400));
-        out.push(...page);
-        if (page.length < 400) return out;
-        from = page[page.length - 1].id;
+      const keys = await this.keys();
+      const s = tx(["games"], "readonly").objectStore("games");
+      const pages = [];
+      for (let i = 0; i < keys.length || !i; i += 400) {
+        const lo = i ? keys[i] : null, hi = keys[i + 400];
+        const range = hi == null ? (lo == null ? null : IDBKeyRange.lowerBound(lo))
+          : lo == null ? IDBKeyRange.upperBound(hi, true) : IDBKeyRange.bound(lo, hi, false, true);
+        pages.push(done(s.getAll(range)));
       }
+      return [].concat(...await Promise.all(pages));
     },
     async keys() { return done(tx(["games"], "readonly").objectStore("games").getAllKeys()); },
     async count() { return done(tx(["games"], "readonly").objectStore("games").count()); },

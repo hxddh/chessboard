@@ -27,6 +27,7 @@
  * @module shell
  */
 import { ChessDialog } from "./dialog.js";
+import { ChessBoardView } from "./board.js";
 
 /** The views, in the rail's order; `home` is the rail's head. */
 export const SHELL_VIEWS = ["home", "play", "puzzle", "learn", "library", "me"];
@@ -63,7 +64,8 @@ export function createShell(d) {
     const want = SHELL_VIEWS.includes(view) ? view : "play";
     store.ui.view = want;
     appEl.setAttribute("data-view", want);
-    appEl.classList.toggle("page-on", isPage(want));
+    // v8-2-plan F3: the board is drawn when it is uncovered, not under a page
+    ChessBoardView.cover(appEl.classList.toggle("page-on", isPage(want)));
     for (const b of railBtns()) {
       if (b.dataset.view === want) b.setAttribute("aria-current", "page");
       else b.removeAttribute("aria-current");

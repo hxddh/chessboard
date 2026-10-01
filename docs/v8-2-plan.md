@@ -905,3 +905,15 @@
 
 - V3 的钩子按 T4 的设计接上：`test-downgrade-e2e.mjs REP_LINES` 40 → 450（每方超过头上的 400 条）。8.2 的档案：chessboard.replines 里执白 450 条，头上前 400 条加 `ln = 450`；练过三次的卡两张，一张（c4 g6）只在第 400 条以后的线上。8.0 / 8.1 的书都是头上的前 400 条；8.1 按版本 1 打开 chessboard.repertoire 没有异常（执黑那条线的记录是它写进去的），按 400 条重建索引时删掉 7 个局面的记录（含 c4 g6）。回到 8.2：450 条线都在、旧版加的执黑线进了 replines、`ln` 补成 451、两张卡排期照旧（c4 g6 那张从 `cards` 副本找回）。`EXPECT` 加两项：`repertoire.head` 两版都是「补回」（旧版写头时去掉 `ln`），8.1 的 `repertoire.records` 是「补回」。比较改为不计对象键的先后：从副本回来的卡写成 `{s, n, due, ivl}`，内容相同。没有发现 T4 的错。README「降级」一段跟着改。
 - 合并后整套跑过（本机 Chromium，一个一个跑）：test:static 通过；downgrade 95 条 ok、repertoire 126、persist 167、library 312、endgames 52、content 543、review 228、trainer 128、board 306、shell 116、explorer 67，0 条失败，合并本身没有要修的。主包 909,572 字节（上限 910,972）。
+- **F3 「经过这个局面」冷启动**（m23-f3）：
+  - **剖析**（本机 headless Chromium，一万局，存档停在棋谱库页；CDP trace + Long Animation Frame + 给 `#board` 的 `getContext` 记调用栈）：一次启动棋盘画 **10 遍**，全在棋谱库页底下、一遍也看不见——bundle 那一个任务里 5 遍（`setPanelOpen` 的 commit、`tryLoadSave`、`applyLanguage` 的 sync、收尾 sync、棋子图换上），首帧前 2 遍（`setPanelOpen` 的 rAF、ResizeObserver），之后 3 遍（懒加载内容 `onReady`、`onMinedArrived`、`onLibraryLoaded`）。带棋盘的帧很贵：首帧提交 `ProduceCanvasResource` 857 ms，之后每帧 `FinalizeFrame` 334–538 ms。单独量（只放一块棋盘的页面）：画一遍的那一帧 450–700 ms，同一帧里画五遍 3.0–3.7 s（前面画的都要栅格化）；去掉每个棋子脚下接触阴影的 `ctx.filter = blur(…)`，一帧 33 ms（就是两次 rAF 的下限）——32 个 blur 滤镜在没有 GPU 的 Chromium 里几乎就是一帧的全部。整局按页读（25 页，一页 400 局），每一页的请求要等上一页的回复，回复又排在这些帧后面：第一页 196 ms 发出、1,376 ms 才回来。
+  - **四分之一的启动列表 1.2–1.8 s**：原因找到了——chunk-boot 发出的摘要读取（最后一个是 `games.count()`）要是在 bundle.js 开始运行之后才答复，就排到首帧之后，而首帧提交要 0.7–0.86 s（上面那几遍棋盘）。这台机器负载高的时候五次里四五次都这样（dab3e66 上五次的列表 1,333–2,196 ms）。首帧便宜了之后这种启动也只晚几十毫秒。
+  - **改动**：
+    - board.js `cover()`：shell.js 第一次 `show()` 之前、以及页面（首页 / 棋谱库 / 我的）盖在棋盘上的时候，`draw()` 不画；回到棋盘的那一刻（`show()` 里，同一个任务）画一遍。test-chess 的渲染遍历先 `cover(false)`。
+    - 接触阴影：每个尺寸（和棋盘主题，`_sprites` 一起失效）模糊一次，存成一张小画布，每个棋子 `drawImage` 盖一下。和原来逐个跑滤镜逐像素比，884 px 棋盘上最大差 2/255。Safari 15 不支持 `ctx.filter`，和以前一样是不模糊的椭圆。
+    - library-db.js `all()`：先 `getAllKeys()`，再按每 400 个键切开、一次把所有页都发出去（区间首尾相接，两次读之间另一个窗口写进来的局不会漏）。九次对比，读整库的时长中位数 467 → 390 ms。分块里，不占主包。
+    - 试过、没留：每次 `draw()` 先 `clearRect` 整块画布让 Chromium 丢掉同一帧里前面几遍的绘制——滤镜去掉之后量不出差别（同一帧五遍和一遍都是 33 ms），省下 23 字节。
+  - **验收**（`docs/measured.json libraryDb.coldStart`，`node scripts/test-library-e2e.mjs --record`，五次中位数，从导航开始；`coldStartBefore82` 是同一套测量跑在 dab3e66 的 src/web 上，`--record --before=dab3e66`）：「经过这个局面」可用（整局和索引到齐）**2,739 → 526 ms**（线 1.5 s；同一天另一次全套运行 699 ms）；列表可见 1,451 → 230 ms；按摘要搜索可用 1,477 → 244 ms。不用摘要的启动（头里去掉 `sum`）：索引 2,715 → 429 ms。停在下棋页的启动（剖析脚本，五次中位数）：整库可用约 2.9 → 1.1 s，棋盘照常画 10 遍，但每遍只要一帧的零头。
+  - **测试**：test-library-e2e 冷启动改为五次取中位数（8.1 是列表取三次最快、索引取三次最慢），「经过这个局面」可用断言 ≤ 1.5 s（dab3e66 上 2,739 ms，红），另留 max(1.5 s, 不用摘要 × 1.25) 给更慢的机器；test-board-e2e 新增一段：开在棋谱库页上棋盘一遍不画、回到棋盘画出来、一遍棋盘不在 `#board` 上跑 blur 滤镜（dab3e66 上 9 遍 / 32 个，红）；test-chess 渲染遍历加「盖着不画、揭开就画」（dab3e66 上没有 `cover`，红）。
+  - 本机 Chromium，一次一个：test:static、test-board-e2e、test-library-e2e（`--record`）、test-persist-e2e、test-shell-e2e、test-layout-e2e 全过；perf-e2e 一次「回放一步 ≤ 5 ms」得 5.1 ms，重跑 4.9 / 5.0 ms 过，dab3e66 上同样是 4.7–5.0 ms（这台机器上本来就贴着线，不是这一条带来的）。
+  - **主包** 909,756 → 909,949（+193）。

@@ -2234,12 +2234,12 @@ function tenThousand() {
   // poll of ours waits behind a frame); times are from the navigation's
   // start. The plan's lines: list visible ≤ 1.5 s, search usable ≤ 4.5 s —
   // the search on the summary at once, "passes through this position" when
-  // the index has arrived (ready). Best of three for the list (a regression
-  // moves every run; one slow frame on a CI runner moves one), worst of
-  // three for ready.
+  // the index has arrived (ready). v8-2-plan F3: the median of five for all
+  // three (8.1 took the best of three for the list and the worst for ready,
+  // which hid the quarter of launches whose list came after the first frame).
   await page.evaluate(() => { sessionStorage.setItem("f3.cold", "1"); });
   const cold = [];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 5; i++) {
     const t0 = Date.now();
     await page.reload();
     await c1Ready(page);
@@ -2321,11 +2321,12 @@ function tenThousand() {
   await page.click('#rail button[data-view="library"]').catch(() => {});
   await page.waitForTimeout(300);
   const r0 = (x) => Math.round(x);
+  const median = (xs) => xs.slice().sort((a, b) => a - b)[xs.length >> 1];
   console.log("  F3 冷启动(ms，从导航开始)：" + cold.map((r) => `列表 ${r0(r.rows)} · 搜索 ${r0(r.search)} · 局面索引 ${r0(r.ready)}`).join(" | "));
   C1.cold = {
-    listVisibleMs: r0(Math.min(...cold.map((r) => r.rows))),
-    searchUsableMs: r0(Math.min(...cold.map((r) => r.search))),
-    readyMs: r0(Math.max(...cold.map((r) => r.ready))),
+    listVisibleMs: r0(median(cold.map((r) => r.rows))),
+    searchUsableMs: r0(median(cold.map((r) => r.search))),
+    readyMs: r0(median(cold.map((r) => r.ready))),
     runs: cold.map((r) => ({ list: r0(r.rows), search: r0(r.search), ready: r0(r.ready), reload: r.reloadReady })),
   };
   assert(cold.every((r) => r.rows != null && r.fromSummary),
@@ -2335,14 +2336,18 @@ function tenThousand() {
   assert(cold.every((r) => r.posHits === api.position.n),
     "F3 重启：索引到了之后「包含这个局面」照常(" + cold.map((r) => r.posHits).join(",") + " = " + api.position.n + ")");
   if (ENGINE === "chromium") {
-    assert(C1.cold.listVisibleMs <= 1500, `F3 1 万局重启到列表可见 ≤ 1.5 s(${C1.cold.listVisibleMs} ms，三次里最快)`);
-    assert(C1.cold.searchUsableMs <= 4500, `F3 1 万局重启到搜索可用 ≤ 4.5 s(按摘要 ${C1.cold.searchUsableMs} ms)`);
-    // 「不比现在差」: 4.5 s, or — on a runner slower than the machines that
-    // number came from — a quarter over the same run's launch without the
-    // summary (v8-1-plan §9 M4 评审修正)
-    const readyLimit = Math.max(4500, Math.round(C1.coldBase.readyMs * 1.25));
+    assert(C1.cold.listVisibleMs <= 1500, `F3 1 万局重启到列表可见 ≤ 1.5 s(${C1.cold.listVisibleMs} ms，五次的中位数)`);
+    assert(C1.cold.searchUsableMs <= 4500, `F3 1 万局重启到搜索可用 ≤ 4.5 s(按摘要 ${C1.cold.searchUsableMs} ms，五次的中位数)`);
+    // v8-2-plan F3: the plan's line, 1.5 s (2,739 ms on dab3e66: the board
+    // drew ten frames under the library page and the index waited behind
+    // them) …
+    assert(C1.cold.readyMs <= 1500,
+      `F3 1 万局重启到「包含这个局面」可用 ≤ 1.5 s(${C1.cold.readyMs} ms，五次的中位数)`);
+    // … and on a slower runner, the summary costs the index no more than a
+    // quarter over the same run's launch without it (v8-1-plan §9 M4 评审修正)
+    const readyLimit = Math.max(1500, Math.round(C1.coldBase.readyMs * 1.25));
     assert(C1.cold.readyMs <= readyLimit,
-      `F3 1 万局重启到「包含这个局面」可用 ≤ ${readyLimit} ms(${C1.cold.readyMs} ms，三次里最慢；不用摘要 ${C1.coldBase.readyMs} ms)`);
+      `F3 有摘要时索引到达 ≤ max(1.5 s, 不用摘要的 1.25 倍)(${C1.cold.readyMs} ≤ ${readyLimit} ms；不用摘要 ${C1.coldBase.readyMs} ms)`);
   }
 
   // the whole library out as PGN, into an empty profile, game for game
@@ -2691,7 +2696,7 @@ let t5Export = "";
 {
   const r1 = (x) => Math.round(x * 10) / 10;
   const figures = {
-    what: "v8-0-plan C1：1 万局棋谱库（1,000 条不同着法 × 各约 10 局，每局 8–19 个半回合，标签各异）在 headless Chromium 里：一次导入进库、重启读回到可用、各种查询（API）与列表页上的搜索（查询 + 画出列表）的耗时，毫秒；验收线 ≤ 200 ms。coldStart（v8-1-plan F3）：重启后从导航开始到列表可见、按摘要搜索可用、局面索引到达（ready），列表与搜索取三次最快、索引取三次最慢；验收线 1.5 s / 4.5 s",
+    what: "v8-0-plan C1：1 万局棋谱库（1,000 条不同着法 × 各约 10 局，每局 8–19 个半回合，标签各异）在 headless Chromium 里：一次导入进库、重启读回到可用、各种查询（API）与列表页上的搜索（查询 + 画出列表）的耗时，毫秒；验收线 ≤ 200 ms。coldStart（v8-1-plan F3，v8-2-plan F3）：重启后从导航开始到列表可见、按摘要搜索可用、局面索引到达（ready，即「经过这个局面」可用），五次取中位数；验收线 1.5 s / 4.5 s / 1.5 s",
     script: "node scripts/test-library-e2e.mjs --record",
     games: 10000,
     importMs: C1.importMs, loadMs: C1.loadMs,
@@ -2699,15 +2704,19 @@ let t5Export = "";
     queryHits: C1.api && Object.fromEntries(Object.entries(C1.api).map(([k, r]) => [k, r.n])),
     pageMs: C1.ui && { typed: r1(C1.ui.typed), position: r1(C1.ui.pos), speed: r1(C1.ui.seg) },
     limitMs: 200,
-    // v8-1-plan F3: from the navigation's start; list and search best of three, index worst of three
-    coldStart: C1.cold && Object.assign({ limitMs: { list: 1500, search: 4500, ready: "max(4500, 1.25 × noSummary.readyMs)" } }, C1.cold, { noSummary: C1.coldBase }),
+    // from the navigation's start, the median of five (v8-2-plan F3)
+    coldStart: C1.cold && Object.assign({ limitMs: { list: 1500, search: 4500, ready: 1500, readyVsNoSummary: "max(1500, 1.25 × noSummary.readyMs)" } }, C1.cold, { noSummary: C1.coldBase }),
   };
-  // the same measurement on the code before F3 (this suite run over 17334e1's
-  // src/web), kept across re-recordings
-  const had = (readMeasured().libraryDb || {}).coldStartBefore;
-  if (had) figures.coldStartBefore = had;
+  // the same measurement on the code before each F3, kept across
+  // re-recordings: v8-1-plan's (this suite over 17334e1's src/web) and
+  // v8-2-plan's (`--before=<ref>`: this suite over that ref's src/web; such
+  // a run records only that)
+  const had = readMeasured().libraryDb || {};
+  const before = (process.argv.find((a) => a.startsWith("--before=")) || "").slice(9);
+  for (const k of ["coldStartBefore", "coldStartBefore82"]) if (had[k]) figures[k] = had[k];
+  if (before && C1.cold) figures.coldStartBefore82 = Object.assign({ ref: before }, C1.cold, { noSummary: C1.coldBase });
   console.log("C1 measured: " + JSON.stringify(figures));
-  if (RECORDING && C1.api && C1.ui) record("libraryDb", figures);
+  if (RECORDING && C1.api && C1.ui) record("libraryDb", before ? Object.assign({}, had, { coldStartBefore82: figures.coldStartBefore82 }) : figures);
 }
 
 await browser.close();

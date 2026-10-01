@@ -2203,22 +2203,22 @@
     "changedBestPctSd": 16.5
   },
   "libraryDb": {
-    "what": "v8-0-plan C1：1 万局棋谱库（1,000 条不同着法 × 各约 10 局，每局 8–19 个半回合，标签各异）在 headless Chromium 里：一次导入进库、重启读回到可用、各种查询（API）与列表页上的搜索（查询 + 画出列表）的耗时，毫秒；验收线 ≤ 200 ms。coldStart（v8-1-plan F3）：重启后从导航开始到列表可见、按摘要搜索可用、局面索引到达（ready），列表与搜索取三次最快、索引取三次最慢；验收线 1.5 s / 4.5 s",
+    "what": "v8-0-plan C1：1 万局棋谱库（1,000 条不同着法 × 各约 10 局，每局 8–19 个半回合，标签各异）在 headless Chromium 里：一次导入进库、重启读回到可用、各种查询（API）与列表页上的搜索（查询 + 画出列表）的耗时，毫秒；验收线 ≤ 200 ms。coldStart（v8-1-plan F3，v8-2-plan F3）：重启后从导航开始到列表可见、按摘要搜索可用、局面索引到达（ready，即「经过这个局面」可用），五次取中位数；验收线 1.5 s / 4.5 s / 1.5 s",
     "script": "node scripts/test-library-e2e.mjs --record",
     "games": 10000,
-    "importMs": 17439,
-    "loadMs": 3003,
+    "importMs": 19780,
+    "loadMs": 505,
     "queryMs": {
-      "opponent": 5.1,
-      "text": 13.9,
-      "date": 8.9,
-      "result": 0.9,
-      "tc": 5,
-      "eco": 1.1,
-      "position": 2.8,
-      "combined": 4.5,
-      "explorer": 7,
-      "start": 15.4
+      "opponent": 4.5,
+      "text": 9.8,
+      "date": 7.9,
+      "result": 0.6,
+      "tc": 4.1,
+      "eco": 1.7,
+      "position": 3,
+      "combined": 5.3,
+      "explorer": 9.8,
+      "start": 20.6
     },
     "queryHits": {
       "opponent": 1170,
@@ -2233,43 +2233,56 @@
       "start": 10000
     },
     "pageMs": {
-      "typed": 19,
-      "position": 18.9,
-      "speed": 12.9
+      "typed": 12,
+      "position": 13.3,
+      "speed": 10.5
     },
     "limitMs": 200,
     "coldStart": {
       "limitMs": {
         "list": 1500,
         "search": 4500,
-        "ready": "max(4500, 1.25 × noSummary.readyMs)"
+        "ready": 1500,
+        "readyVsNoSummary": "max(1500, 1.25 × noSummary.readyMs)"
       },
-      "listVisibleMs": 199,
-      "searchUsableMs": 210,
-      "readyMs": 3115,
+      "listVisibleMs": 230,
+      "searchUsableMs": 244,
+      "readyMs": 526,
       "runs": [
         {
-          "list": 286,
-          "search": 297,
-          "ready": 2670,
-          "reload": 3187
+          "list": 234,
+          "search": 248,
+          "ready": 526,
+          "reload": 572
         },
         {
-          "list": 199,
-          "search": 210,
-          "ready": 2611,
-          "reload": 3170
+          "list": 237,
+          "search": 251,
+          "ready": 543,
+          "reload": 583
         },
         {
-          "list": 1805,
-          "search": 1817,
-          "ready": 3115,
-          "reload": 3526
+          "list": 217,
+          "search": 235,
+          "ready": 506,
+          "reload": 554
+        },
+        {
+          "list": 230,
+          "search": 244,
+          "ready": 555,
+          "reload": 626
+        },
+        {
+          "list": 196,
+          "search": 208,
+          "ready": 501,
+          "reload": 554
         }
       ],
       "noSummary": {
-        "readyMs": 2535,
-        "listMs": 2350
+        "readyMs": 429,
+        "listMs": 387
       }
     },
     "coldStartBefore": {
@@ -2302,6 +2315,48 @@
           "reload": 2819
         }
       ]
+    },
+    "coldStartBefore82": {
+      "ref": "dab3e66",
+      "listVisibleMs": 1451,
+      "searchUsableMs": 1477,
+      "readyMs": 2739,
+      "runs": [
+        {
+          "list": 1451,
+          "search": 1477,
+          "ready": 2739,
+          "reload": 3205
+        },
+        {
+          "list": 1575,
+          "search": 1593,
+          "ready": 3062,
+          "reload": 3576
+        },
+        {
+          "list": 2196,
+          "search": 2208,
+          "ready": 2558,
+          "reload": 3043
+        },
+        {
+          "list": 1402,
+          "search": 1418,
+          "ready": 2800,
+          "reload": 3298
+        },
+        {
+          "list": 1333,
+          "search": 1346,
+          "ready": 2476,
+          "reload": 2877
+        }
+      ],
+      "noSummary": {
+        "readyMs": 2715,
+        "listMs": 2586
+      }
     }
   },
   "markChroma": {
