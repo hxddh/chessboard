@@ -187,14 +187,18 @@ jobs:
             suites: scripts/test-audio-e2e.mjs scripts/test-shell-e2e.mjs scripts/test-trainer-e2e.mjs
             timeout: 30
           # v8-2-plan V4: split in two, as in checks.yml
-          - name: lessons + review
-            suites: scripts/test-content-e2e.mjs scripts/test-review-e2e.mjs
-            timeout: 25
+          # v8-2-plan V4 (M3): split in two, as in checks.yml
+          - name: lessons
+            suites: scripts/test-content-e2e.mjs
+            timeout: 20
+          - name: review
+            suites: scripts/test-review-e2e.mjs
+            timeout: 15
           - name: engine
             suites: scripts/test-engine-e2e.mjs scripts/test-engine-flows-e2e.mjs scripts/test-endgames-e2e.mjs
             timeout: 30
           - name: persistence
-            suites: scripts/test-persist-e2e.mjs
+            suites: scripts/test-persist-e2e.mjs scripts/test-downgrade-e2e.mjs
             timeout: 25
           # v8-2-plan V4 (M2): split in two, as in checks.yml
           - name: game library
