@@ -7772,8 +7772,10 @@ for (const lang of CONTENT_LANGS) {
   // switch's paint and the loader are in the bundle (prefs-ui.js)
   assert(CHUNKS.some((c) => c.entry === "src/web/js/sync-ui.js" && c.global === "createSyncUI"),
     "C2: the sync dialog is an on-demand chunk (chunk-sync.js)");
-  const callers = [...WEB_MODULES].filter(([file, text]) => /\.fetchGames\(/.test(text) && file !== "host.js").map(([file]) => file);
-  assert(callers.length === 1 && callers[0] === "sync-ui.js", "C2: only the sync dialog calls fetchGames (" + callers.join(", ") + ")");
+  // v8-2-plan V1: and the automation build's sync scenario, which runs only
+  // under CHESS_SELFTEST and against the fake server main.zig's CHESS_SYNC_BASE names
+  const callers = [...WEB_MODULES].filter(([file, text]) => /\.fetchGames\(/.test(text) && file !== "host.js").map(([file]) => file).sort();
+  assert(callers.join() === "selftest-scenarios.js,sync-ui.js", "C2: only the sync dialog (and the self-test's sync scenario) calls fetchGames (" + callers.join(", ") + ")");
 }
 
 if (failed) {
