@@ -187,7 +187,9 @@ async function runLive() {
       const { snap, ms } = await app.ready(120000);
       extra.launches[name] = { readyMs: ms };
       const reportNow = () => readReport(out);
-      const side = during ? during(app, reportNow, snap) : Promise.resolve();
+      // caught here, not where it is awaited: a rejection left pending while
+      // the loop below polls would end the whole run as an unhandled one
+      const side = (during ? during(app, reportNow, snap) : Promise.resolve()).catch((e) => check(name + ":drive", false, e.message));
       while (Date.now() - t0 < THRESHOLDS.launchMs) {
         report = reportNow();
         if (report && report.stage === "done") break;
