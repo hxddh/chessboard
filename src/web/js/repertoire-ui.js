@@ -275,12 +275,6 @@ export function createRepertoireUI(d) {
     return q ? q.name : t("rep.unnamed");
   }
 
-  /** 导出 PGN: both books, one game each, variations and all (rep-book.js toPgn). */
-  async function exportBook() {
-    if (!ctrl || !total()) return;
-    const text = ctrl.exportPgn((s) => t("rep.title") + " · " + t(s === "b" ? "color.black" : "color.white"));
-    if (text) await d.exportText("chessboard-repertoire.pgn", text, "application/x-chess-pgn", t("lib.exportPgn"));
-  }
 
   // --- the chunk ---------------------------------------------------------------
   // After the library's chunk: the records live in its database. Without it
@@ -288,7 +282,7 @@ export function createRepertoireUI(d) {
   // on a Map for the session and the native shards.
   const ready = !(d.library && d.library.ready) ? Promise.resolve(null)
     : d.library.ready().then((c) => loadChunk("chunk-rep.js", "CHESS_REP").then((m) => m.bootRepertoire({
-      store, Persist, t, tf, toast, doc, R: Rep, libDb: c, cardName, onChange: () => render(), forget: forgetDrills,
+      store, Persist, t, tf, toast, doc, R: Rep, libDb: c, cardName, onChange: () => render(), forget: forgetDrills, exportText: d.exportText,
       LibraryQuery: typeof window !== "undefined" && window.CHESS_LIBDB ? window.CHESS_LIBDB.LibraryQuery : null,
     }))).then((c) => {
       ctrl = c;
@@ -478,7 +472,8 @@ export function createRepertoireUI(d) {
     const due = doc.getElementById("rep-due");
     if (due) due.onclick = () => d.startDrills(true);
     const exp = doc.getElementById("rep-export");
-    if (exp) exp.onclick = () => { exportBook(); };
+    // 导出 PGN (rep-page.js exportBook, v8-2-plan T4: in the chunk, which is what holds the book by position)
+    if (exp) exp.onclick = () => { if (ctrl && total()) ctrl.exportBook(); };
   }
 
   /** Re-read the book from storage — after a learning file brought one in. */

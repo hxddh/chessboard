@@ -73,7 +73,8 @@ function memoryRep() {
  *   R (ChessRepertoire), libDb (library-page.js's controller, or null: the cross-check),
  *   repBackend (tests: a backend instead of rep-db.js),
  *   LibraryQuery (or null), cardName(side, sans), onChange() (the section again),
- *   forget(ids) (lines that left the book at boot: their drills' queue entries)
+ *   forget(ids) (lines that left the book at boot: their drills' queue entries),
+ *   exportText (导出 PGN, exportBook)
  * @returns {Promise<object>} the controller
  */
 async function bootRepertoire(d) {
@@ -476,6 +477,11 @@ async function bootRepertoire(d) {
     cross,
     renderInto,
     exportPgn: (event) => ["w", "b"].map((s) => B.toPgn(records, s, event(s))).filter(Boolean).join("\n"),
+    /** 导出 PGN: both books, one game each, variations and all (rep-book.js toPgn). */
+    exportBook() {
+      const text = this.exportPgn((s) => t("rep.title") + " · " + t(s === "b" ? "color.black" : "color.white"));
+      return text ? d.exportText("chessboard-repertoire.pgn", text, "application/x-chess-pgn", t("lib.exportPgn")) : null;
+    },
     // persist.js's port for the "rep" shards
     // held: not known — the store keeps the shards it has (persist.js valueOf)
     // v8-2-plan T4: a shard carries the lines whose key hashes to it as well
