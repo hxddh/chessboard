@@ -936,3 +936,44 @@
   - 仍看不见的：译文经参数、属性、后来才赋值的名字、或「含有」译文的表达式赋的名字流到 `+`。
 - **主包** 909,765 → 910,148（+383：P2 +145、P3 长将 +247、整句 −9；上限 910,972）。
 - 本机 Chromium，一个一个跑：test:static 通过；rep-book 118、explain 111、repertoire-e2e 133、downgrade 95、library 313、trainer 128、review 228 条 ok，coach、motif 通过，0 条失败。评审的 zz-probe-cover（各页切回棋盘都画满）照旧全对，没有要改的。评审的探针只在本地跑过，没有入库。
+
+### M4
+
+#### F2 `src/main.zig` 拆分与上游差异登记（分支 m24-f2）
+
+- **拆分**：`main.zig` 4,785 行按职责拆成五个文件，代码和测试都原样搬移，测试跟着各自的代码走。
+  - `main.zig` 319 行（2 个测试）：入口与装配，即 `App`、`onEvent` / `onStop`、`main()`。
+  - `bridge.zig` 1,564 行（17）：命令表与内建命令放行、分块传输、签发路径（信任模型，含拖放与系统打开的文件）、appdata 存储、自检。
+  - `dialogs.zig` 733 行（14）：`chess.openPgn` / `chess.saveText` 与原生文件对话框。
+  - `menus.zig` 163 行（3）：菜单语言、菜单命令交给页面的 `shortcut` 事件。
+  - `sync.zig` 2,113 行（28）：异步桥、检查更新、HTTP、Lichess / Chess.com 取棋。
+  - 新增的只有三样：各文件头的说明、按名字逐个 `@import` 的别名、跨文件用到的声明加 `pub`（顶层 46 个、方法 13 个）。两处注释里写死的文件位置改了。
+  - 逐行核对：原文件 4,419 个非空行都在，多出来的只有上面三样。
+  - `build.zig` 不用改：同目录的 `@import` 属于同一个模块。
+- **行为零改动的证据**：
+  - `zig build test -Dplatform=null`：拆分前 64/64，拆分后 64/64，测试名逐个相同。
+  - aarch64-macos 与 x86_64-windows 的 ReleaseFast object 构建（M1 V1 的只编 object 的做法），拆分前后**代码段逐字节相同**：macOS `__text` 2,093,632 字节，Windows `.text` 2,520,098 字节。
+- **读 main.zig 的脚本**：
+  - `manifest-check.mjs` 第 2、5、6 节改为读 `src/` 下除 runner.zig 外的全部 `.zig`，目录现读，以后新加文件不会漏。另加两条：`BUILTIN_COMMANDS`、`APP_COMMANDS` 各只有一份。改之前跑是红的（13 个命令都「没注册」）。
+  - `test-sync.mjs` 的 `SYNC_GAMES_MAX` 改读 `sync.zig`。
+  - 脚本和 workflow 注释里点名的取棋函数改指 `sync.zig`。
+- **上游差异**：
+  - `docs/sdk-fork.json` 登记 runner.zig ↔ `src/app_runner/root.zig`、build.zig ↔ `build/app.zig` 的全部差异：**27 组、174 块**（ours 14 组、unused 4 组、lag 9 组），按内容加上下文定位，不靠行号。
+  - `docs/sdk-fork-notes.md` 逐组写理由，以及 0.10.2 升级的步骤。
+  - `scripts/sdk-diff.mjs` 把登记过的差异套到上游上再比，只报没登记的块，以及原文已变的登记项（给出上游前后的变化）。对 v0.10.1 的标签与 npm 包，输出都是空的，退出码 0。
+  - `scripts/test-sdk-diff.mjs` 进了 `test:static`，离线，13 条：
+    - 从我们的文件和登记表反推出 0.10.1 上游；有 SDK 时逐字节相同；
+    - 上游多一行时恰好报那一块；
+    - 改登记过的原文时按组报出；
+    - 说明里缺一组时报出。
+  - `checks.yml` 的 zig 作业对 npm 装的 SDK 跑 `sdk-diff`。
+- **登记时发现的 lag 项**（这次没修，F2 要求行为零改动；建议 0.10.2 时一起处理）：
+  - **R15 窗口位置记不住**：恢复时只换了 frame，没把 `initial_placement` 标成 `.restored`，macOS 主机因此把窗口居中。大小能记住，位置每次居中。一行可修，要真机核对。
+  - **B09 Windows exe 没嵌 SDK 的应用清单**：没有按显示器 DPI 感知，缩放不是 100% 时整窗按位图拉伸、发虚。一行可修，要在 150% 缩放的真机上核对。
+  - 其余 7 组（平台对象堆分配、trace 过滤、Runtime 三项设置、`.show` 键名、排版、链接路径位置、x86_64 LLVM 规避）对发布件没有可见影响，影响逐条写在说明里。
+- **验证**：
+  - `zig build test` 64/64；
+  - 双平台 object 交叉编译通过；
+  - `manifest-check.mjs --sdk`（0.10.1）通过；
+  - `npm run test:static` 通过；
+  - `node scripts/sdk-diff.mjs`（`NATIVE_SDK_PATH` = 0.10.1）无输出、退出码 0。
