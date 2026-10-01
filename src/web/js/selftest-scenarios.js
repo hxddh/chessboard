@@ -211,8 +211,6 @@ const SCENARIOS = {
       const h = await until(() => { const raw = localStorage.getItem(HEADER_KEY); return raw && /"db":2[,}]/.test(raw) && /"sum":"/.test(raw) ? JSON.parse(raw) : null; }, 30000, 250);
       if (!h) throw new Error("the library's header never said db 2 with a summary");
       await d.Persist.flushMirror();
-      // the summary's own write, then a margin for the WebView to commit it
-      await sleep(3000);
       return { n: Number(h.n) || 0 };
     });
   },
@@ -265,6 +263,15 @@ const SCENARIOS = {
   },
 };
 
+/**
+ * The scenarios whose writes the next launch reads. A WebView commits
+ * storage to disk on a timer of its own and the driver ends the process once
+ * "done" is reported, so these wait first — selftest-run.js MARKER_SETTLE_MS,
+ * for the same reason.
+ */
+const WRITES = new Set(["rep-seed", "rep-index", "sync", "prefetch-seed"]);
+const SETTLE_MS = 6000;
+
 /** The scenario names, in the order the driver runs them. */
 export const SCENARIO_NAMES = Object.keys(SCENARIOS);
 
@@ -292,6 +299,7 @@ export async function runScenario(name, d) {
   else {
     await report("running");
     try { await run(d, check, report); } catch (err) { rep.checks.scenario = { pass: false, err: d.errText(err) }; }
+    if (WRITES.has(name)) await sleep(SETTLE_MS);
   }
   await report("done");
 }

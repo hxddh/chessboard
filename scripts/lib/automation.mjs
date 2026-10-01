@@ -105,9 +105,13 @@ export function launchApp(exe, { work, env, stdio = "inherit" }) {
     return null;
   }
   async function stop() {
-    if (state.exited !== null) return;
-    child.kill();
-    for (let i = 0; i < 100 && state.exited === null; i++) await sleep(50);
+    if (state.exited === null) {
+      child.kill();
+      for (let i = 0; i < 100 && state.exited === null; i++) await sleep(50);
+    }
+    // the WebView's own processes (WebView2's msedgewebview2.exe hold the
+    // user-data folder the next launch opens) go a moment after the app
+    await sleep(2000);
   }
   return { child, box, state, send, ready, bridge, stop };
 }

@@ -7129,6 +7129,50 @@ for (const lang of CONTENT_LANGS) {
   }
 }
 
+// --- v8-2-plan V1: the automation build is tested, never released ------------
+//
+// -Dautomation=true compiles in the SDK's automation server: a dropbox under
+// the app's working directory through which any local process can call
+// chess.*. build-macos.yml / build-windows.yml build it as a second package of
+// the same commit to drive it (scripts/automation-scenarios.mjs). What ships
+// is the other one: the job that uploads the Chessboard-* artifacts release.yml
+// downloads must not build with automation, the automation job must upload no
+// Chessboard-* artifact and nothing to a release, and release.yml attaches
+// exactly the three files by name. Comments are dropped first: they may say
+// what they like about the other job.
+{
+  const code = (rel) => fs.readFileSync(path.join(root, rel), "utf8").replace(/\r\n/g, "\n")
+    .split("\n").filter((l) => !l.trim().startsWith("#")).join("\n");
+  /** The jobs of a workflow, by name: each one's text up to the next job. */
+  const jobsOf = (text) => {
+    const body = text.slice(text.indexOf("\njobs:\n") + 7);
+    const out = {};
+    const heads = [...body.matchAll(/^  ([\w-]+):\n/gm)];
+    heads.forEach((m, i) => { out[m[1]] = body.slice(m.index, i + 1 < heads.length ? heads[i + 1].index : body.length); });
+    return out;
+  };
+  for (const rel of [".github/workflows/build-macos.yml", ".github/workflows/build-windows.yml"]) {
+    const jobs = jobsOf(code(rel));
+    const auto = Object.entries(jobs).filter(([, j]) => /-Dautomation=true/.test(j));
+    const shipping = Object.entries(jobs).filter(([, j]) => /name: Chessboard-/.test(j) || /gh release upload/.test(j));
+    assert(auto.length === 1 && auto[0][0] === "automation", rel + ": one job builds with -Dautomation=true, `automation` (" + auto.map(([n]) => n).join(", ") + ")");
+    assert(shipping.length === 1 && shipping[0][0] === "build", rel + ": only `build` uploads a Chessboard-* artifact or to a release (" + shipping.map(([n]) => n).join(", ") + ")");
+    assert(!/-Dautomation/.test(jobs.build || ""), rel + ": the shipped package is built without automation");
+    const a = jobs.automation || "";
+    assert(!/name: Chessboard-|gh release|upload-artifact[\s\S]*?path: dist\//.test(a) && /--output dist-auto\//.test(a) && !/--output dist\//.test(a),
+      rel + ": the automation job packages into dist-auto/ and uploads no package (only its report)");
+    assert(/timeout-minutes: 20\b/.test(a), rel + ": the automation job has its 20-minute limit");
+    assert(/node scripts\/automation-smoke\.mjs/.test(a) && /node scripts\/automation-scenarios\.mjs/.test(a), rel + ": the automation job runs the smoke test and the scenarios");
+  }
+  const rel = code(".github/workflows/release.yml");
+  assert(/pattern: Chessboard-\*/.test(rel) && (rel.match(/uses: actions\/download-artifact@/g) || []).length === 1,
+    "release.yml downloads only the Chessboard-* artifacts (never automation-report-*)");
+  const attached = (/gh release create[\s\S]*?\n\s*(dist\/[^\n]*)\n/.exec(rel) || [])[1] || "";
+  assert(attached.trim() === "dist/Chessboard-macOS-arm64.zip dist/Chessboard-macOS-arm64.dmg dist/Chessboard-Windows-x64.zip",
+    "release.yml attaches exactly the three shipped packages (" + attached.trim() + ")");
+  assert(!/dist-auto|-Dautomation/.test(rel), "release.yml never names the automation build");
+}
+
 // --- 7.0: every suite package.json runs, CI runs too -------------------------
 //
 // 6.1 found that `checks.yml`'s static job named three scripts by hand while
