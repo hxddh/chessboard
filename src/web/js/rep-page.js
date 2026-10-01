@@ -20,9 +20,9 @@
  *   * export as PGN with variations.
  *
  * 8.1 left the lines in `chess.v1.repertoire` — the header — exactly as
- * 7.2–8.0 wrote them, plus `db: 2, n, sig`. v8-2-plan T4 moved them into the
- * same database ("lines", rep-lines.js) and the same shards, without the
- * 400-line cap; the header keeps the first 400 a side, which is what an
+ * 7.2–8.0 wrote them, plus `db: 2, n, sig`. v8-2-plan T4 moved them into a
+ * database of their own (chessboard.replines, rep-db.js; rep-lines.js) and
+ * into the same shards, without the 400-line cap; the header keeps the first 400 a side, which is what an
  * older build reads and drills, and what it changes there is laid over the
  * stored book on the next launch here (rep-lines.js mergeHead).
  * @module rep-page
@@ -62,6 +62,8 @@ function memoryRep() {
     async remove(ids) { for (const id of ids) m.delete(id); return true; },
     async lines() { return [...lines.values()]; },
     async putLines(rows, gone) { for (const k of gone) lines.delete(k); for (const r of rows) lines.set(r.k, r); return true; },
+    async cards() { return []; },
+    async putCards() { return true; },
     async clear() { m.clear(); lines.clear(); return true; },
     async getMeta() { return undefined; },
     async setMeta() { return true; },
@@ -89,8 +91,10 @@ async function bootRepertoire(d) {
   let warned = false;
   const warnOnce = (e) => { if (warned) return; warned = true; toast(tf("rep.saveFailed", [(e && e.name) || ""]), "fault"); };
 
-  let stored = [], storedLines = [];
-  try { stored = await backend.all(); storedLines = await backend.lines(); } catch (e) { backend = memoryRep(); stored = []; storedLines = []; }
+  let stored = [], storedLines = [], storedCards = [];
+  try { stored = await backend.all(); storedLines = await backend.lines(); storedCards = await backend.cards(); } catch (e) {
+    backend = memoryRep(); stored = []; storedLines = []; storedCards = [];
+  }
   const memory = backend.kind === "memory";
   // M3 评审: which write the records in IndexedDB are from. The header's
   // `gen` is the last write any session made (a session with no IndexedDB
@@ -144,7 +148,13 @@ async function bootRepertoire(d) {
   // IndexedDB, the shards are the store
   let lineMap = L.mapOf(memory && picked.from === "shards" ? shardLines : storedLines);
   const booted = book();
-  const r = B.reconcile({ book: booted, header, stored, shards, newer, state: store.session.puzzleState, now: Date.now() });
+  // v8-2-plan T4: the cards' copy in chessboard.replines fills in what
+  // chessboard.repertoire no longer has — the records an 8.1 session dropped
+  // when it indexed only the header's 400 lines a side. Where both have a
+  // record, chessboard.repertoire's (the last one graded) stands.
+  const have = new Set(stored.map((x) => x && x.id).concat((shards || []).map((x) => x && x.id)));
+  const kept = storedCards.filter((x) => x && typeof x.id === "string" && x.card && !have.has(x.id)).map((x) => ({ id: x.id, moves: [], card: x.card }));
+  const r = B.reconcile({ book: booted, header, stored, shards: kept.length ? (shards || []).concat(kept) : shards, newer, state: store.session.puzzleState, now: Date.now() });
   // M3 评审 P2-3: the signature of the lines the records were indexed from —
   // what the header may vouch for. An edit made while this boot was still
   // awaiting changes book() but not the records, and the header must not
@@ -177,6 +187,8 @@ async function bootRepertoire(d) {
       try {
         if (gone.length) await backend.remove(gone);
         if (put.length) await backend.put(put);
+        // the cards' copy (v8-2-plan T4, rep-db.js)
+        if (put.length || gone.length) await backend.putCards(put.filter((x) => x.card).map((x) => ({ id: x.id, card: x.card })), gone);
         if (lp.length || lg.length) await backend.putLines(lp, lg);
         await backend.setMeta("rep-gen", g);
         if (peers) peers.postMessage({ gen: g });
@@ -195,8 +207,13 @@ async function bootRepertoire(d) {
   }
   // the boot's own writes, read back before the header may say db 2
   let vouched = r.fresh;
-  // the lines first: a migration moves them in here (v8-2-plan T4)
+  // the lines first: a migration moves them in here (v8-2-plan T4) — and
+  // the cards' copy starts out whole
   saveLines();
+  if (!memory && !hold && !storedCards.length && r.records.size) {
+    const all = [...r.records.values()].filter((x) => x.card).map((x) => ({ id: x.id, card: x.card }));
+    chain = chain.then(() => backend.putCards(all, [])).catch(warnOnce);
+  }
   if (!r.fresh && !hold) {
     save(r.put, r.gone);
     await chain;

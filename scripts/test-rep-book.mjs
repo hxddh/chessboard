@@ -301,14 +301,17 @@ const book = (w, b) => ({ w: R.addLines([], w || [], null).lines, b: R.addLines(
   const idb = (rows, gen, lineRows) => {
     const m = new Map(rows.map((x) => [x.id, JSON.parse(JSON.stringify(x))]));
     const ls = new Map((lineRows || []).map((x) => [x.k, JSON.parse(JSON.stringify(x))]));
+    const cs = new Map();
     const meta = new Map(gen ? [["rep-gen", gen]] : []);
-    return { m, ls, meta, puts: 0, lineWrites: 0,
+    return { m, ls, cs, meta, puts: 0, lineWrites: 0,
       async all() { return [...m.values()].map((x) => JSON.parse(JSON.stringify(x))); },
       async put(rs) { this.puts++; for (const x of rs) m.set(x.id, JSON.parse(JSON.stringify(x))); return true; },
       async remove(ids) { for (const id of ids) m.delete(id); return true; },
       async lines() { return [...ls.values()].map((x) => JSON.parse(JSON.stringify(x))); },
       async putLines(rs, gone) { this.lineWrites++; for (const k of gone) ls.delete(k); for (const x of rs) ls.set(x.k, JSON.parse(JSON.stringify(x))); return true; },
-      async clear() { m.clear(); ls.clear(); return true; },
+      async cards() { return [...cs.values()].map((x) => JSON.parse(JSON.stringify(x))); },
+      async putCards(rs, gone) { for (const k of gone) cs.delete(k); for (const x of rs) cs.set(x.id, JSON.parse(JSON.stringify(x))); return true; },
+      async clear() { m.clear(); ls.clear(); cs.clear(); return true; },
       async getMeta(k) { return meta.get(k); },
       async setMeta(k, v) { meta.set(k, v); return true; } };
   };
@@ -470,6 +473,27 @@ const book = (w, b) => ({ w: R.addLines([], w || [], null).lines, b: R.addLines(
   const u4 = await boot2({ header: null, backend: fresh });
   await u4.c.restoreShards(texts);
   assert(fresh.ls.size === 1022 && fresh.m.size === u.c.records().size, "导入全部数据：线和记录都从分片进库", JSON.stringify({ ls: fresh.ls.size, m: fresh.m.size }));
+  // 降级到 8.1：它只按头上的 400 条重建记录，那之外的局面从 chessboard.repertoire 掉了——
+  // 卡片从 chessboard.replines 的副本回来（rep-db.js：开局书的库不升版本，8.1 照常打开）
+  const fat = book(Array.from({ length: 400 }, (_, i) => "e4 e5 Nf3 Q" + i).concat(["g4 d5 Bg2"]));
+  const dbF = idb([], 0);
+  const uF = await boot2({ header: Object.assign({ v: 1 }, fat), backend: dbF });
+  const farId = "w|" + keyAfter("g4 d5");
+  uF.c.grade({ card: farId }, true);
+  const hF = uF.c.head();
+  await new Promise((r) => setTimeout(r, 0));
+  const gradedF = uF.c.records().get(farId).card;
+  assert(gradedF.s === 1 && dbF.cs.get(farId) && dbF.cs.get(farId).card.due === gradedF.due && hF.w.length === 400 && hF.ln === 401,
+    "第 401 条线上的一张卡答对了；卡片的副本在 replines", JSON.stringify(dbF.cs.get(farId)));
+  const book400 = { w: hF.w, b: hF.b };
+  const rec400 = B.indexBook(book400, new Map(dbF.m));
+  const db81c = idb([...rec400.values()], 0, [...dbF.ls.values()]);
+  for (const [k, v] of dbF.cs) db81c.cs.set(k, v);
+  assert(!rec400.has(farId), "8.1 的索引里没有这个局面（它看不到第 401 条）");
+  const uB = await boot2({ header: Object.assign({ v: 1 }, book400, { db: 2, n: rec400.size, sig: B.sigOf(book400), gen: 1 }), backend: db81c });
+  const backF = uB.c.records().get(farId);
+  assert(uB.store.session.repertoire.w.length === 401 && backF && backF.card.s === 1 && backF.card.due === gradedF.due,
+    "回到 8.2：第 401 条线回来，那张卡的排期也回来", JSON.stringify(backF && backF.card));
 }
 
 if (failed) { console.error(`\n${failed} 项失败`); process.exit(1); }

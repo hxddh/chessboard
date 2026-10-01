@@ -4,17 +4,17 @@
  * Until 8.1 the lines — the book's structure, what 按线练 drills and what
  * every edit edits — lived only in the localStorage header
  * `chess.v1.repertoire`, and repertoire.js capped them at 400 a side so the
- * header stayed a few dozen KB. They now live in the "lines" store of
- * chessboard.repertoire (rep-db.js, version 2), one row per line, and in the
- * native shards beside the records (rep-page.js). The cap is repertoire.js
+ * header stayed a few dozen KB. They now live in the "lines" store of a new
+ * database, chessboard.replines (rep-db.js — chessboard.repertoire keeps
+ * 8.1's version, so 8.1 still opens it), one row per line, and in the native
+ * shards beside the records (rep-page.js). The cap is repertoire.js
  * MAX_LINES (5,000 a side).
  *
  * The header keeps a copy of the first HEAD lines of each side — exactly
  * what 7.2–8.1 read, so a downgrade still opens a book: the whole of any
  * book that was ≤ 400 lines when it moved, and the first 400 a side of a
- * bigger one (8.1 keeps its records on its in-memory backend: it cannot open
- * a version-2 database). `ln` on the header says how many lines the store
- * holds; an older build rewriting the header drops it.
+ * bigger one. `ln` on the header says how many lines the store holds; an
+ * older build rewriting the header drops it.
  *
  * The header is also the journal for whatever reaches it without passing
  * the store: an older build's edits, and an edit made while chunk-rep.js was

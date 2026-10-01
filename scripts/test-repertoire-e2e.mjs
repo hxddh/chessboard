@@ -16,9 +16,9 @@
  *   5. 棋谱库反推：「你常走 X，开局书写的是 Y」。
  *   6. 导出 PGN（带变着）再导进一个空档案，逐节点相等。
  *   7. 英文、日文：新文字都在、不截断。
- *   v8-2-plan T4（线搬进开局书自己的数据库，版本 2）：
- *   8. 2,000 条线导入、复习、导出 PGN 再导回逐节点相等；重启读回；8.1 打开
- *      版本 2 得 VersionError、头上的 400 条副本；8.1 改过书之后回来；导出 /
+ *   v8-2-plan T4（线搬进新的数据库 chessboard.replines；chessboard.repertoire 不升版本）：
+ *   8. 2,000 条线导入、复习、导出 PGN 再导回逐节点相等；重启读回；8.1 照常
+ *      打开开局书的库、头上的 400 条副本；8.1 改过书之后回来；导出 /
  *      导入全部数据带着线。
  *   9. 8.1 的档案（头上的线 + 版本 1 的数据库）升上来，什么都不丢。
  *  10. 没有 IndexedDB：整本书写在头上（lf）；IndexedDB 回来再搬进去；又没有
@@ -120,22 +120,42 @@ const records = (page) => page.evaluate(() => {
   for (const [id, r] of all) out[id] = { moves: r.moves.map((m) => m.san), card: r.card || null, path: r.path };
   return out;
 });
-/** The records as IndexedDB holds them (their own database, store "repertoire"); `lib`: the library's version. */
-const idbRecords = (page) => page.evaluate(() => new Promise((resolve) => {
+/**
+ * The records as IndexedDB holds them (their own database, store "repertoire"); `lib`: the library's version.
+ * v8-2-plan T4: `lines` / `cards` from chessboard.replines, `linesVersion` its version (null: not there).
+ */
+const idbRecords = (page) => page.evaluate(async () => {
   const libVersion = () => new Promise((r) => { const q = indexedDB.open("chessboard.library"); q.onsuccess = () => { const v = q.result.version; q.result.close(); r(v); }; q.onerror = () => r(null); });
-  const req = indexedDB.open("chessboard.repertoire");
-  req.onsuccess = () => {
-    const db = req.result;
-    if (!db.objectStoreNames.contains("repertoire")) { resolve({ version: db.version, rows: null }); db.close(); return; }
-    const hasLines = db.objectStoreNames.contains("lines");
-    const tx = db.transaction(hasLines ? ["repertoire", "meta", "lines"] : ["repertoire", "meta"], "readonly");
-    const all = tx.objectStore("repertoire").getAll();
-    const keys = tx.objectStore("meta").getAllKeys();
-    const lines = hasLines ? tx.objectStore("lines").getAll() : null;
-    tx.oncomplete = () => { const out = { version: db.version, rows: all.result, meta: keys.result.map(String), lines: lines ? lines.result : null }; db.close(); libVersion().then((lib) => resolve(Object.assign(out, { lib }))); };
+  // opened without a version only when it exists: an open would create an empty one
+  const replines = async () => {
+    const dbs = await indexedDB.databases();
+    if (!dbs.some((x) => x.name === "chessboard.replines")) return { linesVersion: null, lines: null, cards: null };
+    return new Promise((resolve) => {
+      const q = indexedDB.open("chessboard.replines");
+      q.onsuccess = () => {
+        const db = q.result;
+        const tx = db.transaction(["lines", "cards"], "readonly");
+        const lines = tx.objectStore("lines").getAll(), cards = tx.objectStore("cards").getAll();
+        tx.oncomplete = () => { db.close(); resolve({ linesVersion: db.version, lines: lines.result, cards: cards.result }); };
+      };
+      q.onerror = () => resolve({ linesVersion: null, lines: null, cards: null });
+    });
   };
-  req.onerror = () => resolve(null);
-}));
+  const out = await new Promise((resolve) => {
+    const req = indexedDB.open("chessboard.repertoire");
+    req.onsuccess = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains("repertoire")) { resolve({ version: db.version, rows: null, stores: [...db.objectStoreNames] }); db.close(); return; }
+      const tx = db.transaction(["repertoire", "meta"], "readonly");
+      const all = tx.objectStore("repertoire").getAll();
+      const keys = tx.objectStore("meta").getAllKeys();
+      tx.oncomplete = () => { const o = { version: db.version, rows: all.result, meta: keys.result.map(String), stores: [...db.objectStoreNames] }; db.close(); resolve(o); };
+    };
+    req.onerror = () => resolve(null);
+  });
+  if (!out) return null;
+  return Object.assign(out, await replines(), { lib: await libVersion() });
+});
 const header = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.repertoire") || "null"));
 
 /** The explorer's rows: move, 书, 我的, and the toggle beside it. */
@@ -177,10 +197,12 @@ let migratedRecords = null;
   assert(JSON.stringify(h.w) === JSON.stringify(BOOK80.w) && JSON.stringify(h.b) === JSON.stringify(BOOK80.b),
     "线一字不动：7.2–8.0 照读，按线练的进度照挂");
   const idb = await idbRecords(page);
-  assert(idb && idb.version === 2 && Array.isArray(idb.rows) && idb.rows.length === h.n,
-    `开局书自己的数据库 chessboard.repertoire（v8-2-plan T4：版本 2），repertoire 表里 ${idb && idb.rows && idb.rows.length} 条，与头上的数一致`, JSON.stringify(idb && { v: idb.version, n: idb.rows && idb.rows.length }));
+  assert(idb && idb.version === 1 && idb.stores.join() === "meta,repertoire" && Array.isArray(idb.rows) && idb.rows.length === h.n,
+    `开局书自己的数据库 chessboard.repertoire（版本 1，两张表——v8-2-plan T4 不升版本，8.1 照常打开），repertoire 表里 ${idb && idb.rows && idb.rows.length} 条，与头上的数一致`, JSON.stringify(idb && { v: idb.version, stores: idb.stores, n: idb.rows && idb.rows.length }));
   assert(idb.lines && JSON.stringify(bookOfRows(idb.lines)) === JSON.stringify({ w: BOOK80.w, b: BOOK80.b }) && h.ln === 3,
-    "v8-2-plan T4：线进了 lines 表，一条不少、先后不变；头上 ln 3", JSON.stringify({ ln: h.ln, lines: idb.lines && idb.lines.length }));
+    "v8-2-plan T4：线进了 chessboard.replines 的 lines 表，一条不少、先后不变；头上 ln 3", JSON.stringify({ ln: h.ln, lines: idb.lines && idb.lines.length }));
+  assert(idb.linesVersion === 1 && idb.cards.length === Object.values(await records(page)).filter((r) => r.card).length,
+    "……卡片的副本也在那里，一张不少（8.1 降级时看不到的局面靠它找回）", JSON.stringify({ v: idb.linesVersion, cards: idb.cards && idb.cards.length }));
   assert(idb.lib === 1, "M3 评审：棋谱库的数据库还是版本 1——8.0 打开它不会 VersionError", String(idb.lib));
   assert(idb.meta.some((k) => k.startsWith("rep-v1:")), "迁移前的原值备份在 meta 表里", JSON.stringify(idb.meta));
   const recs = await records(page);
@@ -639,9 +661,9 @@ let big = null;
   await ready(page);
   assert((await page.evaluate(() => window.__chess.rep().records().size)) === Object.keys(want).length && /2000/.test(await page.textContent("#rep-meta")),
     "重启：2000 条线、全部记录从数据库读回（头上只有 400 条）");
-  // 8.1 打开这个数据库：版本 1 → VersionError（它退回内存 + 本机分片，书是头上的 400 条）
-  const v81 = await page.evaluate(() => new Promise((r) => { const q = indexedDB.open("chessboard.repertoire", 1); q.onsuccess = () => { q.result.close(); r("opened"); }; q.onerror = () => r(q.error && q.error.name); }));
-  assert(v81 === "VersionError", "8.1 按版本 1 打开：VersionError（rep-db.js 答 null，8.1 用头上的线）", v81);
+  // 8.1 打开开局书的数据库：它要版本 1，库还是版本 1、两张表（v8-2-plan T4：线在另一个库里）
+  const v81 = await page.evaluate(() => new Promise((r) => { const q = indexedDB.open("chessboard.repertoire", 1); q.onsuccess = () => { const s = [...q.result.objectStoreNames].join(); q.result.close(); r("opened " + s); }; q.onerror = () => r(q.error && q.error.name); }));
+  assert(v81 === "opened meta,repertoire", "8.1 按版本 1 打开开局书的数据库：照常打开（不会 VersionError）", v81);
   // 降级到 8.1 改了书：头上拿掉第 6 条、加一条，写回时没有 ln（8.1 的 saveBook 只写 v w b db n sig gen）
   const gone = h.w[5];
   const added = line("e4 e5 Ke2");
@@ -717,8 +739,8 @@ let big = null;
   const h = await header(page);
   const idb = await idbRecords(page);
   const got = await records(page);
-  assert(idb.version === 2 && JSON.stringify(bookOfRows(idb.lines)) === JSON.stringify({ w: BOOK80.w, b: BOOK80.b }),
-    "8.1 → 8.2：数据库升到版本 2，线进了 lines 表，一条不少", JSON.stringify({ v: idb.version, lines: idb.lines && idb.lines.length }));
+  assert(idb.version === 1 && idb.stores.join() === "meta,repertoire" && JSON.stringify(bookOfRows(idb.lines)) === JSON.stringify({ w: BOOK80.w, b: BOOK80.b }),
+    "8.1 → 8.2：开局书的数据库原样（版本 1、两张表），线进了 chessboard.replines，一条不少", JSON.stringify({ v: idb.version, stores: idb.stores, lines: idb.lines && idb.lines.length }));
   const cards = Object.values(got).filter((r) => r.card);
   assert(Object.keys(got).length === rows.length && cards.length && cards.every((r) => r.card.s === 3 && r.card.ivl === 7),
     "……按局面的记录与卡片排期原样（不重建、不重播种）", JSON.stringify(cards.map((r) => r.card.s)));
