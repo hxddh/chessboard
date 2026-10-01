@@ -383,6 +383,12 @@ jobs:
         run: node scripts/gen-manifest.mjs macos
       - name: manifest keys are actually read (with the SDK on disk)
         run: node scripts/manifest-check.mjs --sdk "$SDK_PATH"
+      # v8-2-plan F2: every difference of src/runner.zig / build.zig from the
+      # pinned SDK's own files is registered (docs/sdk-fork.json) and explained
+      # (docs/sdk-fork-notes.md); silent when so, and the upgrade's to-do list
+      # when the pin moves
+      - name: runner.zig / build.zig differ from the SDK only where registered
+        run: node scripts/sdk-diff.mjs "$SDK_PATH"
       - name: zig build test
         run: zig build test ${{ matrix.flags }} -Dnative-sdk-path="$SDK_PATH"
       - name: zig build

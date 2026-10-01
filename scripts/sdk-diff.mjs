@@ -306,7 +306,10 @@ function suggestion(file, up, origin, O, ops, hunk) {
 function relocate(up, h) {
   if (!h.before.length || !h.after.length) return null;
   const reach = h.up.length * 2 + 60;
-  for (const b of findAll(up, h.before)) {
+  // a short context recurs; the occurrence nearest where the hunk was wins
+  const near = (h.at ?? 1) - 1 - h.before.length;
+  const befores = findAll(up, h.before).sort((x, y) => Math.abs(x - near) - Math.abs(y - near));
+  for (const b of befores) {
     const from = b + h.before.length;
     for (const a of findAll(up, h.after)) {
       if (a >= from && a - from <= reach) return { at: from, lines: up.slice(from, a) };
@@ -410,7 +413,15 @@ export function run(argv, env = process.env) {
         // what upstream did to the text we diverge from: old "-", new "+"
         say(`upstream ${now.at + 1}..${now.at + now.lines.length}, the registered upstream text against what is there now:`);
         const rops = diffLines(h.up, now.lines);
-        for (const op of rops) say(op[0] === "=" ? "  " + h.up[op[1]] : op[0] === "-" ? "- " + h.up[op[1]] : "+ " + now.lines[op[1]]);
+        const show = new Set();
+        for (const { from, to } of hunksOf(rops)) for (let i = Math.max(0, from - 3); i < Math.min(rops.length, to + 3); i++) show.add(i);
+        let gap = false;
+        rops.forEach((op, i) => {
+          if (!show.has(i)) return void (gap = true);
+          if (gap) say("  …");
+          gap = false;
+          say(op[0] === "=" ? "  " + h.up[op[1]] : op[0] === "-" ? "- " + h.up[op[1]] : "+ " + now.lines[op[1]]);
+        });
       } else {
         say("its context is gone too; it expected upstream to read:");
         for (const l of h.before) say("  " + l);
