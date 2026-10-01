@@ -2338,13 +2338,16 @@ function tenThousand() {
   if (ENGINE === "chromium") {
     assert(C1.cold.listVisibleMs <= 1500, `F3 1 万局重启到列表可见 ≤ 1.5 s(${C1.cold.listVisibleMs} ms，五次的中位数)`);
     assert(C1.cold.searchUsableMs <= 4500, `F3 1 万局重启到搜索可用 ≤ 4.5 s(按摘要 ${C1.cold.searchUsableMs} ms，五次的中位数)`);
-    // v8-2-plan F3: 1.5 s — or, on a runner slower than this machine, a
-    // quarter over the same run's launch without the summary (v8-1-plan §9
-    // M4 评审修正; that was max(4.5 s, …) while the board's frames held the
-    // index back)
+    // v8-2-plan F3: the plan's line, 1.5 s (2,739 ms on dab3e66: the board
+    // drew ten frames under the library page and the index waited behind
+    // them) …
+    assert(C1.cold.readyMs <= 1500,
+      `F3 1 万局重启到「包含这个局面」可用 ≤ 1.5 s(${C1.cold.readyMs} ms，五次的中位数)`);
+    // … and on a slower runner, the summary costs the index no more than a
+    // quarter over the same run's launch without it (v8-1-plan §9 M4 评审修正)
     const readyLimit = Math.max(1500, Math.round(C1.coldBase.readyMs * 1.25));
     assert(C1.cold.readyMs <= readyLimit,
-      `F3 1 万局重启到「包含这个局面」可用 ≤ ${readyLimit} ms(${C1.cold.readyMs} ms，五次的中位数；不用摘要 ${C1.coldBase.readyMs} ms)`);
+      `F3 有摘要时索引到达 ≤ max(1.5 s, 不用摘要的 1.25 倍)(${C1.cold.readyMs} ≤ ${readyLimit} ms；不用摘要 ${C1.coldBase.readyMs} ms)`);
   }
 
   // the whole library out as PGN, into an empty profile, game for game
@@ -2702,7 +2705,7 @@ let t5Export = "";
     pageMs: C1.ui && { typed: r1(C1.ui.typed), position: r1(C1.ui.pos), speed: r1(C1.ui.seg) },
     limitMs: 200,
     // from the navigation's start, the median of five (v8-2-plan F3)
-    coldStart: C1.cold && Object.assign({ limitMs: { list: 1500, search: 4500, ready: "max(1500, 1.25 × noSummary.readyMs)" } }, C1.cold, { noSummary: C1.coldBase }),
+    coldStart: C1.cold && Object.assign({ limitMs: { list: 1500, search: 4500, ready: 1500, readyVsNoSummary: "max(1500, 1.25 × noSummary.readyMs)" } }, C1.cold, { noSummary: C1.coldBase }),
   };
   // the same measurement on the code before each F3, kept across
   // re-recordings: v8-1-plan's (this suite over 17334e1's src/web) and
