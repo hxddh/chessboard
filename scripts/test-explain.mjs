@@ -240,6 +240,29 @@ const FIXED = fenAfter("e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5 Nxd5 Nxf7 Kxf7 Qf3+ Ke
     const r = ctx.lineMotif(g.fen(), line.split(" "), Chess, { played: mv, credit: mv.captured ? { p: 1, n: 3, b: 3, r: 5, q: 9 }[mv.captured] : 0, evalBefore, evalAfter });
     assert(!r || r.motif !== want, "T5：8.1 判错的 " + id + " 不再说成 " + want + "（" + (r && r.motif) + "）");
   }
+  // M3 评审 P3: the perpetual search is bounded in what it costs, not only in
+  // positions. Counted, not timed: the moves chess.js lists (each one is a
+  // SAN, which generates the legal moves again) — 8.2 M3 listed some 20,000
+  // on each of these no-perpetuals and held the page for about a second
+  {
+    let listed = 0;
+    const Counting = function (fen) {
+      const g = new Chess(fen);
+      const moves = g.moves;
+      g.moves = (o) => { const r = moves(o); listed += r.length; return r; };
+      return g;
+    };
+    for (const [fen, line] of [
+      ["rn3bnr/pp2Npp1/1k6/2p4p/6bP/P2P1P2/1PPQP3/R3KBNR w KQ - 1 12", "Qb4+ Kc7 Qa5+ Kd7 Qd8+"],
+      ["r6q/pp3k2/2n5/4B3/4p3/P1P1bbP1/1P6/R3K1N1 b - - 1 23", "Bf2+ Kf1 Be2+ Kxe2 Nd4+"],
+      ["rnb1kb2/1p1p1pp1/8/4p1p1/1P4n1/3K4/2QP3r/2B2BR1 b - - 1 18", "Rh3+ Kc4 Rc3+ Kxc3 Ra3+"],
+    ]) {
+      listed = 0;
+      const t0 = Date.now();
+      const r = ctx.lineMotif(fen, line.split(" "), Counting, { evalBefore: fen.split(" ")[1] === "w" ? -300 : 300, evalAfter: 0 });
+      assert((!r || r.motif !== "perpetual") && listed < 8000, "长将的搜索有上限：" + line + " 不是长将，列了 " + listed + " 着（" + (Date.now() - t0) + " ms）");
+    }
+  }
   // 中间着 and 绝望子 read the mistake itself, so they take its move record
   {
     const g = new Chess("r5k1/6p1/8/8/6b1/5N2/5PPP/3Q2K1 b - - 0 1");

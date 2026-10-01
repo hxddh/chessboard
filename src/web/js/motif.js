@@ -389,31 +389,48 @@ function dPerpetual(c) {
   // 8.1's sample had the king walk out (…Kf8 Rxh7) and a draw by other means.
   // Proved on the board: after the line's first check, whatever the king
   // does, a check brings a position back. Short cycles first (most are two
-  // or three checks long); 2,000 positions is about half a second at worst,
-  // and the 8.1 cases that proved at all did so inside it
+  // or three checks long). M3 评审 P3: 2,000 positions held the page for up
+  // to a second; positions are listed once now (forever), and what listing
+  // costs is bounded too — 100,000 of chess.js's legal-move steps, about a
+  // quarter of a second at worst. Every proof in the T6 sample (motif-sample
+  // .json) takes less: the most, pz:DxwJB, about 87,000
   const g = load(c.Chess, c.fen);
   g.move(c.L.moves[0]);
-  const b = { n: 2000 };
-  for (let d = 2; d < 7 && b.n > 0; d++) if (forever(g, [c.fen.split(" ", 2).join()], d, b, true)) return { motif: "perpetual" };
+  const b = { n: 2000, w: 100000 }, kids = new Map(), at = g.fen();
+  for (let d = 2; d < 7 && b.n > 0 && b.w > 0; d++) if (forever(g, at, [c.fen.split(" ", 2).join()], d, b, true, kids)) return { motif: "perpetual" };
   return null;
 }
 /**
- * `g` after a check (`def`: the defender on move) or before one: can the
- * checking side keep on checking until a position on `seen` comes back?
- * Within `d` more checks and `b.n` positions — past that, no.
+ * The position `fen` after a check (`def`: the defender on move) or before
+ * one: can the checking side keep on checking until a position on `seen`
+ * comes back? Within `d` more checks, `b.n` positions and `b.w` steps.
+ * M3 评审 P3: chess.js writes the SAN of every move it lists, and each SAN
+ * generates the legal moves again — 40 moves cost some 1,600 made and taken
+ * back. So each position's children are listed once, as FENs in move order,
+ * in `kids` (the deeper passes and the cycles a perpetual is made of come
+ * back to the same positions: same order, same answer), and a listing is
+ * charged what it costs to `b.w`: n × n steps for the checker, n × 40 for a
+ * king in check (its ~40 pseudo-moves, tried for each reply).
  */
-function forever(g, seen, d, b, def) {
-  const k = g.fen().split(" ", 2).join();
+function forever(g, fen, seen, d, b, def, kids) {
+  const k = fen.split(" ", 2).join();
   if (!def && seen.includes(k)) return true;
   if (--b.n < 0 || !d) return false;
+  let list = kids.get(fen);
+  if (!list) {
+    g.load(fen);
+    const ms = g.moves({ verbose: true });
+    if ((b.w -= ms.length * (def ? 40 : ms.length)) < 0) return false;
+    // the defender: every reply (none at all: mate); the checker: the checks
+    list = [];
+    for (const m of ms) if (def || /[+#]/.test(m.san)) { g.move(m); list.push(g.fen().replace(/ \d+ \d+$/, " 0 1")); g.undo(); }
+    kids.set(fen, list);
+  }
   seen.push(k);
-  // the defender: every reply (none at all: mate); the checker: one check that works
+  // the checker: one check that works
   let ok = def;
-  for (const m of g.moves({ verbose: true })) {
-    if (!def && !/[+#]/.test(m.san)) continue;
-    g.move(m);
-    const r = forever(g, seen, d - !def, b, !def);
-    g.undo();
+  for (const x of list) {
+    const r = forever(g, x, seen, d - !def, b, !def, kids);
     if (r !== def) { ok = r; break; }
   }
   seen.pop();
