@@ -76,6 +76,8 @@
             .title = "视图",
             .items = .{
                 .{ .label = "侧栏", .command = "view.panel", .key = "\\", .modifiers = .{"primary"} },
+                // v8-2-plan T4: the book's section on the 棋谱库 page, from any view
+                .{ .label = "开局书", .command = "view.repertoire", .key = "o", .modifiers = .{ "primary", "shift" } },
                 .{ .separator = true },
                 .{ .label = "上一手", .command = "view.prev", .key = "[", .modifiers = .{"primary"} },
                 .{ .label = "下一手", .command = "view.next", .key = "]", .modifiers = .{"primary"} },

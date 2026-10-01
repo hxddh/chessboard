@@ -23,6 +23,7 @@ import { ChessHost } from "./host.js";
 import { ChessLearning } from "./learning.js";
 import { ChessPgnParser } from "./pgn-parser.js";
 import { ChessPgn } from "./pgn.js";
+import { tdot } from "./tdot.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -126,8 +127,8 @@ export function createIO(d) {
    * receipt to ignore.
    */
   function savedToast(name, path, revealed) {
-    if (revealed) toast(t("msg.export.done") + name);
-    else toast(t("msg.export.doneAt") + path, "fix");
+    if (revealed) toast(tf("msg.export.doneN", [name]));
+    else toast(tf("msg.export.doneAtN", [path]), "fix");
   }
 
   /**
@@ -176,7 +177,7 @@ export function createIO(d) {
       a.download = name;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      toast(t("msg.export.done") + name + t("msg.export.inDownloads"), "fix");
+      toast(tf("msg.export.doneDl", [name]), "fix");
     } catch (_) {
       copyText(text, t("msg.export.restrictedCopied"));
     }
@@ -246,7 +247,7 @@ export function createIO(d) {
         const s = ChessPgn.summary(g);
         return {
           label: (i + 1) + ". " + s.white + " — " + s.black + "  " + s.result,
-          sub: [s.event, s.date, s.plies ? tf("mm.plies", [s.plies]) : ""].filter(Boolean).join(" · "),
+          sub: tdot(s.event, s.date, s.plies ? tf("mm.plies", [s.plies]) : ""),
         };
       });
       const pick = await pickFromList(tf("dlg.pickGame", [games.length]), items);
@@ -319,7 +320,7 @@ export function createIO(d) {
     if (store.session.mode === "learn" || store.session.mode === "puzzle") switchMode(store.ui.playMode === "pvp" ? "pvp" : "ai");
     Shell.toBoard(); store.commit("game", "action"); saveGame();
     toast(sanHistory().length
-      ? t("msg.import.donePrefix") + moveCount(Math.ceil(sanHistory().length / 2))
+      ? tf("msg.import.doneN", [moveCount(Math.ceil(sanHistory().length / 2))])
       : t("mm.positionLoaded"));
     maybeEngineTurn();
     return true;
@@ -388,9 +389,13 @@ export function createIO(d) {
 
   // --- learning data: out as one file, back in as a merge (learning.js) ---
   const Learning = ChessLearning;
-  function learningBag() {
+  // v8-2-plan T4: the repertoire whole (its lines are in their own store
+  // once its chunk is up; the header holds 400 a side) and its cards' schedules
+  async function learningBag() {
+    await RepUI.ready();
     const bag = {};
     for (const k of Learning.LEARNING_KEYS) bag[k] = Persist.get(k);
+    bag.repertoire = RepUI.bag(bag.repertoire);
     return bag;
   }
   function learningFileName() {
@@ -399,7 +404,7 @@ export function createIO(d) {
     return "chessboard-learning-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + ".json";
   }
   async function exportLearning() {
-    const doc = RepUI.withCards(Learning.pack(learningBag(), Date.now()));   // M3 评审: the repertoire's card schedules too
+    const doc = Learning.pack(await learningBag(), Date.now());
     await exportText(learningFileName(), JSON.stringify(doc, null, 2), "application/json", t("dlg.exportLearning"));
   }
   /** Merge a learning file into this machine's data and rebuild the views. */
@@ -407,7 +412,7 @@ export function createIO(d) {
     let doc = null;
     try { doc = JSON.parse(text); } catch (_) { doc = null; }
     if (!Learning.isLearningDoc(doc)) { toast(t("msg.learning.badFile"), "fix"); return; }
-    const merged = Learning.merge(learningBag(), doc, Mistakes.MAX_MINES);
+    const merged = Learning.merge(await learningBag(), doc, Mistakes.MAX_MINES);
     for (const [k, v] of Object.entries(merged)) Persist.setJson(k, v);
     // the in-memory copies re-read what was just written — the same loaders
     // startup uses, so an imported book is served exactly like a saved one

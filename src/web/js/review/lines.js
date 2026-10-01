@@ -18,6 +18,7 @@
 import { ChessEngine } from "../engine.js";
 import { ChessReview } from "../review.js";
 import { ChessReviewPass } from "../review-pass.js";
+import { tdot } from "../tdot.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -37,7 +38,7 @@ export function createLines(d) {
     if (cp == null) return "";
     // the panel reads from White's side, like the curve
     const white = turn === "w" ? cp : -cp;
-    return t("an.win") + " " + Math.round(Review.winPct(white)) + "%";
+    return tf("an.winPct", [Math.round(Review.winPct(white))]);
   }
 
   // --- 6.0: continuous analysis (v6-plan Q2.6) -------------------------------
@@ -132,7 +133,7 @@ export function createLines(d) {
     }
     const info = rec.info;
     const turn = info ? info.turn : (rec.fen.split(" ")[1] === "b" ? "b" : "w");
-    setText(el.firstElementChild.firstElementChild, t("act.live") + " · " + t("an.depth") + " " + ((info && info.depth) || 0));
+    setText(el.firstElementChild.firstElementChild, tdot(t("act.live"), tf("an.depthN", [(info && info.depth) || 0])));
     if (store.ui.liveHeld || liveOwnsPreview(el)) return;
     for (let i = 0; i < n; i++) {
       const l = info && info.lines[i];
@@ -196,7 +197,7 @@ export function createLines(d) {
     setText(box, sc ? sc.text : "");
     box.classList.toggle("is-white", !!sc && sc.white);
     box.classList.toggle("is-black", !!sc && !sc.white);
-    const tip = tf("an.line", [i + 1]) + (l && winLabel(l, turn) ? " · " + winLabel(l, turn) : "");
+    const tip = tdot(tf("an.line", [i + 1]), l && winLabel(l, turn));
     if (box.title !== tip) box.title = tip;
     row._sans = sans;
     while (row.childElementCount - 2 > sans.length) row.lastElementChild.remove();

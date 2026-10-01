@@ -24,6 +24,7 @@ import { createEndgames } from "./endgames.js";
 import { ChessReview } from "../review.js";
 import { ChessReviewGrade } from "../review-grade.js";
 import { createAdvLessons } from "./lessons-adv.js";
+import { tdot } from "../tdot.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -45,11 +46,17 @@ export function createLessonsUI(d) {
 
   function loadLearnState() {
     const s = Persist.read("learn").value;
+    // v8-2-plan V3: 8.0 / 8.1 have the first 96 lessons, and opening 学习
+    // there bookmarks the last of them over a part-3 bookmark; `l2` is the
+    // bookmark as this build last wrote it, which they leave alone
+    if (s && s.last === CHESS_LESSONS.length - 1 && s.l2 > s.last) s.last = s.l2;
     return s || { v: 1, done: {}, last: 0 };
   }
   store.session.learnState = loadLearnState();
   function saveLearnState() {
-    Persist.setJson("learn", store.session.learnState);
+    const s = store.session.learnState;
+    s.l2 = s.last;
+    Persist.setJson("learn", s);
   }
   // v8-1-plan T2: the endgame camp — its content is a chunk, its runs are
   // one-task drills in this runner (`learn.eg` names the position)
@@ -129,7 +136,7 @@ export function createLessonsUI(d) {
       if (at === 0) p.textContent = tf("study.intro", [tx.event, c.year, c.eco, c.result]);
       else {
         const note = tx.note(at);
-        p.textContent = tf("study.of", [at]) + " · " + (sanHistory()[at - 1] || "") + (note ? " —— " + note : " " + t("study.noNote"));
+        p.textContent = tf(note ? "study.ofNote" : "study.ofNoNote", [at, sanHistory()[at - 1] || "", note]);
       }
       body.appendChild(p);
     }
@@ -150,7 +157,7 @@ export function createLessonsUI(d) {
   function startGuess(ci) {
     if (Gs.m) { Gs.m.start(ci); return; }
     loadChunk("chunk-guess.js", "createGuess").then((create) => {
-      Gs.m = Gs.m || create(Object.assign({ Chess, Engine: ChessEngine, Review: ChessReview, Grade: ChessReviewGrade, CLASSICS, classicText, carryToken, startClassic, saveLearnState }, d));
+      Gs.m = Gs.m || create(Object.assign({ tdot, Chess, Engine: ChessEngine, Review: ChessReview, Grade: ChessReviewGrade, CLASSICS, classicText, carryToken, startClassic, saveLearnState }, d));
       Gs.m.start(ci);
     }, () => {}); // a failed load is retried on the next click
   }
@@ -325,8 +332,8 @@ export function createLessonsUI(d) {
     if (store.session.learn.gs) return Gs.m.task();
     const task = curTask();
     if (store.session.learn.demoing) return t("lm.demoing");
-    if (store.session.learn.done && store.session.learn.eg) return t("lm.taskDone") + t(Endgames.next(store.session.learn.eg) ? "eg.tapNext" : "eg.allDone");
-    if (store.session.learn.done) return t("lm.taskDone") + (store.session.learn.li + 1 < LESSONS.length ? t("lm.tapNext") : t("lm.allDone"));
+    if (store.session.learn.done && store.session.learn.eg) return tf("lm.doneThen", [t(Endgames.next(store.session.learn.eg) ? "eg.tapNext" : "eg.allDone")]);
+    if (store.session.learn.done) return tf("lm.doneThen", [t(store.session.learn.li + 1 < LESSONS.length ? "lm.tapNext" : "lm.allDone")]);
     const tx = taskText(curLesson(), store.session.learn.ti);
     if (task.type === "tap") return tx.step(store.session.learn.tapStep) + " (" + (store.session.learn.tapStep + 1) + "/" + task.steps.length + ")";
     if (task.type === "drill" && store.session.learn.engineBusy) return t("lm.sparThinking");
@@ -389,7 +396,7 @@ export function createLessonsUI(d) {
     // T2: a camp position that went wrong joins the review queue (srs.js)
     const eg = store.session.learn.eg;
     if (eg) Endgames.record(eg, false, false);
-    toast(eg ? msg + t("lm.tipSep") + t("eg.queued") : msg, "fix");
+    toast(eg ? tf("lm.tip2", [msg, t("eg.queued")]) : msg, "fix");
     const token = store.session.learn.token;
     setTimeout(() => { if (store.session.learn && store.session.learn.token === token) startLearnTask(); }, 1400);
   }
@@ -478,7 +485,7 @@ export function createLessonsUI(d) {
     // Where it has nothing certain to say the plain outcome stands alone. 缺陷 26.
     const say = (key, goal, how) => {
       const tip = ChessDrills.drillAdvice(g, goal, how);
-      return tip ? t(key) + t("lm.tipSep") + t(tip) : t(key);
+      return tip ? tf("lm.tip2", [t(key), t(tip)]) : t(key);
     };
     if (task.eg) {
       // v8-1-plan T2: the camp's own rules (endgame-rules.js), one table for
@@ -671,11 +678,10 @@ export function createLessonsUI(d) {
     // "完成 3/72" reads differently from the header chip's "4/72", which is
     // where you ARE. Two bare N/72 on one screen meant two different things.
     const eg = store.session.learn.eg, gs = store.session.learn.gs;
-    if (prog) prog.textContent = gs ? Gs.m.progress() : eg ? t("learn.donePre") + Endgames.doneCount() + "/" + Endgames.total()
-      : t("learn.donePre") + doneCount + "/" + LESSONS.length;
+    if (prog) prog.textContent = gs ? Gs.m.progress() : tf("learn.doneN", eg ? [Endgames.doneCount(), Endgames.total()] : [doneCount, LESSONS.length]);
     const loc = lessonText(L);
     const title = document.getElementById("lesson-title");
-    if (title) title.textContent = (eg || gs ? "" : t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost") + " · ") + loc.part + " · " + loc.title;
+    if (title) title.textContent = tdot(!eg && !gs && tf("learn.lessonN", [store.session.learn.li + 1]), loc.part, loc.title);
     // 7.7 (v7-7-plan §4): the lesson's tasks as a row of dots — done filled,
     // current ringed; a finished lesson is a full row
     const dots = el("lesson-dots");
@@ -692,7 +698,7 @@ export function createLessonsUI(d) {
           return d;
         }));
         dots.classList.toggle("complete", done);
-        dots.setAttribute("aria-label", t("aria.lessonDots") + " " + (done ? n : ti) + "/" + n);
+        dots.setAttribute("aria-label", tf("aria.lessonDotsOf", [done ? n : ti, n]));
       }
     }
     const textEl = document.getElementById("lesson-text");

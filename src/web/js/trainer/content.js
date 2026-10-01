@@ -17,6 +17,7 @@ import { ChessLazy } from "../lazy-content.js";
 import { motifOf, puzzleMotifKey } from "../motif.js";
 import { CHESS_OPENING_NAMES } from "../openings.js";
 import { HAND_MOTIF_KEY } from "../puzzles.js";
+import { tdot } from "../tdot.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -108,7 +109,7 @@ export function createTrainerContent(d) {
     // black sibling carries its chair in the name so toasts and history rows
     // never leave "which side was that" to memory
     if (p.cat === "op" && p.nameId)
-      return p.eco + " " + openingName(p.nameId) + (p.side === "b" ? " · " + t("color.black") : "");
+      return tdot(p.eco + " " + openingName(p.nameId), p.side === "b" && t("color.black"));
     if (p.cat === "mine") {
       const d = new Date(p.t || 0);
       const mm = String(d.getMonth() + 1).padStart(2, "0"), dd = String(d.getDate()).padStart(2, "0");
@@ -117,10 +118,10 @@ export function createTrainerContent(d) {
     // a repertoire line is named by the book it came from — the ECO name when
     // the position is a known one, and the chair, for the same reason the
     // built-in drills carry theirs
-    if (p.cat === "rep") return p.name + (p.side === "b" ? " · " + t("color.black") : "");
-    if (p.src === "mined") return t("pz.cat." + p.cat) + " #" + (MINED_ORDINAL.get(p.id) || "");
+    if (p.cat === "rep") return tdot(p.name, p.side === "b" && t("color.black"));
+    if (p.src === "mined") return tf("pz.catNo", [t("pz.cat." + p.cat), MINED_ORDINAL.get(p.id) || ""]);
     // v8-0-plan B1: an imported puzzle is named by its Lichess id
-    if (p.src === "lichess") return t("pz.cat." + p.cat) + " #" + p.id.slice(3);
+    if (p.src === "lichess") return tf("pz.catNo", [t("pz.cat." + p.cat), p.id.slice(3)]);
     return contentField("puzzles", p.id, "name") || p.name;
   }
   /**

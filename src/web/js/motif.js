@@ -29,18 +29,9 @@ const VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 /** Squares a piece on `sq` attacks, ignoring whose turn it is. */
 function attacksFrom(Chess, fen, sq) {
   // A side can only be asked for its own moves, so put the mover on move.
-  const parts = fen.split(" ");
-  const g0 = new Chess(fen);
-  const piece = g0.get(sq);
-  if (!piece) return [];
-  parts[1] = piece.color;
-  parts[3] = "-";           // en-passant rights belong to the other position
-  let g;
-  try { g = new Chess(parts.join(" ")); } catch (_) { return []; }
-  if (!g || !g.fen) return [];
-  let moves = [];
-  try { moves = g.moves({ square: sq, verbose: true }) || []; } catch (_) { return []; }
-  return moves;
+  const p = load(Chess, fen).get(sq);
+  const g = p && load(Chess, onMove(fen, p.color));
+  return g ? g.moves({ square: sq, verbose: true }) : [];
 }
 
 /**
@@ -63,13 +54,11 @@ export function motifOf(fen, san, Chess) {
   const them = mv.color === "w" ? "b" : "w";
 
   // --- checks: is the checking piece the one that moved? -------------------
-  if (g.in_check()) {
-    const king = kingSquare(g, them);
-    const givers = attackersOf(Chess, after, king, mv.color);
-    if (givers.length >= 2) return "double";
-    // A discovered check is a check delivered by a piece that did not move.
-    if (givers.length === 1 && givers[0] !== mv.to) return "discovered";
-  }
+  // (a king cannot be captured, so ask which moves would land on its square)
+  const givers = g.in_check() ? takersOf(Chess, after, kingOf(gridOf(g), them), mv.color).map((m) => m.from) : [];
+  if (givers.length >= 2) return "double";
+  // A discovered check is a check delivered by a piece that did not move.
+  if (givers.length === 1 && givers[0] !== mv.to) return "discovered";
 
   // --- fork: the piece that moved now attacks two things worth winning -----
   // The king counts as one of them, and usually is: a knight hitting king and
@@ -79,10 +68,7 @@ export function motifOf(fen, san, Chess) {
     const hits = new Set(attacksFrom(Chess, after, mv.to)
       .filter((m) => m.captured && VALUE[m.captured] >= 3)
       .map((m) => m.to));
-    if (g.in_check()) {
-      const givers = attackersOf(Chess, after, kingSquare(g, them), mv.color);
-      if (givers.includes(mv.to)) hits.add("K");
-    }
+    if (givers.includes(mv.to)) hits.add("K");
     if (hits.size >= 2) return "fork";
   }
 
@@ -109,11 +95,7 @@ export function motifOf(fen, san, Chess) {
  * any move".
  */
 function exploitsPin(Chess, before, after, mv, them) {
-  const parts = after.split(" ");
-  parts[1] = them;
-  parts[3] = "-";
-  let g;
-  try { g = new Chess(parts.join(" ")); } catch (_) { return null; }
+  const g = load(Chess, onMove(after, them));
   if (!g || g.in_check()) return null;    // in check, everything is constrained
   const victims = attacksFrom(Chess, after, mv.to).filter((m) => m.captured);
   for (const v of victims) {
@@ -124,32 +106,6 @@ function exploitsPin(Chess, before, after, mv, them) {
     if (moves.length === 0) return "pin";
   }
   return null;
-}
-
-/** Where `color`'s king stands. */
-function kingSquare(g, color) {
-  const b = g.board();
-  for (let r = 0; r < 8; r++) {
-    for (let f = 0; f < 8; f++) {
-      const p = b[r][f];
-      if (p && p.type === "k" && p.color === color) return "abcdefgh"[f] + (8 - r);
-    }
-  }
-  return null;
-}
-
-/** Squares from which `color` attacks `sq`. */
-function attackersOf(Chess, fen, sq, color) {
-  if (!sq) return [];
-  const parts = fen.split(" ");
-  parts[1] = color;
-  parts[3] = "-";
-  let g;
-  try { g = new Chess(parts.join(" ")); } catch (_) { return []; }
-  let moves = [];
-  try { moves = g.moves({ verbose: true }) || []; } catch (_) { return []; }
-  // a king cannot be captured, so ask which moves would land on that square
-  return moves.filter((m) => m.to === sq).map((m) => m.from);
 }
 
 /**
@@ -429,7 +385,56 @@ function dPerpetual(c) {
   if (sign * o.evalBefore < 150 || Math.abs(o.evalAfter) > 15) return null;
   const mine = c.L.moves.filter((m) => m.color === c.A);
   if (c.L.moves.length < 3 || mine.length < 2 || !mine.every((m) => /[+#]$/.test(m.san))) return null;
-  return { motif: "perpetual" };
+  // v8-2-plan T5: a run of checks in a level line is not yet a perpetual —
+  // 8.1's sample had the king walk out (…Kf8 Rxh7) and a draw by other means.
+  // Proved on the board: after the line's first check, whatever the king
+  // does, a check brings a position back. Short cycles first (most are two
+  // or three checks long). M3 评审 P3: 2,000 positions held the page for up
+  // to a second; positions are listed once now (forever), and what listing
+  // costs is bounded too — 100,000 of chess.js's legal-move steps, about a
+  // quarter of a second at worst. Every proof in the T6 sample (motif-sample
+  // .json) takes less: the most, pz:DxwJB, about 87,000
+  const g = load(c.Chess, c.fen);
+  g.move(c.L.moves[0]);
+  const b = { n: 2000, w: 100000 }, kids = new Map(), at = g.fen();
+  for (let d = 2; d < 7 && b.n > 0 && b.w > 0; d++) if (forever(g, at, [c.fen.split(" ", 2).join()], d, b, true, kids)) return { motif: "perpetual" };
+  return null;
+}
+/**
+ * The position `fen` after a check (`def`: the defender on move) or before
+ * one: can the checking side keep on checking until a position on `seen`
+ * comes back? Within `d` more checks, `b.n` positions and `b.w` steps.
+ * M3 评审 P3: chess.js writes the SAN of every move it lists, and each SAN
+ * generates the legal moves again — 40 moves cost some 1,600 made and taken
+ * back. So each position's children are listed once, as FENs in move order,
+ * in `kids` (the deeper passes and the cycles a perpetual is made of come
+ * back to the same positions: same order, same answer), and a listing is
+ * charged what it costs to `b.w`: n × n steps for the checker, n × 40 for a
+ * king in check (its ~40 pseudo-moves, tried for each reply).
+ */
+function forever(g, fen, seen, d, b, def, kids) {
+  const k = fen.split(" ", 2).join();
+  if (!def && seen.includes(k)) return true;
+  if (--b.n < 0 || !d) return false;
+  let list = kids.get(fen);
+  if (!list) {
+    g.load(fen);
+    const ms = g.moves({ verbose: true });
+    if ((b.w -= ms.length * (def ? 40 : ms.length)) < 0) return false;
+    // the defender: every reply (none at all: mate); the checker: the checks
+    list = [];
+    for (const m of ms) if (def || /[+#]/.test(m.san)) { g.move(m); list.push(g.fen().replace(/ \d+ \d+$/, " 0 1")); g.undo(); }
+    kids.set(fen, list);
+  }
+  seen.push(k);
+  // the checker: one check that works
+  let ok = def;
+  for (const x of list) {
+    const r = forever(g, x, seen, d - !def, b, !def, kids);
+    if (r !== def) { ok = r; break; }
+  }
+  seen.pop();
+  return ok;
 }
 
 /** A line piece unmasked by the move: check, double check, or attack. */
@@ -643,6 +648,9 @@ function dTrapped(c) {
     let ms = [];
     try { ms = g.moves({ square: t, verbose: true }) || []; } catch (_) { ms = []; }
     if (!ms.length) continue;               // no move at all is a pin or a wall, not this
+    // v8-2-plan T5: nor is a man whose king takes its squares away — all
+    // three of 8.1's wrong 困子 were queens pinned to the king (…Qxd4 Bc5)
+    if (g.moves({ square: t, legal: false }).length > ms.length) continue;
     const everywhere = ms.every((mv) => {
       if (mv.captured && VALUE[mv.captured] >= VALUE[p.type]) return false;
       g.move(mv);

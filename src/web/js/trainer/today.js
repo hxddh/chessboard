@@ -11,6 +11,7 @@
  * app.js. The shell is created later, so app.js hands in a forwarder.
  * @module trainer/today
  */
+import { tdot } from "../tdot.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -54,10 +55,10 @@ export function createTodayUI(d) {
       const owed = owedNow();
       const tomorrow = Math.max(0, Srs.dueCount(st.missed, Date.now() + 86400000) - owed);
       const parts = [];
-      if (hist.length) parts.push(t("rec.rating") + " " + ratingLabel());
+      if (hist.length) parts.push(tf("ui.pair", [t("rec.rating"), ratingLabel()]));
       if (owed || tomorrow) parts.push(tf("rec.due", [owed, tomorrow]));
       meta.hidden = !parts.length;
-      if (parts.length) { meta.textContent = parts.join(" · "); head.hidden = false; }
+      if (parts.length) { meta.textContent = tdot(...parts); head.hidden = false; }
       meta.title = hist.length ? ratingTip() : "";
     }
     if (rcv) {
@@ -70,8 +71,7 @@ export function createTodayUI(d) {
       row.className = "stat-row";
       const name = document.createElement("span");
       name.className = "stat-k";
-      name.textContent = t("pz.cat." + r.cat) +
-        (weak && weak.cat === r.cat ? " · " + t("rec.weakMark") : "");
+      name.textContent = tdot(t("pz.cat." + r.cat), weak && weak.cat === r.cat && t("rec.weakMark"));
       const val = document.createElement("span");
       val.className = "stat-v num";
       val.textContent = tf("rec.tally", [r.solve, r.miss]);
@@ -266,13 +266,13 @@ export function createTodayUI(d) {
       Progress.recordSession(store.session.progress, Date.now());
       saveProgress();
       const run = Progress.streak(store.session.progress, Date.now());
-      toast(t("daily.done") + (run >= 2 ? " · " + tf("daily.streak", [run]) : ""));
+      toast(tdot(t("daily.done"), run >= 2 && tf("daily.streak", [run])));
       setText(label, t("daily.btn"));
       note.hidden = run < 2;
       if (run >= 2) setText(note, tf("daily.streak", [run]));
       return;
     }
-    setText(label, tf("daily.of", [d.i + 1, d.steps.length]) + " · " + dailyStepLabel(d.steps[d.i]));
+    setText(label, tdot(tf("daily.of", [d.i + 1, d.steps.length]), dailyStepLabel(d.steps[d.i])));
     note.hidden = true;
     renderDailyPlan(d.steps, d.i);
   }

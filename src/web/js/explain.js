@@ -46,15 +46,16 @@ export const LOSS_PLIES = 4;
  * (「对方 X 之后丢 Y」) or which move was better, exactly as when no motif is
  * proved. The rates, 22–25 real-game cases per motif judged against a
  * search 3.7 times deeper, are docs/measured.json `motifPrecision`
- * (scripts/sample-motifs.mjs); the cases are docs/motif-audit-8.1.md.
+ * (scripts/sample-motifs.mjs); the cases are docs/motif-audit-8.1.md and,
+ * for 长将 and 困子 since their re-sample, docs/motif-audit-8.2.md.
  *
- *   - perpetual: 3 of 25 wrong — the drawing line the deep search finds is
- *     not all checks, or it is not a draw at all;
- *   - trapped: 3 of 25 wrong — each a queen pinned to its king, not trapped
- *     (motif.js dTrapped asks whether every square loses the man, and a
- *     pinned man's few legal moves all do).
+ * Empty as of v8-2-plan T5. 8.1 had held back two, both at 3 of 25 wrong:
+ * 长将 (the deep search's draw was not all checks, or no draw) and 困子
+ * (queens pinned to their king). motif.js now proves the perpetual on the
+ * board (dPerpetual: every king move runs into a check that repeats) and
+ * leaves pinned men out of dTrapped; re-sampled, 0 of 25 wrong each.
  */
-export const MATERIAL_ONLY = ["perpetual", "trapped"];
+export const MATERIAL_ONLY = [];
 /** A motif record the sentence may name, or null. */
 const said = (m) => (m && m.motif && !MATERIAL_ONLY.includes(m.motif) ? m : null);
 

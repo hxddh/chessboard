@@ -28,11 +28,15 @@
  *                                           at the review budget, the tags,
  *                                           explain.js's sentence
  *   games --out=app-games.jsonl             the same over the repo's games
+ *   explain --in=app.jsonl --out=app2.jsonl the app's sentence again from the
+ *                                           stored engine lines (no engine),
+ *                                           after motif.js changed
  *   judge --in=a.jsonl,b.jsonl --out=judged.jsonl
  *                                           the sample (≤ PER_MOTIF per motif,
  *                                           seeded) against the deep search
  *   report --in=judged.jsonl [--record] [--doc=docs/motif-audit-8.1.md]
  *                                           [--fixture=scripts/fixtures/motif-sample.json]
+ *                                           [--doc-motifs=perpetual,trapped]  only these motifs' cases in --doc
  *
  * The app's pass, reproduced: a mistake's two positions are what the review
  * deepens (review-grade.js deepTargets: a drop of ≥ 5 points), so both are
@@ -64,6 +68,10 @@ const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/review.js", "src/
   "src/web/js/i18n.js", "src/web/js/explain.js"]);
 const { Chess, ChessReview: Review, ChessExplain: X, ChessI18n } = ctx;
 const tOf = (lang) => (k) => ChessI18n.DICT[lang][k] || k;
+// v8-2-plan T5: a motif that fell back (explain.js MATERIAL_ONLY) is still
+// sampled — what is measured is what motif.js would name, so the sentences
+// here are built with nothing held back
+X.MATERIAL_ONLY.length = 0;
 
 // --- small helpers ---------------------------------------------------------------
 function seeded(seed) {
@@ -397,6 +405,24 @@ async function games() {
   fs.closeSync(fd);
 }
 
+/**
+ * v8-2-plan T5: explain.js over the stored app rows again — the engine
+ * lines are the app pass's own, only the sentence (and so the motif) is
+ * today's. Rows keep their shape (a game stays {gid, rows}).
+ */
+async function explain() {
+  const redo = (x) => {
+    if (!x.played || (x.tag !== "?" && x.tag !== "??")) return x;
+    const ex = X.explainMistake({ fen: x.fen, played: x.played, best: x.best, bestLine: x.bestLine, line: x.line,
+      evalBefore: x.evalBefore, evalAfter: x.evalAfter }, Chess);
+    return Object.assign({}, x, { key: X.explainKey(ex), motif: X.explainMotif(ex),
+      zh: X.explainText(ex, tOf("zh-CN")), en: X.explainText(ex, tOf("en")) });
+  };
+  const out = readJsonl(arg("in")).map((r) => JSON.stringify(Array.isArray(r.rows) ? Object.assign({}, r, { rows: r.rows.map(redo) }) : redo(r)));
+  fs.writeFileSync(arg("out"), out.join("\n") + "\n");
+  console.log("explained " + out.length);
+}
+
 // --- judge ------------------------------------------------------------------------------
 /** Every app row with a named motif, games' rows unpacked. */
 function namedRows(files) {
@@ -516,7 +542,7 @@ async function report() {
   if (process.argv.includes("--record")) {
     const prev = readMeasured().motifPrecision || {};
     record("motifPrecision", Object.assign(prev, {
-      what: "教练说明里每个母题说对的比例（v8-1-plan T6）：真实对局的失误，按 app 的复盘预算重跑引擎与 explain.js，再用 3.7 倍节点（1,000,000）的深搜按判定规则逐条核对",
+      what: "教练说明里每个母题说对的比例（v8-1-plan T6）：真实对局的失误，按 app 的复盘预算重跑引擎与 explain.js，再用 3.7 倍节点（1,000,000）的深搜按判定规则逐条核对；长将、困子在 v8-2-plan T5 改了检测之后重抽（docs/motif-audit-8.2.md）",
       script: "scripts/sample-motifs.mjs（scan → app / games → judge → report）",
       sources: "Lichess 谜题库（database.lichess.org，每行是真实对局里走出的失着）+ scripts/fixtures/corpus.mjs + coach-games.mjs + src/sync-fixtures",
       appNodes: APP_NODES, deepNodes: DEEP_NODES, minPerMotif: MIN_PER_MOTIF, perMotif: PER_MOTIF, rule: "错误率 > 5% 的母题回退到只说子力得失（explain.js MATERIAL_ONLY）",
@@ -537,9 +563,12 @@ function writeDoc(file, all, res, order, rubric) {
     const x = res[m];
     parts.push(`| ${m} | ${x.n} | ${x.wrong} | ${x.errPct == null ? "—" : x.errPct + "%"} | ${x.fallback ? "**回退到只说子力**" : x.fallback == null ? "样本不足" : "保留"} |`);
   }
+  // --doc-motifs: the cases of these only (v8-2-plan T5 re-sampled two; the
+  // other seventeen are listed in the 8.1 document)
+  const listed = arg("doc-motifs") ? arg("doc-motifs").split(",") : order;
   for (const m of order) {
     const rs = all.filter((r) => r.motif === m);
-    if (!rs.length) continue;
+    if (!rs.length || !listed.includes(m)) continue;
     parts.push("", `### ${m}`, "", "判定规则：" + (rubric[m] || ""), "",
       "| # | 来源 | 标 | FEN（走之前） | 走的 | 说明（中文） | 判定 | 依据 |", "|---|---|---|---|---|---|---|---|");
     rs.forEach((r, i) => {
@@ -555,9 +584,9 @@ function writeDoc(file, all, res, order, rubric) {
   console.log("wrote " + path.relative(ROOT, file));
 }
 
-const STAGES = { scan, app, games, judge, rejudge, report };
+const STAGES = { scan, app, games, explain, judge, rejudge, report };
 if (!STAGES[STAGE]) {
-  console.error("usage: node scripts/sample-motifs.mjs scan|app|games|judge|report …  (see the header)");
+  console.error("usage: node scripts/sample-motifs.mjs scan|app|games|explain|judge|report …  (see the header)");
   process.exit(2);
 }
 await STAGES[STAGE]();

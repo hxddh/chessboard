@@ -111,7 +111,11 @@ const W = {
   p: ["兵", "pawn", "ポーン"], n: ["马", "knight", "ナイト"], b: ["象", "bishop", "ビショップ"],
   r: ["车", "rook", "ルーク"], q: ["后", "queen", "クイーン"], k: ["王", "king", "キング"],
   sep: ["、", ", ", "、"],
-  semi: ["；", "; ", "；"],
+  // a man and the men on the board, each a whole phrase (M3 评审: not glued)
+  man: ["{0}{1}", "{0} {1}", "{0}の{1}"],
+  whiteS: ["白", "White", "白"],
+  blackS: ["黑", "Black", "黒"],
+  men: ["白方 {0}；黑方 {1}", "White {0}; Black {1}", "白 {0}；黒 {1}"],
 };
 
 /** A seeded generator (runs.js's), so a set can be rebuilt from its seed. */
@@ -306,7 +310,7 @@ export function lineText(fen, sans) {
  */
 export function createVisualModes(d) {
   const {
-    store, t, tf, el, avail, setText, sync, Audio2, Chess, ChessRating, Srs, Progress, ALL_PUZZLES, mined,
+    store, t, tf, tdot, el, avail, setText, sync, Audio2, Chess, ChessRating, Srs, Progress, ALL_PUZZLES, mined,
     seatPuzzle, puzzleMove, puzzleHumanSide, puzzleRating, savePuzzleState, saveProgress, startRun, finishRun,
   } = d;
   const lang = () => LANG_AT[store.ui.langId] || 0;
@@ -316,7 +320,7 @@ export function createVisualModes(d) {
   };
   const sideW = (c) => w(c === "b" ? "black" : "white");
   /** "Black knight", 「黑马」, 「黒のナイト」 */
-  const manW = (pc) => (lang() === 1 ? sideW(pc.color) + " " + w(pc.type) : lang() === 2 ? sideW(pc.color) + "の" + w(pc.type) : sideW(pc.color).slice(0, 1) + w(pc.type));
+  const manW = (pc) => w("man", [w(pc.color === "b" ? "blackS" : "whiteS"), w(pc.type)]);
   const ratingText = (r) => Math.round(r.r) + (ChessRating.isProvisional(r) ? "?" : "");
 
   // worked out again only when the book grows (the mined set joining late)
@@ -382,7 +386,7 @@ export function createVisualModes(d) {
       const p = { id: "look:" + q.key, cat: "look", fen: q.start, solution: [], side: q.start.split(" ")[1], vq: q, review: !!key };
       run.used.push(p.id);
       seatPuzzle("look", k, p, run);
-      say(w("moves", [lineText(q.start, q.sans)]) + " " + asked(q));
+      say(tf("ui.pair", [w("moves", [lineText(q.start, q.sans)]), asked(q)]));
     } else {
       const pools2 = book().blind;
       let p = key ? pools2[0].concat(pools2[1]).find((x) => x.id === key) : blindPick(pools2, run.seed, k, run.lvl, run.used);
@@ -402,7 +406,7 @@ export function createVisualModes(d) {
         pz.hidden = true;
         if (store.session.puzzle === pz) { say(w("hidden")); sync(); }
       }, SHOW_MS);
-      say(blindGoal(p) + " " + w("pos", [menText(pz.g)]) + " " + w("showing"));
+      say(tf("ui.pair", [blindGoal(p), tf("ui.pair", [w("pos", [menText(pz.g)]), w("showing")])]));
     }
     sync();
     focusIn();
@@ -415,7 +419,7 @@ export function createVisualModes(d) {
     for (const row of g.board()) for (const x of row) if (x) out[x.color].push(x);
     const fmt = (xs) => xs.sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type) || (a.square < b.square ? -1 : 1))
       .map((x) => (x.type === "p" ? "" : x.type.toUpperCase()) + x.square).join(" ");
-    return sideW("w") + " " + fmt(out.w) + w("semi") + sideW("b") + " " + fmt(out.b);
+    return w("men", [fmt(out.w), fmt(out.b)]);
   }
   function blindGoal(p) {
     return w("qBlind", [sideW(new Chess(p.fen).turn()), t("pz.cat." + p.cat)]);
@@ -476,7 +480,7 @@ export function createVisualModes(d) {
     const next = pz.p.solution[pz.stage * 2];
     const mv = next ? probe.move(next) : null;
     if (mv) pz.helpArrow = { from: mv.from, to: mv.to };
-    settle(pz, false, (reason ? reason + " · " : "") + w("ansLine", [pz.p.solution.join(" ")]), pz.p.id, puzzleRating(pz.p).r + BLIND_PLUS);
+    settle(pz, false, tdot(reason, w("ansLine", [pz.p.solution.join(" ")])), pz.p.id, puzzleRating(pz.p).r + BLIND_PLUS);
   }
   /** 答案 (H): this one is given up. */
   function answer(pz) {
@@ -585,11 +589,11 @@ export function createVisualModes(d) {
     const done = pz ? pz.done : true;
     const q = pz && pz.p.vq;
     const head = run.over ? w("over", [run.score, run.k])
-      : w(kind === "look" ? "ruleLook" : "ruleBlind", [run.total]) + " · " + w("nth", [run.k, run.total])
-        + (pz && (pz.review || pz.p.review) ? " · " + w("review") : kind === "look" && q ? " · " + w("lvl", [q.n]) : "");
+      : tdot(w(kind === "look" ? "ruleLook" : "ruleBlind", [run.total]), w("nth", [run.k, run.total]),
+        pz && (pz.review || pz.p.review) ? w("review") : kind === "look" && q ? w("lvl", [q.n]) : "");
     setText(el("pz-run-head"), head);
-    setText(el("pz-run-best"), (run.over && run.newBest ? tf("run.newBest", [run.score]) : tf("run.best", [(store.session.puzzleState.runs || {})[kind] ? store.session.puzzleState.runs[kind].best : 0]))
-      + " · " + w("rating", [t("pz.cat." + kind), m.rating ? ratingText(m.rating) : "—"]));
+    setText(el("pz-run-best"), tdot(run.over && run.newBest ? tf("run.newBest", [run.score]) : tf("run.best", [(store.session.puzzleState.runs || {})[kind] ? store.session.puzzleState.runs[kind].best : 0]),
+      w("rating", [t("pz.cat." + kind), m.rating ? ratingText(m.rating) : "—"])));
     const moves = el("pz-vis-moves");
     const ask = el("pz-vis-q");
     if (q) {
@@ -598,7 +602,7 @@ export function createVisualModes(d) {
     } else if (pz) {
       const h = pz.g.history();
       setText(moves, pz.hidden ? (h.length ? w("played", [lineText(pz.p.fen, h)]) : "") : w("pos", [menText(new Chess(pz.p.fen))]));
-      setText(ask, blindGoal(pz.p) + " " + (pz.hidden ? w("hidden") : w("showing")));
+      setText(ask, tf("ui.pair", [blindGoal(pz.p), pz.hidden ? w("hidden") : w("showing")]));
       // the reply to a right first move of a mate in two: said, since it cannot be seen
       if (!pz.done && h.length > pz.said) {
         pz.said = h.length;

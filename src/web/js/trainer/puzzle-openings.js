@@ -13,6 +13,7 @@ import { ChessDrills as Drills } from "../drills.js";
 import { ChessOpeningCoach } from "../opening-coach.js";
 import { ChessOpeningTree } from "../opening-tree.js";
 import { CHESS_OPENING_NAMES } from "../openings.js";
+import { tdot } from "../tdot.js";
 
 /**
  * @param {object} d app.js's bag, the book (puzzle-book.js) and the trainer's verdicts
@@ -87,7 +88,7 @@ export function createPuzzleOpenings(d) {
       // there when you cannot. A repertoire line is a thing you decided to
       // play and are trying to remember, so being told which move that was is
       // the whole exercise, not the end of it.
-      puzzleWrong(pz.p.cat === "rep" ? why + " · " + tf("pz.repBook", [book]) : why);
+      puzzleWrong(pz.p.cat === "rep" ? tdot(why, tf("pz.repBook", [book])) : why);
       return true;
     }
     pz.stage++;
@@ -155,7 +156,7 @@ export function createPuzzleOpenings(d) {
     if (!pz.p.answers.includes(mv.san)) {
       const why = openingWhy(g, mv, pz.p.answers[0]);
       gradeCard(false);
-      puzzleWrong(why + " · " + tf("pz.repBook", [pz.p.answers.join(" / ")]));
+      puzzleWrong(tdot(why, tf("pz.repBook", [pz.p.answers.join(" / ")])));
       return true;
     }
     pz.stage++;

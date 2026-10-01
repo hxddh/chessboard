@@ -17,6 +17,7 @@
  * @module me-page
  */
 import { ChessProgressMetrics as Metrics } from "./progress-metrics.js";
+import { tdot } from "./tdot.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -154,7 +155,7 @@ export function createMePage(d) {
       tip.className = "ach-next";
       const nm = next.ach.nameKey ? t(next.ach.nameKey) : next.ach.name;
       const desc = next.ach.descKey ? t(next.ach.descKey) : next.ach.desc;
-      tip.textContent = t("ach.next") + nm + " · " + desc;
+      tip.textContent = tf("ach.nextOf", [nm, desc]);
       el.appendChild(tip);
     }
     const groups = [];
@@ -168,7 +169,7 @@ export function createMePage(d) {
     for (const [key, rows, foldable] of groups) {
       const h = document.createElement("div");
       h.className = "ach-group";
-      h.textContent = t(key) + " " + rows.length;
+      h.textContent = tf("ui.pair", [t(key), rows.length]);
       el.appendChild(h);
       const fold = foldable && rows.length > ACH_FOLD_AT && !store.session.achAll;
       renderAchRows(fold ? rows.slice(0, ACH_FOLD_AT) : rows, res, el);
