@@ -179,6 +179,14 @@ async function runLive() {
   console.log("假同步服务器：" + fake.base);
   const reports = {};
   const extra = { latency: {}, frames: null, launches: {} };
+  /**
+   * A launch whose page wrote no report at all says the page is not running
+   * (the first Windows run, §9 M4: no page-side bridge call, one frame, and
+   * every launch waited out its limit until the job's own limit cancelled
+   * it). The rest would only wait the same way, so they are not launched.
+   */
+  let silentAt = null;
+  const notLaunched = [];
 
   /**
    * One launch of one scenario: `during(app, reportNow)` runs once the app
@@ -187,6 +195,7 @@ async function runLive() {
    */
   async function scenario(name, during) {
     if (only && !only.includes(name)) return null;
+    if (silentAt) { notLaunched.push(name); return null; }
     const out = path.join(work, "report-" + name + ".json");
     fs.rmSync(out, { force: true });
     dropbox(work).reset();
@@ -216,6 +225,7 @@ async function runLive() {
     }
     extra.launches[name] = Object.assign(extra.launches[name] || {}, { ms: Date.now() - t0 });
     reports[name] = report;
+    if (!report && !silentAt) silentAt = name;
     if (report) {
       for (const [k, c] of Object.entries(report.checks || {})) check(name + ":" + k, c.pass, c.pass ? JSON.stringify(c) : c.err);
     }
@@ -312,6 +322,9 @@ async function runLive() {
     }
   });
 
+  if (notLaunched.length) {
+    check("page:silent", false, "页面在 " + silentAt + " 的启动里一份报告都没写（页面没在运行？），其后 " + notLaunched.length + " 个场景没有再启动：" + notLaunched.join("、"));
+  }
   await fake.close();
   fs.rmSync(work, { recursive: true, force: true });
   finish(Object.assign(extra, { reports }));

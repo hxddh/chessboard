@@ -7163,6 +7163,12 @@ for (const lang of CONTENT_LANGS) {
       rel + ": the automation job packages into dist-auto/ and uploads no package (only its report)");
     assert(/timeout-minutes: 20\b/.test(a), rel + ": the automation job has its 20-minute limit");
     assert(/node scripts\/automation-smoke\.mjs/.test(a) && /node scripts\/automation-scenarios\.mjs/.test(a), rel + ": the automation job runs the smoke test and the scenarios");
+    // §9 M4: a job its own limit stops ends "cancelled", which continue-on-error
+    // does not cover and which skips `publish`; a step's limit ends it "failed"
+    for (const step of ["automation smoke", "automation scenarios"]) {
+      const lim = /^\s*timeout-minutes: (\d+)/m.exec(a.slice(a.indexOf("name: " + step)).split(/\n      - /)[0]);
+      assert(lim && +lim[1] < 20, rel + ": the `" + step + "` step has its own limit under the job's 20 minutes");
+    }
   }
   const rel = code(".github/workflows/release.yml");
   assert(/pattern: Chessboard-\*/.test(rel) && (rel.match(/uses: actions\/download-artifact@/g) || []).length === 1,
