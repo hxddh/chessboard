@@ -454,7 +454,9 @@ async function bootRepertoire(d) {
   }
 
   return {
-    fresh: r.fresh,
+    // v8-2-plan T4: and the header is the one this build would write — an
+    // 8.1 header (no `ln`), or one an older build rewrote, is owed a rewrite
+    fresh: r.fresh && raw === JSON.stringify(head()),
     migrated: r.migrating && !!raw,
     seeded: r.seeded,
     recovered: r.recovered,

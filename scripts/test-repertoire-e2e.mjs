@@ -609,11 +609,14 @@ let big = null;
   let h = await waitFor(page, header, (x) => x && x.ln === 2000, 30000);
   const took = Date.now() - t0;
   assert(h && h.ln === 2000 && h.w.length === 400 && h.db === 2, `导入 2000 条：一条不丢（8.1 只留 400 条）；头上留前 400 条、ln 2000（${took} ms）`, JSON.stringify(h && { ln: h.ln, w: h.w.length }));
-  let idb = await idbRecords(page);
+  // the lines land after the header (one write behind the records)
+  let idb = await waitFor(page, idbRecords, (x) => x && x.lines && x.lines.length === 2000, 15000);
   const stored = bookOfRows(idb.lines);
   assert(stored.w.length === 2000 && stored.w.map((l) => l.sans).join("|") === LINES.join("|") && idb.rows.length === h.n,
     "lines 表里 2000 条、按导入的先后；记录数与头上一致", JSON.stringify({ lines: stored.w.length, recs: idb.rows.length, n: h.n }));
-  assert(JSON.stringify(h.w) === JSON.stringify(stored.w.slice(0, 400)) && h.w.every((l) => l.id && typeof l.sans === "string" && l.sans),
+  // (by id and moves: the ECO names may be filled in between the two reads)
+  const ids = (ls) => ls.map((l) => l.id + "=" + l.sans).join("|");
+  assert(ids(h.w) === ids(stored.w.slice(0, 400)) && h.w.every((l) => l.id && typeof l.sans === "string" && l.sans),
     "降级用的副本：头上的 400 条就是书里最早的 400 条，8.0 / 8.1 的 loadBook 条条认得");
   assert(/2000/.test(await page.textContent("#rep-meta")), "记录页说 2000 条", await page.textContent("#rep-meta"));
   // 复习：到期的第一张（起始局面），在棋盘上答
@@ -649,7 +652,7 @@ let big = null;
   }, [gone.id, added]);
   await page.reload();
   await ready(page);
-  h = await header(page);
+  h = await waitFor(page, header, (x) => x && x.ln === 2000, 10000);
   idb = await idbRecords(page);
   const after = bookOfRows(idb.lines).w;
   assert(after.length === 2000 && !after.some((l) => l.id === gone.id) && after.some((l) => l.sans === "e4 e5 Ke2") && after.some((l) => l.sans === LINES[1999]) && h.ln === 2000,
@@ -751,7 +754,7 @@ let big = null;
   await page.reload();
   await ready(page);
   h = await header(page);
-  let idb = await idbRecords(page);
+  let idb = await waitFor(page, idbRecords, (x) => x && x.lines && x.lines.length === 453, 10000);
   assert((await mode()) === "idb" && idb.lines.length === 453 && h.w.length === 400 && h.ln === 453 && !h.lf,
     "IndexedDB 回来：453 条进 lines 表，头上只留 400 条副本", JSON.stringify({ lines: idb.lines && idb.lines.length, w: h.w.length, ln: h.ln }));
   // 又没有了：头上的 400 条够不着后面的线——这次什么都不写，改动记在头上
@@ -766,7 +769,7 @@ let big = null;
   await page.evaluate(() => sessionStorage.setItem("noIdb", "0"));
   await page.reload();
   await ready(page);
-  idb = await idbRecords(page);
+  idb = await waitFor(page, idbRecords, (x) => x && x.lines && x.lines.length === 454, 10000);
   const w = bookOfRows(idb.lines).w;
   assert(w.length === 453 && w.some((l) => l.sans === "e4 e5 Ke2") && w.some((l) => l.sans === LINES[449]),
     "IndexedDB 回来：那一条叠进整本书，后面的线一条不少", String(w.length));
