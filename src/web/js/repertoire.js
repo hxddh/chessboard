@@ -25,8 +25,16 @@
  */
 import { ChessDrills } from "./drills.js";  // hash36: one id scheme in this app
 
-/** Lines per side. A repertoire this size is already more than anyone drills. */
-const MAX_LINES = 400;
+/**
+ * Lines per side. 400 until 8.1, while the lines lived only in the
+ * localStorage header; v8-2-plan T4 moved them into IndexedDB (rep-lines.js)
+ * and this is now a guard, not a budget. It is the by-position records that
+ * grow (rep-book.js, one per position, both FEN keys stored): measured on
+ * 16-ply lines branching at random, 2,000 lines → 17,700 records, 5.6 MB,
+ * indexed in 0.3 s; 5,000 → 42,500 records, 13.5 MB, 0.7 s — and an edit
+ * indexes its side again. 20,000 would be ~54 MB and ~3 s an edit.
+ */
+const MAX_LINES = 5000;
 /** Plies deep enough to be a line rather than a first move. */
 const MIN_PLIES = 2;
 /** Longest path this will follow — a whole annotated game is not a line. */
