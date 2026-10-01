@@ -28,6 +28,9 @@
  *                                           at the review budget, the tags,
  *                                           explain.js's sentence
  *   games --out=app-games.jsonl             the same over the repo's games
+ *   explain --in=app.jsonl --out=app2.jsonl the app's sentence again from the
+ *                                           stored engine lines (no engine),
+ *                                           after motif.js changed
  *   judge --in=a.jsonl,b.jsonl --out=judged.jsonl
  *                                           the sample (≤ PER_MOTIF per motif,
  *                                           seeded) against the deep search
@@ -64,6 +67,10 @@ const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/review.js", "src/
   "src/web/js/i18n.js", "src/web/js/explain.js"]);
 const { Chess, ChessReview: Review, ChessExplain: X, ChessI18n } = ctx;
 const tOf = (lang) => (k) => ChessI18n.DICT[lang][k] || k;
+// v8-2-plan T5: a motif that fell back (explain.js MATERIAL_ONLY) is still
+// sampled — what is measured is what motif.js would name, so the sentences
+// here are built with nothing held back
+X.MATERIAL_ONLY.length = 0;
 
 // --- small helpers ---------------------------------------------------------------
 function seeded(seed) {
@@ -397,6 +404,24 @@ async function games() {
   fs.closeSync(fd);
 }
 
+/**
+ * v8-2-plan T5: explain.js over the stored app rows again — the engine
+ * lines are the app pass's own, only the sentence (and so the motif) is
+ * today's. Rows keep their shape (a game stays {gid, rows}).
+ */
+async function explain() {
+  const redo = (x) => {
+    if (!x.played || (x.tag !== "?" && x.tag !== "??")) return x;
+    const ex = X.explainMistake({ fen: x.fen, played: x.played, best: x.best, bestLine: x.bestLine, line: x.line,
+      evalBefore: x.evalBefore, evalAfter: x.evalAfter }, Chess);
+    return Object.assign({}, x, { key: X.explainKey(ex), motif: X.explainMotif(ex),
+      zh: X.explainText(ex, tOf("zh-CN")), en: X.explainText(ex, tOf("en")) });
+  };
+  const out = readJsonl(arg("in")).map((r) => JSON.stringify(Array.isArray(r.rows) ? Object.assign({}, r, { rows: r.rows.map(redo) }) : redo(r)));
+  fs.writeFileSync(arg("out"), out.join("\n") + "\n");
+  console.log("explained " + out.length);
+}
+
 // --- judge ------------------------------------------------------------------------------
 /** Every app row with a named motif, games' rows unpacked. */
 function namedRows(files) {
@@ -555,9 +580,9 @@ function writeDoc(file, all, res, order, rubric) {
   console.log("wrote " + path.relative(ROOT, file));
 }
 
-const STAGES = { scan, app, games, judge, rejudge, report };
+const STAGES = { scan, app, games, explain, judge, rejudge, report };
 if (!STAGES[STAGE]) {
-  console.error("usage: node scripts/sample-motifs.mjs scan|app|games|judge|report …  (see the header)");
+  console.error("usage: node scripts/sample-motifs.mjs scan|app|games|explain|judge|report …  (see the header)");
   process.exit(2);
 }
 await STAGES[STAGE]();

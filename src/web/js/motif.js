@@ -429,7 +429,35 @@ function dPerpetual(c) {
   if (sign * o.evalBefore < 150 || Math.abs(o.evalAfter) > 15) return null;
   const mine = c.L.moves.filter((m) => m.color === c.A);
   if (c.L.moves.length < 3 || mine.length < 2 || !mine.every((m) => /[+#]$/.test(m.san))) return null;
-  return { motif: "perpetual" };
+  // v8-2-plan T5: a run of checks in a level line is not yet a perpetual —
+  // 8.1's sample had the king walk out (…Kf8 Rxh7) and a draw by other means.
+  // Proved on the board: after the line's first check, whatever the king
+  // does, a check brings a position back
+  const g = load(c.Chess, c.fen);
+  g.move(c.L.moves[0]);
+  return forever(g, [c.fen.split(" ", 2).join()], 5, { n: 3000 }, true) ? { motif: "perpetual" } : null;
+}
+/**
+ * `g` after a check (`def`: the defender on move) or before one: can the
+ * checking side keep on checking until a position on `seen` comes back?
+ * Within `d` more checks and `b.n` positions — past that, no.
+ */
+function forever(g, seen, d, b, def) {
+  const k = g.fen().split(" ", 2).join();
+  if (!def && seen.includes(k)) return true;
+  if (--b.n < 0 || !d) return false;
+  seen.push(k);
+  // the defender: every reply (none at all: mate); the checker: one check that works
+  let ok = def;
+  for (const m of g.moves({ verbose: true })) {
+    if (!def && !/[+#]/.test(m.san)) continue;
+    g.move(m);
+    const r = forever(g, seen, d - !def, b, !def);
+    g.undo();
+    if (r !== def) { ok = r; break; }
+  }
+  seen.pop();
+  return ok;
 }
 
 /** A line piece unmasked by the move: check, double check, or attack. */
@@ -643,6 +671,9 @@ function dTrapped(c) {
     let ms = [];
     try { ms = g.moves({ square: t, verbose: true }) || []; } catch (_) { ms = []; }
     if (!ms.length) continue;               // no move at all is a pin or a wall, not this
+    // v8-2-plan T5: nor is a man whose king takes its squares away — all
+    // three of 8.1's wrong 困子 were queens pinned to the king (…Qxd4 Bc5)
+    if (g.moves({ square: t, legal: false }).length > ms.length) continue;
     const everywhere = ms.every((mv) => {
       if (mv.captured && VALUE[mv.captured] >= VALUE[p.type]) return false;
       g.move(mv);
