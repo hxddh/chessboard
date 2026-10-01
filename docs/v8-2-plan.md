@@ -1049,3 +1049,13 @@
   - CI 已覆盖 9 条：R5（部分）、R6、R6a、R7、R8、R9、R11、R17、R18。M1 的表里 R10（Windows runner 上真取 lichess.org）和 R16（导出导入全部数据）这次没做，留给人。
   - 只能人看的收成「8.2 真机路线（30 分钟）」：图标、原生对话框本身（含中文路径）、60 fps 手感、Windows 顶部拖动区实验（可选）、真账号同步。macOS、Windows 各约 15 分钟。
   - 菜单（不在 R1–R19 里）：B1 的目录和 B2–B5 的命令路径由 automation 覆盖；按键匹配（⌘N 这类）automation 碰不到，仍是清单 B 节的人工项。
+
+#### 合并（分支 m24int = m24-fix + m24-v1）
+
+- **V1 的 Zig 改动按拆分后的归属重放**（V1 改的是拆分前的 `main.zig`；`main.zig` 仍只是入口与装配）：
+  - `sync.zig`：`JobSpec.sync_base`；`syncWork` 外套 `RebaseGetter`；`SYNC_HOSTS` / `syncBaseOf` / `syncBase`（`pub`）/ `rebaseUrl` / `RebaseGetter` 接在 `syncWork` 后面；`fetchGames` 传 `.sync_base`；`rebaseUrl`、经 StubGetter 的整次同步、真实 http 回环三条测试和 `OneShotServer` 接在 T4 测试后面。
+  - `bridge.zig` 自检一节：`selftestOn` 改 `pub`（`syncBase` 要用）；`selftestScenario`、`selftestModeAnswer` 新增，`selftestMode` 改用后者；`selftestReport` 有场景时答 `{"written":true}` 不退出；「两个变量只在自检模式下生效」那条测试放在 `selftestReport` 后面（它同时查 `syncBase`，从 `sync.zig` 引入）。
+  - `runner.zig`、`build.zig` V1 没动，`docs/sdk-fork.json` 不用加登记；`sdk-diff`（v0.10.1）无输出、退出码 0；`manifest-check.mjs --sdk` 通过（V1 没有按路径读 `main.zig` 的守卫，它读 `src/` 全部 `.zig`）。
+- **真机路线**：m24-fix 的「8.2 修正，需真机确认」X1、X2 并进「8.2 真机路线（30 分钟）」，作 macOS 第 6 步、Windows 第 6 步（拖动区实验顺延为第 7 步），两平台各约 17 分钟，合计略超 30 分钟，标题沿用 §8 第 8 条的说法。
+- **app.js 行数上限** 5,873 → 5,754（现在的行数）。
+- **验证**：`zig build test -Dplatform=null` 75/75（应用 68 = 64 + V1 的 4，runner 7）；x86_64-windows ReleaseFast exe 链接通过（4,318,208 字节，`.rsrc` 仍只有 `RT_MANIFEST` #1，1,752 字节）；aarch64-macos object 构建通过；null 平台 automation 构建上 `automation-smoke.mjs --null` 与 `automation-scenarios.mjs --null`（4 项）全绿；主包 907,245 字节；`test:static`（`NATIVE_SDK_PATH` = 0.10.1）通过；selftest-e2e、engine-e2e（26）、sync-e2e（80）、repertoire-e2e（133）全过。
