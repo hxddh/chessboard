@@ -98,7 +98,7 @@
       "ob.knowSub": "Play Stockfish; the difficulty row in the side panel changes it any time",
       "ob.later": "Just show me the board", "ob.recommended": "Recommended",
       // post-game review (rv.*)
-      "rv.title": "Game review",
+      "rv.title": "Game review", "rv.dot": "  ·  ",
       // "what next?" line under the statistics (rec.*)
       "rec.lessons": "{1:lesson|lessons} still to go (you have finished {0}) \u2014 finish the course, then come back to play",
       "rec.harder": "You are winning nearly everything \u2014 time to try the \u201c{0}\u201d level",
@@ -345,7 +345,7 @@
       "pz.goalMine": "In the game you played {0} — find the stronger move",
       "pz.mineCost": "it cost {0} pawns",
       "pz.mineName": "Mistake {0} · move {1}",
-      "pz.mine.repeatWhy": "That is exactly the move that lost the game its edge —— {0}",
+      "pz.mine.repeat": "That is exactly the move that lost the game its edge", "pz.mine.repeatWhy": "That is exactly the move that lost the game its edge —— {0}",
       "pz.mine.stronger": "The engine has a stronger move here",
       "pz.mine.whyLoss": "In the game, {0} cost about {1} pawns.", "pz.mine.whyLine": "After {0} the line runs roughly {1}.",
       "pz.mine.alsoFine": "{0} works too — only {1} pawns short of the best move", "pz.mine.strongerCost": "The engine has a stronger move here —— {0} pawns worse than the best move",
@@ -409,7 +409,7 @@
       "pz.smart.motif": "You keep missing {0}s — here is one",
       "pz.line": "Then", "pz.lineStart": "Start",
       "pz.smart.explore": "Trying \u201c{0}\u201d \u2014 barely touched yet",
-      "pz.smart.rated": "A puzzle at your level ({0})", "pz.rating": "Rating", "pz.ratingOf": "Rated {0}", "rec.ratingIs": "Puzzle rating {0}", "rec.ratingRd": "±{0}", "aria.trendRating": "Puzzle rating trend", "tip.trendRating": "Your rating after each of the last 60 first attempts",
+      "pz.smart.rated": "A puzzle at your level ({0})", "pz.rating": "Rating", "pz.ratingOf": "Rated {0}", "rec.rating": "Puzzle rating", "rec.ratingRd": "±{0}", "aria.trendRating": "Puzzle rating trend", "tip.trendRating": "Your rating after each of the last 60 first attempts",
       "rec.due": "Reviews due {0} · tomorrow {1}",
       "study.part": "Classic games", "study.head": "Reading a game", "study.intro": "{0}, {1} · {2} · result {3}. Step through with ← →; the notes appear with the moves, and you can try another move at any point.", "study.ofNoNote": "Move {0} · {1} (no note on this move)", "study.ofNote": "Move {0} · {1} —— {2}",
       "pz.smart.done": "The whole book is solved \u2014 nothing left to recommend",

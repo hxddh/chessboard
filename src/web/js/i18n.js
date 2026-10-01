@@ -128,7 +128,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "ob.knowSub": "与 Stockfish 对弈，难度可随时在侧栏调整",
       "ob.later": "先看看棋盘", "ob.recommended": "推荐",
       // post-game review (rv.*)
-      "rv.title": "对局回顾",
+      "rv.title": "对局回顾", "rv.dot": "  ·  ",
       // "what next?" line under the statistics (rec.*)
       "rec.lessons": "教学还剩 {1} 课未完成（已完成 {0}）—— 打好基础再回来对弈",
       "rec.harder": "近几局几乎全胜 —— 可以试试「{0}」难度了",
@@ -375,7 +375,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "pz.goalMine": "实战里你走了 {0} —— 找出更强的一手",
       "pz.mineCost": "当时亏 {0} 分",
       "pz.mineName": "错题 {0} · 第 {1} 手",
-      "pz.mine.repeatWhy": "这正是实战里丢分的那一手 —— {0}",
+      "pz.mine.repeat": "这正是实战里丢分的那一手", "pz.mine.repeatWhy": "这正是实战里丢分的那一手 —— {0}",
       "pz.mine.stronger": "引擎在这里另有更强的一手",
       "pz.mine.whyLoss": "实战的 {0} 亏了约 {1} 分。", "pz.mine.whyLine": "{0} 之后大致是 {1}。",
       "pz.mine.alsoFine": "{0} 也成立 —— 与最佳着只差 {1} 分", "pz.mine.strongerCost": "引擎在这里另有更强的一手 —— 比最佳着亏 {0} 分",
@@ -440,7 +440,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "pz.smart.motif": "「{0}」是你反复错的母题 —— 来一道",
       "pz.line": "接下来", "pz.lineStart": "题面",
       "pz.smart.explore": "去还没怎么练过的「{0}」看看",
-      "pz.smart.rated": "一道和你评级相当的题（{0}）", "pz.rating": "评级", "pz.ratingOf": "评级 {0}", "rec.ratingIs": "做题评级 {0}", "rec.ratingRd": "±{0}", "aria.trendRating": "做题评级走势", "tip.trendRating": "最近 60 次首答后的评级",
+      "pz.smart.rated": "一道和你评级相当的题（{0}）", "pz.rating": "评级", "pz.ratingOf": "评级 {0}", "rec.rating": "做题评级", "rec.ratingRd": "±{0}", "aria.trendRating": "做题评级走势", "tip.trendRating": "最近 60 次首答后的评级",
       "rec.due": "复习到期 {0} · 明天 {1}",
       "study.part": "名局", "study.head": "读棋", "study.intro": "{0}，{1} 年 · {2} · 结果 {3}。用 ← → 逐着读，注释随着法出现；随时可以走别的着法试试。", "study.ofNoNote": "第 {0} 手 · {1} （这一手没有注释）", "study.ofNote": "第 {0} 手 · {1} —— {2}",
       "pz.smart.done": "全书都做完了 —— 没有可推荐的了",

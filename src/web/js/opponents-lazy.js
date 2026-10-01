@@ -12,6 +12,7 @@
  * @module opponents-lazy
  */
 import { loadChunk } from "./chunk.js";
+import { tdot } from "./tdot.js";
 
 const CHUNK = { file: "chunk-opponents.js", global: "CHESS_OPPONENTS" };
 
@@ -80,7 +81,7 @@ export function createOpponentsLazy(d) {
     ? requestAnimationFrame(() => setTimeout(fn, 0)) : setTimeout(fn, 0));
   later(() => loadChunk(CHUNK.file, CHUNK.global).then((m) => {
     mod = m;
-    ui = m.createOpponentsUI(Object.assign({}, d, { rating: () => m.Opponents.ratingOfStats(d.loadStats()) }));
+    ui = m.createOpponentsUI(Object.assign({}, d, { tdot, rating: () => m.Opponents.ratingOfStats(d.loadStats()) }));
     ui.mount();
     ui.wireOffer();
     flushLate();

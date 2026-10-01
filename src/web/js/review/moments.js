@@ -26,7 +26,7 @@
  */
 export function createMoments(d) {
   const {
-    doc, store, t, tf, sideName, analysisFor, sanHistory, startFen, boardMoveNo, setViewIndex, writeSan,
+    doc, store, t, tf, tdot, sideName, analysisFor, sanHistory, startFen, boardMoveNo, setViewIndex, writeSan,
     inModal, Retry, Grade,
   } = d;
   const document = doc;
@@ -122,7 +122,7 @@ export function createMoments(d) {
     head.onclick = () => setViewIndex(m.ply + 1);
     const what = document.createElement("span");
     what.className = "km-what";
-    what.textContent = sideName(m.side) + " · " + t(Grade.LABEL[m.grade]);
+    what.textContent = tdot(sideName(m.side), t(Grade.LABEL[m.grade]));
     const win = document.createElement("p");
     win.className = "km-win num";
     win.textContent = tf("rv.km.win", [Math.round(m.before), Math.round(m.after)]);

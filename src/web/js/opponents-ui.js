@@ -21,7 +21,7 @@ import { OP_LINES } from "./opponents-lines.js";
  * @param {object} d what this module borrows from app.js
  */
 export function createOpponentsUI(d) {
-  const { doc, store, t, tf, setText, repaint, saveSettings, diffName } = d;
+  const { doc, store, t, tf, tdot, setText, repaint, saveSettings, diffName } = d;
   const el = (id) => doc.getElementById(id);
   /** the personas' words (opponents-lines.js), in the interface's language */
   const L = () => OP_LINES[d.lang()] || OP_LINES["zh-CN"];
@@ -185,12 +185,12 @@ export function createOpponentsUI(d) {
   function strip(level, style) {
     const p = Opponents.personaFor(level, style);
     const r = Opponents.ratingOf(level);
-    const bits = [diffName(level) + (r ? " " + r : "")];
+    const bits = [r ? tf("ui.pair", [diffName(level), r]) : diffName(level)];
     if (style && style !== "off") bits.push(styleName(style));
     return {
       icon: p ? p.icon : "bot",
       name: p ? nameOf(p) : "Stockfish",
-      level: bits.join(" · "),
+      level: tdot(...bits),
     };
   }
 
@@ -222,7 +222,7 @@ export function createOpponentsUI(d) {
     const delta = now - Math.round(filed.before ? filed.before.r : ChessRating.DEFAULT.r);
     const parts = [tf("go.rating", [fmtRating(filed.after), delta > 0 ? "+" + delta : delta < 0 ? "−" + -delta : "±0"])];
     if (filed.perf != null) parts.push(tf("go.perf", [filed.perf]));
-    return parts.join(" · ");
+    return tdot(...parts);
   }
   function adviceLine(filed, level) {
     if (!filed || !filed.advice) return "";

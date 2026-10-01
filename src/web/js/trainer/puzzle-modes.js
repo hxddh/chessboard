@@ -32,6 +32,7 @@ import { ChessRating } from "../rating.js";
 import { THEME_IDS, themesOf, themeRecord, attemptsIn, filterThemes } from "./themes.js";
 import { ChessRuns as Runs } from "./runs.js";
 import { VIS_KINDS } from "./visual.js";
+import { tdot } from "../tdot.js";
 
 /** A theme's category id in the puzzle state: "theme:fork". */
 export const THEME_CAT = "theme:";
@@ -218,7 +219,7 @@ export function createPuzzleModes(d) {
       b.textContent = r.name;
       const sub = doc.createElement("span");
       sub.className = "pick-sub";
-      sub.textContent = tf("theme.sub", [r.n, r.tried]) + (r.rating ? " · " + tf("pz.ratingOf", [ratingText(r.rating)]) : "");
+      sub.textContent = tdot(tf("theme.sub", [r.n, r.tried]), r.rating ? tf("pz.ratingOf", [ratingText(r.rating)]) : "");
       b.appendChild(sub);
       return b;
     }));
@@ -407,7 +408,7 @@ export function createPuzzleModes(d) {
     const v = el("pz-rating-v");
     const theme = !run && isThemeCat(cat) ? cat.slice(THEME_CAT.length) : null;
     const tr = theme ? themeRating(theme) : null;
-    setText(v, ratingText(seenRating()) + (theme ? " · " + themeName(theme) + " " + (tr ? ratingText(tr) : "—") : ""));
+    setText(v, tdot(ratingText(seenRating()), theme && tf("ui.pair", [themeName(theme), tr ? ratingText(tr) : "—"])));
     if (v) v.title = ChessRating.isProvisional(seenRating()) ? tf("rec.ratingRd", [Math.round(seenRating().rd)]) : "";
     const cv = el("pz-rating-curve");
     if (cv && cv.clientWidth) {

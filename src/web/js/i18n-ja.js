@@ -98,7 +98,7 @@
       "ob.knowSub": "Stockfish と対局します。強さはサイドパネルでいつでも変更できます",
       "ob.later": "まず盤を見る", "ob.recommended": "おすすめ",
       // post-game review (rv.*)
-      "rv.title": "対局レビュー",
+      "rv.title": "対局レビュー", "rv.dot": "  ·  ",
       // "what next?" line under the statistics (rec.*)
       "rec.lessons": "レッスンはあと {1} 課（修了 {0} 課）—— 基礎を固めてから対局に戻りましょう",
       "rec.harder": "最近はほぼ全勝です —— 「{0}」の強さに挑戦してみましょう",
@@ -345,7 +345,7 @@
       "pz.goalMine": "実戦では {0} と指しました —— より強い一手を探してください",
       "pz.mineCost": "損失 {0} ポーン",
       "pz.mineName": "失着 {0} · {1} 手目",
-      "pz.mine.repeatWhy": "それこそ実戦で形勢を失った一手です —— {0}",
+      "pz.mine.repeat": "それこそ実戦で形勢を失った一手です", "pz.mine.repeatWhy": "それこそ実戦で形勢を失った一手です —— {0}",
       "pz.mine.stronger": "ここではエンジンにより強い一手があります",
       "pz.mine.whyLoss": "実戦の {0} は約 {1} 点の損でした。", "pz.mine.whyLine": "{0} のあとはおおむね {1} と進みます。",
       "pz.mine.alsoFine": "{0} でも成立します —— 最善手との差は {1} 点だけ", "pz.mine.strongerCost": "ここではエンジンにより強い一手があります —— 最善手より {0} 点の損",
@@ -409,7 +409,7 @@
       "pz.smart.motif": "「{0}」は繰り返し間違えているテーマです —— 一問どうぞ",
       "pz.line": "続き", "pz.lineStart": "出題図",
       "pz.smart.explore": "まだ手つかずの「{0}」へ",
-      "pz.smart.rated": "あなたのレーティングに合った問題（{0}）", "pz.rating": "レーティング", "pz.ratingOf": "レーティング {0}", "rec.ratingIs": "パズルのレーティング {0}", "rec.ratingRd": "誤差 ±{0}", "aria.trendRating": "パズルレーティングの推移", "tip.trendRating": "直近 60 回の初回解答後のレーティング",
+      "pz.smart.rated": "あなたのレーティングに合った問題（{0}）", "pz.rating": "レーティング", "pz.ratingOf": "レーティング {0}", "rec.rating": "パズルのレーティング", "rec.ratingRd": "誤差 ±{0}", "aria.trendRating": "パズルレーティングの推移", "tip.trendRating": "直近 60 回の初回解答後のレーティング",
       "rec.due": "復習の期限 {0} · 明日 {1}",
       "study.part": "名局を読む", "study.head": "棋譜を読む", "study.intro": "{0}、{1} 年 · {2} · 結果 {3}。← → で一手ずつ読み進めると注釈が現れます。いつでも別の手を試せます。", "study.ofNoNote": "{0} 手目 · {1} （この手に注釈はありません）", "study.ofNote": "{0} 手目 · {1} —— {2}",
       "pz.smart.done": "全問クリア \u2014 おすすめできる問題がありません",

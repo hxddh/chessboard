@@ -41,7 +41,7 @@ export function masterChunk(i) {
  * @param {Array} bookLines openings.js's lines, from the bundle
  */
 export function createExplorerUI(d, bookLines) {
-  const doc = document, { store, t, tf } = d;
+  const doc = document, { store, t, tf, tdot } = d;
   const M = EXPLORER_MASTERS;
   // M5: C1's position index (d.library = LibraryUI) answers, the replay only without it
   const lib = X.librarySource(() => store.session.library, d.library, () => render());
@@ -105,7 +105,7 @@ export function createExplorerUI(d, bookLines) {
     btn.className = "xp-row";
     btn.dataset.san = r.san;
     const [w, dr, b] = X.percents(r);
-    const name = r.san + (r.book ? " · " + t("xp.book") : "") + (r.mine ? " · " + t("xp.mine") : "");
+    const name = tdot(r.san, r.book ? t("xp.book") : "", r.mine ? t("xp.mine") : "");
     // a book move no game played is read as just that: the move, 书
     btn.setAttribute("aria-label", r.n ? tf("xp.row", [name, r.n, w, dr, b]) : name);
     const san = doc.createElement("span");
@@ -173,7 +173,7 @@ export function createExplorerUI(d, bookLines) {
       // past the tree's depth (M.plies) there is simply nothing, and it says so
       msg = m.wait ? "…" : !out.length ? t("xp.none")
         // the source, the rating floor and the licence are the same words in every language
-        : "Lichess " + M.source.slice(-7) + " · ≥ " + M.minElo + " · " + tf("lib.count", [M.games]) + " · CC0";
+        : tdot("Lichess " + M.source.slice(-7), "≥ " + M.minElo, tf("lib.count", [M.games]), "CC0");
     } else {
       out = lib.movesAt(key, pos.fen());
       // the index answers within the task; what is on screen stays until then

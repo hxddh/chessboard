@@ -35,6 +35,7 @@ import { ChessReview } from "./review.js";
 import { motifOf } from "./motif.js";
 import { reconcile } from "./keyed.js";
 import { prefetchSummary, LIBDB_CHUNK } from "./library-sum.js";
+import { tdot } from "./tdot.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -181,7 +182,7 @@ export function createLibraryUI(d) {
     // boot goes now, and the list from the summary is in the first frame
     const start = typeof globalThis !== "undefined" && globalThis[LIBDB_CHUNK.global] ? (fn) => fn() : later;
     start(() => loadChunk(LIBDB_CHUNK.file, LIBDB_CHUNK.global).then((m) => (charts = m.createDiagCharts({ doc, t, tf, judgeColours, libMoveNo }))
-      && m.bootLibrary(Object.assign({}, d, {
+      && m.bootLibrary(Object.assign({}, d, { tdot,
       // handed over once: its reply holds the whole summary text (M4 评审)
       summary: ((p) => { libSumPre = null; return p; })(libSumPre),
       onSummary: (c) => { libEarly = c; renderLibrary(); },
@@ -564,7 +565,7 @@ export function createLibraryUI(d) {
       if (done && mined) toast(tf("lib.minedDone", [done, mined]));
       if (done && !store.ui.appForeground) {
         Host.notify({ id: "chess.library", title: t("ntf.libraryTitle"),
-          body: tf("ntf.libraryDone", [done]) + (mined ? " · " + tf("msg.mined", [mined]) : "") });
+          body: tdot(tf("ntf.libraryDone", [done]), mined ? tf("msg.mined", [mined]) : "") });
       }
     }
   }
@@ -647,8 +648,7 @@ export function createLibraryUI(d) {
         body.replaceChildren(row);
       }
       setText(row.children[0], tf("lib.claimed", [claimed]));
-      setText(row.children[1], [tf("lib.analysed", [analysed.length]), queued ? tf("lib.queued", [queued]) : ""]
-        .filter(Boolean).join(" · "));
+      setText(row.children[1], tdot(tf("lib.analysed", [analysed.length]), queued ? tf("lib.queued", [queued]) : ""));
       const run = store.session.libRun;
       if (run && run.deep) line(tf("lib.deepWorking", [run.name || "", run.plies ? run.ply + "/" + run.plies : ""]));
       else if (run) line(tf("lib.working", [run.done + 1, run.total, run.plies ? run.ply + "/" + run.plies : run.name || ""]));
@@ -949,8 +949,7 @@ export function createLibraryUI(d) {
     for (const k of ["opening", "middle", "end"]) {
       const p = d.phase[k];
       if (p.acpl == null) continue;
-      row(phaseName[k], tf("diag.acpl", [p.acpl]) + " · " +
-        tf("diag.badRate", [Math.round((p.badRate || 0) * 1000) / 10]));
+      row(phaseName[k], tdot(tf("diag.acpl", [p.acpl]), tf("diag.badRate", [Math.round((p.badRate || 0) * 1000) / 10])));
     }
     if (charts) charts.drawPhaseChart(el, d, phaseName);
     if (d.weakestPhase) {

@@ -10,6 +10,7 @@ import { ChessFide } from "./fide.js";
 import { ChessTree } from "./game-tree.js";
 import { ChessHost } from "./host.js";
 import { ChessI18n } from "./i18n.js";
+import { tdot } from "./tdot.js";
 import { ChessIcons } from "./icons.js";
 import { ChessLazy } from "./lazy-content.js";
 import { ChessMaterial } from "./material.js";
@@ -972,7 +973,7 @@ import { loadChunk } from "./chunk.js";
     el.hidden = !p;
     if (!p) { const tryBtn = document.getElementById("preview-try"); if (tryBtn) tryBtn.hidden = true; return; }
     let text = p.kind === "pv" ? t("board.previewPv") : tf("board.previewPly", [p.ply]);
-    if (store.ui.previewPinned) text += " · " + t("board.previewEsc");
+    if (store.ui.previewPinned) text = tdot(text, t("board.previewEsc"));
     el.textContent = text;
     // a pinned engine line can be written down from here (Q2.3)
     const tryBtn = document.getElementById("preview-try");
@@ -1893,7 +1894,7 @@ import { loadChunk } from "./chunk.js";
     const vmv = game.moves({ verbose: true }).find((m) => m.from === from && m.to === to);
     store.session.hintMove = { from, to };
     store.commit("session", "sync");
-    toast(t("chrome.hint") + " · " + (vmv ? vmv.san : from + " → " + to));
+    toast(tdot(t("chrome.hint"), vmv ? vmv.san : from + " → " + to));
   }
 
   // --- two-player clock (base + Fischer increment; flag fall is terminal) ---
@@ -2208,7 +2209,7 @@ import { loadChunk } from "./chunk.js";
   });
   const { renderMistakeList, renderWhyLine, retryModel, retryClick, renderRetry } = Retry;
   // v8-0-plan A4: the key moments and 从错误中学 live in review/moments.js, a chunk
-  const Moments = createMomentsLazy({ doc: document, store, t, tf, sideName, analysisFor, sanHistory, startFen, boardMoveNo,
+  const Moments = createMomentsLazy({ doc: document, store, t, tf, tdot, sideName, analysisFor, sanHistory, startFen, boardMoveNo,
     setViewIndex, writeSan, inModal, Retry });
 
   // v8-0-plan F4: the eval gauge, the curve and the marks' colours live in
@@ -2380,18 +2381,17 @@ import { loadChunk } from "./chunk.js";
       row.className = "stat-row";
       const name = document.createElement("span");
       name.className = "stat-k";
-      name.textContent = t("stats.recentAcc") + recent.length + t("stats.recentAccSuffix");
+      name.textContent = tf("stats.recentAccN", [recent.length]);
       const val = document.createElement("span");
       val.className = "stat-v num";
-      val.textContent = avg + "% · " + t("stats.latest") + recent[recent.length - 1].acc + "%";
+      val.textContent = tf("stats.accLine", [avg, recent[recent.length - 1].acc]);
       row.append(name, val);
       el.appendChild(row);
     }
     const hint = document.createElement("p");
     hint.className = total ? "hint" : "hint empty-note";   // 7.7 §3: see .empty-note
     hint.textContent = total
-      ? t("stats.games") + total + t("stats.gamesSuffix") + " · " + t("stats.hint") +
-        (withAcc.length ? t("stats.hintAcc") : t("stats.hintNoAcc"))
+      ? tdot(tf("stats.gamesN", [total]), t("stats.hint"), t(withAcc.length ? "stats.accFrom" : "stats.accHow"))
       : t("stats.emptyHint");
     el.appendChild(hint);
     renderLibrary();
@@ -2452,22 +2452,22 @@ import { loadChunk } from "./chunk.js";
     const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
     // in the interface language, not the system's (v6-plan Q3.6)
     const clock2 = I18n.fmtDate(d, { hour: "2-digit", minute: "2-digit" });
-    if (midnight(d) === midnight(now)) return t("hist.today") + " " + clock2;
-    if (midnight(d) === midnight(yesterday)) return t("hist.yesterday") + " " + clock2;
+    if (midnight(d) === midnight(now)) return tf("hist.todayAt", [clock2]);
+    if (midnight(d) === midnight(yesterday)) return tf("hist.yesterdayAt", [clock2]);
     return I18n.fmtDate(d, { dateStyle: "short" });
   }
 
   /** everything is localised at render time, so a language switch relabels it */
   function historyLabel(rec) {
     const res = t(rec.result === "win" ? "hist.win" : rec.result === "loss" ? "hist.loss" : "hist.draw");
-    return [res, diffName(rec.diff), t(rec.color === "b" ? "hist.black" : "hist.white")].join(" · ");
+    return tdot(res, diffName(rec.diff), t(rec.color === "b" ? "hist.black" : "hist.white"));
   }
 
   function historySub(rec) {
     const parts = [historyWhen(rec.t)];
     if (rec.moves) parts.push(moveCount(Math.ceil(rec.moves / 2)));
     if (typeof rec.acc === "number") parts.push(tf("hist.acc", [rec.acc]));
-    return parts.filter(Boolean).join(" · ");
+    return tdot(...parts);
   }
 
   function historyRow(rec, i) {
@@ -2801,7 +2801,7 @@ import { loadChunk } from "./chunk.js";
       Persist.setJson("achievements", { seen: Array.from(store.session.achSeen) });
       // one toast per unlock, each shown for its whole life before the next
       // (v8-0-plan A5: with the badge's picture, and long enough to read)
-      fresh.forEach((r, i) => setTimeout(() => toast(t("ach.unlocked") + " · " + (r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name), "ach", { icon: r.ach.icon }), i * TOAST_MS.ach));
+      fresh.forEach((r, i) => setTimeout(() => toast(tdot(t("ach.unlocked"), r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name), "ach", { icon: r.ach.icon }), i * TOAST_MS.ach));
     }
     renderAchievements();
     renderRecordEntry();
@@ -2827,7 +2827,7 @@ import { loadChunk } from "./chunk.js";
   function statusText() {
     if (store.session.editor) {
       const reason = ChessEditor.validate(store.session.editor, Chess);
-      return t("st.editing") + " · " + (reason ? t(reason) : t("st.editingReady"));
+      return tdot(t("st.editing"), t(reason || "st.editingReady"));
     }
     if (store.session.mode === "learn") {
       if (store.session.study) return t("study.head");
@@ -2843,7 +2843,7 @@ import { loadChunk } from "./chunk.js";
       // wanting 463px of a 418px chip. The title is already spelled out on the
       // lesson card two centimetres away, in full, in a box that wraps. What
       // the chip can say without lying is which lesson you are in.
-      return store.session.learn.gs ? t("gs.part") : store.session.learn.eg ? t("eg.camp") : t("learn.lessonPre") + (store.session.learn.li + 1) + t("learn.lessonPost");
+      return store.session.learn.gs ? t("gs.part") : store.session.learn.eg ? t("eg.camp") : tf("learn.lessonN", [store.session.learn.li + 1]);
     }
     if (store.session.mode === "puzzle") {
       if (!store.session.puzzle) return t("st.puzzle");
@@ -2855,11 +2855,10 @@ import { loadChunk } from "./chunk.js";
       // for: where you are, not what the thing is called. Same answer here.
       // Which puzzle, of what kind; the goal, the detail and where it came
       // from stay on the card, which is a box that wraps.
-      return tf("pz.nth", [store.session.puzzle.idx + 1]) +
-        " · " + t("pz.cat." + store.session.puzzle.p.cat);
+      return tdot(tf("pz.nth", [store.session.puzzle.idx + 1]), t("pz.cat." + store.session.puzzle.p.cat));
     }
     const g = viewGame();
-    if (!isLive()) return t("st.replay") + " " + store.game.viewIndex + "/" + sanHistory().length;
+    if (!isLive()) return tf("st.replayAt", [store.game.viewIndex, sanHistory().length]);
     if (store.game.flagFall) {
       if (timeoutIsDraw()) return t("st.flagDraw");
       return t(store.game.flagFall === "w" ? "st.flagWhite" : "st.flagBlack");
@@ -2880,19 +2879,19 @@ import { loadChunk } from "./chunk.js";
     const auto = autoDrawReason();
     if (auto) return t(auto === "fivefold" ? "st.autoFivefold" : "st.autoSeventyfive");
     const side = g.turn() === "w" ? t("turn.white") : t("turn.black");
-    const base = g.in_check() ? side + " · " + t("turn.check") : side;
+    const base = g.in_check() ? tdot(side, t("turn.check")) : side;
     // 7.4: the engine's move, and no engine — said, instead of 思考中 forever
     if (store.session.mode === "ai" && engineOut() && g.turn() !== store.session.humanColor) {
-      return base + " · " + t("st.engineDown");
+      return tdot(base, t("st.engineDown"));
     }
-    if (claimableDrawReason()) return base + " · " + t("st.claimable");
+    if (claimableDrawReason()) return tdot(base, t("st.claimable"));
     // The 50-move rule arrives without warning: nothing on screen changes until
     // the move it becomes claimable, so a player grinding a rook ending has no
     // idea they are on move 43 of it. Start counting once it is close enough to
     // matter — early enough to change how you play, late enough not to be noise
     // in the twenty quiet moves every game has.
     const quiet = halfmoveClock();
-    if (quiet >= FIFTY_WARN_PLIES) return base + " · " + tf("st.quietMoves", [Math.floor(quiet / 2)]);
+    if (quiet >= FIFTY_WARN_PLIES) return tdot(base, tf("st.quietMoves", [Math.floor(quiet / 2)]));
     return base;
   }
 
@@ -4340,8 +4339,7 @@ import { loadChunk } from "./chunk.js";
   function slotWhat(slot) {
     if (!slot) return "";
     if (!slot.mode) return slot.label || "";
-    return t(slot.mode === "ai" ? "mode.ai" : "mode.pvp") +
-      (slot.mode === "ai" ? " · " + diffName(slot.diff) : "");
+    return tdot(t(slot.mode === "ai" ? "mode.ai" : "mode.pvp"), slot.mode === "ai" && diffName(slot.diff));
   }
   function slotWhen(slot) {
     if (!slot) return t("slots.empty");
@@ -4377,7 +4375,7 @@ import { loadChunk } from "./chunk.js";
       load.className = "pick-item";
       load.dataset.load = String(i);
       load.disabled = !slot;
-      load.textContent = [t("slots.slot") + (i + 1), slotWhat(slot)].filter(Boolean).join(" · ");
+      load.textContent = tdot(tf("slots.slotN", [i + 1]), slotWhat(slot));
       const sub = document.createElement("span");
       sub.className = "pick-sub";
       sub.textContent = slotWhen(slot);
@@ -4421,7 +4419,7 @@ import { loadChunk } from "./chunk.js";
     };
     saveSlots(st);
     renderSlots();
-    toast(t("slots.saved") + (i + 1));
+    toast(tf("slots.savedN", [i + 1]));
   }
 
   async function loadFromSlot(i) {
@@ -4429,9 +4427,9 @@ import { loadChunk } from "./chunk.js";
     const slot = st.slots[i];
     if (!slot) return;
     closeSlots();
-    const ok = await importPgnText(slot.pgn, t("slots.slot") + (i + 1),
+    const ok = await importPgnText(slot.pgn, tf("slots.slotN", [i + 1]),
       { msg: t("dlg.loadSlot"), title: t("dlg.loadSlotTitle"), ok: t("dlg.loadSlotOk") });
-    if (ok) toast(t("slots.loaded") + (i + 1));
+    if (ok) toast(tf("slots.loadedN", [i + 1]));
   }
 
   function deleteSlot(i) {
@@ -4439,7 +4437,7 @@ import { loadChunk } from "./chunk.js";
     st.slots[i] = null;
     saveSlots(st);
     renderSlots();
-    toast(t("slots.deleted") + (i + 1));
+    toast(tf("slots.deletedN", [i + 1]));
   }
 
   /**
@@ -4505,7 +4503,7 @@ import { loadChunk } from "./chunk.js";
       // value pretending to be a statistic (audit, work package E)
       const ready = document.createElement("div");
       ready.className = "idle-v";
-      ready.textContent = t("idle.ready") + " · " + t(store.session.mode === "ai" ? "idle.vsEngine" : "idle.vsHuman");
+      ready.textContent = tdot(t("idle.ready"), t(store.session.mode === "ai" ? "idle.vsEngine" : "idle.vsHuman"));
       body.appendChild(ready);
     }
     const rec = recommendation();
@@ -4783,7 +4781,7 @@ import { loadChunk } from "./chunk.js";
   // wrapped so that the ones declared further down this file resolve when
   // they are called rather than when this runs.
   const A11y = createA11y({
-    doc: document, t, store, draw, boardFlipped: () => BoardView.screenCell("a1").row === 0,
+    doc: document, t, tf, store, draw, boardFlipped: () => BoardView.screenCell("a1").row === 0,
     viewGame: () => viewGame(),
     sanHistory: () => sanHistory(),
     statusText: () => statusText(),
@@ -5108,7 +5106,7 @@ import { loadChunk } from "./chunk.js";
       store.ui.previewPv = sans ? sans.slice(0, Number(b.dataset.k) + 1) : null;
       store.ui.previewPinned = true;
       renderPreviewBadge();
-      announce(t("board.previewPv") + " · " + t("board.previewEsc"));
+      announce(tdot(t("board.previewPv"), t("board.previewEsc")));
     };
     lineEl.addEventListener("click", (ev) => { const b = chipOf(ev); if (b) pin(b); });
     lineEl.addEventListener("keydown", (ev) => {
@@ -5355,7 +5353,7 @@ import { loadChunk } from "./chunk.js";
   });
   Shell.wire();
   // v8-0-plan C3: 开局浏览器 — the key, the panel's state; the panel itself is a chunk
-  createExplorerLazy({ store, t, tf, viewGame, movePath, startClockIfIdle, saveSettings, library: LibraryUI, repertoire: RepUI, saved: Persist.read("settings").value,
+  createExplorerLazy({ store, t, tf, tdot, viewGame, movePath, startClockIfIdle, saveSettings, library: LibraryUI, repertoire: RepUI, saved: Persist.read("settings").value,
     toBoard: () => { Shell.go("play"); setSideTab("play"); } });
   /**
    * Put a mode on the board: the mode segment's handler until v8-0-plan A1,

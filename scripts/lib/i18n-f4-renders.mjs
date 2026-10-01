@@ -127,7 +127,7 @@ export const F4_RENDERS = [
     "停止 12/40", "Stop 12/40", "中止 12/40"],
   ["curve.atScore", (t, tf, tdot, diff) => tf("curve.atScore", [0, "+0.3"]),
     "第 0 着 +0.3", "Ply 0 +0.3", "0 手目 +0.3"],
-  ["rec.ratingIs", (t, tf, tdot, diff) => tdot(tf("rec.ratingIs", ["1500?"]), tf("rec.due", [2, 1])),
+  ["rec.rating", (t, tf, tdot, diff) => tdot(tf("ui.pair", [t("rec.rating"), "1500?"]), tf("rec.due", [2, 1])),
     "做题评级 1500? · 复习到期 2 · 明天 1", "Puzzle rating 1500? · Reviews due 2 · tomorrow 1", "パズルのレーティング 1500? · 復習の期限 2 · 明日 1"],
   ["opp.level", (t, tf, tdot, diff) => tf("ui.pair", [t("diff.normal"), 1400]),
     "中级 1400", "Intermediate 1400", "中級 1400"],
@@ -137,4 +137,9 @@ export const F4_RENDERS = [
     "残局训练营 · G 2/6", "Endgame camp · G 2/6", "エンドゲーム道場 · G 2/6"],
   ["rep.export", (t, tf, tdot, diff) => tdot(t("rep.title"), t("color.black")),
     "我的开局书 · 执黑", "My repertoire · Black", "自分の定跡書 · 黒"],
+  ["lib.analysedQueued", (t, tf, tdot, diff) => tdot(tf("lib.analysed", [5]), tf("lib.queued", [2])),
+    "已分析 5 局 · 待分析 2 局", "5 analysed · 2 queued", "解析済み 5 局 · 解析待ち 2 局"],
+  // the review picture's wider separator (report.js)
+  ["rv.dot", (t, tf, tdot, diff) => ["Italian Game", tf("mm.plies", [40])].join(t("rv.dot")),
+    "Italian Game  ·  40 着", "Italian Game  ·  40 moves", "Italian Game  ·  40 手"],
 ];

@@ -22,6 +22,7 @@ import { loadChunk } from "../chunk.js";
 import { REVIEW_CHUNKS } from "../lazy-content.js";
 import { ChessReview } from "../review.js";
 import { ChessReviewGrade as Grade } from "../review-grade.js";
+import { tdot } from "../tdot.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -44,7 +45,7 @@ export function createReviewPanel(d) {
     // a deep pass over a long game is a minute of engine time to be stuck in
     if (btn) {
       btn.disabled = !store.session.analyzing && !sanHistory().length;
-      btn.textContent = store.session.analyzing ? t("act.stop") + " " + store.session.analyzeProgress : t("act.analyze");
+      btn.textContent = store.session.analyzing ? tf("act.stopAt", [store.session.analyzeProgress]) : t("act.analyze");
       btn.title = t(store.session.analyzing ? "tipRun.stop" : "tipRun.analyze");
     }
     const deep = document.getElementById("an-deep");
@@ -93,7 +94,7 @@ export function createReviewPanel(d) {
         // 「第 3 线」, one thing under two names. Every chip is a button: a
         // click walks the board into that line, whichever line it is.
         const head = deskHead();
-        setText(head.firstElementChild, t("an.pv") + (depth ? " · " + t("an.depth") + " " + depth : ""));
+        setText(head.firstElementChild, tdot(t("an.pv"), depth ? tf("an.depthN", [depth]) : ""));
         pvEl.appendChild(head);
         const rows = lineRows(lines.length);
         rows.forEach((row, i) => { paintLineRow(row, i, lines[i], lines[i].sans, turn); pvEl.appendChild(row); });
@@ -307,7 +308,7 @@ export function createReviewPanel(d) {
       // 「挑战更高难度」 is advice to the player about the engine's level
       if (vk === "rv.verdict.excellent" && !isPlayer(side)) vk = "rv.verdict.excellentPlain";
       if (store.session.mode === "ai" && !isPlayer(side)) continue;
-      if (vk) notes.push(sideName(side) + " · " + t(vk));
+      if (vk) notes.push(tdot(sideName(side), t(vk)));
     }
     if (short) notes.unshift(tf("rv.verdict.tooShort", [sum.measured]));
     for (const txt of notes) {
@@ -428,7 +429,7 @@ export function createReviewPanel(d) {
       link.download = name;
       link.click();
       setTimeout(() => URL.revokeObjectURL(link.href), 2000);
-      toast(t("msg.export.done") + name + t("msg.export.inDownloads"), "fix");
+      toast(tf("msg.export.doneDl", [name]), "fix");
     } catch (_) { toast(t("msg.file.readFailed"), "fault"); }
   }
 

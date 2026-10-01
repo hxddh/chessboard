@@ -69,8 +69,8 @@ export function createPuzzleMine(d) {
     const rest = typeof p.pv === "string" ? p.pv.split(" ").slice(1, 4).join(" ") : "";
     const loss = p.loss != null ? (p.loss / 100).toFixed(1) : null;
     let why = loss != null ? tf("pz.mine.whyLoss", [p.played, loss]) : "";
-    if (rest) why += (why ? " " : "") + tf("pz.mine.whyLine", [p.solution[0], rest]);
-    return why;
+    const line = rest ? tf("pz.mine.whyLine", [p.solution[0], rest]) : "";
+    return why && line ? tf("ui.pair", [why, line]) : why || line;
   }
 
   /**

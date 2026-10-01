@@ -113,7 +113,7 @@ export const ChessReport = (() => {
     ctx.fillStyle = muted;
     const opening = openingFor(sanHistory().length);
     const head = [opening ? opening[1] : null, statusText(),
-      tf("mm.plies", [sanHistory().length])].filter(Boolean).join("  ·  ");
+      tf("mm.plies", [sanHistory().length])].filter(Boolean).join(t("rv.dot"));
     text(head, 40, 84, W - 80, 2, 20);
 
     // one line of context: which level, which colour, when
@@ -121,7 +121,7 @@ export const ChessReport = (() => {
     const when = new Date().toISOString().slice(0, 10);
     const ctxLine = [DIFF_NAMES[store.session.difficulty] || store.session.difficulty,
       t(store.session.humanColor === "w" ? "color.white" : "color.black"), when]
-      .filter(Boolean).join("  ·  ");
+      .filter(Boolean).join(t("rv.dot"));
     ctx.fillStyle = muted;
     text(ctxLine, 40, 106, W - 80, 1, 18);
 
