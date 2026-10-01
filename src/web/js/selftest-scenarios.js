@@ -178,7 +178,9 @@ const SCENARIOS = {
       if (!r || r.count !== 3) throw new Error("since=last−2h answered " + JSON.stringify(r && { count: r.count, error: r.error }));
       const none = await ask({ site: "lichess", user: "slow_tester", max: 20, since: first.last + 1000 });
       const say = syncMessage(none, true);
-      if (!say || say.key !== "sync.none") throw new Error("nothing new read as " + JSON.stringify(say));
+      // the dialog's own line for an incremental sync that found nothing
+      const nothing = syncMessage({ pgn: "", count: 0 }, true);
+      if (!none || none.count !== 0 || !say || say.key !== nothing.key) throw new Error("nothing new answered " + JSON.stringify(none) + ", read as " + JSON.stringify(say));
       return { count: r.count, none: say.key };
     });
     // R7: standard chess only
