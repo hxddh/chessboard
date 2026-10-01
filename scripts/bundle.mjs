@@ -121,6 +121,8 @@ export const CHUNKS = [
   { entry: "src/web/js/trainer/visual-modes.js", out: "src/web/js/chunk-visual.js", global: "CHESS_VISUAL", min: 5000 },
   // v8-2-plan T1: the advanced course part 3 — 24 lessons, three languages (trainer/lessons-adv.js)
   { entry: "src/web/js/lessons-adv-chunk.js", out: "src/web/js/chunk-lessons-adv.js", global: "CHESS_LESSONS_ADV", min: 20000 },
+  // v8-2-plan V1: the packaged self-test's checks and the automation build's scenarios (app.js, CHESS_SELFTEST=1 only)
+  { entry: "src/web/js/selftest-run.js", out: "src/web/js/chunk-selftest.js", global: "CHESS_SELFTEST_RUN", min: 5000 },
   ...explorerChunks(path.join(root, "src/web/js/explorer")),
 ];
 

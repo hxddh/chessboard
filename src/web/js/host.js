@@ -777,21 +777,22 @@ const global = typeof window !== "undefined" ? window : globalThis;
   /**
    * 7.5 — whether the packaged app was launched with CHESS_SELFTEST=1 (see
    * main.zig). false everywhere else, including every browser and every
-   * build without the command.
-   * @returns {Promise<boolean>}
+   * build without the command. v8-2-plan V1: the scenario's name instead of
+   * true when main.zig names one (CHESS_SELFTEST_SCENARIO, selftest-scenarios.js).
+   * @returns {Promise<boolean|string>}
    */
   async function selftestMode() {
     if (!hasZero() || typeof global.zero.invoke !== "function") return false;
     try {
       const r = await global.zero.invoke("chess.selftestMode", {});
-      return !!(r && r.on === true);
+      return !!(r && r.on === true) && (typeof r.scenario === "string" && r.scenario || true);
     } catch (_) { return false; }
   }
 
   /**
    * Hand the self-test's result to the native side, which writes it to
    * CHESS_SELFTEST_OUT and exits the process — this call does not return
-   * when it works.
+   * when it works (in a scenario it does: v8-2-plan V1, main.zig).
    * @param {{ok: boolean}} report
    */
   async function selftestReport(report) {

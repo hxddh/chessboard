@@ -7129,6 +7129,50 @@ for (const lang of CONTENT_LANGS) {
   }
 }
 
+// --- v8-2-plan V1: the automation build is tested, never released ------------
+//
+// -Dautomation=true compiles in the SDK's automation server: a dropbox under
+// the app's working directory through which any local process can call
+// chess.*. build-macos.yml / build-windows.yml build it as a second package of
+// the same commit to drive it (scripts/automation-scenarios.mjs). What ships
+// is the other one: the job that uploads the Chessboard-* artifacts release.yml
+// downloads must not build with automation, the automation job must upload no
+// Chessboard-* artifact and nothing to a release, and release.yml attaches
+// exactly the three files by name. Comments are dropped first: they may say
+// what they like about the other job.
+{
+  const code = (rel) => fs.readFileSync(path.join(root, rel), "utf8").replace(/\r\n/g, "\n")
+    .split("\n").filter((l) => !l.trim().startsWith("#")).join("\n");
+  /** The jobs of a workflow, by name: each one's text up to the next job. */
+  const jobsOf = (text) => {
+    const body = text.slice(text.indexOf("\njobs:\n") + 7);
+    const out = {};
+    const heads = [...body.matchAll(/^  ([\w-]+):\n/gm)];
+    heads.forEach((m, i) => { out[m[1]] = body.slice(m.index, i + 1 < heads.length ? heads[i + 1].index : body.length); });
+    return out;
+  };
+  for (const rel of [".github/workflows/build-macos.yml", ".github/workflows/build-windows.yml"]) {
+    const jobs = jobsOf(code(rel));
+    const auto = Object.entries(jobs).filter(([, j]) => /-Dautomation=true/.test(j));
+    const shipping = Object.entries(jobs).filter(([, j]) => /name: Chessboard-/.test(j) || /gh release upload/.test(j));
+    assert(auto.length === 1 && auto[0][0] === "automation", rel + ": one job builds with -Dautomation=true, `automation` (" + auto.map(([n]) => n).join(", ") + ")");
+    assert(shipping.length === 1 && shipping[0][0] === "build", rel + ": only `build` uploads a Chessboard-* artifact or to a release (" + shipping.map(([n]) => n).join(", ") + ")");
+    assert(!/-Dautomation/.test(jobs.build || ""), rel + ": the shipped package is built without automation");
+    const a = jobs.automation || "";
+    assert(!/name: Chessboard-|gh release|upload-artifact[\s\S]*?path: dist\//.test(a) && /--output dist-auto\//.test(a) && !/--output dist\//.test(a),
+      rel + ": the automation job packages into dist-auto/ and uploads no package (only its report)");
+    assert(/timeout-minutes: 20\b/.test(a), rel + ": the automation job has its 20-minute limit");
+    assert(/node scripts\/automation-smoke\.mjs/.test(a) && /node scripts\/automation-scenarios\.mjs/.test(a), rel + ": the automation job runs the smoke test and the scenarios");
+  }
+  const rel = code(".github/workflows/release.yml");
+  assert(/pattern: Chessboard-\*/.test(rel) && (rel.match(/uses: actions\/download-artifact@/g) || []).length === 1,
+    "release.yml downloads only the Chessboard-* artifacts (never automation-report-*)");
+  const attached = (/gh release create[\s\S]*?\n\s*(dist\/[^\n]*)\n/.exec(rel) || [])[1] || "";
+  assert(attached.trim() === "dist/Chessboard-macOS-arm64.zip dist/Chessboard-macOS-arm64.dmg dist/Chessboard-Windows-x64.zip",
+    "release.yml attaches exactly the three shipped packages (" + attached.trim() + ")");
+  assert(!/dist-auto|-Dautomation/.test(rel), "release.yml never names the automation build");
+}
+
 // --- 7.0: every suite package.json runs, CI runs too -------------------------
 //
 // 6.1 found that `checks.yml`'s static job named three scripts by hand while
@@ -7523,7 +7567,7 @@ for (const lang of CONTENT_LANGS) {
 // go down — lower it in the PR that moves code out. The target for the end of
 // the 8.0 milestones is ≤ 6000; 4000 remains the aim.
 {
-  const APP_JS_LINE_CEILING = 5873; // −376 to game-controller.js (v8-1-plan F3, M4: 悔棋, 新局, 从这里续下, resigning, the coach, draws, the result token); −458 to io.js (v8-1-plan F3, M4: PGN and file import / export, the clipboard, the learning file, the whole profile); −107 for C1 (the history dialog became the library list's 本机 games, its wiring moved to library-page.js; M5); −1 when C3 merged in (its wireViews loop paid for movePath; M5); −11 net for B4 (ladder names, filing and the persona hooks moved to opponents*.js; M4); 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3); −239 to review/eval-graph.js (F4, M3); −310 to review/retry.js; −387 to review/panel.js; −205 to review/lines.js; −306 to review/analysis.js; −79 to review/board-marks.js; −2754 to trainer/ (F4, M3: content, lessons, puzzles, today); −237 to me-page.js (F4, M4: 进步, 成就, the entry card); −68 to game-end.js (M4); −2 net for A4 (the move list's marks to review/board-marks.js)
+  const APP_JS_LINE_CEILING = 5754; // −376 to game-controller.js (v8-1-plan F3, M4: 悔棋, 新局, 从这里续下, resigning, the coach, draws, the result token); −458 to io.js (v8-1-plan F3, M4: PGN and file import / export, the clipboard, the learning file, the whole profile); −107 for C1 (the history dialog became the library list's 本机 games, its wiring moved to library-page.js; M5); −1 when C3 merged in (its wireViews loop paid for movePath; M5); −11 net for B4 (ladder names, filing and the persona hooks moved to opponents*.js; M4); 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3); −239 to review/eval-graph.js (F4, M3); −310 to review/retry.js; −387 to review/panel.js; −205 to review/lines.js; −306 to review/analysis.js; −79 to review/board-marks.js; −2754 to trainer/ (F4, M3: content, lessons, puzzles, today); −237 to me-page.js (F4, M4: 进步, 成就, the entry card); −68 to game-end.js (M4); −2 net for A4 (the move list's marks to review/board-marks.js); −117 to selftest-run.js (v8-2-plan V1: the packaged self-test moved into chunk-selftest.js; M4); taken at the M4 merge with the −2 left by F4 (M3): 5873 → 5754
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
@@ -7772,8 +7816,10 @@ for (const lang of CONTENT_LANGS) {
   // switch's paint and the loader are in the bundle (prefs-ui.js)
   assert(CHUNKS.some((c) => c.entry === "src/web/js/sync-ui.js" && c.global === "createSyncUI"),
     "C2: the sync dialog is an on-demand chunk (chunk-sync.js)");
-  const callers = [...WEB_MODULES].filter(([file, text]) => /\.fetchGames\(/.test(text) && file !== "host.js").map(([file]) => file);
-  assert(callers.length === 1 && callers[0] === "sync-ui.js", "C2: only the sync dialog calls fetchGames (" + callers.join(", ") + ")");
+  // v8-2-plan V1: and the automation build's sync scenario, which runs only
+  // under CHESS_SELFTEST and against the fake server sync.zig's CHESS_SYNC_BASE names
+  const callers = [...WEB_MODULES].filter(([file, text]) => /\.fetchGames\(/.test(text) && file !== "host.js").map(([file]) => file).sort();
+  assert(callers.join() === "selftest-scenarios.js,sync-ui.js", "C2: only the sync dialog (and the self-test's sync scenario) calls fetchGames (" + callers.join(", ") + ")");
 }
 
 if (failed) {

@@ -174,7 +174,7 @@ jobs:
             suites: scripts/test-library-e2e.mjs
             timeout: 30
           - name: explorer + sync + repertoire
-            suites: scripts/test-explorer-e2e.mjs scripts/test-sync-e2e.mjs scripts/test-repertoire-e2e.mjs
+            suites: scripts/test-explorer-e2e.mjs scripts/test-sync-e2e.mjs scripts/test-repertoire-e2e.mjs scripts/test-selftest-e2e.mjs
             timeout: 20
           # v8-0-plan F1: the layout suite in four shards. As one job it was
           # 31m51s on Chromium, the critical path of every PR by 18 minutes;
@@ -393,3 +393,13 @@ jobs:
         run: zig build test ${{ matrix.flags }} -Dnative-sdk-path="$SDK_PATH"
       - name: zig build
         run: zig build ${{ matrix.flags }} -Dnative-sdk-path="$SDK_PATH"
+      # v8-2-plan V1: the self-test seams bridge.zig / sync.zig read in self-test mode only
+      # (CHESS_SELFTEST_SCENARIO, the report that does not exit), through the
+      # automation server itself, on the null platform: one frame, one command.
+      # The live runs are build-macos.yml / build-windows.yml's automation jobs.
+      - name: automation seams (null platform)
+        if: matrix.os == 'macos-latest'
+        run: |
+          zig build -Dplatform=null -Dautomation=true -Dnative-sdk-path="$SDK_PATH" --prefix zig-out-null
+          node scripts/automation-smoke.mjs zig-out-null/bin/chessboard --null
+          node scripts/automation-scenarios.mjs zig-out-null/bin/chessboard --null

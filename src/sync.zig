@@ -12,6 +12,7 @@ const jsonFieldValue = @import("bridge.zig").jsonFieldValue;
 const jsonStringField = @import("bridge.zig").jsonStringField;
 const jsonStringFieldRaw = @import("bridge.zig").jsonStringFieldRaw;
 const jsonUintField = @import("bridge.zig").jsonUintField;
+const selftestOn = @import("bridge.zig").selftestOn;
 const tokenValid = @import("bridge.zig").tokenValid;
 const App = @import("main.zig").App;
 
@@ -73,6 +74,9 @@ const JobSpec = struct {
     deadline_ms: u64,
     io: std.Io,
     sync: ?SyncRequest = null,
+    /// v8-2-plan V1: where a self-test's sync goes instead of the two sites
+    /// (syncBase; "" — every launch but a scenario's — is the sites)
+    sync_base: []const u8 = "",
     /// for the tests' work functions only
     test_ctx: ?*anyopaque = null,
 };
@@ -1064,8 +1068,67 @@ fn syncWork(job: *Job, out: []u8) []const u8 {
     var client: std.http.Client = .{ .allocator = gpa, .io = job.spec.io };
     defer client.deinit();
     var net: NetGetter = .{ .client = &client };
-    return syncFetch(gpa, net.getter(), job.spec.sync.?, out, job) catch failText(.sync);
+    var rebased: RebaseGetter = .{ .inner = net.getter(), .base = job.spec.sync_base };
+    return syncFetch(gpa, rebased.getter(), job.spec.sync.?, out, job) catch failText(.sync);
 }
+
+// v8-2-plan V1 step 2: the automation build's scenarios sync against a fake
+// server on the runner (scripts/fake-sync-server.mjs), never the two sites.
+// CHESS_SYNC_BASE names it, and only a self-test launch reads the variable:
+// a release build launched by a person has CHESS_SELFTEST unset, so its
+// syncs go where they always went. Everything above — the URLs, the
+// archive-list check that keeps Chess.com's months under its own API path —
+// is unchanged; only the host of the request that goes out is swapped.
+
+/// The sites' URL prefixes a base stands in for (lichessUrl, chesscomArchivesUrl).
+const SYNC_HOSTS = [_][]const u8{ "https://lichess.org/", "https://api.chess.com/" };
+
+/// CHESS_SYNC_BASE, when this is a self-test launch and it is a loopback
+/// http:// origin ("http://127.0.0.1:<port>", no path); "" otherwise.
+fn syncBaseOf(env: *const std.process.Environ.Map, selftest: bool) []const u8 {
+    if (!selftest) return "";
+    const v = env.get("CHESS_SYNC_BASE") orelse return "";
+    const head = "http://127.0.0.1:";
+    if (!std.mem.startsWith(u8, v, head) or v.len == head.len or v.len > head.len + 5) return "";
+    for (v[head.len..]) |c| if (!std.ascii.isDigit(c)) return "";
+    return v;
+}
+
+pub fn syncBase(self: *const App) []const u8 {
+    return syncBaseOf(self.env_map, selftestOn(self));
+}
+
+/// `url` with its site's prefix replaced by `base` (the path and query kept),
+/// or null when it is not one of the two sites' or does not fit.
+fn rebaseUrl(buf: []u8, base: []const u8, url: []const u8) ?[]const u8 {
+    for (SYNC_HOSTS) |host| {
+        if (!std.mem.startsWith(u8, url, host)) continue;
+        const rest = url[host.len - 1 ..];
+        if (base.len + rest.len > buf.len) return null;
+        @memcpy(buf[0..base.len], base);
+        @memcpy(buf[base.len..][0..rest.len], rest);
+        return buf[0 .. base.len + rest.len];
+    }
+    return null;
+}
+
+/// The getter a sync uses: `inner` as it is with no base; with one, every
+/// URL rebased first, and one that cannot be is not asked at all (0, offline).
+const RebaseGetter = struct {
+    inner: Getter,
+    base: []const u8,
+
+    fn getter(self: *RebaseGetter) Getter {
+        return if (self.base.len == 0) self.inner else .{ .context = self, .get_fn = get };
+    }
+
+    fn get(context: *anyopaque, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) u32 {
+        const self: *RebaseGetter = @ptrCast(@alignCast(context));
+        var buf: [768]u8 = undefined;
+        const local = rebaseUrl(&buf, self.base, url) orelse return 0;
+        return self.inner.get(local, accept, body, tick);
+    }
+};
 
 pub fn fetchGames(context: *anyopaque, invocation: native_sdk.bridge.Invocation, responder: AsyncResponder) anyerror!void {
     const self: *App = @ptrCast(@alignCast(context));
@@ -1077,6 +1140,7 @@ pub fn fetchGames(context: *anyopaque, invocation: native_sdk.bridge.Invocation,
         .deadline_ms = SYNC_DEADLINE_MS,
         .io = self.io,
         .sync = req,
+        .sync_base = syncBase(self),
     }));
 }
 
@@ -2110,4 +2174,106 @@ test "T4: progress — Lichess counts games as the stream arrives, Chess.com mon
     p.progress.store(@as(u64, 8) << 32, .release);
     job.report(4);
     try std.testing.expectEqual(@as(u64, 8) << 32, p.progress.load(.acquire));
+}
+
+test "V1 seams: a base replaces only the site's host; anything else is not asked" {
+    var buf: [256]u8 = undefined;
+    const base = "http://127.0.0.1:9";
+    try std.testing.expectEqualStrings(base ++ LICHESS_URL_THIBAULT["https://lichess.org".len..], rebaseUrl(&buf, base, LICHESS_URL_THIBAULT).?);
+    try std.testing.expectEqualStrings(base ++ "/pub/player/erik/games/2026/09", rebaseUrl(&buf, base, "https://api.chess.com/pub/player/erik/games/2026/09").?);
+    try std.testing.expect(rebaseUrl(&buf, base, "https://example.com/api/games/user/x") == null);
+    try std.testing.expect(rebaseUrl(&buf, base, "https://lichess.org.example.com/x") == null);
+    var small: [24]u8 = undefined;
+    try std.testing.expect(rebaseUrl(&small, base, LICHESS_URL_THIBAULT) == null);
+}
+
+test "V1 seams: a sync through a base asks the same paths there, and without one is unchanged" {
+    const alloc = std.testing.allocator;
+    const out = try alloc.alloc(u8, SYNC_ANSWER_MAX);
+    defer alloc.free(out);
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const local = "http://127.0.0.1:9";
+    const months = local ++ "/pub/player/erik/games/";
+    var stub: StubGetter = .{ .routes = &.{
+        .{ .url = local ++ LICHESS_URL_THIBAULT["https://lichess.org".len..], .body = LICHESS_REAL },
+        .{ .url = months ++ "archives", .body = CHESSCOM_ARCHIVES_REAL },
+        .{ .url = months ++ "2026/09", .body = CHESSCOM_MONTH_REAL },
+    } };
+    var rebased: RebaseGetter = .{ .inner = stub.getter(), .base = local };
+    const li = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(rebased.getter(), "{\"site\":\"lichess\",\"user\":\"thibault\",\"max\":20}", out, null), .{});
+    try std.testing.expectEqual(@as(usize, 5), li.count);
+    // Chess.com's archive list still names api.chess.com (the check that
+    // keeps a month under its API path is untouched); each month is rebased
+    const cc = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(rebased.getter(), "{\"site\":\"chesscom\",\"user\":\"erik\",\"max\":20}", out, null), .{});
+    try std.testing.expectEqual(@as(usize, 9), cc.count);
+    try std.testing.expect(!has(cc.pgn, "Chess960"));
+    // Lichess; then the archive list, September (9 games), August (none here: a 404 after games ends the walk)
+    try std.testing.expectEqual(@as(usize, 4), stub.asked);
+    for (0..stub.asked) |i| try std.testing.expect(std.mem.startsWith(u8, stub.url(i), local ++ "/"));
+    // no base: the getter is the inner one itself, the sites' URLs as before
+    var plain: RebaseGetter = .{ .inner = stub.getter(), .base = "" };
+    try std.testing.expectEqual(stub.getter().context, plain.getter().context);
+    try std.testing.expectEqual(stub.getter().get_fn, plain.getter().get_fn);
+}
+
+/// One HTTP/1.1 exchange on 127.0.0.1: the request line it was sent, and
+/// `body` back with a Content-Length — the shape of the CI fake server's
+/// answer (scripts/fake-sync-server.mjs), over a real socket.
+const OneShotServer = struct {
+    server: std.Io.net.Server,
+    body: []const u8,
+    line_buf: [512]u8 = undefined,
+    line_len: usize = 0,
+
+    fn serve(self: *OneShotServer) void {
+        const io = std.testing.io;
+        const stream = self.server.accept(io) catch return;
+        defer stream.close(io);
+        var rbuf: [4096]u8 = undefined;
+        var r = stream.reader(io, &rbuf);
+        var first = true;
+        while (true) {
+            const line = r.interface.takeDelimiterExclusive('\n') catch return;
+            r.interface.toss(1);
+            const l = std.mem.trimEnd(u8, line, "\r");
+            if (first) {
+                const n = @min(l.len, self.line_buf.len);
+                @memcpy(self.line_buf[0..n], l[0..n]);
+                self.line_len = n;
+                first = false;
+            }
+            if (l.len == 0) break;
+        }
+        var wbuf: [1024]u8 = undefined;
+        var w = stream.writer(io, &wbuf);
+        w.interface.print("HTTP/1.1 200 OK\r\nContent-Type: application/x-chess-pgn\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n", .{self.body.len}) catch return;
+        w.interface.writeAll(self.body) catch return;
+        w.interface.flush() catch {};
+    }
+};
+
+test "V1 seams: a rebased sync goes over plain http to the loopback server and reads its games" {
+    const io = std.testing.io;
+    const addr = try std.Io.net.IpAddress.parseIp4("127.0.0.1", 0);
+    var one: OneShotServer = .{ .server = try addr.listen(io, .{ .reuse_address = true }), .body = LICHESS_REAL };
+    defer one.server.deinit(io);
+    const thread = try std.Thread.spawn(.{}, OneShotServer.serve, .{&one});
+    var base_buf: [32]u8 = undefined;
+    const base = try std.fmt.bufPrint(&base_buf, "http://127.0.0.1:{d}", .{one.server.socket.address.getPort()});
+    const alloc = std.testing.allocator;
+    const out = try alloc.alloc(u8, SYNC_ANSWER_MAX);
+    defer alloc.free(out);
+    var client: std.http.Client = .{ .allocator = alloc, .io = io };
+    defer client.deinit();
+    var net: NetGetter = .{ .client = &client };
+    var rebased: RebaseGetter = .{ .inner = net.getter(), .base = base };
+    const answer = try syncOnce(rebased.getter(), "{\"site\":\"lichess\",\"user\":\"thibault\",\"max\":20}", out, null);
+    thread.join();
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena_state.allocator(), answer, .{});
+    try std.testing.expectEqual(@as(usize, 5), parsed.count);
+    try std.testing.expectEqualStrings("GET " ++ LICHESS_URL_THIBAULT["https://lichess.org".len..] ++ " HTTP/1.1", one.line_buf[0..one.line_len]);
 }

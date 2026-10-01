@@ -14,6 +14,7 @@ const setMenuLanguage = @import("menus.zig").setMenuLanguage;
 const checkUpdate = @import("sync.zig").checkUpdate;
 const fetchGames = @import("sync.zig").fetchGames;
 const fetchProgress = @import("sync.zig").fetchProgress;
+const syncBase = @import("sync.zig").syncBase;
 
 /// The SDK's own bridge commands this page calls (host.js: `zero.dialogs.*`,
 /// `zero.os.*`, `zero.clipboard.*`, `zero.platform.supports`).
@@ -1143,15 +1144,30 @@ fn appdataCommit(self: *App, key: ?[]const u8, bytes: []const u8) anyerror!void 
 // CHESS_SELFTEST_OUT and exits with 0 (ok) or 1. Off by default: without the
 // variable, selftestMode answers {"on":false} and selftestReport refuses.
 
-fn selftestOn(self: *const App) bool {
+pub fn selftestOn(self: *const App) bool {
     const v = self.env_map.get("CHESS_SELFTEST") orelse return false;
     return std.mem.eql(u8, v, "1");
+}
+
+/// v8-2-plan V1 step 2: CHESS_SELFTEST_SCENARIO names a page-side scenario
+/// (selftest-scenarios.js) for the automation build's driver
+/// (scripts/automation-scenarios.mjs) — a plain token, or null. Only in
+/// self-test mode, like everything here.
+fn selftestScenario(self: *const App) ?[]const u8 {
+    if (!selftestOn(self)) return null;
+    const v = self.env_map.get("CHESS_SELFTEST_SCENARIO") orelse return null;
+    return if (tokenValid(v, 32)) v else null;
 }
 
 fn selftestMode(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
     const self: *App = @ptrCast(@alignCast(context));
     _ = invocation;
-    const on = selftestOn(self);
+    return selftestModeAnswer(output, selftestOn(self), selftestScenario(self));
+}
+
+/// {"on":…}, and the scenario's name when one is set (a token: no escaping).
+fn selftestModeAnswer(output: []u8, on: bool, scenario: ?[]const u8) anyerror![]const u8 {
+    if (scenario) |name| return std.fmt.bufPrint(output, "{{\"on\":true,\"scenario\":\"{s}\"}}", .{name}) catch return error.HandlerFailed;
     return std.fmt.bufPrint(output, "{{\"on\":{s}}}", .{if (on) "true" else "false"}) catch return error.HandlerFailed;
 }
 
@@ -1164,7 +1180,6 @@ fn selftestOk(payload: []const u8) bool {
 
 fn selftestReport(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
     const self: *App = @ptrCast(@alignCast(context));
-    _ = output;
     if (!selftestOn(self)) return error.InvalidRequest;
     const payload = invocation.request.payload;
     if (self.env_map.get("CHESS_SELFTEST_OUT")) |path| {
@@ -1176,7 +1191,39 @@ fn selftestReport(context: *anyopaque, invocation: native_sdk.bridge.Invocation,
             } else |_| {}
         }
     }
+    // v8-2-plan V1 step 2: a scenario reports more than once (each report
+    // replaces the file), and the app stays up for the driver, which ends
+    // the process itself once it has read what it needs
+    if (selftestScenario(self) != null) return std.fmt.bufPrint(output, "{{\"written\":true}}", .{}) catch return error.HandlerFailed;
     std.process.exit(if (selftestOk(payload)) 0 else 1);
+}
+
+test "V1 seams: CHESS_SYNC_BASE and CHESS_SELFTEST_SCENARIO are read only in self-test mode" {
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    var app_state = App{ .env_map = &env, .io = undefined };
+    try env.put("CHESS_SYNC_BASE", "http://127.0.0.1:8123");
+    try env.put("CHESS_SELFTEST_SCENARIO", "sync");
+    // a launch without CHESS_SELFTEST=1 — every release launch — sees neither
+    try std.testing.expectEqualStrings("", syncBase(&app_state));
+    try std.testing.expect(selftestScenario(&app_state) == null);
+    var out: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("{\"on\":false}", try selftestModeAnswer(&out, selftestOn(&app_state), selftestScenario(&app_state)));
+    try env.put("CHESS_SELFTEST", "1");
+    try std.testing.expectEqualStrings("http://127.0.0.1:8123", syncBase(&app_state));
+    try std.testing.expectEqualStrings("sync", selftestScenario(&app_state).?);
+    try std.testing.expectEqualStrings("{\"on\":true,\"scenario\":\"sync\"}", try selftestModeAnswer(&out, true, selftestScenario(&app_state)));
+    try std.testing.expectEqualStrings("{\"on\":true}", try selftestModeAnswer(&out, true, null));
+    // a base is a loopback http:// origin and nothing else
+    for ([_][]const u8{ "http://example.com:80", "https://127.0.0.1:8123", "http://127.0.0.1:", "http://127.0.0.1:80/x", "http://127.0.0.1:123456", "http://127.0.0.10:80" }) |bad| {
+        try env.put("CHESS_SYNC_BASE", bad);
+        try std.testing.expectEqualStrings("", syncBase(&app_state));
+    }
+    // a scenario name is a plain token: it goes into JSON unescaped
+    try env.put("CHESS_SELFTEST_SCENARIO", "a\"b");
+    try std.testing.expect(selftestScenario(&app_state) == null);
+    try env.put("CHESS_SELFTEST_SCENARIO", "");
+    try std.testing.expect(selftestScenario(&app_state) == null);
 }
 
 test "the builtin bridge grants exactly the SDK commands the page calls" {
