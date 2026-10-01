@@ -210,14 +210,35 @@ const FIXED = fenAfter("e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5 Nxd5 Nxf7 Kxf7 Qf3+ Ke
     ["X 光：叠车，第二个车从后面吃回", "3r2k1/3r1ppp/8/8/8/8/3R1PPP/3R2K1 w - - 0 1", "Rxd7 Rxd7 Rxd7 Kf8", "xray"],
     ["升变", "8/P6k/8/8/8/8/8/K7 w - - 0 1", "a8=Q Kg6 Qb7 Kf5", "promotion"],
     ["…兵没走：不说升变", "8/P6k/8/8/8/8/8/K7 w - - 0 1", "Kb2 Kg6 Kc3 Kf5", null],
-    ["长将：原本黑优，引擎 0.00，线上步步将军", "6k1/5pp1/8/8/8/8/8/3Q3K w - - 0 1", "Qd8+ Kh7 Qh4+ Kg8 Qd8+ Kh7", "perpetual",
+    // v8-2-plan T5: a real one (Lichess 1VSCb, 47.Kg3??): the king has
+    // nowhere to go from h1/h2 but back. 7.x's made-up one here was no
+    // perpetual at all — 6k1/5pp1 with a lone queen, …Kg6 walks out
+    ["长将：原本白优，引擎 0.00，后在 f3 / f2 / f1 来回将", "8/2RQ1pk1/5qp1/3P4/6pP/4P1K1/5P2/8 b - - 1 47", "Qf3+ Kh2 Qxf2+ Kh1 Qf1+", "perpetual",
+      { evalBefore: 776, evalAfter: 0 }],
+    ["…评估不是和棋：不是长将", "8/2RQ1pk1/5qp1/3P4/6pP/4P1K1/5P2/8 b - - 1 47", "Qf3+ Kh2 Qxf2+ Kh1 Qf1+", null,
+      { evalBefore: 776, evalAfter: 300 }],
+    ["…线上步步将军，王却走得出去：不是长将", "6k1/5pp1/8/8/8/8/8/3Q3K w - - 0 1", "Qd8+ Kh7 Qh4+ Kg8 Qd8+ Kh7", null,
       { evalBefore: -500, evalAfter: 0 }],
-    ["…评估不是和棋：不是长将", "6k1/5pp1/8/8/8/8/8/3Q3K w - - 0 1", "Qd8+ Kh7 Qh4+ Kg8 Qd8+ Kh7", null,
-      { evalBefore: -500, evalAfter: -300 }],
   ];
   for (const [name, fen, line, want, opts] of cases) {
     const got = LM(fen, line, opts);
     assert(got === want, "lineMotif " + name + "（" + got + "）");
+  }
+  // v8-2-plan T5: the six cases 8.1's sample judged wrong (docs/motif-audit-8.1.md),
+  // with the app's own lines and evaluations: kings that walk out of the
+  // checks (or a draw that is no draw), and queens pinned to their king
+  for (const [want, id, fen, played, line, evalBefore, evalAfter] of [
+    ["perpetual", "HQaJg", "3r4/1p3k1R/2p2q2/p2p2r1/P1n5/2P1PQ2/1P2KP2/2R5 b - - 15 33", "Rg7", "Rxg7+ Kxg7 Rg1+ Kf7 Qh5+", -257, -5],
+    ["perpetual", "bKEBE", "5rk1/2RR2pp/ppp5/8/1P6/P3r2P/5pPK/8 b - - 2 35", "Rf6", "Rxg7+ Kh8 Rxh7+ Kg8 Rcg7+", -487, 0],
+    ["perpetual", "n12Rw", "1k6/1r4pp/1p4r1/4p3/4P3/3R1P1P/q5PK/5Q2 b - - 3 35", "Qa6", "Rd8+ Ka7 Ra8+ Kxa8 Qxa6+", -582, 0],
+    ["trapped", "V9epA", "5rk1/pp4pp/2ppq1b1/1N2P1n1/2P5/P3R1P1/1P3rBP/2R1Q2K b - - 2 30", "cxb5", "Bd5 Qxd5+ cxd5 Rxb2 exd6", -587, 131],
+    ["trapped", "YoHIz", "2r2rk1/1p1qb1pp/p4n2/3p4/P2n1N2/2P3PP/1P4B1/R2Q1RK1 w - - 0 20", "Qxd4", "Bc5 Qxc5 Rxc5 Rae1 Rcc8", 8, -447],
+    ["trapped", "k8aIk", "2kr2nr/pppq2pp/2np4/4pP2/3b3P/1PN2P2/PBPPQP2/2KR1B1R b - - 0 11", "Qxf5", "Bh3 Qxh3 Rxh3 Nge7 f4", -15, 623],
+  ]) {
+    const g = new Chess(fen);
+    const mv = g.move(played);
+    const r = ctx.lineMotif(g.fen(), line.split(" "), Chess, { played: mv, credit: mv.captured ? { p: 1, n: 3, b: 3, r: 5, q: 9 }[mv.captured] : 0, evalBefore, evalAfter });
+    assert(!r || r.motif !== want, "T5：8.1 判错的 " + id + " 不再说成 " + want + "（" + (r && r.motif) + "）");
   }
   // 中间着 and 绝望子 read the mistake itself, so they take its move record
   {

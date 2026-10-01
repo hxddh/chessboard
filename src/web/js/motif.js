@@ -432,10 +432,14 @@ function dPerpetual(c) {
   // v8-2-plan T5: a run of checks in a level line is not yet a perpetual —
   // 8.1's sample had the king walk out (…Kf8 Rxh7) and a draw by other means.
   // Proved on the board: after the line's first check, whatever the king
-  // does, a check brings a position back
+  // does, a check brings a position back. Short cycles first (most are two
+  // or three checks long); 2,000 positions is about half a second at worst,
+  // and the 8.1 cases that proved at all did so inside it
   const g = load(c.Chess, c.fen);
   g.move(c.L.moves[0]);
-  return forever(g, [c.fen.split(" ", 2).join()], 5, { n: 3000 }, true) ? { motif: "perpetual" } : null;
+  const b = { n: 2000 };
+  for (let d = 2; d < 7 && b.n > 0; d++) if (forever(g, [c.fen.split(" ", 2).join()], d, b, true)) return { motif: "perpetual" };
+  return null;
 }
 /**
  * `g` after a check (`def`: the defender on move) or before one: can the
