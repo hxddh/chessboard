@@ -900,3 +900,8 @@
   - 日文「与中文逐字相同」的白名单：去掉 `vs.white`、`stats.gamesSuffix`、`learn.lessonPre`、`lm.tipSep`；加上 `live.pieceW`、`lm.tip2`、`ui.dot`、`rv.dot`、`ui.pair`、`pz.catNo`、`lib.sfPlayer`。这些值里只有占位符和符号，或者是同一个汉字。
   - a11y 的假袋子补上 `tf`。
 - **主包**：909,756 → 909,787（+31，F4 的预算是 +200）。碎片键删掉省下的字节，和 `tdot.js`、新键多出的字节大致相抵。app.js 5,873 → 5,871 行。
+
+**M3 合并（m23int = T5 + V3 + T4 + F4）**
+
+- V3 的钩子按 T4 的设计接上：`test-downgrade-e2e.mjs REP_LINES` 40 → 450（每方超过头上的 400 条）。8.2 的档案：chessboard.replines 里执白 450 条，头上前 400 条加 `ln = 450`；练过三次的卡两张，一张（c4 g6）只在第 400 条以后的线上。8.0 / 8.1 的书都是头上的前 400 条；8.1 按版本 1 打开 chessboard.repertoire 没有异常（执黑那条线的记录是它写进去的），按 400 条重建索引时删掉 7 个局面的记录（含 c4 g6）。回到 8.2：450 条线都在、旧版加的执黑线进了 replines、`ln` 补成 451、两张卡排期照旧（c4 g6 那张从 `cards` 副本找回）。`EXPECT` 加两项：`repertoire.head` 两版都是「补回」（旧版写头时去掉 `ln`），8.1 的 `repertoire.records` 是「补回」。比较改为不计对象键的先后：从副本回来的卡写成 `{s, n, due, ivl}`，内容相同。没有发现 T4 的错。README「降级」一段跟着改。
+- 合并后整套跑过（本机 Chromium，一个一个跑）：test:static 通过；downgrade 95 条 ok、repertoire 126、persist 167、library 312、endgames 52、content 543、review 228、trainer 128、board 306、shell 116、explorer 67，0 条失败，合并本身没有要修的。主包 909,572 字节（上限 910,972）。
