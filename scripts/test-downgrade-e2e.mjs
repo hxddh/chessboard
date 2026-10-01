@@ -189,28 +189,29 @@ async function snapshot(page) {
         tx.onerror = () => { db.close(); resolve(out); };
       };
     });
-    return { ls, lib: await dump("chessboard.library"), rep: await dump("chessboard.repertoire") };
+    return { ls, lib: await dump("chessboard.library"), rep: await dump("chessboard.repertoire"), lines: await dump("chessboard.replines") };
   });
 }
 
 // --- the profile -------------------------------------------------------------
 /**
- * Repertoire lines to import. v8-2-plan T4 lifts the 400-line cap and moves
- * the lines into chessboard.repertoire; when it lands, raise this past 400 so
- * the downgrade covers a book an older build cannot hold in its header.
+ * Repertoire lines to import: past the 400 a side an older build reads.
+ * v8-2-plan T4 keeps the whole book in chessboard.replines and the first
+ * HEAD (rep-lines.js) a side in the header, with `ln`, the stored count.
  */
-const REP_LINES = 40;
-/** `n` distinct legal White lines from the start, one game each. */
-function repertoirePgn(n) {
+const REP_LINES = 450;
+const REP_HEAD = 400;
+/** `n` distinct legal White lines from the start, as "a b c". */
+function repertoireLines(n) {
   const g = new Chess(), out = [];
   const firsts = ["e4", "d4", "c4", "Nf3"];
   for (const a of firsts) {
     g.move(a);
     for (const b of g.moves()) {
       g.move(b);
-      for (const c of g.moves().slice(0, 4)) {
+      for (const c of g.moves().slice(0, 8)) {
         if (out.length >= n) break;
-        out.push(`[Event "rep ${out.length}"]\n[Result "*"]\n\n1. ${a} ${b} 2. ${c} *\n`);
+        out.push(a + " " + b + " " + c);
       }
       g.undo();
       if (out.length >= n) break;
@@ -218,8 +219,19 @@ function repertoirePgn(n) {
     g.undo();
     if (out.length >= n) break;
   }
-  return out.join("\n");
+  return out;
 }
+/** …one game each. */
+const repertoirePgn = (n) => repertoireLines(n).map((l, i) => {
+  const [a, b, c] = l.split(" ");
+  return `[Event "rep ${i}"]\n[Result "*"]\n\n1. ${a} ${b} 2. ${c} *\n`;
+}).join("\n");
+/**
+ * The positions practised: one inside the header's 400 lines, and one only
+ * the lines past them reach — 8.1 indexes the header alone and drops its
+ * record, so its schedule comes back from chessboard.replines' copy.
+ */
+const PRACTISED = ["e4 Nc6", repertoireLines(REP_LINES)[REP_LINES - 1].split(" ").slice(0, 2).join(" ")];
 
 const LIB_PGN = [1, 2, 3, 4, 5].map((i) => `[Event "Rated blitz"]\n[Site "lichess"]\n[Date "2026.09.0${i}"]\n` +
   `[White "${i % 2 ? "hxddh" : "rival" + i}"]\n[Black "${i % 2 ? "rival" + i : "hxddh"}"]\n[Result "${i % 2 ? "1-0" : "0-1"}"]\n[TimeControl "180+2"]\n\n` +
@@ -293,10 +305,17 @@ async function openLearn(page) {
 }
 
 // --- (c) the comparison ------------------------------------------------------
-const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+/** Key order is not data: a card rebuilt from its copy (rep-book.js reconcile) lists `due` before `ivl`. */
+const canon = (v) => Array.isArray(v) ? v.map(canon)
+  : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v;
+const eq = (a, b) => JSON.stringify(canon(a)) === JSON.stringify(canon(b));
 const lsOf = (s, k) => s.ls["chess.v1." + k] || {};
 const libGames = (s) => (s.lib && s.lib.stores.games) || {};
 const repRows = (s) => (s.rep && s.rep.stores.repertoire) || {};
+/** chessboard.replines (v8-2-plan T4): one side's stored lines in book order, and the cards' copy. */
+const lineRows = (s, side) => Object.values((s.lines && s.lines.stores.lines) || {}).filter((r) => r.side === side)
+  .sort((a, b) => a.o - b.o).map((r) => ({ id: r.id, sans: r.sans }));
+const cardRows = (s) => (s.lines && s.lines.stores.cards) || {};
 /** Summary rows, as {game id: row}, from every `sum:` key of the library's meta store. */
 function sumRows(s) {
   const out = {};
@@ -337,8 +356,14 @@ function fields(s1) {
     "library.games": (s) => pick(libGames(s), libIds),
     "library.names": (s) => lsOf(s, "library").names,
     "library.sum": (s) => lsOf(s, "library").sum,
-    "repertoire.lines": (s) => lsOf(s, "repertoire").w,
+    // the header: the first 400 lines a side (what 8.0 / 8.1 read) and `ln`
+    // and `ln`, the stored count of both sides — less Black's, which (b) adds to
+    "repertoire.head": (s) => ({ w: (lsOf(s, "repertoire").w || []).map((l) => l.id),
+      ln: lsOf(s, "repertoire").ln == null ? null : lsOf(s, "repertoire").ln - (lsOf(s, "repertoire").b || []).length }),
+    // the whole book, in chessboard.replines
+    "repertoire.lines": (s) => lineRows(s, "w"),
     "repertoire.records": (s) => pick(repRows(s), Object.keys(repRows(s1))),
+    "repertoire.cards": (s) => pick(cardRows(s), Object.keys(cardRows(s1))),
   };
 }
 
@@ -354,9 +379,17 @@ const EXPECT = {
     // known since 8.1: 8.0 rewrites the library header without `sum`; 8.2
     // rebuilds the summary on the next boot (README 8.1.0「降级回 8.0」)
     "library.sum": "restored",
+    // v8-2-plan T4: an older build rewrites the header without `ln`; 8.2
+    // writes it again on the next boot
+    "repertoire.head": "restored",
   },
   "v8.1.0": {
     "learn.last": "restored",
+    "repertoire.head": "restored",
+    // 8.1 indexes only the header's 400 lines and drops the records of the
+    // positions past them; 8.2 indexes the whole book again, the cards from
+    // chessboard.replines' copy (rep-page.js)
+    "repertoire.records": "restored",
   },
 };
 
@@ -408,19 +441,32 @@ for (const tag of TAGS) {
     Object.assign(w.cats, seed.cats);
     localStorage.setItem("chess.v1.progress", JSON.stringify(pr));
   }, [trainerSeed(NOW), WEEK]);
-  // one position of the book practised: its card is what a rebuild of the
-  // index has to carry over by id (rep-page.js)
-  await page.evaluate((card) => new Promise((resolve, reject) => {
-    const req = indexedDB.open("chessboard.repertoire");
-    req.onsuccess = () => {
-      const db = req.result, tx = db.transaction("repertoire", "readwrite"), st = tx.objectStore("repertoire");
-      const all = st.getAll();
-      all.onsuccess = () => { const r = all.result.find((x) => x.side === "w" && x.path === "e4 Nc6"); if (r) st.put(Object.assign(r, { card })); };
+  // two positions of the book practised: their cards are what a rebuild of
+  // the index has to carry over by id (rep-page.js). Written where a grade
+  // writes them (rep-page.js save): the record, and its copy in replines
+  await page.evaluate(([card, paths]) => {
+    const openDb = (name) => new Promise((resolve, reject) => {
+      const req = indexedDB.open(name);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const put = (db, store, f) => new Promise((resolve, reject) => {
+      const tx = db.transaction(store, "readwrite"), st = tx.objectStore(store);
+      f(st);
       tx.oncomplete = () => { db.close(); resolve(); };
       tx.onerror = () => reject(tx.error);
-    };
-    req.onerror = () => reject(req.error);
-  }), { s: 2, n: 3, due: NOW + 3 * 864e5, ivl: 3 });
+    });
+    return openDb("chessboard.repertoire").then((db) => new Promise((resolve, reject) => {
+      const ids = [];
+      put(db, "repertoire", (st) => {
+        const all = st.getAll();
+        all.onsuccess = () => {
+          for (const r of all.result) if (r.side === "w" && paths.includes(r.path)) { st.put(Object.assign(r, { card })); ids.push(r.id); }
+        };
+      }).then(() => openDb("chessboard.replines")).then((ldb) => put(ldb, "cards", (st) => { for (const id of ids) st.put({ id, card }); }))
+        .then(() => resolve(ids), reject);
+    }));
+  }, [{ s: 2, n: 3, due: NOW + 3 * 864e5, ivl: 3 }, PRACTISED]);
   await page.close();
   ({ page, errs } = await open(ctx, CURRENT));
   await openLearn(page);
@@ -436,9 +482,16 @@ for (const tag of TAGS) {
   assert(!!san82 && Object.keys(lsOf(s1, "puzzles").solved || {}).length === 1, tag + " (a): 8.2 解了一题", san82);
   assert(Object.keys(libGames(s1)).length === 6 && !!lsOf(s1, "library").sum && Object.keys(sumRows(s1)).length === 6,
     tag + " (a): 棋谱库 6 局（导入 5 + 本机 1），头里有摘要标记、6 行摘要", Object.keys(libGames(s1)).length);
-  assert((lsOf(s1, "repertoire").w || []).length === REP_LINES && Object.keys(repRows(s1)).length > 0 &&
-    Object.values(repRows(s1)).some((r) => r.path === "e4 Nc6" && r.card && r.card.n === 3),
-    tag + " (a): 开局书 " + REP_LINES + " 条线，数据库里有按局面的记录，其中一张卡练过三次", Object.keys(repRows(s1)).length);
+  const practised = (s) => PRACTISED.filter((p) => Object.values(repRows(s)).some((r) => r.side === "w" && r.path === p && r.card && r.card.n === 3));
+  const wantLines = repertoireLines(REP_LINES);
+  assert(lineRows(s1, "w").length === REP_LINES && lineRows(s1, "w").every((l, i) => l.sans === wantLines[i]),
+    tag + " (a): chessboard.replines 里有执白的 " + REP_LINES + " 条线，按导入的先后", lineRows(s1, "w").length);
+  assert((lsOf(s1, "repertoire").w || []).length === REP_HEAD && lsOf(s1, "repertoire").ln === REP_LINES &&
+    lsOf(s1, "repertoire").w.every((l, i) => l.sans === wantLines[i]),
+    tag + " (a): 头上留前 " + REP_HEAD + " 条、ln = " + REP_LINES, (lsOf(s1, "repertoire").w || []).length + " / " + lsOf(s1, "repertoire").ln);
+  assert(Object.keys(repRows(s1)).length > 0 && practised(s1).length === 2 &&
+    PRACTISED.every((p) => Object.values(cardRows(s1)).some((x) => x.card && x.card.n === 3 && repRows(s1)[x.id] && repRows(s1)[x.id].path === p)),
+    tag + " (a): 按局面的记录里两张卡练过三次（一张只在第 400 条以后的线上），replines 里有它们的副本", JSON.stringify(practised(s1)));
   assert(lsOf(s1, "learn").last === 100 && !!lsOf(s1, "learn").eg && !!lsOf(s1, "learn").gs && !!lsOf(s1, "puzzles").vis,
     tag + " (a): 8.2 自己启动一次之后，书签、eg、gs、vis 都在", JSON.stringify(lsOf(s1, "learn")).slice(0, 200));
   assert(lsOf(s1, "settings").difficulty === "hardplus" && lsOf(s1, "settings").bgWorker === true,
@@ -458,6 +511,15 @@ for (const tag of TAGS) {
   await page.close();
   fs.writeFileSync(path.join(SCRATCH, tag + "-2.json"), JSON.stringify(s2, null, 1));
   assert(errs.length === 0, tag + " (b): 旧版读 8.2 的档案没有页面异常", errs.join(" / "));
+  // 8.0 / 8.1 read the header: the first 400 lines, the whole of what they can hold
+  assert((lsOf(s2, "repertoire").w || []).map((l) => l.sans).join("|") === wantLines.slice(0, REP_HEAD).join("|"),
+    tag + " (b): 旧版的书是头上的前 " + REP_HEAD + " 条执白的线", (lsOf(s2, "repertoire").w || []).length);
+  // 8.1 opens chessboard.repertoire at its own version 1 (a VersionError
+  // would leave it on its memory backend: no records written there at all)
+  if (tag === "v8.1.0") {
+    assert(s2.rep && s2.rep.version === 1 && Object.values(repRows(s2)).some((r) => r.side === "b" && r.path === "d4 Nf6 c4"),
+      tag + " (b): 8.1 按版本 1 打开 chessboard.repertoire，执黑那条线的记录是它写进去的", s2.rep && s2.rep.version);
+  }
   const oldGame = (lsOf(s2, "stats").games || []).find((g) => !st1.some((x) => x.id === g.id));
   assert(!!oldGame && oldGame.ending === "resigned", tag + " (b): 旧版记下了它下的一盘", JSON.stringify(oldGame));
   const oldSolved = Object.keys(lsOf(s2, "puzzles").solved || {}).find((id) => !(id in (lsOf(s1, "puzzles").solved || {})));
@@ -494,6 +556,12 @@ for (const tag of TAGS) {
   const ids3 = Object.keys(libGames(s3)), rows3 = sumRows(s3);
   assert(ids3.length === 8 && ids3.every((id) => rows3[id]) && Object.keys(rows3).length === 8,
     tag + " (c): 摘要行覆盖棋谱库的全部 8 局", ids3.length + " / " + Object.keys(rows3).length);
+  assert(lineRows(s3, "w").map((l) => l.sans).join("|") === wantLines.join("|") &&
+    lineRows(s3, "b").map((l) => l.sans).join("|") === "d4 Nf6 c4 e6",
+    tag + " (c): 执白的 " + REP_LINES + " 条线都还在，旧版加的执黑线也进了 chessboard.replines", lineRows(s3, "w").length + " / " + JSON.stringify(lineRows(s3, "b")));
+  assert((lsOf(s3, "repertoire").w || []).length === REP_HEAD && lsOf(s3, "repertoire").ln === REP_LINES + 1,
+    tag + " (c): 头上又是前 " + REP_HEAD + " 条、ln 补回（" + (REP_LINES + 1) + "）", (lsOf(s3, "repertoire").w || []).length + " / " + lsOf(s3, "repertoire").ln);
+  assert(practised(s3).length === 2, tag + " (c): 两张练过的卡排期照旧", JSON.stringify(practised(s3)));
   assert((lsOf(s3, "repertoire").b || []).length === 1 &&
     Object.values(repRows(s3)).some((r) => r.side === "b" && r.path === "d4 Nf6 c4"),
     tag + " (c): 旧版加的执黑线在书里，按局面的记录也有它", JSON.stringify(Object.keys(repRows(s3))).slice(0, 200));
