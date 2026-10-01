@@ -222,12 +222,12 @@ import { easeFromCss } from "./motion.js";
   let _canvas = null;
   let _model = null;
   // v8-2-plan F3: until the shell shows its first view, and while a page
-  // lies over the stage, draw() owes the frame instead of making it. Each
-  // frame with a board in it is a raster of the whole canvas — 0.35–0.85 s
-  // in Chromium without a GPU — and a launch onto the library drew ten
-  // boards nobody could see, the library's reads waiting behind them.
-  let _covered = true;
-  function cover(on) { if (!(_covered = on)) draw(); }
+  // lies over the stage, draw() is skipped; uncovering draws. A launch onto
+  // the library drew the board ten times under the page, each frame with it
+  // a raster of the whole canvas (0.35–0.85 s in Chromium without a GPU,
+  // before paintContactShadow's stamp), the library's reads waiting behind.
+  let _shown = false;
+  function cover(on) { if ((_shown = !on)) draw(); }
   /** live drag ghost: {from, x, y} in canvas pixels | null */
   // The drag lives in the model, not in a variable here — see draw(). It used
   // to be pushed in through setDrag(), which made the board hold a second copy
@@ -630,7 +630,7 @@ import { easeFromCss } from "./motion.js";
 
   function draw() {
     if (!_canvas || !_model) return;
-    if (_covered) return;
+    if (!_shown) return;
     const m = _model();
     const _drag = m.drag || null;
     const now = typeof performance !== "undefined" ? performance.now() : 0;
@@ -639,9 +639,6 @@ import { easeFromCss } from "./motion.js";
     const ctx = _canvas.getContext("2d");
     const w = _canvas.width;
     const step = w / 8;
-    // v8-2-plan F3: the whole canvas cleared first lets Chromium drop what
-    // earlier draws of the same frame queued, so a frame rasters one board
-    ctx.clearRect(0, 0, w, w);
     // integer cell edges: fractional fillRect boundaries land between device
     // pixels and antialias into soft seams at some board sizes
     const edge = (i) => Math.round(i * step);
@@ -762,7 +759,7 @@ import { easeFromCss } from "./motion.js";
         s.ellipse(sz / 2, sz / 2, sz * 0.30, sz * 0.09, 0, 0, Math.PI * 2);
         s.fill();
       }
-      ctx.drawImage(c, x - sz / 2, y + sz * 0.33 - sz / 2);
+      ctx.drawImage(c, x - sz / 2, y - sz * 0.17); // centred 0.33 below
     }
 
     function paintPiece(piece, x, y, scale) {

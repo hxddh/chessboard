@@ -64,9 +64,8 @@ export function createShell(d) {
     const want = SHELL_VIEWS.includes(view) ? view : "play";
     store.ui.view = want;
     appEl.setAttribute("data-view", want);
-    appEl.classList.toggle("page-on", isPage(want));
     // v8-2-plan F3: the board is drawn when it is uncovered, not under a page
-    ChessBoardView.cover(isPage(want));
+    ChessBoardView.cover(appEl.classList.toggle("page-on", isPage(want)));
     for (const b of railBtns()) {
       if (b.dataset.view === want) b.setAttribute("aria-current", "page");
       else b.removeAttribute("aria-current");
