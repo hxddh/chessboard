@@ -1,7 +1,7 @@
 /**
  * 残局训练营的外壳（v8-1-plan T2）：内容分块、进度、复习队列、目录和「我的」。
  *
- * The sixty positions are js/chunk-endgames.js (endgames.js), fetched the
+ * The ninety positions are js/chunk-endgames.js (endgames.js), fetched the
  * first time the lesson list or 「我的」 draws; this module is what the bundle
  * keeps of the camp. An endgame runs in the lesson runner (trainer/lessons.js)
  * as a one-task lesson built here — a drill against the engine at full
@@ -73,7 +73,8 @@ export function createEndgames(d) {
     if (!it) return null;
     const key = id + "|" + store.ui.langId;
     if (cache.key === key) return cache.L;
-    const src = tdot(tf("eg.src", [word(it.src)]), t(it.v === "tb" ? "eg.verTb" : "eg.verSf"));
+    // v8-3-plan T5: a `pend` card says its table check is still to come
+    const src = tdot(tf("eg.src", [word(it.src)]), t(it.v === "tb" ? "eg.verTb" : it.v === "pend" ? "eg.verPend" : "eg.verSf"));
     cache.key = key;
     cache.L = {
       id: "eg:" + id, eg: id,
@@ -155,7 +156,7 @@ export function createEndgames(d) {
 
   /**
    * 「我的」: the camp's section — per theme done/total, what is due, and the
-   * two ways in. Drawn from the first visit, at 0/60: it is a door as much
+   * two ways in. Drawn from the first visit, at 0/90: it is a door as much
    * as a record, like the entry card's three doors (the lesson list's camp
    * sits folded under 目录). Hidden only until its chunk is here.
    * @param {(id:string) => void} go open an endgame in 学习

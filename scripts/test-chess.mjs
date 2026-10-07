@@ -7268,6 +7268,50 @@ for (const lang of CONTENT_LANGS) {
   }
 }
 
+// v8-3-plan T1 / T2: 看 N 步 / 盲走 draw from the bank's band for the mode's
+// rating, and look's plies past the puzzle's line are the engine's move at
+// the review's budget — the 8.2 rule (pickMove) where it has none
+{
+  const vctx = { console };
+  vctx.globalThis = vctx;
+  vctx.window = vctx;
+  vm.createContext(vctx);
+  loadModule(vctx, "src/web/js/chess.js");
+  loadModule(vctx, "src/web/js/trainer/visual-modes.js");
+  const V = vctx.CHESS_VISUAL, C = vctx.Chess;
+  const ana = fs.readFileSync(path.join(root, "src/web/js/review/analysis.js"), "utf8");
+  assert(Number((/const SCAN_BUDGET = (\d+);/.exec(ana) || [])[1]) === V.LOOK_BUDGET,
+    "visual-modes LOOK_BUDGET is the review's SCAN_BUDGET (" + V.LOOK_BUDGET + ")");
+  const idx = { bands: [{ band: 600 }, { band: 800 }, { band: 1000 }], themes: { m1: { bands: [30, 5, 25] }, m2: { bands: [40, 40, 3] } } };
+  assert(V.bankBand(idx, 600, ["m1", "m2"]) === 600 && V.bankBand(idx, 800, ["m1", "m2"]) === 600 && V.bankBand(idx, 1000, ["m1", "m2"]) === 600 &&
+    V.bankBand(idx, 800, []) === 800 && V.bankBand({ bands: idx.bands, themes: {} }, 1000, ["m1"]) === 1000,
+    "bankBand: the rating's band, or the nearest holding a set's worth of each mate, or the rating's band when none does");
+  assert(V.keyBand("lc-ab|1400") === 1400 && V.keyBand("lc-ab|3|99|1400") === 1400 && V.keyBand("m1-x|3|99") === null &&
+    V.keyBand("m1-x") === null && V.keyBand("lc-ab") === null, "keyBand: a bank review key ends in its band, a local one has none");
+  const A = { id: "lc-a" }, B = { id: "b" }, Cq = { id: "c" };
+  assert(V.blindNext([[A], []], [[B], [Cq]], 7, 0, 1, []) === Cq && V.blindNext([[A], []], [[B], [Cq]], 7, 0, 0, []) === A &&
+    V.blindNext([[A], []], [[B], [Cq]], 7, 0, 0, ["lc-a"]) === B && V.blindNext(null, [[B], []], 7, 0, 1, []) === B &&
+    V.blindNext(null, [[], []], 7, 0, 0, []) === null,
+    "blindNext: the level asked for from the bank, then the local book, then the other level");
+  // the Italian, Black to move; the puzzle's line is one ply, the engine plays two
+  const p = { id: "lc-t", src: "lichess", rating: 1450, cat: "tac", fen: "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3", solution: ["Nf6"] };
+  const asked = [];
+  const eng = { "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4": "f3g5", "r1bqkb1r/pppp1ppp/2n2n2/4p1N1/2B1P3/8/PPPP1PPP/RNBQK2R b KQkq - 5 4": "d7d5" };
+  const best = async (fen) => { asked.push(fen); return eng[fen] || null; };
+  const q = await V.buildLook(C, p, 3, 11, best);
+  const q2 = await V.buildLook(C, p, 3, 11, best);
+  assert(q && q.sans.join(" ") === "Nf6 Ng5 d5" && asked.length === 4 && JSON.stringify(q) === JSON.stringify(q2) && /^lc-t\|3\|11\|1400$/.test(q.key),
+    "buildLook: the puzzle's line first, then the engine's moves (asked only past the line), the same question twice, the key ends in the band", q && q.sans.join(" ") + " " + asked.length + " " + (q && q.key));
+  const none = await V.buildLook(C, p, 3, 11, async () => null);
+  const bad = await V.buildLook(C, p, 3, 11, async () => "a1a1");
+  const rule = await V.buildLook(C, p, 3, 11);
+  assert(rule && JSON.stringify(none) === JSON.stringify(rule) && JSON.stringify(bad) === JSON.stringify(rule) && rule.sans[0] === "Nf6",
+    "buildLook: no engine move (none, or one that is not legal) — the 8.2 rule, exactly as without an engine", rule && rule.sans.join(" "));
+  const pool = V.lookPool([p, Object.assign({}, p, { id: "lc-u", solution: ["Nf6", "Ng5"] })]);
+  const a = await V.lookQuestion(C, pool, 99, 0, 3, best), b = await V.lookQuestion(C, pool, 99, 0, 3, best);
+  assert(a && JSON.stringify(a) === JSON.stringify(b), "lookQuestion with the engine: the same seed, the same question", a && a.key);
+}
+
 // --- 7.0: every suite package.json runs, CI runs too -------------------------
 //
 // 6.1 found that `checks.yml`'s static job named three scripts by hand while

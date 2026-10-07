@@ -246,6 +246,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "eg.src": "出处：{0}",
       "eg.verTb": "结论已查 Syzygy 残局库核对",
       "eg.verSf": "超过七子、没有残局库可查，结论已用 Stockfish 深度搜索核对",
+      "eg.verPend": "五到七子，结论已用 Stockfish 深度搜索核对，查残局库的核对还没做",
       "eg.win": "胜",
       "eg.draw": "和",
       "eg.dueTip": "到复习的日子了",

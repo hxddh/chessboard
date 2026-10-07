@@ -216,6 +216,7 @@
       "eg.src": "Source: {0}",
       "eg.verTb": "verdict checked against the Syzygy tablebase",
       "eg.verSf": "more than seven men, beyond any tablebase: verdict checked by a deep Stockfish search",
+      "eg.verPend": "five to seven men: verdict checked by a deep Stockfish search, tablebase check still to come",
       "eg.win": "win",
       "eg.draw": "draw",
       "eg.dueTip": "Due for review",

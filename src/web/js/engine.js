@@ -433,6 +433,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
   // v8-1-plan F4: a `ucinewgame` in the middle of a background search clears
   // its hash under it; the next game search sends it instead
   let freshGame = false;
+  // v8-3-plan M2 评审: an analysis at its own Hash (看N步's fixed 32 MB) leaves
+  // that Hash on the worker; the game search sets no Hash of its own, so it
+  // puts the player's back once, before its next search
+  let foreignHash = false;
   function newGame() {
     gen++;
     if (!worker) return;
@@ -511,6 +515,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // UCI options are sticky on the worker — always set every knob a tier
     // could have touched so no search inherits another tier's handicap.
     send("setoption name MultiPV value " + (tier.multipv || 1));
+    if (foreignHash) { send("setoption name Hash value " + options.hash); foreignHash = false; }
     if (tier.skill != null) {
       send("setoption name UCI_LimitStrength value false");
       send("setoption name Skill Level value " + tier.skill);
@@ -766,20 +771,20 @@ const global = typeof window !== "undefined" ? window : globalThis;
    */
   const EVAL_CACHE_MAX = 512;
   const evalCache = new Map();
-  function cacheKey(fen, budget, multipv) {
+  function cacheKey(fen, budget, multipv, hash) {
     const f = fen.split(" ");
-    return f.slice(0, 5).join(" ") + "|" + (multipv || 1) + "|" + nodesFor(budget);
+    return f.slice(0, 5).join(" ") + "|" + (multipv || 1) + "|" + nodesFor(budget) + (hash ? "|h" + hash : "");
   }
-  function cachedEval(fen, budget, multipv) {
-    const k = cacheKey(fen, budget, multipv);
+  function cachedEval(fen, budget, multipv, hash) {
+    const k = cacheKey(fen, budget, multipv, hash);
     const hit = evalCache.get(k);
     if (!hit) return null;
     evalCache.delete(k); evalCache.set(k, hit); // refresh recency
     return hit;
   }
-  function rememberEval(fen, budget, multipv, result) {
+  function rememberEval(fen, budget, multipv, result, hash) {
     if (!result) return;
-    const k = cacheKey(fen, budget, multipv);
+    const k = cacheKey(fen, budget, multipv, hash);
     evalCache.delete(k);
     evalCache.set(k, result);
     while (evalCache.size > EVAL_CACHE_MAX) evalCache.delete(evalCache.keys().next().value);
@@ -789,21 +794,24 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * Full-strength eval of `fen` for review analysis.
    * @param {number} budget ms-equivalent, searched as nodesFor(budget) nodes
    * @param {object} [opts] `{multipv}` asks for that many lines (1–5); the
-   *   result then also carries `lines: [{pv, cp, mate}]`, best first
+   *   result then also carries `lines: [{pv, cp, mate}]`, best first;
+   *   `{hash}` searches at that Hash (MB) instead of the player's — a result
+   *   that must not change with the setting (v8-3-plan T2, 看 N 步's plies)
    * @returns {Promise<{cp,mate,turn,best,pv,lines,nodes}|null>} score in
    *   side-to-move terms (`turn` = that side); null when stale/failed.
    */
   function analyze(fen, budget, opts) {
     const multipv = opts && opts.multipv ? Math.max(1, Math.min(5, opts.multipv | 0)) : 1;
-    const hit = cachedEval(fen, budget, multipv);
+    const hash = opts && opts.hash > 0 ? opts.hash : 0;
+    const hit = cachedEval(fen, budget, multipv, hash);
     if (hit) return Promise.resolve(hit);
     // v8-1-plan F4: `{bg: true}` is a pass over many positions — the lowest
     // level, preempted by anything else, and on the second worker when that
     // is turned on
     const run = opts && opts.bg ? analyzeBatch(fen, budget, multipv)
-      : exclusive((job) => analyzeInner(fen, budget, multipv, job), PRIO.PLAY, "eval");
+      : exclusive((job) => analyzeInner(fen, budget, multipv, job, hash), PRIO.PLAY, "eval");
     return run.then((r) => {
-      rememberEval(fen, budget, multipv, r);
+      rememberEval(fen, budget, multipv, r, hash);
       return r;
     });
   }
@@ -855,20 +863,20 @@ const global = typeof window !== "undefined" ? window : globalThis;
     into.set(idx, slot);
   }
 
-  function fullStrengthCmds(multipv) {
+  function fullStrengthCmds(multipv, hash) {
     // all sticky from a handicap game — analysis is always full strength
     return ["setoption name MultiPV value " + (multipv || 1), "setoption name Skill Level value 20",
-      "setoption name UCI_LimitStrength value false", "setoption name Hash value " + options.hash];
+      "setoption name UCI_LimitStrength value false", "setoption name Hash value " + (hash || options.hash)];
   }
-  function fullStrengthOptions(multipv) {
-    for (const c of fullStrengthCmds(multipv)) send(c);
+  function fullStrengthOptions(multipv, hash) {
+    for (const c of fullStrengthCmds(multipv, hash)) send(c);
   }
 
   function linesOf(slots) {
     return [...slots.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
   }
 
-  async function analyzeInner(fen, budget, multipv, job) {
+  async function analyzeInner(fen, budget, multipv, job, hash) {
     await init();
     const myGen = ++gen;
     // v8-1-plan F4: a background search does not answer to cancel(); only
@@ -884,7 +892,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
     await drain;
     if (stale()) return null;
     const nodes = nodesFor(budget);
-    fullStrengthOptions(multipv);
+    fullStrengthOptions(multipv, hash);
+    foreignHash = !!hash && hash !== options.hash;
     send("position fen " + fen);
     const slots = new Map();
     const collect = (line) => { if (typeof line === "string") readInfo(line, slots); };

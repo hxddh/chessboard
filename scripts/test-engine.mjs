@@ -272,6 +272,26 @@ const FEN2 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
   assert(gos() === 2, "setting the same value again keeps the cache");
 }
 
+// --- v8-3-plan M2 评审: a search at its own Hash hands the game back the player's
+// 看N步 searches at a fixed Hash (analyze(…, {hash})); the game search sets no
+// Hash of its own, so without this the next game would play on the fixed one
+{
+  const { E, clock, state } = boot();
+  const p = E.init(); await clock.advance(1); await p;
+  E.setOptions({ hash: 128 });
+  const look = E.analyze(FEN, 100, { hash: 32 }); await clock.advance(1); await look;
+  const cmds = () => state.last().cmds;
+  const hashBefore = (i) => { const hs = cmds().slice(0, i).filter((c) => /Hash value/.test(c)); return hs.length ? hs[hs.length - 1] : null; };
+  const goAt = cmds().map((c, i) => (/^go nodes/.test(c) ? i : -1)).filter((i) => i >= 0).pop();
+  assert(hashBefore(goAt) === "setoption name Hash value 32", "the 看N步 search runs at its own Hash (" + hashBefore(goAt) + ")");
+  const move = E.bestMove(FEN2, "extreme"); await clock.advance(2000); await move;
+  const gameGo = cmds().map((c, i) => (/^go\b/.test(c) ? i : -1)).filter((i) => i >= 0).pop();
+  assert(hashBefore(gameGo) === "setoption name Hash value 128", "…and the next game search is back at the player's Hash (" + hashBefore(gameGo) + ")");
+  const n = cmds().filter((c) => /Hash value/.test(c)).length;
+  const again = E.bestMove(FEN, "extreme"); await clock.advance(2000); await again;
+  assert(cmds().filter((c) => /Hash value/.test(c)).length === n, "…once: a second game search sends no Hash");
+}
+
 // --- 7.4 (Codex review on #76): a failed boot is sticky, whoever hit it ----
 // A hint or a library pass calls analyze()/bestMove() directly and boots the
 // engine lazily, around app.js's bootEngine(). Each such call used to build a

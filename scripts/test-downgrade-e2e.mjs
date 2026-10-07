@@ -1,5 +1,6 @@
 /**
- * Downgrade to 8.0 / 8.1 and back (v8-2-plan V3).
+ * Downgrade to 8.0 / 8.1 and back (v8-2-plan V3); and to 8.2.1 (v8-3-plan
+ * T1, M2 评审 P3-2: the bank-puzzle review keys of 看 N 步 / 盲走).
  *
  * release-notes「降级回 8.0」said what was known — the library's summary
  * marker is dropped — and what was not: whether 8.1's new fields (a game's
@@ -31,7 +32,7 @@
  * A shallow clone (CI) fetches the two tags first. Each build's bundle size
  * is pinned: a different number means this did not build what was shipped.
  *
- *   node scripts/test-downgrade-e2e.mjs            both versions
+ *   node scripts/test-downgrade-e2e.mjs            every version
  *   DOWNGRADE_ONLY=v8.0.0 node scripts/test-downgrade-e2e.mjs
  */
 import fs from "fs";
@@ -49,7 +50,7 @@ const CURRENT = path.join(REPO, "src", "web");
 const CACHE = process.env.DOWNGRADE_CACHE || path.join(REPO, "node_modules", ".cache", "chess-downgrade");
 
 /** The shipped main bundle of each release, in bytes (v8-1-plan / v8-2-plan §2). */
-const SHIPPED = { "v8.0.0": 1200498, "v8.1.0": 900972 };
+const SHIPPED = { "v8.0.0": 1200498, "v8.1.0": 900972, "v8.2.1": 907245 };
 const TAGS = Object.keys(SHIPPED).filter((t) => !process.env.DOWNGRADE_ONLY || process.env.DOWNGRADE_ONLY === t);
 
 let failed = 0;
@@ -247,14 +248,26 @@ const OLD_LIB_PGN = (tag) => `[Event "${tag}"]\n[Site "lichess"]\n[Date "2026.09
  * into what the current build has stored, then the current build boots on
  * it and writes it back — so the snapshot is 8.2's own.
  */
+/** v8-3-plan T1: review keys of bank puzzles, which only the current build writes (and can build again) */
+const BANK_KEYS = { look: "lc-0009X|2|5|1400", blind: "lc-0009Y|1400" };
+const isBankKey = (k) => /\|\d{4}$/.test(k);
+/** puzzleState.vis with (bank: true) only the bank keys of each queue, or (false) everything else */
+const visPart = (vis, bank) => vis && Object.fromEntries(Object.entries(vis).map(([kind, m]) =>
+  [kind, bank ? Object.keys(m.q || {}).filter(isBankKey).sort() : Object.assign({}, m, { q: Object.fromEntries(Object.entries(m.q || {}).filter(([k]) => !isBankKey(k))) })]));
+
 function trainerSeed(now) {
   const srs = (due) => ({ s: 0, n: 1, due, ivl: 0 });
   return {
     eg: { done: { "kp-outside": now - 5e6, "rp-lucena": now - 4e6 }, srs: { "dr-philidor": srs(now - 1e5) } },
     gs: { "morphy-opera-1858": { w: { same: 15, n: 17, avg: 1.2, at: now - 3e6 } }, "anderssen-kieseritzky-1851": { w: { same: 9, n: 23, avg: 4.4, at: now - 2e6 }, b: { same: 3, n: 22, avg: 8.1, at: now - 1e6 } } },
+    // an 8.2 key of each mode (a local puzzle: the id, look's N and question
+    // seed), and v8-3-plan T1's bank keys, the band at the end — all due but
+    // the blind 8.2 one, the bank ones first in their queues
     vis: {
-      look: { rating: { r: 1180, rd: 140, vol: 0.06 }, solve: 6, miss: 3, at: now - 2e6, q: { "m1-1|3|77": srs(now - 1e5) } },
-      blind: { rating: { r: 1320, rd: 160, vol: 0.06 }, solve: 4, miss: 1, at: now - 1e6, q: { "m2-4": srs(now + 1e8) } },
+      look: { rating: { r: 1180, rd: 140, vol: 0.06 }, solve: 6, miss: 3, at: now - 2e6,
+        q: { "d-back-eat|3|77": srs(now - 1e5), [BANK_KEYS.look]: srs(now - 2e5) } },
+      blind: { rating: { r: 1320, rd: 160, vol: 0.06 }, solve: 4, miss: 1, at: now - 1e6,
+        q: { "m2-4": srs(now + 1e8), [BANK_KEYS.blind]: srs(now - 2e5) } },
     },
     runs: { look: { best: 7, at: now - 2e6 }, blind: { best: 5, at: now - 1e6 } },
     // this week's answers in the progress file, under the two modes' own names
@@ -350,7 +363,8 @@ function fields(s1) {
     "learn.done": (s) => lsOf(s, "learn").done,
     "learn.eg": (s) => lsOf(s, "learn").eg,
     "learn.gs": (s) => lsOf(s, "learn").gs,
-    "puzzles.vis": (s) => lsOf(s, "puzzles").vis,
+    "puzzles.vis": (s) => visPart(lsOf(s, "puzzles").vis, false),
+    "puzzles.vis.bank": (s) => visPart(lsOf(s, "puzzles").vis, true),
     "puzzles.runs": (s) => lsOf(s, "puzzles").runs,
     "puzzles.solved": (s) => pick(lsOf(s, "puzzles").solved, solved82),
     "progress.vis": (s) => Object.fromEntries(Object.entries(lsOf(s, "progress").weeks || {})
@@ -396,6 +410,12 @@ const EXPECT = {
     // positions past them; 8.2 indexes the whole book again, the cards from
     // chessboard.replines' copy (rep-page.js)
     "repertoire.records": "restored",
+  },
+  "v8.2.1": {
+    // v8-3-plan T1 (M2 评审 P3-2): 8.2 looks a bank review up in its local book when it
+    // is due, finds nothing and drops it, as it drops any key it cannot build
+    // (visual-modes.js serve); the current build cannot put back what is not there
+    "puzzles.vis.bank": "lost",
   },
 };
 
@@ -508,6 +528,14 @@ for (const tag of TAGS) {
   ({ page, errs } = await open(ctx, BUILDS[tag].web));
   await fileGame(page);
   const sanOld = await solvePuzzle(page);
+  // 8.2 has 看 N 步 / 盲走: a set of each takes what is due in its queue
+  const visModes = tag === "v8.2.1";
+  if (visModes) {
+    for (const k of ["look", "blind", "practice"]) {
+      await page.click('#pz-mode-seg button[data-run="' + k + '"]');
+      await page.waitForTimeout(2000);
+    }
+  }
   await openLearn(page);
   await view(page, "library");
   await importFile(page, "old-" + tag + ".pgn", OLD_LIB_PGN(tag), "#lib-import");
@@ -526,6 +554,13 @@ for (const tag of TAGS) {
     assert(s2.rep && s2.rep.version === 1 && Object.values(repRows(s2)).some((r) => r.side === "b" && r.path === "d4 Nf6 c4"),
       tag + " (b): 8.1 按版本 1 打开 chessboard.repertoire，执黑那条线的记录是它写进去的", s2.rep && s2.rep.version);
   }
+  if (visModes) {
+    const v1 = lsOf(s1, "puzzles").vis, v2 = lsOf(s2, "puzzles").vis;
+    assert(visPart(v1, true).look.length === 1 && visPart(v1, true).blind.length === 1 &&
+      !visPart(v2, true).look.length && !visPart(v2, true).blind.length && eq(visPart(v1, false), visPart(v2, false)),
+      tag + " (b): 8.2 开一组看 N 步、一组盲走：题库题的复习键（当前的包写的）到期时被它悄悄丢掉；8.2 自己的键、评级、对错数原样",
+      JSON.stringify(v2).slice(0, 300));
+  }
   const oldGame = (lsOf(s2, "stats").games || []).find((g) => !st1.some((x) => x.id === g.id));
   assert(!!oldGame && oldGame.ending === "resigned", tag + " (b): 旧版记下了它下的一盘", JSON.stringify(oldGame));
   const oldSolved = Object.keys(lsOf(s2, "puzzles").solved || {}).find((id) => !(id in (lsOf(s1, "puzzles").solved || {})));
@@ -534,9 +569,15 @@ for (const tag of TAGS) {
   assert(!!oldLib, tag + " (b): 旧版往棋谱库导入了一局");
   assert((lsOf(s2, "repertoire").b || []).length === 1, tag + " (b): 旧版导入了一条执黑的线");
   // 8.0 / 8.1 read the header — the first 400 lines, the whole of what they
-  // can hold — and a White line imported into it pushes out the oldest
-  assert((lsOf(s2, "repertoire").w || []).map((l) => l.sans).join("|") === wantLines.slice(1, REP_HEAD).concat(OLD_W).join("|"),
-    tag + " (b): 旧版的书是头上的前 " + REP_HEAD + " 条执白的线；往里加一条，它的上限挤掉最早的一条", (lsOf(s2, "repertoire").w || []).length);
+  // can hold — and a White line imported into it pushes out the oldest; 8.2
+  // keeps the whole book (chessboard.replines), so its header stays the first 400
+  if (tag === "v8.2.1") {
+    assert((lsOf(s2, "repertoire").w || []).map((l) => l.sans).join("|") === wantLines.slice(0, REP_HEAD).join("|") && lineRows(s2, "w").length === REP_LINES + 1,
+      tag + " (b): 8.2 的书是整本（" + (REP_LINES + 1) + " 条执白的线），头上仍是前 " + REP_HEAD + " 条", (lsOf(s2, "repertoire").w || []).length + " / " + lineRows(s2, "w").length);
+  } else {
+    assert((lsOf(s2, "repertoire").w || []).map((l) => l.sans).join("|") === wantLines.slice(1, REP_HEAD).concat(OLD_W).join("|"),
+      tag + " (b): 旧版的书是头上的前 " + REP_HEAD + " 条执白的线；往里加一条，它的上限挤掉最早的一条", (lsOf(s2, "repertoire").w || []).length);
+  }
 
   // (c) back to 8.2
   ({ page, errs } = await open(ctx, CURRENT));
