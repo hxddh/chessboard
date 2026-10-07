@@ -60,16 +60,22 @@ import { makeWork, dropbox, launchApp, declaredMenus, snapshotMenus, latencyStat
 import { startFakeSyncServer } from "./fake-sync-server.mjs";
 
 /**
- * Provisional (v8-2-plan §9 M4): set before any runner had run this, loose
- * on purpose; the first CI runs' numbers replace them, recorded in §9.
+ * v8-3-plan V3: set from the first nine green runs (macOS 36850688751,
+ * 36859018535, 36860775645, 37571034424, 37573325903, 37574917430; Windows
+ * 37571031877, 37573325903, 37574917430 — see §9 M1). Timings: the worst of
+ * the nine × 5, rounded up to 50 ms; the prefetch, a time to first paint
+ * rather than a latency, the worst × 2.
  */
 export const THRESHOLDS = {
-  /** a `wait` taken by a turning loop: within a frame or two of the watcher's 5 ms poll */
-  syncAckP95Ms: 500,
-  syncAckMaxMs: 2000,
-  idleAckMaxMs: 2000,
-  /** the page's longest gap between frames while the 100 games stream in */
-  syncFrameGapMs: 1000,
+  /** a `wait` taken by a turning loop during the sync: worst p95 50 ms, worst single 249 ms */
+  syncAckP95Ms: 250,
+  syncAckMaxMs: 1250,
+  /** idle: worst single 205 ms (Windows) */
+  idleAckMaxMs: 1050,
+  /** the page's longest gap between frames while the 100 games stream in: worst 134 ms */
+  syncFrameGapMs: 700,
+  /** R18: the library summary in hand after the bundle starts: worst 3,365 ms (macOS; Windows ≤ 276) */
+  prefetchMs: 7000,
   /** a launch, from spawn to its scenario's last report */
   launchMs: 180000,
 };
@@ -303,7 +309,8 @@ async function runLive() {
     const seed = reports["prefetch-seed"] && reports["prefetch-seed"].checks.seeded, got = reports["prefetch-read"] && reports["prefetch-read"].checks.prefetch;
     if (seed && got) {
       extra.prefetch = got;
-      check("R18:prefetch", seed.pass && got.pass && got.n === seed.n, "预读命中：摘要 " + got.n + " 局（写入时 " + seed.n + "），bundle 开始后 " + got.ms + " ms 拿到（先只记数）");
+      check("R18:prefetch", seed.pass && got.pass && got.n === seed.n && got.ms < THRESHOLDS.prefetchMs,
+        "预读命中：摘要 " + got.n + " 局（写入时 " + seed.n + "），bundle 开始后 " + got.ms + " ms 拿到（< " + THRESHOLDS.prefetchMs + "）");
     }
   }
 

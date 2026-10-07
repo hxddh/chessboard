@@ -49,7 +49,7 @@
  * English the first launch switches to (chunkSync), in that storage; on a
  * CI runner, which starts empty, the two are one and the same fresh state.
  *
- * The app starts in that temp folder too, never in the checkout: the
+ * The app starts in that temp folder, then in its own folder, never in the checkout: the
  * checkout has a frontend/dist of its own, and until 8.2.1 the Windows
  * build read its page from the current directory (v8-3-plan V1) — run from
  * the repository the self-test passed while the packaged app, started from
@@ -78,11 +78,11 @@ const LIMIT_MS = 120000;
 const CHECKS = ["engine", "appdata", "chunk", "restart", "sound", "idb", "chunkSync", "nativeIo"];
 
 /** One launch. @returns {Promise<{report: object|null, code: number|null, why: string|null}>} */
-async function launch(n) {
+async function launch(n, cwd) {
   const out = path.join(dir, "report-" + n + ".json");
   const t0 = Date.now();
   const child = spawn(path.resolve(exe), [], {
-    cwd: dir,
+    cwd,
     env: { ...process.env, ...profile, CHESS_SELFTEST: "1", CHESS_SELFTEST_OUT: out },
     stdio: "inherit",
   });
@@ -109,7 +109,10 @@ async function launch(n) {
   return { report, code: result.code, why: null };
 }
 
-const runs = [await launch(1), await launch(2)];
+// v8-3-plan V1: the first launch in this run's temp folder, the second in the
+// executable's own folder — the current directory a double click in Explorer
+// (or Finder's launch of Contents/MacOS) gives it. Neither is the checkout.
+const runs = [await launch(1, dir), await launch(2, path.dirname(path.resolve(exe)))];
 
 // check → the reasons it failed, per launch
 const failures = new Map();

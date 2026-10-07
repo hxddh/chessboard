@@ -111,6 +111,9 @@ jobs:
           # script rides next to the exe (see scripts/register-pgn.cmd)
           if [ -d dist/Chessboard ]; then
             cp scripts/register-pgn.cmd scripts/register-pgn.reg dist/Chessboard/
+            # the notification icon main.zig hands the host (v8-3-plan V2):
+            # LoadImageW(IMAGE_ICON) wants an .ico, by an absolute path
+            cp assets/icon.ico dist/Chessboard/resources/icon.ico
             test -f "$(find dist/Chessboard -path '*/licenses/LICENSE.txt' | head -n1)"
           fi
           ls -R dist
@@ -146,20 +149,17 @@ jobs:
   # same job in build-macos.yml for what it is and why it is never released
   # (scripts/test-chess.mjs holds that it produces no Chessboard-* artifact).
   #
-  # Not a gate yet. On macOS the SDK's own CI runs WKWebView with automation
-  # on macos-14; on Windows nobody has run WebView2 with it (§9 M1: the SDK
-  # only runs its canvas smoke test there, under wine). The job runs and says
-  # plainly what failed, and a red does not stop a release; once two runs are
-  # green on a real runner it becomes a gate like macOS (§9 M4).
-  # The smoke and scenario steps carry their own limits: the job's limit
-  # ends a job "cancelled", which continue-on-error does not cover and which
-  # skips release.yml's `publish` (the first rehearsal, §9 M4); a step's
-  # limit ends it "failed", which it does.
+  # A gate since 8.3 (v8-3-plan §8 第 4 条): release.yml's publish needs this
+  # whole workflow, so a red here stops a release, as on macOS. Until 8.2.1
+  # it was not: the page never ran on a runner, because the WebView2 host
+  # read it from the current directory (v8-2-plan §9 「8.2.1」); with that
+  # fixed it went green twice in a row (runs 37571031877, 37573325903).
+  # The smoke and scenario steps carry their own limits under the job's, so
+  # a hang ends a step "failed" with its report, not the job "cancelled".
   automation:
     runs-on: windows-latest
     timeout-minutes: 20
-    continue-on-error: true
-    name: automation (not released, not a gate yet)
+    name: automation (not released)
     defaults:
       run:
         shell: bash
@@ -202,10 +202,3 @@ jobs:
           name: automation-report-Windows
           path: automation-windows.json
           if-no-files-found: ignore
-      # a red job is easy to miss when it does not fail the run: say it on
-      # the run's summary page
-      - name: say what happened
-        if: failure()
-        run: |
-          echo "::warning::Windows automation (WebView2 + -Dautomation) failed — not a gate yet (v8-2-plan §9 M4). See the smoke / scenarios steps above."
-          echo "### Windows automation: failed (not a gate yet)" >> "$GITHUB_STEP_SUMMARY"

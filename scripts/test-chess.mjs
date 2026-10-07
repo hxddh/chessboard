@@ -6982,11 +6982,13 @@ for (const lang of CONTENT_LANGS) {
   // its data go in chunks; the bundle may grow by 10 KB over 8.1.0 for the
   // doors to them — the entry points, the interface keys, the scheduling.
   // 8.1.0 (168acc2) built by its own bundle.mjs: exactly 900,972 bytes, and
-  // the plan's line is 910,972 (10,000, not 10,240).
-  const BUNDLE_BYTES_AT_810 = 900972;
-  const BUNDLE_GROWTH_82 = 10000;
-  assert(bundleBytes <= BUNDLE_BYTES_AT_810 + BUNDLE_GROWTH_82,
-    "v8-2-plan F1: bundle.js grows at most 10 KB over 8.1.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_AT_810 + BUNDLE_GROWTH_82 ? " ≤ " : " > ") + (BUNDLE_BYTES_AT_810 + BUNDLE_GROWTH_82) + " bytes) — 8.2 content goes in chunks");
+  // the plan's line was 910,972 (10,000, not 10,240); 8.2.0 shipped 907,245.
+  // v8-3-plan F4: the same line moved up for 8.3 — 8.2.1 (edaf3b7, no page
+  // change since 8.2.0) is exactly 907,245 bytes; 8.3 may add 10,000 over it.
+  const BUNDLE_BYTES_AT_821 = 907245;
+  const BUNDLE_GROWTH_83 = 10000;
+  assert(bundleBytes <= BUNDLE_BYTES_AT_821 + BUNDLE_GROWTH_83,
+    "v8-3-plan F4: bundle.js grows at most 10 KB over 8.2.1 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_AT_821 + BUNDLE_GROWTH_83 ? " ≤ " : " > ") + (BUNDLE_BYTES_AT_821 + BUNDLE_GROWTH_83) + " bytes) — 8.3 content goes in chunks");
   // …minified without renaming: a player's stack trace still names the code
   assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
     "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");
@@ -7188,8 +7190,16 @@ for (const lang of CONTENT_LANGS) {
     .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
   const selftest = strip("scripts/selftest-app.mjs");
   const spawnCall = (/spawn\(([\s\S]*?)\}\);/.exec(selftest) || [])[1] || "";
-  assert(/\bcwd:\s*dir\b/.test(spawnCall) && /path\.resolve\(exe\)/.test(spawnCall),
-    "selftest-app.mjs starts the packaged app in its temp folder, by an absolute path, never in the checkout");
+  assert(/\bcwd\b/.test(spawnCall) && !/cwd:\s*(process\.cwd|root|ROOT)/.test(spawnCall) && /path\.resolve\(exe\)/.test(spawnCall) &&
+    /launch\(1,\s*dir\)/.test(selftest) && /launch\(2,\s*path\.dirname\(path\.resolve\(exe\)\)\)/.test(selftest),
+    "selftest-app.mjs starts the packaged app by an absolute path, first in its temp folder, then in the executable's own folder (a double click), never in the checkout");
+  // v8-3-plan §8 第 4 条: Windows automation is a gate like macOS
+  for (const wf of [".github/workflows/build-windows.yml", ".github/workflows/build-macos.yml"]) {
+    const text = fs.readFileSync(path.join(root, wf), "utf8").replace(/\r\n/g, "\n");
+    const job = text.slice(text.indexOf("\n  automation:\n"));
+    assert(!/^    continue-on-error:/m.test(job) && !/not a gate/.test(job.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n")),
+      wf + ": the automation job is a gate (no continue-on-error, not named \"not a gate\")");
+  }
   const lib = strip("scripts/lib/automation.mjs");
   assert(/spawn\(path\.resolve\(exe\),\s*\[\],\s*\{\s*cwd:\s*work\b/.test(lib),
     "automation launches start the app in their work folder");
