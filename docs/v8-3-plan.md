@@ -231,4 +231,47 @@
 
 ## 9 · 落地记录
 
-（发布前补）
+### M1
+
+- **V1**：
+  - `build-windows.yml` 的 automation 去掉 `continue-on-error` 与「not a gate yet」，`release.yml` 的 `publish` 从此等它；失败时的 summary 步骤随之去掉。test-chess 对两个平台的 automation 作业都要求「没有 continue-on-error、名字里没有 not a gate」。
+  - `selftest-app.mjs`：第一次在本次临时目录里启动，第二次在可执行文件自己的目录里启动（双击时的当前目录；macOS 是 .app 的 Contents/MacOS）。都按绝对路径，都不在仓库里。test-chess 守着这两处。
+  - **先红后绿**：在分支上临时让 `resolveAssetRoot` 直接返回（388b62b，随即还原），派发 build-windows（run 37578212790）：发布构建的打包自检**两次启动都在 120 秒内交不回结果**（第 2 次就是在 `bin\` 里启动，等于双击），automation 场景也红——8.2.0 的问题在 CI 上完整复现。
+- **V2**（Windows 构建里按当前目录解析的相对路径，逐个下结论）：
+  - 前端页面 `frontend/dist`：8.2.1 已改为 exe 相对。
+  - 通知图标 `icon_path = "assets/icon.png"`：WebView2 宿主只在通知 / 托盘里用它（`loadNotificationIcon`，`LoadImageW(IMAGE_ICON, LR_LOADFROMFILE)`），路径接在当前目录后，而且 PNG 不能当 IMAGE_ICON 加载——更新检查的通知一直是系统默认图标。改为：`build-windows.yml` 把 `assets/icon.ico` 放进 `resources\icon.ico`，`main.zig` 按 exe 目录解析出绝对路径（`packagedResource`）；macOS 不变。
+  - automation 的投递箱 `.zig-cache/native-sdk-automation`：故意按当前目录（驱动脚本的工作目录），只在 automation 构建里有，不改。
+  - `bridge.zig` 的 `Dir.cwd()`：只用来对绝对的 appdata 路径建目录、改名，不受当前目录影响。
+  - **记下、不改**：SDK 启动 WebView2 时不给用户数据目录，WebView2 默认放在 exe 旁边。把应用解压到不可写的目录（例如 `Program Files`）时，WebView2 可能建不起来。要改就得把现有用户的 localStorage / IndexedDB 搬到别处，风险比收益大；真机路线 Windows 段加一个可选步骤。
+- **V3**：阈值按九次绿运行定（macOS 36850688751、36859018535、36860775645、37571034424、37573325903、37574917430；Windows 37571031877、37573325903、37574917430）：
+
+  | 指标 | 九次最坏 | 8.2 暂定 | 8.3 |
+  |---|---|---|---|
+  | 同步期间 `wait` p95 | 50 ms（macOS） | 500 | 250 |
+  | 同步期间 `wait` 最长 | 249 ms（macOS） | 2,000 | 1,250 |
+  | 空闲 `wait` 最长 | 205 ms（Windows） | 2,000 | 1,050 |
+  | 同步期间页面最长帧间隔 | 134 ms（macOS） | 1,000 | 700 |
+  | R18 预读拿到摘要 | 3,365 ms（macOS；Windows ≤ 276） | 只记数 | 7,000 |
+
+  时延取最坏 × 5、向上取整到 50 ms；预读是首屏时刻不是时延，取最坏 × 2。
+- **F4**：主包上限改为 `BUNDLE_BYTES_AT_821`（907,245，8.2.1 与 8.2.0 相同）+ 10,000 = 917,245。
+- **T3**：`ladder.yml` 已派发（`pairs=strongplus:extreme:300`，main）。
+- **F5**：上游问题报告原文见附录 A。
+
+---
+
+## 附录 A · 给 vercel-labs/native 的问题报告（原文，待转交）
+
+> **Windows: relative WebView asset root is resolved against the process's current directory, so a packaged app launched from Explorer shows a blank window**
+>
+> **Version**: `@native-sdk/cli` 0.10.1; also present on `main` at `fd96d9d` (2026-10-06).
+>
+> **What happens**: `native package --target windows` lays the app out as `<out>\bin\<app>.exe` with the frontend in `<out>\resources\<dist>\`. The app hands the runtime the relative root from its manifest (`frontend.productionSource(.{ .dist = "frontend/dist" })`). On Windows, `webview2_host.cpp` `assetFilePath()` joins that root to the *process's current directory* (`CreateFileW` on a relative path). Double-clicking the exe in Explorer starts it with the current directory `bin\`, where no `frontend\dist` exists, so every asset request fails and the window stays blank. The macOS host resolves the same relative root inside the bundle's `Resources` (`appkit_host.m`), so the same app works there.
+>
+> **Why it is easy to miss**: anything that launches the exe from the project directory (a dev run, or a CI smoke test run from the checkout) finds the project's own `frontend/dist` and works.
+>
+> **Repro**: package any frontend app for Windows, then `cd <out>\bin && <app>.exe` (or double-click it) → blank window; `cd <out>\resources && ..\bin\<app>.exe` → works.
+>
+> **Suggested fix**: in the Windows host (or before calling it), resolve a relative asset root against the executable's directory — e.g. `<exe dir>\..\resources\<root>` when that exists, falling back to the current directory for dev runs — mirroring the macOS host's bundle lookup. The same applies to `icon_path` for notifications and the tray (`loadNotificationIcon` loads it relative to the current directory, and only as `IMAGE_ICON`).
+>
+> **Workaround we ship** (chessboard 8.2.1): at startup on Windows, if `<exe dir>\..\resources\frontend\dist\index.html` exists, pass that absolute path as the asset root.
