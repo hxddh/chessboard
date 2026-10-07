@@ -507,6 +507,16 @@
         "jobs": 32,
         "green": true,
         "label": "PR #100"
+      },
+      {
+        "run": 37599608272,
+        "sha": "3b5fdae",
+        "wall": 17.4,
+        "critical": "browser (webkit, panel layout 1/5)",
+        "criticalMin": 7.8,
+        "jobs": 39,
+        "green": true,
+        "label": "8.3 M3 + 8.3.0（PR #105，V4 之后第一次；同时跑着发布彩排）"
       }
     ]
   },

@@ -43,7 +43,9 @@
  * `{ reason: t(x) }`, `[t(x)][0]`), a name assigned inside a nested
  * expression (`f(s = t(x))`), a destructured one, a value that merely
  * contains one (`f(t(x))`, `[t(x)].join()` handed on), and a name read from
- * another module. It does not track a name being overwritten either: once
+ * another module, and a function parameter of the same name does not hide
+ * the outer one (an inner `const` / `let` / `var` and a `for (const s …)`
+ * do). It does not track a name being overwritten either: once
  * assigned a translation it counts as one until its block ends, which errs
  * towards reporting (v8-2-plan §9 M3).
  *
@@ -324,7 +326,32 @@ export function findConcats(src) {
   const isUse = (j, name) => toks[j].k === "id" && toks[j].v === name && !member(j - 1) && !member(j + 1) &&
     pv(j + 1) !== "(" && pv(j + 1) !== "[";
   const tracked = new Map();   // name → [[from, to], …]: where it holds a translation
-  const holds = (name, j) => (tracked.get(name) || []).some(([a, b]) => j >= a && j < b);
+  // a name declared again inside the span is another binding until its own
+  // scope ends: the block around it, or a `for (…)` header and the loop body
+  // (Codex review on #105: `let s; s = t(x); { const s = 1; s + n; }`)
+  const scopeEnd = (d) => {
+    const end = blockEnd(d);
+    if (pv(end) !== ")") return end;
+    let o = end - 1;
+    for (let depth = 0; o >= 0; o--) {
+      if (shuts(pv(o))) depth++;
+      else if (opens(pv(o)) && --depth < 0) break;
+    }
+    if (!(o > 0 && toks[o - 1].k === "id" && toks[o - 1].v === "for")) return end;
+    if (pv(end + 1) === "{") return closer(toks, end + 1) + 1;
+    let j = end + 1;
+    for (let depth = 0; j < toks.length; j++) {
+      if (opens(pv(j))) depth++;
+      else if (shuts(pv(j)) && --depth < 0) break;
+      else if (depth === 0 && pv(j) === ";") break;
+    }
+    return j;
+  };
+  const shadowed = (name, a, j) => {
+    for (let d = a; d < j; d++) if (toks[d].k === "id" && toks[d].v === name && !member(d - 1) && declared(d) && j < scopeEnd(d)) return true;
+    return false;
+  };
+  const holds = (name, j) => (tracked.get(name) || []).some(([a, b]) => j >= a && j < b && !shadowed(name, a, j));
   // the initializer gives a translation: an i18n call at its top level, or a
   // tracked name as a value there (the whole of it, a branch of `?:`, a side
   // of `||` / `??` — not `s ? 1 : 2`, not `s.length`)
@@ -372,7 +399,7 @@ export function findConcats(src) {
   for (const [name, spans] of tracked) {
     for (const [a, b] of spans) {
       for (let j = a; j < b; j++) {
-        if (seen.has(j) || !isUse(j, name)) continue;
+        if (seen.has(j) || !isUse(j, name) || shadowed(name, a, j)) continue;
         if (plus(toks[j - 1]) || plus(toks[j + 1])) { seen.add(j); report(toks[j].at, "+"); }
         else if (pv(j - 1) === "${" && pv(j + 1) === "}$") { seen.add(j); report(toks[j].at, "${}"); }
       }
