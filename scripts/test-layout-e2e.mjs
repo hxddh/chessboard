@@ -5110,7 +5110,7 @@ if (scenario()) {
       await page.reload();
       await page.waitForTimeout(900);
       await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
-      await page.waitForFunction(() => document.querySelectorAll("#lesson-list button[data-eg]").length === 60, null, { timeout: 8000 }).catch(() => {});
+      await page.waitForFunction(() => document.querySelectorAll("#lesson-list button[data-eg]").length === 90, null, { timeout: 8000 }).catch(() => {});
       await page.evaluate(() => {
         const d = document.querySelector("#sec-learn details.reading-index");
         if (d) d.open = true;
@@ -5131,7 +5131,7 @@ if (scenario()) {
           title: document.getElementById("lesson-title").textContent,
           heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))], n: bs.length };
       });
-      assert(learn.items === 60 && /·/.test(learn.title), `${tag}: 目录里 60 个，卡片是这个残局（${learn.title}）`);
+      assert(learn.items === 90 && /·/.test(learn.title), `${tag}: 目录里 90 个，卡片是这个残局（${learn.title}）`);
       assert(learn.cut.length === 0, `${tag}: 学习卡片与目录没有被裁掉的字` + (learn.cut.length ? " — " + learn.cut.join(", ") : ""));
       assert(learn.n === 2 && learn.heights.length === 1, `${tag}: 重来 / 下一个残局 一排、一样高 (${learn.n}; ${learn.heights.join(", ")})`);
       await page.click('#rail button[data-view="me"]', { timeout: 1500 }).catch(() => {});
@@ -5147,7 +5147,7 @@ if (scenario()) {
           spill: bs.filter((b) => b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1 || b.getBoundingClientRect().right > box.right + 1).map((b) => b.textContent.trim()),
           n: bs.length, sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
       });
-      assert(me.shown && me.meta === "2/60" && me.n === 2, `${tag}: 「我的」有训练营一节，2/60，进训练营 + 复习两个按钮`);
+      assert(me.shown && me.meta === "2/90" && me.n === 2, `${tag}: 「我的」有训练营一节，2/90，进训练营 + 复习两个按钮`);
       assert(me.tall.length === 0, `${tag}: 五个主题各一行` + (me.tall.length ? " — " + me.tall.join(", ") : ""));
       assert(me.heights.length === 1 && me.spill.length === 0 && me.sideways <= 0,
         `${tag}: 按钮一样高、字不出框，页面不横向滚动 (${me.heights.join(", ")}; ${me.spill.join(", ") || "—"}; ${me.sideways}px)`);

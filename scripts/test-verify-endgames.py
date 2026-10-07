@@ -238,6 +238,13 @@ class OnFile(unittest.TestCase):
         self.assertEqual(len(V.on_file(it("tb"), dict(told, lichess={"category": "maybe-win", "verdict": "unresolved"}))), 1)
         self.assertEqual(len(V.on_file(it("tb"), dict(eight, lichess=told["lichess"]))), 1)   # over 7 men: no table
         self.assertEqual(V.on_file(it("sf"), eight), [])
+        # v8-3-plan T5: `pend` — 5–7 men on the search alone, the online table not asked yet
+        self.assertEqual(V.on_file(it("pend"), deep), [])
+        self.assertEqual(len(V.on_file(it("pend"), local)), 1)            # ≤ 4 men has the local table: tb
+        self.assertEqual(len(V.on_file(it("pend"), eight)), 1)            # over 7 men: sf
+        self.assertEqual(len(V.on_file(it("pend"), told)), 1)             # answered: a person relabels it
+        self.assertEqual(len(V.on_file(it("pend", ["Rb1"]), deep)), 1)   # no only move without a table
+        self.assertEqual(len(V.on_file(it("pend", goal="draw"), deep)), 1)
 
     def test_the_file_on_disk(self):
         # every item as recorded passes the check the offline run makes

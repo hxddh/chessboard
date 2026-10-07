@@ -216,6 +216,7 @@
       "eg.src": "出典：{0}",
       "eg.verTb": "結論は Syzygy テーブルベースで確認済み",
       "eg.verSf": "7 駒超でテーブルベースなし：結論は Stockfish の深い探索で確認済み",
+      "eg.verPend": "5〜7 駒：結論は Stockfish の深い探索で確認済み、テーブルベースでの確認はまだ",
       "eg.win": "勝ち",
       "eg.draw": "引き分け",
       "eg.dueTip": "復習の日です",

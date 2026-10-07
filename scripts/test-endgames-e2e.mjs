@@ -2,17 +2,17 @@
  * 残局训练营, end to end on the REAL Stockfish (v8-1-plan T2).
  *
  *   1 分块      the first frame fetches no chunk-endgames.js; 学习's 目录 does,
- *               and then lists 60 positions under five themes
+ *               and then lists 90 positions under five themes
  *   2 走错      a position played wrong (马拦兵, not Ne3+): the engine at full
  *               strength queens, the run fails, and the position is in the
  *               review queue (learn key → eg.srs), due now
  *   3 走对      the same position played right: Ne3+ … Nxc2 is a draw by
  *               insufficient material, the goal; it is marked done and walks
  *               up the review ladder
- *   4 我的      the section counts it (1/60), shows no review due, and
+ *   4 我的      the section counts it (1/90), shows no review due, and
  *               进训练营 opens the next untried position in 学习
  *   5 旧存档    an 8.0 learn key (no eg) loads: the course progress is kept
- *               and the camp reads 0/60
+ *               and the camp reads 0/90
  *   6 三语      zh-CN / en / ja at 1400 and 520 wide: nothing in the camp's
  *               list, its lesson card or its 我的 section is cut off
  *
@@ -133,7 +133,7 @@ const occ = (page, sq) => page.evaluate((q) => {
   const n = await until(() => campItems(page), 8000);
   assert(served.some((p) => p.includes("chunk-endgames")), "进学习以后才取分块");
   const parts = await page.evaluate(() => [...document.querySelectorAll("#lesson-list .lesson-part")].map((h) => h.textContent).filter((s) => /残局训练营/.test(s)));
-  assert(n === 60 && parts.length === 5, "目录里有训练营：5 个主题、60 个残局（" + n + "，" + parts.length + "）", parts.join(" | "));
+  assert(n === 90 && parts.length === 5, "目录里有训练营：5 个主题、90 个残局（" + n + "，" + parts.length + "）", parts.join(" | "));
   assert(!errs.length, "分块：页面没有报错", errs.join(" / "));
   await ctx.close();
 }
@@ -183,7 +183,7 @@ const occ = (page, sq) => page.evaluate((q) => {
     rows: document.querySelectorAll("#eg-body .stat-row").length, review: !document.getElementById("eg-review").hidden,
     go: !document.getElementById("eg-go").hidden,
   }));
-  assert(me.shown && me.meta === "1/60" && me.rows === 5 && !me.review && me.go, "我的：训练营 1/60，五行，没有到期的复习", JSON.stringify(me));
+  assert(me.shown && me.meta === "1/90" && me.rows === 5 && !me.review && me.go, "我的：训练营 1/90，五行，没有到期的复习", JSON.stringify(me));
   await page.click("#eg-go");
   await page.waitForTimeout(600);
   const opened = await page.evaluate(() => ({ view: document.getElementById("page-me").hidden, title: document.getElementById("lesson-title").textContent }));
@@ -201,7 +201,7 @@ const occ = (page, sq) => page.evaluate((q) => {
   assert(/2\/\d+/.test(r.prog) && /第 2 课/.test(r.title), "8.0 的教学进度照读：做过 2 课，停在第 2 课", JSON.stringify(r));
   await page.click('#rail button[data-view="me"]');
   const meta = await until(() => page.evaluate(() => document.getElementById("eg-meta").textContent), 6000);
-  assert(meta === "0/60", "……训练营从 0/60 开始", meta);
+  assert(meta === "0/90", "……训练营从 0/90 开始", meta);
   const lk = await learnKey(page);
   assert(lk && lk.done.board && lk.done.squares && lk.last === 1, "……存回去的 learn 键没丢东西", JSON.stringify(lk));
   assert(!errs.length, "旧存档：页面没有报错", errs.join(" / "));
@@ -231,6 +231,15 @@ const occ = (page, sq) => page.evaluate((q) => {
       }, sel);
       const learnCut = await cut("#sec-learn");
       assert(learnCut.length === 0, tag + "：学习卡片和训练营目录没有被裁掉的字", learnCut.join(", "));
+      // v8-3-plan T5: a card of the second part — its longest name, and the
+      // longer source line of a position still waiting for the online table
+      await page.evaluate(() => { const d = document.querySelector("#sec-learn details.reading-index"); if (d) d.open = true; });
+      await openEndgame(page, "mi-same-b");
+      await page.waitForTimeout(400);
+      const pendCut = await cut("#sec-learn");
+      const pendSrc = await page.evaluate(() => [...document.querySelectorAll("#lesson-text p")].map((p) => p.textContent).join(" "));
+      assert(pendCut.length === 0 && /Stockfish/.test(pendSrc), tag + "：第二部的卡片（等在线表的出处一行）没有被裁掉的字",
+        pendCut.join(", ") + " | " + pendSrc.slice(-60));
       const strip = await page.evaluate(() => { const e = document.getElementById("task-strip-text"); return e && e.offsetParent ? { t: e.textContent, over: e.scrollWidth > e.clientWidth + 1 } : null; });
       assert(!strip || !strip.over || strip.t.length > 0, tag + "：任务条有字", JSON.stringify(strip));
       await page.click('#rail button[data-view="me"]').catch(() => {});
