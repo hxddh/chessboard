@@ -4636,6 +4636,12 @@ for (const lang of CONTENT_LANGS) {
       'x = n.concat(" · ", t("a"));', 'function f() { const res = won ? t("w") : t("l");\n  return res + " · " + n; }',
       'function lab(r) { return tdot(t("a"), r); }\nx = lab(r) + " · " + n;', 'const sw = (c) => w(c);\nx = sw("b") + " " + n;',
       'x = w("nth", [1, 2]) + " · " + n;',
+      // v8-3-plan F3: the same name, reached by the data flow of one scope —
+      // assigned later, second in a declaration list, in parentheses, copied
+      // to another name, and glued with a template instead of `+`
+      'function f() { let s;\n  if (a) s = t("a"); else s = t("b");\n  return s + n; }', 'function f() { let a = 1, s = t("a");\n  return s + n; }',
+      'function f() { const s = (a ? t("a") : t("b"));\n  return s + n; }', 'function f() { const s = t("a");\n  const u = s;\n  return u + n; }',
+      'function f() { const s = t("a");\n  const u = n || s;\n  el.title = u + n; }', 'function f() { const s = t("a");\n  return `${s} ${n}`; }',
     ];
     const green = [
       'x = "t(\\"a\\") + n";', '// t("a") + n', 'x = /t\\("a"\\) \\+/.test(s);', 'x = tf("a", [n + 1]);',
@@ -4643,6 +4649,10 @@ for (const lang of CONTENT_LANGS) {
       'function f() { const ls = [t("a")]; g(ls); }\nfunction g(ls) { return ls.join("\\n"); }',
       'x = (n + 1) + " · " + m;', 'const res = f(t("a"));\nx = res + n;', 'const res = t("a");\nx = res.length + 1;',
       'function f() { const res = t("a"); }\nfunction g() { return res + n; }', 'x = [a].concat(b);',
+      // v8-3-plan F3: a name tested, measured or handed on is not the text
+      'function f() { const s = t("a");\n  const k = s ? 1 : 2;\n  return k + n; }', 'function f() { const s = t("a");\n  const k = s.length;\n  return `${k}` + n; }',
+      'function f() { let s;\n  s = g(t("a"));\n  return s + n; }', 'function f() { let s;\n  s = t("a"); }\nfunction g() { let s = 0;\n  return s + 1; }',
+      'const f = (s) => t(s);\nx = `${n}`;',
     ];
     const crlf = (s) => s.replace(/\n/g, "\r\n");
     assert(red.every((s) => findConcats(s).length > 0 && findConcats(crlf(s)).length > 0),

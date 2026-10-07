@@ -32,9 +32,20 @@
  * module's own: a function whose every `return` — or an arrow whose body —
  * starts with an i18n call (M3 评审: app.js historyLabel, visual-modes.js
  * sideW; "starts with", so a wrapper glued onto is still one).
+ *   · v8-3-plan F3: that last rule follows the data flow of one scope — a
+ *     later `s = t(x)` (to the end of the block declaring s), the second
+ *     name of a declaration list, a parenthesised initializer, a copy to
+ *     another name (`const u = s`, `c ? s : t(y)`, `s || t(y)`) — and
+ *     `${s}` in a template counts like the `+`.
  * What the guard still cannot see: a translation that reaches the `+`
- * through anything else — a parameter, a property, a name assigned later
- * or from something that merely contains one (v8-2-plan §9 M3).
+ * through anything else — a function's parameter (`setLabel(t(x))` …
+ * `label + n` inside it), an object property or array slot (`o.msg = t(x)`,
+ * `{ reason: t(x) }`, `[t(x)][0]`), a name assigned inside a nested
+ * expression (`f(s = t(x))`), a destructured one, a value that merely
+ * contains one (`f(t(x))`, `[t(x)].join()` handed on), and a name read from
+ * another module. It does not track a name being overwritten either: once
+ * assigned a translation it counts as one until its block ends, which errs
+ * towards reporting (v8-2-plan §9 M3).
  *
  * It is a text check, so it errs towards reporting: a `+` next to t() that is
  * arithmetic would be flagged too — there is none, and there should not be.
@@ -277,25 +288,94 @@ export function findConcats(src) {
   // M3 评审: a name the block declared straight from an i18n call, glued:
   // `const res = won ? t("w") : t("l")` … `res + " · "`. The initializer's
   // own top level has the call (`f(t(x))` is f's business); the name is
-  // followed until its block closes
-  for (let k = 1; k < toks.length - 2; k++) {
-    if (!/^(const|let|var)$/.test(toks[k - 1].v) || toks[k].k !== "id" || toks[k + 1].v !== "=") continue;
-    let ie = k + 2;
-    for (let depth = 0; ie < toks.length; ie++) {
-      const v = toks[ie].k === "p" ? toks[ie].v : "";
-      if (depth === 0 && (v === ";" || v === "," || v === ")" || v === "}" || v === "]")) break;
-      if (v === "(" || v === "[" || v === "{" || v === "${") depth++;
-      else if (v === ")" || v === "]" || v === "}" || v === "}$") depth--;
+  // followed until its block closes.
+  // v8-3-plan F3 widens it to the data flow inside one scope: the name may be
+  // the second of a declaration list (`let n = 0, s = t(x)`), the call may sit
+  // in parentheses (`const s = (a ? t(x) : t(y))`), the value may come later
+  // (`let s; … s = t(x)`, followed to the end of the block that declares s),
+  // or from another such name (`const u = s`, `c ? s : t(y)`, `s || t(y)`);
+  // and a `${s}` in a template is the same as a `+`
+  const opens = (v) => v === "(" || v === "[" || v === "{" || v === "${";
+  const shuts = (v) => v === ")" || v === "]" || v === "}" || v === "}$";
+  const pv = (j) => (toks[j] && toks[j].k === "p" ? toks[j].v : "");
+  const member = (j) => pv(j) === "." || pv(j) === "?.";
+  // the end of the block around token j: the first bracket that closes it
+  const blockEnd = (j) => {
+    for (let depth = 0; j < toks.length; j++) {
+      if (opens(pv(j))) depth++;
+      else if (shuts(pv(j)) && --depth < 0) return j;
     }
-    if (toks[k + 2].v === "(" || !topCall(toks, calls, k + 2, ie)) continue;
-    const name = toks[k].v;
-    for (let j = ie, depth = 0; j < toks.length; j++) {
-      const v = toks[j].k === "p" ? toks[j].v : "";
-      if (v === "(" || v === "[" || v === "{" || v === "${") depth++;
-      else if (v === ")" || v === "]" || v === "}" || v === "}$") { if (--depth < 0) break; }
-      if (toks[j].k !== "id" || toks[j].v !== name || (toks[j - 1] && /^\.|\?\.$/.test(toks[j - 1].v))) continue;
-      if (toks[j + 1] && /^[.([]$|^\?\.$/.test(toks[j + 1].v)) continue;
-      if (plus(toks[j - 1]) || plus(toks[j + 1])) report(toks[j].at, "+");
+    return toks.length;
+  };
+  // is toks[k] a name being declared (first or later in `const a = …, b = …`)?
+  const declared = (k) => {
+    if (/^(const|let|var)$/.test(toks[k - 1].v)) return true;
+    if (pv(k - 1) !== ",") return false;
+    for (let j = k - 2, depth = 0; j >= 0; j--) {
+      const v = pv(j);
+      if (shuts(v)) depth++;
+      else if (opens(v)) { if (--depth < 0) return false; }
+      else if (depth === 0 && v === ";") return false;
+      else if (depth === 0 && toks[j].k === "id" && /^(const|let|var)$/.test(toks[j].v)) return true;
+    }
+    return false;
+  };
+  // the name itself as a value: not `o.name`, `name.length`, `name(…)`, `name[i]`
+  const isUse = (j, name) => toks[j].k === "id" && toks[j].v === name && !member(j - 1) && !member(j + 1) &&
+    pv(j + 1) !== "(" && pv(j + 1) !== "[";
+  const tracked = new Map();   // name → [[from, to], …]: where it holds a translation
+  const holds = (name, j) => (tracked.get(name) || []).some(([a, b]) => j >= a && j < b);
+  // the initializer gives a translation: an i18n call at its top level, or a
+  // tracked name as a value there (the whole of it, a branch of `?:`, a side
+  // of `||` / `??` — not `s ? 1 : 2`, not `s.length`)
+  const gives = (a, b) => {
+    if (pv(a) === "(" && pv(closer(toks, a) + 1) === "=>") return false;   // an arrow function
+    if (pv(a) === "(" && closer(toks, a) === b - 1) return gives(a + 1, b - 1);
+    if (topCall(toks, calls, a, b)) return true;
+    for (let j = a, depth = 0; j < b; j++) {
+      const v = pv(j);
+      if (depth === 0 && toks[j].k === "id" && holds(toks[j].v, j) && isUse(j, toks[j].v) &&
+        (j === a || /^(\?|:|\|\||\?\?)$/.test(pv(j - 1))) && (j === b - 1 || /^(:|\|\||\?\?)$/.test(pv(j + 1)))) return true;
+      if (opens(v)) depth++;
+      else if (shuts(v)) depth--;
+    }
+    return false;
+  };
+  // where a statement may start: a later `s = …` is an assignment there, not
+  // `f(s = …)` or `a == s`
+  const stmt = (j) => /^[;{}]$/.test(pv(j)) || pv(j) === ")" || (toks[j] && toks[j].k === "id" && toks[j].v === "else");
+  for (let grew = true; grew;) {
+    grew = false;
+    for (let k = 1; k < toks.length - 2; k++) {
+      if (toks[k].k !== "id" || toks[k + 1].v !== "=" || member(k - 1)) continue;
+      const decl = declared(k);
+      if (!decl && !stmt(k - 1)) continue;
+      let ie = k + 2;
+      for (let depth = 0; ie < toks.length; ie++) {
+        const v = pv(ie);
+        if (depth === 0 && (v === ";" || v === "," || v === ")" || v === "}" || v === "]")) break;
+        if (opens(v)) depth++;
+        else if (shuts(v)) depth--;
+      }
+      const name = toks[k].v;
+      if ((tracked.get(name) || []).some(([a]) => a === ie) || !gives(k + 2, ie)) continue;
+      // a later assignment holds until the block that declares the name ends
+      let end = blockEnd(ie);
+      if (!decl) {
+        for (let j = k - 1; j > 0; j--) if (toks[j].k === "id" && toks[j].v === name && declared(j)) { end = blockEnd(j + 1); break; }
+      }
+      tracked.set(name, (tracked.get(name) || []).concat([[ie, end]]));
+      grew = true;
+    }
+  }
+  const seen = new Set();
+  for (const [name, spans] of tracked) {
+    for (const [a, b] of spans) {
+      for (let j = a; j < b; j++) {
+        if (seen.has(j) || !isUse(j, name)) continue;
+        if (plus(toks[j - 1]) || plus(toks[j + 1])) { seen.add(j); report(toks[j].at, "+"); }
+        else if (pv(j - 1) === "${" && pv(j + 1) === "}$") { seen.add(j); report(toks[j].at, "${}"); }
+      }
     }
   }
   // [ …t(…)… ].join(  and  xs.push(…t(…)…) … xs.join(  — also through a
