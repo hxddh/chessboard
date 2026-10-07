@@ -433,6 +433,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
   // v8-1-plan F4: a `ucinewgame` in the middle of a background search clears
   // its hash under it; the next game search sends it instead
   let freshGame = false;
+  // v8-3-plan M2 评审: an analysis at its own Hash (看N步's fixed 32 MB) leaves
+  // that Hash on the worker; the game search sets no Hash of its own, so it
+  // puts the player's back once, before its next search
+  let foreignHash = false;
   function newGame() {
     gen++;
     if (!worker) return;
@@ -511,6 +515,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // UCI options are sticky on the worker — always set every knob a tier
     // could have touched so no search inherits another tier's handicap.
     send("setoption name MultiPV value " + (tier.multipv || 1));
+    if (foreignHash) { send("setoption name Hash value " + options.hash); foreignHash = false; }
     if (tier.skill != null) {
       send("setoption name UCI_LimitStrength value false");
       send("setoption name Skill Level value " + tier.skill);
@@ -888,6 +893,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     if (stale()) return null;
     const nodes = nodesFor(budget);
     fullStrengthOptions(multipv, hash);
+    foreignHash = !!hash && hash !== options.hash;
     send("position fen " + fen);
     const slots = new Map();
     const collect = (line) => { if (typeof line === "string") readInfo(line, slots); };
