@@ -238,7 +238,7 @@ const occ = (page, sq) => page.evaluate((q) => {
       await page.waitForTimeout(400);
       const pendCut = await cut("#sec-learn");
       const pendSrc = await page.evaluate(() => [...document.querySelectorAll("#lesson-text p")].map((p) => p.textContent).join(" "));
-      assert(pendCut.length === 0 && /Stockfish/.test(pendSrc), tag + "：第二部的卡片（等在线表的出处一行）没有被裁掉的字",
+      assert(pendCut.length === 0 && /Stockfish|Syzygy/.test(pendSrc), tag + "：第二部的卡片（出处一行最长的那张）没有被裁掉的字",
         pendCut.join(", ") + " | " + pendSrc.slice(-60));
       const strip = await page.evaluate(() => { const e = document.getElementById("task-strip-text"); return e && e.offsetParent ? { t: e.textContent, over: e.scrollWidth > e.clientWidth + 1 } : null; });
       assert(!strip || !strip.over || strip.t.length > 0, tag + "：任务条有字", JSON.stringify(strip));

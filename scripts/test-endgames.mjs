@@ -245,8 +245,13 @@ function camp(learnState) {
     "每个残局的出处一行写明核对方法：" + tbL.text[1] + " / " + onL.text[1] + " / " + sfL.text[1]);
   // v8-3-plan T5: a 5–7-man position only searched so far says so — not
   // 「超过七子」 (it is not) and not 「查 Syzygy」 (not yet)
-  const pend = ITEMS.find((x) => x.v === "pend");
-  const pL = pend && E.lesson(pend.id);
+  // (none is pending since the 8.3 M2 online check: lend the label to one
+  // 5-man item for the card, and give it back)
+  const real = ITEMS.find((x) => x.v === "pend");
+  const pend = real || ITEMS.find((x) => x.id === "mi-same-b");
+  const was = pend.v; pend.v = "pend";
+  const pL = E.lesson(pend.id);
+  pend.v = was;
   assert(pL && pL.text[1].includes("Stockfish") && pL.text[1].includes("还没做") && !pL.text[1].includes("超过七子") && !pL.text[1].includes("Syzygy"),
     "等在线表的残局，出处一行写着「查残局库的核对还没做」：" + (pL && pL.text[1]));
   assert(tbL.text[1].includes("标准残局理论") && onL.text[1].includes("Salvio"), "……以及局面的来源");

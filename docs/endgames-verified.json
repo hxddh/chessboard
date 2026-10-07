@@ -867,7 +867,24 @@
      "mate": null,
      "pv": "1. Ra3+ Kf4 2. Ke1 e3 3. Ra7 e2 4. Re7 Kf3 5. Kd2 e1=Q+"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Kg1",
+     "Ra3+",
+     "Ra5",
+     "Ra6",
+     "Ra7",
+     "Rb8",
+     "Rc8",
+     "Re8",
+     "Rf8",
+     "Rg8"
+    ]
+   }
   },
   {
    "id": "rp-shortside",
@@ -890,7 +907,21 @@
      "mate": null,
      "pv": "1. Kd6 Rd2+ 2. Ke7 Rd7+ 3. Kf6 Rd2 4. e6 Rf2+ 5. Ke7 Re2"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 7,
+    "good": [
+     "Kd6",
+     "Ke7",
+     "Kf6",
+     "Kf7",
+     "Rd1",
+     "Rf1",
+     "Rg1"
+    ]
+   }
   },
   {
    "id": "rp-backrank",
@@ -913,7 +944,24 @@
      "mate": 11,
      "pv": "1. Rg7 Kd8 2. Rg8+ Kc7 3. Rxb8 Kxb8 4. e7 Kc7 5. e8=Q Kb6"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 3,
+    "good": [
+     "Ra1",
+     "Ra2",
+     "Ra3",
+     "Ra4",
+     "Ra5",
+     "Ra6",
+     "Rc7",
+     "Re7+",
+     "Rg7",
+     "Rh7"
+    ]
+   }
   },
   {
    "id": "rp-backrank-g",
@@ -936,7 +984,21 @@
      "mate": null,
      "pv": "1. Rb3+ Kf4 2. Rb6 g2 3. Rc6 Ra1+ 4. Kxg2"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Kf1",
+     "Kh1",
+     "Rb3+",
+     "Rc1",
+     "Rd1",
+     "Re1",
+     "Rf1+"
+    ]
+   }
   },
   {
    "id": "rp-tarrasch",
@@ -959,7 +1021,28 @@
      "mate": null,
      "pv": "1. a7 Kf6 2. Kc4 Kf5 3. Kc5 Ke4 4. Kc6 Kd3 5. Kb7 Rh8"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 1,
+    "good": [
+     "Kc2",
+     "Kc3",
+     "Kc4",
+     "Kd2",
+     "Kd4",
+     "Ke2",
+     "Ke3",
+     "Ke4",
+     "Ra2",
+     "Ra3",
+     "Ra4",
+     "Ra5",
+     "Rg1+",
+     "a7"
+    ]
+   }
   },
   {
    "id": "rp-apawn-far",
@@ -982,7 +1065,15 @@
      "mate": null,
      "pv": "1. Rh8 Rb1 2. Rb8 Ra1 3. Kb7 Rb1+ 4. Kc7 Rc1+ 5. Kb6 Rb1+"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 17,
+    "good": [
+     "Rh8"
+    ]
+   }
   },
   {
    "id": "rp-apawn-near",
@@ -1005,7 +1096,23 @@
      "mate": null,
      "pv": "1. Rb4 Rd8+ 2. Kc1 Rc8+ 3. Kd1 Rb8 4. Rxb8"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Kc1",
+     "Kc2",
+     "Kc3",
+     "Kd1",
+     "Kd3",
+     "Rb3",
+     "Rb4",
+     "Rb5",
+     "Rb6"
+    ]
+   }
   },
   {
    "id": "mi-bb",
@@ -1442,7 +1549,27 @@
      "mate": null,
      "pv": "1. Kc5 Bc8 2. Kd6 Ba6 3. Bd7 Kf7 4. Kc5 Ke7 5. Bg4 Kf6"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 13,
+    "good": [
+     "Bb3",
+     "Bb5",
+     "Bc2",
+     "Bc6",
+     "Bd1",
+     "Be8",
+     "Ka5",
+     "Ka6",
+     "Ka7",
+     "Kb5",
+     "Kb7",
+     "Kc5",
+     "Kc6"
+    ]
+   }
   },
   {
    "id": "mi-opp-b",
@@ -1465,7 +1592,24 @@
      "mate": null,
      "pv": "1. Kb4 e2 2. Be1 Ke3 3. Kc3 Ba2 4. Kb2 Bf7 5. Ka3 Bb3"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Bd8",
+     "Be1",
+     "Be7",
+     "Bf6",
+     "Bg5",
+     "Ka4",
+     "Ka6",
+     "Kb4",
+     "Kb5",
+     "Kb6"
+    ]
+   }
   },
   {
    "id": "mi-b-vs-n",
@@ -1488,7 +1632,23 @@
      "mate": null,
      "pv": "1. Kc5 Ne5 2. Kd6 Kf6 3. a7 Nxd3"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 7,
+    "good": [
+     "Bb1",
+     "Bc2",
+     "Be2",
+     "Be4",
+     "Bf1",
+     "Bf5",
+     "Bh7",
+     "Kb5",
+     "Kc5"
+    ]
+   }
   },
   {
    "id": "mi-b-vs-np",
@@ -1511,7 +1671,21 @@
      "mate": null,
      "pv": "1. Ka2 Kd4 2. Kb3 Nd2+ 3. Kb2 Ne4 4. Bd1 Nc3 5. Bc2 d2"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Bd1",
+     "Be8",
+     "Bf7",
+     "Bg4",
+     "Bg6",
+     "Ka2",
+     "Kb1"
+    ]
+   }
   },
   {
    "id": "mi-n-block",
@@ -1534,7 +1708,18 @@
      "mate": null,
      "pv": "1. Kd1 Ba6 2. Ke1 Kd4 3. Nf1 d2+ 4. Nxd2"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "draw",
+    "verdict": "draw",
+    "dtz": 0,
+    "good": [
+     "Kd1",
+     "Nb1",
+     "Nb3",
+     "Nf1+"
+    ]
+   }
   },
   {
    "id": "mi-n-vs-n",
@@ -1557,7 +1742,15 @@
      "mate": null,
      "pv": "1. d7 Kg3 2. Ne5 Nxe5"
     }
-   ]
+   ],
+   "lichess": {
+    "category": "win",
+    "verdict": "win",
+    "dtz": 1,
+    "good": [
+     "d7"
+    ]
+   }
   },
   {
    "id": "qu-kqk",
