@@ -1096,3 +1096,12 @@
 - M1–M4 全部合入后发布，按 §7。发布说明在 `.github/release-notes/v8.2.0.md`，README 的「8.2.0 改了什么」与「怎么玩（v8.2）」已更新，8.0.0 一节移进 `docs/CHANGELOG.md`（README 只留最近两版：8.2.0 与 8.1.0）。
 - **SDK**：仍是 0.10.1；发布当天（2026-10-01）`npm view @native-sdk/cli versions` 最新仍是 0.10.1，0.10.2 未发布。
 - **随版带出的遗留**（照实写进了 README 与发布说明）：没有 SDK 升级；macOS 自动更新、签名与公证、透明标题栏维持 8.1 的状况；automation 只跑过一次（macOS 绿、阈值暂定；Windows 页面在 runner 上没跑起来、不挡发布）；「8.2 真机路线」一步都还没有记录（含 R15 / B09 两处修正的 X1、X2）；阶梯顶一级仍是 64 盘；CI 墙钟 15.9 分钟、未达到连续三次 ≤ 15；判长将最坏约 0.3 s；整句守卫的盲区；降级回 8.0 时对手档位与「第二个引擎」开关会丢。
+
+### 8.2.1（2026-10-07）
+
+- **起因**：评估 8.3 时对比 Windows 的两条启动路径——发布构建的打包自检（`selftest-app.mjs`）在同一种 runner 上页面照常调桥；automation 构建的页面一次桥都没调过。先排除了「上一个实例的 msedgewebview2.exe 占着用户数据目录」：加了 `taskkill /T` 与残留计数，每次启动前都是 0 个，页面照样不跑（run 37569752524）。
+- **根因**：两条路径的差别是当前目录。`selftest-app.mjs` 不设 `cwd`，继承仓库根，那里有 `sync-dist.mjs` 生成的 `frontend/dist`；automation 在临时目录启动。SDK 0.10.1 的 WebView2 宿主 `assetFilePath` 把相对资源根接在当前目录后（macOS 宿主在 .app 的 Resources 里解析）；`native package --target windows` 的布局是 `bin\chessboard.exe` + `resources\frontend\dist\`。双击启动的当前目录是 `bin\`，读不到页面。上游 main `fd96d9d`（2026-10-06）未改。
+- **修复**：`main.zig` `resolveAssetRoot()`——只在 Windows，找到 `<exe 目录>\..\resources\frontend\dist\index.html` 就用这个绝对路径作资源根（`source` 与 `source_fn` 一起）；`packagedAssetRoot` 纯函数与 App 默认值各一条 Zig 测试（77 → 79）。`selftest-app.mjs` 在本次临时目录里按绝对路径启动应用；test-chess 守着这三处（去掉 `cwd: dir` 当场红）。automation 的 `stop()` 在 Windows 上 `taskkill /T /F` 并等 WebView2 进程退完，保留。
+- **验证**：本机 null 平台 Zig 测试 79/79、交叉编译 `x86_64-windows-gnu` 链接出 exe、`test-chess` 全过。分支上单独派发 build-windows（run 37571031877）：发布构建在临时目录里的打包自检绿；**automation 30 项第一次全过**——空闲 `wait` p50 18 / p95 32 / 最长 205 ms；同步 100 局 10.0 s 里 175 次 `wait` p50 6 / p95 10 / 最长 11 ms，页面 640 帧、最长帧间隔 46 ms；预读 409 局、bundle 开始后 276 ms。build-macos（run 37571034424）两个作业照常绿。
+- **没做到的**：真机双击没人走过；Windows automation 只绿一次，按 §9 M4 的规矩连续两次绿再改成门槛（留给 8.3）。8.2.0 之前的 Windows 包是否同样受影响没有逐个核对。
+
