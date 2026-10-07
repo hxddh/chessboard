@@ -1,13 +1,15 @@
 /**
  * The endgame camp without an engine (v8-1-plan T2).
  *
- *   - the content: sixty positions, twelve per theme, legal, White to move,
- *     a goal each, words in all three languages;
+ *   - the content: ninety positions (v8-3-plan T5 added thirty to the sixty),
+ *     legal, White to move, a goal each, words in all three languages, and
+ *     README's count of them;
  *   - the verdicts: each goal is what docs/endgames-verified.json recorded
  *     when the content was written (scripts/verify-endgames.py): ≤ 4 men the
  *     local Syzygy tables; 5–7 men a deep Stockfish search, and — for those
  *     marked `tb` — the full Syzygy set's answer from tablebase.lichess.ovh
- *     (`lichess`, v8-2-plan V2); more than 7 men only the search. Each
+ *     (`lichess`, v8-2-plan V2); those marked `pend` are still waiting for
+ *     that answer (T5); more than 7 men only the search. Each
  *     position's method is the one its source note names, and a position
  *     whose tip names "the only move" is held to the table's list of moves
  *     that keep the result;
@@ -39,9 +41,18 @@ function assert(cond, msg) {
 // ------------------------------------------------------------ the content
 const { GROUPS, ITEMS } = CHESS_ENDGAMES;
 {
-  assert(ITEMS.length === 60, "60 个残局（" + ITEMS.length + "）");
-  assert(GROUPS.length === 5 && GROUPS.every((g) => ITEMS.filter((x) => x.g === g.id).length === 12),
-    "五个主题，每个 12 个：" + GROUPS.map((g) => g.id + " " + ITEMS.filter((x) => x.g === g.id).length).join(", "));
+  // v8-1-plan T2 put twelve in each theme; v8-3-plan T5 added 4 pawn, 10
+  // rook, 10 minor-piece and 6 queen-against-pawn endings
+  const PER = { kp: 16, rp: 22, mi: 22, qu: 18, dr: 12 };
+  assert(ITEMS.length === 90, "90 个残局（" + ITEMS.length + "）");
+  assert(GROUPS.length === 5 && GROUPS.every((g) => ITEMS.filter((x) => x.g === g.id).length === PER[g.id]),
+    "五个主题，王兵 16、车 22、轻子 22、后 18、理论和棋 12：" + GROUPS.map((g) => g.id + " " + ITEMS.filter((x) => x.g === g.id).length).join(", "));
+  // …each theme's positions in one run, so 目录 numbers them in file order
+  const runs = GROUPS.every((g) => {
+    const at = ITEMS.map((x, i) => (x.g === g.id ? i : -1)).filter((i) => i >= 0);
+    return at[at.length - 1] - at[0] === at.length - 1;
+  });
+  assert(runs, "同一主题的残局在文件里连在一起");
   assert(new Set(ITEMS.map((x) => x.id)).size === ITEMS.length, "id 不重复");
   const bad = [];
   for (const x of ITEMS) {
@@ -59,15 +70,27 @@ const { GROUPS, ITEMS } = CHESS_ENDGAMES;
     // …and the other way round (M2 review): the card's wording says an `sf`
     // position is one past every table, so one must have more than 7 men
     if (x.v === "sf" && men <= 7) bad.push(x.id + " 标 sf 却只有 " + men + " 子");
+    // v8-3-plan T5: `pend` is a 5–7-man position the online table has not
+    // answered yet; with nothing to hold an only move to, it names none
+    if (x.v === "pend" && (men <= 4 || men > 7)) bad.push(x.id + " 标 pend 却有 " + men + " 子");
+    if (x.v === "pend" && x.key) bad.push(x.id + " 标 pend 却点名了唯一着");
+    if (!["tb", "sf", "pend"].includes(x.v)) bad.push(x.id + " v " + x.v);
     for (const f of ["n", "tip", "src"]) {
       if (!Array.isArray(x[f]) || x[f].length !== 3 || x[f].some((s) => typeof s !== "string" || !s.trim())) bad.push(x.id + " " + f + " 缺语言");
     }
   }
   for (const b of bad) console.error("  " + b);
-  assert(bad.length === 0, "每个局面合法、白先、有目标，名字 / 提示 / 出处三语齐备，≤ 4 子的标 tb，超过 7 子的标 sf，标 sf 的都超过 7 子");
+  assert(bad.length === 0, "每个局面合法、白先、有目标，名字 / 提示 / 出处三语齐备，≤ 4 子的标 tb，超过 7 子的标 sf，标 sf 的都超过 7 子，标 pend 的是 5–7 子、不点名唯一着");
   const goals = { win: ITEMS.filter((x) => x.goal === "win").length, draw: ITEMS.filter((x) => x.goal === "draw").length };
   assert(goals.win > 0 && goals.draw >= 12, "有取胜也有守和（" + goals.win + " 胜 / " + goals.draw + " 和）");
   assert(GROUPS.every((g) => Array.isArray(g.n) && g.n.length === 3 && g.n.every(Boolean)), "主题名三语齐备");
+  // v8-3-plan T5: README's teaching row states the camp's size and its five
+  // themes — the numbers a release that grows the camp forgets to touch
+  const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
+  const m = /名局之后的 (\d+) 个标准残局\(王兵 (\d+) \/ 车 (\d+) \/ 轻子 (\d+) \/ 后 (\d+) \/ 理论和棋 (\d+)/.exec(readme);
+  const said = m ? m.slice(1).map(Number) : null;
+  const real = [ITEMS.length, ...["kp", "rp", "mi", "qu", "dr"].map((g) => ITEMS.filter((x) => x.g === g).length)];
+  assert(said && said.join() === real.join(), "README 写的残局数与内容一致（README " + (said ? said.join("/") : "没写") + "，内容 " + real.join("/") + "）");
 }
 
 // ----------------------------------------------- the verdicts, as recorded
@@ -75,7 +98,7 @@ const { GROUPS, ITEMS } = CHESS_ENDGAMES;
   const file = path.join(ROOT, "docs/endgames-verified.json");
   const doc = JSON.parse(fs.readFileSync(file, "utf8"));
   const rec = new Map(doc.items.map((r) => [r.id, r]));
-  assert(doc.items.length === ITEMS.length && ITEMS.every((x) => rec.has(x.id)), "核对记录覆盖全部 60 个（" + doc.items.length + "）");
+  assert(doc.items.length === ITEMS.length && ITEMS.every((x) => rec.has(x.id)), "核对记录覆盖全部 90 个（" + doc.items.length + "）");
   const bad = [];
   const online = doc.tools.lichessTablebase;
   // tablebase_api.py verdict(): cursed / blessed are draws, maybe-* and unknown settle nothing
@@ -98,6 +121,9 @@ const { GROUPS, ITEMS } = CHESS_ENDGAMES;
       if (r.method === "tb" && JSON.stringify(L.good) !== JSON.stringify(r.good)) bad.push(x.id + " 在线表的着法 ≠ 本地表");
       if (!online || online.partial || online.over7.includes(x.id)) bad.push(x.id + " 在线表的应答没有出处或不完整");
     }
+    // v8-3-plan T5: once the online table has answered a `pend` item, a
+    // person relabels it `tb` (or changes it) — it does not stay pending
+    if (x.v === "pend" && L) bad.push(x.id + " 已有在线表的应答（" + L.verdict + "），应改标 tb 或改内容");
     if (x.v === "tb" && men > 4) {
       byOnline.push(x.id);
       if (!L) bad.push(x.id + " " + men + " 子标 tb，却没有在线表（lichess）的应答");
@@ -116,9 +142,9 @@ const { GROUPS, ITEMS } = CHESS_ENDGAMES;
     }
   }
   for (const b of bad) console.error("  " + b);
-  assert(bad.length === 0, "60 个结论与生成时的核对记录一致（Syzygy " + ITEMS.filter((x) => x.v === "tb").length +
-    "，其中 " + byOnline.length + " 个 5–7 子查的在线表；Stockfish " + ITEMS.filter((x) => x.v === "sf").length +
-    "）；点名「唯一正解」的与表一致");
+  assert(bad.length === 0, "90 个结论与生成时的核对记录一致（Syzygy " + ITEMS.filter((x) => x.v === "tb").length +
+    "，其中 " + byOnline.length + " 个 5–7 子查的在线表；只用 Stockfish 深搜的：超过 7 子 " + ITEMS.filter((x) => x.v === "sf").length +
+    "，5–7 子等在线表 " + ITEMS.filter((x) => x.v === "pend").length + "）；点名「唯一正解」的与表一致");
   assert(/Stockfish/.test(doc.tools.stockfish || "") && Object.keys(doc.tools.syzygyMd5 || {}).length >= 30,
     "记录写明了用的工具：" + doc.tools.stockfish + "，" + Object.keys(doc.tools.syzygyMd5 || {}).length + " 个 Syzygy 文件的 md5");
 }
@@ -185,7 +211,7 @@ const { GROUPS, ITEMS } = CHESS_ENDGAMES;
   assert(r15 && r15.ok && r15.how === "fifty", "守和：50 回合 → 达成");
   // the start of every camp position is still open
   const open = ITEMS.filter((x) => Rules.outcome(new Chess(x.fen), x.goal, Rules.startOf(new Chess(x.fen))) !== null);
-  assert(open.length === 0, "60 个起始局面都还没分出结果" + (open.length ? "：" + open.map((x) => x.id).join(", ") : ""));
+  assert(open.length === 0, "90 个起始局面都还没分出结果" + (open.length ? "：" + open.map((x) => x.id).join(", ") : ""));
 }
 
 // ---------------------------------------- progress and the review queue
@@ -209,7 +235,7 @@ function camp(learnState) {
     "8.0 的教学进度（没有 eg）照样读，课程进度一点不丢");
   E.ensure();
   await new Promise((r) => setTimeout(r, 20));
-  assert(E.ready() && E.total() === 60, "分块已在窗口上时直接可用（60）");
+  assert(E.ready() && E.total() === 90, "分块已在窗口上时直接可用（90）");
   const L = E.lesson("dr-reti");
   assert(L && L.id === "eg:dr-reti" && L.tasks.length === 1 && L.tasks[0].type === "drill" && L.tasks[0].engine === "extreme",
     "一个残局 = 一课一题：和引擎对下，引擎满强度（extreme）");
@@ -217,6 +243,17 @@ function camp(learnState) {
   const tbL = E.lesson("kp-keysq"), onL = E.lesson("rp-lucena"), sfL = E.lesson("kp-breakthrough");
   assert(tbL.text[1].includes("Syzygy") && onL.text[1].includes("Syzygy") && sfL.text[1].includes("Stockfish"),
     "每个残局的出处一行写明核对方法：" + tbL.text[1] + " / " + onL.text[1] + " / " + sfL.text[1]);
+  // v8-3-plan T5: a 5–7-man position only searched so far says so — not
+  // 「超过七子」 (it is not) and not 「查 Syzygy」 (not yet)
+  // (none is pending since the 8.3 M2 online check: lend the label to one
+  // 5-man item for the card, and give it back)
+  const real = ITEMS.find((x) => x.v === "pend");
+  const pend = real || ITEMS.find((x) => x.id === "mi-same-b");
+  const was = pend.v; pend.v = "pend";
+  const pL = E.lesson(pend.id);
+  pend.v = was;
+  assert(pL && pL.text[1].includes("Stockfish") && pL.text[1].includes("还没做") && !pL.text[1].includes("超过七子") && !pL.text[1].includes("Syzygy"),
+    "等在线表的残局，出处一行写着「查残局库的核对还没做」：" + (pL && pL.text[1]));
   assert(tbL.text[1].includes("标准残局理论") && onL.text[1].includes("Salvio"), "……以及局面的来源");
 
   E.record("kp-keysq", false, false, T0);
@@ -242,7 +279,7 @@ function camp(learnState) {
   assert(E.next("kp-keysq") === "qu-qvr", "全做过以后，下一个是到期的复习");
   store.session.learnState.eg.srs = {};
   assert(E.next("kp-keysq") === null, "都做过、也没有到期的，就没有下一个");
-  assert(E.doneCount("kp") === 12 && E.doneCount() === 60, "按主题数做过的");
+  assert(E.doneCount("kp") === 16 && E.doneCount() === 90, "按主题数做过的");
   // a hand-edited key of the wrong shape is repaired, not thrown on
   const { E: E2, store: st2 } = camp({ v: 1, done: {}, last: 0, eg: "junk" });
   E2.ensure();

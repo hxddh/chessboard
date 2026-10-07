@@ -113,7 +113,7 @@ export const CHUNKS = [
   ...lichessChunks(path.join(root, "src/web/js/lichess")),
   // v8-0-plan C3: the opening explorer's panel (explorer/lazy.js), then the master tree's buckets
   { entry: "src/web/js/explorer/ui.js", out: "src/web/js/chunk-explorer.js", global: "createExplorerUI", min: 5000 },
-  // v8-1-plan T2: the endgame camp's sixty positions and their words (trainer/endgames.js)
+  // v8-1-plan T2: the endgame camp's ninety positions and their words (trainer/endgames.js)
   { entry: "src/web/js/endgames.js", out: "src/web/js/chunk-endgames.js", global: "CHESS_ENDGAMES", min: 20000 },
   // v8-2-plan T3: 名局猜着's runner — judging the guesses, its board and card (trainer/lessons.js)
   { entry: "src/web/js/trainer/guess.js", out: "src/web/js/chunk-guess.js", global: "createGuess", min: 3000 },

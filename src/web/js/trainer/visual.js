@@ -9,10 +9,14 @@
  *
  * A set is drawn from the book with the mined puzzles in it, so the mined
  * chunk is waited for too: the same seed has to find the same book.
+ * v8-3-plan T1 / T2: the bank's bands (puzzle-db.js; its index rides in that
+ * chunk) and the engine go in too — the modes load the band a set needs.
  * @module trainer/visual
  */
 import { loadChunk } from "../chunk.js";
 import { ChessLazy } from "../lazy-content.js";
+import { ChessPuzzleDb } from "../puzzle-db.js";
+import { ChessEngine } from "../engine.js";
 
 /** chunk file and global — scripts/bundle.mjs builds visual-modes.js into it */
 export const VIS_CHUNK = { file: "chunk-visual.js", global: "CHESS_VISUAL" };
@@ -27,14 +31,14 @@ export function createVisual(d) {
   function ensure() {
     if (!box.asked) {
       box.asked = Promise.all([loadChunk(VIS_CHUNK.file, VIS_CHUNK.global), ChessLazy.ensureMined().catch(() => null)])
-        .then(([m]) => m.createVisualModes({ ...d, mined: ChessLazy.mined }));
+        .then(([m]) => m.createVisualModes({ ...d, mined: ChessLazy.mined, Db: ChessPuzzleDb, Engine: ChessEngine }));
       box.asked.catch(() => { box.asked = null; }); // a failed load is tried again next time
     }
     return box.asked;
   }
   return {
-    /** A new set of `kind`, or null when the chunk cannot be had. */
-    make: (kind) => ensure().then((m) => m.make(kind), () => { d.toast(d.t("theme.loadFailed"), "fix"); return null; }),
+    /** A new set of `kind`, or null when the chunk cannot be had (or `alive()` turned false meanwhile). */
+    make: (kind, alive) => ensure().then((m) => m.make(kind, alive), () => { d.toast(d.t("theme.loadFailed"), "fix"); return null; }),
     /** 「我的」: the section, once there is anything to show in it. */
     renderMe() {
       const sec = document.getElementById("sec-vis");

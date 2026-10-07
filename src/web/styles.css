@@ -1610,6 +1610,10 @@
       background: color-mix(in srgb, var(--accent) 14%, transparent);
       font-weight: 600;
     }
+    /* v8-3-plan T1 (M2 评审 P2-1): a set of 看 N 步 / 盲走 is being made —
+       its band, the engine, the first question's searches — so its button
+       stands dimmed until the set starts; an attribute, not a rebuild */
+    .theme-row button[aria-busy="true"], .act-btn[aria-busy="true"] { opacity: 0.55; cursor: progress; }
 
     /* sound switch */
     .switch {

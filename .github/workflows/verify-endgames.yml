@@ -12,6 +12,11 @@ name: verify endgames
 # written beside the records (`lichess`). The one position of 8 men has no
 # table and is listed as skipped.
 #
+# v8-3-plan T5 added thirty positions: the 3–4-man ones are on the local
+# tables already, and the thirteen of 5 men are marked `pend` in endgames.js
+# (searched only) until this run has asked about them; then a person
+# relabels them `tb` — test-endgames fails while a `pend` item has an answer.
+#
 # Manual only, read-only, and it commits nothing: whether a 5-man item is
 # re-labelled from `sf` to `tb`, changed or withdrawn is a person's commit,
 # made after reading the answers. A red run means the table disagrees with an
@@ -33,7 +38,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    # ~60 requests a second apart, and a minute's wait on each 429
+    # ~90 requests a second apart, and a minute's wait on each 429
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
