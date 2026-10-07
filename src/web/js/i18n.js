@@ -763,7 +763,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "live.cleared": "已取消选择", "live.start": "回到开局",
       "piece.p": "兵", "piece.n": "马", "piece.b": "象", "piece.r": "车", "piece.q": "后", "piece.k": "王",
       // tooltips (generated alongside index.html's data-i18n-title attributes)
-      "tip.diff.extreme": "不限制棋力等级 —— 仍是每步 1.2 秒，不是无限时间",
+      "tip.diff.extreme": "不限制棋力等级 —— 仍是每步 1.2 秒，不是无限时间；只比强力+ 强一点（对下约 58%：到这个强度和棋多）",
       "tip.cat.m1": "一步将死",
       "tip.claimDraw": "三次重复或 50 回合无进展时可判和",
       "tip.cat.m3": "三步将死（双车赶王）",

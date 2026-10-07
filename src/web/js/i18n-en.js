@@ -730,7 +730,7 @@
       "live.focused": "Board focused", "live.empty": "empty", "live.selectedN": "Selected {0} · {1} legal moves",
       "live.cleared": "Selection cleared", "live.start": "Back to the start",
       "piece.p": "pawn", "piece.n": "knight", "piece.b": "bishop", "piece.r": "rook", "piece.q": "queen", "piece.k": "king",
-      "tip.diff.extreme": "No rating cap — still 1.2 seconds a move, not unlimited time",
+      "tip.diff.extreme": "No rating cap — still 1.2 seconds a move, not unlimited time; only a little stronger than Strong+ (about 58% head to head: at this level most games are drawn)",
       "tip.cat.m1": "Mate in one",
       "tip.claimDraw": "Claimable after threefold repetition or 50 moves without progress",
       "tip.cat.m3": "Mate in three (two rooks driving the king)",
