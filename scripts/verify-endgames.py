@@ -12,6 +12,10 @@ For every position in src/web/js/endgames.js:
     depths. A win needs a mate or tablebase-win score at both; a draw needs
     0.00 at both. Anything else fails the script.
 
+An item of 5–7 men the online table has not answered yet is marked `pend`
+(v8-3-plan T5): it rests on the search alone until verify-endgames.yml has
+asked, and its card says so.
+
 The 5-piece Syzygy set (~1 GB with the 3–4-piece files) could not be fetched
 here — tablebase.lichess.ovh is refused by this machine's proxy — so 5+ men
 are the Stockfish rows. v8-1-plan §9 M3 has the whole story. An item of 5–7
@@ -44,7 +48,7 @@ import chess, chess.engine, chess.syzygy
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "src/web/js/endgames.js")
 OUT = os.path.join(ROOT, "docs/endgames-verified.json")
-ITEM = re.compile(r'\{ id: "([^"]+)", g: "([a-z]+)", fen: "([^"]+)", goal: "(win|draw)", v: "(tb|sf)"(?:, key: \[([^\]]*)\])?')
+ITEM = re.compile(r'\{ id: "([^"]+)", g: "([a-z]+)", fen: "([^"]+)", goal: "(win|draw)", v: "(tb|sf|pend)"(?:, key: \[([^\]]*)\])?')
 
 
 def items():
@@ -100,11 +104,24 @@ def on_file(it, rec):
     the online table's answer: `lichess` must be there and give the goal. An
     only move (`key`) is held to the moves that keep the result, from the
     table the item names.
+
+    `pend` (v8-3-plan T5) is a 5–7-man item the online table has not been
+    asked about yet: the search must give the goal, it names no only move
+    (nothing here could hold one to a table), and once an answer is on file
+    it is a person's turn — relabel it `tb`, or change it.
     """
     why = []
     online = rec.get("lichess") or {}
     if rec["verdict"] != it["goal"]:
         why.append("verdict %s, goal %s" % (rec["verdict"], it["goal"]))
+    if it["v"] == "pend":
+        if rec["method"] != "sf" or not 4 < rec["men"] <= 7:
+            why.append("pend is for 5–7 men searched by Stockfish: %d men, method %s" % (rec["men"], rec["method"]))
+        if online:
+            why.append("the online table has answered (%s): mark it tb or change it" % online.get("verdict"))
+        if it["key"] is not None:
+            why.append("an only move on a pend item, with no table to hold it to")
+        return why
     if it["v"] == "tb" and rec["method"] == "sf" and 4 < rec["men"] <= 7:
         if online.get("verdict") != it["goal"]:
             why.append("tb on %d men needs the online table's answer, and it is %s" % (rec["men"], online.get("verdict")))
