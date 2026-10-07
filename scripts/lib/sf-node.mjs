@@ -90,5 +90,23 @@ export async function startEngine(Chess, depth) {
     listeners.splice(listeners.indexOf(collect), 1);
     return best;
   }
-  return { topLines, scoreOfMove };
+  /**
+   * v8-3-plan T2: the best move (UCI) at `nodes` nodes, sent in the order and
+   * with the options engine.js analyzeInner uses (`ucinewgame`, full
+   * strength, `hash` MB), so a test can tell what the page's fixed-node
+   * search will answer.
+   */
+  async function bestAt(fen, nodes, hash = 32) {
+    send("ucinewgame");
+    await ready();
+    for (const c of ["setoption name MultiPV value 1", "setoption name Skill Level value 20",
+      "setoption name UCI_LimitStrength value false", "setoption name Hash value " + hash]) send(c);
+    send("position fen " + fen);
+    const done = waitFor((l) => /^bestmove/.test(l), 300000);
+    send("go nodes " + nodes);
+    const line = await done;
+    const u = line.split(/\s+/)[1];
+    return u && u !== "(none)" ? u : null;
+  }
+  return { topLines, scoreOfMove, bestAt };
 }

@@ -51,6 +51,20 @@
  * never the order the mined chunk happened to join in). Same seed, same
  * answers → the same set (test-trainer-e2e (h)).
  *
+ * v8-3-plan T1: the book is the Lichess bank's band (puzzle-db.js) for the
+ * mode's rating — blind: the puzzle that rates as the player once BLIND_PLUS
+ * is added, in the nearest band holding a set's worth of both mates. The
+ * band is chosen and loaded when the set is made, and kept for the set, so
+ * the seed and that band's chunk decide it; a band that does not load leaves
+ * the set on the local book, as in 8.2. A bank puzzle's review key ends in
+ * its band (`id|band`, `id|N|seed|band`), so a review waits for that chunk.
+ *
+ * v8-3-plan T2: look's plies past the puzzle's own line are the engine's best
+ * move at the review's budget (LOOK_BUDGET, a fixed node count searched from
+ * `ucinewgame`, as trainer/guess.js asks), worked out when the question is
+ * built — the first with the set, each next one once the answer before it is
+ * in — never while one is being answered. Without the engine, pickMove (8.2).
+ *
  * Words are [zh-CN, en, ja], as in endgames.js: the chunk carries all three.
  * @module trainer/visual-modes
  */
@@ -68,6 +82,10 @@ export const N_MIN = 2, N_MAX = 6;
 const LOOK_CATS = ["m1", "m2", "m3", "win", "tac", "real", "def", "draw"];
 const BLIND_CATS = ["m1", "m2"];
 const VAL = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+/** v8-3-plan T2: review/analysis.js SCAN_BUDGET — engine.js nodesFor() turns it into nodes */
+export const LOOK_BUDGET = 200;
+/** v8-3-plan T1: a band blind draws from holds at least this many of each mate */
+const BLIND_MIN = 2 * SET;
 const LANG_AT = { "zh-CN": 0, en: 1, ja: 2 };
 
 const W = {
@@ -178,8 +196,11 @@ function matesOf(g) {
  * Question `qseed` about puzzle `p` after `n` plies, or null when the line
  * cannot be played that far or the game ends on the way.
  * @param {Function} Chess chess.js
+ * @param {Function} [best] v8-3-plan T2: fen → Promise of the engine's best
+ *   move (UCI) or null; the plies past the puzzle's line are its, and
+ *   pickMove's where it has none
  */
-export function buildLook(Chess, p, n, qseed) {
+export async function buildLook(Chess, p, n, qseed, best) {
   const r = rng(qseed);
   const g = new Chess(p.fen);
   const start = g.fen();
@@ -187,7 +208,13 @@ export function buildLook(Chess, p, n, qseed) {
   const sans = [];
   let last = null;
   for (let i = 0; i < n; i++) {
-    const mv = i < line.length ? g.move(line[i]) : (() => { const m = pickMove(g, r); return m ? g.move(m) : null; })();
+    let mv = null;
+    if (i < line.length) mv = g.move(line[i]);
+    else {
+      const u = best ? await best(g.fen()) : null;
+      mv = u ? g.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] }) : null;
+      if (!mv) { const m = pickMove(g, r); mv = m ? g.move(m) : null; }
+    }
     if (!mv || g.game_over()) return null;
     sans.push(mv.san);
     last = { from: mv.from, to: mv.to };
@@ -210,7 +237,8 @@ export function buildLook(Chess, p, n, qseed) {
   if (kinds.length === 1 && !mates.length) return null;
   let x = r() * kinds.reduce((a, k) => a + k.w, 0);
   const kind = kinds.find((k) => (x -= k.w) < 0) || kinds[0];
-  const q = { key: p.id + "|" + n + "|" + qseed, pid: p.id, n, start, sans, fen: g.fen(), last, t: kind.t, side };
+  const b = bandOfP(p);
+  const q = { key: p.id + "|" + n + "|" + qseed + (b == null ? "" : "|" + b), pid: p.id, n, start, sans, fen: g.fen(), last, t: kind.t, side };
   if (kind.t === "cap") {
     q.sq = caps[Math.floor(r() * caps.length)];
     q.target = g.get(q.sq);
@@ -229,7 +257,7 @@ export function buildLook(Chess, p, n, qseed) {
  * from the mates whose solution is one ply longer than `n` — the n plies
  * listed, and the mate the last one is left for.
  */
-export function lookQuestion(Chess, pool, seed, k, n) {
+export async function lookQuestion(Chess, pool, seed, k, n, best) {
   if (!pool.length) return null;
   const ready = pool.filter((p) => /^m\d$/.test(p.cat) && Array.isArray(p.solution) && p.solution.length === n + 1);
   for (let tries = 0; tries < 60; tries++) {
@@ -237,7 +265,7 @@ export function lookQuestion(Chess, pool, seed, k, n) {
     const r = rng(qseed ^ 0x5bd1e995);
     const from = ready.length && r() < 0.35 ? ready : pool;
     const p = from[Math.floor(r() * from.length)];
-    const q = buildLook(Chess, p, n, qseed);
+    const q = await buildLook(Chess, p, n, qseed, best);
     if (q) return q;
   }
   return null;
@@ -247,6 +275,40 @@ export function lookQuestion(Chess, pool, seed, k, n) {
 export function blindPick(pools, seed, k, lvl, used) {
   const list = (pools[lvl] || []).filter((p) => !(used && used.includes(p.id)));
   return list.length ? list[Math.floor(rng(mix(seed, k, lvl))() * list.length)] : null;
+}
+/**
+ * v8-3-plan T1: puzzle k of a blind set drawn from the bank's pools `bank`
+ * (null: none loaded): the level asked for, from the bank and then the local
+ * `pools`, then the other level the same way.
+ */
+export function blindNext(bank, pools, seed, k, lvl, used) {
+  for (const l of [lvl, 1 - lvl]) {
+    const p = (bank && blindPick(bank, seed, k, l, used)) || blindPick(pools, seed, k, l, used);
+    if (p) return p;
+  }
+  return null;
+}
+
+/** v8-3-plan T1: the band a bank puzzle lives in (scripts/import-puzzles.mjs bandOf), or null for a local one */
+export const bandOfP = (p) => (p && p.src === "lichess" && Number.isFinite(p.rating) ? Math.floor(p.rating / 200) * 200 : null);
+/** …and the band at the end of a review key, or null (a local puzzle's key has none) */
+export function keyBand(key) {
+  const f = String(key).split("|");
+  return f[0].startsWith("lc-") && f.length > 1 ? Number(f[f.length - 1]) : null;
+}
+/**
+ * v8-3-plan T1: band `b` (puzzle-db.js bandFor of the rating), unless it has
+ * fewer than BLIND_MIN of one of `cats` (index: LC_INDEX) — then the nearest
+ * band that has them all, or `b` when none does.
+ */
+export function bankBand(index, b, cats) {
+  const bands = (index && index.bands) || [];
+  const ok = (i) => cats.every((c) => index.themes[c] && index.themes[c].bands[i] >= BLIND_MIN);
+  const at = bands.findIndex((x) => x.band === b);
+  if (at < 0 || ok(at)) return b;
+  let best = null;
+  bands.forEach((x, i) => { if (ok(i) && (best == null || Math.abs(x.band - b) < Math.abs(best - b))) best = x.band; });
+  return best == null ? b : best;
 }
 
 /**
@@ -306,11 +368,11 @@ export function lineText(fen, sans) {
  * @param {object} d trainer/visual.js's bag: the book, the ratings, the
  *   trainer's seat / move / side, the modes' startRun / finishRun, Chess and
  *   ChessRating, and `mined` (the mined set, which may have arrived before
- *   it joined the book)
+ *   it joined the book); v8-3-plan: `Db` (puzzle-db.js) and `Engine`
  */
 export function createVisualModes(d) {
   const {
-    store, t, tf, tdot, el, avail, setText, sync, Audio2, Chess, ChessRating, Srs, Progress, ALL_PUZZLES, mined,
+    store, t, tf, tdot, el, avail, setText, sync, Audio2, Chess, ChessRating, Srs, Progress, ALL_PUZZLES, mined, Db, Engine,
     seatPuzzle, puzzleMove, puzzleHumanSide, puzzleRating, savePuzzleState, saveProgress, startRun, finishRun,
   } = d;
   const lang = () => LANG_AT[store.ui.langId] || 0;
@@ -335,6 +397,42 @@ export function createVisualModes(d) {
     return pools;
   }
 
+  // v8-3-plan T1: the bank's bands, each asked for once a session — band →
+  // {p, v}: the load, and once it is in, the pools (null: it did not come,
+  // and the next set asks again)
+  const banks = new Map();
+  function bank(b) {
+    if (b == null || !Db) return Promise.resolve(null);
+    let e = banks.get(b);
+    if (!e) {
+      e = { v: null };
+      e.p = Promise.resolve().then(() => Db.ensureBand(b)).then((list) => {
+        e.v = list && list.length ? { look: lookPool(list), blind: blindPool(list) } : null;
+        return e.v;
+      }, () => null);
+      e.p.then((v) => { if (!v) banks.delete(b); });
+      banks.set(b, e);
+    }
+    return e.p;
+  }
+  const bankNow = (b) => (b == null || !banks.has(b) ? null : banks.get(b).v);
+  /** The band a new set of `kind` draws from, or null before the bank's index is here. */
+  function bandOf(kind) {
+    if (!Db || !Db.indexReady()) return null;
+    const m = rec(kind);
+    const r = (m.rating || ChessRating.newRating()).r - (kind === "blind" ? BLIND_PLUS : 0);
+    return bankBand(Db.index, Db.bandFor(r), kind === "blind" ? BLIND_CATS : []);
+  }
+  /** v8-3-plan T2: the engine's best move at the review's budget; null when it has none */
+  async function best(fen) {
+    if (!Engine) return null;
+    try {
+      // null is a search something else cut short (engine.js stale): asked once more
+      const a = (await Engine.analyze(fen, LOOK_BUDGET)) || (await Engine.analyze(fen, LOOK_BUDGET));
+      return a && a.best;
+    } catch (_) { return null; }
+  }
+
   /** puzzleState.vis[kind], made whole: an old save has none, a hand-edited one may be anything */
   function rec(kind) {
     const st = store.session.puzzleState;
@@ -352,46 +450,87 @@ export function createVisualModes(d) {
 
   const api = { make, serve, render, click, solved, missed, answer, renderMe };
 
-  /** A new set: trainer/visual.js calls this, puzzle-modes.js startRun takes it from there. */
-  function make(kind) {
+  /**
+   * A new set: trainer/visual.js calls this, puzzle-modes.js startRun takes
+   * it from there. v8-3-plan: once its band (and those of the bank reviews
+   * due) is here, and with look's first question built.
+   */
+  async function make(kind) {
     const now = Date.now();
     book();
-    return { kind, own: api, seed: (now >>> 0) || 1, score: 0, strikes: 0, k: 0, used: [], startedAt: now,
-      endsAt: 0, over: false, last: null, n: N_MIN, lvl: 0, due: due(kind, now).slice(0, REVIEW_MAX), total: SET };
+    const run = { kind, own: api, seed: (now >>> 0) || 1, score: 0, strikes: 0, k: 0, used: [], startedAt: now,
+      endsAt: 0, over: false, last: null, n: N_MIN, lvl: 0, due: [], total: SET, band: bandOf(kind), next: null };
+    const owed = due(kind, now);
+    await Promise.all([...new Set([run.band, ...owed.map(keyBand)])].map(bank));
+    if (!bankNow(run.band)) run.band = null;
+    // a bank review whose band did not come waits for a set where it does
+    run.due = owed.filter((k) => keyBand(k) == null || bankNow(keyBand(k))).slice(0, REVIEW_MAX);
+    if (kind === "look") await prepare(run).p;
+    return run;
+  }
+  /** The look pool of band `b`: the bank's, or the local book's (8.2) when there is none. */
+  const lookOf = (b) => (bankNow(b) || book()).look;
+
+  /**
+   * v8-3-plan T2: look question k of `run`, built ahead (run.next) so that the
+   * engine searches before the question is asked, not while it is answered.
+   */
+  function prepare(run) {
+    const k = run.k;
+    if (!run.next || run.next.k !== k || run.next.n !== run.n) run.next = { k, n: run.n, p: lookAt(run, k).catch(() => ({ key: null, q: null })) };
+    return run.next;
+  }
+  async function lookAt(run, k) {
+    const key = k < run.due.length ? run.due[k] : null;
+    const n = run.n;
+    if (key) {
+      const [pid, n, qs] = key.split("|");
+      const p = lookOf(keyBand(key)).find((x) => x.id === pid);
+      return { key, q: p ? await buildLook(Chess, p, Number(n), Number(qs) >>> 0, best) : null };
+    }
+    let q = null;
+    // a question that cannot be put into words is skipped for another,
+    // never seated: the card would be left half drawn (M2 review)
+    for (let i = 0; i < 4 && !(q && asked(q)); i++) q = await lookQuestion(Chess, lookOf(run.band), i ? mix(run.seed, i) : run.seed, k, n, best);
+    return { key: null, q };
   }
 
   /** The next question of the set on the board, or the set's end. */
   function serve(run) {
-    if (run.over) return;
+    if (run.over || run.busy) return;
     if (run.k >= run.total) { run.why = "done"; finishRun(run); return; }
     const k = run.k;
+    if (run.kind === "look") {
+      const nx = prepare(run);
+      run.k++;
+      run.busy = true;
+      nx.p.then(({ key, q }) => {
+        run.busy = false;
+        if (run.over) return;
+        // parked meanwhile (a load asking first): 下一题 asks for it again
+        if (store.session.run !== run) { run.k = k; return; }
+        run.next = null;
+        if (!q || !asked(q)) {
+          if (key) { delete rec("look").q[key]; savePuzzleState(); serve(run); return; }
+          run.why = "spent"; finishRun(run); return;
+        }
+        const p = { id: "look:" + q.key, cat: "look", fen: q.start, solution: [], side: q.start.split(" ")[1], vq: q, review: !!key };
+        run.used.push(p.id);
+        seatPuzzle("look", k, p, run);
+        say(tf("ui.pair", [w("moves", [lineText(q.start, q.sans)]), asked(q)]));
+        sync();
+        focusIn();
+      });
+      return;
+    }
     const key = k < run.due.length ? run.due[k] : null;
     run.k++;
-    if (run.kind === "look") {
-      const pool = book().look;
-      let q = null;
-      if (key) {
-        const [pid, n, qs] = key.split("|");
-        const p = pool.find((x) => x.id === pid);
-        q = p ? buildLook(Chess, p, Number(n), Number(qs) >>> 0) : null;
-      } else {
-        // a question that cannot be put into words is skipped for another,
-        // never seated: the card would be left half drawn (M2 review)
-        for (let i = 0; i < 4 && !(q && asked(q)); i++) q = lookQuestion(Chess, pool, i ? mix(run.seed, i) : run.seed, k, run.n);
-      }
-      if (!q || !asked(q)) {
-        if (key) { delete rec("look").q[key]; savePuzzleState(); serve(run); return; }
-        run.why = "spent"; finishRun(run); return;
-      }
-      const p = { id: "look:" + q.key, cat: "look", fen: q.start, solution: [], side: q.start.split(" ")[1], vq: q, review: !!key };
-      run.used.push(p.id);
-      seatPuzzle("look", k, p, run);
-      say(tf("ui.pair", [w("moves", [lineText(q.start, q.sans)]), asked(q)]));
-    } else {
-      const pools2 = book().blind;
-      let p = key ? pools2[0].concat(pools2[1]).find((x) => x.id === key) : blindPick(pools2, run.seed, k, run.lvl, run.used);
+    {
+      const local = book().blind;
+      const bk = bankNow(run.band);
+      let p = key ? ((bankNow(keyBand(key)) || {}).blind || local).flat().find((x) => x.id === key.split("|")[0])
+        : blindNext(bk && bk.blind, local, run.seed, k, run.lvl, run.used);
       if (key && !p) { delete rec("blind").q[key]; savePuzzleState(); serve(run); return; }
-      if (!p) p = blindPick(pools2, run.seed, k, 1 - run.lvl, run.used);
       if (!p) { run.why = "spent"; finishRun(run); return; }
       run.used.push(p.id);
       seatPuzzle("blind", k, p, run);
@@ -465,10 +604,12 @@ export function createVisualModes(d) {
     settle(pz, ok, explain(q), q.key, q.r);
   }
 
+  /** A blind review key: the puzzle's id, and a bank puzzle's band after it (v8-3-plan T1) */
+  const blindKey = (p) => (bandOfP(p) == null ? p.id : p.id + "|" + bandOfP(p));
   /** The trainer's verdicts on a blind move (puzzle-modes.js runSolved / runMissed). */
   function solved(pz) {
     const p = pz.p;
-    settle(pz, true, w("ansLine", [p.solution.join(" ")]), p.id, puzzleRating(p).r + BLIND_PLUS);
+    settle(pz, true, w("ansLine", [p.solution.join(" ")]), blindKey(p), puzzleRating(p).r + BLIND_PLUS);
   }
   function missed(pz, reason) {
     if (pz.p.vq) return; // look is never judged by the trainer
@@ -480,7 +621,7 @@ export function createVisualModes(d) {
     const next = pz.p.solution[pz.stage * 2];
     const mv = next ? probe.move(next) : null;
     if (mv) pz.helpArrow = { from: mv.from, to: mv.to };
-    settle(pz, false, tdot(reason, w("ansLine", [pz.p.solution.join(" ")])), pz.p.id, puzzleRating(pz.p).r + BLIND_PLUS);
+    settle(pz, false, tdot(reason, w("ansLine", [pz.p.solution.join(" ")])), blindKey(pz.p), puzzleRating(pz.p).r + BLIND_PLUS);
   }
   /** 答案 (H): this one is given up. */
   function answer(pz) {
@@ -504,6 +645,8 @@ export function createVisualModes(d) {
     if (ok) run.score++; else run.strikes++;
     if (kind === "look") run.n = Math.max(N_MIN, Math.min(N_MAX, run.n + (ok ? 1 : -1)));
     else run.lvl = ok ? 1 : 0;
+    // v8-3-plan T2: the next question is built now, while this answer is read
+    if (kind === "look" && run.k < run.total) prepare(run);
     const m = rec(kind);
     const review = !!(pz.review || pz.p.review);
     if (!review) {
@@ -679,4 +822,4 @@ export function createVisualModes(d) {
   return api;
 }
 
-export const CHESS_VISUAL = { createVisualModes, lookPool, blindPool, lookQuestion, buildLook, blindPick, parseAnswer, judgeLook, lineText, rng, mix, SET, N_MIN, N_MAX };
+export const CHESS_VISUAL = { createVisualModes, lookPool, blindPool, lookQuestion, buildLook, blindPick, blindNext, bankBand, keyBand, parseAnswer, judgeLook, lineText, rng, mix, SET, N_MIN, N_MAX, LOOK_BUDGET };
