@@ -49,6 +49,12 @@
  * English the first launch switches to (chunkSync), in that storage; on a
  * CI runner, which starts empty, the two are one and the same fresh state.
  *
+ * The app starts in that temp folder too, never in the checkout: the
+ * checkout has a frontend/dist of its own, and until 8.2.1 the Windows
+ * build read its page from the current directory (v8-3-plan V1) — run from
+ * the repository the self-test passed while the packaged app, started from
+ * Explorer, had no page at all.
+ *
  *   node scripts/selftest-app.mjs <path to the packaged executable>
  */
 import fs from "fs";
@@ -75,7 +81,8 @@ const CHECKS = ["engine", "appdata", "chunk", "restart", "sound", "idb", "chunkS
 async function launch(n) {
   const out = path.join(dir, "report-" + n + ".json");
   const t0 = Date.now();
-  const child = spawn(exe, [], {
+  const child = spawn(path.resolve(exe), [], {
+    cwd: dir,
     env: { ...process.env, ...profile, CHESS_SELFTEST: "1", CHESS_SELFTEST_OUT: out },
     stdio: "inherit",
   });

@@ -7,7 +7,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { spawn } from "child_process";
+import { spawn, execFileSync } from "child_process";
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -92,8 +92,26 @@ export function dropbox(work) {
  * own ready=true snapshot; `bridge(req)` sends one bridge request and reads
  * the answer back.
  */
+/**
+ * WebView2's own processes (msedgewebview2.exe) still running on this
+ * machine; null where there are none to count (not Windows, or tasklist
+ * failed). v8-3-plan V1: the Windows automation build's page never ran on
+ * a runner, and every launch there followed a forced kill of the last one.
+ */
+export function webviewProcesses() {
+  if (process.platform !== "win32") return null;
+  try {
+    const out = execFileSync("tasklist", ["/FI", "IMAGENAME eq msedgewebview2.exe", "/FO", "CSV", "/NH"], { encoding: "utf8" });
+    return out.split(/\r?\n/).filter((l) => /msedgewebview2\.exe/i.test(l)).length;
+  } catch {
+    return null;
+  }
+}
+
 export function launchApp(exe, { work, env, stdio = "inherit" }) {
   const box = dropbox(work);
+  const before = webviewProcesses();
+  if (before !== null) console.log("note: 启动前还有 " + before + " 个 msedgewebview2.exe");
   const child = spawn(path.resolve(exe), [], { cwd: work, env, stdio });
   const state = { exited: null };
   child.on("exit", (c, sig) => { state.exited = c ?? sig; });
@@ -128,12 +146,23 @@ export function launchApp(exe, { work, env, stdio = "inherit" }) {
   }
   async function stop() {
     if (state.exited === null) {
-      child.kill();
+      // on Windows child.kill() is TerminateProcess on the app alone: its
+      // WebView2 processes are left holding the user-data folder the next
+      // launch opens, so the whole tree goes
+      if (process.platform === "win32") {
+        try { execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }); } catch { child.kill(); }
+      } else {
+        child.kill();
+      }
       for (let i = 0; i < 100 && state.exited === null; i++) await sleep(50);
     }
-    // the WebView's own processes (WebView2's msedgewebview2.exe hold the
-    // user-data folder the next launch opens) go a moment after the app
-    await sleep(2000);
+    // the WebView's own processes go a moment after the app; on Windows wait
+    // until none is left (up to 20 s) and say if some outlived that
+    if (process.platform !== "win32") { await sleep(2000); return; }
+    let left = webviewProcesses();
+    for (let i = 0; i < 80 && left; i++) { await sleep(250); left = webviewProcesses(); }
+    if (left) console.log("note: 结束 20 秒后还有 " + left + " 个 msedgewebview2.exe");
+    await sleep(500);
   }
   return { child, box, state, send, ready, bridge, stop };
 }
