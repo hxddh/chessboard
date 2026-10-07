@@ -89,7 +89,7 @@ export function createPuzzlesUI(d) {
   const Modes = createPuzzleModes({
     ...Book, ...Rating,
     doc: document, store, t, tf, el, avail, setText, sync, toast, Audio2, drawRatingTrend, motifKeyOf,
-    saveSettings, switchMode, setSideTab, seatPuzzle, startPuzzles, puzzleHumanSide, makeVis: (k) => Vis.make(k),
+    saveSettings, switchMode, setSideTab, seatPuzzle, startPuzzles, puzzleHumanSide, makeVis: (k, alive) => Vis.make(k, alive),
   });
   // v8-2-plan T2: 看 N 步后 and 盲走收官, beside the modes above — the door
   // (trainer/visual.js); the modes themselves are chunk-visual.js

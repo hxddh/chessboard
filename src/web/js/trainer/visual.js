@@ -37,8 +37,8 @@ export function createVisual(d) {
     return box.asked;
   }
   return {
-    /** A new set of `kind`, or null when the chunk cannot be had. */
-    make: (kind) => ensure().then((m) => m.make(kind), () => { d.toast(d.t("theme.loadFailed"), "fix"); return null; }),
+    /** A new set of `kind`, or null when the chunk cannot be had (or `alive()` turned false meanwhile). */
+    make: (kind, alive) => ensure().then((m) => m.make(kind, alive), () => { d.toast(d.t("theme.loadFailed"), "fix"); return null; }),
     /** 「我的」: the section, once there is anything to show in it. */
     renderMe() {
       const sec = document.getElementById("sec-vis");

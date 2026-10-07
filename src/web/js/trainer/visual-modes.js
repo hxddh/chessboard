@@ -61,9 +61,12 @@
  *
  * v8-3-plan T2: look's plies past the puzzle's own line are the engine's best
  * move at the review's budget (LOOK_BUDGET, a fixed node count searched from
- * `ucinewgame`, as trainer/guess.js asks), worked out when the question is
- * built — the first with the set, each next one once the answer before it is
- * in — never while one is being answered. Without the engine, pickMove (8.2).
+ * `ucinewgame`, as trainer/guess.js asks, at a Hash of its own), worked out
+ * when the question is built — the first with the set, each next one once the
+ * answer before it is in — never while one is being answered. Without the
+ * engine, pickMove (8.2). Only a bank puzzle's: a key without a band (8.2's,
+ * a local puzzle's) is built by 8.2's rule alone, so an 8.2 review is the
+ * question that was missed (M2 评审 P2-2).
  *
  * Words are [zh-CN, en, ja], as in endgames.js: the chunk carries all three.
  * @module trainer/visual-modes
@@ -84,6 +87,12 @@ const BLIND_CATS = ["m1", "m2"];
 const VAL = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 /** v8-3-plan T2: review/analysis.js SCAN_BUDGET — engine.js nodesFor() turns it into nodes */
 export const LOOK_BUDGET = 200;
+/** v8-3-plan T2: the Hash (MB) look searches at — engine.js's default, whatever the player set (M2 评审 P3-1) */
+export const LOOK_HASH = 32;
+/** …and how often a search something else cut short is asked again before pickMove answers */
+const ASK_TRIES = 5;
+/** thrown through a question being built once nobody will ask it (M2 评审 P3-3) */
+const STOP = { stop: true };
 /** v8-3-plan T1: a band blind draws from holds at least this many of each mate */
 const BLIND_MIN = 2 * SET;
 const LANG_AT = { "zh-CN": 0, en: 1, ja: 2 };
@@ -197,22 +206,26 @@ function matesOf(g) {
  * cannot be played that far or the game ends on the way.
  * @param {Function} Chess chess.js
  * @param {Function} [best] v8-3-plan T2: fen → Promise of the engine's best
- *   move (UCI) or null; the plies past the puzzle's line are its, and
- *   pickMove's where it has none
+ *   move (UCI) or null; the plies past a bank puzzle's line are its, and
+ *   pickMove's where it has none — or where its move ends the game, which
+ *   would leave nothing to ask (M2 评审 P2-2). A local puzzle never asks it:
+ *   its key has no band, and 8.2 built that key by pickMove alone.
  */
 export async function buildLook(Chess, p, n, qseed, best) {
   const r = rng(qseed);
   const g = new Chess(p.fen);
   const start = g.fen();
   const line = p.line || p.solution || [];
+  const eng = bandOfP(p) == null ? null : best;
   const sans = [];
   let last = null;
   for (let i = 0; i < n; i++) {
     let mv = null;
     if (i < line.length) mv = g.move(line[i]);
     else {
-      const u = best ? await best(g.fen()) : null;
+      const u = eng ? await eng(g.fen()) : null;
       mv = u ? g.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] }) : null;
+      if (mv && g.game_over()) { g.undo(); mv = null; }
       if (!mv) { const m = pickMove(g, r); mv = m ? g.move(m) : null; }
     }
     if (!mv || g.game_over()) return null;
@@ -285,6 +298,23 @@ export function blindNext(bank, pools, seed, k, lvl, used) {
   for (const l of [lvl, 1 - lvl]) {
     const p = (bank && blindPick(bank, seed, k, l, used)) || blindPick(pools, seed, k, l, used);
     if (p) return p;
+  }
+  return null;
+}
+
+/**
+ * v8-3-plan T2: the engine's best move for `fen` (UCI), or null without one.
+ * A null from analyze is a search something else cut short (engine.js
+ * stale): asked again, up to ASK_TRIES times, so that a set built while a
+ * search was cancelled is the set built without one (M2 评审 P3-1). `stop()`
+ * true throws STOP instead of searching.
+ */
+export async function askEngine(Engine, fen, stop) {
+  for (let i = 0; i < ASK_TRIES; i++) {
+    if (stop && stop()) throw STOP;
+    let a = null;
+    try { a = await Engine.analyze(fen, LOOK_BUDGET, { hash: LOOK_HASH }); } catch (_) { return null; }
+    if (a) return a.best;
   }
   return null;
 }
@@ -423,15 +453,14 @@ export function createVisualModes(d) {
     const r = (m.rating || ChessRating.newRating()).r - (kind === "blind" ? BLIND_PLUS : 0);
     return bankBand(Db.index, Db.bandFor(r), kind === "blind" ? BLIND_CATS : []);
   }
-  /** v8-3-plan T2: the engine's best move at the review's budget; null when it has none */
-  async function best(fen) {
-    if (!Engine) return null;
-    try {
-      // null is a search something else cut short (engine.js stale): asked once more
-      const a = (await Engine.analyze(fen, LOOK_BUDGET)) || (await Engine.analyze(fen, LOOK_BUDGET));
-      return a && a.best;
-    } catch (_) { return null; }
-  }
+  /**
+   * M2 评审 P3-3: a set nobody will see any more — over (left, 结束), or still
+   * being made for a click that has been superseded (puzzle-modes.js `alive`)
+   * — searches no further: the searches run at PLAY and would queue on.
+   */
+  const gone = (run) => run.over || (!!run.alive && !run.alive());
+  /** v8-3-plan T2: the engine's best move at the review's budget, for `run`; null when it has none */
+  const bestFor = (run) => (fen) => (Engine ? askEngine(Engine, fen, () => gone(run)) : Promise.resolve(null));
 
   /** puzzleState.vis[kind], made whole: an old save has none, a hand-edited one may be anything */
   function rec(kind) {
@@ -453,19 +482,23 @@ export function createVisualModes(d) {
   /**
    * A new set: trainer/visual.js calls this, puzzle-modes.js startRun takes
    * it from there. v8-3-plan: once its band (and those of the bank reviews
-   * due) is here, and with look's first question built.
+   * due) is here, and with look's first question built — null when `alive()`
+   * says the click it was made for has been superseded meanwhile.
    */
-  async function make(kind) {
+  async function make(kind, alive) {
     const now = Date.now();
     book();
     const run = { kind, own: api, seed: (now >>> 0) || 1, score: 0, strikes: 0, k: 0, used: [], startedAt: now,
-      endsAt: 0, over: false, last: null, n: N_MIN, lvl: 0, due: [], total: SET, band: bandOf(kind), next: null };
+      endsAt: 0, over: false, last: null, n: N_MIN, lvl: 0, due: [], total: SET, band: bandOf(kind), next: null, alive };
     const owed = due(kind, now);
     await Promise.all([...new Set([run.band, ...owed.map(keyBand)])].map(bank));
     if (!bankNow(run.band)) run.band = null;
     // a bank review whose band did not come waits for a set where it does
     run.due = owed.filter((k) => keyBand(k) == null || bankNow(keyBand(k))).slice(0, REVIEW_MAX);
     if (kind === "look") await prepare(run).p;
+    if (gone(run)) return null;
+    // from here the run is puzzle-modes.js's, and run.over says when it ends
+    delete run.alive;
     return run;
   }
   /** The look pool of band `b`: the bank's, or the local book's (8.2) when there is none. */
@@ -477,7 +510,7 @@ export function createVisualModes(d) {
    */
   function prepare(run) {
     const k = run.k;
-    if (!run.next || run.next.k !== k || run.next.n !== run.n) run.next = { k, n: run.n, p: lookAt(run, k).catch(() => ({ key: null, q: null })) };
+    if (!run.next || run.next.k !== k || run.next.n !== run.n) run.next = { k, n: run.n, p: lookAt(run, k).catch((e) => (e === STOP ? STOP : { key: null, q: null })) };
     return run.next;
   }
   async function lookAt(run, k) {
@@ -486,12 +519,15 @@ export function createVisualModes(d) {
     if (key) {
       const [pid, n, qs] = key.split("|");
       const p = lookOf(keyBand(key)).find((x) => x.id === pid);
-      return { key, q: p ? await buildLook(Chess, p, Number(n), Number(qs) >>> 0, best) : null };
+      return { key, q: p ? await buildLook(Chess, p, Number(n), Number(qs) >>> 0, bestFor(run)) : null };
     }
     let q = null;
     // a question that cannot be put into words is skipped for another,
     // never seated: the card would be left half drawn (M2 review)
-    for (let i = 0; i < 4 && !(q && asked(q)); i++) q = await lookQuestion(Chess, lookOf(run.band), i ? mix(run.seed, i) : run.seed, k, n, best);
+    for (let i = 0; i < 4 && !(q && asked(q)); i++) {
+      if (gone(run)) throw STOP;
+      q = await lookQuestion(Chess, lookOf(run.band), i ? mix(run.seed, i) : run.seed, k, n, bestFor(run));
+    }
     return { key: null, q };
   }
 
@@ -504,11 +540,11 @@ export function createVisualModes(d) {
       const nx = prepare(run);
       run.k++;
       run.busy = true;
-      nx.p.then(({ key, q }) => {
+      nx.p.then(({ key, q, stop }) => {
         run.busy = false;
         if (run.over) return;
         // parked meanwhile (a load asking first): 下一题 asks for it again
-        if (store.session.run !== run) { run.k = k; return; }
+        if (store.session.run !== run || stop) { run.k = k; if (stop) run.next = null; return; }
         run.next = null;
         if (!q || !asked(q)) {
           if (key) { delete rec("look").q[key]; savePuzzleState(); serve(run); return; }
@@ -822,4 +858,4 @@ export function createVisualModes(d) {
   return api;
 }
 
-export const CHESS_VISUAL = { createVisualModes, lookPool, blindPool, lookQuestion, buildLook, blindPick, blindNext, bankBand, keyBand, parseAnswer, judgeLook, lineText, rng, mix, SET, N_MIN, N_MAX, LOOK_BUDGET };
+export const CHESS_VISUAL = { createVisualModes, lookPool, blindPool, lookQuestion, buildLook, blindPick, blindNext, bankBand, keyBand, askEngine, parseAnswer, judgeLook, lineText, rng, mix, SET, N_MIN, N_MAX, LOOK_BUDGET, LOOK_HASH };

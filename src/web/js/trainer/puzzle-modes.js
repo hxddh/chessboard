@@ -250,11 +250,41 @@ export function createPuzzleModes(d) {
     });
   }
 
+  /**
+   * M2 评审 P2-1: a set of 看 N 步 / 盲走 takes a while to make (its band, the
+   * engine, the first question's searches). Each ask is numbered, and any run
+   * starting or stopping, or the mode changing, makes it stale: a set made
+   * for an older ask is dropped, never started over what the player did
+   * since. Its button says it is busy meanwhile — an attribute, so nothing is
+   * rebuilt under it between pointerdown and pointerup (7.6).
+   */
+  const vis = { ask: 0, kind: null };
+  function visWait(kind) {
+    vis.kind = kind;
+    doc.querySelectorAll("#pz-mode-seg button[data-run], #vis-look, #vis-blind").forEach((b) => {
+      if (kind && (b.dataset.run || b.id.slice(4)) === kind) b.setAttribute("aria-busy", "true");
+      else b.removeAttribute("aria-busy");
+    });
+  }
+  function dropVis() { vis.ask++; if (vis.kind) visWait(null); }
+
   function startRun(kind, made) {
     // v8-2-plan T2: 看 N 步 / 盲走 — a set made by trainer/visual.js (its
     // chunk loads first), a run like these two from here on, with `own`
     // answering for it where the rules below are runs.js's
-    if (!made && VIS_KINDS.includes(kind)) { makeVis(kind).then((r) => r && startRun(kind, r)); return; }
+    if (!made && VIS_KINDS.includes(kind)) {
+      if (vis.kind === kind) return; // already being made
+      const ask = ++vis.ask, mode = store.session.mode;
+      const alive = () => ask === vis.ask && store.session.mode === mode;
+      visWait(kind);
+      const done = (r) => {
+        if (ask !== vis.ask) return;
+        visWait(null);
+        if (r && alive()) startRun(kind, r);
+      };
+      makeVis(kind, alive).then(done, () => done(null));
+      return;
+    }
     endRun();
     const run = made || Runs.newRun(kind, Date.now(), Date.now());
     if (!run) return;
@@ -341,6 +371,7 @@ export function createPuzzleModes(d) {
   }
   /** Stop the run in progress (leaving the mode, 结束, another run). */
   function endRun() {
+    dropVis();
     // a parked run ends here too: the load it was parked for went ahead
     const run = store.session.run || store.session.parkedRun;
     store.session.parkedRun = null;
@@ -467,7 +498,8 @@ export function createPuzzleModes(d) {
       const b = ev.target.closest("button[data-run]");
       if (!b) return;
       const cur = store.session.run ? store.session.run.kind : "practice";
-      if (b.dataset.run === cur && !(store.session.run && store.session.run.over)) return;
+      // staying where one is drops a set still being made for another click
+      if (b.dataset.run === cur && !(store.session.run && store.session.run.over)) { dropVis(); return; }
       if (b.dataset.run === "practice") toPractice(); else startRun(b.dataset.run);
     };
     const stop = el("pz-run-stop");
