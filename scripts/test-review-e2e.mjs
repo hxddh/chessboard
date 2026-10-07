@@ -1834,6 +1834,16 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     document.querySelector('#lesson-list button[data-gs="8"]').click();
   });
   assert(await gsAt(1), "M2：黑胜的一局默认猜黑方，轮到黑方");
+  // v8-3-plan T4: guessing Black, the hand cursor over Black's men (the board
+  // is flipped: a8 is at the bottom right), and not over White's
+  const hoverCursor = async (sq) => {
+    const c = await pg.evaluate((q) => { const r = document.getElementById("board").getBoundingClientRect(); return { x: r.left + (104.5 - q.charCodeAt(0)) * r.width / 8, y: r.top + (Number(q[1]) - 0.5) * r.height / 8 }; }, sq);
+    await pg.mouse.move(c.x, c.y);
+    await pg.mouse.move(c.x + 2, c.y + 2);
+    return pg.evaluate(() => document.getElementById("board").style.cursor);
+  };
+  const overBlack = await hoverCursor("b8"), overWhite = await hoverCursor("b1");
+  assert(overBlack === "grab" && overWhite !== "grab", "T4：猜黑方时黑子上是手形光标、白子上不是（b8 " + overBlack + "，b1 " + overWhite + "）");
   await pg.focus("#board");
   await pg.keyboard.press("ArrowUp");
   await pg.waitForTimeout(150);
