@@ -4642,6 +4642,9 @@ for (const lang of CONTENT_LANGS) {
       'function f() { let s;\n  if (a) s = t("a"); else s = t("b");\n  return s + n; }', 'function f() { let a = 1, s = t("a");\n  return s + n; }',
       'function f() { const s = (a ? t("a") : t("b"));\n  return s + n; }', 'function f() { const s = t("a");\n  const u = s;\n  return u + n; }',
       'function f() { const s = t("a");\n  const u = n || s;\n  el.title = u + n; }', 'function f() { const s = t("a");\n  return `${s} ${n}`; }',
+      // an inner block's own `s` ends with the block; the outer one is back after it
+      'function f() { const s = t("a");\n  if (a) { const s = 1; g(s + n); }\n  return s + n; }',
+      'function f() { const s = t("a");\n  { const s = t("b"); g(s + n); } }',
     ];
     const green = [
       'x = "t(\\"a\\") + n";', '// t("a") + n', 'x = /t\\("a"\\) \\+/.test(s);', 'x = tf("a", [n + 1]);',
@@ -4653,6 +4656,9 @@ for (const lang of CONTENT_LANGS) {
       'function f() { const s = t("a");\n  const k = s ? 1 : 2;\n  return k + n; }', 'function f() { const s = t("a");\n  const k = s.length;\n  return `${k}` + n; }',
       'function f() { let s;\n  s = g(t("a"));\n  return s + n; }', 'function f() { let s;\n  s = t("a"); }\nfunction g() { let s = 0;\n  return s + 1; }',
       'const f = (s) => t(s);\nx = `${n}`;',
+      // Codex review on #105: an inner declaration of the same name is another binding
+      'let s; s = t("a"); { const s = 1; x = s + n; }', 'function f() { const s = t("a");\n  for (const s of xs) g(s + 1); }',
+      'function f() { const s = t("a");\n  for (let s = 0; s < 3; s++) { g(s + 1); } }',
     ];
     const crlf = (s) => s.replace(/\n/g, "\r\n");
     assert(red.every((s) => findConcats(s).length > 0 && findConcats(crlf(s)).length > 0),
