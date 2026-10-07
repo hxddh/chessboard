@@ -4522,8 +4522,8 @@ import { loadChunk } from "./chunk.js";
       if (!store.session.learn || store.session.learn.done || store.session.learn.demoing) return false;
       const task = curTask();
       if (task.type === "tap") return false;
-      const p = store.session.learn.g.get(sq);
-      return !!p && p.color === "w" && store.session.learn.g.turn() === "w" && (!task.only || p.type === task.only);
+      const p = store.session.learn.g.get(sq), me = store.session.learn.gs ? store.session.learn.gs.side : "w"; // v8-3-plan T4: 名局猜着 may guess Black
+      return !!p && p.color === me && store.session.learn.g.turn() === me && (!task.only || p.type === task.only);
     }
     if (store.session.mode === "puzzle") {
       if (!store.session.puzzle || store.session.puzzle.done || store.session.puzzle.hidden) return false; // 盲走: no hint of the men

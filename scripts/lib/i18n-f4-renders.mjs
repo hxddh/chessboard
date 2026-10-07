@@ -8,7 +8,9 @@
  * test-chess.mjs renders every row in every language and compares: F4 was to
  * change how the text is built, not one character of what anyone reads (the
  * English "1 games" and "Wknight" included — fixing those is a wording
- * change for another day, not part of a refactor).
+ * change for another day, not part of a refactor). That day was v8-3-plan
+ * T4: the stats.hint.noAcc row now reads "1 game", the one English render
+ * changed since; test-chess.mjs's T4 block checks the plural keys themselves.
  *
  * Row: [id, (t, tf, tdot, diff) => text, zh-CN, en, ja]
  */
@@ -34,7 +36,7 @@ export const F4_RENDERS = [
   ["stats.hint.acc", (t, tf, tdot, diff) => tdot(tf("stats.gamesN", [12]), t("stats.hint"), t("stats.accFrom")),
     "共 12 局 · 人机完局自动记录 · 精准度来自「分析」", "12 games · engine games recorded automatically · accuracy comes from Analyse", "計 12 局 · エンジン対局は自動で記録されます · 正確度は「解析」から記録されます"],
   ["stats.hint.noAcc", (t, tf, tdot, diff) => tdot(tf("stats.gamesN", [1]), t("stats.hint"), t("stats.accHow")),
-    "共 1 局 · 人机完局自动记录 · 完局后点「分析」可记录精准度", "1 games · engine games recorded automatically · run Analyse after a game to record accuracy", "計 1 局 · エンジン対局は自動で記録されます · 対局後に「解析」を押すと正確度が記録されます"],
+    "共 1 局 · 人机完局自动记录 · 完局后点「分析」可记录精准度", "1 game · engine games recorded automatically · run Analyse after a game to record accuracy", "計 1 局 · エンジン対局は自動で記録されます · 対局後に「解析」を押すと正確度が記録されます"],
   ["hist.todayAt", (t, tf, tdot, diff) => tf("hist.todayAt", ["09:41"]),
     "今天 09:41", "today 09:41", "今日 09:41"],
   ["hist.yesterdayAt", (t, tf, tdot, diff) => tf("hist.yesterdayAt", ["23:05"]),
