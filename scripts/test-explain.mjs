@@ -263,6 +263,64 @@ const FIXED = fenAfter("e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5 Nxd5 Nxf7 Kxf7 Qf3+ Ke
       assert((!r || r.motif !== "perpetual") && listed < 8000, "长将的搜索有上限：" + line + " 不是长将，列了 " + listed + " 着（" + (Date.now() - t0) + " ms）");
     }
   }
+  // v8-3-plan F2: 8.2 left the perpetual proof at a worst of 260–340 ms and
+  // 8.3 accepts it (a smaller budget loses real perpetuals) — this keeps it
+  // from growing. Every T6 sample line is read as if it were level after the
+  // mistake (the review's way: the evaluations are made up), so each one
+  // whose checks run on starts the proof. The gate is the search's own
+  // budget, counted the way forever() charges it (n × n listing the
+  // checker's moves, n × 40 a king in check's), not the clock: the most is
+  // pz:pUkFR at 157,894 (the last listing overshoots the 100,000 it checks
+  // against), bound 175,000 (+10%); doubling the budget reads ~2× here. The
+  // clock is a loose check on top, the heaviest five, best of five each
+  {
+    const cases = JSON.parse(fs.readFileSync(path.join(root, "scripts/fixtures/motif-sample.json"), "utf8"));
+    let spent = 0, A = "w";
+    const Charged = function (fen) {
+      const g = new Chess(fen);
+      const moves = g.moves;
+      g.moves = (o) => {
+        const r = moves(o);
+        if (o && o.verbose && /\bat forever\b/.test(new Error().stack)) spent += r.length * (g.turn() === A ? r.length : 40);
+        return r;
+      };
+      return g;
+    };
+    const runs = [], limit = Error.stackTraceLimit;
+    Error.stackTraceLimit = 3;   // forever() is the caller of moves(): two frames up
+    for (const c of cases) {
+      const g = new Chess(c.fen);
+      const mv = g.move(c.played);
+      if (!mv) continue;
+      const fen = g.fen(), line = Array.isArray(c.line) ? c.line : c.line.split(" ");
+      const opts = { played: mv, credit: mv.captured ? { p: 1, n: 3, b: 3, r: 5, q: 9 }[mv.captured] : 0,
+        evalBefore: mv.color === "w" ? 300 : -300, evalAfter: 0 };
+      spent = 0;
+      A = g.turn();
+      ctx.lineMotif(fen, line, Charged, opts);
+      runs.push({ id: c.id, spent, fen, line, opts });
+    }
+    Error.stackTraceLimit = limit;
+    runs.sort((a, b) => b.spent - a.spent);
+    const top = runs[0];
+    assert(top.spent > 50000 && top.spent <= 175000,
+      "F2：长将的搜索在 " + runs.length + " 条样本上最多花 " + top.spent + "（" + top.id + "，上限 175,000）");
+    let worst = 0, at = "";
+    for (const r of runs.slice(0, 5)) {
+      let best = Infinity;
+      for (let k = 0; k < 5; k++) {
+        const t0 = performance.now();
+        ctx.lineMotif(r.fen, r.line, Chess, r.opts);
+        best = Math.min(best, performance.now() - t0);
+      }
+      if (best > worst) { worst = best; at = r.id; }
+    }
+    // the gate is the work count above; wall clock is a sanity line — 350 ms
+    // where the decision was measured, three times that on a shared CI runner
+    // (static runs on macOS and Windows runners too, slower and noisier)
+    const wallCap = process.env.CI ? 1050 : 350;
+    assert(worst <= wallCap, "F2：最费的五条，各取五次里最快的一次，最慢 " + worst.toFixed(0) + " ms（" + at + "，上限 " + wallCap + " ms）");
+  }
   // 中间着 and 绝望子 read the mistake itself, so they take its move record
   {
     const g = new Chess("r5k1/6p1/8/8/6b1/5N2/5PPP/3Q2K1 b - - 0 1");

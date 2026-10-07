@@ -67,5 +67,8 @@ export function makeScenarioGate(spec, log = console.log, limitMs = Number(proce
     return true;
   };
   scenario.done = () => { lap(); return { shard, total: k + 1 }; };
+  // v8-3-plan V4: the scenario running now, for a log line that names it
+  scenario.current = () => last;
+  scenario.shard = shard;
   return scenario;
 }

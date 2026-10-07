@@ -183,20 +183,30 @@ jobs:
           - name: board + clock
             suites: scripts/test-board-e2e.mjs scripts/test-clock-e2e.mjs
             timeout: 30
-          - name: sound + shell + trainer
-            suites: scripts/test-audio-e2e.mjs scripts/test-shell-e2e.mjs scripts/test-trainer-e2e.mjs
-            timeout: 30
-          # v8-2-plan V4: split in two, as in checks.yml
+          # v8-3-plan V4: split in two, as in checks.yml
+          - name: sound + shell
+            suites: scripts/test-audio-e2e.mjs scripts/test-shell-e2e.mjs
+            timeout: 15
+          - name: trainer
+            suites: scripts/test-trainer-e2e.mjs
+            timeout: 15
           # v8-2-plan V4 (M3): split in two, as in checks.yml
           - name: lessons
             suites: scripts/test-content-e2e.mjs
             timeout: 20
-          - name: review
-            suites: scripts/test-review-e2e.mjs
-            timeout: 15
-          - name: engine
-            suites: scripts/test-engine-e2e.mjs scripts/test-engine-flows-e2e.mjs scripts/test-endgames-e2e.mjs
-            timeout: 30
+          # v8-3-plan V4: engine flows in two shards, the rest beside review,
+          # as in checks.yml
+          - name: review + engine + endgames
+            suites: scripts/test-review-e2e.mjs scripts/test-engine-e2e.mjs scripts/test-endgames-e2e.mjs
+            timeout: 20
+          - name: engine flows 1/2
+            suites: scripts/test-engine-flows-e2e.mjs
+            shard: 1/2
+            timeout: 20
+          - name: engine flows 2/2
+            suites: scripts/test-engine-flows-e2e.mjs
+            shard: 2/2
+            timeout: 20
           - name: persistence
             suites: scripts/test-persist-e2e.mjs scripts/test-downgrade-e2e.mjs
             timeout: 25
@@ -207,24 +217,29 @@ jobs:
           - name: explorer + sync + repertoire
             suites: scripts/test-explorer-e2e.mjs scripts/test-sync-e2e.mjs scripts/test-repertoire-e2e.mjs scripts/test-selftest-e2e.mjs
             timeout: 20
-          # v8-0-plan F1: the same four shards as checks.yml — together they
-          # are the whole suite, which test-chess.mjs checks for both files
-          - name: panel layout 1/4
+          # v8-0-plan F1: the same shards as checks.yml (five since v8-3-plan
+          # V4) — together they are the whole suite, which test-chess.mjs
+          # checks for both files
+          - name: panel layout 1/5
             suites: scripts/test-layout-e2e.mjs
-            shard: 1/4
-            timeout: 60
-          - name: panel layout 2/4
+            shard: 1/5
+            timeout: 40
+          - name: panel layout 2/5
             suites: scripts/test-layout-e2e.mjs
-            shard: 2/4
-            timeout: 60
-          - name: panel layout 3/4
+            shard: 2/5
+            timeout: 40
+          - name: panel layout 3/5
             suites: scripts/test-layout-e2e.mjs
-            shard: 3/4
-            timeout: 60
-          - name: panel layout 4/4
+            shard: 3/5
+            timeout: 40
+          - name: panel layout 4/5
             suites: scripts/test-layout-e2e.mjs
-            shard: 4/4
-            timeout: 60
+            shard: 4/5
+            timeout: 40
+          - name: panel layout 5/5
+            suites: scripts/test-layout-e2e.mjs
+            shard: 5/5
+            timeout: 40
         # v8-0-plan F2: the per-move cost gate reads a CDP metric, so it is
         # one Chromium job rather than a group on both engines — `include`
         # with a group no combination has adds exactly that one job
