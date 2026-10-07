@@ -7416,6 +7416,36 @@ for (const lang of CONTENT_LANGS) {
       "test-layout-e2e 顶层每个场景都以 `if (scenario())` 开头（" + gates + " 个）" +
       (ungated.length ? " —— 没分片的：" + ungated.join(" | ") : "") +
       (calls !== gates ? " —— scenario() 在门之外还被调了 " + (calls - gates) + " 次" : ""));
+    // v8-3-plan V4: a 400 ms fallback in the layout probe carries its own
+    // evidence (scenario, resizes asked for and seen, rAFs, visibility) and is
+    // counted in the job summary, zero included
+    {
+      const { PAGE_HOOK, makeFrameWatch } = await import("./lib/frame-watch.mjs");
+      const lines = [];
+      let now = 1000;
+      const fw = makeFrameWatch({ shard: parseShard("3/4"), scenario: () => 42, log: (l) => lines.push(l), keep: 2, clock: () => now });
+      const asked = [];
+      const fakePage = { setViewportSize: async (s) => { asked.push(s.width + "x" + s.height); } };
+      const empty = fw.summary();
+      for (const w of [540, 559, 560]) { await fw.resize(fakePage, { width: w, height: 600 }); now += 100; }
+      const rec = fw.miss("5b 560×600 open", { rafs: 0, vis: "visible" });
+      const tmp = path.join((await import("os")).tmpdir(), "frame-watch-" + process.pid + ".md");
+      fs.rmSync(tmp, { force: true });
+      const wrote = fw.writeSummary(tmp) && fs.readFileSync(tmp, "utf8");
+      fs.rmSync(tmp, { force: true });
+      const many = makeFrameWatch({ shard: parseShard("1/5"), log: () => {} });
+      for (let i = 0; i < 9; i++) many.miss("5b " + i, {});
+      const capped = many.summary();
+      const hook = String(PAGE_HOOK);
+      const layoutHooked = /addInitScript\(PAGE_HOOK\)/.test(layoutSrc) && /frames\.miss\(/.test(layoutSrc) &&
+        /frames\.resize\(page/.test(layoutSrc) && /process\.on\("exit", \(\) => frames\.writeSummary\(\)\)/.test(layoutSrc);
+      assert(asked.join() === "540x600,559x600,560x600" && fw.count === 1 &&
+        JSON.stringify(rec.asked) === "[[559,600,200],[560,600,100]]" && rec.scenario === 42 && rec.shard === "3/4" &&
+        lines.length === 1 && lines[0].startsWith("FRAME-MISS {") && JSON.parse(lines[0].slice(11)).page.rafs === 0 &&
+        /layout shard 3\/4: 0 次/.test(empty) && /layout shard 3\/4: 1 次.*#42 5b 560×600 open/.test(wrote) &&
+        fw.writeSummary("") === false && /: 9 次.*5b 5，另 3 处/.test(capped) && !/5b 6/.test(capped) && (hook.match(/\braf\(/g) || []).length === 1 && layoutHooked,
+        "布局分片 400 ms 兜底时记下场景、最近几次视口变化（要的与页面收到的）、rAF 数与可见性，并在作业摘要里按分片计数（v8-3-plan V4）");
+    }
     // both workflows: the layout shards are exactly 1/n..n/n, and wired
     for (const [where, text] of [["checks.yml", checksWf], ["release.yml", releaseWf]]) {
       const shards = [...text.matchAll(/suites: scripts\/test-layout-e2e\.mjs\s*\n\s*shard: (\d+)\/(\d+)/g)].map((m) => [+m[1], +m[2]]);
@@ -7446,6 +7476,23 @@ for (const lang of CONTENT_LANGS) {
       JSON.stringify(cg) === JSON.stringify(rg) && twice.length === 0 && cg.every((g) => g[3] > 0 && g[3] <= 60),
       "checks.yml 与 release.yml 的浏览器分组逐条相同、每组有自己的超时（" + cg.map((g) => g[0] + " " + g[3]).join("，") + "）" +
       (twice.length ? " —— 跑了两遍：" + twice.join(", ") : ""));
+    // v8-3-plan V4: any suite may be sharded now (engine flows too), not only
+    // the layout one. A sharded group holds that one suite alone (SHARD would
+    // cut every suite in it), its shards are exactly 1/n..n/n, it runs in no
+    // unsharded group, and the suite reads SHARD through the gate
+    const sharded = {};
+    for (const [, suites, shard] of cg) if (shard) (sharded[suites] = sharded[suites] || []).push(shard);
+    const badShards = Object.entries(sharded).filter(([suites, list]) => {
+      const n = +list[0].split("/")[1];
+      const idx = list.map((s) => s.split("/")).filter(([, m]) => +m === n).map(([i]) => +i).sort((a, b) => a - b).join(",");
+      const suiteText = /^scripts\/[\w-]+\.mjs$/.test(suites) && fs.existsSync(path.join(root, suites)) ? fs.readFileSync(path.join(root, suites), "utf8") : "";
+      return n < 2 || list.length !== n || idx !== Array.from({ length: n }, (_, i) => i + 1).join(",") ||
+        suiteUse[suites] || !/makeScenarioGate\(process\.env\.SHARD\)/.test(suiteText);
+    }).map(([s]) => s);
+    assert(Object.keys(sharded).length >= 2 && badShards.length === 0,
+      "分片的套件各自独占分组、1/n…n/n 齐全、没有另在不分片的组里跑、读的是 SHARD（" +
+      Object.entries(sharded).map(([s, l]) => s.replace(/^scripts\//, "") + " ×" + l.length).join("，") + "）" +
+      (badShards.length ? " —— 不对：" + badShards.join(", ") : ""));
     const cJobsAt = checksWf.search(/^jobs:\s*$/m);
     const cHeads = [...checksWf.slice(cJobsAt).matchAll(/^  ([\w-]+):\s*$/gm)];
     const noLimit = cHeads.filter((m, i) => {
@@ -7488,8 +7535,13 @@ for (const lang of CONTENT_LANGS) {
       "checks.yml 的 push 只在 main 上跑 —— 其余分支有 PR 就够了，不再同一棵树跑两遍");
     assert(/^concurrency:\s*\n  group: checks-\$\{\{ github\.event_name == 'pull_request' && github\.ref \|\| github\.run_id \}\}\s*\n  cancel-in-progress: true\s*$/m.test(checksWf),
       "checks.yml 取消同一个 PR 上被新提交顶掉的旧运行");
-    assert(/if: matrix\.os == 'ubuntu-latest'\s*\n\s*run: node scripts\/test-mined\.mjs --sample=150/.test(checksWf),
-      "150 题抽样校验只在 ubuntu 上跑 —— 它和平台无关");
+    // v8-3-plan V4: in a job of its own (`mined`), no longer a step of static
+    const minedAt = checksWf.search(/^  mined:\s*$/m);
+    const minedJob = minedAt < 0 ? "" : checksWf.slice(minedAt).split(/\n  [\w-]+:\s*\n/)[0];
+    assert(/^    runs-on: ubuntu-latest\s*$/m.test(minedJob) && /run: node scripts\/test-mined\.mjs --sample=150/.test(minedJob) &&
+      /run: python3 scripts\/test-verify-endgames\.py/.test(minedJob) &&
+      (checksWf.match(/scripts\/test-mined\.mjs/g) || []).length === 1,
+      "150 题抽样校验只在 ubuntu 上跑一遍（自己一个作业）—— 它和平台无关");
     assert(/os: windows-latest\s*\n\s*flags: -Dplatform=windows/.test(zigJob) && /os: macos-latest/.test(zigJob) &&
       /run: zig build test \$\{\{ matrix\.flags \}\}/.test(zigJob) && /runs-on: \$\{\{ matrix\.os \}\}/.test(zigJob),
       "checks.yml 的 zig job 在 windows-latest 上编译并跑 zig build test —— PR 上也编译 Windows 原生");
