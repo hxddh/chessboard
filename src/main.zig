@@ -56,6 +56,19 @@ const menuText = @import("menus.zig").menuText;
 const windowTitleFor = @import("menus.zig").windowTitleFor;
 const Pending = @import("sync.zig").Pending;
 
+/// The page's directory, relative: what app.zon's .frontend.dist names and
+/// what a dev run (or the macOS host, inside the .app) resolves.
+const FRONTEND_DIST = "frontend/dist";
+
+/// `<exe dir>\..\resources\frontend\dist`: where `native package --target
+/// windows` puts the page relative to bin\chessboard.exe. Null when the exe
+/// directory has no parent or the path does not fit.
+fn packagedAssetRoot(buf: []u8, exe_dir: []const u8) ?[]const u8 {
+    const base = std.fs.path.dirname(exe_dir) orelse return null;
+    const sep = std.fs.path.sep;
+    return std.fmt.bufPrint(buf, "{s}{c}resources{c}frontend{c}dist", .{ base, sep, sep, sep }) catch null;
+}
+
 pub const App = struct {
     env_map: *std.process.Environ.Map,
     io: std.Io,
@@ -70,6 +83,17 @@ pub const App = struct {
     /// resolveAppDataDir() ran; main() keeps it in one place.
     appdata_dir_buf: [1024]u8 = undefined,
     appdata_dir: []const u8 = "",
+    /// Where the WebView reads the page from. v8-3-plan V1 (8.2.1): SDK
+    /// 0.10.1's WebView2 host joins a relative asset root to the process's
+    /// current directory (webview2_host.cpp assetFilePath) — unlike the macOS
+    /// host, which resolves it inside the .app — and `native package` puts
+    /// the exe in Chessboard\bin with the page in Chessboard\resources. So a
+    /// packaged Windows app started from Explorer (current directory bin\)
+    /// found no page. main() points this at the packaged copy beside the exe
+    /// when there is one; a dev run keeps the relative path. Slices into
+    /// asset_root_buf, so App must not move after resolveAssetRoot() ran.
+    asset_root_buf: [4096]u8 = undefined,
+    asset_root: []const u8 = FRONTEND_DIST,
     /// 6.1 — bumped per appdata write so each one gets its own tmp file name.
     appdata_seq: u32 = 0,
     /// Q1.2 — the paths the native side has issued to the page this process.
@@ -96,7 +120,7 @@ pub const App = struct {
         return .{
             .context = self,
             .name = "chessboard",
-            .source = native_sdk.frontend.productionSource(.{ .dist = "frontend/dist" }),
+            .source = native_sdk.frontend.productionSource(.{ .dist = self.asset_root }),
             .source_fn = source,
             .event_fn = onEvent,
             .stop_fn = onStop,
@@ -106,9 +130,23 @@ pub const App = struct {
     fn source(context: *anyopaque) anyerror!native_sdk.WebViewSource {
         const self: *@This() = @ptrCast(@alignCast(context));
         return native_sdk.frontend.sourceFromEnv(self.env_map, .{
-            .dist = "frontend/dist",
+            .dist = self.asset_root,
             .entry = "index.html",
         });
+    }
+
+    /// v8-3-plan V1 (8.2.1): see asset_root. Windows only — the macOS host
+    /// already resolves the relative root inside the bundle.
+    fn resolveAssetRoot(self: *@This()) void {
+        if (builtin.os.tag != .windows) return;
+        var exe_buf: [4096]u8 = undefined;
+        const n = std.process.executableDirPath(self.io, &exe_buf) catch return;
+        const root = packagedAssetRoot(&self.asset_root_buf, exe_buf[0..n]) orelse return;
+        var probe_buf: [4096]u8 = undefined;
+        const probe = std.fmt.bufPrint(&probe_buf, "{s}{c}index.html", .{ root, std.fs.path.sep }) catch return;
+        var file = std.Io.Dir.openFileAbsolute(self.io, probe, .{}) catch return;
+        file.close(self.io);
+        self.asset_root = root;
     }
 
     pub fn bridge(self: *@This()) native_sdk.BridgeDispatcher {
@@ -278,6 +316,7 @@ pub fn main(init: std.process.Init) !void {
     // the page last chose decides the menu set and window title for this
     // launch (the Runtime builds the menu bar once, from what it is handed).
     app_state.resolveAppDataDir();
+    app_state.resolveAssetRoot();
     const lang = app_state.launchLanguage();
     const ran = runner.runWithOptions(app_state.app(), .{
         .app_name = windowTitleFor(lang),
@@ -310,6 +349,26 @@ pub fn main(init: std.process.Init) !void {
 // only the files its test blocks happen to touch.
 test "the whole app is semantically analysed by the test build" {
     _ = &main;
+}
+
+test "the packaged page sits in resources beside bin (v8-3-plan V1)" {
+    var buf: [256]u8 = undefined;
+    const sep = std.fs.path.sep_str;
+    const exe_dir = "C:" ++ sep ++ "Apps" ++ sep ++ "Chessboard" ++ sep ++ "bin";
+    const root = packagedAssetRoot(&buf, exe_dir).?;
+    try std.testing.expectEqualStrings("C:" ++ sep ++ "Apps" ++ sep ++ "Chessboard" ++ sep ++ "resources" ++ sep ++ "frontend" ++ sep ++ "dist", root);
+    var small: [8]u8 = undefined;
+    try std.testing.expect(packagedAssetRoot(&small, exe_dir) == null);
+    try std.testing.expect(packagedAssetRoot(&buf, "bin") == null);
+}
+
+test "an App starts on the relative page directory" {
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    var app_state = App{ .env_map = &env, .io = std.testing.io };
+    try std.testing.expectEqualStrings(FRONTEND_DIST, app_state.asset_root);
+    const src = try App.source(&app_state);
+    try std.testing.expectEqualStrings(FRONTEND_DIST, src.asset_options.?.root_path);
 }
 
 test "production source uses frontend assets" {

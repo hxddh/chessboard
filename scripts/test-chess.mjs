@@ -7179,6 +7179,26 @@ for (const lang of CONTENT_LANGS) {
   assert(!/dist-auto|-Dautomation/.test(rel), "release.yml never names the automation build");
 }
 
+// v8-3-plan V1 (8.2.1): the packaged app is launched outside the checkout. The
+// checkout has a frontend/dist of its own, and the Windows build read its page
+// from the current directory: started from the repository the self-test and
+// the release went green while the app, started from Explorer, had no page.
+{
+  const strip = (rel) => fs.readFileSync(path.join(root, rel), "utf8").replace(/\r\n/g, "\n")
+    .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+  const selftest = strip("scripts/selftest-app.mjs");
+  const spawnCall = (/spawn\(([\s\S]*?)\}\);/.exec(selftest) || [])[1] || "";
+  assert(/\bcwd:\s*dir\b/.test(spawnCall) && /path\.resolve\(exe\)/.test(spawnCall),
+    "selftest-app.mjs starts the packaged app in its temp folder, by an absolute path, never in the checkout");
+  const lib = strip("scripts/lib/automation.mjs");
+  assert(/spawn\(path\.resolve\(exe\),\s*\[\],\s*\{\s*cwd:\s*work\b/.test(lib),
+    "automation launches start the app in their work folder");
+  const main = fs.readFileSync(path.join(root, "src/main.zig"), "utf8");
+  assert(/fn resolveAssetRoot\(/.test(main) && /app_state\.resolveAssetRoot\(\);/.test(main) &&
+    /\.dist = self\.asset_root/.test(main),
+    "main.zig points the WebView at the page beside the exe (resolveAssetRoot), in both the source and source_fn");
+}
+
 // v8-2-plan §9 M4 评审修正: a live automation run writes into the machine's real
 // WebView storage (same bundle id; WKWebView ignores $HOME), so off a CI
 // runner both drivers refuse unless told --real-profile-ok; --null never asks.
