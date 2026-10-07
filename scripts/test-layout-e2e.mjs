@@ -37,11 +37,16 @@ const ROOT = path.join(HERE, "..", "src", "web");
 
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { makeScenarioGate } from "./e2e-shard.mjs";
+import { PAGE_HOOK, makeFrameWatch } from "./lib/frame-watch.mjs";
 import { layoutProbe } from "./lib/layout-probe.mjs";
 import { playOpera, analyseOpera } from "./lib/opera-fixture.mjs";
 
 // v8-0-plan F1: SHARD=i/n runs every n-th scenario; unset runs all of them
 const scenario = makeScenarioGate(process.env.SHARD);
+// v8-3-plan V4: every 400 ms fallback logged with its evidence, and counted
+// in the job summary — 'exit' so a shard the watchdog kills still reports
+const frames = makeFrameWatch({ shard: scenario.shard, scenario: scenario.current });
+process.on("exit", () => frames.writeSummary());
 
 const MIME = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript" };
 const server = http.createServer((req, res) => {
@@ -3196,6 +3201,7 @@ if (scenario()) {
     localStorage.setItem("chess.v1.settings", JSON.stringify({
       mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
   });
+  await ctx.addInitScript(PAGE_HOOK);
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));
@@ -3206,16 +3212,28 @@ if (scenario()) {
   // Two frames, or 400ms if the compositor skips one after a resize: a bare
   // rAF chain inside page.evaluate has no timeout, and one headless run
   // (release rehearsal 36721702122) sat on it until the 60-minute cancel.
+  // v8-3-plan V4: a fallback also brings back what the page was doing
+  // (lib/frame-watch.mjs). FRAME_FALLBACK_MS only shortens the wait, to see
+  // that record locally, where the frames do come.
+  const fallbackMs = Number(process.env.FRAME_FALLBACK_MS) || 400;
   let frameMisses = 0;
-  const probe = () => page.evaluate(() => new Promise((done) => {
-    let fired = false;
-    const t = setTimeout(() => { if (!fired) { fired = true; measure(true); } }, 400);
-    requestAnimationFrame(() => requestAnimationFrame(() => {
+  const probe = (tag) => page.evaluate((ms) => new Promise((done) => {
+    let fired = false, rafs = 0;
+    const t = setTimeout(() => { if (!fired) { fired = true; measure(true); } }, ms);
+    requestAnimationFrame(() => { rafs++; requestAnimationFrame(() => {
+      rafs++;
       if (fired) return;
       fired = true; clearTimeout(t); measure(false);
-    }));
+    }); });
     function measure(miss) {
-      const res = (r) => done({ ...r, miss });
+      const fw = window.__frameWatch || {};
+      const at = Math.round(performance.now());
+      const res = (r) => done({ ...r, miss, diag: miss ? {
+        rafs, vis: document.visibilityState, focus: document.hasFocus(),
+        inner: [innerWidth, innerHeight], dpr: devicePixelRatio,
+        frames: fw.frames, sinceFrame: fw.lastAt >= 0 ? at - fw.lastAt : null,
+        seen: (fw.resizes || []).map(([w, h, s]) => [w, h, at - s]),
+        visLog: (fw.vis || []).map(([v, s]) => [v, at - s]) } : undefined });
       const de = document.documentElement;
       const app = document.getElementById("app");
       const side = document.getElementById("side");
@@ -3234,7 +3252,10 @@ if (scenario()) {
             inView: b.bottom <= de.clientHeight + 1 && b.right <= de.clientWidth + 1,
             underSheet: sheet && b.bottom > s.top + 1 });
     }
-  })).then((r) => { if (r.miss) frameMisses++; return r; });
+  }), fallbackMs).then((r) => {
+    if (r.miss) { frameMisses++; frames.miss("5b " + tag, r.diag); }
+    return r;
+  });
   const setOpen = (want) => page.evaluate((w) => {
     if (document.getElementById("app").classList.contains("panel-open") !== w)
       document.getElementById("toggle-panel").click();
@@ -3242,12 +3263,12 @@ if (scenario()) {
 
   const bad = { small: [], moved: [], over: [], out: [] };
   for (const [w, h] of [...sizes, ...wide]) {
-    await page.setViewportSize({ width: w, height: h });
-    await setOpen(true);
-    const a = await probe();
-    await setOpen(false);
-    const c = await probe();
     const tag = `${w}×${h}`;
+    await frames.resize(page, { width: w, height: h });
+    await setOpen(true);
+    const a = await probe(tag + " open");
+    await setOpen(false);
+    const c = await probe(tag + " closed");
     if (a.board < MIN_BOARD || c.board < MIN_BOARD) bad.small.push(`${tag} ${a.board}/${c.board}`);
     if (w <= 820 && a.board !== c.board) bad.moved.push(`${tag} ${a.board}/${c.board}`);
     if (a.over.length || c.over.length) bad.over.push(`${tag} ${[...a.over, ...c.over].slice(0, 2).join(",")}`);

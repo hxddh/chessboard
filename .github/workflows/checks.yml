@@ -55,8 +55,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # longest 10.6 min (ubuntu, which also runs the sampled puzzle search)
-    timeout-minutes: 25
+    # longest 5.0 min (windows) since the sampled puzzle search moved to its
+    # own job below; ubuntu with it was 10.1–10.3
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -75,14 +76,37 @@ jobs:
       # script is the only arrangement where the two cannot disagree.
       - name: static tests
         run: npm run test:static
-      # 7.1 (v7-1-plan §3.2): the sampled soundness gate.
-      #
-      # v8-0-plan F1: on ubuntu only. It is a search against the vendored
-      # engine — nothing in it depends on the platform — and on three runners
-      # it was the same five minutes, three times, on each of them the
-      # longest step. The static tests above stay on all three: installing on
-      # a clean checkout is the part that differs by platform.
-      #
+      # `free variables: node scripts/scope-check.mjs` used to sit here. The
+      # sources are ES modules as of 1.25 and index.html loads one bundle, so
+      # an unbound name is a build failure — test-chess.mjs asserts the bundle
+      # resolves, which is the same rule enforced by the thing that ships.
+      # manifest-check runs as the last step of `npm run test:static` above.
+
+  # 7.1 (v7-1-plan §3.2): the sampled soundness gate.
+  #
+  # v8-0-plan F1: on ubuntu only. It is a search against the vendored
+  # engine — nothing in it depends on the platform — and on three runners
+  # it was the same five minutes, three times, on each of them the
+  # longest step. The static tests above stay on all three: installing on
+  # a clean checkout is the part that differs by platform.
+  #
+  # v8-3-plan V4: a job of its own rather than two more steps of static
+  # (ubuntu). Behind the static tests it made that job 10.1–10.3 minutes, the
+  # longest of the run with webkit engine; the runs take jobs in no fixed
+  # order onto 20 runners at once, so a 10-minute job picked in the second
+  # wave is what pushed the wall clock past 15. Apart, each is about 5.
+  mined:
+    runs-on: ubuntu-latest
+    # 5.7–5.9 min for the search in the last six PR runs
+    timeout-minutes: 15
+    name: mined puzzles (sampled) + tablebase reading
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: install build deps
+        run: npm ci
       # PR CI had no engine-backed check at all — every one of them lived in
       # release.yml, so a change to the puzzle bank or the mining rules was
       # first searched against a real engine at the moment of release. 150 of
@@ -92,24 +116,18 @@ jobs:
       # more than 50cp worse — it used to print and exit 0, which made it
       # worth nothing as a gate. The full sweep stays: nightly.yml.
       - name: mined-puzzle soundness (sampled)
-        if: matrix.os == 'ubuntu-latest'
         run: node scripts/test-mined.mjs --sample=150
       # v8-2-plan V2: how verify-endgames.py --online reads a tablebase
       # answer. The online run itself is manual (verify-endgames.yml); its
       # parsing is checked here, offline, on the runner's own Python.
       - name: tablebase answer reading
-        if: matrix.os == 'ubuntu-latest'
         run: python3 scripts/test-verify-endgames.py
-      # `free variables: node scripts/scope-check.mjs` used to sit here. The
-      # sources are ES modules as of 1.25 and index.html loads one bundle, so
-      # an unbound name is a build failure — test-chess.mjs asserts the bundle
-      # resolves, which is the same rule enforced by the thing that ships.
-      # manifest-check runs as the last step of `npm run test:static` above.
 
   browser:
     runs-on: ubuntu-latest
     # per group: twice the longest of either engine (layout 1/4 on WebKit
-    # once took 28.7 min; its scenarios also have their own 600 s watchdog)
+    # once took 28.7 min; its scenarios also have their own 600 s watchdog,
+    # as engine flows' have since v8-3-plan V4)
     timeout-minutes: ${{ matrix.group.timeout }}
     strategy:
       fail-fast: false
@@ -134,9 +152,16 @@ jobs:
           - name: board + clock
             suites: scripts/test-board-e2e.mjs scripts/test-clock-e2e.mjs
             timeout: 30
-          - name: sound + shell + trainer
-            suites: scripts/test-audio-e2e.mjs scripts/test-shell-e2e.mjs scripts/test-trainer-e2e.mjs
-            timeout: 30
+          # v8-3-plan V4: and "sound + shell + trainer" in two. 8.3's trainer
+          # suite (T1/T2) is now half of it: locally audio 142 s + shell 104 s
+          # / trainer 256 s; the group was 7.4–7.8 min of suites on WebKit, so
+          # each half is about 4.5 min with the job's setup.
+          - name: sound + shell
+            suites: scripts/test-audio-e2e.mjs scripts/test-shell-e2e.mjs
+            timeout: 15
+          - name: trainer
+            suites: scripts/test-trainer-e2e.mjs
+            timeout: 15
           # v8-2-plan V4: "lessons + review + engine" was one 21.7-minute job,
           # the critical path of every PR. Split where its time splits: the
           # lessons and review suites ≈ 10 minutes, the three that start the
@@ -153,12 +178,22 @@ jobs:
           - name: lessons
             suites: scripts/test-content-e2e.mjs
             timeout: 20
-          - name: review
-            suites: scripts/test-review-e2e.mjs
-            timeout: 15
-          - name: engine
-            suites: scripts/test-engine-e2e.mjs scripts/test-engine-flows-e2e.mjs scripts/test-endgames-e2e.mjs
-            timeout: 30
+          # v8-3-plan V4: "engine" was the longest job of 8.2's last PR runs,
+          # 10.1–12.7 min on WebKit (9.2–9.4 of it the suites). Locally
+          # engine 91 s, engine flows 423 s, endgames 27 s: the flows suite is
+          # cut in two by scenario (SHARD, as the layout suite is), and the two
+          # short ones join review, the shortest group (3.2–3.6 min).
+          - name: review + engine + endgames
+            suites: scripts/test-review-e2e.mjs scripts/test-engine-e2e.mjs scripts/test-endgames-e2e.mjs
+            timeout: 20
+          - name: engine flows 1/2
+            suites: scripts/test-engine-flows-e2e.mjs
+            shard: 1/2
+            timeout: 20
+          - name: engine flows 2/2
+            suites: scripts/test-engine-flows-e2e.mjs
+            shard: 2/2
+            timeout: 20
           # v8-2-plan V3: the downgrade suite builds v8.0.0 and v8.1.0 from
           # their tags (a few seconds each) and runs ≈ 2.5 min; persistence is
           # 5.8 min on Chromium, so the group stays far inside its timeout
@@ -176,26 +211,35 @@ jobs:
           - name: explorer + sync + repertoire
             suites: scripts/test-explorer-e2e.mjs scripts/test-sync-e2e.mjs scripts/test-repertoire-e2e.mjs scripts/test-selftest-e2e.mjs
             timeout: 20
-          # v8-0-plan F1: the layout suite in four shards. As one job it was
+          # v8-0-plan F1: the layout suite in shards. As one job it was
           # 31m51s on Chromium, the critical path of every PR by 18 minutes;
-          # SHARD=i/4 runs every fourth scenario (scripts/e2e-shard.mjs).
-          # test-chess.mjs checks the shards here are exactly 1/4..4/4.
-          - name: panel layout 1/4
+          # SHARD=i/n runs every n-th scenario (scripts/e2e-shard.mjs).
+          # test-chess.mjs checks the shards here are exactly 1/n..n/n.
+          # v8-3-plan V4: five rather than four. In four, 2/4 on WebKit was
+          # 6.8–8.0 min of suite and 8.4–10.5 as a job; the suite is 27–28 min
+          # on WebKit in all, so a fifth is about 5.5 plus setup. Timeouts:
+          # the 28.7-minute 1/4 of 8.1 was a stall, which the scenarios' own
+          # 600 s watchdog now ends first.
+          - name: panel layout 1/5
             suites: scripts/test-layout-e2e.mjs
-            shard: 1/4
-            timeout: 60
-          - name: panel layout 2/4
+            shard: 1/5
+            timeout: 40
+          - name: panel layout 2/5
             suites: scripts/test-layout-e2e.mjs
-            shard: 2/4
-            timeout: 60
-          - name: panel layout 3/4
+            shard: 2/5
+            timeout: 40
+          - name: panel layout 3/5
             suites: scripts/test-layout-e2e.mjs
-            shard: 3/4
-            timeout: 60
-          - name: panel layout 4/4
+            shard: 3/5
+            timeout: 40
+          - name: panel layout 4/5
             suites: scripts/test-layout-e2e.mjs
-            shard: 4/4
-            timeout: 60
+            shard: 4/5
+            timeout: 40
+          - name: panel layout 5/5
+            suites: scripts/test-layout-e2e.mjs
+            shard: 5/5
+            timeout: 40
         # v8-0-plan F2: the per-move cost gate reads a CDP metric, so it is
         # one Chromium job rather than a group on both engines — `include`
         # with a group no combination has adds exactly that one job

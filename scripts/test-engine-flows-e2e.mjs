@@ -87,6 +87,7 @@ import { ChessMistakes } from "../src/web/js/mistakes.js";
 import os from "os";
 import { GAMES } from "./fixtures/corpus.mjs";
 import { read as readMeasured, record, RECORDING } from "./measurements.mjs";
+import { makeScenarioGate } from "./e2e-shard.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
@@ -327,8 +328,15 @@ const FAKE_MINES = JSON.stringify({ v: 1, list: [FAKE_DRILL] });
 
 // FLOWS_ONLY=人机,棋谱库 runs just those (a local convenience while debugging)
 const ONLY = (process.env.FLOWS_ONLY || "").split(",").filter(Boolean);
+// v8-3-plan V4: SHARD=i/n runs every n-th scenario (e2e-shard.mjs), the
+// way the layout suite is cut. This suite was 7.3 of webkit engine's 9.3
+// minutes, the longest job of the run; each scenario opens its own page, and
+// round-robin puts the two longest (后台分析中应着, 第二个引擎) in different
+// halves. The gate is called for every scenario, FLOWS_ONLY or not, so an
+// index means the same scenario in every run.
+const gate = makeScenarioGate(process.env.SHARD);
 const scenario = async (name, fn) => {
-  if (ONLY.length && !ONLY.includes(name)) return;
+  if (!gate() || (ONLY.length && !ONLY.includes(name))) return;
   const t0 = Date.now();
   try { await fn(); } catch (e) { failed++; console.error("FAIL:", name, "threw:", e.message.split("\n")[0]); }
   console.log("  —", name, ((Date.now() - t0) / 1000).toFixed(1) + "s");
@@ -1740,6 +1748,8 @@ if (f4 && (F4_REC.before || F4_REC.after) && !failed) {
     determinism: f4.compared, secondWorker: f4.secondWorker || null }));
 }
 
+const { shard, total } = gate.done();
+if (shard.count > 1) console.log(`shard ${shard.index}/${shard.count}: ${Math.ceil((total - shard.index + 1) / shard.count)} of ${total} scenarios`);
 await browser.close();
 server.close();
 console.log("用时", ((Date.now() - T0) / 1000).toFixed(1) + "s");
