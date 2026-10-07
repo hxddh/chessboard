@@ -69,6 +69,16 @@ fn packagedAssetRoot(buf: []u8, exe_dir: []const u8) ?[]const u8 {
     return std.fmt.bufPrint(buf, "{s}{c}resources{c}frontend{c}dist", .{ base, sep, sep, sep }) catch null;
 }
 
+/// The icon a dev run (and the macOS bundle) uses.
+const ICON_PATH = "assets/icon.png";
+
+/// `<exe dir>\..\resources\<name>`, beside the packaged page.
+fn packagedResource(buf: []u8, exe_dir: []const u8, name: []const u8) ?[]const u8 {
+    const base = std.fs.path.dirname(exe_dir) orelse return null;
+    const sep = std.fs.path.sep;
+    return std.fmt.bufPrint(buf, "{s}{c}resources{c}{s}", .{ base, sep, sep, name }) catch null;
+}
+
 pub const App = struct {
     env_map: *std.process.Environ.Map,
     io: std.Io,
@@ -94,6 +104,14 @@ pub const App = struct {
     /// asset_root_buf, so App must not move after resolveAssetRoot() ran.
     asset_root_buf: [4096]u8 = undefined,
     asset_root: []const u8 = FRONTEND_DIST,
+    /// The icon the platform shows on a notification (the update check's).
+    /// v8-3-plan V2: on Windows the host loads it with LoadImageW(IMAGE_ICON)
+    /// from a path joined to the current directory — "assets/icon.png" was
+    /// never found there, and a PNG is no IMAGE_ICON — so notifications fell
+    /// back to the system's generic icon. build-windows.yml ships icon.ico in
+    /// resources\ and main() points this at it. Slices into icon_path_buf.
+    icon_path_buf: [4096]u8 = undefined,
+    icon_path: []const u8 = ICON_PATH,
     /// 6.1 — bumped per appdata write so each one gets its own tmp file name.
     appdata_seq: u32 = 0,
     /// Q1.2 — the paths the native side has issued to the page this process.
@@ -147,6 +165,11 @@ pub const App = struct {
         var file = std.Io.Dir.openFileAbsolute(self.io, probe, .{}) catch return;
         file.close(self.io);
         self.asset_root = root;
+        // v8-3-plan V2: the notification icon, from the same resources folder
+        const icon = packagedResource(&self.icon_path_buf, exe_buf[0..n], "icon.ico") orelse return;
+        var icon_file = std.Io.Dir.openFileAbsolute(self.io, icon, .{}) catch return;
+        icon_file.close(self.io);
+        self.icon_path = icon;
     }
 
     pub fn bridge(self: *@This()) native_sdk.BridgeDispatcher {
@@ -322,7 +345,7 @@ pub fn main(init: std.process.Init) !void {
         .app_name = windowTitleFor(lang),
         .window_title = windowTitleFor(lang),
         .bundle_id = "dev.hxddh.chessboard",
-        .icon_path = "assets/icon.png",
+        .icon_path = app_state.icon_path,
         .js_window_api = true,
         .bridge = app_state.bridge(),
         .builtin_bridge = app_state.builtinBridge(),
@@ -360,6 +383,8 @@ test "the packaged page sits in resources beside bin (v8-3-plan V1)" {
     var small: [8]u8 = undefined;
     try std.testing.expect(packagedAssetRoot(&small, exe_dir) == null);
     try std.testing.expect(packagedAssetRoot(&buf, "bin") == null);
+    const icon = packagedResource(&buf, exe_dir, "icon.ico").?;
+    try std.testing.expectEqualStrings("C:" ++ sep ++ "Apps" ++ sep ++ "Chessboard" ++ sep ++ "resources" ++ sep ++ "icon.ico", icon);
 }
 
 test "an App starts on the relative page directory" {
@@ -367,6 +392,7 @@ test "an App starts on the relative page directory" {
     defer env.deinit();
     var app_state = App{ .env_map = &env, .io = std.testing.io };
     try std.testing.expectEqualStrings(FRONTEND_DIST, app_state.asset_root);
+    try std.testing.expectEqualStrings(ICON_PATH, app_state.icon_path);
     const src = try App.source(&app_state);
     try std.testing.expectEqualStrings(FRONTEND_DIST, src.asset_options.?.root_path);
 }

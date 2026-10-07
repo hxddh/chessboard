@@ -4696,6 +4696,47 @@ for (const lang of CONTENT_LANGS) {
     assert(changed.length === 0, "8.2 F4: the " + F4_RENDERS.length + " converted sentences read exactly as before in zh-CN, en and ja");
   }
 
+  // --- v8-3-plan T4: English counts that can be 1 take tf's {n:one|other} ---
+  // Each key renders its count with 1 and with 2 (the other values fixed).
+  // Chinese and Japanese do not inflect: their entries keep bare {n}, so they
+  // read exactly as a plain substitution would.
+  {
+    const PLURALS = [
+      ["stats.gamesN", (n) => [n], "1 game", "2 games"],
+      ["msg.learning.imported", (n) => [n], "Merged — the personal book now holds 1 drill", "Merged — the personal book now holds 2 drills"],
+      ["pz.goalOp", (n) => ["Italian", n], "Italian · play the book line as White for 1 move", "Italian · play the book line as White for 2 moves"],
+      ["pz.goalOpB", (n) => ["Italian", n], "Italian · answer the book line as Black for 1 move", "Italian · answer the book line as Black for 2 moves"],
+      ["pz.moveN", (n) => [n], "1 move", "2 moves"],
+      ["dlg.retryHere", (n) => [5, n], "Resume from move 5; what follows (1 move) stays as a variation. Continue?", "Resume from move 5; what follows (2 moves) stays as a variation. Continue?"],
+      ["aria.cal", (n) => [18, n], "Played or solved on 1 day in the last 18 weeks", "Played or solved on 2 days in the last 18 weeks"],
+      ["me.m.clockV", (n) => [n, n, "4%"], "1 blunder in 1 move on a low clock · 4% otherwise", "2 blunders in 2 moves on a low clock · 4% otherwise"],
+      ["msg.analysis.kept", (n) => [n], "Analysis stopped · kept the first 1 ply", "Analysis stopped · kept the first 2 plies"],
+      ["home.next.review", (n) => [n], "1 missed puzzle is due for review", "2 missed puzzles are due for review"],
+      ["rep.removeAsk", (n) => ["e4", "White", n, 1], "Take e4 out of your repertoire (White)? 1 line through it will be cut short, 1 of them removed entirely. You can undo this afterwards.",
+        "Take e4 out of your repertoire (White)? 2 lines through it will be cut short, 1 of them removed entirely. You can undo this afterwards."],
+      ["lib.addedNone", (n) => [n], "Nothing added: the file's 1 game was already in the library", "Nothing added: the file's 2 games were already in the library"],
+      ["diag.peakRange", (n) => [1, 40, n], "The chart covers moves 1–40; its tallest bar is 1 game.", "The chart covers moves 1–40; its tallest bar is 2 games."],
+      ["live.selectedN", (n) => ["e2", n], "Selected e2 · 1 legal move", "Selected e2 · 2 legal moves"],
+      ["theme.sub", (n) => [n, 0], "1 puzzle · 0 answered", "2 puzzles · 0 answered"],
+      ["theme.count", (n) => [n], "1 theme", "2 themes"],
+    ];
+    const wrong = [];
+    for (const id of ["zh-CN", "en", "ja"]) {
+      I.setLang(id);
+      for (const [k, vals, one, two] of PLURALS) {
+        for (const n of [1, 2]) {
+          const got = I.tf(k, vals(n));
+          const want = id === "en" ? (n === 1 ? one : two)
+            : I.DICT[id][k].replace(/\{(\d+)\}/g, (m, i) => String(vals(n)[Number(i)]));
+          if (got !== want || (id !== "en" && /\{\d+:/.test(I.DICT[id][k]))) wrong.push(id + " " + k + "(" + n + "): " + JSON.stringify(got));
+        }
+      }
+    }
+    I.setLang("zh-CN");
+    for (const w of wrong) console.error("  plural: " + w);
+    assert(wrong.length === 0, "8.3 T4: the " + PLURALS.length + " English counts say 1 game / 2 games; zh-CN and ja unchanged");
+  }
+
   // Coordinates belong on the frame, not on a1/h1 where they were painted over
   // the rooks. The gutters are DOM, so the canvas must not draw them any more.
   {
@@ -6982,11 +7023,13 @@ for (const lang of CONTENT_LANGS) {
   // its data go in chunks; the bundle may grow by 10 KB over 8.1.0 for the
   // doors to them — the entry points, the interface keys, the scheduling.
   // 8.1.0 (168acc2) built by its own bundle.mjs: exactly 900,972 bytes, and
-  // the plan's line is 910,972 (10,000, not 10,240).
-  const BUNDLE_BYTES_AT_810 = 900972;
-  const BUNDLE_GROWTH_82 = 10000;
-  assert(bundleBytes <= BUNDLE_BYTES_AT_810 + BUNDLE_GROWTH_82,
-    "v8-2-plan F1: bundle.js grows at most 10 KB over 8.1.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_AT_810 + BUNDLE_GROWTH_82 ? " ≤ " : " > ") + (BUNDLE_BYTES_AT_810 + BUNDLE_GROWTH_82) + " bytes) — 8.2 content goes in chunks");
+  // the plan's line was 910,972 (10,000, not 10,240); 8.2.0 shipped 907,245.
+  // v8-3-plan F4: the same line moved up for 8.3 — 8.2.1 (edaf3b7, no page
+  // change since 8.2.0) is exactly 907,245 bytes; 8.3 may add 10,000 over it.
+  const BUNDLE_BYTES_AT_821 = 907245;
+  const BUNDLE_GROWTH_83 = 10000;
+  assert(bundleBytes <= BUNDLE_BYTES_AT_821 + BUNDLE_GROWTH_83,
+    "v8-3-plan F4: bundle.js grows at most 10 KB over 8.2.1 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_AT_821 + BUNDLE_GROWTH_83 ? " ≤ " : " > ") + (BUNDLE_BYTES_AT_821 + BUNDLE_GROWTH_83) + " bytes) — 8.3 content goes in chunks");
   // …minified without renaming: a player's stack trace still names the code
   assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
     "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");
@@ -7188,8 +7231,16 @@ for (const lang of CONTENT_LANGS) {
     .split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
   const selftest = strip("scripts/selftest-app.mjs");
   const spawnCall = (/spawn\(([\s\S]*?)\}\);/.exec(selftest) || [])[1] || "";
-  assert(/\bcwd:\s*dir\b/.test(spawnCall) && /path\.resolve\(exe\)/.test(spawnCall),
-    "selftest-app.mjs starts the packaged app in its temp folder, by an absolute path, never in the checkout");
+  assert(/\bcwd\b/.test(spawnCall) && !/cwd:\s*(process\.cwd|root|ROOT)/.test(spawnCall) && /path\.resolve\(exe\)/.test(spawnCall) &&
+    /launch\(1,\s*dir\)/.test(selftest) && /launch\(2,\s*path\.dirname\(path\.resolve\(exe\)\)\)/.test(selftest),
+    "selftest-app.mjs starts the packaged app by an absolute path, first in its temp folder, then in the executable's own folder (a double click), never in the checkout");
+  // v8-3-plan §8 第 4 条: Windows automation is a gate like macOS
+  for (const wf of [".github/workflows/build-windows.yml", ".github/workflows/build-macos.yml"]) {
+    const text = fs.readFileSync(path.join(root, wf), "utf8").replace(/\r\n/g, "\n");
+    const job = text.slice(text.indexOf("\n  automation:\n"));
+    assert(!/^    continue-on-error:/m.test(job) && !/not a gate/.test(job.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n")),
+      wf + ": the automation job is a gate (no continue-on-error, not named \"not a gate\")");
+  }
   const lib = strip("scripts/lib/automation.mjs");
   assert(/spawn\(path\.resolve\(exe\),\s*\[\],\s*\{\s*cwd:\s*work\b/.test(lib),
     "automation launches start the app in their work folder");

@@ -1103,5 +1103,6 @@
 - **根因**：两条路径的差别是当前目录。`selftest-app.mjs` 不设 `cwd`，继承仓库根，那里有 `sync-dist.mjs` 生成的 `frontend/dist`；automation 在临时目录启动。SDK 0.10.1 的 WebView2 宿主 `assetFilePath` 把相对资源根接在当前目录后（macOS 宿主在 .app 的 Resources 里解析）；`native package --target windows` 的布局是 `bin\chessboard.exe` + `resources\frontend\dist\`。双击启动的当前目录是 `bin\`，读不到页面。上游 main `fd96d9d`（2026-10-06）未改。
 - **修复**：`main.zig` `resolveAssetRoot()`——只在 Windows，找到 `<exe 目录>\..\resources\frontend\dist\index.html` 就用这个绝对路径作资源根（`source` 与 `source_fn` 一起）；`packagedAssetRoot` 纯函数与 App 默认值各一条 Zig 测试（77 → 79）。`selftest-app.mjs` 在本次临时目录里按绝对路径启动应用；test-chess 守着这三处（去掉 `cwd: dir` 当场红）。automation 的 `stop()` 在 Windows 上 `taskkill /T /F` 并等 WebView2 进程退完，保留。
 - **验证**：本机 null 平台 Zig 测试 79/79、交叉编译 `x86_64-windows-gnu` 链接出 exe、`test-chess` 全过。分支上单独派发 build-windows（run 37571031877）：发布构建在临时目录里的打包自检绿；**automation 30 项第一次全过**——空闲 `wait` p50 18 / p95 32 / 最长 205 ms；同步 100 局 10.0 s 里 175 次 `wait` p50 6 / p95 10 / 最长 11 ms，页面 640 帧、最长帧间隔 46 ms；预读 409 局、bundle 开始后 276 ms。build-macos（run 37571034424）两个作业照常绿。
-- **没做到的**：真机双击没人走过；Windows automation 只绿一次，按 §9 M4 的规矩连续两次绿再改成门槛（留给 8.3）。8.2.0 之前的 Windows 包是否同样受影响没有逐个核对。
+- **发布**：`v8.2.1` → `edaf3b7`（PR #102；彩排 run 37573325903，两平台 automation 都绿——Windows 第二次绿；正式 release run 37574917430，2026-10-07 05:34 UTC 发布，三个包齐全）。
+- **没做到的**：真机双击没人走过；Windows automation 修好后在分支与彩排各绿一次（连续两次），门槛留给 8.3 M1。8.2.0 之前的 Windows 包是否同样受影响没有逐个核对。
 
