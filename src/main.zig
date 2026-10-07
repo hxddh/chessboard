@@ -157,6 +157,7 @@ pub const App = struct {
     /// already resolves the relative root inside the bundle.
     fn resolveAssetRoot(self: *@This()) void {
         if (builtin.os.tag != .windows) return;
+        if (true) return; // 临时：验证打包自检在没有修复时会红（v8-3-plan V1），随即还原
         var exe_buf: [4096]u8 = undefined;
         const n = std.process.executableDirPath(self.io, &exe_buf) catch return;
         const root = packagedAssetRoot(&self.asset_root_buf, exe_buf[0..n]) orelse return;
