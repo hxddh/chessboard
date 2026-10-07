@@ -315,7 +315,11 @@ const FIXED = fenAfter("e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5 Nxd5 Nxf7 Kxf7 Qf3+ Ke
       }
       if (best > worst) { worst = best; at = r.id; }
     }
-    assert(worst <= 350, "F2：最费的五条，各取五次里最快的一次，最慢 " + worst.toFixed(0) + " ms（" + at + "，上限 350 ms）");
+    // the gate is the work count above; wall clock is a sanity line — 350 ms
+    // where the decision was measured, three times that on a shared CI runner
+    // (static runs on macOS and Windows runners too, slower and noisier)
+    const wallCap = process.env.CI ? 1050 : 350;
+    assert(worst <= wallCap, "F2：最费的五条，各取五次里最快的一次，最慢 " + worst.toFixed(0) + " ms（" + at + "，上限 " + wallCap + " ms）");
   }
   // 中间着 and 绝望子 read the mistake itself, so they take its move record
   {
