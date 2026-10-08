@@ -279,10 +279,32 @@ jobs:
       # gate exists to prevent. 1.64.0 (Chromium 156 / WebKit 27.2) is the
       # current release (v8-4-plan D1); the pin should be walked forward like
       # this deliberately, not left to rot.
-      - name: install playwright + ${{ matrix.engine }}
+      - name: install playwright
+        id: pw
         run: |
           npm install --no-save playwright@1.64.0
-          npx --yes playwright@1.64.0 install --with-deps ${{ matrix.engine }}
+          node scripts/ci-browser-deps.mjs key ${{ matrix.engine }}
+      # v8-4-plan V2: the engine's system packages (about 180 for WebKit) come
+      # from a cache keyed on this Playwright version and the runner image,
+      # not from the apt mirror every time: `install --with-deps` was 31–53 s
+      # and, the day the mirror was slow, 441 s. The mirror stays the fallback;
+      # scripts/ci-browser-deps.mjs says when, and why not the container image.
+      - name: restore ${{ matrix.engine }}'s system packages
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pw.outputs.dir }}
+          key: ${{ steps.pw.outputs.key }}
+      - name: system packages for ${{ matrix.engine }}
+        id: deps
+        run: node scripts/ci-browser-deps.mjs install ${{ matrix.engine }}
+      - name: cache ${{ matrix.engine }}'s system packages
+        if: steps.deps.outputs.save == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.pw.outputs.dir }}
+          key: ${{ steps.pw.outputs.key }}
+      - name: install ${{ matrix.engine }}
+        run: npx --yes playwright@1.64.0 install ${{ matrix.engine }}
       - name: resolve the browser Playwright just installed
         run: |
           node -e "
@@ -301,6 +323,11 @@ jobs:
       # test-engine-flows-e2e runs the features that need the engine on the
       # real one: vs computer, hint, blunder coach, analysis, live analysis,
       # game library, lesson drill (v7-5-plan §2).
+      #
+      # A layout shard writes its FRAME-MISS count to this job's summary itself
+      # (v8-3-plan V4: test-layout-e2e.mjs → lib/frame-watch.mjs, appending to
+      # $GITHUB_STEP_SUMMARY at exit); release.yml's shards do the same
+      # (v8-4-plan V3), and test-chess.mjs checks both.
       - name: ${{ matrix.group.name }}
         env:
           SUITES: ${{ matrix.group.suites }}
@@ -342,10 +369,28 @@ jobs:
       - name: install build deps
         run: npm ci
       # the same pin as the browser job above, walked forward together
-      - name: install playwright + ${{ matrix.engine }}
+      - name: install playwright
+        id: pw
         run: |
           npm install --no-save playwright@1.64.0
-          npx --yes playwright@1.64.0 install --with-deps ${{ matrix.engine }}
+          node scripts/ci-browser-deps.mjs key ${{ matrix.engine }}
+      # v8-4-plan V2: the same system packages from the same cache
+      - name: restore ${{ matrix.engine }}'s system packages
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pw.outputs.dir }}
+          key: ${{ steps.pw.outputs.key }}
+      - name: system packages for ${{ matrix.engine }}
+        id: deps
+        run: node scripts/ci-browser-deps.mjs install ${{ matrix.engine }}
+      - name: cache ${{ matrix.engine }}'s system packages
+        if: steps.deps.outputs.save == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.pw.outputs.dir }}
+          key: ${{ steps.pw.outputs.key }}
+      - name: install ${{ matrix.engine }}
+        run: npx --yes playwright@1.64.0 install ${{ matrix.engine }}
       - name: resolve the browser Playwright just installed
         run: |
           node -e "
