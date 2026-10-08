@@ -120,8 +120,8 @@ jobs:
       # v8-4-plan V1: the packaged app in a folder the user cannot write to,
       # as when it is unzipped into Program Files. A copy of dist/Chessboard
       # (taken before the self-test below has run it, so it holds no
-      # chessboard.exe.WebView2 folder yet) gets a deny ACE for the runner's
-      # user: (OI)(CI)(WD,AD) — "create files / write data" and "create
+      # chessboard.exe.WebView2 folder yet) gets a deny ACE for Everyone:
+      # (OI)(CI)(WD,AD) — "create files / write data" and "create
       # folders / append data", inherited by everything under it. That is
       # what makes creating a file fail; reading, listing and running the exe
       # are untouched (no full W: W includes SYNCHRONIZE, which opening a
@@ -142,11 +142,14 @@ jobs:
           Get-ChildItem -Recurse -Directory -Filter '*.WebView2' $ro | Remove-Item -Recurse -Force
           $fallback = Join-Path $env:LOCALAPPDATA 'Chessboard\WebView2'
           if (Test-Path $fallback) { Remove-Item -Recurse -Force $fallback }
-          $who = "$env:USERDOMAIN\$env:USERNAME"
-          icacls $ro /deny "${who}:(OI)(CI)(WD,AD)"
+          # Everyone (S-1-1-0), not just $env:USERNAME: on the first CI run a
+          # deny for the user alone did not stop the write. /T writes the ACE
+          # on every folder and file, so it does not rely on propagation.
+          icacls $ro /deny "*S-1-1-0:(OI)(CI)(WD,AD)" /T /C
           if ($LASTEXITCODE -ne 0) { throw "icacls failed ($LASTEXITCODE)" }
           $exe = (Get-ChildItem -Recurse -Filter chessboard.exe $ro | Select-Object -First 1).FullName
           $bin = Split-Path $exe
+          icacls $bin
           $probe = Join-Path $bin 'write-probe.txt'
           $wrote = $true
           try { [IO.File]::WriteAllText($probe, 'x') } catch { $wrote = $false }

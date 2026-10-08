@@ -7287,7 +7287,7 @@ for (const lang of CONTENT_LANGS) {
   const roBody = ro < 0 ? "" : build.slice(ro, build.indexOf("\n      - ", ro + 1));
   assert(ro > 0 && ro < step("self-test the packaged app") && ro < step("zip package"),
     "build-windows.yml: the read-only self-test runs in the build job, before the regular self-test and the zip");
-  assert(/timeout-minutes: \d+/.test(roBody) && /icacls \$ro \/deny "\$\{who\}:\(OI\)\(CI\)\(WD,AD\)"/.test(roBody) &&
+  assert(/timeout-minutes: \d+/.test(roBody) && /icacls \$ro \/deny "\*S-1-1-0:\(OI\)\(CI\)\(WD,AD\)" \/T/.test(roBody) &&
     /the deny did not take/.test(roBody) && /node scripts\/selftest-app\.mjs \$exe/.test(roBody) &&
     /'Chessboard\\WebView2'/.test(roBody) && /no WebView2 data in/.test(roBody) && /WebView2 data beside the exe/.test(roBody),
     "build-windows.yml: the read-only step denies writes with icacls, checks the deny took, runs selftest-app.mjs, and wants the data in %LOCALAPPDATA%\\Chessboard\\WebView2");
