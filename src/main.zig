@@ -402,7 +402,7 @@ pub fn main(init: std.process.Init) !void {
     app_state.resolveAppDataDir();
     app_state.resolveAssetRoot();
     // v8-4-plan V1: before the runner, which creates the WebView2 environment
-    // app_state.resolveWebView2UserData(); // 临时：先红（v8-4-plan V1）
+    app_state.resolveWebView2UserData();
     const lang = app_state.launchLanguage();
     const ran = runner.runWithOptions(app_state.app(), .{
         .app_name = windowTitleFor(lang),
