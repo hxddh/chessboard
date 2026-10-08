@@ -517,6 +517,26 @@
         "jobs": 39,
         "green": true,
         "label": "8.3 M3 + 8.3.0（PR #105，V4 之后第一次；同时跑着发布彩排）"
+      },
+      {
+        "run": 37606746082,
+        "sha": "23f8f65",
+        "wall": 14.8,
+        "critical": "browser (webkit, lessons)",
+        "criticalMin": 7.8,
+        "jobs": 39,
+        "green": true,
+        "label": "8.3.0 发布记录（PR #106）"
+      },
+      {
+        "run": 37720801820,
+        "sha": "794d145",
+        "wall": 12.8,
+        "critical": "browser (webkit, lessons)",
+        "criticalMin": 8,
+        "jobs": 39,
+        "green": true,
+        "label": "8.4 计划（PR #107）"
       }
     ]
   },

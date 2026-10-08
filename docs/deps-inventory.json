@@ -1,6 +1,6 @@
 {
-  "_": "依赖清单（v8-1-plan §1）。current = 仓库里钉住的版本；latest = 2026-09-29 查到的最新正式版；source = 查的是哪里。recommendation：upgrade-8.1 = 下一版升级；upgrade-when-released = 等上游发版再升；later = 以后再说；not-needed = 不升；refresh-data = 数据重新生成；done-8.1 = 8.1 已升（current 已是新版本，note 里写验收结果）。改版本时连同这份文件一起改：scripts/test-deps.mjs（test:static）核对每项 current 与仓库里实际钉的版本；带 npm 字段的几项由 scripts/deps-check.mjs 在 nightly 里对 npm latest 查一遍，有新版只进摘要、不算失败（v8-1-plan §1.7）。",
-  "checkedAt": "2026-09-29",
+  "_": "依赖清单（v8-1-plan §1）。current = 仓库里钉住的版本；latest = 2026-09-29 查到的最新正式版；source = 查的是哪里。recommendation：upgrade-8.1 = 下一版升级；upgrade-when-released = 等上游发版再升；later = 以后再说；not-needed = 不升；refresh-data = 数据重新生成；done-8.1 / done-8.4 = 那一版已升（current 已是新版本，note 里写验收结果）。改版本时连同这份文件一起改：scripts/test-deps.mjs（test:static）核对每项 current 与仓库里实际钉的版本；带 npm 字段的几项由 scripts/deps-check.mjs 在 nightly 里对 npm latest 查一遍，有新版只进摘要、不算失败（v8-1-plan §1.7）。",
+  "checkedAt": "2026-10-08",
   "deps": [
     {
       "name": "@native-sdk/cli（Native SDK，原 zero-native，vercel-labs/native）",
@@ -21,11 +21,11 @@
       "kind": "toolchain",
       "current": "0.16.0",
       "pinnedIn": ["build.zig.zon (.minimum_zig_version)", ".github/workflows/checks.yml / build-macos.yml / build-windows.yml (mlugg/setup-zig version)"],
-      "latest": "0.16.0（PyPI ziglang 镜像，2026-04-15）",
+      "latest": "0.17.0（PyPI ziglang 镜像，2026-10-08）",
       "source": ["https://pypi.org/pypi/ziglang/json", "https://ziglang.org/download/index.json（代理 403，未能核实）", "codeberg.org/ziglang/zig（代理 403，未能核实）"],
-      "checkedAt": "2026-09-29",
-      "recommendation": "not-needed",
-      "note": "SDK main 的 minimum_zig_version 仍是 0.16.0；0.17 未见发布。官方索引被网络策略拦截，结论以 PyPI 镜像为准。"
+      "checkedAt": "2026-10-08",
+      "recommendation": "upgrade-when-released",
+      "note": "v8-4-plan §1 / D3：0.17.0 已发布，但 SDK 0.10.1 与上游 main（minimum_zig_version 仍是 0.16.0）在 0.17 下都编不过（build.zig 的 pathFromRoot；数组乘法 ** 被移除，0.10.1 里约 187 处；@typeInfo 的 .fields 改名约 170 处；std.meta.Int 移除；编译模式枚举改小写）。本仓库的 build.zig 约 20 处要改（.Debug、b.release_mode、b.sysroot、pathFromRoot、addPathDir、zon.parse.fromSliceAlloc），src 至少 7 处 **（bridge.zig 4、sync.zig 3）；0.16 与 0.17 的写法互不兼容，不能先改。等 SDK 发出支持 0.17 的版本，与 SDK 一起升。官方索引被网络策略拦截，结论以 PyPI 镜像与 0.17 自带的 std 源码为准。"
     },
     {
       "name": "Stockfish.js（nmrugg/stockfish.js，Stockfish 19 lite-single）",
@@ -66,13 +66,13 @@
       "name": "playwright",
       "kind": "CI tool（npm install --no-save）",
       "npm": "playwright",
-      "current": "1.63.0（Chromium 153.0.8010.12 / WebKit 26.6）",
+      "current": "1.64.0（Chromium 156.0.8078.4 / WebKit 27.2）",
       "pinnedIn": [".github/workflows/checks.yml", ".github/workflows/release.yml"],
-      "latest": "1.63.0（2026-09-04；Chromium 153.0.8010.12 / WebKit 26.6）",
+      "latest": "1.64.0（2026-10-07；Chromium 156.0.8078.4 / WebKit 27.2）",
       "source": ["npm view playwright dist-tags/time", "raw.githubusercontent.com/microsoft/playwright/main/docs/src/release-notes-js.md"],
-      "checkedAt": "2026-09-29",
-      "recommendation": "done-8.1",
-      "note": "对这个仓库有用的：更新的 WebKit（离 WKWebView 更近）；Locator.visible()；ariaSnapshotJSON（可替代部分手写的无障碍断言）；新的 reducedMotion 选项。本仓库用的是库 API 不是 test runner，test locks / 报告器新特性用不上。布局基线可能随浏览器版本移动，要单独一个 PR。8.1 F1 已升（checks.yml 两处、release.yml 一处与注释）。本地只能用 1.63.0 的库驱动本机的 Chromium 141（executablePath），浏览器 153 / WebKit 26.6 本身只在 CI 里装、在 CI 里验。"
+      "checkedAt": "2026-10-08",
+      "recommendation": "done-8.4",
+      "note": "v8-4-plan D1：本地用同一个 Chromium 141（executablePath）各跑一遍 board / clock / layout（95 场景），1.63.0 与 1.64.0 都通过、耗时持平（267.6 / 51.7 / 1,536 s 对 270.2 / 51.5 / 1,529 s），没有弃用警告。1.64 的破坏性改动（设备描述符带 screen、隐藏 iframe 里的元素算隐藏、两条 test runner 的）本仓库都用不到。浏览器 156 / WebKit 27.2 本身只在 CI 里装、在 CI 里验。上一次是 8.1 F1（1.49.1 → 1.63.0）。"
     },
     {
       "name": "Node.js（CI 与 package.json engines）",
