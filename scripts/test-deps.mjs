@@ -118,9 +118,11 @@ function entry(pred, what) {
 }
 
 // --- GitHub Actions: every `uses: owner/action@vN` -----------------------------
+// and its sub-actions, `owner/action/restore@vN` — one repository, one tag
+// (actions/cache/restore and /save, v8-4-plan V2)
 for (const d of inv.deps.filter((x) => /^[\w-]+\/[\w-]+$/.test(x.name))) {
   const want = "v" + leadingVersion(d.current);
-  const re = new RegExp("uses:\\s*" + d.name.replace("/", "\\/") + "@(\\S+)", "g");
+  const re = new RegExp("uses:\\s*" + d.name.replace("/", "\\/") + "(?:/[\\w-]+)*@(\\S+)", "g");
   const found = inWorkflows(re);
   allEqual(found, want, d.name, 1);
   // "（全部 N 处）" is a claim too: 8.1 F1 wrote 12 for actions/checkout's 13

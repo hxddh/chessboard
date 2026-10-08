@@ -264,14 +264,42 @@ jobs:
         run: npm ci
       # Playwright is pinned. An unpinned global install is how the same
       # commit comes out different on different days.
-      - name: install playwright + ${{ matrix.engine }}
+      - name: install playwright
+        id: pw
         run: |
           npm install --no-save playwright@1.64.0
-          npx --yes playwright@1.64.0 install --with-deps ${{ matrix.engine }}
+          node scripts/ci-browser-deps.mjs key ${{ matrix.engine }}
+      # v8-4-plan V2: the system packages from the cache checks.yml fills (same
+      # key: Playwright version, engine, runner image), the apt mirror only as
+      # the fallback — step for step as in checks.yml
+      - name: restore ${{ matrix.engine }}'s system packages
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pw.outputs.dir }}
+          key: ${{ steps.pw.outputs.key }}
+      - name: system packages for ${{ matrix.engine }}
+        id: deps
+        run: node scripts/ci-browser-deps.mjs install ${{ matrix.engine }}
+      - name: cache ${{ matrix.engine }}'s system packages
+        if: steps.deps.outputs.save == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.pw.outputs.dir }}
+          key: ${{ steps.pw.outputs.key }}
+      - name: install ${{ matrix.engine }}
+        run: |
+          npx --yes playwright@1.64.0 install ${{ matrix.engine }}
           path="$(node -e "console.log(require('playwright')['${{ matrix.engine }}'].executablePath())")"
           if [ "${{ matrix.engine }}" = chromium ]; then echo "CHROME_PATH=$path"; else echo "WEBKIT_PATH=$path"; fi >> "$GITHUB_ENV"
       # every suite in the group runs even when an earlier one fails, so one
       # red run says everything that is wrong in it
+      #
+      # v8-4-plan V3: a layout shard writes its FRAME-MISS count (the 400 ms
+      # fallbacks of the two-frame probe, zero included) to this job's summary
+      # itself — test-layout-e2e.mjs → lib/frame-watch.mjs, appending to
+      # $GITHUB_STEP_SUMMARY at exit — exactly as in checks.yml. 8.2's one
+      # stall was in a rehearsal, so the count has to come from here too;
+      # test-chess.mjs checks both workflows keep it reaching the summary.
       - name: ${{ matrix.group.name }}
         env:
           SUITES: ${{ matrix.group.suites }}

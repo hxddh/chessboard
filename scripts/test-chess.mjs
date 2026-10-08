@@ -7266,6 +7266,33 @@ for (const lang of CONTENT_LANGS) {
     "main.zig points the WebView at the page beside the exe (resolveAssetRoot), in both the source and source_fn");
 }
 
+// v8-4-plan V1: an exe directory the user cannot write to moves WebView2's
+// user data to %LOCALAPPDATA%\Chessboard\WebView2 — set in main() before the
+// runner creates the WebView2 environment — and the Windows build proves it
+// by running the packaged self-test from a copy it has denied writes to.
+{
+  const code = (rel) => fs.readFileSync(path.join(root, rel), "utf8").replace(/\r\n/g, "\n")
+    .split("\n").filter((l) => !/^\s*(\/\/|#)/.test(l)).join("\n");
+  const main = code("src/main.zig");
+  const mainFn = main.slice(main.indexOf("pub fn main("));
+  const call = mainFn.indexOf("app_state.resolveWebView2UserData();");
+  assert(/fn resolveWebView2UserData\(/.test(main) && call > 0 && call < mainFn.indexOf("runner.runWithOptions("),
+    "main.zig calls resolveWebView2UserData() in main(), before the runner starts");
+  assert(/"WEBVIEW2_USER_DATA_FOLDER"/.test(main) && /\\\\Chessboard\\\\WebView2/.test(main) && /SetEnvironmentVariableW\(/.test(main),
+    "main.zig sets WEBVIEW2_USER_DATA_FOLDER to <LOCALAPPDATA>\\Chessboard\\WebView2 through SetEnvironmentVariableW");
+  const wf = code(".github/workflows/build-windows.yml");
+  const build = wf.slice(wf.indexOf("\n  build:\n"), wf.indexOf("\n  automation:\n"));
+  const step = (name) => build.indexOf("- name: " + name + "\n");
+  const ro = step("self-test the packaged app from a read-only folder");
+  const roBody = ro < 0 ? "" : build.slice(ro, build.indexOf("\n      - ", ro + 1));
+  assert(ro > 0 && ro < step("self-test the packaged app") && ro < step("zip package"),
+    "build-windows.yml: the read-only self-test runs in the build job, before the regular self-test and the zip");
+  assert(/timeout-minutes: \d+/.test(roBody) && /icacls \$ro \/deny "\*S-1-1-0:\(OI\)\(CI\)\(WD,AD\)" \/T/.test(roBody) &&
+    /the deny did not take/.test(roBody) && /node scripts\/selftest-app\.mjs \$exe/.test(roBody) &&
+    /'Chessboard\\WebView2'/.test(roBody) && /no WebView2 data in/.test(roBody) && /WebView2 data beside the exe/.test(roBody),
+    "build-windows.yml: the read-only step denies writes with icacls, checks the deny took, runs selftest-app.mjs, and wants the data in %LOCALAPPDATA%\\Chessboard\\WebView2");
+}
+
 // v8-2-plan §9 M4 评审修正: a live automation run writes into the machine's real
 // WebView storage (same bundle id; WKWebView ignores $HOME), so off a CI
 // runner both drivers refuse unless told --real-profile-ok; --null never asks.
@@ -7461,6 +7488,78 @@ for (const lang of CONTENT_LANGS) {
       assert(n >= 2 && shards.every(([, m]) => m === n) && idx === Array.from({ length: n }, (_, i) => i + 1).join(",") &&
         !whole && /SHARD: \$\{\{ matrix\.group\.shard \}\}/.test(text),
         where + " 把布局套件切成 1/n…n/n 全部的片，并把 SHARD 传进去（" + shards.map((s) => s.join("/")).join(" ") + "）");
+    }
+    // v8-4-plan V3: the FRAME-MISS count reaches the job summary in the
+    // release rehearsal too, not only in checks.yml. The suite writes it
+    // itself (asserted above), so what each workflow has to keep is the step
+    // that runs the shard: the same loop in both, a plain `node` on the host
+    // (no container, no override of GITHUB_STEP_SUMMARY). And the tally that
+    // adds the counts up across saved job logs reads timestamped lines.
+    {
+      const suiteStep = (text) => {
+        const at = text.indexOf("      - name: ${{ matrix.group.name }}\n");
+        return at < 0 ? "" : text.slice(at).split(/\n\n|\n  [\w-]+:\s*\n/)[0];
+      };
+      const cs = suiteStep(checksWf), rs = suiteStep(releaseWf);
+      const host = (text) => !/^\s+container:/m.test(text) && !/GITHUB_STEP_SUMMARY\s*:/.test(text);
+      const { tally } = await import("./frame-miss-tally.mjs");
+      const log = [
+        "2026-10-08T01:02:03.4567890Z ok   5b 560×600",
+        '2026-10-08T01:02:04.0000000Z FRAME-MISS {"shard":"2/5","scenario":17,"where":"5b 560×600 open","asked":[],"page":{"rafs":0}}',
+        "FRAME-MISS {not json",
+        "- layout shard 2/5: 2 次量取没等到两帧（明细见日志里的 FRAME-MISS 行）",
+      ].join("\r\n");
+      const t = tally(log);
+      assert(cs.length > 0 && cs === rs && /node "\$s"/.test(cs) && /SUITES: \$\{\{ matrix\.group\.suites \}\}/.test(cs) &&
+        host(checksWf) && host(releaseWf) && /FRAME-MISS/.test(checksWf) && /FRAME-MISS/.test(releaseWf) &&
+        t.length === 2 && t[0].shard === "2/5" && t[0].scenario === 17 && t[1].raw === "{not json" && tally("").length === 0,
+        "release.yml 与 checks.yml 的布局分片用同一个步骤跑、FRAME-MISS 计数都进作业摘要；frame-miss-tally 从带时间戳的作业日志里数（v8-4-plan V3）");
+    }
+    // v8-4-plan V2: no browser job runs `install --with-deps` (apt-get update
+    // and ~180 packages from the mirror, 441 s on a slow day); each one takes
+    // its engine's system packages through scripts/ci-browser-deps.mjs and the
+    // cache, the same five steps everywhere, before the browser itself
+    {
+      const D = await import("./ci-browser-deps.mjs");
+      const block = (pin) => [
+        "      - name: install playwright", "        id: pw", "        run: |",
+        "          npm install --no-save playwright@" + pin,
+        "          node scripts/ci-browser-deps.mjs key ${{ matrix.engine }}",
+      ].join("\n");
+      const tail = [
+        "      - name: restore ${{ matrix.engine }}'s system packages", "        uses: actions/cache/restore@v6", "        with:",
+        "          path: ${{ steps.pw.outputs.dir }}", "          key: ${{ steps.pw.outputs.key }}",
+        "      - name: system packages for ${{ matrix.engine }}", "        id: deps",
+        "        run: node scripts/ci-browser-deps.mjs install ${{ matrix.engine }}",
+        "      - name: cache ${{ matrix.engine }}'s system packages", "        if: steps.deps.outputs.save == 'true'",
+        "        uses: actions/cache/save@v6", "        with:",
+        "          path: ${{ steps.pw.outputs.dir }}", "          key: ${{ steps.pw.outputs.key }}",
+        "      - name: install ${{ matrix.engine }}",
+      ].join("\n");
+      const bad = [];
+      let installs = 0;
+      for (const [where, text] of [["checks.yml", checksWf], ["release.yml", releaseWf]]) {
+        const code = text.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+        if (/--with-deps/.test(code)) bad.push(where + " 还有 --with-deps");
+        for (const m of code.matchAll(/npx --yes playwright@(\S+) install \$\{\{ matrix\.engine \}\}\s*$/gm)) {
+          installs++;
+          const before = code.slice(0, m.index);
+          const at = before.lastIndexOf(block(m[1]));
+          if (at < 0 || !before.slice(at + block(m[1]).length).replace(/^\n/, "").startsWith(tail)) bad.push(where + " 的 playwright@" + m[1] + " 前面不是那五步");
+        }
+      }
+      const key = (v, e, iv) => D.cacheKey({ version: v, engine: e, env: { ImageOS: "ubuntu24", ImageVersion: iv }, arch: "x64" });
+      let noVersion = false;
+      try { D.cacheKey({ version: "", engine: "webkit" }); } catch { noVersion = true; }
+      assert(installs === 3 && bad.length === 0 &&
+        key("1.64.0", "webkit", "20261005.1") === "playwright-1.64.0-webkit-debs-ubuntu24-20261005.1-x64" &&
+        key("1.64.0", "webkit", "20261012.1") !== key("1.64.0", "webkit", "20261005.1") &&
+        key("1.65.0", "webkit", "20261005.1") !== key("1.64.0", "webkit", "20261005.1") &&
+        key("1.64.0", "chromium", "20261005.1") !== key("1.64.0", "webkit", "20261005.1") && noVersion &&
+        /Dir::Cache::Archives "\/var\/cache\/apt\/playwright-debs\/"/.test(D.aptConf()) &&
+        D.debsIn(path.join(root, "no-such-dir")).length === 0,
+        "浏览器作业的系统依赖走缓存（键是 Playwright 版本 + 引擎 + runner 镜像），不再 --with-deps 每次从 apt 镜像下（" + installs + " 处；v8-4-plan V2）" +
+        (bad.length ? " —— " + bad.join("；") : ""));
     }
     // v8-2-plan V4: both workflows run the same browser groups (release.yml
     // is where a group that drifted would first matter), no suite runs in

@@ -270,3 +270,28 @@
   - 第一次 CI：webkit 布局 5/5 的「T1 对手分段」报三段不等宽（133.41 / 134.00 / 134.00）。原因是刚点过的一段还在 `:active { transform: scale(0.97) }` 的回弹过渡里（0.12 s），WebKit 27.2 在 100 ms 时还没放完；同场景其他段都是 134.00。改为量之前等这几个按钮的过渡结束（`getAnimations().finished`），阈值不变；本机 Chromium 跑这一场景通过。
 - **D3 Zig 0.17**：`deps-inventory.json` 的 Zig 条目 latest 0.17.0、`upgrade-when-released`，note 写 §1 的清单。没改代码。
 - **CI 墙钟**：8.4 计划的 PR 检查（#107，run 37720801820）12.8 分钟，最长 webkit lessons 8.0 分钟。
+- **V1 WebView2 用户数据目录**：
+  - **确认**：SDK 0.10.1 `webview2_host.cpp` 的 `createChildWebView` 调 `CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr, …)`，不传用户数据目录，所以 `WEBVIEW2_USER_DATA_FOLDER` 就是决定值。
+  - **改动**：`main.zig` 在 `resolveAssetRoot` 之后、runner 之前加 `resolveWebView2UserData()`，只在 Windows 上：
+    - 在 exe 目录建、删一个 `.chessboard-write-probe-<pid>`，出任何错都算写不进去；
+    - 写不进去、环境变量没设过、有 `%LOCALAPPDATA%` 时，建好 `%LOCALAPPDATA%\Chessboard\WebView2`，用 kernel32 `SetEnvironmentVariableW` 设进本进程的环境块（loader 读的就是它；`std.process.Environ` 只是拷贝）。
+    - 判断抽成纯函数 `webview2UserDataFallback`。Zig 测试 79 → 84：可写、不可写、已设、没有 `%LOCALAPPDATA%` 四种，加探测本身一条。没改 SDK。
+  - **CI**：`build-windows.yml` 的 build 作业在原自检之前加「self-test the packaged app from a read-only folder」（6 分钟上限）：
+    - 拷一份 `dist/Chessboard` 到 `RUNNER_TEMP`，`icacls /deny "<用户>:(OI)(CI)(WD,AD)"`；
+    - 先证明写文件确实失败，再跑两次启动的打包自检；
+    - 之后要求 `%LOCALAPPDATA%\Chessboard\WebView2` 里有数据、`bin\` 旁边没有 `*.WebView2`。
+    - 不用整个 `W`：它含 `SYNCHRONIZE`，打开文件夹要用。
+  - **守卫**：`test-chess.mjs` 查 `main()` 在 runner 之前调这一步，查这个步骤在原自检和打包 zip 之前，并且带 `icacls`、写入探测、自检和两项目录检查。
+  - **先红后绿**：把 `main()` 里的 `app_state.resolveWebView2UserData();` 注释掉推一次，这个步骤应当红；静态守卫也会红。
+  - **还要在 CI 上证实**：
+    - 这个步骤绿；
+    - 先红那一次真的红，并记下红在哪：自检超时，还是只有 `%LOCALAPPDATA%` 检查没过；
+    - runner 账户上 deny 确实生效（步骤自己会查）。
+  - **CI 结果（2026-10-08）**：
+    - 第一次（run 37726044424）红在准备上：只对 runner 用户的 deny 没挡住写入（`bin\write-probe.txt` 写进去了）。改为对 Everyone（S-1-1-0）deny，`/T` 写到每个文件夹和文件（bfc3cdc）。
+    - 绿（run 37726755301）：`bin\` 拒绝新建文件；两次启动都交回自检报告；WebView2 的数据在 `C:\Users\runneradmin\AppData\Local\Chessboard\WebView2`。
+    - 先红（run 37727593248，临时提交 281e1a5 让 `resolveWebView2UserData` 一进来就返回）：两次启动都在 1 秒内退出，日志 `dispatch.error "CreateFailed" event="app_start"`、`error: CallbackFailed`，没有自检报告。也就是说，**8.3 以前，解压到不可写目录时应用根本起不来**（不只是页面空白）。临时代码随即删掉。
+    - 另一次「先红」（ae1d7c4，把调用注释掉）在单元测试那步就被静态守卫拦下，没走到这一步——守卫本身也算证明过了。
+  - 本机只有 Linux：Windows 路径交叉编译通过（`-Dtarget=x86_64-windows`，null 与 windows 平台都试了），没有跑过。
+- **V2 webkit 系统依赖不再每次从 apt 下（选 b，缓存）**：checks.yml 的 browser、shots 与 release.yml 的 browser 不再 `install --with-deps`，改成五步：装 playwright 并算缓存键 → `actions/cache/restore@v6` → 「system packages for <引擎>」（`scripts/ci-browser-deps.mjs install`）→ 只在缓存没命中且这次真从 apt 下了包时 `actions/cache/save@v6` → 只下浏览器。键是装上的 Playwright 版本 + 引擎 + runner 镜像（`ImageOS` / `ImageVersion`），版本从 node_modules 读回、不另抄。判断用 Playwright 1.64 自带的 `install-deps --dry-run`（`apt-get install -s`，离线、不要 sudo）：不缺就跳过 apt（chromium 通常如此）；缺就把缓存的 .deb 当本地文件装，装时不给软件源（否则同版本的包 apt 会改从镜像下，本机实测 182 个全被重新下载），装完再查一遍；仍缺或装不上就退回原来的 `playwright install-deps`，apt 下载放进自己的目录、复制出来给缓存存。本机（Ubuntu 24.04）实测：从 apt 装 211 个 .deb、106 MB、45.9 s；清掉后从缓存装 19.5 s、零下载；缓存缺一个包时报警告退回 apt、不存。没选容器（a）：所有测试会改成 root、镜像自己的字体（布局套件量文字）、每个作业拉约 2 GB、/dev/shm 只有 64 MB，改动的不止装依赖这一步。`actions/cache` 进依赖清单，`test-deps` 认子 action（`actions/cache/restore@v6`）；test-chess 守卫三处都是这五步、没有 `--with-deps`、键随版本 / 引擎 / 镜像变。**CI 要确认**：①第一次运行（缓存空）各 webkit 作业日志出现 `system packages from apt` 且有一个作业存上缓存（其余作业的「Unable to reserve cache」只是警告）；②之后的运行出现 `system packages from cache`、这一步 ≤ 60 s，十次运行算 p95；③chromium 出现 `from image`；④`/var/cache/apt/archives` 之外的下载目录在 runner 上确实留下 .deb（日志 `apt downloaded N .deb` 的 N > 0）；⑤runner 镜像每周换版本时键会变，那一次是缓存未命中，计 p95 时算进去。
+- **V3 发布彩排的 FRAME-MISS 计数**：查下来 release.yml 本来就有——计数是 test-layout-e2e.mjs 退出时自己往 `$GITHUB_STEP_SUMMARY` 写的（lib/frame-watch.mjs），两个 workflow 跑分片的步骤一样，§2 说「现在 checks.yml 才有」不对。这次把它写明并守住：两个 workflow 的那一步加注释，test-chess 核对两边跑套件的步骤逐字相同、都在 runner 上直接跑（没有 container、没有覆盖 `GITHUB_STEP_SUMMARY`）。另加 `scripts/frame-miss-tally.mjs LOG…`：从存下来的作业日志里数 `FRAME-MISS` 行（日志行首带时间戳），给 8.4 收尾时的汇总用。**CI 要确认**：下一次发布彩排里每个布局分片（两个引擎 × 5 片）的作业摘要都有「layout shard i/5: N 次」一行。
