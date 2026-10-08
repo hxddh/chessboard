@@ -346,4 +346,4 @@
 
 ## 发布
 
-- `v8.4.0` → （发布后补）
+- `v8.4.0` → `b0cf38a`（#110 squash；release.yml 运行 37742250309；彩排 37739614234 在 55f6988 上通过）。发布页三个文件：`Chessboard-macOS-arm64.dmg`（8,814,620 字节）、`Chessboard-macOS-arm64.zip`（7,601,066）、`Chessboard-Windows-x64.zip`（10,701,752）。

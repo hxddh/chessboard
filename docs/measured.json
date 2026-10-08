@@ -577,6 +577,16 @@
         "jobs": 39,
         "green": true,
         "label": "8.4 M2（PR #109）"
+      },
+      {
+        "run": 37739614414,
+        "sha": "55f6988",
+        "wall": 18.7,
+        "critical": "browser (webkit, persistence)",
+        "criticalMin": 8.2,
+        "jobs": 39,
+        "green": true,
+        "label": "8.4.0（PR #110，同时跑着发布彩排）"
       }
     ]
   },
