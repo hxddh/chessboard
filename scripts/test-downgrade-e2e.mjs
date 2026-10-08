@@ -1,6 +1,10 @@
 /**
  * Downgrade to 8.0 / 8.1 and back (v8-2-plan V3); and to 8.2.1 (v8-3-plan
- * T1, M2 评审 P3-2: the bank-puzzle review keys of 看 N 步 / 盲走).
+ * T1, M2 评审 P3-2: the bank-puzzle review keys of 看 N 步 / 盲走); and to
+ * 8.3.0 (v8-4-plan §9 M3: look's engine plies `vis.look.eng` (T1), review
+ * entries of the refreshed Lichess bank (T3) — ids 8.4 keeps only in its
+ * old-puzzle chunks, ids new to 8.4, ids whose band moved — and the guess
+ * records of the thirty new classics (T2)).
  *
  * release-notes「降级回 8.0」said what was known — the library's summary
  * marker is dropped — and what was not: whether 8.1's new fields (a game's
@@ -29,7 +33,7 @@
  * The old builds are made here, from their tags (git archive of the tag →
  * npm ci → its own scripts/bundle.mjs), into node_modules/.cache, keyed by
  * the tag's commit; a second run reuses them. Nothing of them is committed.
- * A shallow clone (CI) fetches the two tags first. Each build's bundle size
+ * A shallow clone (CI) fetches the tags first. Each build's bundle size
  * is pinned: a different number means this did not build what was shipped.
  *
  *   node scripts/test-downgrade-e2e.mjs            every version
@@ -50,7 +54,7 @@ const CURRENT = path.join(REPO, "src", "web");
 const CACHE = process.env.DOWNGRADE_CACHE || path.join(REPO, "node_modules", ".cache", "chess-downgrade");
 
 /** The shipped main bundle of each release, in bytes (v8-1-plan / v8-2-plan §2). */
-const SHIPPED = { "v8.0.0": 1200498, "v8.1.0": 900972, "v8.2.1": 907245 };
+const SHIPPED = { "v8.0.0": 1200498, "v8.1.0": 900972, "v8.2.1": 907245, "v8.3.0": 908392 };
 const TAGS = Object.keys(SHIPPED).filter((t) => !process.env.DOWNGRADE_ONLY || process.env.DOWNGRADE_ONLY === t);
 
 let failed = 0;
@@ -248,27 +252,65 @@ const OLD_LIB_PGN = (tag) => `[Event "${tag}"]\n[Site "lichess"]\n[Date "2026.09
  * into what the current build has stored, then the current build boots on
  * it and writes it back — so the snapshot is 8.2's own.
  */
-/** v8-3-plan T1: review keys of bank puzzles, which only the current build writes (and can build again) */
-const BANK_KEYS = { look: "lc-0009X|2|5|1400", blind: "lc-0009Y|1400" };
+/**
+ * v8-3-plan T1: review keys of bank puzzles, which only the current build
+ * writes (and can build again). v8-4-plan T3 refreshed the bank, so one id
+ * of each kind a review can name after it, all in band 1400 (the band the
+ * current build rates them in, at the end of their keys):
+ *   old   — in 8.3's band 1400, not in the refreshed one: the current build
+ *           finds it in its old-puzzle chunk (chunk-lc-old-1400.js,
+ *           puzzle-db.js full);
+ *   new   — in the refreshed band 1400 and in no band of 8.3's bank;
+ *   drift — in the refreshed band 1400 and in 8.3's band 1200 (its rating
+ *           moved).
+ * look's are mates in two (N = 2 stays on the puzzle's own line: no search),
+ * blind's mates in one; `missed` is 做题's review queue (bank-review.js, the
+ * band in the side table `bank`).
+ */
+const BANK = {
+  old: { look: "lc-Yxv4P|2|5|1400", blind: "lc-1afJm|1400", missed: "lc-6uG5Z" },
+  new: { look: "lc-Vhpc9|2|5|1400", blind: "lc-1EHD3|1400", missed: "lc-4IVu0" },
+  drift: { look: "lc-KUdp5|2|5|1400", blind: "lc-sVmeC|1400", missed: "lc-9Ccj3" },
+};
+const BANK_KINDS = Object.keys(BANK);
 const isBankKey = (k) => /\|\d{4}$/.test(k);
-/** puzzleState.vis with (bank: true) only the bank keys of each queue, or (false) everything else */
-const visPart = (vis, bank) => vis && Object.fromEntries(Object.entries(vis).map(([kind, m]) =>
-  [kind, bank ? Object.keys(m.q || {}).filter(isBankKey).sort() : Object.assign({}, m, { q: Object.fromEntries(Object.entries(m.q || {}).filter(([k]) => !isBankKey(k))) })]));
+/** puzzleState.vis without the bank keys of each queue and look's engine plies (fields of their own) */
+const visRest = (vis) => vis && Object.fromEntries(Object.entries(vis).map(([kind, m]) => {
+  const o = Object.assign({}, m, { q: Object.fromEntries(Object.entries(m.q || {}).filter(([k]) => !isBankKey(k))) });
+  delete o.eng;
+  return [kind, o];
+}));
+/** puzzleState.vis's bank keys, {look: [...], blind: [...]}; `only`: those of one kind of BANK */
+const visBank = (vis, only) => Object.fromEntries(["look", "blind"].map((kind) =>
+  [kind, Object.keys(((vis || {})[kind] || {}).q || {}).filter((k) => isBankKey(k) && (!only || k === BANK[only][kind])).sort()]));
+/** v8-4-plan T2: four of the thirty classics 8.3 does not have (classics-more.js) */
+const GS_MORE = ["labourdonnais-mcdonnell-1834", "bird-morphy-1858", "rubinstein-lasker-1909", "botvinnik-keres-1948"];
+/** v8-4-plan T1: look's engine plies, by review key (visual-modes.js engPlies: "tag:uci,…") */
+const ENG = Object.fromEntries(BANK_KINDS.map((x, i) => [BANK[x].look, "1q2w" + i + ":e2e4,3e4r" + i + ":g1f3"]));
 
 function trainerSeed(now) {
   const srs = (due) => ({ s: 0, n: 1, due, ivl: 0 });
+  // the bank reviews' order in their queues: new, drift, old
+  const overdue = (x) => now - { new: 5e5, drift: 4e5, old: 3e5 }[x];
   return {
     eg: { done: { "kp-outside": now - 5e6, "rp-lucena": now - 4e6 }, srs: { "dr-philidor": srs(now - 1e5) } },
-    gs: { "morphy-opera-1858": { w: { same: 15, n: 17, avg: 1.2, at: now - 3e6 } }, "anderssen-kieseritzky-1851": { w: { same: 9, n: 23, avg: 4.4, at: now - 2e6 }, b: { same: 3, n: 22, avg: 8.1, at: now - 1e6 } } },
+    gs: Object.assign({ "morphy-opera-1858": { w: { same: 15, n: 17, avg: 1.2, at: now - 3e6 } }, "anderssen-kieseritzky-1851": { w: { same: 9, n: 23, avg: 4.4, at: now - 2e6 }, b: { same: 3, n: 22, avg: 8.1, at: now - 1e6 } } },
+      Object.fromEntries(GS_MORE.map((id, i) => [id, { [i % 2 ? "b" : "w"]: { same: 10 + i, n: 20 + i, avg: 2.5 + i, at: now - 9e5 + i } }]))),
     // an 8.2 key of each mode (a local puzzle: the id, look's N and question
-    // seed), and v8-3-plan T1's bank keys, the band at the end — all due but
-    // the blind 8.2 one, the bank ones first in their queues
+    // seed), and the bank keys, the band at the end — all due but the blind
+    // 8.2 one, the bank ones first in their queues: new, drift, old. A set
+    // serves its first review; one it cannot build is dropped and the next
+    // one served (visual-modes.js serve), so one set reaches all three
     vis: {
       look: { rating: { r: 1180, rd: 140, vol: 0.06 }, solve: 6, miss: 3, at: now - 2e6,
-        q: { "d-back-eat|3|77": srs(now - 1e5), [BANK_KEYS.look]: srs(now - 2e5) } },
+        q: Object.assign({ "d-back-eat|3|77": srs(now - 1e5) }, ...BANK_KINDS.map((x) => ({ [BANK[x].look]: srs(overdue(x)) }))),
+        eng: ENG },
       blind: { rating: { r: 1320, rd: 160, vol: 0.06 }, solve: 4, miss: 1, at: now - 1e6,
-        q: { "m2-4": srs(now + 1e8), [BANK_KEYS.blind]: srs(now - 2e5) } },
+        q: Object.assign({ "m2-4": srs(now + 1e8) }, ...BANK_KINDS.map((x) => ({ [BANK[x].blind]: srs(overdue(x)) }))) },
     },
+    // 做题's review queue: the three bank ids, due, their band in `bank`
+    missed: Object.fromEntries(BANK_KINDS.map((x) => [BANK[x].missed, srs(overdue(x))])),
+    bank: Object.fromEntries(BANK_KINDS.map((x) => [BANK[x].missed, 1400])),
     runs: { look: { best: 7, at: now - 2e6 }, blind: { best: 5, at: now - 1e6 } },
     // this week's answers in the progress file, under the two modes' own names
     cats: { look: { m: 3, s: 6 }, blind: { m: 1, s: 4 } },
@@ -362,9 +404,19 @@ function fields(s1) {
     "learn.last": (s) => lsOf(s, "learn").last,
     "learn.done": (s) => lsOf(s, "learn").done,
     "learn.eg": (s) => lsOf(s, "learn").eg,
-    "learn.gs": (s) => lsOf(s, "learn").gs,
-    "puzzles.vis": (s) => visPart(lsOf(s, "puzzles").vis, false),
-    "puzzles.vis.bank": (s) => visPart(lsOf(s, "puzzles").vis, true),
+    "learn.gs": (s) => Object.fromEntries(Object.entries(lsOf(s, "learn").gs || {}).filter(([id]) => !GS_MORE.includes(id))),
+    // v8-4-plan T2: the guess records of games only 8.4 has
+    "learn.gs.more": (s) => pick(lsOf(s, "learn").gs, GS_MORE),
+    "puzzles.vis": (s) => visRest(lsOf(s, "puzzles").vis),
+    // v8-3-plan T1 / v8-4-plan T3: the bank review keys of 看 N 步 / 盲走, by kind of id
+    ...Object.fromEntries(BANK_KINDS.map((x) => ["puzzles.vis.bank." + x, (s) => visBank(lsOf(s, "puzzles").vis, x)])),
+    // v8-4-plan T1: the engine plies kept with the look key of the id both banks have
+    "puzzles.vis.eng": (s) => pick(((lsOf(s, "puzzles").vis || {}).look || {}).eng, [BANK.old.look]),
+    // v8-4-plan T3: 做题's review entries of bank ids, with their band
+    ...Object.fromEntries(BANK_KINDS.map((x) => ["puzzles.review." + x, (s) => {
+      const pz = lsOf(s, "puzzles"), id = BANK[x].missed;
+      return { q: (pz.missed || {})[id] || null, band: (pz.bank || {})[id] || null };
+    }])),
     "puzzles.runs": (s) => lsOf(s, "puzzles").runs,
     "puzzles.solved": (s) => pick(lsOf(s, "puzzles").solved, solved82),
     "progress.vis": (s) => Object.fromEntries(Object.entries(lsOf(s, "progress").weeks || {})
@@ -410,14 +462,39 @@ const EXPECT = {
     // positions past them; 8.2 indexes the whole book again, the cards from
     // chessboard.replines' copy (rep-page.js)
     "repertoire.records": "restored",
+    // v8-4-plan T3: 8.1 has 做题's bank review (v8-1-plan T6) on 8.3's bank:
+    // what 8.3 drops there (below), 8.1 drops too; 8.0 has no bank review
+    // and leaves the lc- ids alone
+    "puzzles.review.new": "lost", "puzzles.review.drift": "lost",
   },
   "v8.2.1": {
     // v8-3-plan T1 (M2 评审 P3-2): 8.2 looks a bank review up in its local book when it
     // is due, finds nothing and drops it, as it drops any key it cannot build
     // (visual-modes.js serve); the current build cannot put back what is not there
-    "puzzles.vis.bank": "lost",
+    "puzzles.vis.bank.old": "lost", "puzzles.vis.bank.new": "lost", "puzzles.vis.bank.drift": "lost",
+    // …and with the key, look's engine plies (v8-4-plan T1): 8.2 leaves them,
+    // the current build deletes those of keys no longer queued
+    "puzzles.vis.eng": "lost",
+    // v8-4-plan T3: as in 8.1 and 8.3 (below)
+    "puzzles.review.new": "lost", "puzzles.review.drift": "lost",
+  },
+  "v8.3.0": {
+    // v8-4-plan T3: 8.3's bank is the 2026-09-09 import. A bank review of an
+    // id it does not have in the band the key names — new to the refreshed
+    // bank, or one now rated in another band than 8.3 rated it — is dropped:
+    // 看 N 步 / 盲走 when a set reaches it (visual-modes.js serve), 做题's
+    // 复习 once that band is here (bank-review.js prune). The current build
+    // cannot put back what is not there. An id it keeps only in its
+    // old-puzzle chunk is in 8.3's band: kept.
+    "puzzles.vis.bank.new": "lost", "puzzles.vis.bank.drift": "lost",
+    "puzzles.review.new": "lost", "puzzles.review.drift": "lost",
+    // kept: vis.look.eng (T1) — 8.3 leaves it as it is, the plies of the
+    // keys it dropped too, which 8.4 deletes at its next set of 看 N 步; and
+    // the guess records of the thirty games 8.3 does not have (T2, learn.gs.more)
   },
 };
+/** Per version: what it has — 看 N 步 / 盲走 (8.2), the whole book in chessboard.replines (8.2) */
+const HAS = { "v8.2.1": { vis: true, book: true }, "v8.3.0": { vis: true, book: true } };
 
 // --- run ---------------------------------------------------------------------
 const NOW = Date.now();
@@ -460,7 +537,8 @@ for (const tag of TAGS) {
     Object.assign(learn, { eg: seed.eg, gs: seed.gs });
     localStorage.setItem("chess.v1.learn", JSON.stringify(learn));
     const pz = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
-    Object.assign(pz, { vis: seed.vis, runs: Object.assign(pz.runs || {}, seed.runs) });
+    Object.assign(pz, { vis: seed.vis, runs: Object.assign(pz.runs || {}, seed.runs),
+      missed: Object.assign(pz.missed || {}, seed.missed), bank: Object.assign(pz.bank || {}, seed.bank) });
     localStorage.setItem("chess.v1.puzzles", JSON.stringify(pz));
     const pr = JSON.parse(localStorage.getItem("chess.v1.progress") || '{"v":1,"weeks":{},"days":{}}');
     const w = pr.weeks[week] = pr.weeks[week] || { cats: {}, mined: 0, red: 0 };
@@ -523,19 +601,29 @@ for (const tag of TAGS) {
   assert(lsOf(s1, "settings").difficulty === "hardplus" && lsOf(s1, "settings").bgWorker === true,
     tag + " (a): 设置里是 8.1 起才有的档（hardplus）、第二个引擎开着");
   assert(errs82.length === 0, tag + " (a): 8.2 没有页面异常", errs82.join(" / "));
+  {
+    const pz1 = lsOf(s1, "puzzles"), v = pz1.vis || {};
+    assert(BANK_KINDS.every((x) => v.look.q[BANK[x].look] && v.blind.q[BANK[x].blind] && pz1.missed[BANK[x].missed] && pz1.bank[BANK[x].missed] === 1400) &&
+      eq(v.look.eng, ENG) && GS_MORE.every((id) => lsOf(s1, "learn").gs[id]),
+      tag + " (a): 当前的包自己启动之后，三种题库 id 的复习条目（看 N 步、盲走、做题）、看 N 步的引擎着法（eng）、新三十局的猜着记录都在",
+      JSON.stringify(v.look).slice(0, 300));
+  }
 
   // (b) the old build on the same storage
   ({ page, errs } = await open(ctx, BUILDS[tag].web));
   await fileGame(page);
   const sanOld = await solvePuzzle(page);
   // 8.2 has 看 N 步 / 盲走: a set of each takes what is due in its queue
-  const visModes = tag === "v8.2.1";
+  const visModes = !!(HAS[tag] || {}).vis;
   if (visModes) {
     for (const k of ["look", "blind", "practice"]) {
       await page.click('#pz-mode-seg button[data-run="' + k + '"]');
       await page.waitForTimeout(2000);
     }
   }
+  // 做题's 复习: the due bank reviews wait for their band (8.1 on, bank-review.js), then the queue is read
+  await page.evaluate(() => { const b = document.querySelector('button[data-cat="review"]'); if (b) b.click(); });
+  await page.waitForTimeout(2500);
   await openLearn(page);
   await view(page, "library");
   await importFile(page, "old-" + tag + ".pgn", OLD_LIB_PGN(tag), "#lib-import");
@@ -555,11 +643,15 @@ for (const tag of TAGS) {
       tag + " (b): 8.1 按版本 1 打开 chessboard.repertoire，执黑那条线的记录是它写进去的", s2.rep && s2.rep.version);
   }
   if (visModes) {
+    // which kinds of bank id the old build's sets left in the two queues
     const v1 = lsOf(s1, "puzzles").vis, v2 = lsOf(s2, "puzzles").vis;
-    assert(visPart(v1, true).look.length === 1 && visPart(v1, true).blind.length === 1 &&
-      !visPart(v2, true).look.length && !visPart(v2, true).blind.length && eq(visPart(v1, false), visPart(v2, false)),
-      tag + " (b): 8.2 开一组看 N 步、一组盲走：题库题的复习键（当前的包写的）到期时被它悄悄丢掉；8.2 自己的键、评级、对错数原样",
-      JSON.stringify(v2).slice(0, 300));
+    const left = BANK_KINDS.filter((x) => visBank(v2, x).look.length && visBank(v2, x).blind.length);
+    const want = tag === "v8.2.1" ? [] : ["old"];
+    assert(eq(left, want) && BANK_KINDS.every((x) => !!visBank(v2, x).look.length === !!visBank(v2, x).blind.length) && eq(visRest(v1), visRest(v2)),
+      tag + " (b): 旧版开一组看 N 步、一组盲走：到期的题库题复习键，它的题库里没有的被悄悄丢掉，留下的是 [" + want.join(", ") + "]；本地题的键、评级、对错数原样",
+      JSON.stringify(left) + " " + JSON.stringify(visBank(v2)));
+    // v8-4-plan T1: an older build does not know `eng` and leaves it as it is — the plies of the keys it dropped too
+    assert(eq(v2.look.eng, ENG), tag + " (b): 旧版原样留着 vis.look.eng（连它丢掉的键的那几条）", JSON.stringify(v2.look.eng));
   }
   const oldGame = (lsOf(s2, "stats").games || []).find((g) => !st1.some((x) => x.id === g.id));
   assert(!!oldGame && oldGame.ending === "resigned", tag + " (b): 旧版记下了它下的一盘", JSON.stringify(oldGame));
@@ -571,7 +663,7 @@ for (const tag of TAGS) {
   // 8.0 / 8.1 read the header — the first 400 lines, the whole of what they
   // can hold — and a White line imported into it pushes out the oldest; 8.2
   // keeps the whole book (chessboard.replines), so its header stays the first 400
-  if (tag === "v8.2.1") {
+  if ((HAS[tag] || {}).book) {
     assert((lsOf(s2, "repertoire").w || []).map((l) => l.sans).join("|") === wantLines.slice(0, REP_HEAD).join("|") && lineRows(s2, "w").length === REP_LINES + 1,
       tag + " (b): 8.2 的书是整本（" + (REP_LINES + 1) + " 条执白的线），头上仍是前 " + REP_HEAD + " 条", (lsOf(s2, "repertoire").w || []).length + " / " + lineRows(s2, "w").length);
   } else {
@@ -581,12 +673,26 @@ for (const tag of TAGS) {
 
   // (c) back to 8.2
   ({ page, errs } = await open(ctx, CURRENT));
+  // v8-4-plan T1: a set of 看 N 步 on what the old build left — the current
+  // build drops the plies of keys no longer queued, serves the rest
+  if (visModes) {
+    await view(page, "puzzle");
+    for (const k of ["look", "practice"]) {
+      await page.click('#pz-mode-seg button[data-run="' + k + '"]');
+      await page.waitForTimeout(2500);
+    }
+  }
   await view(page, "library");
   await page.waitForTimeout(2500);
   const s3 = await snapshot(page);
   await page.close();
   fs.writeFileSync(path.join(SCRATCH, tag + "-3.json"), JSON.stringify(s3, null, 1));
   assert(errs.length === 0, tag + " (c): 回到 8.2 没有页面异常", errs.join(" / "));
+  if (visModes) {
+    const lk = lsOf(s3, "puzzles").vis.look;
+    assert(Object.keys(lk.eng || {}).every((k) => k in lk.q),
+      tag + " (c): 当前的包开一组看 N 步时，删掉已不在队列里的键的引擎着法（eng 只剩队列里的键）", JSON.stringify(lk.eng));
+  }
 
   // every field of (a), by outcome
   const F = fields(s1), want = EXPECT[tag] || {}, got = {};
