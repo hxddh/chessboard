@@ -63,10 +63,12 @@ export const OUT = path.join(root, "src/web/js/bundle.js");
  */
 export function lichessChunks(dir) {
   let files = [];
-  try { files = fs.readdirSync(dir).filter((f) => /^band-\d{4}\.js$/.test(f)).sort(); } catch { files = []; }
+  try { files = fs.readdirSync(dir).filter((f) => /^(band|old)-\d{4}\.js$/.test(f)).sort(); } catch { files = []; }
   return files.map((f) => {
-    const n = f.slice(5, 9);
-    return { entry: path.relative(root, path.join(dir, f)).split(path.sep).join("/"), out: "src/web/js/chunk-lc-" + n + ".js", global: "LC_BAND_" + n, min: 1000 };
+    const n = f.slice(-7, -3);
+    // v8-4-plan T3: old-NNNN.js, the rows an earlier import shipped (puzzle-db.js oldChunk)
+    const old = f.startsWith("old-");
+    return { entry: path.relative(root, path.join(dir, f)).split(path.sep).join("/"), out: "src/web/js/chunk-lc-" + (old ? "old-" : "") + n + ".js", global: (old ? "LC_OLD_" : "LC_BAND_") + n, min: old ? 100 : 1000 };
   });
 }
 
