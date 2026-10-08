@@ -24,6 +24,7 @@ import { createEndgames } from "./endgames.js";
 import { ChessReview } from "../review.js";
 import { ChessReviewGrade } from "../review-grade.js";
 import { createAdvLessons } from "./lessons-adv.js";
+import { createMoreClassics } from "./classics-more.js";
 import { tdot } from "../tdot.js";
 
 /**
@@ -77,14 +78,22 @@ export function createLessonsUI(d) {
   // A study is learn mode with no lesson: the main board holds the game, the
   // lesson pane holds the note for the move on the board, and every replay and
   // variation tool works as in a finished game. Nothing is graded.
-  const CLASSICS = CHESS_CLASSICS || [];
+  // v8-4-plan T2: the first ten are in the bundle, thirty more are appended
+  // when their chunk arrives (trainer/classics-more.js) — to a copy, so the
+  // module's own array stays the ten
+  const CLASSICS = (CHESS_CLASSICS || []).slice();
+  const More = createMoreClassics({ store, list: CLASSICS, onReady: () => sync() });
   function classicText(c) {
+    // the thirty carry their own translations; the ten read the language chunks
+    const tr = c.tr ? c.tr[store.ui.langId] : null;
+    const field = (k) => (c.tr ? tr && tr[k] : contentField("classics", c.id, k));
     return {
-      white: contentField("classics", c.id, "white") || c.white,
-      black: contentField("classics", c.id, "black") || c.black,
-      event: contentField("classics", c.id, "event") || c.event,
+      white: field("white") || c.white,
+      black: field("black") || c.black,
+      event: field("event") || c.event,
+      intro: field("intro") || c.intro || "",
       note: (ply) => {
-        const notes = contentField("classics", c.id, "notes");
+        const notes = field("notes");
         if (notes && notes[ply]) return notes[ply];
         const n = (c.notes || []).find((x) => x.ply === ply);
         return n ? n.text : null;
@@ -139,6 +148,8 @@ export function createLessonsUI(d) {
         p.textContent = tf(note ? "study.ofNote" : "study.ofNoNote", [at, sanHistory()[at - 1] || "", note]);
       }
       body.appendChild(p);
+      // v8-4-plan T2: a game's own paragraph, before the first move
+      if (at === 0 && tx.intro) { const q = document.createElement("p"); q.textContent = tx.intro; body.appendChild(q); }
     }
     if (task) { task.hidden = true; task.replaceChildren(); }
     // a classic being read has no tasks, so no progress dots
@@ -792,13 +803,21 @@ export function createLessonsUI(d) {
       });
       // 6.0: the annotated classics, after the course (v6-plan Q3.5); and
       // v8-2-plan T3: the same games again, to guess (✓ once guessed through)
+      // v8-4-plan T2: the thirty more follow each ten, headed by their eras
       const gsDone = store.session.learnState.gs || {};
+      More.ensure();
       for (const k of CLASSICS.length ? ["c", "gs"] : []) {
-        const h = document.createElement("div");
-        h.className = "lesson-part";
-        h.textContent = t(k === "c" ? "study.part" : "gs.part");
-        list.appendChild(h);
+        const part = t(k === "c" ? "study.part" : "gs.part");
+        let head = null;
         CLASSICS.forEach((c, i) => {
+          const want = c.g ? tdot(part, More.groupName(c.g)) : part;
+          if (want !== head) {
+            head = want;
+            const h = document.createElement("div");
+            h.className = "lesson-part";
+            h.textContent = want;
+            list.appendChild(h);
+          }
           const tx = classicText(c);
           const b = document.createElement("button");
           b.type = "button";

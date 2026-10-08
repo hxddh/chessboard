@@ -1627,8 +1627,13 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.waitForTimeout(900);
   await pg.click("#pick-cancel", { timeout: 500 }).catch(() => {});
   assert(!served.slice(from).includes("/js/chunk-guess.js"), "T3：首屏不取 chunk-guess.js");
+  // v8-4-plan T2: ten from the bundle, thirty more once chunk-classics-more.js is in
+  await pg.waitForFunction(() => document.querySelectorAll("#lesson-list button[data-gs]").length === 40, null, { timeout: 8000 }).catch(() => {});
   const entries = await pg.evaluate(() => [...document.querySelectorAll("#lesson-list button[data-gs]")].map((b) => b.textContent));
-  assert(entries.length === 10, "T3：学习目录里 10 局名局都能猜（" + entries.length + "）");
+  assert(entries.length === 40, "T2（8.4）：学习目录里 40 局名局都能猜（" + entries.length + "）");
+  assert(served.slice(from).includes("/js/chunk-classics-more.js"), "T2（8.4）：目录画出来以后才取 chunk-classics-more.js");
+  const eras = await pg.evaluate(() => [...document.querySelectorAll("#lesson-list .lesson-part")].map((h) => h.textContent).filter((x) => /名局猜着/.test(x)));
+  assert(eras.length === 5 && eras.slice(1).every((x) => / · /.test(x)), "T2（8.4）：名局猜着按时代分组（" + eras.join(" | ") + "）");
 
   // the scripted engine: White-view cp by position (the first four FEN fields)
   const master = [];
@@ -1798,6 +1803,27 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     document.querySelector('#lesson-list button[data-gs="0"]').click();
   });
   assert(await waitAt(0), "T3：重新载入之后（gs 被改坏）照样能开始猜");
+
+  // (6) v8-4-plan T2: one of the thirty from the chunk — its card reads the
+  // game's own paragraph before the first guess, in the reader's language;
+  // 读棋 on it shows the paragraph at move 0 and the first note at its ply
+  await pg.waitForFunction(() => document.querySelectorAll("#lesson-list button[data-gs]").length === 40, null, { timeout: 8000 }).catch(() => {});
+  await pg.evaluate(() => document.querySelector('#lesson-list button[data-gs="10"]').click()); // La Bourdonnais – McDonnell, 0-1
+  assert(await waitAt(1), "T2（8.4）：新的一局（黑胜）默认猜黑方");
+  const about = await pg.evaluate(() => { const e = document.getElementById("gs-about"); return e && !e.hidden ? e.textContent : ""; });
+  assert(/1834/.test(about), "T2（8.4）：猜第一步之前，卡片上有这一局的开场白（" + about.slice(0, 30) + "…）");
+  const title10 = (await panel()).title;
+  assert(/德拉布尔多内/.test(title10) && /1834/.test(title10), "T2（8.4）：标题是新的一局（" + title10 + "）");
+  await pg.evaluate(() => document.querySelector('#lang-seg button[data-lang="en"]').click());
+  await pg.waitForTimeout(600);
+  const aboutEn = await pg.evaluate(() => document.getElementById("gs-about").textContent);
+  assert(/La Bourdonnais/.test(aboutEn) && !/[一-鿿]/.test(aboutEn + (await panel()).title), "T2（8.4）：英文下开场白与标题是英文（" + aboutEn.slice(0, 40) + "…）");
+  await pg.evaluate(() => document.querySelector('#lang-seg button[data-lang="zh-CN"]').click());
+  await pg.waitForTimeout(600);
+  await pg.click("#gs-quit");
+  await pg.waitForTimeout(400);
+  const read = await pg.evaluate(() => document.getElementById("lesson-text").textContent);
+  assert(/1834/.test(read) && /麦克唐奈/.test(read), "T2（8.4）：读棋第 0 步也有开场白（" + read.slice(0, 40) + "…）");
   assert(errsG.length === 0, "T3：全程没有页面异常 — " + errsG.join(" / "));
   await ctxG.close();
 }
