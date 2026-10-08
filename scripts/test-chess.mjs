@@ -7042,11 +7042,12 @@ for (const lang of CONTENT_LANGS) {
   // 8.1.0 (168acc2) built by its own bundle.mjs: exactly 900,972 bytes, and
   // the plan's line was 910,972 (10,000, not 10,240); 8.2.0 shipped 907,245.
   // v8-3-plan F4: the same line moved up for 8.3 — 8.2.1 (edaf3b7, no page
-  // change since 8.2.0) is exactly 907,245 bytes; 8.3 may add 10,000 over it.
-  const BUNDLE_BYTES_AT_821 = 907245;
-  const BUNDLE_GROWTH_83 = 10000;
-  assert(bundleBytes <= BUNDLE_BYTES_AT_821 + BUNDLE_GROWTH_83,
-    "v8-3-plan F4: bundle.js grows at most 10 KB over 8.2.1 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_AT_821 + BUNDLE_GROWTH_83 ? " ≤ " : " > ") + (BUNDLE_BYTES_AT_821 + BUNDLE_GROWTH_83) + " bytes) — 8.3 content goes in chunks");
+  // change since 8.2.0) is exactly 907,245 bytes; 8.3 could add 10,000 over it.
+  // v8-4-plan §2: and again for 8.4 — 8.3.0 (e6cdabe) shipped 908,392 bytes.
+  const BUNDLE_BYTES_AT_830 = 908392;
+  const BUNDLE_GROWTH_84 = 10000;
+  assert(bundleBytes <= BUNDLE_BYTES_AT_830 + BUNDLE_GROWTH_84,
+    "v8-4-plan §2: bundle.js grows at most 10 KB over 8.3.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_AT_830 + BUNDLE_GROWTH_84 ? " ≤ " : " > ") + (BUNDLE_BYTES_AT_830 + BUNDLE_GROWTH_84) + " bytes) — 8.4 content goes in chunks");
   // …minified without renaming: a player's stack trace still names the code
   assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
     "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");

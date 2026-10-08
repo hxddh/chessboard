@@ -537,6 +537,46 @@
         "jobs": 39,
         "green": true,
         "label": "8.4 计划（PR #107）"
+      },
+      {
+        "run": 37724544408,
+        "sha": "62f5ab1",
+        "wall": 14.7,
+        "critical": "browser (webkit, lessons)",
+        "criticalMin": 8,
+        "jobs": 39,
+        "green": true,
+        "label": "8.4 D1（PR #107）"
+      },
+      {
+        "run": 37728142024,
+        "sha": "e2d58b3",
+        "wall": 14.7,
+        "critical": "browser (webkit, lessons)",
+        "criticalMin": 7.7,
+        "jobs": 39,
+        "green": true,
+        "label": "8.4 M1（PR #108）"
+      },
+      {
+        "run": 37730411550,
+        "sha": "ff88383",
+        "wall": 16.2,
+        "critical": "browser (webkit, lessons)",
+        "criticalMin": 7.7,
+        "jobs": 39,
+        "green": true,
+        "label": "8.4 M2 T1+T2（PR #109）"
+      },
+      {
+        "run": 37735664741,
+        "sha": "8ee572f",
+        "wall": 13.7,
+        "critical": "browser (webkit, panel layout 4/5)",
+        "criticalMin": 7.7,
+        "jobs": 39,
+        "green": true,
+        "label": "8.4 M2（PR #109）"
       }
     ]
   },
