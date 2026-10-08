@@ -22,6 +22,9 @@
  *     player did since, an 8.2 review key is rebuilt by 8.2's own rule (its
  *     module from the v8.2.1 tag), a cancelled search is asked again, the
  *     Hash setting does not reach these searches, and leaving stops them
+ *   - (l) v8-4-plan T1: the first question of a set is up within 1 s (CI:
+ *     2.5 s); a review whose key kept its engine plies searches nothing,
+ *     and a wrong answer to an 8.3 key files them
  *
  * The real Lichess index changes with every import, so this builds its own
  * page, where the answers are known: scripts/import-puzzles.mjs runs over the fixture
@@ -1326,7 +1329,134 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
     assert(hashes.length >= 3 && hashes.every((x) => x === "32"), "k/P3-1: 设置里 Hash 是 128，看 N 步的每次搜索仍按 32", hashes.join(","));
     await ctx.close();
   }
+  // (l) v8-4-plan T1: 开始一组到第一题出现 ≤ 1 s（CI 放宽）——新的一组；复习题带着
+  // 自己的引擎着法（vis.look.eng）时不搜；8.3 的键答错一次之后就带上
+  {
+    const cap = process.env.CI ? 2500 : 1000;
+    const firstAt = async (page) => {
+      const t0 = Date.now();
+      await page.click('#pz-mode-seg button[data-run="look"]');
+      const shown = await visMoves(page, 60000);
+      return { ms: Date.now() - t0, shown };
+    };
+    const gos = (page) => page.evaluate(() => window.__sent.filter((m) => /^go nodes /.test(m)).length);
+    {
+      const { ctx, page } = await open(null);
+      await watch(page);
+      const { ms, shown } = await firstAt(page);
+      assert(shown && ms <= cap, "l/T1: 新的一组，点下去到第一题出现 ≤ " + cap + " ms", ms + " ms");
+      await ctx.close();
+    }
+    if (qa) {
+      // the plies qa's key would keep, worked out here against the same Stockfish
+      const p = LOOK_POOL.find((x) => x.id === qa.pid);
+      const seen = new Map();
+      const tee = async (fen) => { const u = await best(fen); if (u) seen.set(VIS.fenTag(fen), u); return u; };
+      const again = await VIS.buildLook(Chess, p, qa.n, Number(qa.key.split("|")[2]), tee);
+      const eng = VIS.engPlies(Chess, again, seen);
+      assert(JSON.stringify(again) === JSON.stringify(qa) && eng.split(",").length >= 3, "l/T1: qa 的引擎着法（至少 3 步）", eng);
+      {
+        const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { solve: 0, miss: 1, q: { [qa.key]: due0 }, eng: { [qa.key]: eng } } } });
+        await watch(page);
+        const { ms, shown } = await firstAt(page);
+        assert(shown.includes(VIS.lineText(qa.start, qa.sans)) && await gos(page) === 0 && ms <= cap,
+          "l/T1: 复习题带着引擎着法：不搜一次，与引擎出的同一道题，第一题 ≤ " + cap + " ms", ms + " ms, " + await gos(page) + " 次搜索");
+        await ctx.close();
+      }
+      {
+        // 8.3's key (no plies): searched as before; a wrong answer files the plies with the key
+        const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { solve: 0, miss: 1, q: { [qa.key]: due0 } } } });
+        await watch(page);
+        const { shown } = await firstAt(page);
+        const searched = await gos(page);
+        const wrong = qa.t === "mate" ? (qa.mates.length ? "没有" : new Chess(qa.fen).moves()[0]) : wrongSquare(qa);
+        await page.fill("#pz-vis-in", wrong);
+        await page.press("#pz-vis-in", "Enter");
+        await page.waitForTimeout(400);
+        const look = ((await visState(page)).vis || {}).look || {};
+        assert(shown.includes(VIS.lineText(qa.start, qa.sans)) && searched >= 3 && look.q[qa.key] && look.eng && look.eng[qa.key] === eng,
+          "l/T1: 8.3 的复习键照旧搜出同一道题；答错后键旁记下这几步引擎着法", searched + " 次搜索, " + JSON.stringify(look.eng));
+        await ctx.close();
+      }
+    }
+  }
   realEngine = false;
+}
+
+// --- (l) v8-4-plan T3: a later import drops a puzzle the queues name ---------------
+// The bank is imported again over the fixture with F0001 left out (as a
+// refresh drops ids): it goes to lichess/old-NNNN.js. A 复习 entry, a blind
+// key `id|band` and a look key `id|N|seed|band` stored by the earlier import
+// must still open — the same puzzle, the same question — and stay queued.
+{
+  const TMP2 = fs.mkdtempSync(path.join(os.tmpdir(), "trainer-e2e-re-"));
+  // F0001 for 复习 and 盲走 (a mate in one ends the game: no look question
+  // after it), and the first bank puzzle a look question can be built on
+  let lq = null, lp = null;
+  for (const p of VIS.lookPool(LC)) {
+    for (let qs = 1; qs <= 50 && !lq; qs++) lq = await VIS.buildLook(Chess, p, VIS.N_MIN, qs);
+    if (lq) { lp = p; break; }
+  }
+  fs.cpSync(path.join(TMP, "lichess"), path.join(TMP2, "lichess"), { recursive: true });
+  const re = spawnSync(process.execPath, [path.join(HERE, "import-puzzles.mjs"), path.join(HERE, "fixtures", "lichess-sample.csv"),
+    "--out-dir", TMP2, "--seed", "1", "--exclude", "F0001" + (lp ? "," + lp.id : "")], { encoding: "utf8" });
+  const p1 = lcById("F0001");
+  const b1 = Math.floor(p1.rating / 200) * 200, bn = String(b1).padStart(4, "0");
+  const olds = fs.readdirSync(path.join(TMP2, "lichess")).filter((f) => f.startsWith("old-"));
+  assert(re.status === 0 && olds.includes("old-" + bn + ".js"), "l/T3: 重新导入去掉 F0001，它进了 old-" + bn + ".js", olds.join() + " " + (re.stderr || ""));
+  // serve the re-import: its index (in chunk-mined.js), its bands and the old rows
+  const saved = new Map(CHUNKS);
+  const idx2 = { name: "lc-reimport-index", setup(b) { b.onResolve({ filter: /puzzles-lc-index\.js$/ }, () => ({ path: path.join(TMP2, "puzzles-lc-index.js") })); } };
+  const tail = "\n;for (var k in __chunk) if (Object.prototype.hasOwnProperty.call(__chunk, k)) window[k] = __chunk[k];\n";
+  CHUNKS.set("chunk-mined.js", (await esbuild.build(Object.assign({ entryPoints: [path.join(ROOT, "js", "mined-chunk.js")], globalName: "__chunk", plugins: [idx2] }, OPTS))).outputFiles[0].text + tail);
+  for (const f of fs.readdirSync(path.join(TMP2, "lichess"))) {
+    const out = (f.startsWith("old-") ? "chunk-lc-old-" : "chunk-lc-") + f.slice(-7, -3) + ".js";
+    CHUNKS.set(out, (await esbuild.build(Object.assign({ entryPoints: [path.join(TMP2, "lichess", f)], globalName: "__chunk" }, OPTS))).outputFiles[0].text + tail);
+  }
+  const reBand = fs.readFileSync(path.join(TMP2, "lichess", "band-" + bn + ".js"), "utf8");
+  assert(!reBand.includes('["F0001",') && CHUNKS.has("chunk-lc-old-" + bn + ".js"), "l/T3: 新分块里没有它，旧题分块单独一个");
+
+  // 复习: the entry and its band note, as 8.3 stored them
+  {
+    const st = { v: 1, solved: {}, missed: { "lc-F0001": due0 }, bank: { "lc-F0001": b1 }, cat: "review" };
+    const { ctx, page } = await open(st);
+    const h = helpers(page);
+    await page.waitForTimeout(1500);
+    const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles") || "{}"));
+    assert(await h.faces(p1.fen) === true && await page.evaluate((g) => Array.isArray(window[g]), "LC_OLD_" + bn) && kept.missed && !!kept.missed["lc-F0001"],
+      "l/T3: 复习里那道新题库已没有的题照常摆出来（从旧题分块），队列里还在", JSON.stringify({ occ: await h.occupied(), missed: kept.missed }));
+    await ctx.close();
+  }
+  // 盲走: the key `id|band`
+  if (["m1", "m2"].includes(p1.cat)) {
+    const { ctx, page } = await open({ v: 1, solved: {}, vis: { blind: { solve: 0, miss: 1, q: { ["lc-F0001|" + b1]: due0 } } } });
+    const h = helpers(page);
+    await page.click('#pz-mode-seg button[data-run="blind"]');
+    await page.waitForTimeout(1200);
+    const st = await visState(page);
+    assert(await h.faces(p1.fen) !== null && !!(st.vis.blind.q || {})["lc-F0001|" + b1], "l/T3: 盲走的旧复习键照常出这道题，键还在",
+      JSON.stringify({ occ: await h.occupied(), q: st.vis.blind.q }));
+    await ctx.close();
+  } else assert(false, "l/T3: F0001 应是一步杀（盲走可出）", p1.cat);
+  // 看 N 步: the key `id|N|seed|band` builds the same question it was stored with
+  {
+    const q = lq;
+    const lb = lp && Math.floor(lp.rating / 200) * 200;
+    assert(!!q && q.key.endsWith("|" + lb) && !fs.readFileSync(path.join(TMP2, "lichess", "band-" + String(lb).padStart(4, "0") + ".js"), "utf8").includes(JSON.stringify(lp.id.slice(3)) + ","),
+      "l/T3: 一道看 N 步的复习题，它的题新库里也没有了", q && q.key);
+    if (q) {
+      const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { solve: 0, miss: 1, q: { [q.key]: due0 } } } });
+      await page.click('#pz-mode-seg button[data-run="look"]');
+      const shown = await visMoves(page);
+      const st = await visState(page);
+      assert(shown.includes(VIS.lineText(q.start, q.sans)) && !!(st.vis.look.q || {})[q.key], "l/T3: 看 N 步的旧复习键出的是同一道题，键还在",
+        shown + " | 期望 " + VIS.lineText(q.start, q.sans));
+      await ctx.close();
+    }
+  }
+  CHUNKS.clear();
+  for (const [k, v] of saved) CHUNKS.set(k, v);
+  fs.rmSync(TMP2, { recursive: true, force: true });
 }
 
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));

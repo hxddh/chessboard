@@ -40,6 +40,7 @@ import { makeScenarioGate } from "./e2e-shard.mjs";
 import { PAGE_HOOK, makeFrameWatch } from "./lib/frame-watch.mjs";
 import { layoutProbe } from "./lib/layout-probe.mjs";
 import { playOpera, analyseOpera } from "./lib/opera-fixture.mjs";
+import { loadAppModules } from "./lib/app-module.mjs";
 
 // v8-0-plan F1: SHARD=i/n runs every n-th scenario; unset runs all of them
 const scenario = makeScenarioGate(process.env.SHARD);
@@ -5219,6 +5220,18 @@ if (scenario()) {
       sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
   });
   const WIDE = { width: 1400, height: 900 }, NARROW = { width: 520, height: 800 };
+  // v8-4-plan T2: per language, the catalog index (10–39) of the game with
+  // the longest "white – black" and of the one with the longest intro
+  const LONGEST = {};
+  {
+    const m = loadAppModules(["src/web/js/classics-more.js", "src/web/js/classics-more-en.js", "src/web/js/classics-more-ja.js"]);
+    const G = m.CHESS_CLASSICS_MORE_ZH.games;
+    for (const lang of LANGS) {
+      const tr = (g) => (lang === "en" ? m.CHESS_CLASSICS_MORE_EN : lang === "ja" ? m.CHESS_CLASSICS_MORE_JA : null)?.[g.id] || g;
+      const top = (f) => 10 + G.reduce((b, g, i) => (f(tr(g)) > f(tr(G[b])) ? i : b), 0);
+      LONGEST[lang] = { title: top((x) => (x.white + x.black).length), intro: top((x) => x.intro.length) };
+    }
+  }
   /** probe at both sizes, back to the wide one after */
   const both = async (page) => {
     const out = [];
@@ -5270,6 +5283,27 @@ if (scenario()) {
         assert(end.cut.length === 0 && end.sideways <= 0, `${tag}: 终局卡没有被裁掉的字，页面不横向滚动` + (end.cut.length ? " — " + end.cut.join(", ") : ""));
         assert(end.n === 3 && end.rows === 1 && end.heights.length === 1 && end.spill.length === 0,
           `${tag}: 看这一步 / 换一方 / 读棋 一排、一样高、字在框里 (${end.n}; ${end.rows} 行; ${end.heights.join(", ")}; ${end.spill.join(", ") || "—"})`);
+      }
+      // v8-4-plan T2: of the forty, the game with the longest names and the
+      // one with the longest intro in this language — the card before the
+      // first guess (the intro is shown then), and the 40-entry catalog open
+      // beside it, at both sizes
+      await page.waitForFunction(() => document.querySelectorAll("#lesson-list button[data-gs]").length === 40, null, { timeout: 8000 }).catch(() => {});
+      assert((await page.evaluate(() => document.querySelectorAll("#lesson-list button[data-gs]").length)) === 40, `T2 (${lang}): 目录里 40 局名局猜着`);
+      for (const [what, ci] of [["最长的标题", LONGEST[lang].title], ["最长的开场白", LONGEST[lang].intro]]) {
+        await page.evaluate((i) => {
+          document.querySelector("#sec-learn details.reading-index").open = true;
+          document.querySelector('#lesson-list button[data-gs="' + i + '"]').click();
+        }, ci);
+        const shown = await page.waitForFunction(() => {
+          const e = document.getElementById("gs-about");
+          return !!e && !e.hidden && e.textContent.length > 20;
+        }, null, { timeout: 10000 }).then(() => true, () => false);
+        assert(shown, `T2 (${lang}): ${what}（第 ${ci} 局）开场白在卡片上`);
+        for (const [v, st] of await both(page)) {
+          const tag = `T2 (${lang}, ${v.width}×${v.height}) ${what}（第 ${ci} 局）`;
+          assert(st.cut.length === 0 && st.sideways <= 0, `${tag}: 标题、开场白、目录 40 局都没有被裁掉的字，页面不横向滚动` + (st.cut.length ? " — " + st.cut.join(", ") : ""));
+        }
       }
       assert(errs.length === 0, `T3 猜着 (${lang}): 没有页面异常 — ` + errs.join(" / "));
       await ctx.close();

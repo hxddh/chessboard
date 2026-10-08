@@ -152,13 +152,13 @@
     {
       "name": "Lichess 题库（lichess_db_puzzle.csv.zst）",
       "kind": "data (CC0)",
-      "current": "2026-09-09 的版本，导入 40,000 道（src/web/js/lichess/band-*.js）",
-      "pinnedIn": ["src/web/js/lichess/*.js 文件头", "scripts/import-puzzles.mjs"],
-      "latest": "Last-Modified 2026-09-09 17:40 GMT（304,429,328 字节）",
-      "source": ["curl -I https://database.lichess.org/lichess_db_puzzle.csv.zst"],
-      "checkedAt": "2026-09-29",
-      "recommendation": "not-needed",
-      "note": "已是最新一份。"
+      "current": "2026-10-02 的导出（sha256 76335bfa7d7c4a7f93c1366d81549e53951ebb79dd43d34904cab8f22d962f8d），导入 40,000 道（src/web/js/lichess/band-*.js）；上一次导入（2026-09-09 的导出）而新库没有的 13,386 行原样留在 src/web/js/lichess/old-*.js，只供复习按 id 查",
+      "pinnedIn": ["src/web/js/lichess/*.js 文件头", "src/web/js/puzzles-lc-index.js 文件头（Selected … of 6157342 rows）", "scripts/import-puzzles.mjs"],
+      "latest": "Last-Modified 2026-10-02 08:51:45 GMT（307,234,795 字节，6,157,342 行）",
+      "source": ["curl -I https://database.lichess.org/lichess_db_puzzle.csv.zst", "sha256sum 下载件（2026-10-08）"],
+      "checkedAt": "2026-10-08",
+      "recommendation": "done-8.4",
+      "note": "v8-4-plan T3：同一脚本、同一参数（--max 40000 --pool 1500 --seed 1 --min-rating 600 --max-rating 2800 --min-popularity 80 --min-plays 100 --max-rd 90，没有 --exclude）重抽。上一份是 2026-09-09 的导出（Last-Modified 2026-09-09 17:40 GMT，304,429,328 字节，当时没记 sha256）。11 个分段的题数与 8.3 相差 ≤ 0.59%，26 个有题的主题与「闪将」标记相差 ≤ 2.42%（验收线 5%）。旧库 40,000 道里 26,614 道在新库同一分段、局面与解法不变；6,535 道评级漂到别的分段、6,851 道不在新库——这 13,386 行原样留在 old-NNNN.js（import-puzzles.mjs droppedRows；--no-keep-old 可关）。同一导出在 scratch 目录与仓库里各导一次，11 个分段文件逐字节相同。Node 22 的 zstd 读 pzstd 照常。"
     },
     {
       "name": "Lichess 标准对局库（大师着法树的来源）",

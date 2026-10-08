@@ -1,0 +1,591 @@
+{
+ "depth": 18,
+ "flag": 20,
+ "engine": "third_party/stockfish/stockfish-19-lite-single (lib/sf-node.mjs)",
+ "games": [
+  {
+   "id": "morphy-opera-1858",
+   "plies": 33,
+   "moves": "e4 e5 Nf3 d6 d4 Bg4 dxe5 Bxf3 Qxf3 dxe5 Bc4 Nf6 Qb3 Qe7 Nc3 c6 Bg5 b5 Nxb5 cxb5 Bxb5+ Nbd7 O-O-O Rd8 Rxd7 Rxd7 Rd1 Qe6 Bxd7+ Nxd7 Qb8+ Nxb8 Rd8#",
+   "flagged": [],
+   "worst": 12.7,
+   "ms": 69854
+  },
+  {
+   "id": "anderssen-kieseritzky-1851",
+   "plies": 45,
+   "moves": "e4 e5 f4 exf4 Bc4 Qh4+ Kf1 b5 Bxb5 Nf6 Nf3 Qh6 d3 Nh5 Nh4 Qg5 Nf5 c6 g4 Nf6 Rg1 cxb5 h4 Qg6 h5 Qg5 Qf3 Ng8 Bxf4 Qf6 Nc3 Bc5 Nd5 Qxb2 Bd6 Bxg1 e5 Qxa1+ Ke2 Na6 Nxg7+ Kd8 Qf6+ Nxf6 Be7#",
+   "flagged": [
+    {
+     "ply": 35,
+     "san": "Bd6",
+     "best": "Re1",
+     "bestScore": 328,
+     "score": 0,
+     "drop": 27
+    },
+    {
+     "ply": 36,
+     "san": "Bxg1",
+     "best": "Qxa1+",
+     "bestScore": -62,
+     "score": -313,
+     "drop": 20.3
+    },
+    {
+     "ply": 37,
+     "san": "e5",
+     "best": "Re1",
+     "bestScore": 291,
+     "score": 0,
+     "drop": 24.5
+    },
+    {
+     "ply": 40,
+     "san": "Na6",
+     "best": "Ba6",
+     "bestScore": -206,
+     "score": -99997,
+     "drop": 31.9
+    }
+   ],
+   "worst": 31.9,
+   "ms": 182965
+  },
+  {
+   "id": "anderssen-dufresne-1852",
+   "plies": 47,
+   "moves": "e4 e5 Nf3 Nc6 Bc4 Bc5 b4 Bxb4 c3 Ba5 d4 exd4 O-O d3 Qb3 Qf6 e5 Qg6 Re1 Nge7 Ba3 b5 Qxb5 Rb8 Qa4 Bb6 Nbd2 Bb7 Ne4 Qf5 Bxd3 Qh5 Nf6+ gxf6 exf6 Rg8 Rad1 Qxf3 Rxe7+ Nxe7 Qxd7+ Kxd7 Bf5+ Ke8 Bd7+ Kf8 Bxe7#",
+   "flagged": [
+    {
+     "ply": 33,
+     "san": "Nf6+",
+     "best": "Ng3",
+     "bestScore": 545,
+     "score": 98,
+     "drop": 29.2
+    },
+    {
+     "ply": 38,
+     "san": "Qxf3",
+     "best": "Qh3",
+     "bestScore": -23,
+     "score": -482,
+     "drop": 33.4
+    }
+   ],
+   "worst": 33.4,
+   "ms": 124500
+  },
+  {
+   "id": "steinitz-bardeleben-1895",
+   "plies": 49,
+   "moves": "e4 e5 Nf3 Nc6 Bc4 Bc5 c3 Nf6 d4 exd4 cxd4 Bb4+ Nc3 d5 exd5 Nxd5 O-O Be6 Bg5 Be7 Bxd5 Bxd5 Nxd5 Qxd5 Bxe7 Nxe7 Re1 f6 Qe2 Qd7 Rac1 c6 d5 cxd5 Nd4 Kf7 Ne6 Rhc8 Qg4 g6 Ng5+ Ke8 Rxe7+ Kf8 Rf7+ Kg8 Rg7+ Kh8 Rxh7+",
+   "flagged": [],
+   "worst": 15.8,
+   "ms": 106393
+  },
+  {
+   "id": "lasker-bauer-1889",
+   "plies": 75,
+   "moves": "f4 d5 e3 Nf6 b3 e6 Bb2 Be7 Bd3 b6 Nc3 Bb7 Nf3 Nbd7 O-O O-O Ne2 c5 Ng3 Qc7 Ne5 Nxe5 Bxe5 Qc6 Qe2 a6 Nh5 Nxh5 Bxh7+ Kxh7 Qxh5+ Kg8 Bxg7 Kxg7 Qg4+ Kh7 Rf3 e5 Rh3+ Qh6 Rxh6+ Kxh6 Qd7 Bf6 Qxb7 Kg7 Rf1 Rab8 Qd7 Rfd8 Qg4+ Kf8 fxe5 Bg7 e6 Rb7 Qg6 f6 Rxf6+ Bxf6 Qxf6+ Ke8 Qh8+ Ke7 Qg7+ Kxe6 Qxb7 Rd6 Qxa6 d4 exd4 cxd4 h4 d3 Qxd3",
+   "flagged": [
+    {
+     "ply": 28,
+     "san": "Nxh5",
+     "best": "Rfc8",
+     "bestScore": -194,
+     "score": -540,
+     "drop": 20.8
+    }
+   ],
+   "worst": 20.8,
+   "ms": 446828
+  },
+  {
+   "id": "pillsbury-tarrasch-1895",
+   "plies": 103,
+   "moves": "d4 d5 c4 e6 Nc3 Nf6 Bg5 Be7 Nf3 Nbd7 Rc1 O-O e3 b6 cxd5 exd5 Bd3 Bb7 O-O c5 Re1 c4 Bb1 a6 Ne5 b5 f4 Re8 Qf3 Nf8 Ne2 Ne4 Bxe7 Rxe7 Bxe4 dxe4 Qg3 f6 Ng4 Kh8 f5 Qd7 Rf1 Rd8 Rf4 Qd6 Qh4 Rde8 Nc3 Bd5 Nf2 Qc6 Rf1 b4 Ne2 Qa4 Ng4 Nd7 R4f2 Kg8 Nc1 c3 b3 Qc6 h3 a5 Nh2 a4 g4 axb3 axb3 Ra8 g5 Ra3 Ng4 Bxb3 Rg2 Kh8 gxf6 gxf6 Nxb3 Rxb3 Nh6 Rg7 Rxg7 Kxg7 Qg3+ Kxh6 Kh1 Qd5 Rg1 Qxf5 Qh4+ Qh5 Qf4+ Qg5 Rxg5 fxg5 Qd6+ Kh5 Qxd7 c2 Qxh7#",
+   "flagged": [
+    {
+     "ply": 61,
+     "san": "Nc1",
+     "best": "Nf4",
+     "bestScore": 34,
+     "score": -207,
+     "drop": 21.3
+    },
+    {
+     "ply": 80,
+     "san": "gxf6",
+     "best": "Nxf6",
+     "bestScore": -72,
+     "score": -450,
+     "drop": 27.4
+    }
+   ],
+   "worst": 27.4,
+   "ms": 371573
+  },
+  {
+   "id": "capablanca-marshall-1918",
+   "plies": 71,
+   "moves": "e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7 Re1 b5 Bb3 O-O c3 d5 exd5 Nxd5 Nxe5 Nxe5 Rxe5 Nf6 Re1 Bd6 h3 Ng4 Qf3 Qh4 d4 Nxf2 Re2 Bg4 hxg4 Bh2+ Kf1 Bg3 Rxf2 Qh1+ Ke2 Bxf2 Bd2 Bh4 Qh3 Rae8+ Kd3 Qf1+ Kc2 Bf2 Qf3 Qg1 Bd5 c5 dxc5 Bxc5 b4 Bd6 a4 a5 axb5 axb4 Ra6 bxc3 Nxc3 Bb4 b6 Bxc3 Bxc3 h6 b7 Re3 Bxf7+",
+   "flagged": [],
+   "worst": 5.7,
+   "ms": 211947
+  },
+  {
+   "id": "reti-bogoljubov-1924",
+   "plies": 49,
+   "moves": "Nf3 Nf6 c4 e6 g3 d5 Bg2 Bd6 O-O O-O b3 Re8 Bb2 Nbd7 d4 c6 Nbd2 Ne4 Nxe4 dxe4 Ne5 f5 f3 exf3 Bxf3 Qc7 Nxd7 Bxd7 e4 e5 c5 Bf8 Qc2 exd4 exf5 Rad8 Bh5 Re5 Bxd4 Rxf5 Rxf5 Bxf5 Qxf5 Rxd4 Rf1 Rd8 Bf7+ Kh8 Be8",
+   "flagged": [],
+   "worst": 11.4,
+   "ms": 137310
+  },
+  {
+   "id": "rotlewi-rubinstein-1907",
+   "plies": 50,
+   "moves": "d4 d5 Nf3 e6 e3 c5 c4 Nc6 Nc3 Nf6 dxc5 Bxc5 a3 a6 b4 Bd6 Bb2 O-O Qd2 Qe7 Bd3 dxc4 Bxc4 b5 Bd3 Rd8 Qe2 Bb7 O-O Ne5 Nxe5 Bxe5 f4 Bc7 e4 Rac8 e5 Bb6+ Kh1 Ng4 Be4 Qh4 g3 Rxc3 gxh4 Rd2 Qxd2 Bxe4+ Qg2 Rh3",
+   "flagged": [],
+   "worst": 14.6,
+   "ms": 108320
+  },
+  {
+   "id": "bernstein-capablanca-1914",
+   "plies": 58,
+   "moves": "d4 d5 c4 e6 Nc3 Nf6 Nf3 Be7 Bg5 O-O e3 Nbd7 Rc1 b6 cxd5 exd5 Qa4 Bb7 Ba6 Bxa6 Qxa6 c5 Bxf6 Nxf6 dxc5 bxc5 O-O Qb6 Qe2 c4 Rfd1 Rfd8 Nd4 Bb4 b3 Rac8 bxc4 dxc4 Rc2 Bxc3 Rxc3 Nd5 Rc2 c3 Rdc1 Rc5 Nb3 Rc6 Nd4 Rc7 Nb5 Rc5 Nxc3 Nxc3 Rxc3 Rxc3 Rxc3 Qb2",
+   "flagged": [
+    {
+     "ply": 53,
+     "san": "Nxc3",
+     "best": "Nd4",
+     "bestScore": -23,
+     "score": -530,
+     "drop": 35.4
+    }
+   ],
+   "worst": 35.4,
+   "ms": 174649
+  },
+  {
+   "id": "labourdonnais-mcdonnell-1834",
+   "plies": 72,
+   "moves": "d4 d5 c4 dxc4 e4 e5 d5 f5 Nc3 Nf6 Bxc4 Bc5 Nf3 Qe7 Bg5 Bxf2+ Kf1 Bb6 Qe2 f4 Rd1 Bg4 d6 cxd6 Nd5 Nxd5 Bxe7 Ne3+ Ke1 Kxe7 Qd3 Rd8 Rd2 Nc6 b3 Ba5 a3 Rac8 Rg1 b5 Bxb5 Bxf3 gxf3 Nd4 Bc4 Nxf3+ Kf2 Nxd2 Rxg7+ Kf6 Rf7+ Kg6 Rb7 Ndxc4 bxc4 Rxc4 Qb1 Bb6 Kf3 Rc3 Qa2 Nc4+ Kg4 Rg8 Rxb6 axb6 Kh4 Kf6 Qe2 Rg6 Qh5 Ne3",
+   "flagged": [
+    {
+     "ply": 17,
+     "san": "Kf1",
+     "best": "Kxf2",
+     "bestScore": 179,
+     "score": -83,
+     "drop": 23.5
+    }
+   ],
+   "worst": 23.5,
+   "ms": 199377
+  },
+  {
+   "id": "paulsen-morphy-1857",
+   "plies": 56,
+   "moves": "e4 e5 Nf3 Nc6 Nc3 Nf6 Bb5 Bc5 O-O O-O Nxe5 Re8 Nxc6 dxc6 Bc4 b5 Be2 Nxe4 Nxe4 Rxe4 Bf3 Re6 c3 Qd3 b4 Bb6 a4 bxa4 Qxa4 Bd7 Ra2 Rae8 Qa6 Qxf3 gxf3 Rg6+ Kh1 Bh3 Rd1 Bg2+ Kg1 Bxf3+ Kf1 Bg2+ Kg1 Bh3+ Kh1 Bxf2 Qf1 Bxf1 Rxf1 Re2 Ra1 Rh6 d4 Be3",
+   "flagged": [
+    {
+     "ply": 39,
+     "san": "Rd1",
+     "best": "Qd3",
+     "bestScore": -113,
+     "score": -484,
+     "drop": 25.3
+    }
+   ],
+   "worst": 25.3,
+   "ms": 141967
+  },
+  {
+   "id": "bird-morphy-1858",
+   "plies": 58,
+   "moves": "e4 e5 Nf3 d6 d4 f5 Nc3 fxe4 Nxe4 d5 Ng3 e4 Ne5 Nf6 Bg5 Bd6 Nh5 O-O Qd2 Qe8 g4 Nxg4 Nxg4 Qxh5 Ne5 Nc6 Be2 Qh3 Nxc6 bxc6 Be3 Rb8 O-O-O Rxf2 Bxf2 Qa3 c3 Qxa2 b4 Qa1+ Kc2 Qa4+ Kb2 Bxb4 cxb4 Rxb4+ Qxb4 Qxb4+ Kc2 e3 Bxe3 Bf5+ Rd3 Qc4+ Kd2 Qa2+ Kd1 Qb1+",
+   "flagged": [
+    {
+     "ply": 43,
+     "san": "Kb2",
+     "best": "Kc1",
+     "bestScore": -61,
+     "score": -522,
+     "drop": 31.6
+    }
+   ],
+   "worst": 31.6,
+   "ms": 144661
+  },
+  {
+   "id": "zukertort-blackburne-1883",
+   "plies": 65,
+   "moves": "c4 e6 e3 Nf6 Nf3 b6 Be2 Bb7 O-O d5 d4 Bd6 Nc3 O-O b3 Nbd7 Bb2 Qe7 Nb5 Ne4 Nxd6 cxd6 Nd2 Ndf6 f3 Nxd2 Qxd2 dxc4 Bxc4 d5 Bd3 Rfc8 Rae1 Rc7 e4 Rac8 e5 Ne8 f4 g6 Re3 f5 exf6 Nxf6 f5 Ne4 Bxe4 dxe4 fxg6 Rc2 gxh7+ Kh8 d5+ e5 Qb4 R8c5 Rf8+ Kxh7 Qxe4+ Kg7 Bxe5+ Kxf8 Bg7+ Kg8 Qxe7",
+   "flagged": [],
+   "worst": 6.1,
+   "ms": 134876
+  },
+  {
+   "id": "chigorin-steinitz-1890",
+   "plies": 75,
+   "moves": "e4 e5 Nf3 Nc6 Bc4 Bc5 b4 Bxb4 c3 Ba5 O-O Qf6 d4 Nh6 Bg5 Qd6 d5 Nd8 Qa4 Bb6 Na3 c6 Be2 Bc7 Nc4 Qf8 d6 Bxd6 Nb6 Rb8 Qxa7 Ne6 Bc1 Ng8 Ba3 c5 Rad1 Nf6 Bc4 Bc7 Nd5 Bd6 Nh4 Nxd5 Nf5 g6 Nxd6+ Qxd6 Bxd5 Qc7 Bxe6 fxe6 Bxc5 Ra8 Qxa8 Qxc5 Qa4 Kd8 Rd2 Kc7 Rb1 Rd8 Rb5 Qc6 Qb4 d6 a4 Qe8 Rb6 Qf8 Qa5 d5 exd5 Kb8 d6",
+   "flagged": [],
+   "worst": 8.4,
+   "ms": 199931
+  },
+  {
+   "id": "steinitz-chigorin-1892",
+   "plies": 55,
+   "moves": "e4 e5 Nf3 Nc6 Bb5 Nf6 d3 d6 c3 g6 Nbd2 Bg7 Nf1 O-O Ba4 Nd7 Ne3 Nc5 Bc2 Ne6 h4 Ne7 h5 d5 hxg6 fxg6 exd5 Nxd5 Nxd5 Qxd5 Bb3 Qc6 Qe2 Bd7 Be3 Kh8 O-O-O Rae8 Qf1 a5 d4 exd4 Nxd4 Bxd4 Rxd4 Nxd4 Rxh7+ Kxh7 Qh1+ Kg7 Bh6+ Kf6 Qh4+ Ke5 Qxd4+",
+   "flagged": [],
+   "worst": 19.3,
+   "ms": 203761
+  },
+  {
+   "id": "pillsbury-lasker-1896",
+   "plies": 64,
+   "moves": "d4 d5 c4 e6 Nc3 Nf6 Nf3 c5 Bg5 cxd4 Qxd4 Nc6 Qh4 Be7 O-O-O Qa5 e3 Bd7 Kb1 h6 cxd5 exd5 Nd4 O-O Bxf6 Bxf6 Qh5 Nxd4 exd4 Be6 f4 Rac8 f5 Rxc3 fxe6 Ra3 exf7+ Rxf7 bxa3 Qb6+ Bb5 Qxb5+ Ka1 Rc7 Rd2 Rc4 Rhd1 Rc3 Qf5 Qc4 Kb2 Rxa3 Qe6+ Kh7 Kxa3 Qc3+ Ka4 b5+ Kxb5 Qc4+ Ka5 Bd8+ Qb6 Bxb6#",
+   "flagged": [
+    {
+     "ply": 37,
+     "san": "exf7+",
+     "best": "bxa3",
+     "bestScore": -91,
+     "score": -432,
+     "drop": 24.8
+    },
+    {
+     "ply": 44,
+     "san": "Rc7",
+     "best": "Qc4",
+     "bestScore": 363,
+     "score": 0,
+     "drop": 29.2
+    },
+    {
+     "ply": 47,
+     "san": "Rhd1",
+     "best": "Re1",
+     "bestScore": 0,
+     "score": -262,
+     "drop": 22.4
+    },
+    {
+     "ply": 48,
+     "san": "Rc3",
+     "best": "Qc6",
+     "bestScore": 267,
+     "score": -89,
+     "drop": 30.9
+    },
+    {
+     "ply": 54,
+     "san": "Kh7",
+     "best": "Kh8",
+     "bestScore": 433,
+     "score": 0,
+     "drop": 33.1
+    },
+    {
+     "ply": 55,
+     "san": "Kxa3",
+     "best": "Qf5+",
+     "bestScore": 0,
+     "score": -99995,
+     "drop": 50
+    }
+   ],
+   "worst": 50,
+   "ms": 196587
+  },
+  {
+   "id": "pillsbury-lasker-1904",
+   "plies": 59,
+   "moves": "d4 d5 c4 e6 Nc3 Nf6 Nf3 c5 Bg5 cxd4 Qxd4 Nc6 Bxf6 gxf6 Qh4 dxc4 Rd1 Bd7 e3 Ne5 Nxe5 fxe5 Qxc4 Qb6 Be2 Qxb2 O-O Rc8 Qd3 Rc7 Ne4 Be7 Nd6+ Kf8 Nc4 Qb4 f4 exf4 Qd4 f6 Qxf4 Qc5 Ne5 Be8 Ng4 f5 Qh6+ Kf7 Bc4 Rc6 Rxf5+ Qxf5 Rf1 Qxf1+ Kxf1 Bd7 Qh5+ Kg8 Ne5",
+   "flagged": [
+    {
+     "ply": 37,
+     "san": "f4",
+     "best": "Nxe5",
+     "bestScore": 24,
+     "score": -254,
+     "drop": 24
+    },
+    {
+     "ply": 38,
+     "san": "exf4",
+     "best": "Bb5",
+     "bestScore": 230,
+     "score": -541,
+     "drop": 58
+    }
+   ],
+   "worst": 58,
+   "ms": 229905
+  },
+  {
+   "id": "rubinstein-lasker-1909",
+   "plies": 79,
+   "moves": "d4 d5 Nf3 Nf6 c4 e6 Bg5 c5 cxd5 exd5 Nc3 cxd4 Nxd4 Nc6 e3 Be7 Bb5 Bd7 Bxf6 Bxf6 Nxd5 Bxd4 exd4 Qg5 Bxc6 Bxc6 Ne3 O-O-O O-O Rhe8 Rc1 Rxe3 Rxc6+ bxc6 Qc1 Rxd4 fxe3 Rd7 Qxc6+ Kd8 Rf4 f5 Qc5 Qe7 Qxe7+ Kxe7 Rxf5 Rd1+ Kf2 Rd2+ Kf3 Rxb2 Ra5 Rb7 Ra6 Kf8 e4 Rc7 h4 Kf7 g4 Kf8 Kf4 Ke7 h5 h6 Kf5 Kf7 e5 Rb7 Rd6 Ke7 Ra6 Kf7 Rd6 Kf8 Rc6 Kf7 a3",
+   "flagged": [],
+   "worst": 10.1,
+   "ms": 126634
+  },
+  {
+   "id": "levitsky-marshall-1912",
+   "plies": 46,
+   "moves": "e4 e6 d4 d5 Nc3 c5 Nf3 Nc6 exd5 exd5 Be2 Nf6 O-O Be7 Bg5 O-O dxc5 Be6 Nd4 Bxc5 Nxe6 fxe6 Bg4 Qd6 Bh3 Rae8 Qd2 Bb4 Bxf6 Rxf6 Rad1 Qc5 Qe2 Bxc3 bxc3 Qxc3 Rxd5 Nd4 Qh5 Ref8 Re5 Rh6 Qg5 Rxh3 Rc5 Qg3",
+   "flagged": [
+    {
+     "ply": 39,
+     "san": "Qh5",
+     "best": "Qe4",
+     "bestScore": -8,
+     "score": -428,
+     "drop": 32.1
+    }
+   ],
+   "worst": 32.1,
+   "ms": 142237
+  },
+  {
+   "id": "edlasker-thomas-1912",
+   "plies": 35,
+   "moves": "d4 e6 Nf3 f5 Nc3 Nf6 Bg5 Be7 Bxf6 Bxf6 e4 fxe4 Nxe4 b6 Ne5 O-O Bd3 Bb7 Qh5 Qe7 Qxh7+ Kxh7 Nxf6+ Kh6 Neg4+ Kg5 h4+ Kf4 g3+ Kf3 Be2+ Kg2 Rh2+ Kg1 Kd2#",
+   "flagged": [
+    {
+     "ply": 20,
+     "san": "Qe7",
+     "best": "Bxe5",
+     "bestScore": 0,
+     "score": -99993,
+     "drop": 50
+    }
+   ],
+   "worst": 50,
+   "ms": 56588
+  },
+  {
+   "id": "lasker-capablanca-1914",
+   "plies": 83,
+   "moves": "e4 e5 Nf3 Nc6 Bb5 a6 Bxc6 dxc6 d4 exd4 Qxd4 Qxd4 Nxd4 Bd6 Nc3 Ne7 O-O O-O f4 Re8 Nb3 f6 f5 b6 Bf4 Bb7 Bxd6 cxd6 Nd4 Rad8 Ne6 Rd7 Rad1 Nc8 Rf2 b5 Rfd2 Rde7 b4 Kf7 a3 Ba8 Kf2 Ra7 g4 h6 Rd3 a5 h4 axb4 axb4 Rae7 Kf3 Rg8 Kf4 g6 Rg3 g5+ Kf3 Nb6 hxg5 hxg5 Rh3 Rd7 Kg3 Ke8 Rdh1 Bb7 e5 dxe5 Ne4 Nd5 N6c5 Bc8 Nxd7 Bxd7 Rh7 Rf8 Ra1 Kd8 Ra8+ Bc8 Nc5",
+   "flagged": [],
+   "worst": 11.6,
+   "ms": 201928
+  },
+  {
+   "id": "nimzowitsch-tarrasch-1914",
+   "plies": 64,
+   "moves": "d4 d5 Nf3 c5 c4 e6 e3 Nf6 Bd3 Nc6 O-O Bd6 b3 O-O Bb2 b6 Nbd2 Bb7 Rc1 Qe7 cxd5 exd5 Nh4 g6 Nhf3 Rad8 dxc5 bxc5 Bb5 Ne4 Bxc6 Bxc6 Qc2 Nxd2 Nxd2 d4 exd4 Bxh2+ Kxh2 Qh4+ Kg1 Bxg2 f3 Rfe8 Ne4 Qh1+ Kf2 Bxf1 d5 f5 Qc3 Qg2+ Ke3 Rxe4+ fxe4 f4+ Kxf4 Rf8+ Ke5 Qh2+ Ke6 Re8+ Kd7 Bb5#",
+   "flagged": [
+    {
+     "ply": 37,
+     "san": "exd4",
+     "best": "g3",
+     "bestScore": -81,
+     "score": -620,
+     "drop": 33.3
+    }
+   ],
+   "worst": 33.3,
+   "ms": 174313
+  },
+  {
+   "id": "bogoljubov-alekhine-1922",
+   "plies": 106,
+   "moves": "d4 f5 c4 Nf6 g3 e6 Bg2 Bb4+ Bd2 Bxd2+ Nxd2 Nc6 Ngf3 O-O O-O d6 Qb3 Kh8 Qc3 e5 e3 a5 b3 Qe8 a3 Qh5 h4 Ng4 Ng5 Bd7 f3 Nf6 f4 e4 Rfd1 h6 Nh3 d5 Nf1 Ne7 a4 Nc6 Rd2 Nb4 Bh1 Qe8 Rg2 dxc4 bxc4 Bxa4 Nf2 Bd7 Nd2 b5 Nd1 Nd3 Rxa5 b4 Rxa8 bxc3 Rxe8 c2 Rxf8+ Kh7 Nf2 c1=Q+ Nf1 Ne1 Rh2 Qxc4 Rb8 Bb5 Rxb5 Qxb5 g4 Nf3+ Bxf3 exf3 gxf5 Qe2 d5 Kg8 h5 Kh7 e4 Nxe4 Nxe4 Qxe4 d6 cxd6 f6 gxf6 Rd2 Qe2 Rxe2 fxe2 Kf2 exf1=Q+ Kxf1 Kg7 Kf2 Kf7 Ke3 Ke6 Ke4 d5+",
+   "flagged": [],
+   "worst": 11,
+   "ms": 236932
+  },
+  {
+   "id": "saemisch-nimzowitsch-1923",
+   "plies": 50,
+   "moves": "d4 Nf6 c4 e6 Nf3 b6 g3 Bb7 Bg2 Be7 Nc3 O-O O-O d5 Ne5 c6 cxd5 cxd5 Bf4 a6 Rc1 b5 Qb3 Nc6 Nxc6 Bxc6 h3 Qd7 Kh2 Nh5 Bd2 f5 Qd1 b4 Nb1 Bb5 Rg1 Bd6 e4 fxe4 Qxh5 Rxf2 Qg5 Raf8 Kh1 R8f5 Qe3 Bd3 Rce1 h6",
+   "flagged": [],
+   "worst": 14.1,
+   "ms": 174213
+  },
+  {
+   "id": "reti-capablanca-1924",
+   "plies": 61,
+   "moves": "Nf3 Nf6 c4 g6 b4 Bg7 Bb2 O-O g3 b6 Bg2 Bb7 O-O d6 d3 Nbd7 Nbd2 e5 Qc2 Re8 Rfd1 a5 a3 h6 Nf1 c5 b5 Nf8 e3 Qc7 d4 Be4 Qc3 exd4 exd4 N6d7 Qd2 cxd4 Bxd4 Qxc4 Bxg7 Kxg7 Qb2+ Kg8 Rxd6 Qc5 Rad1 Ra7 Ne3 Qh5 Nd4 Bxg2 Kxg2 Qe5 Nc4 Qc5 Nc6 Rc7 Ne3 Ne5 R1d5",
+   "flagged": [],
+   "worst": 16.3,
+   "ms": 202823
+  },
+  {
+   "id": "capablanca-tartakower-1924",
+   "plies": 103,
+   "moves": "d4 e6 Nf3 f5 c4 Nf6 Bg5 Be7 Nc3 O-O e3 b6 Bd3 Bb7 O-O Qe8 Qe2 Ne4 Bxe7 Nxc3 bxc3 Qxe7 a4 Bxf3 Qxf3 Nc6 Rfb1 Rae8 Qh3 Rf6 f4 Na5 Qf3 d6 Re1 Qd7 e4 fxe4 Qxe4 g6 g3 Kf8 Kg2 Rf7 h4 d5 cxd5 exd5 Qxe8+ Qxe8 Rxe8+ Kxe8 h5 Rf6 hxg6 hxg6 Rh1 Kf8 Rh7 Rc6 g4 Nc4 g5 Ne3+ Kf3 Nf5 Bxf5 gxf5 Kg3 Rxc3+ Kh4 Rf3 g6 Rxf4+ Kg5 Re4 Kf6 Kg8 Rg7+ Kh8 Rxc7 Re8 Kxf5 Re4 Kf6 Rf4+ Ke5 Rg4 g7+ Kg8 Rxa7 Rg1 Kxd5 Rc1 Kd6 Rc2 d5 Rc1 Rc7 Ra1 Kc6 Rxa4 d6",
+   "flagged": [],
+   "worst": 19.3,
+   "ms": 218217
+  },
+  {
+   "id": "torre-lasker-1925",
+   "plies": 85,
+   "moves": "d4 Nf6 Nf3 e6 Bg5 c5 e3 cxd4 exd4 Be7 Nbd2 d6 c3 Nbd7 Bd3 b6 Nc4 Bb7 Qe2 Qc7 O-O O-O Rfe1 Rfe8 Rad1 Nf8 Bc1 Nd5 Ng5 b5 Na3 b4 cxb4 Nxb4 Qh5 Bxg5 Bxg5 Nxd3 Rxd3 Qa5 b4 Qf5 Rg3 h6 Nc4 Qd5 Ne3 Qb5 Bf6 Qxh5 Rxg7+ Kh8 Rxf7+ Kg8 Rg7+ Kh8 Rxb7+ Kg8 Rg7+ Kh8 Rg5+ Kh7 Rxh5 Kg6 Rh3 Kxf6 Rxh6+ Kg5 Rh3 Reb8 Rg3+ Kf6 Rf3+ Kg6 a3 a5 bxa5 Rxa5 Nc4 Rd5 Rf4 Nd7 Rxe6+ Kg5 g3",
+   "flagged": [
+    {
+     "ply": 44,
+     "san": "h6",
+     "best": "f6",
+     "bestScore": 442,
+     "score": 19,
+     "drop": 31.8
+    },
+    {
+     "ply": 48,
+     "san": "Qb5",
+     "best": "Qxd4",
+     "bestScore": -178,
+     "score": -564,
+     "drop": 23
+    }
+   ],
+   "worst": 31.8,
+   "ms": 228108
+  },
+  {
+   "id": "reti-alekhine-1925",
+   "plies": 80,
+   "moves": "g3 e5 Nf3 e4 Nd4 d5 d3 exd3 Qxd3 Nf6 Bg2 Bb4+ Bd2 Bxd2+ Nxd2 O-O c4 Na6 cxd5 Nb4 Qc4 Nbxd5 N2b3 c6 O-O Re8 Rfd1 Bg4 Rd2 Qc8 Nc5 Bh3 Bf3 Bg4 Bg2 Bh3 Bf3 Bg4 Bh1 h5 b4 a6 Rc1 h4 a4 hxg3 hxg3 Qc7 b5 axb5 axb5 Re3 Nf3 cxb5 Qxb5 Nc3 Qxb7 Qxb7 Nxb7 Nxe2+ Kh2 Ne4 Rc4 Nxf2 Bg2 Be6 Rcc2 Ng4+ Kh3 Ne5+ Kh2 Rxf3 Rxe2 Ng4+ Kh3 Ne3+ Kh2 Nxc2 Bxf3 Nd4",
+   "flagged": [],
+   "worst": 12.7,
+   "ms": 216302
+  },
+  {
+   "id": "alekhine-nimzowitsch-1930",
+   "plies": 63,
+   "moves": "e4 e6 d4 d5 Nc3 Bb4 e5 c5 Bd2 Ne7 Nb5 Bxd2+ Qxd2 O-O c3 b6 f4 Ba6 Nf3 Qd7 a4 Nbc6 b4 cxb4 cxb4 Bb7 Nd6 f5 a5 Nc8 Nxb7 Qxb7 a6 Qf7 Bb5 N8e7 O-O h6 Rfc1 Rfc8 Rc2 Qe8 Rac1 Rab8 Qe3 Rc7 Rc3 Qd7 R1c2 Kf8 Qc1 Rbc8 Ba4 b5 Bxb5 Ke8 Ba4 Kd8 h4 h5 Kh2 g6 g3",
+   "flagged": [],
+   "worst": 19.7,
+   "ms": 102533
+  },
+  {
+   "id": "sultankhan-capablanca-1930",
+   "plies": 129,
+   "moves": "Nf3 Nf6 d4 b6 c4 Bb7 Nc3 e6 a3 d5 cxd5 exd5 Bg5 Be7 e3 O-O Bd3 Ne4 Bf4 Nd7 Qc2 f5 Nb5 Bd6 Nxd6 cxd6 h4 Rc8 Qb3 Qe7 Nd2 Ndf6 Nxe4 fxe4 Be2 Rc6 g4 Rfc8 g5 Ne8 Bg4 Rc1+ Kd2 R8c2+ Qxc2 Rxc2+ Kxc2 Qc7+ Kd2 Qc4 Be2 Qb3 Rab1 Kf7 Rhc1 Ke7 Rc3 Qa4 b4 Qd7 Rbc1 a6 Rg1 Qh3 Rgc1 Qd7 h5 Kd8 R1c2 Qh3 Kc1 Qh4 Kb2 Qh3 Rc1 Qh4 R3c2 Qh3 a4 Qh4 Ka3 Qh3 Bg3 Qf5 Bh4 g6 h6 Qd7 b5 a5 Bg3 Qf5 Bf4 Qh3 Kb2 Qg2 Kb1 Qh3 Ka1 Qg2 Kb2 Qh3 Rg1 Bc8 Rc6 Qh4 Rgc1 Bg4 Bf1 Qh5 Re1 Qh1 Rec1 Qh5 Kc3 Qh4 Bg3 Qxg5 Kd2 Qh5 Rxb6 Ke7 Rb7+ Ke6 b6 Nf6 Bb5 Qh3 Rb8",
+   "flagged": [],
+   "worst": 11.6,
+   "ms": 370283
+  },
+  {
+   "id": "menchik-euwe-1931",
+   "plies": 111,
+   "moves": "d4 d5 c4 c6 Nf3 Nf6 Nc3 dxc4 a4 Bf5 e3 Na6 Bxc4 Nb4 O-O e6 Ne5 Bd6 Qe2 c5 Bb5+ Ke7 e4 Bg6 Nxg6+ hxg6 e5 cxd4 Rd1 Bc7 exf6+ gxf6 g3 a6 Be3 Bb6 Bc4 Kf8 Ne4 Kg7 Rac1 Rh5 Bf4 e5 g4 Rh8 Bg3 Qe7 Nd2 Rhe8 Qe4 Qd7 Nf3 Qc6 Qxc6 Nxc6 Bd5 Rac8 Be4 Rc7 Ne1 Rec8 Nd3 Ne7 Rxc7 Rxc7 Kf1 Rc4 Bxb7 Rxa4 Rc1 g5 f3 Ra2 Be1 a5 Bd2 f5 gxf5 a4 Ke1 a3 b4 Kf6 Ba6 g4 Bc4 Rxd2 Kxd2 gxf3 Nc5 Kxf5 Bxf7 Bd8 Be6+ Kf6 Bg4 Nd5 Bxf3 Nxb4 Be4 Be7 Nd3 Na2 Rc6+ Kg5 Rg6+ Kh4 Nxe5 Nc3 Kd3",
+   "flagged": [],
+   "worst": 12.8,
+   "ms": 217848
+  },
+  {
+   "id": "alekhine-lasker-1934",
+   "plies": 51,
+   "moves": "d4 d5 c4 e6 Nc3 Nf6 Nf3 Be7 Bg5 Nbd7 e3 O-O Rc1 c6 Bd3 dxc4 Bxc4 Nd5 Bxe7 Qxe7 Ne4 N5f6 Ng3 e5 O-O exd4 Nf5 Qd8 N3xd4 Ne5 Bb3 Bxf5 Nxf5 Qb6 Qd6 Ned7 Rfd1 Rad8 Qg3 g6 Qg5 Kh8 Nd6 Kg7 e4 Ng8 Rd3 f6 Nf5+ Kh8 Qxg6",
+   "flagged": [
+    {
+     "ply": 48,
+     "san": "f6",
+     "best": "Ndf6",
+     "bestScore": -372,
+     "score": -99995,
+     "drop": 20.3
+    }
+   ],
+   "worst": 20.3,
+   "ms": 129183
+  },
+  {
+   "id": "euwe-alekhine-1935",
+   "plies": 93,
+   "moves": "d4 e6 c4 f5 g3 Bb4+ Bd2 Be7 Bg2 Nf6 Nc3 O-O Nf3 Ne4 O-O b6 Qc2 Bb7 Ne5 Nxc3 Bxc3 Bxg2 Kxg2 Qc8 d5 d6 Nd3 e5 Kh1 c6 Qb3 Kh8 f4 e4 Nb4 c5 Nc2 Nd7 Ne3 Bf6 Nxf5 Bxc3 Nxd6 Qb8 Nxe4 Bf6 Nd2 g5 e4 gxf4 gxf4 Bd4 e5 Qe8 e6 Rg8 Nf3 Qg6 Rg1 Bxg1 Rxg1 Qf6 Ng5 Rg7 exd7 Rxd7 Qe3 Re7 Ne6 Rf8 Qe5 Qxe5 fxe5 Rf5 Re1 h6 Nd8 Rf2 e6 Rd2 Nc6 Re8 e7 b5 Nd8 Kg7 Nb7 Kf6 Re6+ Kg5 Nd6 Rxe7 Ne4+",
+   "flagged": [
+    {
+     "ply": 76,
+     "san": "h6",
+     "best": "Rxe6",
+     "bestScore": -58,
+     "score": -346,
+     "drop": 22.8
+    }
+   ],
+   "worst": 22.8,
+   "ms": 289890
+  },
+  {
+   "id": "botvinnik-vidmar-1936",
+   "plies": 47,
+   "moves": "c4 e6 Nf3 d5 d4 Nf6 Nc3 Be7 Bg5 O-O e3 Nbd7 Bd3 c5 O-O cxd4 exd4 dxc4 Bxc4 Nb6 Bb3 Bd7 Qd3 Nbd5 Ne5 Bc6 Rad1 Nb4 Qh3 Bd5 Nxd5 Nbxd5 f4 Rc8 f5 exf5 Rxf5 Qd6 Nxf7 Rxf7 Bxf6 Bxf6 Rxd5 Qc6 Rd6 Qe8 Rd7",
+   "flagged": [],
+   "worst": 15.9,
+   "ms": 179574
+  },
+  {
+   "id": "keres-alekhine-1937",
+   "plies": 45,
+   "moves": "e4 e5 Nf3 Nc6 Bb5 a6 Ba4 d6 c4 Bd7 Nc3 g6 d4 Bg7 Be3 Nf6 dxe5 dxe5 Bc5 Nh5 Nd5 Nf4 Nxf4 exf4 e5 g5 Qd5 Bf8 Bxf8 Rxf8 O-O-O Qe7 Bxc6 Bxc6 Qd3 Bd7 Nxg5 O-O-O Nf3 f6 exf6 Rxf6 Rhe1 Qb4 Qxd7+",
+   "flagged": [
+    {
+     "ply": 44,
+     "san": "Qb4",
+     "best": "Qf8",
+     "bestScore": -171,
+     "score": -1900,
+     "drop": 34.7
+    }
+   ],
+   "worst": 34.7,
+   "ms": 100105
+  },
+  {
+   "id": "botvinnik-capablanca-1938",
+   "plies": 81,
+   "moves": "d4 Nf6 c4 e6 Nc3 Bb4 e3 d5 a3 Bxc3+ bxc3 c5 cxd5 exd5 Bd3 O-O Ne2 b6 O-O Ba6 Bxa6 Nxa6 Bb2 Qd7 a4 Rfe8 Qd3 c4 Qc2 Nb8 Rae1 Nc6 Ng3 Na5 f3 Nb3 e4 Qxa4 e5 Nd7 Qf2 g6 f4 f5 exf6 Nxf6 f5 Rxe1 Rxe1 Re8 Re6 Rxe6 fxe6 Kg7 Qf4 Qe8 Qe5 Qe7 Ba3 Qxa3 Nh5+ gxh5 Qg5+ Kf8 Qxf6+ Kg8 e7 Qc1+ Kf2 Qc2+ Kg3 Qd3+ Kh4 Qe4+ Kxh5 Qe2+ Kh4 Qe4+ g4 Qe1+ Kh5",
+   "flagged": [
+    {
+     "ply": 58,
+     "san": "Qe7",
+     "best": "h6",
+     "bestScore": -207,
+     "score": -586,
+     "drop": 21.5
+    }
+   ],
+   "worst": 21.5,
+   "ms": 151102
+  },
+  {
+   "id": "fine-botvinnik-1938",
+   "plies": 61,
+   "moves": "e4 e6 d4 d5 Nc3 Bb4 e5 c5 dxc5 Ne7 Nf3 Nbc6 Bd3 d4 a3 Ba5 b4 Nxb4 axb4 Bxb4 Bb5+ Nc6 Bxc6+ bxc6 Ra4 Bxc3+ Bd2 f6 O-O O-O Bxc3 dxc3 Qe1 a5 Qxc3 Ba6 Rfa1 Bb5 Rd4 Qe7 Rd6 a4 Qe3 Ra7 Nd2 a3 c4 Ba4 exf6 Qxf6 Rxa3 Re8 h3 Raa8 Nf3 Qb2 Ne5 Qb1+ Kh2 Qf5 Qg3",
+   "flagged": [],
+   "worst": 12.3,
+   "ms": 201066
+  },
+  {
+   "id": "smyslov-kottnauer-1946",
+   "plies": 41,
+   "moves": "e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 a6 Be2 e6 O-O b5 Bf3 Ra7 Qe2 Rc7 Rd1 Nbd7 a4 bxa4 Nxa4 Bb7 e5 Nxe5 Bxb7 Rxb7 Qxa6 Qb8 Nc6 Nxc6 Qxc6+ Nd7 Nc5 dxc5 Bf4 Bd6 Bxd6 Rb6 Qxd7+",
+   "flagged": [],
+   "worst": 9.7,
+   "ms": 92094
+  },
+  {
+   "id": "botvinnik-keres-1948",
+   "plies": 45,
+   "moves": "d4 Nf6 c4 e6 Nc3 Bb4 e3 O-O a3 Bxc3+ bxc3 Re8 Ne2 e5 Ng3 d6 Be2 Nbd7 O-O c5 f3 cxd4 cxd4 Nb6 Bb2 exd4 e4 Be6 Rc1 Re7 Qxd4 Qc7 c5 dxc5 Rxc5 Qf4 Bc1 Qb8 Rg5 Nbd7 Rxg7+ Kxg7 Nh5+ Kg6 Qe3",
+   "flagged": [],
+   "worst": 13.3,
+   "ms": 135418
+  }
+ ],
+ "summary": {
+  "games": 40,
+  "plies": 2643,
+  "flagged": 30,
+  "ms": 7332795
+ }
+}

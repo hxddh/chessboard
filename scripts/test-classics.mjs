@@ -26,12 +26,18 @@ function assert(cond, msg) {
 const ctx = loadAppModules([
   "src/web/js/chess.js", "src/web/js/classics.js",
   "src/web/js/classics-en.js", "src/web/js/classics-ja.js",
+  // v8-4-plan T2: the thirty of the chunk, same rules plus an era and an intro
+  "src/web/js/classics-more.js", "src/web/js/classics-more-en.js", "src/web/js/classics-more-ja.js",
 ]);
 const Chess = ctx.Chess;
-const games = ctx.CHESS_CLASSICS;
+const TEN = ctx.CHESS_CLASSICS;
+const MORE = ctx.CHESS_CLASSICS_MORE_ZH;
+const games = [...TEN, ...MORE.games];
+const more = new Set(MORE.games.map((g) => g.id));
 
 // ------------------------------------------------------------------ games
-assert(Array.isArray(games) && games.length >= 10, "classics loaded (" + (games ? games.length : 0) + ")");
+assert(TEN.length === 10 && MORE.games.length === 30 && games.length === 40,
+  "40 classics: 10 in the bundle, 30 in the chunk (" + TEN.length + " + " + MORE.games.length + ")");
 const ids = new Set();
 const plies = new Map();
 {
@@ -67,9 +73,16 @@ const plies = new Map();
       if (c.turn() !== loser) fail(g.id, "the winner is on move at the end — the losing side resigns on its own turn");
       if (c.in_stalemate() || c.insufficient_material()) fail(g.id, "decisive result on a drawn position");
     }
-    // notes: enough of them, in order, each at a ply that was played
-    if (!Array.isArray(g.notes) || g.notes.length < 6 || g.notes.length > 12) {
-      fail(g.id, "needs 6–12 notes, has", g.notes ? g.notes.length : 0);
+    // notes: enough of them, in order, each at a ply that was played. The
+    // ten are the 读棋 module's long reads (6–12); the thirty of v8-4-plan T2
+    // are shorter, 3–6, with an intro paragraph and an era in the catalog
+    const [lo, hi] = more.has(g.id) ? [3, 6] : [6, 12];
+    if (!Array.isArray(g.notes) || g.notes.length < lo || g.notes.length > hi) {
+      fail(g.id, "needs " + lo + "–" + hi + " notes, has", g.notes ? g.notes.length : 0);
+    }
+    if (more.has(g.id)) {
+      if (!MORE.groups.some((gr) => gr.id === g.g)) fail(g.id, "era group unknown:", g.g);
+      if (typeof g.intro !== "string" || g.intro.length < 20) fail(g.id, "needs an intro paragraph");
     }
     let last = 0;
     for (const note of g.notes || []) {
@@ -83,6 +96,9 @@ const plies = new Map();
       if (m) {
         const want = m[2] === "." ? Number(m[1]) * 2 - 1 : Number(m[1]) * 2;
         if (want !== note.ply) fail(g.id, "note quotes move " + m[1] + m[2] + " (ply " + want + ") but sits on ply " + note.ply);
+        // …and the move it quotes is the one played there (v8-4-plan T2)
+        const san = /^\d+\.{1,3}\s?((?:O-O(?:-O)?|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?)[+#]?)/.exec(note.text);
+        if (san && san[1] !== c.history()[note.ply - 1]) fail(g.id, "note at ply " + note.ply + " quotes " + san[1] + " but the move there is " + c.history()[note.ply - 1]);
       }
     }
     // the last note lands on the final ply, so the reader is told how it ended
@@ -145,9 +161,11 @@ function checkJapanese(label, table, kanaMin, minStrings) {
 }
 
 for (const lang of ["en", "ja"]) {
-  const table = ctx["CHESS_CLASSICS_" + lang.toUpperCase()];
-  assert(table && typeof table === "object", "classics-" + lang + ".js exports a table");
-  if (!table) continue;
+  const ten = ctx["CHESS_CLASSICS_" + lang.toUpperCase()];
+  const thirty = ctx["CHESS_CLASSICS_MORE_" + lang.toUpperCase()];
+  assert(ten && typeof ten === "object" && thirty && typeof thirty === "object", "classics-" + lang + ".js and classics-more-" + lang + ".js export tables");
+  if (!ten || !thirty) continue;
+  const table = Object.assign({}, ten, thirty);
   const byId = new Map(games.map((g) => [g.id, g]));
   const uncovered = games.filter((g) => !table[g.id]).map((g) => g.id);
   assert(uncovered.length === 0, "all " + games.length + " classics have " + lang + " text" + (uncovered.length ? ": " + uncovered.join(", ") : ""));
@@ -157,9 +175,10 @@ for (const lang of ["en", "ja"]) {
     const g = byId.get(id);
     if (!g) { fail(lang, "translation for unknown classic", id); continue; }
     for (const k of Object.keys(tr)) {
-      if (!["white", "black", "event", "notes"].includes(k)) fail(lang, id, "unexpected key in translation:", k);
+      if (!["white", "black", "event", "notes"].concat(more.has(id) ? ["intro"] : []).includes(k)) fail(lang, id, "unexpected key in translation:", k);
     }
-    for (const k of ["white", "black", "event"]) {
+    if (more.has(id) !== Object.prototype.hasOwnProperty.call(thirty, id)) fail(lang, id, "translation sits in the wrong file for its game");
+    for (const k of more.has(id) ? ["white", "black", "event", "intro"] : ["white", "black", "event"]) {
       if (typeof tr[k] !== "string" || !tr[k].trim()) fail(lang, id, "missing " + k);
       else if (untranslated(lang, tr[k], g[k])) fail(lang, id, k + " is untranslated:", tr[k]);
     }
@@ -170,10 +189,62 @@ for (const lang of ["en", "ja"]) {
       const t = tr.notes && tr.notes[n.ply];
       if (typeof t !== "string" || t.trim().length < 8) fail(lang, id, "empty note at ply", n.ply);
       else if (untranslated(lang, t, n.text)) fail(lang, id, "untranslated note at ply", n.ply, ":", t);
+      // a translated note quotes the same move as the original
+      const SAN = /^(\d+\.{1,3}\s?(?:O-O(?:-O)?|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?)[+#]?)/;
+      const mo = SAN.exec(n.text), mt = typeof t === "string" ? SAN.exec(t) : null;
+      if (more.has(id) && mo && (!mt || mt[1] !== mo[1])) fail(lang, id, "note at ply", n.ply, "quotes", mt && mt[1], "not", mo[1]);
     }
   }
   assert(bad === 0, lang + " classics match the originals and are translated");
-  if (lang === "ja") checkJapanese("ja classics prose", table, 0.9, 100);
+  if (lang === "ja") checkJapanese("ja classics prose", table, 0.9, 300);
+  // the era names, in the order the chunk lists them
+  const at = lang === "en" ? 1 : 2;
+  const names = MORE.groups.map((gr) => gr.n[at]);
+  assert(names.every((x, i) => typeof x === "string" && x.trim() && !untranslated(lang, x, MORE.groups[i].n[0])), lang + " era names: " + names.join(" / "));
+  if (lang === "ja") checkJapanese("ja era names", names, 0.5, 4);
+}
+
+// ------------------------------------------- engine record (v8-4-plan T2)
+// docs/classics-verified.json is scripts/verify-classics.mjs's run: every
+// master move of the forty against Stockfish's first choice. It is held to
+// the games as they are now — a game edited after its check fails here until
+// the script is run again — and every move it flags as a blunder-sized drop
+// in one of the thirty is either spoken of in a note on that ply or listed in
+// NOT_NOTED with the reason it is left unremarked.
+/** flagged plies of the thirty left without a note of their own, and why */
+const NOT_NOTED = {
+  // the swings of a mutual attack (depth 18: 22...Rc7 0.00 against 22...Qc4
+  // +3.6, 24.Rhd1 −2.6, 24...Rc3 −0.9, 27...Kh7 0.00); the move that lost it,
+  // 28.Kxa3 (Qf5+ draws), has the note (ply 55), with 19.exf7+ (ply 37)
+  "pillsbury-lasker-1896:44": "22...Rc7 — one of the swings; see ply 55",
+  "pillsbury-lasker-1896:47": "24.Rhd1 — one of the swings; see ply 55",
+  "pillsbury-lasker-1896:48": "24...Rc3 — one of the swings; see ply 55",
+  "pillsbury-lasker-1896:54": "27...Kh7 — one of the swings; see ply 55",
+  // one note per mistake pair: the reply is the one remarked on
+  "pillsbury-lasker-1904:37": "19.f4 — answered by 19...exf4?, whose note (ply 38) covers the exchange",
+  "torre-lasker-1925:44": "22...h6 — the weakening that 24...Qb5? (ply 48) turns into a loss",
+};
+{
+  const rec = JSON.parse(fs.readFileSync(path.join(root, "docs/classics-verified.json"), "utf8"));
+  assert(rec.depth >= 16 && rec.flag === 20, "the record is a depth ≥ 16 search, flagging drops of 20 win-% points (" + rec.depth + " / " + rec.flag + ")");
+  const byId = new Map(rec.games.map((r) => [r.id, r]));
+  const stale = [];
+  for (const g of games) {
+    const r = byId.get(g.id);
+    const c = new Chess();
+    c.load_pgn(g.pgn, { sloppy: true });
+    if (!r || r.moves !== c.history().join(" ") || r.plies !== c.history().length) stale.push(g.id);
+  }
+  assert(rec.games.length === 40 && stale.length === 0, "the engine record covers all 40 games, each with its current move list (re-run verify-classics after editing a game)" + (stale.length ? ": " + stale.join(", ") : ""));
+  const flagged = rec.games.reduce((a, r) => a + r.flagged.length, 0);
+  assert(rec.summary && rec.summary.games === 40 && rec.summary.flagged === flagged, "the record's summary adds up (" + flagged + " flagged plies)");
+  const unnoted = [];
+  for (const g of MORE.games) {
+    for (const f of (byId.get(g.id) || { flagged: [] }).flagged) {
+      if (!g.notes.some((n) => n.ply === f.ply) && !NOT_NOTED[g.id + ":" + f.ply]) unnoted.push(g.id + " ply " + f.ply + " " + f.san);
+    }
+  }
+  assert(unnoted.length === 0, "each flagged master move of the thirty has a note on its ply or a reason to stay unremarked" + (unnoted.length ? ": " + unnoted.join("; ") : ""));
 }
 
 // ------------------------------------------------------ punctuation rule
@@ -181,7 +252,7 @@ for (const lang of ["en", "ja"]) {
 // the same transform is run here on the two CJK sources.
 {
   let hits = 0;
-  for (const rel of ["src/web/js/classics.js", "src/web/js/classics-ja.js"]) {
+  for (const rel of ["src/web/js/classics.js", "src/web/js/classics-ja.js", "src/web/js/classics-more.js", "src/web/js/classics-more-ja.js"]) {
     const src = fs.readFileSync(path.join(root, rel), "utf8");
     for (const h of transform(src).hits) {
       hits++;
