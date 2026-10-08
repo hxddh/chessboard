@@ -228,7 +228,20 @@
 
 ---
 
-## 8 · 需要你拍板的
+## 8 · 需要你拍板的（2026-10-08 已定：「按照你的建议来」）
+
+| # | 决定 |
+|---|---|
+| 1 | 版本号 8.4 |
+| 2 | a：T2 名局 10 → 40 局、T3 题库刷新都做 |
+| 3 | Zig 0.17 这一版不升，等支持它的 SDK 一起换 |
+| 4 | Playwright 1.64 在 M1 单独一个 PR 升 |
+| 5 | V1：只在 exe 目录写不进去时，WebView2 用户数据目录放到 `%LOCALAPPDATA%\Chessboard\WebView2` |
+| 6 | 8.4.0 若在 10-28 前就绪就先发，D2 Node 26 进 8.4.1 |
+| 7 | 真机照旧不挡发布 |
+
+原来的问题：
+
 
 1. **版本号 8.4**：同意吗？
 2. **新内容**：T2 名局 10 → 40 局、T3 题库刷新，做哪个？
@@ -251,4 +264,8 @@
 
 ## 9 · 落地记录
 
-（开发中补）
+### M1
+
+- **D1 Playwright 1.63 → 1.64**：checks.yml 4 处、release.yml 2 处与注释 1 处，`deps-inventory.json` 条目改为 `done-8.4`（Chromium 156.0.8078.4 / WebKit 27.2）。`test-deps` 通过。CI 验收见 PR。
+- **D3 Zig 0.17**：`deps-inventory.json` 的 Zig 条目 latest 0.17.0、`upgrade-when-released`，note 写 §1 的清单。没改代码。
+- **CI 墙钟**：8.4 计划的 PR 检查（#107，run 37720801820）12.8 分钟，最长 webkit lessons 8.0 分钟。

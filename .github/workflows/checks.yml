@@ -276,13 +276,13 @@ jobs:
       # 1.49.1's WebKit is nearly two years behind that. A regression that
       # appears in the WebKit a real user has and not in the one this gate
       # runs is invisible here, which is the one failure mode a two-engine
-      # gate exists to prevent. 1.63.0 (Chromium 153 / WebKit 26.6) is the
-      # current release (v8-1-plan F1); the pin should be walked forward like
+      # gate exists to prevent. 1.64.0 (Chromium 156 / WebKit 27.2) is the
+      # current release (v8-4-plan D1); the pin should be walked forward like
       # this deliberately, not left to rot.
       - name: install playwright + ${{ matrix.engine }}
         run: |
-          npm install --no-save playwright@1.63.0
-          npx --yes playwright@1.63.0 install --with-deps ${{ matrix.engine }}
+          npm install --no-save playwright@1.64.0
+          npx --yes playwright@1.64.0 install --with-deps ${{ matrix.engine }}
       - name: resolve the browser Playwright just installed
         run: |
           node -e "
@@ -344,8 +344,8 @@ jobs:
       # the same pin as the browser job above, walked forward together
       - name: install playwright + ${{ matrix.engine }}
         run: |
-          npm install --no-save playwright@1.63.0
-          npx --yes playwright@1.63.0 install --with-deps ${{ matrix.engine }}
+          npm install --no-save playwright@1.64.0
+          npx --yes playwright@1.64.0 install --with-deps ${{ matrix.engine }}
       - name: resolve the browser Playwright just installed
         run: |
           node -e "
