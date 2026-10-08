@@ -1012,6 +1012,15 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
       "M2: …and its review queues merge as `missed` does (further up the ladder wins); a mode only the file has comes in whole", JSON.stringify(vis.look.q));
     const again = L.merge({ puzzles: JSON.stringify(L.merge(pc, pi, 100).puzzles) }, pi, 100).puzzles.vis;
     assert(JSON.stringify(again) === JSON.stringify(vis), "M2: the same file imported twice is a no-op for vis");
+    assert(!("eng" in vis.look), "v8-4-plan T1: …and adds no eng to records that had none");
+    // v8-4-plan T1: a look review's engine plies come in from either side
+    const pe = JSON.parse(pc.puzzles);
+    pe.vis.look.eng = { "a|2|1": "x1:e2e4" };
+    const ie = JSON.parse(JSON.stringify(pi));
+    ie.data.puzzles.vis.look.eng = { "c|4|3": "y2:d2d4" };
+    const ve = L.merge({ puzzles: JSON.stringify(pe) }, ie, 100).puzzles.vis.look;
+    assert(ve.eng && ve.eng["a|2|1"] === "x1:e2e4" && ve.eng["c|4|3"] === "y2:d2d4",
+      "v8-4-plan T1: vis.look.eng (a review's engine plies) merges as a union, whichever record is later", JSON.stringify(ve.eng));
   }
   {
     const repCur = { repertoire: JSON.stringify({ v: 1, w: [], b: [], db: 2, n: 0, sig: "x" }) };

@@ -68,6 +68,16 @@
  * a local puzzle's) is built by 8.2's rule alone, so an 8.2 review is the
  * question that was missed (M2 评审 P2-2).
  *
+ * v8-4-plan T1: the wait for a set's first question was a review's searches
+ * (up to N − 3 of them) on an engine still booting. A missed question's
+ * engine answers now go with its key (vis.look.eng, tag of the position →
+ * UCI; engPlies), so the review is built again without searching — the same
+ * question, the search being a pure function of the position; a key without
+ * them (8.3's) searches as before. A session keeps what it built by key, and
+ * the engine boots once the first question is up. Which positions are asked
+ * about, and at what budget, is 8.3's: test-chess runs whole sets against
+ * 8.3's snapshot.
+ *
  * Words are [zh-CN, en, ja], as in endgames.js: the chunk carries all three.
  * @module trainer/visual-modes
  */
@@ -95,6 +105,8 @@ const ASK_TRIES = 5;
 const STOP = { stop: true };
 /** v8-3-plan T1: a band blind draws from holds at least this many of each mate */
 const BLIND_MIN = 2 * SET;
+/** v8-4-plan T1: look questions a session keeps by key */
+const BUILT_MAX = 64;
 const LANG_AT = { "zh-CN": 0, en: 1, ja: 2 };
 
 const W = {
@@ -282,6 +294,60 @@ export async function lookQuestion(Chess, pool, seed, k, n, best) {
     if (q) return q;
   }
   return null;
+}
+
+/**
+ * Question k of the look set with seed `seed` at `n` plies, as a set asks
+ * for it: a question `ok` cannot put into words is drawn again from the seed
+ * mixed with the attempt, four attempts in all (M2 review); `stop()` true
+ * throws STOP before each. v8-4-plan T1: lifted out of createVisualModes,
+ * unchanged, so test-chess can run a whole set against 8.3's snapshot.
+ */
+export async function lookNth(Chess, pool, seed, k, n, best, ok, stop) {
+  let q = null;
+  for (let i = 0; i < 4 && !(q && (!ok || ok(q))); i++) {
+    if (stop && stop()) throw STOP;
+    q = await lookQuestion(Chess, pool, i ? mix(seed, i) : seed, k, n, best);
+  }
+  return q;
+}
+
+/**
+ * v8-4-plan T1: a position, as a short tag — what a question's engine plies
+ * are filed under (FNV-1a of the whole FEN, base 36).
+ */
+export function fenTag(fen) {
+  let h = 0x811c9dc5;
+  const s = String(fen);
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0;
+  return h.toString(36);
+}
+/**
+ * …the engine's answers along question `q`'s line, from `seen` (tag → UCI,
+ * every answer while it was built): "tag:uci,tag:uci", "" when none. A review
+ * key keeps them (puzzleState.vis.look.eng), so the question is built again
+ * without a search: the search is a pure function of the position (engine.js
+ * NODES_PER_MS), and these are its answers.
+ */
+export function engPlies(Chess, q, seen) {
+  if (!q || !seen || !seen.size) return "";
+  const g = new Chess(q.start);
+  const out = [];
+  for (const san of q.sans) {
+    const h = fenTag(g.fen());
+    if (seen.has(h)) out.push(h + ":" + seen.get(h));
+    if (!g.move(san)) break;
+  }
+  return out.join(",");
+}
+/** …and back: tag → UCI, only what reads as a move */
+export function engFrom(s) {
+  const m = new Map();
+  for (const x of String(s || "").split(",")) {
+    const [h, u] = x.split(":");
+    if (h && /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(u || "")) m.set(h, u);
+  }
+  return m;
 }
 
 /** Puzzle k of the blind set at level `lvl` (0 mate in one, 1 mate in two), none already used. */
@@ -491,12 +557,23 @@ export function createVisualModes(d) {
     const run = { kind, own: api, seed: (now >>> 0) || 1, score: 0, strikes: 0, k: 0, used: [], startedAt: now,
       endsAt: 0, over: false, last: null, n: N_MIN, lvl: 0, due: [], total: SET, band: bandOf(kind), next: null, alive };
     const owed = due(kind, now);
+    const m = rec(kind);
+    // v8-4-plan T1: the engine boots alongside the chunks when the first
+    // question is a bank review with no plies kept (8.3's) — it will search
+    const boot = () => { if (Engine && Engine.init) Promise.resolve().then(() => Engine.init()).catch(() => {}); };
+    if (kind === "look" && owed.length && keyBand(owed[0]) != null && !(m.eng || {})[owed[0]]) boot();
     await Promise.all([...new Set([run.band, ...owed.map(keyBand)])].map(bank));
     if (!bankNow(run.band)) run.band = null;
     // a bank review whose band did not come waits for a set where it does
     run.due = owed.filter((k) => keyBand(k) == null || bankNow(keyBand(k))).slice(0, REVIEW_MAX);
-    if (kind === "look") await prepare(run).p;
+    if (kind === "look") {
+      if (m.eng && typeof m.eng === "object") { for (const key in m.eng) if (!m.q[key]) delete m.eng[key]; } else delete m.eng;
+      await prepare(run).p;
+    }
     if (gone(run)) return null;
+    // …and otherwise once the first question is up: the next one searches
+    // as soon as this one is answered, so it boots while this one is read
+    if (kind === "look" && run.band != null) boot();
     // from here the run is puzzle-modes.js's, and run.over says when it ends
     delete run.alive;
     return run;
@@ -516,20 +593,40 @@ export function createVisualModes(d) {
   async function lookAt(run, k) {
     const key = k < run.due.length ? run.due[k] : null;
     const n = run.n;
+    // v8-4-plan T1: every engine answer is noted by position (engPlies), and
+    // a review key's own (vis.look.eng) answer before any search is asked
+    const seen = new Map();
+    const ask = bestFor(run);
+    const tee = (kept) => (fen) => {
+      const h = fenTag(fen), u = kept && kept.get(h);
+      return (u ? Promise.resolve(u) : ask(fen)).then((x) => { if (x) seen.set(h, x); return x; });
+    };
+    const done = (q) => {
+      const v = { key, q, eng: engPlies(Chess, q, seen) };
+      if (q) keep(q.key, v);
+      return v;
+    };
     if (key) {
+      const hit = built.get(key);
+      if (hit) return { key, q: hit.q, eng: hit.eng };
       const [pid, n, qs] = key.split("|");
       const p = lookOf(keyBand(key)).find((x) => x.id === pid);
-      return { key, q: p ? await buildLook(Chess, p, Number(n), Number(qs) >>> 0, bestFor(run)) : null };
+      return done(p ? await buildLook(Chess, p, Number(n), Number(qs) >>> 0, tee(engFrom((rec("look").eng || {})[key]))) : null);
     }
-    let q = null;
     // a question that cannot be put into words is skipped for another,
     // never seated: the card would be left half drawn (M2 review)
-    for (let i = 0; i < 4 && !(q && asked(q)); i++) {
-      if (gone(run)) throw STOP;
-      q = await lookQuestion(Chess, lookOf(run.band), i ? mix(run.seed, i) : run.seed, k, n, bestFor(run));
-    }
-    return { key: null, q };
+    return done(await lookNth(Chess, lookOf(run.band), run.seed, k, n, tee(null), asked, () => gone(run)));
   }
+  // v8-4-plan T1: the questions built this session, by key — a review of one
+  // missed earlier in the session is the same question, and needs no search
+  const built = new Map();
+  function keep(key, v) {
+    built.delete(key);
+    built.set(key, v);
+    if (built.size > BUILT_MAX) built.delete(built.keys().next().value);
+  }
+  /** the engine plies kept for look review key `key`, and the key gone from the queue */
+  const dropEng = (m, key) => { if (m.eng) delete m.eng[key]; };
 
   /** The next question of the set on the board, or the set's end. */
   function serve(run) {
@@ -540,17 +637,17 @@ export function createVisualModes(d) {
       const nx = prepare(run);
       run.k++;
       run.busy = true;
-      nx.p.then(({ key, q, stop }) => {
+      nx.p.then(({ key, q, eng, stop }) => {
         run.busy = false;
         if (run.over) return;
         // parked meanwhile (a load asking first): 下一题 asks for it again
         if (store.session.run !== run || stop) { run.k = k; if (stop) run.next = null; return; }
         run.next = null;
         if (!q || !asked(q)) {
-          if (key) { delete rec("look").q[key]; savePuzzleState(); serve(run); return; }
+          if (key) { delete rec("look").q[key]; dropEng(rec("look"), key); savePuzzleState(); serve(run); return; }
           run.why = "spent"; finishRun(run); return;
         }
-        const p = { id: "look:" + q.key, cat: "look", fen: q.start, solution: [], side: q.start.split(" ")[1], vq: q, review: !!key };
+        const p = { id: "look:" + q.key, cat: "look", fen: q.start, solution: [], side: q.start.split(" ")[1], vq: q, review: !!key, eng };
         run.used.push(p.id);
         seatPuzzle("look", k, p, run);
         say(tf("ui.pair", [w("moves", [lineText(q.start, q.sans)]), asked(q)]));
@@ -692,10 +789,13 @@ export function createVisualModes(d) {
     }
     m[ok ? "solve" : "miss"] = (m[ok ? "solve" : "miss"] || 0) + 1;
     m.at = now;
-    if (!ok) m.q[key] = Srs.onMiss(m.q[key], now);
-    else if (m.q[key]) {
+    if (!ok) {
+      m.q[key] = Srs.onMiss(m.q[key], now);
+      // v8-4-plan T1: the engine's plies go with the key, for the review
+      if (pz.p.eng) (m.eng && typeof m.eng === "object" ? m.eng : (m.eng = {}))[key] = pz.p.eng;
+    } else if (m.q[key]) {
       const next = Srs.onSolve(m.q[key], now);
-      if (next) m.q[key] = next; else delete m.q[key];
+      if (next) m.q[key] = next; else { delete m.q[key]; dropEng(m, key); }
     }
     Progress.recordAnswer(store.session.progress, kind, !ok, now);
     saveProgress();
@@ -858,4 +958,4 @@ export function createVisualModes(d) {
   return api;
 }
 
-export const CHESS_VISUAL = { createVisualModes, lookPool, blindPool, lookQuestion, buildLook, blindPick, blindNext, bankBand, keyBand, askEngine, parseAnswer, judgeLook, lineText, rng, mix, SET, N_MIN, N_MAX, LOOK_BUDGET, LOOK_HASH };
+export const CHESS_VISUAL = { createVisualModes, lookPool, blindPool, lookQuestion, lookNth, fenTag, engPlies, engFrom, buildLook, blindPick, blindNext, bankBand, keyBand, askEngine, parseAnswer, judgeLook, lineText, rng, mix, SET, N_MIN, N_MAX, LOOK_BUDGET, LOOK_HASH };
