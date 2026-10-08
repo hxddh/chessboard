@@ -216,6 +216,7 @@ pub const App = struct {
     /// file is in resolveAppDataDir's folder either way.
     fn resolveWebView2UserData(self: *@This()) void {
         if (builtin.os.tag != .windows) return;
+        if (@intFromPtr(self) != 0) return; // 临时：先红（v8-4-plan V1），下一个提交删掉
         var exe_buf: [4096]u8 = undefined;
         const n = std.process.executableDirPath(self.io, &exe_buf) catch return;
         const writable = dirWritable(self.io, exe_buf[0..n], std.os.windows.GetCurrentProcessId());
