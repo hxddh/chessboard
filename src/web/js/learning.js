@@ -148,6 +148,8 @@ function mergePuzzles(cur, inc) {
       const a = obj(vis[k]), bb = obj(b);
       vis[k] = Object.assign({}, num(bb.at) > num(a.at) ? bb : a,
         { solve: Math.max(num(a.solve), num(bb.solve)), miss: Math.max(num(a.miss), num(bb.miss)), q: mergeQueue(a.q, bb.q) });
+      // v8-4-plan T1: a look review's engine plies, from either side
+      if (a.eng || bb.eng) vis[k].eng = Object.assign({}, obj(a.eng), obj(bb.eng));
     }
   }
   return out;

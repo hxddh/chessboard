@@ -22,6 +22,9 @@
  *     player did since, an 8.2 review key is rebuilt by 8.2's own rule (its
  *     module from the v8.2.1 tag), a cancelled search is asked again, the
  *     Hash setting does not reach these searches, and leaving stops them
+ *   - (l) v8-4-plan T1: the first question of a set is up within 1 s (CI:
+ *     2.5 s); a review whose key kept its engine plies searches nothing,
+ *     and a wrong answer to an 8.3 key files them
  *
  * The real Lichess index changes with every import, so this builds its own
  * page, where the answers are known: scripts/import-puzzles.mjs runs over the fixture
@@ -1325,6 +1328,57 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
     sent.forEach((m, i) => { if (/^go nodes /.test(m)) { const hs = sent.slice(0, i).filter((x) => /Hash value/.test(x)); hashes.push(hs.length ? hs[hs.length - 1].split(" ").pop() : "?"); } });
     assert(hashes.length >= 3 && hashes.every((x) => x === "32"), "k/P3-1: 设置里 Hash 是 128，看 N 步的每次搜索仍按 32", hashes.join(","));
     await ctx.close();
+  }
+  // (l) v8-4-plan T1: 开始一组到第一题出现 ≤ 1 s（CI 放宽）——新的一组；复习题带着
+  // 自己的引擎着法（vis.look.eng）时不搜；8.3 的键答错一次之后就带上
+  {
+    const cap = process.env.CI ? 2500 : 1000;
+    const firstAt = async (page) => {
+      const t0 = Date.now();
+      await page.click('#pz-mode-seg button[data-run="look"]');
+      const shown = await visMoves(page, 60000);
+      return { ms: Date.now() - t0, shown };
+    };
+    const gos = (page) => page.evaluate(() => window.__sent.filter((m) => /^go nodes /.test(m)).length);
+    {
+      const { ctx, page } = await open(null);
+      await watch(page);
+      const { ms, shown } = await firstAt(page);
+      assert(shown && ms <= cap, "l/T1: 新的一组，点下去到第一题出现 ≤ " + cap + " ms", ms + " ms");
+      await ctx.close();
+    }
+    if (qa) {
+      // the plies qa's key would keep, worked out here against the same Stockfish
+      const p = LOOK_POOL.find((x) => x.id === qa.pid);
+      const seen = new Map();
+      const tee = async (fen) => { const u = await best(fen); if (u) seen.set(VIS.fenTag(fen), u); return u; };
+      const again = await VIS.buildLook(Chess, p, qa.n, Number(qa.key.split("|")[2]), tee);
+      const eng = VIS.engPlies(Chess, again, seen);
+      assert(JSON.stringify(again) === JSON.stringify(qa) && eng.split(",").length >= 3, "l/T1: qa 的引擎着法（至少 3 步）", eng);
+      {
+        const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { solve: 0, miss: 1, q: { [qa.key]: due0 }, eng: { [qa.key]: eng } } } });
+        await watch(page);
+        const { ms, shown } = await firstAt(page);
+        assert(shown.includes(VIS.lineText(qa.start, qa.sans)) && await gos(page) === 0 && ms <= cap,
+          "l/T1: 复习题带着引擎着法：不搜一次，与引擎出的同一道题，第一题 ≤ " + cap + " ms", ms + " ms, " + await gos(page) + " 次搜索");
+        await ctx.close();
+      }
+      {
+        // 8.3's key (no plies): searched as before; a wrong answer files the plies with the key
+        const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { solve: 0, miss: 1, q: { [qa.key]: due0 } } } });
+        await watch(page);
+        const { shown } = await firstAt(page);
+        const searched = await gos(page);
+        const wrong = qa.t === "mate" ? (qa.mates.length ? "没有" : new Chess(qa.fen).moves()[0]) : wrongSquare(qa);
+        await page.fill("#pz-vis-in", wrong);
+        await page.press("#pz-vis-in", "Enter");
+        await page.waitForTimeout(400);
+        const look = ((await visState(page)).vis || {}).look || {};
+        assert(shown.includes(VIS.lineText(qa.start, qa.sans)) && searched >= 3 && look.q[qa.key] && look.eng && look.eng[qa.key] === eng,
+          "l/T1: 8.3 的复习键照旧搜出同一道题；答错后键旁记下这几步引擎着法", searched + " 次搜索, " + JSON.stringify(look.eng));
+        await ctx.close();
+      }
+    }
   }
   realEngine = false;
 }
