@@ -267,5 +267,6 @@
 ### M1
 
 - **D1 Playwright 1.63 → 1.64**：checks.yml 4 处、release.yml 2 处与注释 1 处，`deps-inventory.json` 条目改为 `done-8.4`（Chromium 156.0.8078.4 / WebKit 27.2）。`test-deps` 通过。CI 验收见 PR。
+  - 第一次 CI：webkit 布局 5/5 的「T1 对手分段」报三段不等宽（133.41 / 134.00 / 134.00）。原因是刚点过的一段还在 `:active { transform: scale(0.97) }` 的回弹过渡里（0.12 s），WebKit 27.2 在 100 ms 时还没放完；同场景其他段都是 134.00。改为量之前等这几个按钮的过渡结束（`getAnimations().finished`），阈值不变；本机 Chromium 跑这一场景通过。
 - **D3 Zig 0.17**：`deps-inventory.json` 的 Zig 条目 latest 0.17.0、`upgrade-when-released`，note 写 §1 的清单。没改代码。
 - **CI 墙钟**：8.4 计划的 PR 检查（#107，run 37720801820）12.8 分钟，最长 webkit lessons 8.0 分钟。

@@ -5031,6 +5031,12 @@ if (scenario()) {
         await page.click('#op-seg button[data-seg="' + k + '"]', { timeout: 5000 }).catch((e) => console.log("  click seg " + k + ": " + e.message.split("\n")[0]));
         await page.waitForFunction((x) => { const b = document.querySelector('#op-seg button[data-seg="' + x + '"]'); return b && b.getAttribute("aria-pressed") === "true"; }, k, { timeout: 3000 }).catch(() => {});
         await page.waitForTimeout(100);
+        // v8-4-plan D1: the click leaves the pressed segment easing back from
+        // `:active { transform: scale(0.97) }` (--dur-quick); WebKit 27.2 was
+        // still mid-transition at 100 ms (133.41 vs 134.00). Measure the
+        // layout, not the press: wait for the segments' transitions to end.
+        await page.evaluate(() => Promise.all([...document.querySelectorAll("#op-seg button")]
+          .flatMap((b) => (b.getAnimations ? b.getAnimations() : []).map((a) => a.finished.catch(() => {})))));
         const r = await page.evaluate(() => {
           const seg = document.getElementById("op-seg");
           const bs = [...seg.querySelectorAll("button")];
