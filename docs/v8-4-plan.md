@@ -317,3 +317,11 @@
   - **只按 id 查，不出新题**：`puzzle-db.js` 新增 `full(b)` / `ensureFull(b)`——分段加它的旧题行，索引、分段、旧题都到了才非空（只到了分段时返回 null，否则 `bank-review.js prune` 会把旧 id 当成「库里没有」删掉）。复习队列（`puzzle-book.js` 交给 `createBankReview` 的 `band` / `ensureBand` 换成这两个）、看 N 步与盲走的复习键（`visual-modes.js` 在本段题池找不到时再到 `full(b)` 里按 id 找，开组前一起取）都走它；新题照旧只从 `band(b)` 抽。键 `id|band` / `id|N|seed|band` 里的分段是 8.3 存键时的分段，旧行原样保留、评级没动，`buildLook` 按同一道题建出同一个问题。
   - **测试**：`test-learning` 加重导留旧题、再导回来旧题消失、`--no-keep-old`、`full()` 要等旧题分块、按 8.3 的接法（只看分段）这道复习会被删而现在保留并能出题；`test-trainer-e2e` 加 (l)：在夹具上去掉 F0001 和一道看 N 步的题重导，复习、盲走键 `lc-F0001|800`、看 N 步键 `id|2|seed|band` 都照常出同一道题，键留在队列里。
   - **体积**：主包 908,392 → 908,968 字节（+576）；11 个分段分块合计 4,556,016 → 4,558,559（+2,543），旧题分块 11 个共 1,531,082 字节（89–191 KB 一个），只在有到期复习的分段才取；chunk-mined.js +96（索引的 `old` 计数）。git 上数据文件约 3.9 万行替换、新增 1.3 万行。
+
+### M3
+
+- **降级到 8.3.0**：`scripts/test-downgrade-e2e.mjs` 加 v8.3.0（e6cdabe，从标签构建的主包 908,392 字节，与发布时相同），档案里加三种题库 id 的复习条目（都在 1400 段：只在旧题分块里的 `lc-Yxv4P` / `lc-1afJm` / `lc-6uG5Z`，新题库才有的 `lc-Vhpc9` / `lc-1EHD3` / `lc-4IVu0`，8.3 在 1200 段、新题库在 1400 段的 `lc-KUdp5` / `lc-sVmeC` / `lc-9Ccj3`）各进看 N 步、盲走、做题复习三个队列，`vis.look.eng`，新三十局里四局的猜着记录。8.3 开一组看 N 步、一组盲走、打开做题「复习」之后回到当前的包，逐字段：
+  - **T3 丢**：新题库才有的、换了分段的两种——看 N 步 / 盲走的键轮到时被 8.3 删掉（`visual-modes.js serve`），做题复习的条目在 1400 段载入后被 `bank-review.js prune` 删掉（`puzzles.vis.bank.new/drift`、`puzzles.review.new/drift` lost）。只在旧题分块里的那种在 8.3 自己的 1400 段里，保留（`.old` kept）。做题复习这两种降到 8.1、8.2.1 也丢（同一份 9 月题库）；8.0 没有题库复习，不动 `lc-` 条目。
+  - **T1 保留**：8.3 不认识 `eng`，原样写回，连它删掉的键的那两条也在；回到当前的包开一组看 N 步时删掉不在队列里的键的 `eng`，留下的那条照用（`puzzles.vis.eng` kept）。8.2.1 删了全部题库键，回来后 `eng` 也跟着清掉（lost）。
+  - **T2 保留**：8.3 的 `learn.gs` 不按局的 id 过滤，新三十局的记录原样（`learn.gs.more` kept）。
+  - 其余字段与降回 8.2.1 相同，全部 kept。README「降级」加了一条。
