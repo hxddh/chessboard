@@ -45,7 +45,9 @@
  * WKWebView keeps localStorage and IndexedDB under the real user's
  * ~/Library (it asks the system for the home folder, not $HOME), and the
  * SDK starts WebView2 with no user-data folder, which puts it beside the
- * exe. So a local run still leaves the restart / idb markers, and the
+ * exe (or, when the exe's folder cannot be written to, main.zig sends it to
+ * %LOCALAPPDATA%\Chessboard\WebView2 — v8-4-plan V1; build-windows.yml runs
+ * this script once more from such a folder). So a local run still leaves the restart / idb markers, and the
  * English the first launch switches to (chunkSync), in that storage; on a
  * CI runner, which starts empty, the two are one and the same fresh state.
  *

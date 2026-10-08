@@ -117,6 +117,47 @@ jobs:
             test -f "$(find dist/Chessboard -path '*/licenses/LICENSE.txt' | head -n1)"
           fi
           ls -R dist
+      # v8-4-plan V1: the packaged app in a folder the user cannot write to,
+      # as when it is unzipped into Program Files. A copy of dist/Chessboard
+      # (taken before the self-test below has run it, so it holds no
+      # chessboard.exe.WebView2 folder yet) gets a deny ACE for the runner's
+      # user: (OI)(CI)(WD,AD) — "create files / write data" and "create
+      # folders / append data", inherited by everything under it. That is
+      # what makes creating a file fail; reading, listing and running the exe
+      # are untouched (no full W: W includes SYNCHRONIZE, which opening a
+      # folder needs). The step proves the deny took (a write must fail),
+      # runs the same two-launch self-test there, and then wants WebView2's
+      # data in %LOCALAPPDATA%\Chessboard\WebView2 and none beside the exe.
+      # Red on purpose: comment out `app_state.resolveWebView2UserData();` in
+      # src/main.zig main() — then WebView2 has no folder it may write, and
+      # even if the page came up anyway the %LOCALAPPDATA% check fails.
+      - name: self-test the packaged app from a read-only folder
+        timeout-minutes: 6
+        shell: pwsh
+        run: |
+          $src = if (Test-Path 'dist/Chessboard') { 'dist/Chessboard' } else { throw 'no dist/Chessboard to copy' }
+          $ro = Join-Path $env:RUNNER_TEMP 'readonly-app\Chessboard'
+          New-Item -ItemType Directory -Force (Split-Path $ro) | Out-Null
+          Copy-Item -Recurse -Force $src $ro
+          Get-ChildItem -Recurse -Directory -Filter '*.WebView2' $ro | Remove-Item -Recurse -Force
+          $fallback = Join-Path $env:LOCALAPPDATA 'Chessboard\WebView2'
+          if (Test-Path $fallback) { Remove-Item -Recurse -Force $fallback }
+          $who = "$env:USERDOMAIN\$env:USERNAME"
+          icacls $ro /deny "${who}:(OI)(CI)(WD,AD)"
+          if ($LASTEXITCODE -ne 0) { throw "icacls failed ($LASTEXITCODE)" }
+          $exe = (Get-ChildItem -Recurse -Filter chessboard.exe $ro | Select-Object -First 1).FullName
+          $bin = Split-Path $exe
+          $probe = Join-Path $bin 'write-probe.txt'
+          $wrote = $true
+          try { [IO.File]::WriteAllText($probe, 'x') } catch { $wrote = $false }
+          if ($wrote) { throw "the deny did not take: $probe could be written" }
+          Write-Host "ok: $bin refuses new files"
+          node scripts/selftest-app.mjs $exe
+          if ($LASTEXITCODE -ne 0) { throw "self-test from the read-only folder failed ($LASTEXITCODE)" }
+          $beside = Get-ChildItem -Directory -Filter '*.WebView2' $bin
+          if ($beside) { throw "WebView2 data beside the exe: $($beside.FullName -join ', ')" }
+          if (-not (Get-ChildItem -Force $fallback -ErrorAction SilentlyContinue)) { throw "no WebView2 data in $fallback" }
+          Write-Host "ok: WebView2 data went to $fallback"
       # 7.5: launch the packaged app once before shipping it — see the same
       # step in build-macos.yml and scripts/selftest-app.mjs (v8-1-plan N3 adds
       # IndexedDB, the synchronous language chunks and the native file commands).

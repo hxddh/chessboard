@@ -7266,6 +7266,33 @@ for (const lang of CONTENT_LANGS) {
     "main.zig points the WebView at the page beside the exe (resolveAssetRoot), in both the source and source_fn");
 }
 
+// v8-4-plan V1: an exe directory the user cannot write to moves WebView2's
+// user data to %LOCALAPPDATA%\Chessboard\WebView2 — set in main() before the
+// runner creates the WebView2 environment — and the Windows build proves it
+// by running the packaged self-test from a copy it has denied writes to.
+{
+  const code = (rel) => fs.readFileSync(path.join(root, rel), "utf8").replace(/\r\n/g, "\n")
+    .split("\n").filter((l) => !/^\s*(\/\/|#)/.test(l)).join("\n");
+  const main = code("src/main.zig");
+  const mainFn = main.slice(main.indexOf("pub fn main("));
+  const call = mainFn.indexOf("app_state.resolveWebView2UserData();");
+  assert(/fn resolveWebView2UserData\(/.test(main) && call > 0 && call < mainFn.indexOf("runner.runWithOptions("),
+    "main.zig calls resolveWebView2UserData() in main(), before the runner starts");
+  assert(/"WEBVIEW2_USER_DATA_FOLDER"/.test(main) && /\\\\Chessboard\\\\WebView2/.test(main) && /SetEnvironmentVariableW\(/.test(main),
+    "main.zig sets WEBVIEW2_USER_DATA_FOLDER to <LOCALAPPDATA>\\Chessboard\\WebView2 through SetEnvironmentVariableW");
+  const wf = code(".github/workflows/build-windows.yml");
+  const build = wf.slice(wf.indexOf("\n  build:\n"), wf.indexOf("\n  automation:\n"));
+  const step = (name) => build.indexOf("- name: " + name + "\n");
+  const ro = step("self-test the packaged app from a read-only folder");
+  const roBody = ro < 0 ? "" : build.slice(ro, build.indexOf("\n      - ", ro + 1));
+  assert(ro > 0 && ro < step("self-test the packaged app") && ro < step("zip package"),
+    "build-windows.yml: the read-only self-test runs in the build job, before the regular self-test and the zip");
+  assert(/timeout-minutes: \d+/.test(roBody) && /icacls \$ro \/deny "\$\{who\}:\(OI\)\(CI\)\(WD,AD\)"/.test(roBody) &&
+    /the deny did not take/.test(roBody) && /node scripts\/selftest-app\.mjs \$exe/.test(roBody) &&
+    /'Chessboard\\WebView2'/.test(roBody) && /no WebView2 data in/.test(roBody) && /WebView2 data beside the exe/.test(roBody),
+    "build-windows.yml: the read-only step denies writes with icacls, checks the deny took, runs selftest-app.mjs, and wants the data in %LOCALAPPDATA%\\Chessboard\\WebView2");
+}
+
 // v8-2-plan §9 M4 评审修正: a live automation run writes into the machine's real
 // WebView storage (same bundle id; WKWebView ignores $HOME), so off a CI
 // runner both drivers refuse unless told --real-profile-ok; --null never asks.
