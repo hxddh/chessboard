@@ -79,6 +79,41 @@ fn packagedResource(buf: []u8, exe_dir: []const u8, name: []const u8) ?[]const u
     return std.fmt.bufPrint(buf, "{s}{c}resources{c}{s}", .{ base, sep, sep, name }) catch null;
 }
 
+/// v8-4-plan V1: the environment variable the WebView2 loader takes the user
+/// data folder from when the caller names none — and SDK 0.10.1 names none
+/// (webview2_host.cpp createChildWebView calls
+/// CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr, …)).
+const WEBVIEW2_USER_DATA_ENV = "WEBVIEW2_USER_DATA_FOLDER";
+
+/// v8-4-plan V1, the decision on its own so it can be tested off Windows: the
+/// folder to put in WEBVIEW2_USER_DATA_FOLDER, or null to leave WebView2 on
+/// its default (`<exe dir>\<exe name>.WebView2`). Only a non-writable exe
+/// directory moves it, so no existing install — which works, so its exe
+/// directory is writable — ever sees its WebView2 data change place. A value
+/// someone already set is theirs; no %LOCALAPPDATA% leaves the default too.
+fn webview2UserDataFallback(buf: []u8, exe_dir_writable: bool, already_set: bool, local_app_data: ?[]const u8) ?[]const u8 {
+    if (exe_dir_writable or already_set) return null;
+    const raw = local_app_data orelse return null;
+    const base = std.mem.trimEnd(u8, raw, "\\/");
+    if (base.len == 0) return null;
+    return std.fmt.bufPrint(buf, "{s}\\Chessboard\\WebView2", .{base}) catch null;
+}
+
+/// v8-4-plan V1: whether a file can be created in `dir` — make one and delete
+/// it. Any error counts as "no".
+fn dirWritable(io: std.Io, dir: []const u8, unique: u32) bool {
+    var buf: [4200]u8 = undefined;
+    const probe = std.fmt.bufPrint(&buf, "{s}{c}.chessboard-write-probe-{d}", .{ dir, std.fs.path.sep, unique }) catch return false;
+    var file = std.Io.Dir.createFileAbsolute(io, probe, .{}) catch return false;
+    file.close(io);
+    std.Io.Dir.deleteFileAbsolute(io, probe) catch {};
+    return true;
+}
+
+/// The loader reads the process environment block, which std.process.Environ
+/// only copies, so the variable goes in through kernel32 itself.
+extern "kernel32" fn SetEnvironmentVariableW(name: [*:0]const u16, value: ?[*:0]const u16) callconv(.winapi) std.os.windows.BOOL;
+
 pub const App = struct {
     env_map: *std.process.Environ.Map,
     io: std.Io,
@@ -170,6 +205,32 @@ pub const App = struct {
         var icon_file = std.Io.Dir.openFileAbsolute(self.io, icon, .{}) catch return;
         icon_file.close(self.io);
         self.icon_path = icon;
+    }
+
+    /// v8-4-plan V1: WebView2 keeps its user data beside the exe unless told
+    /// otherwise, so a copy unzipped where the user cannot write (Program
+    /// Files) had nowhere to put it and the page could fail to come up. Then,
+    /// and only then, point WEBVIEW2_USER_DATA_FOLDER at
+    /// %LOCALAPPDATA%\Chessboard\WebView2 — before the runner starts and the
+    /// SDK creates the WebView2 environment. Windows only; the app's own save
+    /// file is in resolveAppDataDir's folder either way.
+    fn resolveWebView2UserData(self: *@This()) void {
+        if (builtin.os.tag != .windows) return;
+        var exe_buf: [4096]u8 = undefined;
+        const n = std.process.executableDirPath(self.io, &exe_buf) catch return;
+        const writable = dirWritable(self.io, exe_buf[0..n], std.os.windows.GetCurrentProcessId());
+        var folder_buf: [1100]u8 = undefined;
+        const folder = webview2UserDataFallback(
+            &folder_buf,
+            writable,
+            self.env_map.get(WEBVIEW2_USER_DATA_ENV) != null,
+            self.env_map.get("LOCALAPPDATA"),
+        ) orelse return;
+        std.Io.Dir.cwd().createDirPath(self.io, folder) catch return;
+        var wide: [1101]u16 = undefined;
+        const len = std.unicode.wtf8ToWtf16Le(wide[0 .. wide.len - 1], folder) catch return;
+        wide[len] = 0;
+        _ = SetEnvironmentVariableW(std.unicode.wtf8ToWtf16LeStringLiteral(WEBVIEW2_USER_DATA_ENV), wide[0..len :0]);
     }
 
     pub fn bridge(self: *@This()) native_sdk.BridgeDispatcher {
@@ -340,6 +401,8 @@ pub fn main(init: std.process.Init) !void {
     // launch (the Runtime builds the menu bar once, from what it is handed).
     app_state.resolveAppDataDir();
     app_state.resolveAssetRoot();
+    // v8-4-plan V1: before the runner, which creates the WebView2 environment
+    app_state.resolveWebView2UserData();
     const lang = app_state.launchLanguage();
     const ran = runner.runWithOptions(app_state.app(), .{
         .app_name = windowTitleFor(lang),
@@ -385,6 +448,55 @@ test "the packaged page sits in resources beside bin (v8-3-plan V1)" {
     try std.testing.expect(packagedAssetRoot(&buf, "bin") == null);
     const icon = packagedResource(&buf, exe_dir, "icon.ico").?;
     try std.testing.expectEqualStrings("C:" ++ sep ++ "Apps" ++ sep ++ "Chessboard" ++ sep ++ "resources" ++ sep ++ "icon.ico", icon);
+}
+
+test "WebView2 user data: a writable exe directory keeps the default (v8-4-plan V1)" {
+    var buf: [256]u8 = undefined;
+    try std.testing.expect(webview2UserDataFallback(&buf, true, false, "C:\\Users\\a\\AppData\\Local") == null);
+}
+
+test "WebView2 user data: a non-writable exe directory moves to %LOCALAPPDATA% (v8-4-plan V1)" {
+    var buf: [256]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        "C:\\Users\\a\\AppData\\Local\\Chessboard\\WebView2",
+        webview2UserDataFallback(&buf, false, false, "C:\\Users\\a\\AppData\\Local").?,
+    );
+    // a trailing separator does not double up
+    try std.testing.expectEqualStrings(
+        "C:\\Users\\a\\AppData\\Local\\Chessboard\\WebView2",
+        webview2UserDataFallback(&buf, false, false, "C:\\Users\\a\\AppData\\Local\\").?,
+    );
+    var small: [8]u8 = undefined;
+    try std.testing.expect(webview2UserDataFallback(&small, false, false, "C:\\Users\\a\\AppData\\Local") == null);
+}
+
+test "WebView2 user data: a variable already set is left alone (v8-4-plan V1)" {
+    var buf: [256]u8 = undefined;
+    try std.testing.expect(webview2UserDataFallback(&buf, false, true, "C:\\Users\\a\\AppData\\Local") == null);
+    try std.testing.expect(webview2UserDataFallback(&buf, true, true, "C:\\Users\\a\\AppData\\Local") == null);
+}
+
+test "WebView2 user data: no %LOCALAPPDATA% keeps the default (v8-4-plan V1)" {
+    var buf: [256]u8 = undefined;
+    try std.testing.expect(webview2UserDataFallback(&buf, false, false, null) == null);
+    try std.testing.expect(webview2UserDataFallback(&buf, false, false, "") == null);
+    try std.testing.expect(webview2UserDataFallback(&buf, false, false, "\\") == null);
+}
+
+test "the write probe tells a writable directory from a missing one (v8-4-plan V1)" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [4096]u8 = undefined;
+    const n = try tmp.dir.realPath(std.testing.io, &path_buf);
+    const dir = path_buf[0..n];
+    try std.testing.expect(dirWritable(std.testing.io, dir, 1));
+    // the probe file is gone again
+    var probe_buf: [4200]u8 = undefined;
+    const probe = try std.fmt.bufPrint(&probe_buf, "{s}{c}.chessboard-write-probe-1", .{ dir, std.fs.path.sep });
+    try std.testing.expectError(error.FileNotFound, std.Io.Dir.openFileAbsolute(std.testing.io, probe, .{}));
+    var missing_buf: [4200]u8 = undefined;
+    const missing = try std.fmt.bufPrint(&missing_buf, "{s}{c}no-such-dir", .{ dir, std.fs.path.sep });
+    try std.testing.expect(!dirWritable(std.testing.io, missing, 1));
 }
 
 test "an App starts on the relative page directory" {

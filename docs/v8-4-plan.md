@@ -269,3 +269,21 @@
 - **D1 Playwright 1.63 → 1.64**：checks.yml 4 处、release.yml 2 处与注释 1 处，`deps-inventory.json` 条目改为 `done-8.4`（Chromium 156.0.8078.4 / WebKit 27.2）。`test-deps` 通过。CI 验收见 PR。
 - **D3 Zig 0.17**：`deps-inventory.json` 的 Zig 条目 latest 0.17.0、`upgrade-when-released`，note 写 §1 的清单。没改代码。
 - **CI 墙钟**：8.4 计划的 PR 检查（#107，run 37720801820）12.8 分钟，最长 webkit lessons 8.0 分钟。
+- **V1 WebView2 用户数据目录**：
+  - **确认**：SDK 0.10.1 `webview2_host.cpp` 的 `createChildWebView` 调 `CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr, …)`，不传用户数据目录，所以 `WEBVIEW2_USER_DATA_FOLDER` 就是决定值。
+  - **改动**：`main.zig` 在 `resolveAssetRoot` 之后、runner 之前加 `resolveWebView2UserData()`，只在 Windows 上：
+    - 在 exe 目录建、删一个 `.chessboard-write-probe-<pid>`，出任何错都算写不进去；
+    - 写不进去、环境变量没设过、有 `%LOCALAPPDATA%` 时，建好 `%LOCALAPPDATA%\Chessboard\WebView2`，用 kernel32 `SetEnvironmentVariableW` 设进本进程的环境块（loader 读的就是它；`std.process.Environ` 只是拷贝）。
+    - 判断抽成纯函数 `webview2UserDataFallback`。Zig 测试 79 → 84：可写、不可写、已设、没有 `%LOCALAPPDATA%` 四种，加探测本身一条。没改 SDK。
+  - **CI**：`build-windows.yml` 的 build 作业在原自检之前加「self-test the packaged app from a read-only folder」（6 分钟上限）：
+    - 拷一份 `dist/Chessboard` 到 `RUNNER_TEMP`，`icacls /deny "<用户>:(OI)(CI)(WD,AD)"`；
+    - 先证明写文件确实失败，再跑两次启动的打包自检；
+    - 之后要求 `%LOCALAPPDATA%\Chessboard\WebView2` 里有数据、`bin\` 旁边没有 `*.WebView2`。
+    - 不用整个 `W`：它含 `SYNCHRONIZE`，打开文件夹要用。
+  - **守卫**：`test-chess.mjs` 查 `main()` 在 runner 之前调这一步，查这个步骤在原自检和打包 zip 之前，并且带 `icacls`、写入探测、自检和两项目录检查。
+  - **先红后绿**：把 `main()` 里的 `app_state.resolveWebView2UserData();` 注释掉推一次，这个步骤应当红；静态守卫也会红。
+  - **还要在 CI 上证实**：
+    - 这个步骤绿；
+    - 先红那一次真的红，并记下红在哪：自检超时，还是只有 `%LOCALAPPDATA%` 检查没过；
+    - runner 账户上 deny 确实生效（步骤自己会查）。
+  - 本机只有 Linux：Windows 路径交叉编译通过（`-Dtarget=x86_64-windows`，null 与 windows 平台都试了），没有跑过。
