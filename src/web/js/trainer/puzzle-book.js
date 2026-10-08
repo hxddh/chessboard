@@ -345,7 +345,9 @@ export function createPuzzleBook(d) {
   forgetRetired();
   const Srs = ChessSrs;
   // v8-1-plan T6: bank puzzles in the review queue, their bands loaded when due
-  const Bank = createBankReview({ Db: ChessPuzzleDb, Srs });
+  // v8-4-plan T3: a queued id is looked up in its band with the rows earlier
+  // imports shipped there (puzzle-db.js full), so a refresh strands no review
+  const Bank = createBankReview({ Db: Object.assign({}, ChessPuzzleDb, { band: ChessPuzzleDb.full, ensureBand: ChessPuzzleDb.ensureFull }), Srs });
   const Picker = ChessPicker;
   /** reviews served per day before the rest is pushed to tomorrow (Q3.3) */
   const REVIEW_CAP = 20;

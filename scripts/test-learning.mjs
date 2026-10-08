@@ -571,6 +571,62 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const r5 = spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), csvPath, "--out-dir", path.join(dir, "ex"), "--seed", "1", "--exclude", report], { encoding: "utf8" });
   assert(r5.status === 0 && shipped(dir).includes(JSON.stringify(firstId)) && !shipped(path.join(dir, "ex")).includes(JSON.stringify(firstId)) &&
     /accepted 48 /.test(r5.stdout), "--exclude report.json drops the reported id (" + firstId + ", " + r5.stdout.split("\n")[0] + ")");
+  // v8-4-plan T3: an import over an earlier one keeps what it drops in
+  // old-NNNN.js, row for row as it shipped, counted in the index; a third
+  // import that ships it again drops the old file, and --no-keep-old starts afresh
+  {
+    const re = path.join(dir, "re");
+    fs.mkdirSync(re);
+    fs.cpSync(path.join(dir, "lichess"), path.join(re, "lichess"), { recursive: true });
+    const before = fs.readdirSync(path.join(re, "lichess")).flatMap((f) => fs.readFileSync(path.join(re, "lichess", f), "utf8").split("\n"))
+      .find((l) => l.startsWith("[" + JSON.stringify(firstId) + ","));
+    const r7 = spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), csvPath, "--out-dir", re, "--seed", "1", "--exclude", report], { encoding: "utf8" });
+    const olds = fs.readdirSync(path.join(re, "lichess")).filter((f) => f.startsWith("old-"));
+    const oldText = olds.map((f) => fs.readFileSync(path.join(re, "lichess", f), "utf8")).join("");
+    const reIdx = loadAppModules([path.join(re, "puzzles-lc-index.js")]).LC_INDEX;
+    const oldBand = olds.length === 1 && Number(olds[0].slice(4, 8));
+    const oldList = olds.length === 1 && loadAppModules([path.join(re, "lichess", olds[0])])["LC_OLD_" + olds[0].slice(4, 8)];
+    assert(r7.status === 0 && olds.length === 1 && oldText.split("\n").includes(before) && oldList.length === 1 &&
+      reIdx.total === 48 && reIdx.bands.filter((b) => b.old).map((b) => b.band + ":" + b.old).join() === oldBand + ":1" &&
+      lichessChunks(path.join(re, "lichess")).some((c) => c.global === "LC_OLD_" + olds[0].slice(4, 8) && /chunk-lc-old-\d{4}\.js$/.test(c.out)),
+    "a re-import keeps the dropped puzzle in old-NNNN.js as it shipped, and the index counts it (" + olds.join() + ", " + (r7.stderr || "").trim().split("\n")[0] + ")");
+    const r8 = spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), csvPath, "--out-dir", re, "--seed", "1"], { encoding: "utf8" });
+    assert(r8.status === 0 && !fs.readdirSync(path.join(re, "lichess")).some((f) => f.startsWith("old-")) &&
+      fs.readFileSync(path.join(re, "puzzles-lc-index.js"), "utf8") === fs.readFileSync(path.join(dir, "puzzles-lc-index.js"), "utf8"),
+    "…and an import that ships it again has no old rows left");
+    spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), csvPath, "--out-dir", re, "--seed", "1", "--exclude", report, "--no-keep-old"], { encoding: "utf8" });
+    assert(!fs.readdirSync(path.join(re, "lichess")).some((f) => f.startsWith("old-")), "--no-keep-old keeps nothing");
+    // puzzle-db.js full(): the band and its old rows, null until both are here; band() alone never has them
+    const fctx = loadAppModules(["src/web/js/chess.js", "src/web/js/puzzle-db.js", "src/web/js/srs.js", "src/web/js/trainer/bank-review.js"]);
+    fs.rmSync(path.join(re, "lichess"), { recursive: true });
+    fs.cpSync(path.join(dir, "lichess"), path.join(re, "lichess"), { recursive: true });
+    spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), csvPath, "--out-dir", re, "--seed", "1", "--exclude", report], { encoding: "utf8" });
+    const FDb = fctx.ChessPuzzleDb;
+    fctx.LC_INDEX = loadAppModules([path.join(re, "puzzles-lc-index.js")]).LC_INDEX;
+    const bn = String(oldBand).padStart(4, "0");
+    fctx["LC_BAND_" + bn] = loadAppModules([path.join(re, "lichess", "band-" + bn + ".js")])["LC_BAND_" + bn];
+    const noOld = FDb.full(oldBand) === null && FDb.band(oldBand) && !FDb.band(oldBand).some((p) => p.id === "lc-" + firstId);
+    // a review queued against the dropped id, as puzzle-book.js wires it: kept
+    // while its old rows are not here (the band alone is not all there is)…
+    const qid = "lc-" + firstId, FS = fctx.ChessSrs;
+    const qst = () => ({ missed: { [qid]: FS.onMiss(undefined, Date.now() - 30 * 864e5) }, bank: { [qid]: oldBand } });
+    const reviewDb = Object.assign({}, FDb, { band: FDb.full, ensureBand: FDb.ensureFull });
+    const st1 = qst(), B1 = fctx.createBankReview({ Db: reviewDb, Srs: FS });
+    const keptEarly = B1.prune(st1) === 0 && !!st1.missed[qid] && B1.resolve(st1, qid) === null && B1.pending(st1, Date.now()).includes(oldBand);
+    // …where the 8.3 wiring (the band alone) would have dropped it as gone
+    const st0 = qst(), B0 = fctx.createBankReview({ Db: FDb, Srs: FS });
+    const droppedBefore = B0.prune(st0) === 1 && !st0.missed[qid];
+    fctx["LC_OLD_" + bn] = loadAppModules([path.join(re, "lichess", "old-" + bn + ".js")])["LC_OLD_" + bn];
+    const f = FDb.full(oldBand);
+    assert(noOld && f && f.length === FDb.band(oldBand).length + 1 && f.some((p) => p.id === "lc-" + firstId) &&
+      FDb.oldChunk(oldBand).file === "chunk-lc-old-" + bn + ".js",
+    "puzzle-db.js full(): the band with its old rows once both are here; band() never has them");
+    const st2 = qst(), B2 = fctx.createBankReview({ Db: reviewDb, Srs: FS });
+    const p2 = B2.resolve(st2, qid);
+    assert(keptEarly && droppedBefore && B2.prune(st2) === 0 && !!p2 && p2.fen === JSON.parse(before.replace(/,$/, ""))[1] &&
+      B2.reviewList(st2, Date.now(), 20, () => null).some((p) => p.id === qid),
+    "a queued review of a puzzle the new import dropped still opens, from its old rows (kept " + keptEarly + ", 8.3 wiring drops it " + droppedBefore + ")");
+  }
   // Codex #89: a pzstd file cut off right after a size header (its frame never
   // came — a truncated download) fails too, instead of importing what it has
   const cutPath = path.join(dir, "cut.csv.zst");
@@ -615,7 +671,7 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const LC_INDEX_DECL = /\bLC_INDEX\d*\s*=\s*\{/;
   assert(!LC_INDEX_DECL.test(bundled) && LC_INDEX_DECL.test(minedChunk), "the Lichess index is in chunk-mined.js, not in bundle.js");
   // what ships today: the committed index, and chunks exactly for its bands
-  assert(ctx.ChessPuzzleDb.index.bands.length === CHUNKS.filter((c) => /chunk-lc-/.test(c.out)).length,
+  assert(ctx.ChessPuzzleDb.index.bands.length === CHUNKS.filter((c) => /chunk-lc-\d{4}\.js$/.test(c.out)).length,
     "CHUNKS carries one Lichess chunk per band of the committed index (" + ctx.ChessPuzzleDb.index.bands.length + ")");
 }
 

@@ -512,6 +512,14 @@ export function createVisualModes(d) {
     return e.p;
   }
   const bankNow = (b) => (b == null || !banks.has(b) ? null : banks.get(b).v);
+  /**
+   * v8-4-plan T3: band `b` with the rows earlier imports shipped there
+   * (puzzle-db.js full) — where a review key's puzzle is looked for when a
+   * later import no longer has it. Never drawn from for a new question.
+   * Null while that is not all here (a review then waits, as for its band).
+   */
+  const fullOf = (b) => (b != null && Db && Db.full ? Db.full(b) : []);
+  const ensureFull = (b) => (b != null && Db && Db.ensureFull ? Db.ensureFull(b).catch(() => null) : null);
   /** The band a new set of `kind` draws from, or null before the bank's index is here. */
   function bandOf(kind) {
     if (!Db || !Db.indexReady()) return null;
@@ -562,10 +570,10 @@ export function createVisualModes(d) {
     // question is a bank review with no plies kept (8.3's) — it will search
     const boot = () => { if (Engine && Engine.init) Promise.resolve().then(() => Engine.init()).catch(() => {}); };
     if (kind === "look" && owed.length && keyBand(owed[0]) != null && !(m.eng || {})[owed[0]]) boot();
-    await Promise.all([...new Set([run.band, ...owed.map(keyBand)])].map(bank));
+    await Promise.all([...new Set([run.band, ...owed.map(keyBand)])].map(bank).concat([...new Set(owed.map(keyBand))].map(ensureFull)));
     if (!bankNow(run.band)) run.band = null;
     // a bank review whose band did not come waits for a set where it does
-    run.due = owed.filter((k) => keyBand(k) == null || bankNow(keyBand(k))).slice(0, REVIEW_MAX);
+    run.due = owed.filter((k) => keyBand(k) == null || (bankNow(keyBand(k)) && fullOf(keyBand(k)))).slice(0, REVIEW_MAX);
     if (kind === "look") {
       if (m.eng && typeof m.eng === "object") { for (const key in m.eng) if (!m.q[key]) delete m.eng[key]; } else delete m.eng;
       await prepare(run).p;
@@ -610,7 +618,7 @@ export function createVisualModes(d) {
       const hit = built.get(key);
       if (hit) return { key, q: hit.q, eng: hit.eng };
       const [pid, n, qs] = key.split("|");
-      const p = lookOf(keyBand(key)).find((x) => x.id === pid);
+      const p = lookOf(keyBand(key)).find((x) => x.id === pid) || lookPool(fullOf(keyBand(key)) || []).find((x) => x.id === pid);
       return done(p ? await buildLook(Chess, p, Number(n), Number(qs) >>> 0, tee(engFrom((rec("look").eng || {})[key]))) : null);
     }
     // a question that cannot be put into words is skipped for another,
@@ -661,7 +669,8 @@ export function createVisualModes(d) {
     {
       const local = book().blind;
       const bk = bankNow(run.band);
-      let p = key ? ((bankNow(keyBand(key)) || {}).blind || local).flat().find((x) => x.id === key.split("|")[0])
+      const kid = key && key.split("|")[0];
+      let p = key ? ((bankNow(keyBand(key)) || {}).blind || local).flat().find((x) => x.id === kid) || blindPool(fullOf(keyBand(key)) || []).flat().find((x) => x.id === kid)
         : blindNext(bk && bk.blind, local, run.seed, k, run.lvl, run.used);
       if (key && !p) { delete rec("blind").q[key]; savePuzzleState(); serve(run); return; }
       if (!p) { run.why = "spent"; finishRun(run); return; }

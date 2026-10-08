@@ -64,6 +64,27 @@ import { loadChunk, chunkReady } from "./chunk.js";
     const c = bandChunk(b);
     return loadChunk(c.file, c.global).then(() => band(b));
   }
+  /**
+   * v8-4-plan T3: the rows of band `b` an earlier import shipped and the
+   * current one does not (scripts/import-puzzles.mjs droppedRows), for the
+   * reviews that name them. The index says which bands have them (`old`).
+   */
+  export const oldChunk = (b) => ({ file: "chunk-lc-old-" + bandName(b) + ".js", global: "LC_OLD_" + bandName(b) });
+  const oldN = (b) => (index().bands.find((x) => x.band === b) || {}).old;
+  /**
+   * Band `b` with its old rows after it — what a review looks an id up in
+   * (bank-review.js, which keeps its own map per band; visual-modes.js),
+   * never what a new question is drawn from. Null until the index, the band
+   * and its old rows are all here: a band without them must not read as
+   * all there is (bank-review.js prune would drop the ids they hold).
+   */
+  function full(b) {
+    const l = band(b), o = globalThis[oldChunk(b).global];
+    return l && globalThis.LC_INDEX && (o || !oldN(b)) ? (oldN(b) ? l.concat(o.map(decodeRow)) : l) : null;
+  }
+  /** full(b), once what it needs has come (the index rides in chunk-mined.js) */
+  const ensureFull = (b) => loadChunk("chunk-mined.js", "MINED_PUZZLES")
+    .then(() => Promise.all([ensureBand(b), oldN(b) && loadChunk(oldChunk(b).file, oldChunk(b).global)])).then(() => full(b));
   /** The band a rating falls in, clamped to the bands there are (null: none). */
   function bandFor(rating) {
     const bands = index().bands;
@@ -85,5 +106,5 @@ import { loadChunk, chunkReady } from "./chunk.js";
     indexReady: () => !!globalThis.LC_INDEX,
     total: () => index().total,
     themeIds: () => Object.keys(index().themes),
-    bandFor, bandsWith, band, ensureBand, bandChunk, decodeRow,
+    bandFor, bandsWith, band, ensureBand, bandChunk, decodeRow, full, ensureFull, oldChunk,
   };
