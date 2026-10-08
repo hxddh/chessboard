@@ -286,6 +286,9 @@ export function createGuess(d) {
     const b = (id, fn) => { const e = document.createElement("button"); e.type = "button"; e.className = "tool-btn"; e.id = id; e.onclick = fn; return e; };
     ui.root = document.createElement("div");
     ui.root.id = "gs-panel";
+    // v8-4-plan T2: the game's own paragraph (the thirty of classics-more.js have one)
+    ui.about = p();
+    ui.about.id = "gs-about";
     ui.intro = p();
     ui.say = p();
     ui.say.id = "gs-say";
@@ -301,7 +304,7 @@ export function createGuess(d) {
     ui.swap = b("gs-swap", () => { const s = run(); if (s) start(s.ci, s.side === "w" ? "b" : "w"); });
     ui.quit = b("gs-quit", () => { const s = run(); if (s) startClassic(s.ci); });
     row.append(ui.jump, ui.swap, ui.quit);
-    ui.root.append(ui.intro, ui.say, ui.sum, ui.worst, row);
+    ui.root.append(ui.about, ui.intro, ui.say, ui.sum, ui.worst, row);
   }
   /** The verdict on one guess, in the language of the moment it is read. */
   function sayOf(r) {
@@ -332,6 +335,10 @@ export function createGuess(d) {
     ui.root.dataset.phase = s.phase;
     ui.root.dataset.at = String(s.at);
     ui.root.dataset.view = s.view == null ? "" : String(s.res[s.view].ply);
+    // read before the first guess; after it the card is the verdicts'
+    const about = s.res.length ? "" : classicText(CLASSICS[s.ci]).intro;
+    put(ui.about, about);
+    ui.about.hidden = !about;
     put(ui.intro, t("gs.intro"));
     put(ui.say, sayOf(s.said));
     put(ui.sum, m.n ? tf("gs.sum", [m.same, m.n, r1(m.avg), r1(m.score)]) : "");

@@ -29,7 +29,7 @@ vm.createContext(ctx);
 // context first is the same arrangement, and without it every lookup here
 // answers null, which is exactly what a missing chunk looks like.
 for (const m of ["chess.js", "eco.js", "eco-lookup.js", "game-tree.js", "openings.js", "openings-en.js", "openings-ja.js", "openings-family-zh.js", "openings-family-ja.js",
-  "openings-variation-zh.js", "openings-variation-ja.js", "classics.js", "lessons.js", "puzzles.js", "puzzles-mined.js"]) {
+  "openings-variation-zh.js", "openings-variation-ja.js", "classics.js", "classics-more.js", "lessons.js", "puzzles.js", "puzzles-mined.js"]) {
   vm.runInContext(compileModuleSync(path.join(root, "src/web/js", m)), ctx, { filename: m });
 }
 const { Chess, ChessEco, ChessTree, CHESS_OPENINGS, CHESS_OPENING_NAMES, CHESS_OPENINGS_JA, OPENING_FAMILIES_ZH, OPENING_FAMILIES_JA } = ctx;
@@ -246,6 +246,8 @@ assert(ChessEco.size >= 3000, "the table has at least 3000 positions (" + ChessE
     // 7.9
     "Czerniak Defense", "Haxo Gambit", "Suhle Defense", "Rio Gambit Accepted", "l'Hermet Variation",
     "Stoltz Variation", "Bryan Countergambit", "Dufresne Defense",
+    // 8.4 (v8-4-plan T2): from the thirty further classics
+    "Primitive Pillsbury Variation", "Krause Variation", "Opocensky Variation", "Saduleto Variation",
   ]);
   // Move notation is not English: 「伦敦体系，e6 型」 names a move, as the family
   // table's 「伦敦体系（Be2 型）」 does. It is taken out before looking for Latin.
@@ -260,7 +262,7 @@ assert(ChessEco.size >= 3000, "the table has at least 3000 positions (" + ChessE
     }
   };
   for (const [, , moves] of CHESS_OPENINGS) walkLine(moves.split(" "));
-  for (const c of CHESS_CLASSICS) {
+  for (const c of [...CHESS_CLASSICS, ...ctx.CHESS_CLASSICS_MORE_ZH.games]) { // v8-4-plan T2: the thirty are read in 读棋 too
     const g = new Chess();
     g.load_pgn(c.pgn, { sloppy: true });
     walkLine(g.history().slice(0, 30));

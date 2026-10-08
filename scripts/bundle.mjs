@@ -117,6 +117,8 @@ export const CHUNKS = [
   { entry: "src/web/js/endgames.js", out: "src/web/js/chunk-endgames.js", global: "CHESS_ENDGAMES", min: 20000 },
   // v8-2-plan T3: 名局猜着's runner — judging the guesses, its board and card (trainer/lessons.js)
   { entry: "src/web/js/trainer/guess.js", out: "src/web/js/chunk-guess.js", global: "createGuess", min: 3000 },
+  // v8-4-plan T2: the thirty further classics, three languages, for 读棋 and 名局猜着 (trainer/classics-more.js)
+  { entry: "src/web/js/classics-more-chunk.js", out: "src/web/js/chunk-classics-more.js", global: "CHESS_CLASSICS_MORE", min: 40000 },
   // v8-2-plan T2: 看 N 步后 / 盲走收官, their questions and their words (trainer/visual.js)
   { entry: "src/web/js/trainer/visual-modes.js", out: "src/web/js/chunk-visual.js", global: "CHESS_VISUAL", min: 5000 },
   // v8-2-plan T1: the advanced course part 3 — 24 lessons, three languages (trainer/lessons-adv.js)
