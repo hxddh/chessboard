@@ -397,26 +397,28 @@ if (scenario()) {
 // The alignment this bar could never reach: 36 / 32 / 27.4px and baselines
 // 26.5 / 25.3, because the mode row sized from --row-h, the buttons were a
 // literal 32 and the pill was 4px of padding around whatever the text
-// measured. It is also 12px from the left edge and 8px from the right.
+// measured. 9.0 V3: wider than 820px the bar holds nothing to see (☰ is the
+// strip's) and takes no height; at 820 and under it is the rail's row, and
+// that row is one height on one centre line, inside the bar.
 if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "play");
-    const bar = await page.evaluate(async () => {
-      // shut the panel: with it open the right inset is the panel's width plus
-      // the gap, so the two sides are only comparable here
-      document.getElementById("toggle-panel").click();
-      await new Promise((z) => setTimeout(z, 400));
+    const wide = await page.evaluate(() => document.querySelector(".chrome").getBoundingClientRect().height);
+    assert(wide === 0, lang + ": 1400 wide, the bar takes no height (" + wide + ")");
+    await page.setViewportSize({ width: 760, height: 900 });
+    await page.waitForTimeout(400);
+    const bar = await page.evaluate(() => {
       const ch = document.querySelector(".chrome");
       const cr = ch.getBoundingClientRect();
-      const items = [...document.querySelectorAll(".chrome button")]
-        .filter((e) => e && e.getBoundingClientRect().width > 0);
+      const items = [...document.querySelectorAll(".rail .rail-btn")]
+        .filter((e) => e.checkVisibility({ visibilityProperty: true }) && e.getBoundingClientRect().width > 0);
       const cs = getComputedStyle(ch);
       return {
         chrome: { t: cr.top, b: cr.bottom },
         padL: parseFloat(cs.paddingLeft), padR: parseFloat(cs.paddingRight),
         items: items.map((e) => {
           const b = e.getBoundingClientRect();
-          return { id: e.id || e.className, h: Math.round(b.height * 10) / 10,
+          return { id: e.id || e.dataset.view, h: Math.round(b.height * 10) / 10,
                    mid: Math.round((b.top + b.bottom) / 2 * 10) / 10,
                    past: Math.round((b.bottom - cr.bottom) * 10) / 10 };
         }),
@@ -424,8 +426,8 @@ if (scenario()) {
     });
     const heights = [...new Set(bar.items.map((i) => i.h))];
     const mids = [...new Set(bar.items.map((i) => i.mid))];
-    assert(heights.length === 1,
-      lang + ": everything in the bar is one height (" + heights.join(", ") + ")");
+    assert(bar.items.length >= 5 && heights.length === 1,
+      lang + ": 760 wide, everything in the bar is one height (" + heights.join(", ") + ")");
     assert(mids.length === 1,
       lang + ": …on one centre line (" + mids.join(", ") + ")");
     const barMid = Math.round((bar.chrome.t + bar.chrome.b) / 2 * 10) / 10;
