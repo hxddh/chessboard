@@ -51,7 +51,7 @@ import { ChessSrs as Srs } from "../srs.js";
 import { mateInOne, blackForcedLost, findRefutation, bestDefense } from "./puzzle-mate.js";
 import { createPuzzleBook } from "./puzzle-book.js";
 import { createPuzzleMine } from "./puzzle-mine.js";
-import { createPuzzleModes, isThemeCat, THEME_CAT } from "./puzzle-modes.js";
+import { createPuzzleModes, isThemeCat, THEME_CAT, isGroupCat, GROUP_CAT, groupOfCat } from "./puzzle-modes.js";
 import { createPuzzleOpenings } from "./puzzle-openings.js";
 import { createPuzzleRating } from "./puzzle-rating.js";
 import { createVisual } from "./visual.js";
@@ -73,9 +73,9 @@ export function createPuzzlesUI(d) {
   // v8-2-plan F1: the parts, in the order the old file ran them. The book
   // first: creating it loads the puzzle state. The modes come last, so the
   // book and the ratings reach them through forwarders.
-  const Book = createPuzzleBook({ ...d, Modes: { themeList: (id) => Modes.themeList(id) } });
+  const Book = createPuzzleBook({ ...d, Modes: { themeList: (id) => Modes.themeList(id), groupList: (g) => Modes.groupList(g) } });
   const {
-    saveProgress, bookNow, isOpeningCat, openingTreeFor, tierApplies, puzzleTier, savePuzzleState, owedNow,
+    saveProgress, bookNow, isOpeningCat, openingTreeFor, puzzleTier, savePuzzleState, owedNow,
     reviewWaits, reviewBank, puzzlesInCat,
   } = Book;
   const Rating = createPuzzleRating({ ...d, ...Book, Modes: { rateThemes: (p, score, r) => Modes.rateThemes(p, score, r) } });
@@ -169,6 +169,8 @@ export function createPuzzlesUI(d) {
   function startPuzzles() {
     // v8-0-plan B1: a theme resumes as a theme (its bands load first)
     if (isThemeCat(store.session.puzzleState.cat)) { Modes.startTheme(store.session.puzzleState.cat.slice(THEME_CAT.length)); return; }
+    // 9.0 S3: …and a group as a group
+    if (isGroupCat(store.session.puzzleState.cat)) { Modes.startGroup(store.session.puzzleState.cat.slice(GROUP_CAT.length)); return; }
     let cat = PUZZLE_CAT_IDS.includes(store.session.puzzleState.cat) || store.session.puzzleState.cat === "repdue" ? store.session.puzzleState.cat : "m1";
     // the due list is chunk-rep.js's: at launch it may still be booting — wait
     // for it once rather than read "nothing due" off a list not there yet (M3 评审)
@@ -187,7 +189,11 @@ export function createPuzzlesUI(d) {
     // don't strand the user on an empty review tab — or an emptied personal
     // book, which retires drills on its own (mistakes.js cap)
     // …or an emptied repertoire, which is a file the player can delete
-    if ((cat === "review" || cat === "mine" || cat === "rep") && !puzzlesInCat(cat).length) cat = "m1";
+    if ((cat === "review" || cat === "mine" || cat === "rep") && !puzzlesInCat(cat).length) {
+      store.session.puzzleState.cat = GROUP_CAT + "mate";
+      startPuzzles();
+      return;
+    }
     const list = puzzlesInCat(cat);
     let idx = list.findIndex((p) => !store.session.puzzleState.solved[p.id]);
     if (idx < 0) idx = 0;
@@ -758,30 +764,45 @@ export function createPuzzlesUI(d) {
     if (store.session.mode === "puzzle") Modes.render();
   }
 
+  /**
+   * 9.0 S3: the picker under the puzzle — the review card with what is due,
+   * the six kinds with their counts, the tile of what is on the board lit.
+   * Built once in the markup, only relabelled here (7.6).
+   */
+  function paintPicker(cat) {
+    const due = puzzlesInCat("review").length;
+    const rv = el("pz-review");
+    if (rv) {
+      rv.classList.toggle("active", cat === "review");
+      setText(el("pz-review-n"), due ? tf("pz.dueN", [due]) : t("pz.dueNone"));
+    }
+    const on = cat === "review" || isThemeCat(cat) ? null : groupOfCat(cat);
+    document.querySelectorAll("#pz-groups button[data-group]").forEach((b) => {
+      const g = b.dataset.group;
+      b.classList.toggle("active", g === on);
+      b.setAttribute("aria-pressed", g === on ? "true" : "false");
+      if (g === "mine") b.hidden = !store.session.mines.length;
+      const n = g === "opening" ? ALL_PUZZLES.filter((p) => p.cat === "op").length
+        : g === "mine" ? store.session.mines.length : Modes.groupCount(g);
+      setText(b.querySelector(".pz-tile-n"), tf("pz.countN", [n]));
+    });
+  }
+
   function paintPuzzlePanel() {
     const sec = document.getElementById("sec-puzzle");
     if (!sec) return;
     sec.hidden = store.session.mode !== "puzzle";
     if (store.session.mode !== "puzzle") return;
-    // an empty difficulty filter leaves no puzzle loaded — keep the filter row
-    // usable so the user can pick their way back out
+    // with no puzzle on the board (a group or a theme waiting for its first
+    // band) the picker stays usable, so the player can go elsewhere
+    paintPicker(store.session.puzzle ? store.session.puzzle.cat : store.session.puzzleState.cat);
     if (!store.session.puzzle) {
-      document.querySelectorAll("#puzzle-tier-seg button").forEach((b) => {
-        b.classList.toggle("active", b.dataset.tier === store.session.puzzleTierFilter);
-        b.disabled = false; // no puzzle loaded means we are not in review
-      });
-      document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
-        b.classList.toggle("active", b.dataset.cat === store.session.puzzleState.cat);
-        if (b.dataset.cat === "mine") b.hidden = !store.session.mines.length;
-        if (b.dataset.cat === "rep") b.hidden = !RepUI.total();
-      });
-      avail(el("row-puzzle-tier"), tierApplies(store.session.puzzleState.cat));
       syncOpSideSeg(store.session.puzzleState.cat);
       const emptyProg = document.getElementById("puzzle-progress");
       if (emptyProg) emptyProg.textContent = tf("pz.solvedCount",
         [bookNow().filter((p) => store.session.puzzleState.solved[p.id]).length, bookNow().length]);
       const emptyTask = document.getElementById("puzzle-task");
-      if (emptyTask) emptyTask.textContent = t("pz.noneInTier");
+      if (emptyTask) emptyTask.textContent = t("theme.loading");
       const emptyList = document.getElementById("puzzle-list");
       if (emptyList) emptyList.replaceChildren();
       avail(el("puzzle-feedback"), false);
@@ -797,26 +818,7 @@ export function createPuzzlesUI(d) {
         : store.session.puzzle.cat === "repdue" ? tf("rep.dueLeft", [list.length])
         : tf("pz.solvedCount", [solvedAll, bookNow().length]);
     }
-    // the tier row does nothing in the review queue — grey it out rather than
-    // The difficulty filter exists only where difficulty is a separate axis.
-    // In review it filters nothing (the queue is what it is), and in the three
-    // mate categories the tier is the category under another name — see
-    // tierApplies(). A filter that cannot change the list is not disabled, it
-    // is absent (P3.3).
-    const shows = tierApplies(store.session.puzzle.cat);
-    avail(el("row-puzzle-tier"), shows);
     syncOpSideSeg(store.session.puzzle.cat);
-    document.querySelectorAll("#puzzle-tier-seg button").forEach((b) => {
-      b.classList.toggle("active", shows && b.dataset.tier === store.session.puzzleTierFilter);
-      b.disabled = false;
-    });
-    document.querySelectorAll("#puzzle-cat-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.cat === store.session.puzzle.cat || (b.dataset.cat === "rep" && store.session.puzzle.cat === "repdue"));
-      // surface how many are queued for review right on the tab
-      if (b.dataset.cat === "review") b.textContent = missedCount ? tf("pz.reviewN", [missedCount]) : t("pz.cat.review");
-      if (b.dataset.cat === "mine") b.hidden = !store.session.mines.length;
-      if (b.dataset.cat === "rep") b.hidden = !RepUI.total();
-    });
     const task = document.getElementById("puzzle-task");
     if (task) {
       // 「第 N 题」 is the chip's job now (7.3 B4) — the card carries the goal,
@@ -879,23 +881,21 @@ export function createPuzzlesUI(d) {
   /** The puzzle panel's controls — wired from app.js's boot as before (v8-0-plan F4). */
   function wirePuzzlePanel() {
     Modes.wire();
-    document.getElementById("puzzle-cat-seg").onclick = (ev) => {
-      const b = ev.target.closest("button[data-cat]");
-      // `puzzle` is null whenever the tier filter empties the current category —
-      // exactly the moment the user needs these tabs to change category, so this
-      // must not bail out on a missing puzzle
-      if (!b || (store.session.puzzle && b.dataset.cat === store.session.puzzle.cat)) return;
+    // 9.0 S3: the six kinds, and the review queue as its own card
+    document.getElementById("pz-groups").onclick = (ev) => {
+      const b = ev.target.closest("button[data-group]");
+      if (b) Modes.goGroup(b.dataset.group);
+    };
+    document.getElementById("pz-review").onclick = () => {
+      if (store.session.run) { Modes.endRun(); store.session.run = null; }
       const go = () => {
-        if (b.dataset.cat === "review" && !puzzlesInCat("review").length) {
-          toast(t("pz.noMissed"));
-          return;
-        }
-        store.session.puzzleState.cat = b.dataset.cat;
+        if (!puzzlesInCat("review").length) { toast(t("pz.noMissed")); return; }
+        store.session.puzzleState.cat = "review";
         savePuzzleState();
         startPuzzles();
       };
       // v8-1-plan T6: a queue of bank puzzles only is empty until their bands are here
-      if (b.dataset.cat !== "review" || !reviewWaits(go)) go();
+      if (!reviewWaits(go)) go();
     };
     document.getElementById("op-side-seg").onclick = (ev) => {
       const b = ev.target.closest("button[data-side]");
@@ -904,13 +904,6 @@ export function createPuzzlesUI(d) {
       store.session.puzzleState.opSide = b.dataset.side;
       savePuzzleState();
       // land on this chair's first unsolved line, same as entering the mode
-      startPuzzles();
-    };
-    document.getElementById("puzzle-tier-seg").onclick = (ev) => {
-      const b = ev.target.closest("button[data-tier]");
-      if (!b || b.dataset.tier === store.session.puzzleTierFilter) return;
-      store.session.puzzleTierFilter = b.dataset.tier;
-      saveSettings();
       startPuzzles();
     };
     document.getElementById("puzzle-retry").onclick = () => {
@@ -922,6 +915,8 @@ export function createPuzzlesUI(d) {
     document.getElementById("puzzle-review-nudge").onclick = () =>
       document.getElementById("puzzle-smart").click();
     document.getElementById("puzzle-smart").onclick = function smart() {
+      // 9.0 S3: from a finished run's card, back to practice
+      if (store.session.run) { Modes.endRun(); store.session.run = null; }
       // the review rung reads the queue: a due bank puzzle's band first (v8-1-plan T6)
       if (reviewWaits(smart)) return;
       // the rating rung only once a first answer has moved the rating — a fresh
@@ -937,10 +932,6 @@ export function createPuzzlesUI(d) {
       if (picked && isOpeningCat(picked.cat) && isOpeningCat(pick.cat))
         store.session.puzzleState.opSide = picked.side === "b" ? "b" : "w";
       savePuzzleState();
-      // the recommendation must be able to serve what it picked: the tier
-      // filter is a per-category browse tool, and a pick filtered out by it
-      // would land on "这一档没有题" — the interface contradicting itself
-      store.session.puzzleTierFilter = "all";
       const list = puzzlesInCat(pick.cat);
       const idx = Math.max(0, list.findIndex((p) => p.id === pick.id));
       startPuzzleAt(pick.cat, idx);

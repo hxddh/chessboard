@@ -1,5 +1,5 @@
 /**
- * The interface's icons — 47 line icons from Lucide, drawn inline as SVG.
+ * The interface's icons — 50 line icons from Lucide, drawn inline as SVG.
  *
  * 7.7 (v7-7-plan §7): until now the icons were emoji — a mortarboard, a
  * jigsaw piece and a cup on the achievements, a padlock on a locked one, a
@@ -114,7 +114,11 @@
     "grid": [["rect",{"width":"18","height":"18","x":"3","y":"3","rx":"2"}],["path",{"d":"M3 12h18"}],["path",{"d":"M12 3v18"}]],
     "volume-2": [["path",{"d":"M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"}],["path",{"d":"M16 9a5 5 0 0 1 0 6"}],["path",{"d":"M19.364 18.364a9 9 0 0 0 0-12.728"}]],
     "database": [["ellipse",{"cx":"12","cy":"5","rx":"9","ry":"3"}],["path",{"d":"M3 5V19A9 3 0 0 0 21 19V5"}],["path",{"d":"M3 12A9 3 0 0 0 21 12"}]],
-    "sliders": [["path",{"d":"M21 4h-7"}],["path",{"d":"M10 4H3"}],["path",{"d":"M21 12h-9"}],["path",{"d":"M8 12H3"}],["path",{"d":"M21 20h-5"}],["path",{"d":"M12 20H3"}],["path",{"d":"M14 2v4"}],["path",{"d":"M8 10v4"}],["path",{"d":"M16 18v4"}]]
+    "sliders": [["path",{"d":"M21 4h-7"}],["path",{"d":"M10 4H3"}],["path",{"d":"M21 12h-9"}],["path",{"d":"M8 12H3"}],["path",{"d":"M21 20h-5"}],["path",{"d":"M12 20H3"}],["path",{"d":"M14 2v4"}],["path",{"d":"M8 10v4"}],["path",{"d":"M16 18v4"}]],
+    // 9.0 S3: the training page's defence and mistakes kinds, and 盲走
+    "shield": [["path",{"d":"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"}]],
+    "circle-x": [["circle",{"cx":"12","cy":"12","r":"10"}],["path",{"d":"m15 9-6 6"}],["path",{"d":"m9 9 6 6"}]],
+    "eye-off": [["path",{"d":"M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"}],["path",{"d":"M14.084 14.158a3 3 0 0 1-4.242-4.242"}],["path",{"d":"M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"}],["path",{"d":"m2 2 20 20"}]]
   };
 
   const NS = "http://www.w3.org/2000/svg";

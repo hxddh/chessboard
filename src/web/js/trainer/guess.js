@@ -38,12 +38,12 @@ const REPLY_MS = 700;
 
 /**
  * @param {object} d trainer/lessons.js's bag, plus what it adds: Chess,
- *   Engine, Review, Grade, CLASSICS, classicText, carryToken, startClassic
+ *   Engine, Review, Grade, CLASSICS, classicText, carryToken
  */
 export function createGuess(d) {
   const {
     store, t, tf, tdot, Chess, Engine, Review, Grade, CLASSICS, classicText, carryToken, saveLearnState,
-    startClassic, sync, BoardView, animateReply, moveSound, selectSquare, clearSelection, choosePromotion,
+    sync, BoardView, animateReply, moveSound, selectSquare, clearSelection, choosePromotion,
     kingSquare, cursorSquare, evalScalar, scanBudget, sideName,
   } = d;
   /** White-view scalar per position after a move (fen), and loss per (fen, guess) */
@@ -302,8 +302,9 @@ export function createGuess(d) {
     row.className = "lesson-controls fit-row fit-fill";
     ui.jump = b("gs-jump", jump);
     ui.swap = b("gs-swap", () => { const s = run(); if (s) start(s.ci, s.side === "w" ? "b" : "w"); });
-    ui.quit = b("gs-quit", () => { const s = run(); if (s) startClassic(s.ci); });
-    row.append(ui.jump, ui.swap, ui.quit);
+    // 9.0 S3: reading the game instead is 名局's switch (读谱 / 猜着), not a
+    // third button here that would read it without turning the switch
+    row.append(ui.jump, ui.swap);
     ui.root.append(ui.about, ui.intro, ui.say, ui.sum, ui.worst, row);
   }
   /** The verdict on one guess, in the language of the moment it is read. */
@@ -327,7 +328,7 @@ export function createGuess(d) {
       s.stall = null;
       setTimeout(() => { if (run() === s) { if (p === "wait") advance(s); else judge(s, p); } }, 0);
     }
-    // 重来 restarts the game (lessons.js startLearnTask); 读棋 may have hidden it
+    // 重来 restarts the game (lessons.js startLearnTask); reading may have hidden it
     const again = document.getElementById("lesson-restart");
     if (again) again.hidden = false;
     if (box.firstChild !== ui.root || box.childNodes.length !== 1) box.replaceChildren(ui.root);
@@ -348,7 +349,6 @@ export function createGuess(d) {
     ui.jump.hidden = !w;
     put(ui.jump, t("gs.jump"));
     put(ui.swap, t("gs.swap"));
-    put(ui.quit, t("study.head"));
   }
 
   const restart = () => { const s = run(); if (s) start(s.ci, s.side); };

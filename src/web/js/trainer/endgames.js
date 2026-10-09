@@ -34,6 +34,7 @@ export function createEndgames(d) {
   let data = null;
   let asked = null;
   let meLater = null; // 「我的」 asked before the chunk was here
+  const later = []; // 9.0 S3: whenReady's callers, until the chunk is here
 
   /**
    * Start the fetch once; `onReady` repaints whoever asked. After the frame
@@ -48,10 +49,25 @@ export function createEndgames(d) {
       .then((m) => {
         data = m;
         onReady();
+        for (const fn of later.splice(0)) fn();
         if (meLater) { const go = meLater; meLater = null; renderMe(go); }
       }, () => { asked = null; }); // a failed load is retried next time something asks
   }
   const ready = () => !!data;
+  /** 9.0 S3: run `fn` once the camp is here (at once if it is). */
+  function whenReady(fn) {
+    if (data) { fn(); return; }
+    later.push(fn);
+    ensure();
+  }
+  /** Where 残局 picks up: the one last opened, else the first not done, else the first. */
+  function resumeId() {
+    if (!data) return null;
+    const eg = state();
+    if (eg.last && item(eg.last)) return eg.last;
+    const open = data.ITEMS.find((x) => !eg.done[x.id]);
+    return (open || data.ITEMS[0]).id;
+  }
   const word = (arr) => (arr ? arr[LANG_AT[store.ui.langId] || 0] || arr[0] : "");
   const item = (id) => (data ? data.ITEMS.find((x) => x.id === id) || null : null);
   const group = (g) => data.GROUPS.find((x) => x.id === g);
@@ -127,6 +143,8 @@ export function createEndgames(d) {
     return data ? data.ITEMS.filter((x) => (!g || x.g === g) && eg.done[x.id]).length : 0;
   }
   const total = () => (data ? data.ITEMS.length : 0);
+  /** How many endgames group `g` holds (9.0 S1's 继续 card). */
+  const groupSize = (g) => (data ? data.ITEMS.filter((x) => x.g === g).length : 0);
 
   /** The camp's part of the lesson list, after the classics; fetched on first draw. */
   function renderList(list, curId) {
@@ -193,5 +211,5 @@ export function createEndgames(d) {
     cont.onclick = () => { const f = data.ITEMS.find((x) => !state().done[x.id]); if (f) go(f.id); };
   }
 
-  return { ensure, ready, item, lesson, record, due, next, doneCount, total, renderList, renderMe, state };
+  return { ensure, ready, whenReady, resumeId, item, lesson, record, due, next, doneCount, total, groupSize, renderList, renderMe, state };
 }

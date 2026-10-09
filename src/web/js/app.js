@@ -33,6 +33,7 @@ import { createPuzzlesUI } from "./trainer/puzzles.js";
 import { createTodayUI } from "./trainer/today.js";
 import { createMePage } from "./me-page.js";
 import { createShell } from "./shell.js";
+import { createTodayPage } from "./today-page.js";
 import { createPrefsUI } from "./prefs-ui.js";
 import { ChessReview } from "./review.js";
 import { createAnalysis } from "./review/analysis.js";
@@ -337,8 +338,6 @@ import { loadChunk } from "./chunk.js";
       progress: null,
       /** 今天的训练 — the active sitting {steps, i, before}, or null (planner.js) */
       daily: null,
-      /** active difficulty filter: "all" | "easy" | "mid" | "hard" */
-      puzzleTierFilter: "all",
       /** editor runtime: {board, turn, castling, brush} | null */
       editor: null,
       coachPending: null,
@@ -395,6 +394,9 @@ import { loadChunk } from "./chunk.js";
       autoFlipPvp: false,
       /** 9.0 S5: the settings page's open category (shell.js SETTING_CATS) */
       setCat: "general",
+      /** 9.0 S3: 训练's last segment (shell.js TRAIN_SEGS), and 名局 read or guessed */
+      trainSeg: "course",
+      classicMode: "read",
       /** UI language id (see i18n.js); lesson/puzzle content stays Chinese */
       langId: null,  // filled in below, where it can first be computed
       /** Is the app in front of somebody? Kept by the app:activate/deactivate
@@ -860,19 +862,6 @@ import { loadChunk } from "./chunk.js";
   function baseGame() {
     const sf = startFen();
     return sf ? new Chess(sf) : new Chess();
-  }
-
-  /** Reset `game` itself to its starting position, keeping any FEN header. */
-  function resetGameToStart() {
-    // whatever was being previewed belonged to the game that just ended
-    if (store.ui.preview) clearPreview();
-    const sf = startFen();
-    if (sf) {
-      gameLoad(sf);
-      game.header("SetUp", "1", "FEN", sf);
-    } else {
-      gameReset();
-    }
   }
 
   /**
@@ -1460,8 +1449,10 @@ import { loadChunk } from "./chunk.js";
       if (typeof s.coachOn === "boolean") store.session.coachOn = s.coachOn;
       if (typeof s.autoFlipPvp === "boolean") store.ui.autoFlipPvp = s.autoFlipPvp;
       if (I18n && typeof s.langId === "string") store.ui.langId = I18n.setLang(s.langId);
-      if (["all", "easy", "mid", "hard"].includes(s.puzzleTier)) store.session.puzzleTierFilter = s.puzzleTier;
       if (typeof s.setCat === "string") store.ui.setCat = s.setCat;
+      if (typeof s.liveOn === "boolean") store.session.liveOn = s.liveOn;
+      if (typeof s.trainSeg === "string") store.ui.trainSeg = s.trainSeg;
+      if (s.classicMode === "guess") store.ui.classicMode = "guess";
       // v8-0-plan A1: the view and the last playing mode; shell.js vets both
       Object.assign(store.ui, { view: s.view, playMode: s.playMode });
       if (PERSONA_IDS.includes(s.personaId)) store.session.personaId = s.personaId;
@@ -1469,7 +1460,7 @@ import { loadChunk } from "./chunk.js";
   }
   function saveSettings() {
     try {
-      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, setCat: store.ui.setCat, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
+      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, setCat: store.ui.setCat, liveOn: store.session.liveOn, trainSeg: store.ui.trainSeg, classicMode: store.ui.classicMode, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
         volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv, bgWorker: store.ui.bgWorker === true,
         textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
         // v8-0-plan A3: the look
@@ -2052,7 +2043,7 @@ import { loadChunk } from "./chunk.js";
   // v8-0-plan F4: the analysis — the pass and what it leaves behind — lives
   // in review/analysis.js. The panel and the library are made below it.
   const Analysis = createAnalysis({
-    store, game, Persist, t, tf, toast, sync, sanHistory, baseGame, bootEngine,
+    store, game, Persist, t, tf, toast, sync, sanHistory, baseGame, bootEngine, saveSettings,
     setAnalyzeUI: () => setAnalyzeUI(), stopLiveAnalysis,
     LibraryUI: { adoptBoardAnalysis: (...args) => LibraryUI.adoptBoardAnalysis(...args) },
     boardDrillSource, saveMines, savePuzzleState, saveProgress,
@@ -2373,10 +2364,8 @@ import { loadChunk } from "./chunk.js";
   const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;
   const closeDiagnosis = () => LibraryUI.closeDiagnosis();
   const closeLibList = () => LibraryUI.closeLibList();
-  const deepenLibraryGame = (id) => LibraryUI.deepenLibraryGame(id);
   const importPgnToLibrary = (text, label) => LibraryUI.importPgnToLibrary(text, label);
   const libNamesFrom = (text) => LibraryUI.libNamesFrom(text);
-  const loadFromLibrary = (id) => LibraryUI.loadFromLibrary(id);
   const loadLibraryEntry = (entry) => LibraryUI.loadLibraryEntry(entry);
   const openDiagnosis = () => LibraryUI.openDiagnosis();
   const openLibList = (pick, opts) => LibraryUI.openLibList(pick, opts);
@@ -2390,8 +2379,8 @@ import { loadChunk } from "./chunk.js";
     bookNow, drawRatingTrend, el, loadStats, motifKeyOf, owedNow, puzzlesInCat, ratingLabel,
     ratingTip, runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
-    sync, t, tf, toast,
-    Shell: { go: (id) => Shell.go(id) },
+    sync, t, tf, toast, pieceSrc: (k) => BoardView.pieceSrc(k), game, isOver: () => appGameOver(), isLive: () => isLive(),
+    Shell: { go: (id) => Shell.go(id), openTrain: (g) => Shell.openTrain(g) },
   });
   const {
     renderPuzzleTally, libPlayedAt, dailySignals, dailyStepLabel, syncDailyUI,
@@ -2465,7 +2454,6 @@ import { loadChunk } from "./chunk.js";
     // which chair to sit in is `seatRepSide`'s rule, and startPuzzles() below
     // applies it — one rule, one place
     store.session.puzzleState.cat = due ? "repdue" : "rep";   // v8-1-plan T3: 复习到期的着
-    store.session.puzzleTierFilter = "all";
     savePuzzleState();
     store.session.mode = "puzzle";
     saveSettings();
@@ -3514,7 +3502,7 @@ import { loadChunk } from "./chunk.js";
     // time anyone wonders where 分析 went (5.1, work package E)
     const engineDown = !ChessEngine || !!store.session.engineDown;
     avail(el("an-run"), !engineDown && (hasGame || store.session.analyzing));
-    avail(el("an-deep"), !engineDown && hasGame && !store.session.analyzing);
+    avail(el("an-more"), !engineDown && hasGame && !store.session.analyzing);
     // …said exactly where 分析 would have stood: once there is a game to
     // analyse. An empty board has nothing for the engine to do yet, and a
     // heading over one line of apology is still a heading over nothing.
@@ -3580,8 +3568,9 @@ import { loadChunk } from "./chunk.js";
       : over && unanalysed ? "an-run" : null;
     for (const b of document.querySelectorAll(".act-btn.primary")) {
       // 7.9 §4a: the record page's empty library spends its own fill, on a
-      // tab of its own (library-ui.js renderLibrary) — not this function's
-      if (b.id !== wants && !b.closest(".page")) b.classList.remove("primary");
+      // tab of its own (library-ui.js renderLibrary) — not this function's;
+      // nor is 为你出一题, the puzzle picker's one fill (9.0 S3)
+      if (b.id !== wants && !b.closest(".page, .pz-hero")) b.classList.remove("primary");
     }
     if (wants) {
       const b = el(wants);
@@ -5214,13 +5203,14 @@ import { loadChunk } from "./chunk.js";
   });
   SettingsUI.wire();
   // v8-0-plan A1: the rail, the home page and the pages (shell.js)
-  const Shell = createShell({
-    doc: document, store, appEl, t, tf, switchMode, saveSettings, sanHistory,
-    requestNewGame: () => requestNewGame(), onSettings: (c) => PrefsUI.onCat(c), gameOver: () => appGameOver(),
-    onMe: () => MePage.onShow(), recommendation, owed: owedNow, dailyStepLabel, dailyPlan: () => Planner.plan(dailySignals()).steps, dailyJump: (step) => dailyJump(step),
-    nextLesson: () => { const i = LESSONS.findIndex((L) => !store.session.learnState.done[L.id]); return i < 0 ? null : { i, n: i + 1, title: lessonText(LESSONS[i]).title }; },
-  });
+  const Shell = createShell({ doc: document, store, appEl, switchMode, saveSettings, onSettings: (c) => PrefsUI.onCat(c),
+    onHome: () => { TodayPage.render(); syncDailyUI(); }, onMe: () => MePage.onShow(), learnSeg: () => LessonsUI.learnSeg(), openSeg: (g) => LessonsUI.openSeg(g) });
   Shell.wire();
+  // 9.0 S1: 今天 — the page around the coach's card (today-page.js)
+  const TodayPage = createTodayPage({ doc: document, store, t, tf, tdot, Chess, pieceSrc: (k) => BoardView.pieceSrc(k), LESSONS, lessonText, Endgames: LessonsUI.Endgames,
+    CLASSICS: LessonsUI.CLASSICS, classicText: LessonsUI.classicText, loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText: () => ratingLabel(),
+    drawRatingTrend, Shell, requestNewGame: () => requestNewGame() });
+  TodayPage.wire();
   // v8-0-plan C3: 开局浏览器 — the key, the panel's state; the panel itself is a chunk
   createExplorerLazy({ store, t, tf, tdot, viewGame, movePath, startClockIfIdle, saveSettings, library: LibraryUI, repertoire: RepUI, saved: Persist.read("settings").value,
     toBoard: () => { Shell.go("play"); setSideTab("play"); } });

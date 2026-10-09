@@ -120,7 +120,8 @@ export function createSettingsUI(d) {
     });
     // v8-0-plan B4: 自定义 is lit by any c<min>+<inc> id, and shows its numbers
     const custom = TimeControl.isCustom(pick.timeControl);
-    document.querySelectorAll("#clock-seg button").forEach((b) => {
+    // 9.0 S2: the four common clocks, and the rest under 更多选项
+    document.querySelectorAll("#clock-seg button, #clock-seg-more button").forEach((b) => {
       b.classList.toggle("active", b.dataset.tc === pick.timeControl || (custom && b.dataset.tc === "custom"));
     });
     const customRow = document.getElementById("clock-custom");
@@ -148,6 +149,8 @@ export function createSettingsUI(d) {
       setText(colorRow.querySelector(".setting-k"), t(pvpPick ? "ng.pvpColor" : "side.color"));
     }
     if (clockRow) clockRow.hidden = ngMode !== "pvp" && ngMode !== "ai";
+    const moreClocks = document.getElementById("row-clock-more");
+    if (moreClocks && clockRow) moreClocks.hidden = clockRow.hidden;
     const coachSwitch = document.getElementById("opt-coach");
     if (coachSwitch) coachSwitch.setAttribute("aria-pressed", store.session.coachOn ? "true" : "false");
     const flipSwitch = document.getElementById("opt-autoflip");
@@ -218,10 +221,11 @@ export function createSettingsUI(d) {
     // v8-0-plan B4: 自定义 is the control the two numbers beside it say
     const customTc = () => TimeControl.customId(document.getElementById("tc-min").value,
       document.getElementById("tc-inc").value);
-    document.getElementById("clock-seg").onclick = (ev) => {
+    const onClock = (ev) => {
       const b = ev.target.closest("button[data-tc]");
       if (b) pickTc(b.dataset.tc === "custom" ? customTc() : b.dataset.tc);
     };
+    for (const id of ["clock-seg", "clock-seg-more"]) document.getElementById(id).onclick = onClock;
     for (const id of ["tc-min", "tc-inc"]) {
       const inp = document.getElementById(id);
       if (inp) inp.onchange = () => { pickTc(customTc()); paintSettings(); };

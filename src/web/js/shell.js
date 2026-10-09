@@ -5,17 +5,18 @@
  * on the settings page (index.html's #sec-mode), the library and its
  * diagnosis were ~460px dialogs, and 统计 / 棋谱库 / 开局书 / 对局历史 / 成就
  * were stacked in the 400px side panel under 记录. This is the level above
- * all of that — seven views, one of them showing at a time:
+ * all of that — six views, one of them showing at a time:
  *
- *   home     首页: 继续上次 / 今天的训练 / 下一步建议
+ *   home     今天: the next thing on a board, today's counts, where each
+ *            course was left, the last games, the ratings (9.0 S1)
  *   play     下棋: the board with the panel — the geometry players know
- *   puzzle   谜题: the same board view, in the puzzle mode
- *   learn    学习: the same board view, in the lesson mode
+ *   train    训练: the same board view, in the lesson or the puzzle mode —
+ *            课程 / 谜题 / 残局 / 名局 at the top of the panel (9.0 S3)
  *   library  棋谱库: a page — the library, its diagnosis, the opening book
  *   me       我的: a page — statistics, history, achievements
  *   settings 设置: a page — the one place settings live (9.0 S5)
  *
- * The three board views are the one stage in three modes, so the board's
+ * The two board views are the one stage in its modes, so the board's
  * rect is the same in all of them (test-layout-e2e). The two pages lie over
  * the stage rather than replacing it: the board keeps its size underneath,
  * and coming back to it moves nothing.
@@ -31,7 +32,9 @@ import { ChessDialog } from "./dialog.js";
 import { ChessBoardView } from "./board.js";
 
 /** The views, in the rail's order; `home` is the rail's head. */
-export const SHELL_VIEWS = ["home", "play", "puzzle", "learn", "library", "me", "settings"];
+export const SHELL_VIEWS = ["home", "play", "train", "library", "me", "settings"];
+/** 9.0 S3: 训练's four segments, in the switch's order. */
+export const TRAIN_SEGS = ["course", "puzzle", "endgame", "classic"];
 /** The views that are pages over the stage, and the page each one shows. */
 const PAGES = { home: "page-home", library: "page-library", me: "page-me", settings: "page-settings" };
 /** 9.0 S5: the settings page's categories, in the list's order. */
@@ -42,8 +45,7 @@ export const SETTING_CATS = ["general", "board", "sound", "game", "data", "advan
  */
 export function createShell(d) {
   const {
-    doc, store, appEl, t, tf, switchMode, saveSettings, requestNewGame, onSettings,
-    sanHistory, gameOver, recommendation, nextLesson, owed, dailyPlan, dailyStepLabel, dailyJump, onMe,
+    doc, store, appEl, switchMode, saveSettings, onSettings, onHome, onMe, learnSeg, openSeg,
   } = d;
   const Dlg = ChessDialog;
   const rail = doc.getElementById("rail");
@@ -53,7 +55,44 @@ export function createShell(d) {
   /** The board view the current mode belongs to. */
   function boardView() {
     const m = store.session.mode;
-    return m === "learn" || m === "puzzle" ? m : "play";
+    return m === "learn" || m === "puzzle" ? "train" : "play";
+  }
+
+  // --- 训练 (9.0 S3) ----------------------------------------------------------
+
+  /** The segment on the board now, or null outside 训练. */
+  function trainSeg() {
+    const m = store.session.mode;
+    if (m === "puzzle") return "puzzle";
+    return m === "learn" ? (learnSeg && learnSeg()) || "course" : null;
+  }
+  /**
+   * Into segment `seg`: 谜题 is the puzzle mode; the other three are the
+   * lesson mode, opened where the segment was left (lessons.js openSeg).
+   */
+  function openTrain(seg) {
+    const want = TRAIN_SEGS.includes(seg) ? seg : "course";
+    store.ui.trainSeg = want;
+    if (want === "puzzle") { if (store.session.mode !== "puzzle") switchMode("puzzle"); }
+    else {
+      if (store.session.mode !== "learn") switchMode("learn");
+      if (openSeg) openSeg(want);
+    }
+    show("train");
+    saveSettings();
+  }
+  /** The switch over the panel: shown while training, the segment lit. */
+  function paintTrain() {
+    const row = doc.getElementById("train-seg");
+    if (!row) return;
+    const seg = trainSeg();
+    row.hidden = !seg;
+    if (seg) store.ui.trainSeg = seg;
+    for (const b of row.querySelectorAll("button[data-seg]")) {
+      const on = b.dataset.seg === seg;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    }
   }
 
   // before the first show() at launch, nothing is showing yet: the restored
@@ -113,7 +152,8 @@ export function createShell(d) {
     // history) belongs to the page it was opened from
     while (closeSheet()) { /* one sheet per pass */ }
     if (view === "play" && boardView() !== "play") switchMode(store.ui.playMode === "pvp" ? "pvp" : "ai");
-    else if ((view === "puzzle" || view === "learn") && store.session.mode !== view) switchMode(view);
+    // 训练 from elsewhere: the segment it was left on
+    else if (view === "train" && boardView() !== "train") { openTrain(store.ui.trainSeg); return; }
     show(view);
     saveSettings();
   }
@@ -149,12 +189,14 @@ export function createShell(d) {
    * game lands while it is showing (Codex on #86).
    */
   function onGame() {
+    paintTrain();
     if (shown() && store.ui.view === "home") renderHome();
   }
 
   function onSession() {
     const m = store.session.mode;
     if (m === "ai" || m === "pvp") store.ui.playMode = m;
+    paintTrain();
     if (!shown()) return;
     if (!isPage(store.ui.view) && store.ui.view !== boardView()) show(boardView());
     else if (store.ui.view === "home") renderHome();
@@ -219,82 +261,10 @@ export function createShell(d) {
     });
   }
 
-  // --- 首页 ------------------------------------------------------------------
+  // --- 今天 (9.0 S1) ------------------------------------------------------------
 
-  /** A card's body text and its one button, written only when they differ. */
-  function fill(id, lines, label, action) {
-    const card = doc.getElementById(id);
-    if (!card) return;
-    const body = card.querySelector(".home-body");
-    const btn = card.querySelector(".home-go");
-    const sig = lines.join("\u0001") + "|" + label;
-    if (body && body.dataset.sig !== sig) {
-      body.dataset.sig = sig;
-      body.replaceChildren(...lines.map((s) => {
-        const p = doc.createElement("p");
-        p.className = "home-line";
-        p.textContent = s;
-        return p;
-      }));
-    }
-    // 7.6: relabelled in place, never rebuilt — the button may be under a press
-    if (btn) {
-      if (btn.textContent !== label) btn.textContent = label;
-      btn.onclick = action;
-    }
-  }
-
-  function renderHome() {
-    // 继续上次: where the board was left — a lesson, a puzzle or a game
-    const m = store.session.mode;
-    const n = sanHistory().length;
-    if (m === "learn") {
-      fill("home-continue", [t("home.cont.learn")], t("home.cont.go"), () => go("learn"));
-    } else if (m === "puzzle") {
-      fill("home-continue", [t("home.cont.puzzle")], t("home.cont.go"), () => go("puzzle"));
-    } else if (n && !gameOver()) {
-      fill("home-continue", [tf("home.cont.live", [t(m === "pvp" ? "mode.pvp" : "mode.ai"), Math.ceil(n / 2)])],
-        t("home.cont.go"), () => go("play"));
-    } else if (n) {
-      fill("home-continue", [t("home.cont.over")], t("home.cont.review"), () => go("play"));
-    } else {
-      fill("home-continue", [t("home.cont.none")], t("chrome.new"), () => { go("play"); requestNewGame(); });
-    }
-    // 今天的训练: the planner's steps, and the same button as the panel's card
-    const running = store.session.daily;
-    const steps = running ? running.steps.slice(running.i) : dailyPlan();
-    if (!steps.length) {
-      fill("home-daily", [t("daily.rest")], t("nav.puzzle"), () => go("puzzle"));
-    } else {
-      fill("home-daily", steps.slice(0, 3).map((s, i) => (i + 1) + ". " + dailyStepLabel(s)),
-        running ? tf("daily.of", [running.i + 1, running.steps.length]) : t("home.daily.go"),
-        // the panel card's own handler: it jumps to the step, and the jump
-        // lands on the step's view (toBoard / go("library"))
-        () => { const b = doc.getElementById("daily-btn"); if (b) b.click(); });
-    }
-    // 下一步建议: the coach's sentence when it has one, and a concrete step
-    const said = recommendation();
-    const lesson = nextLesson();
-    const due = owed();
-    const lines = said ? [said] : [];
-    // The button opens what the card names — the daily plan's own jump, so
-    // the lesson is that lesson (not the last one visited) and the review is
-    // the 错题 category (not whichever one was open) (Codex on #86)
-    if (lesson) {
-      lines.push(tf("home.next.lesson", [lesson.n, lesson.title]));
-      fill("home-next", lines, t("home.next.learn"), () => dailyJump({ kind: "lesson", i: lesson.i }));
-    } else if (due) {
-      lines.push(tf("home.next.review", [due]));
-      fill("home-next", lines, t("nav.puzzle"), () => dailyJump({ kind: "review" }));
-    } else {
-      lines.push(t("home.next.smart"));
-      fill("home-next", lines, t("pz.smart"), () => {
-        go("puzzle");
-        const b = doc.getElementById("puzzle-smart");
-        if (b) b.click();
-      });
-    }
-  }
+  /** The page is today-page.js's and trainer/today.js's; this only asks it to draw. */
+  function renderHome() { if (onHome) onHome(); }
 
   // --- wiring ----------------------------------------------------------------
 
@@ -302,6 +272,11 @@ export function createShell(d) {
 
   function wire() {
     wireCats();
+    const seg = doc.getElementById("train-seg");
+    if (seg) seg.addEventListener("click", (ev) => {
+      const b = ev.target.closest("button[data-seg]");
+      if (b && b.dataset.seg !== trainSeg()) openTrain(b.dataset.seg);
+    });
     if (rail) {
       rail.addEventListener("click", (ev) => {
         const b = ev.target.closest("button");
@@ -336,7 +311,7 @@ export function createShell(d) {
   }
 
   return {
-    go, show, toBoard, restore, onSession, onGame, renderHome, wire, boardView, setSideTab,
+    go, show, toBoard, restore, onSession, onGame, renderHome, wire, boardView, setSideTab, openTrain,
     /** Is a page (not the board) in front? The game's keys stand down. */
     pageShown: () => isPage(store.ui.view),
   };
