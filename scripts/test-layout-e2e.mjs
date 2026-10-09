@@ -5685,7 +5685,8 @@ if (scenario()) {
           spill: bs.filter((b) => b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1 || b.getBoundingClientRect().right > box.right + 1).map((b) => b.textContent.trim()),
           n: bs.length, sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
       });
-      assert(me.shown && me.meta === "2/90" && me.n === 2, `${tag}: 「我的」有训练营一节，2/90，进训练营 + 复习两个按钮`);
+      // 9.0 S3: a record, not a second way in — the camp is 训练 · 残局
+      assert(me.shown && me.meta === "2/90" && me.n === 0, `${tag}: 「我的」有训练营一节，2/90，没有第二个入口（${me.n} 个按钮）`);
       assert(me.tall.length === 0, `${tag}: 五个主题各一行` + (me.tall.length ? " — " + me.tall.join(", ") : ""));
       assert(me.sideways <= 0, `${tag}: 页面不横向滚动 (${me.sideways}px)`);
       assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));

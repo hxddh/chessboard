@@ -11,7 +11,7 @@
  *               insufficient material, the goal; it is marked done and walks
  *               up the review ladder
  *   4 我的      the section counts it (1/90), shows no review due, and
- *               进训练营 opens the next untried position in 训练 · 残局;
+ *               训练 · 残局 opens where it was left, else the next untried position;
  *               残局 picks up where it was left (9.0 S3) after 课程
  *   5 旧存档    an 8.0 learn key (no eg) loads: the course progress is kept
  *               and the camp reads 0/90
@@ -115,10 +115,9 @@ const trainSeg = (page) => page.evaluate(() => {
 });
 /** 9.0 S3: into 训练's 残局 segment — the camp's own catalog */
 async function toEndgames(page) {
-  if ((await trainSeg(page)) !== "endgame") {
-    if (!(await trainSeg(page))) await page.click('#rail button[data-view="train"]');
-    await page.click('#train-seg button[data-seg="endgame"]');
-  }
+  // a page (我的, 今天) may cover the board while the switch under it is lit
+  if ((await page.evaluate(() => document.getElementById("app").dataset.view)) !== "train") await page.click('#rail button[data-view="train"]');
+  if ((await trainSeg(page)) !== "endgame") await page.click('#train-seg button[data-seg="endgame"]');
   return until(() => campItems(page), 8000);
 }
 async function openEndgame(page, id) {
@@ -211,17 +210,17 @@ const occ = (page, sq) => page.evaluate((q) => {
   assert(me.shown && me.meta === "1/90" && me.rows === 5 && me.doors === 0, "我的：训练营 1/90，五行，没有到期的复习，也没有第二个入口", JSON.stringify(me));
   await toEndgames(page);
   const opened = await page.evaluate(() => ({ view: document.getElementById("page-me").hidden, title: document.getElementById("lesson-title").textContent }));
-  assert(opened.view && /关键格/.test(opened.title) && (await trainSeg(page)) === "endgame", "回到训练 · 残局：接着上次的（关键格）", JSON.stringify(opened));
-  // 9.0 S3: each segment opens where it was left — 课程 and back to 残局 is 关键格 again
+  assert(opened.view && /马拦兵/.test(opened.title) && (await trainSeg(page)) === "endgame", "回到训练 · 残局：接着上次打开的那个（马拦兵）", JSON.stringify(opened));
+  // 9.0 S3: each segment opens where it was left — 课程 and back to 残局 is 马拦兵 again
   await page.click('#train-seg button[data-seg="course"]');
   await page.waitForTimeout(500);
   const course = await page.evaluate(() => ({ title: document.getElementById("lesson-title").textContent, eg: document.querySelectorAll("#lesson-list button[data-eg]").length, les: document.querySelectorAll("#lesson-list button[data-i]").length }));
-  assert(!/关键格/.test(course.title) && course.eg === 0 && course.les > 0 && (await trainSeg(page)) === "course", "9.0 S3：切到课程，目录换成课程的", JSON.stringify(course));
+  assert(!/马拦兵/.test(course.title) && course.eg === 0 && course.les > 0 && (await trainSeg(page)) === "course", "9.0 S3：切到课程，目录换成课程的", JSON.stringify(course));
   await page.click('#train-seg button[data-seg="endgame"]');
   await page.waitForTimeout(500);
   const back = await page.evaluate(() => document.getElementById("lesson-title").textContent);
   const lkBack = await learnKey(page);
-  assert(/关键格/.test(back) && lkBack && lkBack.eg && lkBack.eg.last === "kp-keysq", "9.0 S3：再切回残局，接着刚才那个（关键格），learn 键记着 eg.last", back + " " + JSON.stringify(lkBack && lkBack.eg && lkBack.eg.last));
+  assert(/马拦兵/.test(back) && lkBack && lkBack.eg && lkBack.eg.last === "mi-n-stop", "9.0 S3：再切回残局，接着刚才那个（马拦兵），learn 键记着 eg.last", back + " " + JSON.stringify(lkBack && lkBack.eg && lkBack.eg.last));
   assert(!errs.length, "走错走对：页面没有报错", errs.join(" / "));
   await ctx.close();
 }
