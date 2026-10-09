@@ -45,7 +45,7 @@ export function createExplorerUI(d, bookLines) {
   const M = EXPLORER_MASTERS;
   // M5: C1's position index (d.library = LibraryUI) answers, the replay only without it
   const lib = X.librarySource(() => store.session.library, d.library, () => render());
-  // the first launch after a migration indexes the old games in the
+  // a launch after a restore indexes the restored games in the
   // background (library-db.js indexMissing): ask again once that is done
   if (d.library && d.library.ready) d.library.ready().then((c) => c && c.indexing).then(() => { lib.refresh(); render(); }, () => {});
   let book = null; // built on first use: 195 lines, a few ms

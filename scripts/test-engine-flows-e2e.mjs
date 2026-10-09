@@ -151,7 +151,7 @@ const tmpFile = (name, text) => {
 async function openPage(settings, seed, ctxOpts) {
   const ctx = await browser.newContext(Object.assign({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" }, ctxOpts));
   await ctx.addInitScript(([s, sd]) => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify(Object.assign(
+    localStorage.setItem("chess.settings", JSON.stringify(Object.assign(
       { langId: "zh-CN", sideTab: "play", soundOn: false }, s)));
     localStorage.setItem("chess.panelOpen", "1");
     // stored state the scenario starts from — written on the first load only,
@@ -250,7 +250,7 @@ async function until(fn, ms, step = 200) {
 /** The live game's position, read from what the page saves. */
 async function savedGame(page) {
   const pgn = await page.evaluate(() => {
-    try { return JSON.parse(localStorage.getItem("chess.v1.save") || "null").pgn; } catch { return null; }
+    try { return JSON.parse(localStorage.getItem("chess.save") || "null").pgn; } catch { return null; }
   });
   const g = new Chess();
   if (pgn) g.load_pgn(pgn, { sloppy: true });
@@ -300,7 +300,7 @@ const readAn = (page) => page.evaluate(() => {
 });
 
 const minesOf = (page) => page.evaluate(() =>
-  (JSON.parse(localStorage.getItem("chess.v1.mines") || "null") || { list: [] }).list);
+  (JSON.parse(localStorage.getItem("chess.mines") || "null") || { list: [] }).list);
 
 /** Import LIB_PGN into the library, claim hxddh's games and run the pass to the end. */
 async function libraryPass(page, file) {
@@ -686,7 +686,7 @@ await scenario("分析存盘", async () => {
   const go1 = await page.evaluate(() => window.__go);
   assert(!!r1 && r1.acc === r0.acc && r1.tags.join(",") === r0.tags.join(",") && go1 === 0 && !/停/.test(r1.btn),
     "分析存盘：刷新以后精准度和标注都还在，引擎一次没跑(go " + go1 + ")", JSON.stringify({ r0, r1 }));
-  const kept = await page.evaluate(() => localStorage.getItem("chess.v1.analyses"));
+  const kept = await page.evaluate(() => localStorage.getItem("chess.analyses"));
   assert(!errs.length, "分析存盘：页面没有报错", errs.join(" / "));
   await ctx.close();
 
@@ -697,7 +697,7 @@ await scenario("分析存盘", async () => {
   // the moment it lands, before the record's colour is restored (the same
   // search 7.5 already made and cancelled) — that is not what is measured here
   const p2 = await openPage({ mode: "pvp", sideTab: "record" },
-    { "chess.v1.analyses": kept, "chess.v1.stats": JSON.stringify(stats) });
+    { "chess.analyses": kept, "chess.stats": JSON.stringify(stats) });
   await p2.page.click('#rail button[data-view="me"]').catch(() => {});   // v8-0-plan A1: history is on 我的
   const row = await until(() => p2.page.isVisible('#hist-body button[data-hist="0"]'), 3000, 100);
   if (row) await p2.page.click('#hist-body button[data-hist="0"]');
@@ -714,7 +714,7 @@ await scenario("分析存盘", async () => {
 // and the old accuracy. The deeper look now goes back to the entry the way
 // 「再深一遍」 does, drills included (reviseMines).
 await scenario("精析回写库", async () => {
-  const { ctx, page, errs } = await openPage({ mode: "pvp", sideTab: "record" }, { "chess.v1.mines": FAKE_MINES });
+  const { ctx, page, errs } = await openPage({ mode: "pvp", sideTab: "record" }, { "chess.mines": FAKE_MINES });
   const l0 = await libraryPass(page, "flows-lib-deep1.pgn");
   const trap0 = l0 && l0.games.find((g) => /Nxf7/.test(g.sans));
   const fake0 = (await minesOf(page)).some((m) => m.id === FAKE_DRILL.id);
@@ -744,7 +744,7 @@ await scenario("精析回写库", async () => {
 
 // --- 11. 再深一遍 (v7-6-plan §6.2) ---------------------------------------------
 await scenario("再深一遍", async () => {
-  const { ctx, page, errs } = await openPage({ mode: "pvp", sideTab: "record" }, { "chess.v1.mines": FAKE_MINES });
+  const { ctx, page, errs } = await openPage({ mode: "pvp", sideTab: "record" }, { "chess.mines": FAKE_MINES });
   const l0 = await libraryPass(page, "flows-lib-deep2.pgn");
   const trap0 = l0 && l0.games.find((g) => /Nxf7/.test(g.sans));
   await page.waitForTimeout(500);
@@ -782,7 +782,7 @@ await scenario("人机高档棋钟", async () => {
   const save = { v: 1, pgn: '[Event "flows"]\n[Result "*"]\n\n1. e4 e5 *', savedAt: Date.now(),
     clock: { tc: "3", w: 170000, b: 20000, started: true } };
   const hard = await openPage({ mode: "ai", difficulty: "extreme", humanColor: "w", timeControl: "3" },
-    { "chess.v1.save": JSON.stringify(save) });
+    { "chess.save": JSON.stringify(save) });
   // the boot the page starts on its own for an ai game: wait for it to answer
   const ready = await until(() => hard.page.evaluate(() => window.__uci.includes("uci")), 30000, 200);
   await hard.page.waitForTimeout(3000);
@@ -791,7 +791,7 @@ await scenario("人机高档棋钟", async () => {
   const n = await until(() => plies(hard.page).then((p) => (p >= 4 ? p : 0)), 15000, 100);
   const uci = await hard.page.evaluate(() => window.__uci);
   const g = await savedAt(hard.page, 4, 3000);
-  const clk = await hard.page.evaluate(() => (JSON.parse(localStorage.getItem("chess.v1.save") || "{}").clock) || null);
+  const clk = await hard.page.evaluate(() => (JSON.parse(localStorage.getItem("chess.save") || "{}").clock) || null);
   const ms = uci.filter((m) => /^go movetime/.test(m)).map((m) => Number(m.split(" ")[2]));
   assert(!!ready && n >= 4 && uci.includes("setoption name UCI_LimitStrength value false") && ms.length === 1 && ms[0] >= 450 && ms[0] <= 500,
     "人机高档棋钟：不限档、黑方钟上 20 秒，引擎满强度、压到 " + ms[0] + "ms(不是 1200)应着(" + (Date.now() - t0) + "ms)", JSON.stringify({ ready, n, uci }));
@@ -1135,7 +1135,7 @@ await scenario("复盘可复现", async () => {
     await openPgn(page, TRAP);
     const ms = await runAn(page, "#an-run", 90000);
     const an = await page.evaluate(() => {
-      const kept = JSON.parse(localStorage.getItem("chess.v1.analyses") || "null");
+      const kept = JSON.parse(localStorage.getItem("chess.analyses") || "null");
       const e = kept && kept.list && kept.list[kept.list.length - 1];
       return e ? { v: e.an.v, scalars: e.an.scalars, grades: e.an.grades, tags: e.an.tags, deep: e.an.deep } : null;
     });
@@ -1260,7 +1260,7 @@ await scenario("对手角色", async () => {
   await page.click("#ng-start");
   await page.waitForTimeout(600);
   const st = await page.evaluate(() => ({
-    s: JSON.parse(localStorage.getItem("chess.v1.settings") || "{}"),
+    s: JSON.parse(localStorage.getItem("chess.settings") || "{}"),
     role: document.getElementById("black-role").textContent.trim(),
     level: document.getElementById("black-level").textContent.trim(),
     hello: document.getElementById("op-hello").hidden ? "" : document.getElementById("op-hello").textContent.trim(),
@@ -1284,11 +1284,11 @@ await scenario("引擎认输", async () => {
   // (opponents.js: sustained, not a first-move verdict) it resigns
   const fen = "1n2k3/pp6/8/8/8/8/PPPPPPPP/RNBQKBNR w KQ - 0 1";
   const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" },
-    { "chess.v1.save": setupSave(fen) });
-  const resigned = () => page.evaluate(() => (JSON.parse(localStorage.getItem("chess.v1.save") || "{}").resigned) || null);
+    { "chess.save": setupSave(fen) });
+  const resigned = () => page.evaluate(() => (JSON.parse(localStorage.getItem("chess.save") || "{}").resigned) || null);
   const ok = await playQuietly(page, resigned, 16);
   const after = await page.evaluate(() => {
-    const st = JSON.parse(localStorage.getItem("chess.v1.stats") || "{}");
+    const st = JSON.parse(localStorage.getItem("chess.stats") || "{}");
     const last = (st.games || []).slice(-1)[0] || null;
     const card = document.getElementById("go-card");
     return { last, rating: st.rating || null, card: card && !card.hidden ? card.textContent.replace(/\s+/g, " ").trim() : "",
@@ -1313,7 +1313,7 @@ await scenario("引擎认输", async () => {
 
 /** The last stats record, the stored rating and the result card's two lines. */
 const filedOf = (page) => page.evaluate(() => {
-  const st = JSON.parse(localStorage.getItem("chess.v1.stats") || "{}");
+  const st = JSON.parse(localStorage.getItem("chess.stats") || "{}");
   const last = (st.games || []).slice(-1)[0] || null;
   const shown = (id) => (document.getElementById(id).hidden ? "" : document.getElementById(id).textContent.trim());
   return { n: (st.games || []).length, rating: st.rating || null, rate: shown("go-rating"), say: shown("go-say"),
@@ -1336,7 +1336,7 @@ await scenario("你将死引擎", async () => {
   // #89 review: a position set up by hand (FEN, the editor) is recorded
   // but not rated — mating from it says nothing about the player's level
   const fen = "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1";
-  const one = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" }, { "chess.v1.save": setupSave(fen) });
+  const one = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" }, { "chess.save": setupSave(fen) });
   await one.page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
   await clickMove(one.page, "a1", "a8");
   await one.page.waitForTimeout(600);
@@ -1349,7 +1349,7 @@ await scenario("你将死引擎", async () => {
   // move's own sync(); with the opponents chunk already here that filing is
   // synchronous, and the result card must still show the rating line
   const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" },
-    { "chess.v1.save": scholarSave() });
+    { "chess.save": scholarSave() });
   await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
   const ready = await page.evaluate(() => !!window.CHESS_OPPONENTS);
   await clickMove(page, "h5", "f7");
@@ -1367,7 +1367,7 @@ await scenario("你将死引擎", async () => {
   await page.waitForTimeout(400);
   await page.click("#prefs-close").catch(() => {});
   await page.waitForTimeout(300);
-  const cleared = await page.evaluate(() => ({ stats: localStorage.getItem("chess.v1.stats"),
+  const cleared = await page.evaluate(() => ({ stats: localStorage.getItem("chess.stats"),
     rate: document.getElementById("go-rating").hidden ? "" : document.getElementById("go-rating").textContent.trim() }));
   assert(!cleared.stats && cleared.rate === "", "你将死引擎：清除统计后，结果卡上的分数跟着撤掉", JSON.stringify(cleared));
   assert(!errs.length, "你将死引擎：页面没有报错", errs.join(" / "));
@@ -1379,7 +1379,7 @@ await scenario("续下后结果卡", async () => {
   // once, at its first ending), so the continuation's ending is not rated —
   // and the card must not show the first ending's rating line
   const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" },
-    { "chess.v1.save": scholarSave() });
+    { "chess.save": scholarSave() });
   await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
   await clickMove(page, "h5", "f7");
   await page.waitForTimeout(600);
@@ -1463,7 +1463,7 @@ await scenario("引擎提和", async () => {
   // that the rules do not end. After eight level evaluations the engine offers.
   const fen = "8/8/4k3/8/4b3/8/3B4/4K3 w - - 40 50";
   const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "easy", humanColor: "w" },
-    { "chess.v1.save": setupSave(fen) });
+    { "chess.save": setupSave(fen) });
   const offered = () => page.evaluate(() => !document.getElementById("draw-offer").hidden);
   let ok = await playQuietly(page, offered, 14);
   const bar = await page.evaluate(() => document.getElementById("draw-offer").textContent.replace(/\s+/g, " ").trim());
@@ -1473,7 +1473,7 @@ await scenario("引擎提和", async () => {
   const m = quietMove(g);
   await clickMove(page, m.from, m.to);
   await page.waitForTimeout(600);
-  assert(!(await offered()) && !(await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.save") || "{}").drawAgreed)),
+  assert(!(await offered()) && !(await page.evaluate(() => JSON.parse(localStorage.getItem("chess.save") || "{}").drawAgreed)),
     "引擎提和：走一步棋 = 不接受，提示条收起，棋照下");
   ok = await playQuietly(page, offered, 14);
   if (process.env.FLOWS_DEBUG) console.log("  scores:", JSON.stringify(await page.evaluate(() => window.__scores)));
@@ -1481,9 +1481,9 @@ await scenario("引擎提和", async () => {
   await page.click("#draw-accept");
   await page.waitForTimeout(600);
   const after = await page.evaluate(() => {
-    const st = JSON.parse(localStorage.getItem("chess.v1.stats") || "{}");
+    const st = JSON.parse(localStorage.getItem("chess.stats") || "{}");
     const last = (st.games || []).slice(-1)[0] || {};
-    return { agreed: !!JSON.parse(localStorage.getItem("chess.v1.save") || "{}").drawAgreed, last,
+    return { agreed: !!JSON.parse(localStorage.getItem("chess.save") || "{}").drawAgreed, last,
       bar: !document.getElementById("draw-offer").hidden, reason: document.getElementById("go-reason").textContent.trim() };
   });
   assert(after.agreed && !after.bar && after.last.result === "draw" && after.last.ending === "drawAgreed" && after.last.unrated === "setup" && !Number.isFinite(after.last.ra),
@@ -1500,12 +1500,12 @@ await scenario("棋钟节奏", async () => {
   await until(() => plies(page).then((p) => (p >= 2 ? p : 0)), 30000, 150);   // the boot
   const g = await savedGame(page);
   const m = quietMove(g) || g.moves({ verbose: true })[0];
-  const clk0 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.save") || "{}").clock);
+  const clk0 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.save") || "{}").clock);
   await clickMove(page, m.from, m.to);
   const t0 = Date.now();
   await until(() => plies(page).then((p) => (p >= 4 ? p : 0)), 15000, 50);
   const dt = Date.now() - t0;
-  const clk1 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.save") || "{}").clock);
+  const clk1 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.save") || "{}").clock);
   assert(dt >= 2600 && dt < 6000, "棋钟节奏：30 分钟的棋，新手档也按钟上的时间想 3 秒左右，不是 0.35 秒（" + dt + "ms）");
   assert(!!clk0 && !!clk1 && clk0.b - clk1.b >= 2500, "棋钟节奏：想的时间记在它自己的钟上", JSON.stringify({ clk0, clk1 }));
   assert(!errs.length, "棋钟节奏：页面没有报错", errs.join(" / "));
@@ -1542,7 +1542,7 @@ async function replyWaits(page, moves) {
     let g = await savedGame(page);
     // quiet moves lose: a mate, or a resignation. A new game (as a player
     // would) and on — the pass keeps going under it either way
-    const ended = await page.evaluate(() => { try { const s = JSON.parse(localStorage.getItem("chess.v1.save") || "{}"); return !!(s.resigned || s.drawAgreed); } catch { return false; } });
+    const ended = await page.evaluate(() => { try { const s = JSON.parse(localStorage.getItem("chess.save") || "{}"); return !!(s.resigned || s.drawAgreed); } catch { return false; } });
     if (ended || g.game_over()) {
       if (++restarts > 3) break;
       await page.keyboard.press("n");

@@ -13,11 +13,11 @@
  * Each scenario is one launch; the ones about a restart are two or three
  * launches on one profile, compared by the driver:
  *
- *   rep-seed     a two-line book in the header (chess.v1.repertoire), the
- *                way 8.0–8.1 kept it, written through persist.js (R17)
- *   rep-index    the next launch's own boot moves it into chessboard.replines
- *                and makes records with cards in chessboard.repertoire
- *                (rep-page.js, v8-2-plan T4); the page waits for both and
+ *   rep-seed     a two-line book in the header (chess.repertoire), the way
+ *                a learning file leaves it, written through persist.js (R17)
+ *   rep-index    the next launch's own boot moves it into chessboard.book —
+ *                its lines, and records with cards (rep-page.js, v8-2-plan
+ *                T4); the page waits for both and
  *                reports what is there — records, lines, cards, due today
  *   rep-read     one more launch: the same records and lines, read back
  *   sync         against the fake server (CHESS_SYNC_BASE,
@@ -76,15 +76,15 @@ function frameGaps() {
   return () => { on = false; return { maxMs: Math.round(max), frames: n }; };
 }
 
-/** What chessboard.repertoire and chessboard.replines hold now. */
+/** What chessboard.book holds now. */
 async function repState(now) {
   const db = await openRepDb(globalThis.indexedDB);
-  if (!db) throw new Error("openRepDb answered null: no IndexedDB, or a database refused");
-  const records = await db.all(), lines = await db.lines(), cards = await db.cards();
+  if (!db) throw new Error("openRepDb answered null: no IndexedDB, or the database refused");
+  const records = await db.all(), lines = await db.lines();
   return {
     records: records.map((r) => r.id).sort(),
     lines: lines.map((r) => r.k).sort(),
-    cards: cards.length,
+    cards: records.filter((r) => r && r.card).length,
     due: records.filter((r) => r && r.card && (Number(r.card.due) || 0) <= now).length,
   };
 }
@@ -209,9 +209,9 @@ const SCENARIOS = {
     await c("seeded", async () => {
       const r = await d.within(d.importPgnToLibrary(seedPgn(300), "selftest"), 90000, "import 300 games");
       if (!r || r.added !== 300) throw new Error("import answered " + JSON.stringify(r));
-      // the header says the games and the summary are in IndexedDB (library-sum.js bootPrefetch's test)
-      const h = await until(() => { const raw = localStorage.getItem(HEADER_KEY); return raw && /"db":2[,}]/.test(raw) && /"sum":"/.test(raw) ? JSON.parse(raw) : null; }, 30000, 250);
-      if (!h) throw new Error("the library's header never said db 2 with a summary");
+      // the header names the summary in IndexedDB (library-sum.js bootPrefetch's test)
+      const h = await until(() => { const raw = localStorage.getItem(HEADER_KEY); return raw && /"sum":"/.test(raw) ? JSON.parse(raw) : null; }, 30000, 250);
+      if (!h) throw new Error("the library's header never named a summary");
       await d.Persist.flushMirror();
       return { n: Number(h.n) || 0 };
     });
@@ -219,7 +219,7 @@ const SCENARIOS = {
   async "prefetch-read"(d, c) {
     await c("prefetch", async () => {
       const pre = d.atBoot.pre;
-      if (!pre) throw new Error("chunk-boot.js did not ask for the summary (no header with db 2 and a summary)");
+      if (!pre) throw new Error("chunk-boot.js did not ask for the summary (no header with a summary)");
       const got = await d.within(pre, 15000, "the prefetch's answer");
       if (!got || got.n < 0) throw new Error("the prefetch answered without a summary");
       return { n: got.n, ms: Math.round(got.ms) };

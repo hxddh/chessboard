@@ -23,6 +23,7 @@ import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+import { seedLibrary } from "./lib/library-view.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
@@ -58,8 +59,8 @@ async function open(settings = {}, viewport = WIDE) {
   await ctx.addInitScript((s) => {
     if (sessionStorage.getItem("seeded")) return;
     sessionStorage.setItem("seeded", "1");
-    localStorage.setItem("chess.v1.settings", JSON.stringify(Object.assign(
-      { mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }, s)));
+    localStorage.setItem("chess.settings", JSON.stringify(Object.assign(
+      { mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }, s)));
     localStorage.setItem("chess.panelOpen", "1");
   }, settings);
   const page = await ctx.newPage();
@@ -77,7 +78,7 @@ const state = (page) => page.evaluate(() => {
   return {
     view: document.getElementById("app").getAttribute("data-view"),
     current: cur ? cur.dataset.view : null,
-    mode: JSON.parse(localStorage.getItem("chess.v1.settings") || "{}").mode,
+    mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode,
     home: vis(document.getElementById("page-home")),
     library: vis(document.getElementById("page-library")),
     me: vis(document.getElementById("page-me")),
@@ -283,15 +284,12 @@ const state = (page) => page.evaluate(() => {
       frame: has("frame-seg"), lang: has("lang-seg"),
       sound: has("opt-sound"), pieces: has("piece-pick-seg"), data: has("alldata-export"),
       text: has("text-seg"), coords: has("opt-coords"), coordsAt: has("coords-seg"),
-      langs: m.querySelectorAll("#lang-seg button").length,
-      // the 7.x rows are gone everywhere, not only moved (M2 merge: A3 × A1)
-      old: ["theme-seg", "opt-follow", "pieces-seg", "look-rows"].filter((id) => document.getElementById(id)) };
+      langs: m.querySelectorAll("#lang-seg button").length };
   });
   assert(prefs.open, "A1: Ctrl+, 打开偏好设置");
   assert(prefs.theme && prefs.board && prefs.frame && prefs.pieces && prefs.lang && prefs.sound && prefs.data && prefs.langs === 3,
     "A1 × A3: 偏好设置里有外观 / 棋盘 / 边框 / 棋子、语言、声音、数据(" + JSON.stringify(prefs) + ")");
   assert(prefs.text && prefs.coords && prefs.coordsAt, "A1: 字号与坐标两行在偏好设置里(" + JSON.stringify(prefs) + ")");
-  assert(prefs.old.length === 0, "A3: 旧的主题 / 跟随系统 / 棋子样式行已不存在(" + prefs.old + ")");
   // a choice there still works: the board and the appearance change the page
   await page.click('#board-pick-seg button[data-board-id="green"]');
   await page.click('#appearance-seg button[data-appearance="dark"]');
@@ -326,7 +324,7 @@ const state = (page) => page.evaluate(() => {
   await page.waitForTimeout(150);
   const draft = await page.evaluate(() => ({
     diffHidden: document.getElementById("row-difficulty").hidden,
-    mode: JSON.parse(localStorage.getItem("chess.v1.settings")).mode,
+    mode: JSON.parse(localStorage.getItem("chess.settings")).mode,
   }));
   assert(draft.diffHidden && draft.mode === "ai", "A1: 选了双人,难度行收起;还没开始,模式不变(" + JSON.stringify(draft) + ")");
   await page.click("#ng-start");
@@ -382,7 +380,7 @@ for (const lang of ["en", "ja"]) {
 {
   const ctx = await browser.newContext({ viewport: WIDE, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     window.__handlers = {};
     window.zero = {
@@ -428,7 +426,7 @@ for (const lang of ["en", "ja"]) {
 {
   const { ctx, page, errs } = await open();
   await page.evaluate(() => {
-    localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 2, games: [
+    localStorage.setItem("chess.stats", JSON.stringify({ v: 2, games: [
       { id: "h1", t: Date.now() - 864e5, diff: "learner", style: "principled", color: "w", result: "win", moves: 3,
         pgn: '[Event "?"]\n\n1. e4 e5 2. Nf3 *', ending: "", acc: 70 },
     ] }));
@@ -460,7 +458,7 @@ for (const lang of ["en", "ja"]) {
     await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(300);
     const who = await page.evaluate(() => ({ role: document.getElementById("black-role").textContent.trim(),
-      persona: JSON.parse(localStorage.getItem("chess.v1.settings") || "{}").personaId }));
+      persona: JSON.parse(localStorage.getItem("chess.settings") || "{}").personaId }));
     assert(who.role === "莉娜" && who.persona === "principled", door + ":对局历史载入:对手是那盘棋的角色(" + JSON.stringify(who) + ")");
   }
   assert(errs.length === 0, "对局历史载入:没有页面异常 " + errs.join(" / "));
@@ -474,7 +472,7 @@ for (const lang of ["en", "ja"]) {
 {
   const { ctx, page, errs } = await open();
   await page.evaluate(() => {
-    localStorage.setItem("chess.v1.learn", JSON.stringify({ v: 1, done: { board: true }, last: 2 }));
+    localStorage.setItem("chess.learn", JSON.stringify({ v: 1, done: { board: true }, last: 2 }));
   });
   await page.reload();
   await page.waitForTimeout(900);
@@ -484,7 +482,7 @@ for (const lang of ["en", "ja"]) {
   const said = await page.evaluate(() => document.getElementById("home-next").textContent);
   await page.click("#home-next .home-go");
   await page.waitForTimeout(700);
-  const last = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.learn")).last);
+  const last = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.learn")).last);
   const st = await state(page);
   assert(st.view === "learn" && last === 1,
     "「下一步建议」点开的正是卡上说的那一课(第 2 课;打开的是第 " + (last + 1) + " 课,视图 " + st.view + ";卡上:" + said.trim().slice(0, 40) + ")");
@@ -647,12 +645,15 @@ for (const v of ["home", "library", "me"]) {
   const th = (r, solve, miss) => ({ solve, miss, rating: { r, rd: 80, vol: 0.06 } });
   const puzzles = { v: 1, solved: {}, tally: { tac: { miss: 3, solve: 9 } }, rhist: [{ t: now - DAY, r: 1500 }, { t: now, r: 1520 }],
     themes: { fork: th(1700, 6, 1), pin: th(1350, 2, 4), skewer: th(1550, 4, 2) } };
-  const seeded = async (keys, viewport) => {
+  const seeded = async (all, viewport) => {
     const ctx = await browser.newContext({ viewport: viewport || WIDE, locale: "zh-CN" });
+    // the library (`{names, games}`) goes in as the app keeps it (seedLibrary)
+    const { "chess.library": lib, ...keys } = all;
+    if (lib) await ctx.addInitScript(seedLibrary, Object.assign({ once: true }, lib));
     await ctx.addInitScript((ks) => {
       if (sessionStorage.getItem("seeded")) return;
       sessionStorage.setItem("seeded", "1");
-      localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "ai", langId: "zh-CN", sideTab: "play", view: "me", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.settings", JSON.stringify({ mode: "ai", langId: "zh-CN", sideTab: "play", view: "me", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
       // the profile keys, spelled out by the callers (persist.js KEYS)
       for (const [k, v] of Object.entries(ks)) localStorage.setItem(k, JSON.stringify(v));
@@ -690,7 +691,7 @@ for (const v of ["home", "library", "me"]) {
   {
     // one first answer, and it was wrong: a tally row and a rating on the
     // page — which is a record, and the entry card said 「现在还空着」 over it
-    const { ctx, page, errs } = await seeded({ "chess.v1.puzzles": { v: 1, solved: {}, tally: { tac: { miss: 1, solve: 0 } }, rhist: [{ t: now, r: 1480 }] } });
+    const { ctx, page, errs } = await seeded({ "chess.puzzles": { v: 1, solved: {}, tally: { tac: { miss: 1, solve: 0 } }, rhist: [{ t: now, r: 1480 }] } });
     const s = await meState(page);
     const tally = await page.evaluate(() => !document.getElementById("puzzle-tally-body").hidden);
     assert(tally && !s.empty, "B5 答错过一道题:战绩里有这一行,入口卡片不再说「现在还空着」(" + JSON.stringify({ tally, empty: s.empty }) + ")");
@@ -704,7 +705,7 @@ for (const v of ["home", "library", "me"]) {
     // too few games for any figure: the block is there, says what it needs,
     // and prints no percentage
     const few = lib.slice(0, 3).map((g) => Object.assign({}, g, { clk: undefined }));
-    const { ctx, page, errs } = await seeded({ "chess.v1.library": { v: 1, names: ["hxddh"], games: few } });
+    const { ctx, page, errs } = await seeded({ "chess.library": { v: 1, names: ["hxddh"], games: few } });
     const s = await meState(page);
     assert(s.metrics && s.rows.length === 3 && s.rows.every((r) => !/%/.test(r)) && s.rows.every((r) => /5|10/.test(r)),
       "B5 三局:三项指标都写明要几局,一个百分比也不给(" + JSON.stringify(s.rows) + ")");
@@ -712,8 +713,8 @@ for (const v of ["home", "library", "me"]) {
     await ctx.close();
   }
   {
-    const { ctx, page, errs } = await seeded({ "chess.v1.library": { v: 1, names: ["hxddh"], games: lib },
-      "chess.v1.stats": stats, "chess.v1.puzzles": puzzles, "chess.v1.progress": { v: 1, weeks: {}, days: {} } });
+    const { ctx, page, errs } = await seeded({ "chess.library": { v: 1, names: ["hxddh"], games: lib },
+      "chess.stats": stats, "chess.puzzles": puzzles, "chess.progress": { v: 1, weeks: {}, days: {} } });
     const s = await meState(page);
     assert(!s.empty && s.growth && s.rating && s.cal && s.sw && s.metrics, "B5 满档案:评级曲线、日历、强弱项、跨局指标都在(" + JSON.stringify(s) + ")");
     assert(/1510/.test(s.ratingMeta), "B5 对局评级读的是每局存下的评级(" + s.ratingMeta + ")");
@@ -748,7 +749,7 @@ for (const v of ["home", "library", "me"]) {
   await ctx.addInitScript(() => {
     if (sessionStorage.getItem("seeded")) return;
     sessionStorage.setItem("seeded", "1");
-    localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "ai", difficulty: "casual", humanColor: "w",
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "ai", difficulty: "casual", humanColor: "w",
       langId: "zh-CN", sideTab: "play", view: "play", soundOn: false }));
     localStorage.setItem("chess.panelOpen", "1");
   });
@@ -772,7 +773,7 @@ for (const v of ["home", "library", "me"]) {
     await page.waitForTimeout(300);
     await page.click("#confirm-ok"); await page.waitForTimeout(500);
   }
-  const st = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.stats") || "{}"));
+  const st = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.stats") || "{}"));
   const ras = (st.games || []).map((g) => g.ra);
   assert(ras.length === 3 && ras.every(Number.isFinite) && ras[2] < ras[0] && !!st.rating,
     "B4→B5 三盘人机（都认输）各自计了等级分，存下 ra（" + JSON.stringify(ras) + "）");

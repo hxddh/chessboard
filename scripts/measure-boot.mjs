@@ -28,7 +28,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
-import { build, CHUNKS, OUT, BUNDLE_BUDGET, BUNDLE_BYTES_BEFORE_F5, BUNDLE_BYTES_BEFORE_F5_READABLE } from "./bundle.mjs";
+import { build, CHUNKS, OUT, BUNDLE_BUDGET } from "./bundle.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.join(HERE, "..");
@@ -75,7 +75,7 @@ const browser = await launchBrowser();
 async function once(lang) {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: lang });
   await ctx.addInitScript((l) => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "pvp", langId: l, sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: l, sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     window.__t = { painted: null, wired: null };
     const realCtx = HTMLCanvasElement.prototype.getContext;
@@ -136,7 +136,7 @@ for (const l of LANGS) {
     `可交互 ${result.readable[l].interactiveMs} → ${result.minified[l].interactiveMs} ms（中位数，各 ${RUNS} 次）`);
 }
 const B = (f) => forms[f].bytes["bundle.js"];
-console.log(`bundle.js ${B("readable")} → ${B("minified")} 字节；预算 ${BUNDLE_BUDGET}（7.9.0 压缩后 ${BUNDLE_BYTES_BEFORE_F5} × 70.5%）`);
+console.log(`bundle.js ${B("readable")} → ${B("minified")} 字节；预算 ${BUNDLE_BUDGET}`);
 
 if (process.argv.includes("--record")) {
   const file = path.join(REPO, "docs/measured.json");
@@ -147,11 +147,7 @@ if (process.argv.includes("--record")) {
     script: "scripts/measure-boot.mjs --record",
     engine: ENGINE,
     runs: RUNS,
-    budget: {
-      base790Readable: BUNDLE_BYTES_BEFORE_F5_READABLE, base790Minified: BUNDLE_BYTES_BEFORE_F5, ratio: 0.705, budget: BUNDLE_BUDGET,
-      budgetBefore: Math.floor(BUNDLE_BYTES_BEFORE_F5_READABLE * 0.705),
-      headroomBefore: Math.floor(BUNDLE_BYTES_BEFORE_F5_READABLE * 0.705) - B("readable"), headroomAfter: BUNDLE_BUDGET - B("minified"),
-    },
+    budget: { budget: BUNDLE_BUDGET, headroomAfter: BUNDLE_BUDGET - B("minified") },
     bytes: { before: forms.readable.bytes, after: forms.minified.bytes, chunksTotalBefore: chunkTotal("readable"), chunksTotalAfter: chunkTotal("minified") },
     before: result.readable,
     after: result.minified,

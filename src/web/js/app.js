@@ -24,7 +24,7 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
 import { createA11y } from "./a11y.js";
 import { createNativeCommands } from "./native-commands.js";
 import { createLibraryUI } from "./library-ui.js";
-import { LOOK_DEFAULT, migrateLook } from "./look.js";
+import { LOOK_DEFAULT, readLook } from "./look.js";
 import { createRepertoireUI } from "./repertoire-ui.js";
 import { createSettingsUI } from "./settings-ui.js";
 import { createTrainerContent } from "./trainer/content.js";
@@ -133,9 +133,8 @@ import { loadChunk } from "./chunk.js";
     showStorageFault();
     toast(t("msg.storage.failed"), "fault");
   });
-  // One pass over storage, before anything reads from it: migrations get to
-  // see a whole profile, and no later reader has to wonder whether some other
-  // key moved under it.
+  // One pass over storage, before anything reads from it: no later reader
+  // has to wonder whether some other key moved under it.
   Persist.load();
 
   const canvas = document.getElementById("board");
@@ -392,8 +391,6 @@ import { loadChunk } from "./chunk.js";
       textSize: "m",
       /** v8-0-plan A3: the look, four answers (look.js) — first-run values */
       ...LOOK_DEFAULT,
-      /** the shell palette the look resolves to right now (look.js shellFor) */
-      themeId: "wood",
       /** pvp: flip the board to face the side to move after every move */
       autoFlipPvp: false,
       /** which panel tab is showing: "play" | "setup" | "record" */
@@ -1449,9 +1446,8 @@ import { loadChunk } from "./chunk.js";
       if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
       store.ui.bgWorker = s.bgWorker === true; // v8-1-plan F4: a second engine for passes, off unless set (§8.7)
       if (["s", "m", "l"].includes(s.textSize)) store.ui.textSize = s.textSize;
-      // v8-0-plan A3: 7.x's themeId / followSystem / pieceSet, or 8.0's four
-      // fields — migrateLook reads either
-      Object.assign(store.ui, migrateLook(s));
+      // v8-0-plan A3: the look's four fields
+      Object.assign(store.ui, readLook(s));
       if (typeof s.flipped === "boolean") store.game.flipped = s.flipped;
       if (["ai", "pvp", "learn", "puzzle"].includes(s.mode)) store.session.mode = s.mode;
       // DIFF_IDS, not a second copy of it — this list was written out by hand
@@ -1473,21 +1469,19 @@ import { loadChunk } from "./chunk.js";
   }
   function saveSettings() {
     try {
-      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
+      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
         volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv, bgWorker: store.ui.bgWorker === true,
         textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
-        // v8-0-plan A3: the look; themeId and followSystem still written, for
-        // a 7.x build opening this profile (it reads those two and not these)
+        // v8-0-plan A3: the look
         appearance: store.ui.appearance, boardId: store.ui.boardId, boardFrame: store.ui.boardFrame,
-        followSystem: store.ui.appearance === "system",
         soundSet: store.ui.soundSet, explorer: store.ui.explorer }));
     } catch (_) {}
   }
   function saveGame() {
     try {
-      // the PGN is the mainline, whatever line the cursor is on: it is what
-      // a save written before 6.0 held, and the tree beside it carries the
-      // rest — variations, comments, shapes and the line itself (Q2.1)
+      // the PGN is the mainline, whatever line the cursor is on, and the
+      // tree beside it carries the rest — variations, comments, shapes and
+      // the line itself (Q2.1)
       const payload = { v: 1, pgn: mainlinePgn(), savedAt: Date.now() };
       payload.tree = ChessTree.serialize(store.game.tree);
       payload.line = store.game.line.slice();
@@ -1535,9 +1529,8 @@ import { loadChunk } from "./chunk.js";
   }
 
   /**
-   * The tree of a save, if it has one and it still describes this game. A
-   * save from before 6.0 has none, and the tree the load just built from
-   * its PGN is the whole of what it knew.
+   * The tree of a save, if it still describes this game; otherwise the tree
+   * the load just built from its PGN stands.
    */
   function restoreTree(s) {
     if (s.imported === true) store.game.imported = true;
@@ -1577,9 +1570,7 @@ import { loadChunk } from "./chunk.js";
         store.game.timeControl = s.clock.tc;
         store.game.clock = { w: Math.max(0, s.clock.w), b: Math.max(0, s.clock.b) };
         store.game.flagFall = s.clock.flag === "w" || s.clock.flag === "b" ? s.clock.flag : null;
-        // an archive from before 7.0 has no `started`; a game with moves in it
-        // was already ticking, so restoring it must not hand out a free move
-        store.game.clockStarted = typeof s.clock.started === "boolean" ? s.clock.started : sanHistory().length >= 1;
+        store.game.clockStarted = s.clock.started === true;
       }
       if (s.resigned === "w" || s.resigned === "b") store.game.resigned = s.resigned;
       if (s.drawAgreed === true) store.game.drawAgreed = true;
@@ -4198,8 +4189,7 @@ import { loadChunk } from "./chunk.js";
    * A slot's one-line description, localised *at render time*.
    *
    * Slots store the mode and difficulty ids rather than a finished label, so a
-   * game saved in Chinese still reads as English after a language switch;
-   * `slot.label` is only the fallback for slots written before 1.6.
+   * game saved in Chinese still reads as English after a language switch.
    */
   /**
    * A slot in two lines, the same shape the game-history rows use: what kind
@@ -4217,7 +4207,7 @@ import { loadChunk } from "./chunk.js";
    */
   function slotWhat(slot) {
     if (!slot) return "";
-    if (!slot.mode) return slot.label || "";
+    if (!slot.mode) return "";
     return tdot(t(slot.mode === "ai" ? "mode.ai" : "mode.pvp"), slot.mode === "ai" && diffName(slot.diff));
   }
   function slotWhen(slot) {

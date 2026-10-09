@@ -36,6 +36,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
 
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+import { seedLibrary } from "./lib/library-view.mjs";
 import { makeScenarioGate } from "./e2e-shard.mjs";
 import { PAGE_HOOK, makeFrameWatch } from "./lib/frame-watch.mjs";
 import { layoutProbe } from "./lib/layout-probe.mjs";
@@ -82,6 +83,10 @@ console.log("引擎:", ENGINE);
 // 520x520. A panel column is 239px at 1400 and the whole layout argument rests
 // on numbers like that, so "it fits" was only ever established at the widest
 // end. `viewport` lets a section re-run at the narrow end; see 4c.
+/** A shell's name (data-theme) as the look that gives it (look.js shellFor). */
+const lookOf = (th) => ({ wood: { appearance: "dark", boardId: "wood" }, night: { appearance: "dark", boardId: "green" },
+  day: { appearance: "light", boardId: "wood" }, notebook: { appearance: "light", boardId: "blue" } })[th] || {};
+
 async function open(lang, mode, tab, theme = "wood", viewport = { width: 1400, height: 900 }, panelOpen = "1") {
   const ctx = await browser.newContext({ viewport, locale: lang });
   // The theme is chosen at load. Setting data-theme on a page already living in
@@ -94,10 +99,10 @@ async function open(lang, mode, tab, theme = "wood", viewport = { width: 1400, h
   // restored the way the app restores them, from the saved view
   const view = { record: "me", me: "me", home: "home", library: "library" }[tab] || "play";
   await ctx.addInitScript(([l, m, tb, th, po, v]) => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: m, langId: l, sideTab: tb, soundOn: false, themeId: th, view: v }));
+    localStorage.setItem("chess.settings", JSON.stringify(Object.assign({
+      mode: m, langId: l, sideTab: tb, soundOn: false, view: v }, th)));
     localStorage.setItem("chess.panelOpen", po);
-  }, [lang, mode, view === "play" ? tab : "play", theme, panelOpen, view]);
+  }, [lang, mode, view === "play" ? tab : "play", lookOf(theme), panelOpen, view]);
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));
@@ -1563,7 +1568,7 @@ if (scenario()) {
       for (let i = 0; i < 20; i++) games.push({ id: "g" + i, t: Date.now() - i * 864e5,
         diff: diffs[i % 6], color: i % 2 ? "w" : "b", result: ["win", "loss", "draw"][i % 3],
         moves: 8 + i * 4, pgn: '[Event "?"]\n\n1. e4 e5 1/2-1/2', ending: "", acc: 40 + i * 2, acpl: 120 - i * 4 });
-      localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 2, games }));
+      localStorage.setItem("chess.stats", JSON.stringify({ v: 2, games }));
     });
     await page.reload();
     await page.waitForTimeout(900);
@@ -1607,7 +1612,7 @@ if (scenario()) {
       for (let i = 0; i < 20; i++) games.push({ id: "g" + i, t: Date.now() - i * 864e5,
         diff: diffs[i % 6], color: i % 2 ? "w" : "b", result: ["win", "loss", "draw"][i % 3],
         moves: 8 + i * 4, pgn: '[Event "?"]\n\n1. e4 e5 1/2-1/2', ending: "", acc: 40 + i * 2, acpl: 120 - i * 4 });
-      localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 2, games }));
+      localStorage.setItem("chess.stats", JSON.stringify({ v: 2, games }));
       // a library with two openings, so the rows that carry an ECO name — the
       // ones that wrapped — are on screen
       const ECOS = ["e4 e5 Nf3 Nc6 Bb5 a6", "d4 d5 c4 e6 Nf3 Nf6"];
@@ -1627,8 +1632,9 @@ if (scenario()) {
           an: { acc: { w: 60 + (i % 20), b: 65 }, acpl: { w: 80, b: 50 }, tags, losses, scalars,
                 bests: new Array(81).fill(null), budget: 200 } });
       }
-      localStorage.setItem("chess.v1.library", JSON.stringify({ v: 1, names: ["hxddh"], games: lib }));
+      window.__seedLib = { names: ["hxddh"], games: lib };
     });
+    await page.evaluate(seedLibrary, await page.evaluate(() => window.__seedLib));
     await page.reload();
     await page.waitForTimeout(1000);
     await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
@@ -1734,8 +1740,9 @@ if (scenario()) {
         an: { acc: { w: 60 + (i % 20), b: 65 }, acpl: { w: 80, b: 50 }, tags, losses, scalars,
               bests: new Array(81).fill(null), budget: 200 } });
     }
-    localStorage.setItem("chess.v1.library", JSON.stringify({ v: 1, names: ["hxddh"], games }));
+    window.__seedLib = { names: ["hxddh"], games: games };
   });
+  await page.evaluate(seedLibrary, await page.evaluate(() => window.__seedLib));
   await page.reload();
   await page.waitForTimeout(1000);
   await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
@@ -2149,13 +2156,13 @@ if (scenario()) {
   for (const lang of LANGS) {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: lang });
     await ctx.addInitScript(([l]) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: "puzzle", langId: l, sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "puzzle", langId: l, sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
-      localStorage.setItem("chess.v1.mines", JSON.stringify({ v: 1, list: [{
+      localStorage.setItem("chess.mines", JSON.stringify({ v: 1, list: [{
         id: "mine:t1", cat: "mine", fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
         solution: ["Nf3"], played: "e4", loss: 350, ply: 0, t: 1700000000000 }] }));
-      localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "mine" }));
+      localStorage.setItem("chess.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "mine" }));
     }, [lang]);
     const page = await ctx.newPage();
     await page.goto(`http://127.0.0.1:${PORT}/`);
@@ -2290,7 +2297,7 @@ if (scenario()) {
       for (let i = 0; i < 40; i++) games.push({ id: "g" + i, t: Date.now() - i * 36e5,
         diff: diffs[i % 6], color: i % 2 ? "w" : "b", result: ["win", "loss", "draw"][i % 3],
         moves: 8 + i * 3, pgn: '[Event "?"]\n\n1. e4 e5 1/2-1/2', ending: "", acc: 40 + i, acpl: 120 - i * 2 });
-      localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 2, games }));
+      localStorage.setItem("chess.stats", JSON.stringify({ v: 2, games }));
     });
     await page.reload();
     await page.waitForTimeout(900);
@@ -2360,8 +2367,9 @@ if (scenario()) {
           sans: "e4 e5 Nf3 Nc6 Bb5 a6", fen: "", side: "w", outcome: i % 2 ? "win" : "loss",
           motifs: {}, an: null });
       }
-      localStorage.setItem("chess.v1.library", JSON.stringify({ v: 1, names: ["hxddh"], games }));
+      window.__seedLib = { names: ["hxddh"], games: games };
     });
+    await page.evaluate(seedLibrary, await page.evaluate(() => window.__seedLib));
     await page.reload();
     await page.waitForTimeout(900);
     await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
@@ -2561,7 +2569,7 @@ if (scenario()) {
     await page.evaluate(() => {
       const mk = (d) => ({ pgn: '[Event "?"]\n[Result "*"]\n\n1. d4 d5 2. c4 e6 3. Nc3 Nf6 *',
                            savedAt: Date.now() - 1e7, mode: "ai", diff: d });
-      localStorage.setItem("chess.v1.slots",
+      localStorage.setItem("chess.slots",
         JSON.stringify({ v: 1, slots: [mk("extreme"), mk("beginner"), null, null, null] }));
     });
     await page.reload();
@@ -2662,7 +2670,7 @@ if (scenario()) {
       shown: document.getElementById("pick-modal").classList.contains("show"),
       items: document.querySelectorAll("#pick-list .pick-item").length,
       firstTab: (document.getElementById("tab-play") || {}).textContent,
-      stored: JSON.parse(localStorage.getItem("chess.v1.settings") || "{}").langId,
+      stored: JSON.parse(localStorage.getItem("chess.settings") || "{}").langId,
     }));
     assert(r.shown, locale + ": a new install opens the guide");
     assert(r.items === 2, locale + ": …with both ways in (" + r.items + ")");
@@ -2679,7 +2687,7 @@ if (scenario()) {
     // 7.6 §3a: the first answer is 「我是新手」 — the lesson it opens is not
     // the whole of it: the engine waiting after the lessons is the Beginner
     // one, not the default 1700 (「我会下棋」 was already getting a lower rung)
-    const chose = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings") || "{}"));
+    const chose = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}"));
     assert(chose.mode === "learn" && chose.difficulty === "beginner",
       locale + ": 「new to chess」 lands in the lessons with the Beginner engine (" +
       chose.mode + " / " + chose.difficulty + ")");
@@ -2816,8 +2824,8 @@ if (scenario()) {
   const openBridged = async (mode) => {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
     await ctx.addInitScript((m) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: m, langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: m, langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
       window.__handlers = {};
       window.zero = {
@@ -2857,7 +2865,7 @@ if (scenario()) {
       await page.click(`#rail button[data-view="${mode}"]`); await page.waitForTimeout(800);
     } else {
       await page.click('#rail button[data-view="play"]'); await page.waitForTimeout(400);
-      if (await page.evaluate((m) => JSON.parse(localStorage.getItem("chess.v1.settings")).mode !== m, mode)) {
+      if (await page.evaluate((m) => JSON.parse(localStorage.getItem("chess.settings")).mode !== m, mode)) {
         await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);
         await page.click(`#mode-seg button[data-mode="${mode}"]`);
         await page.click("#ng-start"); await page.waitForTimeout(800);
@@ -2961,10 +2969,10 @@ if (scenario()) {
   const openDialogBridge = async (answer, supported) => {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
     await ctx.addInitScript(([a, sup]) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: "ai", langId: "zh-CN", sideTab: "setup", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "ai", langId: "zh-CN", sideTab: "setup", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
-      localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 1, games: 3 }));
+      localStorage.setItem("chess.stats", JSON.stringify({ v: 1, games: 3 }));
       window.__asked = [];
       window.zero = {
         on: () => () => {}, invoke: async () => ({}),
@@ -2986,7 +2994,7 @@ if (scenario()) {
   const asked = (page) => page.evaluate(() => window.__asked);
   const inPageUp = (page) => page.evaluate(() =>
     !!document.getElementById("confirm-modal").classList.contains("show"));
-  const saved = (page) => page.evaluate(() => localStorage.getItem("chess.v1.stats"));
+  const saved = (page) => page.evaluate(() => localStorage.getItem("chess.stats"));
 
   // 1. it asks the platform, with the right shape, and takes "no" for an answer
   {
@@ -3039,8 +3047,8 @@ if (scenario()) {
   const openTc = async (tc) => {
     const ctx = await browser.newContext({ viewport: { width: 1500, height: 950 }, locale: "zh-CN" });
     await ctx.addInitScript((t) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", timeControl: t }));
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood", timeControl: t }));
       localStorage.setItem("chess.panelOpen", "0");
     }, tc);
     const page = await ctx.newPage();
@@ -3199,8 +3207,8 @@ if (scenario()) {
   const ctx = await browser.newContext({ viewport: { width: 520, height: 520 }, locale: "zh-CN",
                                          reducedMotion: "reduce" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
   });
   await ctx.addInitScript(PAGE_HOOK);
   const page = await ctx.newPage();
@@ -3599,8 +3607,8 @@ if (scenario()) {
     await ctx.addInitScript(() => {
       const t0 = Date.now(), real = Date.now;
       Date.now = () => t0 + (real() - t0) * 40;
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", timeControl: "3" }));
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood", timeControl: "3" }));
       localStorage.setItem("chess.panelOpen", "1");
     });
     const page = await ctx.newPage();
@@ -4510,7 +4518,7 @@ if (scenario()) {
     for (const lang of ["zh-CN", "en"]) {
       const tag = w + "x" + h + "/" + lang;
       const { ctx, page, errs } = await open(lang, "ai", "home", "wood", { width: w, height: h });
-      await page.evaluate((l) => { localStorage.setItem("chess.v1.library", l); }, lib);
+      await page.evaluate(seedLibrary, JSON.parse(lib));
       await page.reload();
       await page.waitForTimeout(900);
       const overflow = (sel) => page.evaluate((q) => {
@@ -4573,17 +4581,19 @@ if (scenario()) {
   });
   const th = (r, s, m) => ({ solve: s, miss: m, rating: { r, rd: 80, vol: 0.06 } });
   const seed = {
-    "chess.v1.library": { v: 1, names: ["hxddh"], games },
-    "chess.v1.stats": { v: 2, games: Array.from({ length: 12 }, (_, i) => ({ id: "s" + i, t: now - (12 - i) * DAY, diff: "normal",
+    "chess.library": { v: 1, names: ["hxddh"], games },
+    "chess.stats": { v: 2, games: Array.from({ length: 12 }, (_, i) => ({ id: "s" + i, t: now - (12 - i) * DAY, diff: "normal",
       color: "w", result: i % 2 ? "win" : "loss", moves: 40, pgn: "", ending: "", ra: 1450 + i * 9 })) },
-    "chess.v1.puzzles": { v: 1, solved: {}, tally: { tac: { miss: 3, solve: 9 } }, rhist: [{ t: now - DAY, r: 1500 }, { t: now, r: 1520 }],
+    "chess.puzzles": { v: 1, solved: {}, tally: { tac: { miss: 3, solve: 9 } }, rhist: [{ t: now - DAY, r: 1500 }, { t: now, r: 1520 }],
       themes: { fork: th(1700, 6, 1), pin: th(1350, 2, 4), skewer: th(1550, 4, 2), discoveredAttack: th(1600, 5, 2), backRank: th(1420, 3, 3), m1: th(1800, 9, 0) } },
   };
   for (const [w, h] of [[1024, 768], [1280, 800], [1440, 900], [1920, 1080], [600, 900]]) {
     for (const lang of LANGS) {
       const tag = "B5 " + w + "x" + h + "/" + lang;
       const { ctx, page, errs } = await open(lang, "ai", "me", "wood", { width: w, height: h });
-      await page.evaluate((ks) => { for (const [k, v] of Object.entries(ks)) localStorage.setItem(k, JSON.stringify(v)); }, seed);
+      const { "chess.library": seedLib, ...seedKeys } = seed;
+      await page.evaluate((ks) => { for (const [k, v] of Object.entries(ks)) localStorage.setItem(k, JSON.stringify(v)); }, seedKeys);
+      await page.evaluate(seedLibrary, seedLib);
       await page.reload();
       await page.waitForTimeout(1200);
       const r = await page.evaluate(() => {
@@ -4975,7 +4985,7 @@ if (scenario()) {
           games.push({ id: "t5-" + i, t: Date.now() - (i + 1) * 36e5, diff: "normal", color: i % 2 ? "b" : "w",
             result: i % 2 ? "loss" : "win", moves: 4, acc: 50 + i, pgn: i % 2 ? "1. d4 d5 2. c4 e6" : "1. e4 e5 2. Nf3 Nc6", ending: "resigned" });
         }
-        localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 2, games }));
+        localStorage.setItem("chess.stats", JSON.stringify({ v: 2, games }));
       });
       await page.reload();
       await page.waitForFunction(() => window.__chess && window.__chess.library && window.__chess.library().ready, null, { timeout: 20000 }).catch(() => {});
@@ -5083,7 +5093,7 @@ if (scenario()) {
       await ctx.addInitScript(() => {
         if (sessionStorage.getItem("t3seed")) return;
         sessionStorage.setItem("t3seed", "1");
-        localStorage.setItem("chess.v1.repertoire", JSON.stringify({ v: 1, w: [{ id: "rep-t3a", sans: "e4 e5 Nf3 Nc6 Bb5", eco: "", name: "" },
+        localStorage.setItem("chess.repertoire", JSON.stringify({ v: 1, w: [{ id: "rep-t3a", sans: "e4 e5 Nf3 Nc6 Bb5", eco: "", name: "" },
           { id: "rep-t3b", sans: "d4 d5 c4", eco: "", name: "" }], b: [] }));
       });
       await page.reload();
@@ -5134,7 +5144,7 @@ if (scenario()) {
     for (const viewport of [{ width: 1400, height: 900 }, { width: 520, height: 800 }]) {
       const tag = `T2 训练营 (${lang}, ${viewport.width}×${viewport.height})`;
       const { ctx, page, errs } = await open(lang, "learn", "play", "wood", viewport);
-      await page.evaluate((s) => localStorage.setItem("chess.v1.learn", s), seed);
+      await page.evaluate((s) => localStorage.setItem("chess.learn", s), seed);
       await page.reload();
       await page.waitForTimeout(900);
       await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
@@ -5342,7 +5352,7 @@ if (scenario()) {
     for (const viewport of [{ width: 1400, height: 900 }, { width: 520, height: 800 }]) {
       const tag = `T2 看 N 步 / 盲走 (${lang}, ${viewport.width}×${viewport.height})`;
       const { ctx, page, errs } = await open(lang, "puzzle", "play", "wood", viewport);
-      await page.evaluate((s) => localStorage.setItem("chess.v1.puzzles", s), seed);
+      await page.evaluate((s) => localStorage.setItem("chess.puzzles", s), seed);
       await page.reload();
       await page.waitForTimeout(900);
       await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});

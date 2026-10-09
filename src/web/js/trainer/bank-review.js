@@ -13,9 +13,8 @@
  * floor(rating / 200) × 200 of the rating the puzzle shipped with). A side
  * table and not a field on the queue entry: srs.js rebuilds entries from
  * their four numbers (entry()), so a fifth would not survive the first
- * solve. A queue from 6.x–8.0 has no bank ids and loads as it did; an older
- * build reading this queue leaves the lc- ids alone (drills.js forgetRetired
- * keeps them: "bands load on demand").
+ * solve. drills.js forgetRetired leaves the lc- ids alone: bands load on
+ * demand.
  *
  * Without the table (an entry merged in from elsewhere), the puzzle's own
  * rating in `pr` is the guess, with the bands either side of it — the first

@@ -38,7 +38,7 @@ const b = await launchBrowser();
 console.log("引擎:", ENGINE);
 const c = await b.newContext({ viewport: { width: 1280, height: 900 }, locale: 'zh-CN' });
 await c.addInitScript(() => {
-  localStorage.setItem('chess.v1.settings', JSON.stringify({
+  localStorage.setItem('chess.settings', JSON.stringify({
     mode: 'pvp', langId: 'zh-CN', sideTab: 'play', soundOn: false, timeControl: '3' }));
   localStorage.setItem('chess.panelOpen', '1');
   const listeners = {};
@@ -153,8 +153,8 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
   await c2.addInitScript(() => {
     const t0 = Date.now(), real = Date.now;
     Date.now = () => t0 + (real() - t0) * 40;
-    localStorage.setItem('chess.v1.settings', JSON.stringify({
-      mode: 'pvp', langId: 'zh-CN', sideTab: 'setup', soundOn: false, themeId: 'wood' }));
+    localStorage.setItem('chess.settings', JSON.stringify({
+      mode: 'pvp', langId: 'zh-CN', sideTab: 'setup', soundOn: false, appearance: 'dark', boardId: 'wood' }));
     localStorage.setItem('chess.panelOpen', '1');
   });
   const p2 = await c2.newPage();
@@ -226,7 +226,7 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
 {
   const c3 = await b.newContext({ viewport: { width: 1280, height: 900 }, locale: 'zh-CN' });
   await c3.addInitScript(() => {
-    localStorage.setItem('chess.v1.settings', JSON.stringify({
+    localStorage.setItem('chess.settings', JSON.stringify({
       mode: 'pvp', langId: 'zh-CN', sideTab: 'play', soundOn: false, timeControl: '3+2' }));
   });
   const p3 = await c3.newPage();
@@ -275,7 +275,7 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
   await c4.addInitScript(() => {
     if (!sessionStorage.getItem('seeded')) {
       sessionStorage.setItem('seeded', '1');
-      localStorage.setItem('chess.v1.settings', JSON.stringify({
+      localStorage.setItem('chess.settings', JSON.stringify({
         mode: 'pvp', langId: 'zh-CN', sideTab: 'setup', soundOn: false, timeControl: 'off' }));
       localStorage.setItem('chess.panelOpen', '1');
     }
@@ -293,7 +293,7 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
     const to = (x) => { const m = /^(\d+):(\d\d)$/.exec(x.trim()); return m ? +m[1] * 60 + +m[2] : null; };
     return {
       secs: [...document.querySelectorAll('#clock-w, #clock-b')].map((x) => to(x.textContent)),
-      tc: JSON.parse(localStorage.getItem('chess.v1.settings') || '{}').timeControl,
+      tc: JSON.parse(localStorage.getItem('chess.settings') || '{}').timeControl,
       active: (document.querySelector('#clock-seg button.active') || {}).dataset?.tc,
       custom: !document.getElementById('clock-custom').hidden,
     };
@@ -352,7 +352,7 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
   await c5.addInitScript(() => {
     if (!sessionStorage.getItem('seeded')) {
       sessionStorage.setItem('seeded', '1');
-      localStorage.setItem('chess.v1.settings', JSON.stringify({ mode: 'pvp', langId: 'zh-CN', sideTab: 'play', soundOn: false, timeControl: 'off' }));
+      localStorage.setItem('chess.settings', JSON.stringify({ mode: 'pvp', langId: 'zh-CN', sideTab: 'play', soundOn: false, timeControl: 'off' }));
       localStorage.setItem('chess.panelOpen', '1');
     }
   });
@@ -379,7 +379,7 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
   await p5.waitForTimeout(500);
   const got = await p5.evaluate(() => ({ open: document.getElementById('newgame-modal').classList.contains('show'),
     clocks: [...document.querySelectorAll('#clock-w, #clock-b')].map((x) => x.textContent.trim()),
-    tc: JSON.parse(localStorage.getItem('chess.v1.settings') || '{}').timeControl }));
+    tc: JSON.parse(localStorage.getItem('chess.settings') || '{}').timeControl }));
   chk(!got.open && got.clocks.every((x) => x === '25:00'), '新对局里自定义填 25 直接回车：这盘两只钟都是 25:00', JSON.stringify(got));
   if (errs5.length) errs.push(...errs5);
   await c5.close();

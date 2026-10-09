@@ -40,18 +40,20 @@ export function createRepertoireUI(d) {
   /** chunk-rep.js's controller once it has booted (rep-page.js), else null. */
   let ctrl = null;
   /**
-   * v8-1-plan T3: what the stored header said about the records (db, n, sig,
-   * gen), kept until the chunk speaks; v8-2-plan T4: about the lines too (ln, lf).
+   * v8-1-plan T3: what the stored header said about the records (n, sig,
+   * gen) and the lines (ln), kept until the chunk speaks.
    */
   let headExtra = {};
+  /** The chunk will not boot this session (it failed to load, or there is no library). */
+  let chunkGone = false;
 
   /** How many of your games in an opening before its absence is a gap. */
   const GAP_MIN_GAMES = 2;
 
   /**
-   * The header's lines. v8-2-plan T4: with the lines in their store, the
-   * header holds the first 400 a side (rep-lines.js) until chunk-rep.js has
-   * booted and put the whole book here.
+   * The header's lines: none, except those a learning file merged into it
+   * (rep-lines.js) — the book until chunk-rep.js has booted and put the
+   * stored one here.
    */
   function loadBook() {
     const s = Persist.read("repertoire").value;
@@ -63,12 +65,15 @@ export function createRepertoireUI(d) {
   }
   store.session.repertoire = loadBook();
   function saveBook() {
-    // still the 7.2 shape, `{v: 1, w, b}`, which every older build reads.
-    // Once the chunk is up it writes the lines into their store and says
-    // what goes here (rep-page.js head); until then the header is what holds
-    // an edit, and the chunk lays it over the stored book when it boots
-    Persist.setJson("repertoire", ctrl ? ctrl.head() : Object.assign({}, headExtra, { v: 1, w: store.session.repertoire.w, b: store.session.repertoire.b }));
+    // the chunk writes the lines into their store and says what goes here
+    // (rep-page.js head). Before it has booted nothing is edited (edits wait
+    // for it); with no chunk this session the header holds the lines, and a
+    // launch whose chunk boots takes them into the store
+    if (ctrl) Persist.setJson("repertoire", ctrl.head());
+    else if (chunkGone) Persist.setJson("repertoire", Object.assign({}, headExtra, { v: 1, w: store.session.repertoire.w, b: store.session.repertoire.b }));
   }
+  /** Edits wait for the chunk: it holds the book. */
+  const settled = () => (ctrl || chunkGone ? null : ready);
 
   const linesOf = (side) => store.session.repertoire[side === "b" ? "b" : "w"] || [];
   const total = () => linesOf("w").length + linesOf("b").length;
@@ -130,7 +135,7 @@ export function createRepertoireUI(d) {
     // the file's lines afterwards would quietly undo that
     const book = store.session.repertoire;
     importing = true;
-    try { parsed = await ChessPgnParser.parseGamesAsync(chunks); }
+    try { await settled(); parsed = await ChessPgnParser.parseGamesAsync(chunks); }
     finally { importing = false; }
     if (store.session.repertoire !== book) return;
     const games = parsed.filter(Boolean);
@@ -167,6 +172,7 @@ export function createRepertoireUI(d) {
   }
 
   async function clearBook() {
+    await settled();
     if (!total()) return;
     const ok = await confirmNative(t("rep.clearAsk"), t("rep.clearTitle"),
       { ok: t("rep.clearOk"), cancel: t("act.cancel") });
@@ -217,6 +223,7 @@ export function createRepertoireUI(d) {
     const min = s === "b" ? 2 : 1;
     // null: the board's game did not begin at the starting position
     if (!sans) { toast(tf("rep.lineLen", [min, Rep.MAX_PLIES]), "fix"); return false; }
+    await settled();
     const san = sans[sans.length - 1] || "";
     if (remove) {
       let r = ctrl ? ctrl.removeAt(s, sans) : null;
@@ -287,15 +294,15 @@ export function createRepertoireUI(d) {
       LibraryQuery: typeof window !== "undefined" && window.CHESS_LIBDB ? window.CHESS_LIBDB.LibraryQuery : null,
     }))).then((c) => {
       ctrl = c;
-      // an edit made while the chunk was booting (M3 评审 P2-3): index those lines too;
-      // a learning file merged meanwhile left its cards in the header
+      // a learning file merged meanwhile left its lines and cards in the header
       if (c.stale()) { c.sync(); takeCards(c); saveBook(); render(); return c; }
-      // what the boot indexed, migrated or recovered: the header says so now
+      // what the boot indexed or recovered: the header says so now
       // (a profile that never had a book is not given one — the library's rule)
       if (takeCards(c) || (!c.fresh && (total() || Persist.get("repertoire") != null))) saveBook();
       render();
       return c;
     }, () => null);
+  ready.then(() => { if (!ctrl) chunkGone = true; });
   // persist.js's port for the records' shards (BULK "rep0" … "rep3")
   if (Persist.attachBulk) {
     Persist.attachBulk({
@@ -303,12 +310,12 @@ export function createRepertoireUI(d) {
       read: (name) => (ctrl ? ctrl.shardText(name) : null),
       restore: (texts) => ready.then((c) => c && c.restoreShards(texts)),
       // 清除全部存档: the session's book too (the library's rule), and before
-      // the chunk has booted its two databases by name — left alone, the
-      // boot would read them back (M3 评审 P2)
+      // the chunk has booted its database by name — left alone, the boot
+      // would read it back (M3 评审 P2)
       clear: () => {
         store.session.repertoire = { w: [], b: [] };
         if (ctrl) ctrl.clear();
-        else try { for (const n of ["chessboard.repertoire", "chessboard.replines"]) indexedDB.deleteDatabase(n); } catch (_) { /* none here */ }
+        else try { indexedDB.deleteDatabase("chessboard.book"); } catch (_) { /* none here: rep-db.js REP_DB_NAME */ }
       },
     }, "rep");
   }
@@ -514,15 +521,13 @@ export function createRepertoireUI(d) {
    * as shards. With no chunk to serve them (it failed to boot, or held its
    * shards unread this session) the file says nothing about records, and
    * importing it indexes the lines afresh instead of clearing the cards.
-   * v8-2-plan T4: nor about lines past the header's copy (`ln`) — the
-   * header's lines are then the book the file holds.
    */
   function forExport(doc) {
     if (ctrl && !ctrl.held()) return doc;
     let h = null;
     try { h = JSON.parse(doc.keys.repertoire); } catch (_) { h = null; }
     if (h) {
-      for (const k of ["db", "n", "sig", "gen", "ln"]) delete h[k];
+      for (const k of ["n", "sig", "gen", "ln"]) delete h[k];
       doc.keys.repertoire = JSON.stringify(h);
     }
     return doc;

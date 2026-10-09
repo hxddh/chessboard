@@ -38,7 +38,6 @@ pub const panic = std.debug.FullPanic(native_sdk.debug.capturePanic);
 // *localized copy* of the manifest menus (see localizedMenus) — a real slice
 // built from app.zon, never an empty one. Chinese stays null → manifest.
 
-const APPDATA_FILE = @import("bridge.zig").APPDATA_FILE;
 const APP_COMMANDS = @import("bridge.zig").APP_COMMANDS;
 const BUILTIN_COMMANDS = @import("bridge.zig").BUILTIN_COMMANDS;
 const IssuedPaths = @import("bridge.zig").IssuedPaths;
@@ -308,15 +307,12 @@ pub const App = struct {
         return std.fmt.bufPrint(buf, "{s}{s}{s}", .{ self.appdata_dir, SEP, name }) catch null;
     }
 
-    /// v8-0-plan F3: `<appdata>/store/<key>.json<suffix>` for a key of the
-    /// per-key store, `<appdata>/chessboard.json<suffix>` for null. The key
-    /// has passed storeKeyValid, so it cannot climb out of the directory.
-    pub fn appdataFile(self: *@This(), buf: []u8, key: ?[]const u8, suffix: []const u8) ?[]const u8 {
+    /// v8-0-plan F3: `<appdata>/profile/<key>.json<suffix>` for a key of the
+    /// per-key store. The key has passed storeKeyValid, so it cannot climb
+    /// out of the directory.
+    pub fn appdataFile(self: *@This(), buf: []u8, key: []const u8, suffix: []const u8) ?[]const u8 {
         if (self.appdata_dir.len == 0) return null;
-        if (key) |k| {
-            return std.fmt.bufPrint(buf, "{s}{s}{s}{s}{s}.json{s}", .{ self.appdata_dir, SEP, STORE_DIR, SEP, k, suffix }) catch null;
-        }
-        return std.fmt.bufPrint(buf, "{s}{s}{s}{s}", .{ self.appdata_dir, SEP, APPDATA_FILE, suffix }) catch null;
+        return std.fmt.bufPrint(buf, "{s}{s}{s}{s}{s}.json{s}", .{ self.appdata_dir, SEP, STORE_DIR, SEP, key, suffix }) catch null;
     }
 
     pub fn pathPolicy(self: *@This()) PathPolicy {

@@ -93,7 +93,7 @@ function keysOfFens(fens) {
 
 /**
  * The index of a stored entry, by replaying it — for games that arrive
- * without their positions (a migrated library, a restored one). null when
+ * without their positions (a restored library). null when
  * the moves do not replay: such a game is kept, it just cannot be found by
  * position.
  * @param {{sans: string, fen?: string}} g

@@ -26,9 +26,8 @@
 import { ChessDrills } from "./drills.js";  // hash36: one id scheme in this app
 
 /**
- * Lines per side. 400 until 8.1, while the lines lived only in the
- * localStorage header; v8-2-plan T4 moved them into IndexedDB (rep-lines.js)
- * and this is now a guard, not a budget. It is the by-position records that
+ * Lines per side. The lines live in IndexedDB (rep-lines.js, v8-2-plan T4),
+ * and this is a guard, not a budget. It is the by-position records that
  * grow (rep-book.js, one per position, both FEN keys stored): measured on
  * 16-ply lines branching at random, 2,000 lines → 17,700 records, 5.6 MB,
  * indexed in 0.3 s; 5,000 → 42,500 records, 13.5 MB, 0.7 s — and an edit

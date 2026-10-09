@@ -63,7 +63,7 @@ async function openPage(settings, seed, viewport) {
   const ctx = await browser.newContext({ viewport: viewport || { width: 1400, height: 1000 }, locale: (settings && settings.langId) || "zh-CN" });
   await ctx.addInitScript(([s, sd]) => {
     if (!sessionStorage.getItem("eg.seeded")) {
-      localStorage.setItem("chess.v1.settings", JSON.stringify(Object.assign({ langId: "zh-CN", sideTab: "play", soundOn: false }, s)));
+      localStorage.setItem("chess.settings", JSON.stringify(Object.assign({ langId: "zh-CN", sideTab: "play", soundOn: false }, s)));
       localStorage.setItem("chess.panelOpen", "1");
       for (const [k, v] of Object.entries(sd || {})) localStorage.setItem(k, v);
       sessionStorage.setItem("eg.seeded", "1");
@@ -103,7 +103,7 @@ async function clickMove(page, from, to) {
   const a = await xy(from); await page.mouse.click(a.x, a.y); await page.waitForTimeout(150);
   const b = await xy(to); await page.mouse.click(b.x, b.y);
 }
-const learnKey = (page) => page.evaluate(() => { try { return JSON.parse(localStorage.getItem("chess.v1.learn") || "null"); } catch { return null; } });
+const learnKey = (page) => page.evaluate(() => { try { return JSON.parse(localStorage.getItem("chess.learn") || "null"); } catch { return null; } });
 const campItems = (page) => page.evaluate(() => document.querySelectorAll("#lesson-list button[data-eg]").length);
 async function openEndgame(page, id) {
   await until(async () => (await campItems(page)) > 0, 8000);
@@ -195,7 +195,7 @@ const occ = (page, sq) => page.evaluate((q) => {
 // --- 5. 旧存档 ----------------------------------------------------------------
 {
   const old = JSON.stringify({ v: 1, done: { board: true, squares: true }, last: 1 });
-  const { ctx, page, errs } = await openPage({ mode: "learn" }, { "chess.v1.learn": old });
+  const { ctx, page, errs } = await openPage({ mode: "learn" }, { "chess.learn": old });
   await until(async () => (await campItems(page)) > 0, 8000);
   const r = await page.evaluate(() => ({ prog: document.getElementById("learn-progress").textContent, title: document.getElementById("lesson-title").textContent }));
   assert(/2\/\d+/.test(r.prog) && /第 2 课/.test(r.title), "8.0 的教学进度照读：做过 2 课，停在第 2 课", JSON.stringify(r));
@@ -214,7 +214,7 @@ const occ = (page, sq) => page.evaluate((q) => {
   for (const lang of ["zh-CN", "en", "ja"]) {
     for (const viewport of [{ width: 1400, height: 900 }, { width: 520, height: 800 }]) {
       const tag = lang + " " + viewport.width;
-      const { ctx, page, errs } = await openPage({ mode: "learn", langId: lang }, { "chess.v1.learn": seed }, viewport);
+      const { ctx, page, errs } = await openPage({ mode: "learn", langId: lang }, { "chess.learn": seed }, viewport);
       await page.evaluate(() => { const d = document.querySelector("#sec-learn details.reading-index"); if (d) d.open = true; });
       await openEndgame(page, "rp-lucena2");
       await page.waitForTimeout(400);

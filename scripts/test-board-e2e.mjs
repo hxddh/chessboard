@@ -53,13 +53,17 @@ const assert = (cond, msg) => {
 const browser = await launchBrowser();
 console.log("引擎:", ENGINE);
 
+/** A shell's name (data-theme) as the look that gives it (look.js shellFor). */
+const lookOf = (th) => ({ wood: { appearance: "dark", boardId: "wood" }, night: { appearance: "dark", boardId: "green" },
+  day: { appearance: "light", boardId: "wood" }, notebook: { appearance: "light", boardId: "blue" } })[th] || {};
+
 /** Play `line` in a fresh page and report what the board and the panel show. */
 async function play(theme, line) {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
-  // a 7.x theme id, or (v8-0-plan A3) the look's own fields
-  const look = typeof theme === "string" ? { themeId: theme } : theme;
+  // a shell's name, or (v8-0-plan A3) the look's own fields
+  const look = typeof theme === "string" ? lookOf(theme) : theme;
   await ctx.addInitScript((lk) => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify(Object.assign({
+    localStorage.setItem("chess.settings", JSON.stringify(Object.assign({
       mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false }, lk)));
     localStorage.setItem("chess.panelOpen", "1");
   }, look);
@@ -161,9 +165,9 @@ for (const [boardId, boardFrame, appearance] of [["wood", "flat", "system"], ["g
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
+    localStorage.setItem("chess.settings", JSON.stringify({
       mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false,
-      themeId: "wood", humanColor: "w" }));
+      appearance: "dark", boardId: "wood", humanColor: "w" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -295,8 +299,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -406,8 +410,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -448,8 +452,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -507,8 +511,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -570,8 +574,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -619,8 +623,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const setup = async (turn, set, flip) => {
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
     await ctx.addInitScript(([s, f]) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", pieceSet: s, flipped: f, autoFlipPvp: false }));
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood", pieceSet: s, flipped: f, autoFlipPvp: false }));
       localStorage.setItem("chess.panelOpen", "1");
     }, [set, flip]);
     const page = await ctx.newPage();
@@ -730,8 +734,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "ai", humanColor: "w", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "ai", humanColor: "w", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -770,8 +774,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -852,8 +856,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -939,9 +943,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
+    localStorage.setItem("chess.settings", JSON.stringify({
       mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false,
-      themeId: "wood", humanColor: "w", difficulty: "easy" }));
+      appearance: "dark", boardId: "wood", humanColor: "w", difficulty: "easy" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -1021,8 +1025,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -1144,8 +1148,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     window.__paints = 0;
     const real = HTMLCanvasElement.prototype.getContext;
@@ -1198,8 +1202,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     window.__t = { painted: null, wired: null };
     const realCtx = HTMLCanvasElement.prototype.getContext;
@@ -1271,8 +1275,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     window.__full = 0;
     const real = CanvasRenderingContext2D.prototype.fillRect;
     CanvasRenderingContext2D.prototype.fillRect = function (x, y, ...rest) {
@@ -1315,7 +1319,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const f = await page.evaluate(() => ({
     image: window.__chess.board().imageRedraws,
     fetched: performance.getEntriesByType("resource").some((e) => /chunk-pieces-fantasy\.js$/.test(e.name)),
-    saved: JSON.parse(localStorage.getItem("chess.v1.settings") || "{}").pieceSet,
+    saved: JSON.parse(localStorage.getItem("chess.settings") || "{}").pieceSet,
   }));
   assert(f.fetched && f.image === 3 && f.saved === "fantasy",
     `换 Fantasy:取了 chunk-pieces-fantasy.js,只多画一次(共 ${f.image} 次),设置里记下 ${f.saved}`);
@@ -1331,8 +1335,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     // a slow decode, so the switch can land while it runs
     const real = HTMLImageElement.prototype.decode;
     HTMLImageElement.prototype.decode = function () {
@@ -1361,10 +1365,10 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
-    localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "op" }));
+    localStorage.setItem("chess.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "op" }));
   });
   const page = await ctx.newPage();
   const errs = [];
@@ -1394,8 +1398,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     // v8-0-plan A3: 盘外 / 盘内 is a choice on the wooden frame only (a flat
     // board has nothing to print on), so these two runs are framed
     await ctx.addInitScript((th) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: th,
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false,
         appearance: th === "day" ? "light" : "dark", boardId: "wood", boardFrame: "frame" }));
       localStorage.setItem("chess.panelOpen", "1");
     }, theme);
@@ -1481,7 +1485,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   for (const reduced of [false, true]) {
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN", reducedMotion: reduced ? "reduce" : "no-preference" });
     await ctx.addInitScript(() => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false }));
+      localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false }));
       localStorage.setItem("chess.panelOpen", "1");
     });
     const page = await ctx.newPage();
@@ -1515,7 +1519,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.addInitScript(() => {
     if (sessionStorage.getItem("seeded")) return;
     sessionStorage.setItem("seeded", "1");
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
+    localStorage.setItem("chess.settings", JSON.stringify({
       mode: "ai", difficulty: "normal", humanColor: "w", langId: "zh-CN", sideTab: "play", soundOn: false }));
     localStorage.setItem("chess.panelOpen", "1");
   });
@@ -1534,7 +1538,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   };
   const state = () => page.evaluate(() => {
     const m = document.getElementById("newgame-modal");
-    const s = JSON.parse(localStorage.getItem("chess.v1.settings") || "{}");
+    const s = JSON.parse(localStorage.getItem("chess.settings") || "{}");
     return {
       open: !!m && m.classList.contains("show"),
       confirm: document.getElementById("confirm-modal").classList.contains("show"),
@@ -1667,7 +1671,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const seeded = async (mode) => {
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
     await ctx.addInitScript((m) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
+      localStorage.setItem("chess.settings", JSON.stringify({
         mode: m, difficulty: "normal", humanColor: "w", langId: "zh-CN", sideTab: "play", soundOn: false }));
       localStorage.setItem("chess.panelOpen", "1");
     }, mode);
@@ -1739,7 +1743,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     assert(pick.diff === "easy" && s.focus === "ben", `§5 …预选初级,焦点在它的角色卡上(${pick.diff} / ${s.focus})`);
     await page.keyboard.press("Enter"); await page.waitForTimeout(500);
     s = await ngState(page);
-    const set = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings") || "{}"));
+    const set = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}"));
     assert(!s.open && set.mode === "ai" && set.difficulty === "easy", `§5 …回车开局:人机、初级(${set.mode} / ${set.difficulty})`);
     assert(errs.length === 0, `§5 首次启动:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
     await ctx.close();
@@ -1812,7 +1816,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const open = async (settings, vp, scheme) => {
     const ctx = await browser.newContext({ viewport: vp || { width: 1200, height: 900 }, locale: "zh-CN", colorScheme: scheme || "light" });
     await ctx.addInitScript((s) => {
-      if (s) localStorage.setItem("chess.v1.settings", JSON.stringify(s));
+      if (s) localStorage.setItem("chess.settings", JSON.stringify(s));
       localStorage.setItem("chess.panelOpen", "1");
     }, settings);
     const page = await ctx.newPage();
@@ -1907,7 +1911,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     const { ctx, page, errs } = await open({ mode: "pvp", langId: "zh-CN", sideTab: "setup" }, null, "dark");
     const state = () => page.evaluate(() => {
       const root = document.documentElement;
-      const s = JSON.parse(localStorage.getItem("chess.v1.settings") || "{}");
+      const s = JSON.parse(localStorage.getItem("chess.settings") || "{}");
       const on = (sel) => [...document.querySelectorAll(sel)].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.textContent.trim());
       return { attrs: [root.dataset.theme, root.dataset.board, root.dataset.frame].join("/"),
         saved: [s.appearance, s.boardId, s.boardFrame, s.pieceSet].join("/"),
@@ -1965,10 +1969,10 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const openA5 = async (settings, opts = {}) => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, locale: "zh-CN" });
     await ctx.addInitScript(([st, pz]) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify(Object.assign({ langId: "zh-CN", sideTab: "play", soundOn: false,
+      localStorage.setItem("chess.settings", JSON.stringify(Object.assign({ langId: "zh-CN", sideTab: "play", soundOn: false,
         appearance: "dark", boardId: "wood", boardFrame: "flat" }, st)));
       localStorage.setItem("chess.panelOpen", "1");
-      if (pz) localStorage.setItem("chess.v1.puzzles", JSON.stringify(pz));
+      if (pz) localStorage.setItem("chess.puzzles", JSON.stringify(pz));
     }, [settings, opts.puzzles || null]);
     const page = await ctx.newPage();
     const errs = [];
@@ -2192,8 +2196,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.addInitScript(() => {
     if (!sessionStorage.getItem("f3.seeded")) {
       sessionStorage.setItem("f3.seeded", "1");
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
     }
     window.__paints = 0;

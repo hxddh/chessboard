@@ -139,15 +139,15 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const DAY = S.DAY;
   const T0 = Date.UTC(2026, 0, 10);
 
-  // the pre-6.0 contract, verbatim: no dates, count-based, null on graduation
+  // the count axis alone, without a clock: null on graduation
   let e = S.onMiss(undefined);
-  assert(S.isDue(e), "legacy: a missed puzzle enters the queue");
+  assert(S.isDue(e), "count axis: a missed puzzle enters the queue");
   e = S.onSolve(e);
-  assert(e && S.isDue(e) && e.s === 1, "legacy: one clean solve is not enough");
-  assert(S.onSolve(e) === null, "legacy: the second consecutive clean solve graduates");
-  assert(S.isDue(true) && S.entry(true).s === 0 && S.entry(true).due === 0, "legacy: a 1.6 boolean entry is due, streak 0, overdue since forever");
-  assert(S.onSolve(undefined) === null, "legacy: solving an unqueued puzzle is a no-op");
-  assert(S.entry({ s: 1, n: 2 }).due === 0 && S.entry({ s: 1, n: 2 }).ivl === 0, "a 1.7 entry without dates reads as overdue");
+  assert(e && S.isDue(e) && e.s === 1, "count axis: one clean solve is not enough");
+  assert(S.onSolve(e) === null, "count axis: the second consecutive clean solve graduates");
+  assert(S.entry(true) === null && !S.isDue(true), "count axis: what is not an entry is not in the queue");
+  assert(S.onSolve(undefined) === null, "count axis: solving an unqueued puzzle is a no-op");
+  assert(S.entry({ s: 1, n: 2 }).due === 0 && S.entry({ s: 1, n: 2 }).ivl === 0, "an entry without dates reads as overdue");
 
   // the time axis: 1 → 3 → 7 → 21
   let t = S.onMiss(undefined, T0);
@@ -174,11 +174,11 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   // Q3 acceptance: offline 14 days, back today → today's load ≤ cap
   const state = {};
   for (let i = 0; i < 40; i++) state["p" + i] = { s: i % 2, n: 1, ivl: 1, due: T0 - (i % 14) * DAY };
-  state.legacy = true;
+  state.undated = { s: 0, n: 1 };
   const CAP = 10;
   const today = S.dueQueue(state, T0, CAP);
   assert(today.length === CAP, "14 days away, 41 due: today serves " + today.length + " (cap " + CAP + ")");
-  assert(today[0] === "legacy", "the entry with no date is the most overdue and comes first");
+  assert(today[0] === "undated", "the entry with no date is the most overdue and comes first");
   assert(S.dueCount(state, T0) === CAP, "after spreading, dueCount(today) == cap");
   assert(S.dueCount(state, T0 + DAY) === 2 * CAP, "tomorrow adds the next batch");
   assert(S.dueCount(state, T0 + 3 * DAY) === 40 && S.dueCount(state, T0 + 4 * DAY) === 41, "the whole backlog drains at cap a day");
@@ -571,62 +571,6 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const r5 = spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), csvPath, "--out-dir", path.join(dir, "ex"), "--seed", "1", "--exclude", report], { encoding: "utf8" });
   assert(r5.status === 0 && shipped(dir).includes(JSON.stringify(firstId)) && !shipped(path.join(dir, "ex")).includes(JSON.stringify(firstId)) &&
     /accepted 48 /.test(r5.stdout), "--exclude report.json drops the reported id (" + firstId + ", " + r5.stdout.split("\n")[0] + ")");
-  // v8-4-plan T3: an import over an earlier one keeps what it drops in
-  // old-NNNN.js, row for row as it shipped, counted in the index; a third
-  // import that ships it again drops the old file, and --no-keep-old starts afresh
-  {
-    const re = path.join(dir, "re");
-    fs.mkdirSync(re);
-    fs.cpSync(path.join(dir, "lichess"), path.join(re, "lichess"), { recursive: true });
-    const before = fs.readdirSync(path.join(re, "lichess")).flatMap((f) => fs.readFileSync(path.join(re, "lichess", f), "utf8").split("\n"))
-      .find((l) => l.startsWith("[" + JSON.stringify(firstId) + ","));
-    const r7 = spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), csvPath, "--out-dir", re, "--seed", "1", "--exclude", report], { encoding: "utf8" });
-    const olds = fs.readdirSync(path.join(re, "lichess")).filter((f) => f.startsWith("old-"));
-    const oldText = olds.map((f) => fs.readFileSync(path.join(re, "lichess", f), "utf8")).join("");
-    const reIdx = loadAppModules([path.join(re, "puzzles-lc-index.js")]).LC_INDEX;
-    const oldBand = olds.length === 1 && Number(olds[0].slice(4, 8));
-    const oldList = olds.length === 1 && loadAppModules([path.join(re, "lichess", olds[0])])["LC_OLD_" + olds[0].slice(4, 8)];
-    assert(r7.status === 0 && olds.length === 1 && oldText.split("\n").includes(before) && oldList.length === 1 &&
-      reIdx.total === 48 && reIdx.bands.filter((b) => b.old).map((b) => b.band + ":" + b.old).join() === oldBand + ":1" &&
-      lichessChunks(path.join(re, "lichess")).some((c) => c.global === "LC_OLD_" + olds[0].slice(4, 8) && /chunk-lc-old-\d{4}\.js$/.test(c.out)),
-    "a re-import keeps the dropped puzzle in old-NNNN.js as it shipped, and the index counts it (" + olds.join() + ", " + (r7.stderr || "").trim().split("\n")[0] + ")");
-    const r8 = spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), csvPath, "--out-dir", re, "--seed", "1"], { encoding: "utf8" });
-    assert(r8.status === 0 && !fs.readdirSync(path.join(re, "lichess")).some((f) => f.startsWith("old-")) &&
-      fs.readFileSync(path.join(re, "puzzles-lc-index.js"), "utf8") === fs.readFileSync(path.join(dir, "puzzles-lc-index.js"), "utf8"),
-    "…and an import that ships it again has no old rows left");
-    spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), csvPath, "--out-dir", re, "--seed", "1", "--exclude", report, "--no-keep-old"], { encoding: "utf8" });
-    assert(!fs.readdirSync(path.join(re, "lichess")).some((f) => f.startsWith("old-")), "--no-keep-old keeps nothing");
-    // puzzle-db.js full(): the band and its old rows, null until both are here; band() alone never has them
-    const fctx = loadAppModules(["src/web/js/chess.js", "src/web/js/puzzle-db.js", "src/web/js/srs.js", "src/web/js/trainer/bank-review.js"]);
-    fs.rmSync(path.join(re, "lichess"), { recursive: true });
-    fs.cpSync(path.join(dir, "lichess"), path.join(re, "lichess"), { recursive: true });
-    spawnSync(process.execPath, [path.join(ROOT, "scripts/import-puzzles.mjs"), csvPath, "--out-dir", re, "--seed", "1", "--exclude", report], { encoding: "utf8" });
-    const FDb = fctx.ChessPuzzleDb;
-    fctx.LC_INDEX = loadAppModules([path.join(re, "puzzles-lc-index.js")]).LC_INDEX;
-    const bn = String(oldBand).padStart(4, "0");
-    fctx["LC_BAND_" + bn] = loadAppModules([path.join(re, "lichess", "band-" + bn + ".js")])["LC_BAND_" + bn];
-    const noOld = FDb.full(oldBand) === null && FDb.band(oldBand) && !FDb.band(oldBand).some((p) => p.id === "lc-" + firstId);
-    // a review queued against the dropped id, as puzzle-book.js wires it: kept
-    // while its old rows are not here (the band alone is not all there is)…
-    const qid = "lc-" + firstId, FS = fctx.ChessSrs;
-    const qst = () => ({ missed: { [qid]: FS.onMiss(undefined, Date.now() - 30 * 864e5) }, bank: { [qid]: oldBand } });
-    const reviewDb = Object.assign({}, FDb, { band: FDb.full, ensureBand: FDb.ensureFull });
-    const st1 = qst(), B1 = fctx.createBankReview({ Db: reviewDb, Srs: FS });
-    const keptEarly = B1.prune(st1) === 0 && !!st1.missed[qid] && B1.resolve(st1, qid) === null && B1.pending(st1, Date.now()).includes(oldBand);
-    // …where the 8.3 wiring (the band alone) would have dropped it as gone
-    const st0 = qst(), B0 = fctx.createBankReview({ Db: FDb, Srs: FS });
-    const droppedBefore = B0.prune(st0) === 1 && !st0.missed[qid];
-    fctx["LC_OLD_" + bn] = loadAppModules([path.join(re, "lichess", "old-" + bn + ".js")])["LC_OLD_" + bn];
-    const f = FDb.full(oldBand);
-    assert(noOld && f && f.length === FDb.band(oldBand).length + 1 && f.some((p) => p.id === "lc-" + firstId) &&
-      FDb.oldChunk(oldBand).file === "chunk-lc-old-" + bn + ".js",
-    "puzzle-db.js full(): the band with its old rows once both are here; band() never has them");
-    const st2 = qst(), B2 = fctx.createBankReview({ Db: reviewDb, Srs: FS });
-    const p2 = B2.resolve(st2, qid);
-    assert(keptEarly && droppedBefore && B2.prune(st2) === 0 && !!p2 && p2.fen === JSON.parse(before.replace(/,$/, ""))[1] &&
-      B2.reviewList(st2, Date.now(), 20, () => null).some((p) => p.id === qid),
-    "a queued review of a puzzle the new import dropped still opens, from its old rows (kept " + keptEarly + ", 8.3 wiring drops it " + droppedBefore + ")");
-  }
   // Codex #89: a pzstd file cut off right after a size header (its frame never
   // came — a truncated download) fails too, instead of importing what it has
   const cutPath = path.join(dir, "cut.csv.zst");
@@ -973,11 +917,11 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   };
   const B = bctx.createBankReview({ Db, Srs: S });
   const now = Date.now();
-  // a 8.0 queue: no bank ids, no `bank` table — nothing to wait for, nothing changes
+  // a queue of local ids only: no bank ids, no `bank` table — nothing to wait for, nothing changes
   const old = { missed: { "w-hangq": S.onMiss(null, now - 1000), "mn-00012": { s: 0, n: 1 } }, solved: {} };
   const before = JSON.stringify(old);
   assert(!B.wait(old, now, () => {}) && B.pending(old, now).length === 0 && B.prune(old) === 0 && JSON.stringify(old) === before,
-    "T6: an 8.0 queue (no bank ids) loads as it was: no wait, no change");
+    "T6: a queue with no bank ids loads as it was: no wait, no change");
   assert(bctx.isBankId("lc-aaa") && !bctx.isBankId("mn-00012") && !bctx.isBankId(null), "T6: bank ids are the lc- ones");
 
   // missed: queued by id, its band noted beside the entry

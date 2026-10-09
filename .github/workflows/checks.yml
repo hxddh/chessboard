@@ -194,11 +194,8 @@ jobs:
             suites: scripts/test-engine-flows-e2e.mjs
             shard: 2/2
             timeout: 20
-          # v8-2-plan V3: the downgrade suite builds v8.0.0 and v8.1.0 from
-          # their tags (a few seconds each) and runs ≈ 2.5 min; persistence is
-          # 5.8 min on Chromium, so the group stays far inside its timeout
           - name: persistence
-            suites: scripts/test-persist-e2e.mjs scripts/test-downgrade-e2e.mjs
+            suites: scripts/test-persist-e2e.mjs
             timeout: 25
           # v8-2-plan V4 (M2): the next group over the target — 13.0 min on
           # Chromium in run 36767532525, 12.4 of it the suites (library 7.8,

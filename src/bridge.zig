@@ -103,12 +103,10 @@ pub const APP_COMMANDS = [_]AppCommand{
 /// The platform path separator, as the strings this file builds need it.
 pub const SEP: []const u8 = if (builtin.os.tag == .windows) "\\" else "/";
 
-/// Q1.1 — the one-document user-data file 6.x–7.x mirrored into. Since
-/// v8-0-plan F3 the page reads it only to migrate from, and mirrors into the
-/// per-key store instead: `<appdata>/store/<key>.json`, one file per profile
-/// key plus the page's manifest. Both kinds share the sidecars below.
-pub const APPDATA_FILE = "chessboard.json";
-pub const STORE_DIR = "store";
+/// Q1.1 / v8-0-plan F3 — the per-key store: `<appdata>/profile/<key>.json`,
+/// one file per profile key plus the page's manifest. 9.0 starts its profile
+/// over in a folder of its own.
+pub const STORE_DIR = "profile";
 /// The sidecars the atomic write leaves next to a data file.
 const TMP_SUFFIX = ".tmp";
 const BAK_SUFFIX = ".bak";
@@ -363,7 +361,7 @@ pub fn tokenValid(s: []const u8, max: usize) bool {
 }
 
 /// A store key becomes a file name, so it is a plain token — no separator,
-/// no dot, nothing to climb out of store/ with — and not one of the device
+/// no dot, nothing to climb out of profile/ with — and not one of the device
 /// names Windows reserves whatever the extension.
 fn storeKeyValid(key: []const u8) bool {
     if (!tokenValid(key, STORE_KEY_MAX)) return false;
@@ -932,36 +930,32 @@ fn readTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, o
 
 // ------------------------------------------------------------ app data (Q1.1)
 //
-// One file, chessboard.json, in the per-user data directory. The page owns
-// its contents (schema, migration from localStorage, the corrupt-file
-// banner); this side only promises two things:
+// One file per profile key, profile/<key>.json, in the per-user data
+// directory. The page owns their contents (schema, the manifest, the
+// corrupt-file banner); this side only promises three things:
 //
 //   * a write is atomic and durable — the bytes go to a tmp file whose name
 //     is unique to this write (two windows must not share one tmp and
 //     interleave their bytes), that file is flushed to the disk before it is
-//     renamed, the previous file is renamed to chessboard.json.bak, and the
-//     tmp is renamed into place. A crash at any point leaves either the old
-//     file or the new one, never a half-written one;
-//   * a read that finds nothing usable in chessboard.json — no file, or a
+//     renamed, the previous file is renamed to <key>.json.bak, and the tmp
+//     is renamed into place. A crash at any point leaves either the old file
+//     or the new one, never a half-written one;
+//   * a read that finds nothing usable in <key>.json — no file, or a
 //     zero-length one, which is what the gap between those two renames looks
-//     like after a crash — falls back to chessboard.json.bak, so the last
-//     good copy is reachable rather than merely written (6.1);
+//     like after a crash — falls back to <key>.json.bak, so the last good
+//     copy is reachable rather than merely written (6.1);
 //   * a read says which of four things happened: {b64,bak} (the file, base64
 //     so no JSON escaping is done here, and whether it came from the .bak),
-//     {missing:true} (no file and no .bak — a fresh install, so the page
-//     migrates), {empty:true} (a zero-length file and no usable .bak: not a
-//     fresh install, something went wrong), or {tooLarge:true,limit}.
+//     {missing:true} (no file and no .bak — nothing written yet),
+//     {empty:true} (a zero-length file and no usable .bak: something went
+//     wrong), or {tooLarge:true,limit}.
 //
 // The text rides as base64 in both directions (host.js does the conversion),
 // for the same reason chess.readTextFile does: the bridge frame is JSON and
-// base64 is the one encoding that needs no escaping on the Zig side.
-//
-// v8-0-plan F3: "one file" became one file per key. A request that names a
-// `key` (storeKeyValid) reads or writes store/<key>.json with every promise
-// above, .bak and all; one without is chessboard.json, which pages since F3 only
-// read, to migrate from. Both travel in pieces past CHUNK_BYTES: a read's
-// later pieces name their `offset` and whether the first came from the .bak,
-// so every piece comes from the same file.
+// base64 is the one encoding that needs no escaping on the Zig side. Every
+// request names its `key` (storeKeyValid); both directions travel in pieces
+// past CHUNK_BYTES: a read's later pieces name their `offset` and whether
+// the first came from the .bak, so every piece comes from the same file.
 //
 // The two filesystem calls this needs beyond what the file handlers above
 // already use — create the directory, rename — are isolated in fsMakePath /
@@ -989,9 +983,8 @@ pub fn appdataUnavailable(output: []u8) anyerror![]const u8 {
     return std.fmt.bufPrint(output, "{{\"error\":\"no_appdata_dir\"}}", .{}) catch return error.HandlerFailed;
 }
 
-/// The data directory, for About ("数据位置"). It used to name
-/// chessboard.json; since v8-0-plan F3 the profile is the store/ folder beside
-/// it, so the folder is the honest answer.
+/// The data directory, for About ("数据位置"): the profile is the folder of
+/// key files inside it, so the directory is the honest answer.
 fn appdataPath(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
     const self: *App = @ptrCast(@alignCast(context));
     _ = invocation;
@@ -1003,10 +996,9 @@ fn appdataPath(context: *anyopaque, invocation: native_sdk.bridge.Invocation, ou
     return output[0..n];
 }
 
-/// The store key a request names (v8-0-plan F3), or null for chessboard.json.
-/// A key that is there and not a valid one fails the request.
-fn requestKey(payload: []const u8, buf: []u8) error{InvalidRequest}!?[]const u8 {
-    if (jsonFieldValue(payload, "key") == null) return null;
+/// The store key a request names (v8-0-plan F3). Every request has one, and
+/// one that is missing or not a valid key fails the request.
+fn requestKey(payload: []const u8, buf: []u8) error{InvalidRequest}![]const u8 {
     const key = jsonStringField(payload, "key", buf) orelse return error.InvalidRequest;
     if (!storeKeyValid(key)) return error.InvalidRequest;
     return key;
@@ -1073,7 +1065,7 @@ fn appdataWrite(context: *anyopaque, invocation: native_sdk.bridge.Invocation, o
     // v8-0-plan F3: whole, or staged piece by piece under "appdata:<key>" —
     // a name no issued path (always absolute) can share
     var target_buf: [STORE_KEY_MAX + 16]u8 = undefined;
-    const target = std.fmt.bufPrint(&target_buf, "appdata:{s}", .{key orelse ""}) catch return error.HandlerFailed;
+    const target = std.fmt.bufPrint(&target_buf, "appdata:{s}", .{key}) catch return error.HandlerFailed;
     var incoming: Incoming = undefined;
     var answer: []const u8 = "";
     switch (try receive(self, payload, target, output, &incoming, &answer)) {
@@ -1087,7 +1079,7 @@ fn appdataWrite(context: *anyopaque, invocation: native_sdk.bridge.Invocation, o
 }
 
 /// The atomic, durable write the section comment promises, for one data file.
-fn appdataCommit(self: *App, key: ?[]const u8, bytes: []const u8) anyerror!void {
+fn appdataCommit(self: *App, key: []const u8, bytes: []const u8) anyerror!void {
     var main_buf: [1200]u8 = undefined;
     var tmp_buf: [1200]u8 = undefined;
     var bak_buf: [1200]u8 = undefined;
@@ -1108,10 +1100,7 @@ fn appdataCommit(self: *App, key: ?[]const u8, bytes: []const u8) anyerror!void 
     const tmp_suffix = std.fmt.bufPrint(&tmp_suffix_buf, "{s}.{x}.{d}", .{ TMP_SUFFIX, @intFromPtr(self), seq }) catch return error.HandlerFailed;
     const tmp_path = self.appdataFile(&tmp_buf, key, tmp_suffix) orelse return error.HandlerFailed;
     const bak_path = self.appdataFile(&bak_buf, key, BAK_SUFFIX) orelse return error.HandlerFailed;
-    var dir: []const u8 = self.appdata_dir;
-    if (key != null) {
-        dir = std.fmt.bufPrint(&dir_buf, "{s}{s}{s}", .{ self.appdata_dir, SEP, STORE_DIR }) catch return error.HandlerFailed;
-    }
+    const dir = std.fmt.bufPrint(&dir_buf, "{s}{s}{s}", .{ self.appdata_dir, SEP, STORE_DIR }) catch return error.HandlerFailed;
 
     fsMakePath(self.io, dir);
     {
@@ -1120,7 +1109,7 @@ fn appdataCommit(self: *App, key: ?[]const u8, bytes: []const u8) anyerror!void 
         file.writeStreamingAll(self.io, bytes) catch return error.HandlerFailed;
         // 6.1: rename is atomic, the write behind it is not. Without this a
         // power loss could make the rename durable and the bytes not, which
-        // is exactly how a zero-length chessboard.json appears.
+        // is exactly how a zero-length data file appears.
         fsSync(self.io, &file) catch return error.HandlerFailed;
     }
     // previous file → .bak (there is none on the very first write)
@@ -1523,8 +1512,8 @@ test "store keys are plain names that cannot leave the store" {
         try std.testing.expect(!storeKeyValid(k));
     }
     var buf: [STORE_KEY_MAX]u8 = undefined;
-    try std.testing.expectEqualStrings("library", (try requestKey("{\"key\":\"library\",\"b64\":\"AA==\"}", &buf)).?);
-    try std.testing.expect((try requestKey("{\"b64\":\"AA==\"}", &buf)) == null);
+    try std.testing.expectEqualStrings("library", try requestKey("{\"key\":\"library\",\"b64\":\"AA==\"}", &buf));
+    try std.testing.expectError(error.InvalidRequest, requestKey("{\"b64\":\"AA==\"}", &buf));
     try std.testing.expectError(error.InvalidRequest, requestKey("{\"key\":\"../chessboard\"}", &buf));
 }
 
@@ -1620,7 +1609,7 @@ test "a dropped or OS-opened path is issued only when it is a user's file, not t
     try std.testing.expect(pathAllowed(mac, "/Users/me/Desktop/a.pgn"));
     try std.testing.expect(pathAllowed(mac, "/Volumes/USB/games.pgn"));
     // our own data dir is the one thing under ~/Library that is fine
-    try std.testing.expect(pathAllowed(mac, "/Users/me/Library/Application Support/Chessboard/chessboard.json"));
+    try std.testing.expect(pathAllowed(mac, "/Users/me/Library/Application Support/Chessboard/profile/save.json"));
     // dotfiles, in any position
     try std.testing.expect(!pathAllowed(mac, "/Users/me/.ssh/id_ed25519"));
     try std.testing.expect(!pathAllowed(mac, "/Users/me/.config/x"));
@@ -1650,7 +1639,7 @@ test "a dropped or OS-opened path is issued only when it is a user's file, not t
     try std.testing.expect(pathAllowed(win, "C:\\Users\\me\\Desktop\\a.pgn"));
     try std.testing.expect(pathAllowed(win, "c:\\users\\me\\Documents\\a.pgn"));
     try std.testing.expect(pathAllowed(win, "D:\\games\\a.pgn"));
-    try std.testing.expect(pathAllowed(win, "C:\\Users\\me\\AppData\\Roaming\\Chessboard\\chessboard.json"));
+    try std.testing.expect(pathAllowed(win, "C:\\Users\\me\\AppData\\Roaming\\Chessboard\\profile\\save.json"));
     try std.testing.expect(!pathAllowed(win, "C:\\Users\\me\\AppData\\Local\\x"));
     try std.testing.expect(!pathAllowed(win, "C:\\Users\\me\\appdata\\Roaming\\x"));
     try std.testing.expect(!pathAllowed(win, "C:\\Windows\\System32\\config\\SAM"));

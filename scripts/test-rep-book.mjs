@@ -5,12 +5,11 @@
  *   2. 开局浏览器的「我的」（explorer/core.js mineIndex）与开局书的记录逐着一致。
  *   3. 按单着排期：固定时钟，到期和不到期逐条核对。
  *   4. 导出 / 导入 PGN（带变着）往返逐节点相等。
- *   5. 老的 repertoire 存档（6.x–8.0 的形状）无损迁移；进度带到新卡片上。
+ *   5. 线 → 按局面的记录（reconcile）：无损、头担保时直接用、丢了从分片找回。
  *   6. 从开局书里拿掉一着；棋谱库反推。
  *   7. 启动：本机分片一时读不出来、只写了分片的会话。
- *   8. v8-2-plan T4：线搬进开局书自己的数据库（rep-lines.js）——上限、行的
- *      往返、头上的 400 条副本、老版本改动叠回、8.1 档案升级、降级、没有
- *      IndexedDB、分片与导入全部数据。
+ *   8. v8-2-plan T4：线存进开局书自己的数据库（rep-lines.js）——上限、行的
+ *      往返、启动时用哪份线、学习数据带来的线、没有 IndexedDB、分片与导入全部数据。
  *
  * 跑：node scripts/test-rep-book.mjs
  */
@@ -149,15 +148,6 @@ const book = (w, b) => ({ w: R.addLines([], w || [], null).lines, b: R.addLines(
   assert(B.DAILY === 20 && d0.today.length === 20 && d0.moved.length === 25 && dueOn(1) === 20 && dueOn(2) === 5,
     "45 张新卡：今天 20 张，明天 20 张，后天 5 张", JSON.stringify({ today: d0.today.length, moved: d0.moved.length, d1: dueOn(1), d2: dueOn(2) }));
   assert(B.dose(many, T0).moved.length === 0 && B.dose(many, T0).today.length === 20, "同一天再算一次：不再挪动，还是那 20 张");
-  // 迁移时背过的线：带进度的卡同样一天 DAILY 张，不是全在明天
-  const wl = R.addLines([], ctx.CHESS_OPENINGS.map((r) => r[2]), null).lines;
-  const srecs = B.indexBook({ w: wl, b: [] });
-  const solvedAll = {}; for (const l of wl) solvedAll[l.id] = 1;
-  const seeded = B.seedCards(srecs, { w: wl, b: [] }, { solved: solvedAll, missed: {} }, T0);
-  const perDay = {};
-  for (const r of srecs.values()) if (r.card && r.card.s === 1) { const k = Math.round((r.card.due - T0) / D); perDay[k] = (perDay[k] || 0) + 1; }
-  assert(seeded > 40 && Object.values(perDay).every((x) => x <= B.DAILY) && perDay[1] === B.DAILY,
-    `迁移播种 ${seeded} 张：从明天起一天至多 ${B.DAILY} 张`, JSON.stringify(perDay).slice(0, 120));
 }
 
 // --- 4. PGN 往返逐节点相等 ------------------------------------------------------
@@ -194,58 +184,47 @@ const book = (w, b) => ({ w: R.addLines([], w || [], null).lines, b: R.addLines(
   assert(B.toPgn(B.indexBook(book([], [])), "w") === "", "空书导出空串");
 }
 
-// --- 5. 老存档迁移（6.x–8.0 的形状）----------------------------------------------
+// --- 5. 线 → 按局面的记录 ----------------------------------------------------------
 {
   const T0 = Date.UTC(2026, 8, 30);
-  // 6.x：没有开局书这个键
-  const r6 = B.reconcile({ book: { w: [], b: [] }, header: null, stored: [], state: { solved: {}, missed: {} }, now: T0 });
-  assert(r6.records.size === 0 && !r6.put.length && r6.migrating, "6.x：没有书，迁移不产生任何记录");
-  // 7.2：线没有名字，还混着一条「从残局出发」的线（7.2 当时照收）
-  const v72 = { v: 1, w: [
-    { id: "rep-" + ctx.ChessDrills.hash36("e4 e5 Nf3 Nc6 Bc4"), sans: "e4 e5 Nf3 Nc6 Bc4", eco: "", name: "" },
-    { id: "rep-" + ctx.ChessDrills.hash36("Rd8 Rb1 Rd2"), sans: "Rd8 Rb1 Rd2", eco: "", name: "" },
-  ], b: [] };
-  // 7.4–8.0：有 ECO 名字，两方都有；换序
-  const v80 = { v: 1, w: [
+  const r0 = B.reconcile({ book: { w: [], b: [] }, header: null, stored: [] });
+  assert(r0.records.size === 0 && !r0.put.length, "没有书：没有任何记录");
+  // 有 ECO 名字，两方都有；换序；一条「从残局出发」的线只索引走得通的那一段
+  const bk = { w: [
     { id: "rep-" + ctx.ChessDrills.hash36("e4 e5 Nf3 Nc6 Bb5 a6"), sans: "e4 e5 Nf3 Nc6 Bb5 a6", eco: "C68", name: "Ruy Lopez: Morphy Defense" },
     { id: "rep-" + ctx.ChessDrills.hash36("Nf3 Nc6 e4 e5 Bc4"), sans: "Nf3 Nc6 e4 e5 Bc4", eco: "C50", name: "Italian Game" },
+    { id: "rep-" + ctx.ChessDrills.hash36("Rd8 Rb1 Rd2"), sans: "Rd8 Rb1 Rd2", eco: "", name: "" },
   ], b: [
     { id: "rep-" + ctx.ChessDrills.hash36("d4 Nf6 c4 e6"), sans: "d4 Nf6 c4 e6", eco: "E00", name: "Indian Defense" },
   ] };
-  for (const [tag, v1, solved] of [["7.2", v72, [v72.w[0].id]], ["8.0", v80, [v80.w[0].id, v80.b[0].id + ":b"]]]) {
-    const before = JSON.stringify(v1);
-    const state = { solved: Object.fromEntries(solved.map((id) => [id, true])), missed: {} };
-    const r = B.reconcile({ book: { w: v1.w, b: v1.b }, header: v1, stored: [], state, now: T0 });
-    assert(JSON.stringify(v1) === before, `${tag}：迁移不改线本身（旧版本照读、按线练的进度照挂）`);
-    // 无损：每条线能走的每一着，都在它那一方的记录里
-    let edges = 0, miss = [];
-    for (const side of ["w", "b"]) for (const l of v1[side]) {
-      const g = new Chess();
-      for (const san of l.sans.split(" ")) {
-        const key = ctx.ChessFide.positionKey(g.fen(), g);
-        if (!g.move(san)) break;
-        edges++;
-        if (!B.movesAt(r.records, key, side).has(san)) miss.push(side + " " + san);
-      }
+  const before = JSON.stringify(bk);
+  const r = B.reconcile({ book: bk, header: null, stored: [] });
+  assert(JSON.stringify(bk) === before, "建索引不改线本身（按线练的进度照挂）");
+  // 无损：每条线能走的每一着，都在它那一方的记录里
+  let edges = 0;
+  const miss = [];
+  for (const side of ["w", "b"]) for (const l of bk[side]) {
+    const g = new Chess();
+    for (const san of l.sans.split(" ")) {
+      const key = ctx.ChessFide.positionKey(g.fen(), g);
+      if (!g.move(san)) break;
+      edges++;
+      if (!B.movesAt(r.records, key, side).has(san)) miss.push(side + " " + san);
     }
-    assert(edges > 0 && !miss.length, `${tag}：${edges} 着全部进了按局面的记录`, miss.join());
-    assert(r.put.length === r.records.size && !r.gone.length, `${tag}：第一次迁移把每条记录都写进去（${r.put.length}）`);
-    const seededCards = [...r.records.values()].filter((x) => x.card && x.card.s === 1);
-    assert(r.seeded > 0 && r.seeded === seededCards.length && seededCards.every((x) => x.card.due === T0 + B.DAY),
-      `${tag}：背下来的线，它上面的卡从第一级开始、一天后到期（${r.seeded} 张）`);
-    // 迁移第二遍（旧版本又写了一次头）：卡片原样带过来，不再重播种
-    const again = B.reconcile({ book: { w: v1.w, b: v1.b }, header: v1, stored: [...r.records.values()], state, now: T0 + 5 * B.DAY });
-    assert(!again.put.length && !again.gone.length && again.seeded === 0, `${tag}：再迁一次什么都不写、不重播种`);
-    // 迁移完的头：db 2、同样的签名与记录数 —— 直接信任
-    const header = Object.assign({}, v1, { db: 2, n: r.records.size, sig: B.sigOf({ w: v1.w, b: v1.b }) });
-    const fast = B.reconcile({ book: { w: v1.w, b: v1.b }, header, stored: [...r.records.values()], state, now: T0 });
-    assert(fast.fresh && fast.records.size === r.records.size, `${tag}：头对得上时直接用存着的记录`);
-    // 浏览器存储丢了记录，本机存档的分片还在：卡片找回来
-    const graded = [...r.records.values()].map((x) => (x.card ? Object.assign({}, x, { card: { s: 3, n: 3, due: T0 + 7 * B.DAY, ivl: 7 } }) : x));
-    const lost = B.reconcile({ book: { w: v1.w, b: v1.b }, header, stored: [], shards: graded, state, now: T0 });
-    assert(lost.recovered === graded.length && [...lost.records.values()].filter((x) => x.card).every((x) => x.card.s === 3),
-      `${tag}：记录丢了，从分片找回 ${lost.recovered} 条，复习进度一张不少`);
   }
+  assert(edges > 0 && !miss.length, `${edges} 着全部进了按局面的记录`, miss.join());
+  assert(r.put.length === r.records.size && !r.gone.length, `第一次把每条记录都写进去（${r.put.length}）`);
+  const again = B.reconcile({ book: bk, header: null, stored: [...r.records.values()] });
+  assert(!again.put.length && !again.gone.length, "再来一次：什么都不写");
+  // 头担保：同样的签名与记录数 —— 直接信任
+  const header = { v: 1, n: r.records.size, sig: B.sigOf(bk) };
+  const fast = B.reconcile({ book: bk, header, stored: [...r.records.values()] });
+  assert(fast.fresh && fast.records.size === r.records.size, "头对得上时直接用存着的记录");
+  // 浏览器存储丢了记录，本机存档的分片还在：卡片找回来
+  const graded = [...r.records.values()].map((x) => (x.card ? Object.assign({}, x, { card: { s: 3, n: 3, due: T0 + 7 * B.DAY, ivl: 7 } }) : x));
+  const lost = B.reconcile({ book: bk, header, stored: [], shards: graded });
+  assert(lost.recovered === graded.length && [...lost.records.values()].filter((x) => x.card).every((x) => x.card.s === 3),
+    `记录丢了，从分片找回 ${lost.recovered} 条，复习进度一张不少`);
 }
 
 // --- 6. 拿掉一着；棋谱库反推 ----------------------------------------------------
@@ -294,54 +273,55 @@ const book = (w, b) => ({ w: R.addLines([], w || [], null).lines, b: R.addLines(
   const bk = book(["e4 e5 Nf3 Nc6 Bb5", "d4 d5 c4"], ["e4 c5 Nf3 d6"]);
   const full = B.indexBook(bk);
   const graded = [...full.values()].map((x) => (x.card ? Object.assign({}, x, { card: { s: 3, n: 3, due: 1, ivl: 7 } }) : x));
+  const L = ctx.ChessRepLines;
+  const bkRows = L.diff(new Map(), bk).put;
   const shardTexts = {};
-  for (const x of graded) { const n = B.shardOf(x.id); (shardTexts[n] = shardTexts[n] || []).push(x); }
-  for (const n of Object.keys(shardTexts)) shardTexts[n] = JSON.stringify({ v: 1, rep: shardTexts[n] });
+  const shardOf = (n) => (shardTexts[n] = shardTexts[n] || { v: 1, rep: [], lines: [] });
+  for (const x of graded) shardOf(B.shardOf(x.id)).rep.push(x);
+  for (const x of bkRows) shardOf(B.shardOf(x.k)).lines.push(x);
+  for (const n of Object.keys(shardTexts)) shardTexts[n] = JSON.stringify(shardTexts[n]);
   // rep-db.js's interface over Maps — the records, and since v8-2-plan T4 the lines
   const idb = (rows, gen, lineRows) => {
     const m = new Map(rows.map((x) => [x.id, JSON.parse(JSON.stringify(x))]));
     const ls = new Map((lineRows || []).map((x) => [x.k, JSON.parse(JSON.stringify(x))]));
-    const cs = new Map();
     const meta = new Map(gen ? [["rep-gen", gen]] : []);
-    return { m, ls, cs, meta, puts: 0, lineWrites: 0,
+    return { m, ls, meta, puts: 0, lineWrites: 0,
       async all() { return [...m.values()].map((x) => JSON.parse(JSON.stringify(x))); },
       async put(rs) { this.puts++; for (const x of rs) m.set(x.id, JSON.parse(JSON.stringify(x))); return true; },
       async remove(ids) { for (const id of ids) m.delete(id); return true; },
       async lines() { return [...ls.values()].map((x) => JSON.parse(JSON.stringify(x))); },
       async putLines(rs, gone) { this.lineWrites++; for (const k of gone) ls.delete(k); for (const x of rs) ls.set(x.k, JSON.parse(JSON.stringify(x))); return true; },
-      async cards() { return [...cs.values()].map((x) => JSON.parse(JSON.stringify(x))); },
-      async putCards(rs, gone) { for (const k of gone) cs.delete(k); for (const x of rs) cs.set(x.id, JSON.parse(JSON.stringify(x))); return true; },
-      async clear() { m.clear(); ls.clear(); cs.clear(); return true; },
+      async clear() { m.clear(); ls.clear(); return true; },
       async getMeta(k) { return meta.get(k); },
       async setMeta(k, v) { meta.set(k, v); return true; } };
   };
   const run = async (header, backend, texts) => {
     const touched = [];
-    const Persist = { get: () => JSON.stringify(Object.assign({ v: 1 }, bk, header)), readBulk: async () => texts,
-      hasStore: () => true, touchBulk: (n) => touched.push(...n), touchUnlisted: (n) => touched.push(...n) };
-    const store = { session: { repertoire: { w: bk.w, b: bk.b }, puzzleState: { solved: {}, missed: {} } } };
+    const Persist = { get: () => JSON.stringify(Object.assign({ v: 1 }, header)), readBulk: async () => texts,
+      hasStore: () => true, touchBulk: (n) => touched.push(...n) };
+    const store = { session: { repertoire: { w: [], b: [] }, puzzleState: { solved: {}, missed: {} } } };
     const c = await boot({ store, Persist, t: (k) => k, tf: (k) => k, toast: () => {}, doc: null, R, libDb: null, repBackend: backend,
       LibraryQuery: null, cardName: () => "", onChange: () => {} });
     return { c, touched };
   };
-  const head = { db: 2, n: full.size, sig: B.sigOf(bk), gen: 500 };
+  const head = { n: full.size, sig: B.sigOf(bk), gen: 500, ln: bkRows.length };
   // IndexedDB lost the records; the native store is there but this read failed
   const lost = idb([], 500);
   const h1 = await run(head, lost, null);
   const ex = h1.c.extra();
   assert(h1.c.held() && !h1.touched.length && lost.puts === 0 && h1.c.shardNames() === null,
     "分片一时读不出来：这次什么也不写（不写记录、不碰分片）", JSON.stringify({ held: h1.c.held(), touched: h1.touched, puts: lost.puts }));
-  assert(ex.db === 2 && ex.n === head.n && ex.sig === head.sig && ex.gen === 500, "……头照原样担保，下次启动再读分片", JSON.stringify(ex));
+  assert(ex.n === head.n && ex.sig === head.sig && ex.gen === 500, "……头照原样担保，下次启动再读分片", JSON.stringify(ex));
   const h1b = await run(head, idb([], 500), shardTexts);
   assert(!h1b.c.held() && [...h1b.c.records().values()].filter((x) => x.card).every((x) => x.card.s === 3), "下次读得出来：卡片从分片找回");
   // a session with no IndexedDB graded into the shards only (header gen 900 > IndexedDB's 500)
-  const stale = idb([...full.values()], 500);
+  const stale = idb([...full.values()], 500, bkRows);
   const h2 = await run(Object.assign({}, head, { gen: 900 }), stale, shardTexts);
   const cards = [...h2.c.records().values()].filter((x) => x.card);
   assert(cards.length && cards.every((x) => x.card.s === 3), "只写了分片的那次会话更新：它的卡片胜过 IndexedDB 里旧的", JSON.stringify(cards.map((x) => x.card.s)));
   assert([...stale.m.values()].filter((x) => x.card).every((x) => x.card.s === 3) && stale.meta.get("rep-gen") > 900,
     "……写回 IndexedDB，代数跟着往前走");
-  const same = idb([...full.values()], 900);
+  const same = idb([...full.values()], 900, bkRows);
   const h3 = await run(Object.assign({}, head, { gen: 900 }), same, shardTexts);
   assert(same.puts === 0 && [...h3.c.records().values()].filter((x) => x.card).every((x) => x.card.s === 0), "代数一样：直接用 IndexedDB 的记录，不读分片");
   // 学习数据带来的卡片：阶梯更远的那张胜出；书里没有的局面不收
@@ -352,12 +332,11 @@ const book = (w, b) => ({ w: R.addLines([], w || [], null).lines, b: R.addLines(
   assert(took === 1 && h3.c.records().get(withCard[0].id).card.s === 4 && h3.c.records().get(withCard[1].id).card.s === 2 && !h3.c.records().has("w|nowhere"),
     "学习数据里的卡片：更远的一张进来，更近的不覆盖，书里没有的局面不收", String(took));
 
-  // --- 8. v8-2-plan T4：线搬进开局书自己的数据库，去掉 400 条上限 ----------------------
-  const L = ctx.ChessRepLines;
-  assert(R.MAX_LINES === 5000 && L.HEAD === 400, "上限 5000 条一方（只是护栏）；头上留每方前 400 条", R.MAX_LINES + " / " + L.HEAD);
+  // --- 8. v8-2-plan T4：线存进开局书自己的数据库，没有 400 条上限 ----------------------
+  assert(R.MAX_LINES === 5000, "上限 5000 条一方（只是护栏）", String(R.MAX_LINES));
   // 1000 条执白线、3 条执黑线（走不通的着法只截断记录，不影响线的存储）
   const many = book(Array.from({ length: 1000 }, (_, i) => "e4 e5 Nf3 L" + i), ["e4 c5 Nf3 d6", "d4 Nf6 c4 e6", "Nf3 d5 g3 Nf6"]);
-  assert(many.w.length === 1000, "一次加 1000 条，一条不丢（8.1 会只留最后 400 条）", String(many.w.length));
+  assert(many.w.length === 1000, "一次加 1000 条，一条不丢", String(many.w.length));
   // 行：往返、顺序、改名、删一条后面的挪位置
   const rows0 = L.diff(new Map(), many).put;
   const back = L.bookOf(rows0);
@@ -370,70 +349,23 @@ const book = (w, b) => ({ w: R.addLines([], w || [], null).lines, b: R.addLines(
   const cut = { w: many.w.filter((_, i) => i !== 997), b: many.b };
   const dc = L.diff(m0, cut);
   assert(dc.gone.length === 1 && dc.gone[0] === "w:" + many.w[997].id && dc.put.length === 2, "拿掉一条：删它、后面两条挪位置", JSON.stringify({ gone: dc.gone.length, put: dc.put.length }));
-  // 头上的副本：前 400 条
-  const copy = L.headOf(many);
-  assert(copy.w.length === 400 && copy.w[399].id === many.w[399].id && copy.b.length === 3, "头上的副本：执白前 400 条，执黑 3 条全在");
-  // 老版本在副本上的改动叠回整本书
-  const asIs = L.mergeHead(R, many, copy);
-  assert(asIs.book.w === many.w && !asIs.gone.length, "头就是副本：整本书原样");
-  const edited = { w: copy.w.filter((l) => l.id !== many.w[10].id).concat(R.addLines([], ["d4 d5 c4"], null).lines), b: copy.b };
-  const mg = L.mergeHead(R, many, edited);
-  assert(mg.book.w.length === 1000 && !mg.book.w.some((l) => l.id === many.w[10].id) && mg.book.w.some((l) => l.sans === "d4 d5 c4") &&
-    mg.book.w.some((l) => l.id === many.w[999].id) && JSON.stringify(mg.gone) === JSON.stringify([many.w[10].id]),
-    "老版本拿掉一条、加了一条：照做；副本以外的 600 条都在", JSON.stringify({ n: mg.book.w.length, gone: mg.gone }));
-  const deeper = { w: copy.w.map((l, i) => (i === 0 ? R.addLines([], ["e4 e5 Nf3 L0 x"], null).lines[0] : l)), b: copy.b };
-  const md = L.mergeHead(R, many, deeper);
-  assert(md.book.w.length === 1000 && md.book.w.some((l) => l.sans === "e4 e5 Nf3 L0 x") && !md.book.w.some((l) => l.sans === "e4 e5 Nf3 L0"),
-    "老版本把一条线走深：深的那条接替浅的");
-  const emptied = L.mergeHead(R, many, { w: [], b: copy.b });
-  assert(!emptied.book.w.length && emptied.book.b === many.b && emptied.gone.length === 1000, "老版本把执白清空：整本执白书清空（不只清副本那 400 条）");
   // 启动时选哪份线
-  const head8 = { db: 2, ln: 1003 };
-  const pk = (o) => L.pick(R, Object.assign({ header: head8, head: copy, stored: [], shards: [] }, o));
-  assert(pk({ stored: rows0 }).from === "idb" && pk({ stored: rows0 }).book.w.length === 1000, "IndexedDB 有线：用它（头叠在上面）");
+  const pk = (o) => L.pick(Object.assign({ stored: [], shards: [] }, o));
+  assert(pk({ stored: rows0 }).from === "idb" && pk({ stored: rows0 }).book.w.length === 1000, "IndexedDB 有线：用它");
   assert(pk({ shards: rows0 }).from === "shards", "IndexedDB 没有、分片有：用分片");
   assert(pk({ stored: L.diff(new Map(), cut).put, shards: rows0, newer: true }).book.w.length === 1000, "只写了分片的会话更新（newer）：用分片");
-  const ph = pk({});
-  assert(ph.from === "head" && ph.short && ph.book.w.length === 400, "哪里都没有：只能用头上的 400 条，并且知道缺了（short）");
-  assert(L.pick(R, { header: { v: 1 }, head: copy, stored: [], shards: [] }).short === false, "8.1 / 8.0 的头（没有 ln）：头就是整本书");
-  const lfp = L.pick(R, { header: { lf: 1 }, head: cut, stored: rows0, shards: [] });
-  assert(lfp.from === "head" && lfp.book === cut, "没有 IndexedDB 的会话把整本书写在头上（lf）：以头为准，不叠旧的 IndexedDB");
-  // M3 评审 P2：头读不出来 / 没有了——主包看到的空书不是谁清空了它
-  const none = { w: [], b: [] };
-  for (const [what, o] of [["头读不出来（null）", { header: null }], ["头没了（undefined）", { header: undefined }],
-    ["persist.js 隔离了头（lost），分块启动前又写了一份没有 ln 的", { header: { v: 1, w: [], b: [] }, lost: true }]]) {
-    const r = L.pick(R, Object.assign({ head: none, stored: rows0, shards: [] }, o));
-    assert(r.from === "idb" && r.book.w.length === 1000 && r.book.b.length === 3 && !r.gone.length, what + "：存着的 1003 条一条不删",
-      JSON.stringify({ from: r.from, w: r.book.w.length, b: r.book.b.length, gone: r.gone.length }));
-  }
-  const lostAdd = L.pick(R, { header: null, lost: true, head: { w: R.addLines([], ["d4 d5 c4"], null).lines, b: [] }, stored: rows0, shards: [] });
-  assert(lostAdd.book.w.length === 1001 && lostAdd.book.w.some((l) => l.sans === "d4 d5 c4") && lostAdd.book.b.length === 3 && !lostAdd.gone.length,
-    "头读不出来时分块启动前加的一条：加进去，别的不删", JSON.stringify({ w: lostAdd.book.w.length, gone: lostAdd.gone.length }));
-  const noSide = L.mergeHead(R, many, { w: [], b: copy.b }, { v: 1, b: copy.b });
-  assert(noSide.book.w.length === 1000 && !noSide.gone.length, "头上根本没有执白这一项（不是 []）：不算清空");
-  assert(!L.mergeHead(R, many, { w: [], b: copy.b }, { v: 1, w: [], b: copy.b }).book.w.length, "头上明写着执白 []：照旧算清空（老版本的清空、8.2 分块启动前的清空）");
-  // M3 评审 P3：8.1 的 400 条上限挤掉最早的线，不是删
-  const evict = (k, hdr) => {
-    const h = { w: copy.w.slice(k).concat(R.addLines([], Array.from({ length: k }, (_, i) => "c4 e5 Nc3 N" + i), null).lines), b: copy.b };
-    return L.mergeHead(R, many, h, Object.assign({ v: 1, db: 2 }, hdr, h));
-  };
-  const ev1 = evict(1);
-  assert(ev1.book.w.length === 1001 && ev1.book.w[0].id === many.w[0].id && !ev1.gone.length, "8.1 往满了的 400 条里加一条：被上限挤掉的第一条还在（gone 为空）",
-    JSON.stringify({ n: ev1.book.w.length, gone: ev1.gone }));
-  const ev3 = evict(3);
-  assert(ev3.book.w.length === 1003 && !ev3.gone.length, "加三条、挤掉最早的三条：三条都还在");
-  const ev8 = evict(1, { ln: 1003 });
-  assert(ev8.gone.length === 1 && ev8.gone[0] === many.w[0].id, "8.2 自己写的头（有 ln）：少了第一条就是拿掉了");
-  const mid = { w: copy.w.slice(1).filter((l) => l.id !== many.w[50].id).concat(R.addLines([], ["c4 e5 Nc3 Nf6", "c4 e5 Nc3 Nc6"], null).lines), b: copy.b };
-  const evm = L.mergeHead(R, many, mid, Object.assign({ v: 1 }, mid));
-  assert(JSON.stringify(evm.gone) === JSON.stringify([many.w[0].id, many.w[50].id]), "少的不只是最前面的（中间也拿掉了一条）：照旧都算拿掉", JSON.stringify(evm.gone));
+  assert(pk({}).from === "none" && !pk({}).book.w.length, "哪里都没有：空书");
+  const inb = pk({ stored: rows0, inbound: cut });
+  assert(inb.from === "head" && inb.book.w.length === 999 && JSON.stringify(inb.gone) === JSON.stringify([many.w[997].id]),
+    "学习数据放进头上的线：就是这本书，库里有、它没有的线算拿掉", JSON.stringify({ from: inb.from, gone: inb.gone }));
 
   // 启动（rep-page.js）：真的 boot，假的 IndexedDB / 本机存储
   const boot2 = async (o) => {
     const touched = [], set = [];
     const hdr = o.header ? JSON.stringify(o.header) : null;
     const Persist = { get: () => hdr, readBulk: async () => o.texts, hasStore: () => !!o.hasStore,
-      touchBulk: (n) => touched.push(...n), touchUnlisted: (n) => touched.push(...n) };
+      touchBulk: (n) => touched.push(...n) };
+    // the main bundle's lines: a learning file's in the header, else none (repertoire-ui.js loadBook)
     const lines = o.header ? { w: o.header.w || [], b: o.header.b || [] } : { w: [], b: [] };
     const store = { session: { repertoire: { w: lines.w, b: lines.b }, puzzleState: { solved: o.solved || {}, missed: {} } } };
     const forgot = [];
@@ -442,87 +374,47 @@ const book = (w, b) => ({ w: R.addLines([], w || [], null).lines, b: R.addLines(
     await new Promise((r) => setTimeout(r, 0));
     return { c, touched, set, store, forgot };
   };
-  // 8.1 的档案：头上 ≤ 400 条（带 db 2），IndexedDB 是版本 1 的记录、没有线
-  const book81 = book(Array.from({ length: 120 }, (_, i) => "d4 d5 c4 M" + i).concat(["e4 e5 Nf3 Nc6 Bb5 a6"]), ["e4 c5 Nf3 d6"]);
-  const rec81 = B.indexBook(book81);
-  for (const x of rec81.values()) if (x.card) x.card = { s: 2, n: 2, due: 77, ivl: 3 };
-  const head81 = Object.assign({ v: 1 }, book81, { db: 2, n: rec81.size, sig: B.sigOf(book81), gen: 600 });
-  const db81 = idb([...rec81.values()], 600);
-  const u = await boot2({ header: head81, backend: db81 });
-  const h81 = u.c.head();
-  await new Promise((r) => setTimeout(r, 0));
-  assert(JSON.stringify(L.bookOf([...db81.ls.values()])) === JSON.stringify(book81), "8.1 升上来：线一条不少、按原来的先后进了 lines 表", String(db81.ls.size));
-  assert([...u.c.records().values()].filter((x) => x.card).every((x) => x.card.s === 2 && x.card.due === 77) && u.c.records().size === rec81.size,
-    "……按局面的记录与卡片原样（不重播种、不丢排期）");
-  assert([...db81.meta.keys()].some((k) => k.startsWith("rep-v2:")) && db81.meta.get([...db81.meta.keys()].find((k) => k.startsWith("rep-v2:"))).raw === JSON.stringify(head81),
-    "……迁移前的头原样备份在 meta 表（rep-v2:）");
-  assert(JSON.stringify(h81.w) === JSON.stringify(book81.w) && JSON.stringify(h81.b) === JSON.stringify(book81.b) && h81.ln === 122 && h81.db === 2,
-    "……头上的线一字不动（8.1 / 8.0 降级回去照读），多了 ln", JSON.stringify({ ln: h81.ln, w: h81.w.length }));
-  // 这本书长到 1000 条以后：头上只留 400 条，降级的版本看到的是最早的那 400 条
+  // 学习数据带来的一本书（线在头上）：线进 lines 表，头不再带线
+  const bookA = book(Array.from({ length: 120 }, (_, i) => "d4 d5 c4 M" + i).concat(["e4 e5 Nf3 Nc6 Bb5 a6"]), ["e4 c5 Nf3 d6"]);
+  const dbA = idb([], 0);
+  const u = await boot2({ header: Object.assign({ v: 1 }, bookA), backend: dbA });
+  const hA = u.c.head();
+  await new Promise((r) => setTimeout(r, 10));
+  assert(JSON.stringify(L.bookOf([...dbA.ls.values()])) === JSON.stringify(bookA), "头上带来的线一条不少、按原来的先后进了 lines 表", String(dbA.ls.size));
+  assert(!("w" in hA) && !("b" in hA) && hA.ln === 122 && hA.n === u.c.records().size && dbA.m.size === u.c.records().size,
+    "……头上不再有线，只说库里有几条线（ln）、几条记录（n）", JSON.stringify({ ln: hA.ln, n: hA.n }));
+  // 这本书长到 1000 条以上
   u.store.session.repertoire.w = R.addLines(u.store.session.repertoire.w, Array.from({ length: 900 }, (_, i) => "c4 e5 N" + i), null).lines;
   u.c.sync();
   const big = u.c.head();
-  await new Promise((r) => setTimeout(r, 0));
-  assert(big.w.length === 400 && big.ln === 1022 && JSON.stringify(big.w.slice(0, 121)) === JSON.stringify(book81.w),
-    "1021 条执白线：头上前 400 条，原来那 121 条都在里面", JSON.stringify({ w: big.w.length, ln: big.ln }));
-  assert(db81.ls.size === 1022 && JSON.stringify(u.c.bag(JSON.stringify(big)) && JSON.parse(u.c.bag(JSON.stringify(big))).w.length) === "1021",
-    "lines 表里 1022 条；学习数据拿到的是整本书");
+  await new Promise((r) => setTimeout(r, 10));
+  assert(!big.w && big.ln === 1022 && dbA.ls.size === 1022 && JSON.parse(u.c.bag(JSON.stringify(big))).w.length === 1021,
+    "1021 条执白线：lines 表里 1022 条；学习数据拿到的是整本书", JSON.stringify({ ln: big.ln, ls: dbA.ls.size }));
+  // 下一次启动：线从库里来，头担保记录，不重写
+  const again = await boot2({ header: big, backend: dbA });
+  assert(again.store.session.repertoire.w.length === 1021 && again.c.fresh, "下次启动：线从库里来，头担保记录，什么都不重写",
+    JSON.stringify({ w: again.store.session.repertoire.w.length, fresh: again.c.fresh }));
   // 分片带着线：导出全部数据 / 本机镜像
   const names = u.c.shardNames();
   const texts = Object.fromEntries(names.map((n) => [n, u.c.shardText(n)]));
   const shardRows = L.rowsOfShards(texts);
   assert(shardRows.length === 1022 && Object.values(texts).every((s) => Array.isArray(JSON.parse(s).rep)),
     "分片里有线（lines）也有记录（rep，8.1 照读）", String(shardRows.length));
-  // 降级到 8.1：它只认头（400 条），拿掉一条、加一条、写回头（不带 ln）；回到 8.2，整本书叠上它的改动
-  const h8 = JSON.parse(JSON.stringify(big));
-  delete h8.ln;
-  h8.w = h8.w.filter((l) => l.id !== book81.w[3].id).concat(R.addLines([], ["g3 d5 Bg2"], null).lines);
-  const u2 = await boot2({ header: h8, backend: db81 });
-  const w2 = u2.store.session.repertoire.w;
-  assert(w2.length === 1021 && !w2.some((l) => l.id === book81.w[3].id) && w2.some((l) => l.sans === "g3 d5 Bg2") && w2.some((l) => l.sans === "c4 e5 N899"),
-    "降级时的改动回来叠上：拿掉的那条没了、加的那条在，副本以外的 621 条都在", String(w2.length));
-  assert(u2.forgot.includes(book81.w[3].id), "……拿掉的那条线的按线练进度跟着清掉");
-  // 没有 IndexedDB 的会话（WebView 拒绝）：线从本机分片读回；头写整本（lf）
+  // 没有 IndexedDB 的会话（WebView 拒绝）：线从本机分片读回
   const mem = await boot2({ header: big, backend: null, texts, hasStore: true });
   assert(mem.c.mode() === "memory" && mem.store.session.repertoire.w.length === 1021 && !mem.c.held(), "没有 IndexedDB：整本书从分片读回", String(mem.store.session.repertoire.w.length));
   const hm = mem.c.head();
-  assert(hm.lf === 1 && hm.w.length === 1021 && !("ln" in hm), "……头上写整本书（lf），浏览器里不靠分片也不丢");
-  // …下一次 IndexedDB 回来了：以那份整本的头为准
-  const u3 = await boot2({ header: Object.assign({}, hm, { w: hm.w.slice(1) }), backend: db81 });
-  const h3h = u3.c.head();
-  assert(u3.store.session.repertoire.w.length === 1020 && h3h.ln === 1021 && !h3h.lf && h3h.w.length === 400, "IndexedDB 回来：以 lf 的头为准写回 lines 表，头又只留副本", JSON.stringify({ n: u3.store.session.repertoire.w.length, ln: h3h.ln, lf: h3h.lf }));
-  // 没有 IndexedDB、分片也没有线：副本以外的线够不着——什么都不写，改动记在头上
+  assert(!hm.w && hm.ln === 1022, "……头照旧只说数目");
+  // 没有 IndexedDB、分片里也没有这些线：够不着——什么都不写，头照旧
   const ro = await boot2({ header: big, backend: null, texts: {}, hasStore: false });
-  ro.store.session.repertoire.w = R.addLines(ro.store.session.repertoire.w, ["b3 e5 Bb2"], null).lines;
   const hr = ro.c.head();
-  assert(ro.c.held() && !ro.touched.length && ro.store.session.repertoire.w.length === 401 && hr.ln === 1022 && hr.db === 2 && hr.w.length === 401,
-    "没有 IndexedDB、也没有分片：用头上的 400 条，不写分片，头照旧说 ln（改动叠回去）", JSON.stringify({ held: ro.c.held(), n: hr.w.length, touched: ro.touched.length }));
+  assert(ro.c.held() && !ro.touched.length && hr.ln === 1022 && hr.n === big.n && !hr.w,
+    "没有 IndexedDB、也没有分片：不写分片，头照旧说 ln 与 n", JSON.stringify({ held: ro.c.held(), touched: ro.touched.length }));
   // 导入全部数据：分片里的线进 lines 表
   const fresh = idb([], 0);
   const u4 = await boot2({ header: null, backend: fresh });
   await u4.c.restoreShards(texts);
   assert(fresh.ls.size === 1022 && fresh.m.size === u.c.records().size, "导入全部数据：线和记录都从分片进库", JSON.stringify({ ls: fresh.ls.size, m: fresh.m.size }));
-  // 降级到 8.1：它只按头上的 400 条重建记录，那之外的局面从 chessboard.repertoire 掉了——
-  // 卡片从 chessboard.replines 的副本回来（rep-db.js：开局书的库不升版本，8.1 照常打开）
-  const fat = book(Array.from({ length: 400 }, (_, i) => "e4 e5 Nf3 Q" + i).concat(["g4 d5 Bg2"]));
-  const dbF = idb([], 0);
-  const uF = await boot2({ header: Object.assign({ v: 1 }, fat), backend: dbF });
-  const farId = "w|" + keyAfter("g4 d5");
-  uF.c.grade({ card: farId }, true);
-  const hF = uF.c.head();
-  await new Promise((r) => setTimeout(r, 0));
-  const gradedF = uF.c.records().get(farId).card;
-  assert(gradedF.s === 1 && dbF.cs.get(farId) && dbF.cs.get(farId).card.due === gradedF.due && hF.w.length === 400 && hF.ln === 401,
-    "第 401 条线上的一张卡答对了；卡片的副本在 replines", JSON.stringify(dbF.cs.get(farId)));
-  const book400 = { w: hF.w, b: hF.b };
-  const rec400 = B.indexBook(book400, new Map(dbF.m));
-  const db81c = idb([...rec400.values()], 0, [...dbF.ls.values()]);
-  for (const [k, v] of dbF.cs) db81c.cs.set(k, v);
-  assert(!rec400.has(farId), "8.1 的索引里没有这个局面（它看不到第 401 条）");
-  const uB = await boot2({ header: Object.assign({ v: 1 }, book400, { db: 2, n: rec400.size, sig: B.sigOf(book400), gen: 1 }), backend: db81c });
-  const backF = uB.c.records().get(farId);
-  assert(uB.store.session.repertoire.w.length === 401 && backF && backF.card.s === 1 && backF.card.due === gradedF.due,
-    "回到 8.2：第 401 条线回来，那张卡的排期也回来", JSON.stringify(backF && backF.card));
 }
 
 if (failed) { console.error(`\n${failed} 项失败`); process.exit(1); }

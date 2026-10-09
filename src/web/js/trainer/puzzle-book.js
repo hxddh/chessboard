@@ -5,12 +5,12 @@
  * carved out in v8-2-plan F1 without a change in behaviour. The book (the
  * hand-written set, the mined chunk joined in when it arrives, the opening
  * drills from both chairs, the personal book and the player's own opening
- * book), the puzzle state on disk and its one-time id migration, the derived
+ * book), the puzzle state on disk, the derived
  * difficulty tier, and the review queue: what is owed, what can be served,
  * and the list each category shows.
  *
  * Created first by `createPuzzlesUI()`, before anything else in the trainer:
- * creating it loads the state (and writes a migrated one back), exactly as
+ * creating it loads the state, exactly as
  * the top of the old file did. The rest of the trainer reads the book through
  * what this returns. The theme lists live with the themes (puzzle-modes.js),
  * created later, so `Modes` arrives as a forwarder.
@@ -283,51 +283,17 @@ export function createPuzzleBook(d) {
     return tier;
   }
 
-  /**
-   * Move a pre-1.21.3 save off the positional opening-drill ids.
-   *
-   * Runs once, marked by `idv`. It reads the book as it stands to work out
-   * which row each old index named, so it is only correct while the book is
-   * the one those indexes were written against — which is why the release
-   * carrying this migration must not also change the book.
-   */
-  function migrateDrillIds(s) {
-    if (!s || s.idv >= 2) return s;
-    // frozen table, NOT read from the live book — see drills.js. Deriving it
-    // meant the migration was only correct for someone upgrading from the
-    // exact book it was generated against, which said nothing about a player
-    // who skips this release entirely.
-    const map = ChessDrills.legacyIdMap();
-    ChessDrills.migrateIds(s.solved, map);
-    ChessDrills.migrateIds(s.missed, map);
-    s.idv = 2;
-    return s;
-  }
-
-  /** @returns {{state: object, migrated: boolean}} — `migrated` says the ids
-      were actually rewritten, which is a different thing from "this profile
-      is on the current id version", and the difference is the whole bug */
   function loadPuzzleState() {
     const s = Persist.read("puzzles").value;
     if (s) {
       if (!s.missed) s.missed = {};
-      const was = s.idv;
-      const out = migrateDrillIds(s);
-      return { state: out, migrated: out.idv !== was };
+      return s;
     }
-    return { state: { v: 1, idv: 2, solved: {}, missed: {}, cat: "m1" }, migrated: false };
+    // not written until something is solved: an empty record written at
+    // load is what once made `firstRun` false for everybody
+    return { v: 1, solved: {}, missed: {}, cat: "m1" };
   }
-  const loadedPuzzles = loadPuzzleState();
-  store.session.puzzleState = loadedPuzzles.state;
-  // persist the rewritten ids straight away — a migration that only lives in
-  // memory runs again on every launch, and once the book does change it would
-  // then be reading positions that no longer mean what they meant.
-  //
-  // Only when ids actually moved. The test was `idv === 2`, which is equally
-  // true of the default this function returns for a profile that has never been
-  // touched — so a brand-new user got an empty puzzle record written at import
-  // time, and that write is what made `firstRun` false for everybody.
-  if (loadedPuzzles.migrated) { Persist.setJson("puzzles", store.session.puzzleState); }
+  store.session.puzzleState = loadPuzzleState();
   function savePuzzleState() {
     Persist.setJson("puzzles", store.session.puzzleState);
   }
@@ -345,9 +311,7 @@ export function createPuzzleBook(d) {
   forgetRetired();
   const Srs = ChessSrs;
   // v8-1-plan T6: bank puzzles in the review queue, their bands loaded when due
-  // v8-4-plan T3: a queued id is looked up in its band with the rows earlier
-  // imports shipped there (puzzle-db.js full), so a refresh strands no review
-  const Bank = createBankReview({ Db: Object.assign({}, ChessPuzzleDb, { band: ChessPuzzleDb.full, ensureBand: ChessPuzzleDb.ensureFull }), Srs });
+  const Bank = createBankReview({ Db: ChessPuzzleDb, Srs });
   const Picker = ChessPicker;
   /** reviews served per day before the rest is pushed to tomorrow (Q3.3) */
   const REVIEW_CAP = 20;

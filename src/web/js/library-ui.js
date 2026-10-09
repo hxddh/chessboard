@@ -117,36 +117,25 @@ export function createLibraryUI(d) {
   function loadLibrary() {
     const s = Persist.read("library").value;
     if (!s) return { games: [], names: [] };
-    store.session.libComing = s.db === 2 ? Number(s.n) || 0 : 0;
+    store.session.libComing = Number(s.n) || 0;
     // v8-1-plan F3: games in IndexedDB with a summary beside them — asked for now (see libSumPre)
-    if (s.db === 2 && typeof s.sum === "string" && s.sum && !s.games.length) {
+    if (typeof s.sum === "string" && s.sum) {
       libSumPre = prefetchSummary(typeof indexedDB !== "undefined" ? indexedDB : null);
     }
-    const games = s.games.filter((g) => g && g.id && typeof g.sans === "string" && g.plies > 0);
-    for (const g of games) rescoreLosses(g);
-    return { games, names: Array.isArray(s.names) ? s.names.filter((n) => typeof n === "string") : [] };
+    return { games: [], names: s.names.filter((n) => typeof n === "string") };
   }
 
   /**
-   * Recompute a stored game's per-ply losses from the scalars beside them.
-   *
-   * 7.0 wrote this array unclamped (see analyseLibraryGame), so a library
-   * analysed under 7.0 carries plies charged five figures of centipawns, and
-   * the diagnosis built from it says 残局 whatever the player actually does
-   * there. Capping the stored number at 1000 would not undo it: mate-in-5 to
-   * mate-in-9 is 0 once both ends are in the window and 400 once they are not.
-   * The scalars are in the record, so the honest repair is to run lossOf over
-   * them again rather than to salvage the arithmetic. Idempotent — a record
-   * written by this version comes out of it unchanged — which is why it needs
-   * no version flag and can simply run on every load.
+   * A 本机 game's per-ply losses, from the scalars of its kept pass
+   * (library-local.js localAnalysis leaves them empty): lossOf over each
+   * pair, the one routine an imported game's pass uses too.
    */
-  function rescoreLosses(g) {
+  function fillLosses(g) {
     const an = g && g.an;
     if (!an || !Array.isArray(an.scalars) || !Array.isArray(an.losses)) return;
     const sc = an.scalars;
     if (sc.length !== an.losses.length + 1) return; // not a shape we wrote
-    // side to move at ply 0, straight off the stored FEN — no board needed,
-    // and this runs over the whole library on every boot
+    // side to move at ply 0, straight off the stored FEN — no board needed
     let side = typeof g.fen === "string" && g.fen.trim().split(/\s+/)[1] === "b" ? "b" : "w";
     an.losses = an.losses.map((_, i) => {
       const a = sc[i], b = sc[i + 1];
@@ -189,7 +178,7 @@ export function createLibraryUI(d) {
       Library, Dlg, reconcile, Chess, PgnParser: ChessPgnParser, Pgn: ChessPgn, Eco: ChessEco,
       idb: typeof indexedDB !== "undefined" ? indexedDB : null, withLock: Host.withStoreLock,
       pause: () => new Promise((r) => setTimeout(r, 8)), LIB_DEEP_BUDGET, fillOpenings, libEcoName, libPickPly,
-      libraryLabel, reclaimLibrary, renderLibrary, deepenLibraryGame, loadFromLibrary, rescoreLosses, renderDiagnosis,
+      libraryLabel, reclaimLibrary, renderLibrary, deepenLibraryGame, loadFromLibrary, fillLosses, renderDiagnosis,
     }))).then((c) => {
       libDb = c;
       libEarly = null;
@@ -530,7 +519,7 @@ export function createLibraryUI(d) {
         // does not run, so a button wired to one would be a button that does
         // nothing. Recorded in docs/v7-plan.md §7.5.
         if (!store.ui.appForeground && run.done) {
-          Host.notify({ id: "chess.library", title: t("ntf.libraryTitle"),
+          Host.notify({ id: "chess.libraryPass", title: t("ntf.libraryTitle"),
             body: tf("ntf.libraryBody", [run.done, run.total]) });
         }
         // re-read the queue each round: an import during the pass adds to it,
@@ -564,7 +553,7 @@ export function createLibraryUI(d) {
       if (run.failed) toast(t("lib.passCut"), "fix");
       if (done && mined) toast(tf("lib.minedDone", [done, mined]));
       if (done && !store.ui.appForeground) {
-        Host.notify({ id: "chess.library", title: t("ntf.libraryTitle"),
+        Host.notify({ id: "chess.libraryPass", title: t("ntf.libraryTitle"),
           body: tdot(tf("ntf.libraryDone", [done]), mined ? tf("msg.mined", [mined]) : "") });
       }
     }

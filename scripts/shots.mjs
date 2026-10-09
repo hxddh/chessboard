@@ -199,6 +199,10 @@ const SHOTS = [
   { name: "closed-1440-wood-en", vp: WIDE, lang: "en", theme: "wood", mode: "ai", tab: "play", panel: "0" },
 ];
 
+/** A shell's name (data-theme) as the look that gives it (look.js shellFor). */
+const lookOf = (th) => ({ wood: { appearance: "dark", boardId: "wood" }, night: { appearance: "dark", boardId: "green" },
+  day: { appearance: "light", boardId: "wood" }, notebook: { appearance: "light", boardId: "blue" } })[th] || {};
+
 const browser = await launchBrowser();
 fs.mkdirSync(OUT, { recursive: true });
 console.log("引擎:", ENGINE, "→", OUT);
@@ -208,10 +212,10 @@ for (const [i, s] of SHOTS.entries()) {
   if (ONLY && !ONLY.test(s.name)) continue;
   const ctx = await browser.newContext({ viewport: s.vp, locale: s.lang, deviceScaleFactor: Number(process.env.DPR) || 1 });
   await ctx.addInitScript(([l, m, tb, th, po, v]) => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: m, langId: l, sideTab: tb, soundOn: false, themeId: th, view: v }));
+    localStorage.setItem("chess.settings", JSON.stringify(Object.assign({
+      mode: m, langId: l, sideTab: tb, soundOn: false, view: v }, th)));
     localStorage.setItem("chess.panelOpen", po);
-  }, [s.lang, s.mode, s.tab, s.theme, s.panel || "1", s.view || "play"]);
+  }, [s.lang, s.mode, s.tab, lookOf(s.theme), s.panel || "1", s.view || "play"]);
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));

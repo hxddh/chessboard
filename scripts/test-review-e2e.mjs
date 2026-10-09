@@ -25,6 +25,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { heldClick } from "./lib/held-click.mjs";
+import { seedLibrary } from "./lib/library-view.mjs";
 import { OPERA, playOpera, analyseOpera } from "./lib/opera-fixture.mjs";
 import { Chess } from "../src/web/js/chess.js";
 import { ChessReview } from "../src/web/js/review.js";
@@ -59,8 +60,8 @@ const browser = await launchBrowser();
 console.log("引擎:", ENGINE);
 const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
 await ctx.addInitScript(() => {
-  localStorage.setItem("chess.v1.settings", JSON.stringify({
-    mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+  localStorage.setItem("chess.settings", JSON.stringify({
+    mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
   localStorage.setItem("chess.panelOpen", "1");
 });
 const page = await ctx.newPage();
@@ -407,7 +408,7 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
   await page.waitForTimeout(400);
   const after = await page.evaluate(() => {
     const b = document.querySelector("#review-body .review-bank");
-    const mines = JSON.parse(localStorage.getItem("chess.v1.mines") || "null");
+    const mines = JSON.parse(localStorage.getItem("chess.mines") || "null");
     return { text: b && b.textContent, disabled: b && b.disabled, n: mines ? mines.list.length : 0 };
   });
   assert(after.n === 1, "按一下,错题里多了这一道 (" + after.n + ")");
@@ -428,8 +429,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 {
   const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctx2.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     window.__clip = "";
     window.zero = {
@@ -569,8 +570,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 {
   const ctx3 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctx3.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const pg = await ctx3.newPage();
@@ -826,8 +827,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 
   const ctxC = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctxC.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     window.__clip = "";
     window.zero = {
@@ -990,8 +991,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 {
   const ctxH = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctxH.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", multipv: 3 }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood", multipv: 3 }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const pgH = await ctxH.newPage();
@@ -1159,8 +1160,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 {
   const ctxS = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctxS.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const pgS = await ctxS.newPage();
@@ -1194,7 +1195,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     };
     document.getElementById("an-run").click();
     await new Promise((r) => setTimeout(r, 2500));
-    const kept = JSON.parse(localStorage.getItem("chess.v1.analyses") || "null");
+    const kept = JSON.parse(localStorage.getItem("chess.analyses") || "null");
     const e = kept && kept.list && kept.list[kept.list.length - 1];
     return { deepAsked, toast: document.getElementById("toast").textContent,
       an: e ? { tags: e.an.tags, acc: e.an.acc, grades: e.an.grades, scalars: e.an.scalars, deep: e.an.deep } : null,
@@ -1228,7 +1229,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 {
   const ctxA = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
   await ctxA.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false,
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false,
       appearance: "dark", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett", view: "play" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
@@ -1249,7 +1250,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   };
   const vi = () => pg.evaluate(() => Number(document.getElementById("eval-curve").getAttribute("aria-valuenow")));
   const rec = await pg.evaluate(() => {
-    const kept = JSON.parse(localStorage.getItem("chess.v1.analyses") || "null");
+    const kept = JSON.parse(localStorage.getItem("chess.analyses") || "null");
     const e = kept && kept.list && kept.list[kept.list.length - 1];
     return e ? { tags: e.an.tags, grades: e.an.grades } : null;
   });
@@ -1421,7 +1422,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       // Codex #89: a graded moment that is no mistake (the brilliancy) has a
       // retry too, and once it is judged the board draws the best move's arrow
       const bril = G.indexOf("brilliant");
-      const bests = await pg.evaluate(() => { const k = JSON.parse(localStorage.getItem("chess.v1.analyses") || "null");
+      const bests = await pg.evaluate(() => { const k = JSON.parse(localStorage.getItem("chess.analyses") || "null");
         const e = k && k.list && k.list[k.list.length - 1]; return e ? e.an.bests : null; });
       const can = (sel) => pg.evaluate((q) => { const b = document.querySelector(q); return !!b && !b.disabled; }, sel);
       while (await can("#rv-km .km-prev")) { await pg.click("#rv-km .km-prev"); await pg.waitForTimeout(150); }
@@ -1615,8 +1616,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 {
   const ctxG = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctxG.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "learn", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "learn", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const pg = await ctxG.newPage();
@@ -1739,7 +1740,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(p.sum === "与大师相同 17/17 · 平均扣分 0.0 · 得分 100.0", "T3：终局卡 17/17、扣 0、100 分（" + p.sum + "）");
   assert(!p.worst && !p.jump, "T3：没有偏差，就没有「最大偏差」和跳转按钮");
   assert((await pg.evaluate(() => window.__gsCalls.length)) === 0, "T3：和原着一样的着法不必问引擎");
-  const saved = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.learn") || "{}"));
+  const saved = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.learn") || "{}"));
   assert(saved.gs && saved.gs["morphy-opera-1858"] && saved.gs["morphy-opera-1858"].w.same === 17, "T3：结果记进学习进度（learn 键的 gs）");
   assert(/^✓ /.test(await pg.evaluate(() => document.querySelector('#lesson-list button[data-gs="0"]').textContent)), "T3：猜完的名局在目录里打 ✓");
 
@@ -1795,7 +1796,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(!quit.panel && /1858/.test(quit.title), "T3：「读棋」离开猜着，读这一局（" + quit.title + "）");
   await pg.evaluate(() => document.querySelector('#lesson-list button[data-gs="8"]').click());
   assert(await waitAt(1), "T3：黑胜的一局默认猜黑方");
-  await pg.evaluate(() => { const l = JSON.parse(localStorage.getItem("chess.v1.learn")); l.gs = 7; localStorage.setItem("chess.v1.learn", JSON.stringify(l)); });
+  await pg.evaluate(() => { const l = JSON.parse(localStorage.getItem("chess.learn")); l.gs = 7; localStorage.setItem("chess.learn", JSON.stringify(l)); });
   await pg.reload();
   await pg.waitForTimeout(1200);
   await pg.evaluate(() => {
@@ -1833,22 +1834,22 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const lib = JSON.stringify({ v: 1, names: ["me"], games: [{ id: "g1", t: 1758000000000, white: "me", black: "rival",
     date: "2026.09.01", event: "Casual", result: "1-0", plies: 4, sans: "e4 e5 Nf3 Nc6", fen: "", side: "w", outcome: "win" }] });
   const ctxM = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
-  await ctxM.addInitScript((lb) => {
+  await ctxM.addInitScript(() => {
     if (sessionStorage.getItem("seeded")) return; // a reload keeps what the app wrote
     sessionStorage.setItem("seeded", "1");
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "learn", view: "learn", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", flipped: false }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "learn", view: "learn", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood", flipped: false }));
     localStorage.setItem("chess.panelOpen", "1");
-    localStorage.setItem("chess.v1.library", lb);
-    localStorage.setItem("chess.v1.save", JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }));
-  }, lib);
+    localStorage.setItem("chess.save", JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }));
+  });
+  await ctxM.addInitScript(seedLibrary, Object.assign({ once: true }, JSON.parse(lib)));
   const pg = await ctxM.newPage();
   const errsM = [];
   pg.on("pageerror", (e) => errsM.push(e.message));
   await pg.goto(`http://127.0.0.1:${PORT}/`);
   await pg.waitForTimeout(900);
   await pg.click("#pick-cancel", { timeout: 500 }).catch(() => {});
-  const settings = () => pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings") || "{}"));
+  const settings = () => pg.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}"));
   const gsAt = (ply, phase = "guess") => pg.waitForFunction(([p, ph]) => {
     const e = document.getElementById("gs-panel");
     return !!e && !!e.offsetParent && e.dataset.at === String(p) && e.dataset.phase === ph;

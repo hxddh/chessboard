@@ -123,7 +123,7 @@ const TAP = (settings) => {
     };
     return s;
   };
-  localStorage.setItem("chess.v1.settings", JSON.stringify(settings));
+  localStorage.setItem("chess.settings", JSON.stringify(settings));
   localStorage.setItem("chess.panelOpen", "1");
 };
 
@@ -195,7 +195,7 @@ const bankAt = async (sr) => {
 async function open(settings, { fakeClock = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(TAP, { langId: "zh-CN", sideTab: "play", soundOn: true,
-    themeId: "wood", soundSet: SET, ...settings });
+    appearance: "dark", boardId: "wood", soundSet: SET, ...settings });
   const page = await ctx.newPage();
   if (fakeClock) await page.clock.install();
   const errs = [];
@@ -508,7 +508,7 @@ SET = "wood";
   await a.move("e2", "e4");
   const raw = await a.page.evaluate(() => window.__voices.slice());
   assert(raw.some((v) => typeof v[0] === "number"), "…之后走棋用的是振荡器,不是木质采样");
-  const stored = await a.page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings") || "{}").soundSet);
+  const stored = await a.page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}").soundSet);
   assert(stored === "classic", `…并且存进了设置(soundSet: ${JSON.stringify(stored)})`);
   await a.close();
 }

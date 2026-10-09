@@ -67,7 +67,7 @@ const assert = (cond, msg, extra) => {
   const p2 = ctx.syncPrefs(P({ v: 1, on: true, site: "fics", user: 7 }));
   assert(p2.site === "lichess" && p2.user === "", "认不得的值回到默认", JSON.stringify(p2));
   // 它是档案里的一个键：清除全部存档会连用户名一起清掉
-  assert(ctx.KEYS && ctx.KEYS.sync === "chess.v1.sync", "persist.js 的键表里有 sync");
+  assert(ctx.KEYS && ctx.KEYS.sync === "chess.sync", "persist.js 的键表里有 sync");
 }
 
 // --- v8-1-plan T4：增量、局数上限、同步后分析，都记在同一个 sync 键里 ---------

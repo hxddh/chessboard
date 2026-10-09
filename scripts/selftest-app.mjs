@@ -38,7 +38,7 @@
  *
  * Both launches run with one temporary profile (review P3-7): HOME, and
  * APPDATA on Windows, point into this run's temp folder, so the app's own
- * data directory — the store/ mirror, the `lang` file the menus are picked
+ * data directory — the profile/ mirror, the `lang` file the menus are picked
  * by, the self-test's appdata round trip — is a fresh one that the second
  * launch shares with the first, and a local run leaves nothing of it in the
  * developer's real profile. The WebView's own storage does not follow:
@@ -140,7 +140,7 @@ if (a && b && a.pass && b.pass && b.found !== a.wrote) {
 // v8-1-plan N3: the same restart comparison, for IndexedDB on zero://
 const [ia, ib] = runs.map((r) => r.report && r.report.checks && r.report.checks.idb);
 if (ia && ib && ia.pass && ib.pass && ib.found !== ia.wrote) {
-  fail("idb", "第 2 次启动在 IndexedDB（chessboard.library 的 meta 表）里读到的标记是 " + JSON.stringify(ib.found ?? null) +
+  fail("idb", "第 2 次启动在 IndexedDB（chessboard.games 的 meta 表）里读到的标记是 " + JSON.stringify(ib.found ?? null) +
     "，第 1 次写的是 " + JSON.stringify(ia.wrote) + " —— zero:// 上的 IndexedDB 重启后没留下来，棋谱库只能退回 localStorage");
 }
 const synced = runs.map((r) => r.report && r.report.checks && r.report.checks.chunkSync)

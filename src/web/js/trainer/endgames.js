@@ -8,8 +8,8 @@
  * strength, judged by endgame-rules.js.
  *
  * Progress lives in the learn key, beside the course (`learnState.eg`), so the
- * learning-data file, 清除教学进度 and the old saves need nothing new: a save
- * from before 8.1 has no `eg`, which reads as nothing tried yet.
+ * learning-data file and 清除教学进度 need nothing new: a save with no `eg`
+ * reads as nothing tried yet.
  *
  *   eg.done[id] = ms of the first time the goal was reached
  *   eg.srs[id]  = srs.js entry: a failed try, or a success that leaned on

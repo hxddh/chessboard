@@ -208,7 +208,7 @@ jobs:
             shard: 2/2
             timeout: 20
           - name: persistence
-            suites: scripts/test-persist-e2e.mjs scripts/test-downgrade-e2e.mjs
+            suites: scripts/test-persist-e2e.mjs
             timeout: 25
           # v8-2-plan V4 (M2): split in two, as in checks.yml
           - name: game library
