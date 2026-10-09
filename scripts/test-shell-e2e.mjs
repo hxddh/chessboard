@@ -426,7 +426,8 @@ const state = (page) => page.evaluate(() => {
   await page.waitForTimeout(300);
   assert(await page.evaluate(() => document.getElementById("keys-modal").classList.contains("show")),
     "A1: 页面上 ? 照样打开快捷键表");
-  const prefsRow = await page.evaluate(() => /Ctrl\+,/.test(document.getElementById("keys-modal").textContent));
+  // the menu's accelerator, spelled for the machine (⌘, on a Mac-like UA — WebKit — Ctrl+, elsewhere)
+  const prefsRow = await page.evaluate(() => /(Ctrl\+|⌘),/.test(document.getElementById("keys-modal").textContent));
   assert(prefsRow, "A1 × S5: 快捷键表里有设置页的键");
   await page.keyboard.press("Escape");
   await ctx.close();
