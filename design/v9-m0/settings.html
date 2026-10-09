@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="wood">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设置 · 9.0 设计稿</title>
+<link rel="stylesheet" href="v9.css">
+</head>
+<body>
+<!-- S5 唯一的设置：左侧分类（每类下面一行写着里面有什么，「语言」是通用的第一项），
+     右侧即改即生效；棋盘页的棋子用 48px 实物预览，右边一块 4×4 小棋盘实时显示组合。 -->
+<div class="shell">
+  <nav class="rail" aria-label="去处">
+    <div class="rail__logo"><i data-piece="wn"></i></div>
+    <a href="today.html"><span data-icon="sun"></span><span class="lbl">今天</span></a>
+    <a href="play-gameover.html"><span data-icon="swords"></span><span class="lbl">下棋</span></a>
+    <a href="train-puzzles.html"><span data-icon="target"></span><span class="lbl">训练</span></a>
+    <a href="#"><span data-icon="library"></span><span class="lbl">棋谱</span></a>
+    <a href="#"><span data-icon="user"></span><span class="lbl">我的</span></a>
+    <div class="rail__spacer"></div>
+    <a href="settings.html" class="rail__gear" aria-current="page"><span data-icon="settings"></span><span class="lbl">设置</span></a>
+  </nav>
+
+  <main class="page">
+    <div class="page__inner settings">
+      <header class="page__head"><h1>设置</h1></header>
+
+      <div class="settings__grid">
+        <nav class="cats" aria-label="设置分类">
+          <a href="#"><span data-icon="globe"></span><span><b>通用</b><small>语言 · 外观 · 字号</small></span></a>
+          <a href="#" aria-current="page"><span data-icon="grid"></span><span><b>棋盘</b><small>棋盘 · 棋子 · 坐标 · 盲棋</small></span></a>
+          <a href="#"><span data-icon="volume-2"></span><span><b>声音</b><small>落子声 · 提示音</small></span></a>
+          <a href="#"><span data-icon="swords"></span><span><b>对局</b><small>默认对手 · 棋钟 · 失着提醒</small></span></a>
+          <a href="#"><span data-icon="database"></span><span><b>数据</b><small>同步 · 导入导出 · 清除</small></span></a>
+          <a href="#"><span data-icon="sliders"></span><span><b>高级</b><small>分析深度 · 引擎箭头</small></span></a>
+        </nav>
+
+        <div class="settings__main">
+          <section>
+            <h2 class="section-title">外观</h2>
+            <div class="card setgroup">
+              <div class="setfield">
+                <p class="field-label">棋盘</p>
+                <div class="swatches">
+                  <button class="swatch is-on" style="--l:#f0d9b5;--d:#b58863"><i></i>木纹</button>
+                  <button class="swatch" style="--l:#e2ead6;--d:#81a38a"><i></i>青绿</button>
+                  <button class="swatch" style="--l:#dfe5e8;--d:#8ba3b0"><i></i>灰蓝</button>
+                  <button class="swatch" style="--l:#f3eee2;--d:#c4b9a2"><i></i>纸</button>
+                  <button class="swatch" style="--l:#e9e7e3;--d:#989796"><i></i>大理石</button>
+                </div>
+              </div>
+              <div class="setfield">
+                <p class="field-label">棋子</p>
+                <div class="pieceset">
+                  <button class="pset is-on"><span><i data-piece="wn"></i><i data-piece="wq"></i></span>经典</button>
+                  <button class="pset"><span><i data-piece="sets/merida-wn"></i><i data-piece="sets/merida-wq"></i></span>梅里达</button>
+                  <button class="pset"><span><i data-piece="sets/chessnut-wn"></i><i data-piece="sets/chessnut-wq"></i></span>栗子</button>
+                  <button class="pset"><span><i data-piece="sets/celtic-wn"></i><i data-piece="sets/celtic-wq"></i></span>凯尔特</button>
+                  <button class="pset"><span><i data-piece="sets/fantasy-wn"></i><i data-piece="sets/fantasy-wq"></i></span>奇幻</button>
+                  <button class="pset"><span><i data-piece="sets/spatial-wn"></i><i data-piece="sets/spatial-wq"></i></span>立体</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h2 class="section-title">显示</h2>
+            <div class="card card--flush setrows">
+              <div class="setrow"><p>边框</p><div class="seg seg--sm"><button class="is-on" aria-pressed="true">无</button><button>木框</button></div></div>
+              <div class="setrow"><p>坐标</p><div class="seg seg--sm"><button class="is-on" aria-pressed="true">盘内</button><button>盘边</button><button>不显示</button></div></div>
+              <div class="setrow"><p>方向</p><div class="seg seg--sm"><button class="is-on" aria-pressed="true">跟着执子</button><button>白方在下</button></div></div>
+              <div class="setrow"><div><p>盲棋</p><p class="t-meta">棋子不画出来，只留上一步和将军的提示</p></div><span class="switch" role="switch" aria-checked="false"></span></div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="preview">
+          <h2 class="section-title">预览</h2>
+          <div class="card preview__card">
+            <div class="board board--4" data-n="4" data-fen="1rk1/p2p/2N1/PK1Q" data-last="d4c2" style="--size:208px"></div>
+            <div class="preview__text">
+              <p class="t-meta">木纹 · 经典 · 无边框 · 盘内坐标</p>
+              <button class="btn btn--ghost btn--sm">恢复默认</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="mock.js"></script>
+</body>
+</html>

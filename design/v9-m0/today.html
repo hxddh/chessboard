@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="wood">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>今天 · 9.0 设计稿</title>
+<link rel="stylesheet" href="v9.css">
+</head>
+<body>
+<div class="shell">
+  <nav class="rail" aria-label="去处">
+    <div class="rail__logo"><i data-piece="wn"></i></div>
+    <a href="today.html" aria-current="page"><span data-icon="sun"></span><span class="lbl">今天</span></a>
+    <a href="play-gameover.html"><span data-icon="swords"></span><span class="lbl">下棋</span></a>
+    <a href="train-puzzles.html"><span data-icon="target"></span><span class="lbl">训练</span></a>
+    <a href="#"><span data-icon="library"></span><span class="lbl">棋谱</span></a>
+    <a href="#"><span data-icon="user"></span><span class="lbl">我的</span></a>
+    <div class="rail__spacer"></div>
+    <a href="settings.html" class="rail__gear"><span data-icon="settings"></span><span class="lbl">设置</span></a>
+  </nav>
+
+  <main class="page">
+    <div class="page__inner today">
+      <header class="page__head">
+        <div>
+          <h1>下午好</h1>
+          <p class="t-meta">10 月 9 日 星期五</p>
+        </div>
+        <a class="btn btn--secondary" href="#"><span data-icon="plus"></span>下一盘</a>
+      </header>
+
+      <!-- 第一行：主卡（2）+ 今日进度（1） -->
+      <div class="today__row">
+        <section class="card hero" aria-label="接下来">
+          <div class="board" data-fen="r3k2r/ppp2ppp/2n5/3N4/4P3/8/PPP2PPP/R3K2R w KQkq - 0 1" data-last="b4d5" style="--size:240px"></div>
+          <div class="hero__text">
+            <div class="section-title">接下来 <span class="badge badge--count">还有 11 道到期</span></div>
+            <h2 class="t-title">复习：双重攻击</h2>
+            <p class="t-meta">复习到期 · 约 3 分钟 · 白先</p>
+            <p class="hero__note">上次你走了 <span class="san">Nb6</span>，只吃到一个兵。这次找一步同时攻击王和车的棋。</p>
+            <ul class="facts">
+              <li><span data-icon="rotate-ccw" data-icon-class="ic-sm"></span>第 2 次复习</li>
+              <li><span data-icon="clock" data-icon-class="ic-sm"></span>上次在 3 天前</li>
+              <li><span data-icon="check" data-icon-class="ic-sm"></span>连对两次就算学会</li>
+            </ul>
+            <div class="hero__actions">
+              <a class="btn btn--primary" href="#">开始复习</a>
+              <a class="btn btn--ghost" href="#">换一件事</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="card progress" aria-label="今天的进度">
+          <div class="section-title">今天 <span class="streak"><span data-icon="flame" data-icon-class="ic-sm"></span>连续 6 天</span></div>
+          <div class="rings">
+            <div class="ring is-done" data-value="1" data-max="1"><b class="num">1/1</b><span>课</span></div>
+            <div class="ring" data-value="7" data-max="10"><b class="num">7/10</b><span>题</span></div>
+            <div class="ring" data-value="0" data-max="1"><b class="num">0/1</b><span>局</span></div>
+          </div>
+          <p class="progress__note">再做 3 道题、下 1 盘，今天的目标就完成了。</p>
+        </section>
+      </div>
+
+      <!-- 第二行：继续 -->
+      <section class="today__block">
+        <h2 class="section-title">继续</h2>
+        <div class="continue">
+          <a class="card card--hover cont" href="#">
+            <div class="board" data-fen="4k3/8/8/3n4/8/8/3N4/4K3 w - - 0 1" data-coords="none" style="--size:64px"></div>
+            <div class="cont__text">
+              <p class="t-meta">课程 · 第 3 单元</p>
+              <p class="t-strong">第 23 课 · 双重攻击</p>
+              <div class="cont__bar"><div class="bar"><i style="width:57%"></i></div><span class="t-meta num">4/7</span></div>
+            </div>
+            <span data-icon="chevron-right" class="cont__go"></span>
+          </a>
+          <a class="card card--hover cont" href="#">
+            <div class="board" data-fen="1K1k4/1P6/8/8/8/8/r7/2R5 w - - 0 1" data-coords="none" style="--size:64px"></div>
+            <div class="cont__text">
+              <p class="t-meta">残局 · 车兵残局</p>
+              <p class="t-strong">卢塞纳局面</p>
+              <div class="cont__bar"><div class="bar"><i style="width:33%"></i></div><span class="t-meta num">1/3</span></div>
+            </div>
+            <span data-icon="chevron-right" class="cont__go"></span>
+          </a>
+          <a class="card card--hover cont" href="#">
+            <div class="board" data-fen="rn2kb1r/p3qppp/2p2n2/1N2p1B1/2B1P3/1Q6/PPP2PPP/R3K2R b KQkq - 0 10" data-coords="none" style="--size:64px"></div>
+            <div class="cont__text">
+              <p class="t-meta">名局 · 1858 年 · 巴黎</p>
+              <p class="t-strong">莫菲 · 歌剧院之局</p>
+              <div class="cont__bar"><div class="bar"><i style="width:59%"></i></div><span class="t-meta num">10/17</span></div>
+            </div>
+            <span data-icon="chevron-right" class="cont__go"></span>
+          </a>
+        </div>
+      </section>
+
+      <!-- 第三行：最近对局（2）+ 等级分（1） -->
+      <div class="today__row">
+        <section>
+          <h2 class="section-title">最近对局 <a class="link t-meta" href="#">全部棋谱<span data-icon="chevron-right"></span></a></h2>
+          <div class="card card--flush">
+            <ul class="games">
+              <li><span class="res win">胜</span><span class="avatar avatar--piece"><i data-piece="bn"></i></span><div class="games__who"><p class="t-strong">索尔 <span class="t-muted num">1500</span></p><p class="t-meta">莱加尔陷阱 · 7 回合 · 今天</p></div><span class="games__d num">+18</span><a class="btn btn--ghost btn--sm" href="#">复盘</a></li>
+              <li><span class="res loss">负</span><span class="avatar avatar--piece"><i data-piece="bb"></i></span><div class="games__who"><p class="t-strong">米拉 <span class="t-muted num">1450</span></p><p class="t-meta">意大利开局 · 41 回合 · 昨天</p></div><span class="games__d num neg">−12</span><a class="btn btn--ghost btn--sm" href="#">复盘</a></li>
+              <li><span class="res draw">和</span><span class="avatar avatar--piece"><i data-piece="br"></i></span><div class="games__who"><p class="t-strong">老周 <span class="t-muted num">1550</span></p><p class="t-meta">后翼弃兵 · 58 回合 · 10 月 6 日</p></div><span class="games__d num">+2</span><a class="btn btn--ghost btn--sm" href="#">复盘</a></li>
+              <li><span class="res win">胜</span><span class="avatar avatar--piece"><i data-piece="bn"></i></span><div class="games__who"><p class="t-strong">索尔 <span class="t-muted num">1500</span></p><p class="t-meta">西西里防御 · 36 回合 · 10 月 5 日</p></div><span class="games__d num">+15</span><a class="btn btn--ghost btn--sm" href="#">复盘</a></li>
+            </ul>
+          </div>
+        </section>
+
+        <section>
+          <h2 class="section-title">等级分</h2>
+          <div class="card rating">
+            <div class="rating__row">
+              <div><p class="field-label">对局</p><p class="t-display">1486</p><p class="t-meta">本周 <span class="gain">+21</span></p></div>
+              <div class="spark"><svg class="curve" data-w="160" data-h="48" data-mid="0" data-series="38,40,36,42,45,41,47,50,48,55,58,62"></svg></div>
+            </div>
+            <div class="divider"></div>
+            <div class="rating__row">
+              <div><p class="field-label">谜题</p><p class="t-display">1540</p><p class="t-meta">本周 <span class="gain">+34</span></p></div>
+              <div class="spark"><svg class="curve" data-w="160" data-h="48" data-mid="0" data-series="30,34,33,40,38,44,49,47,52,51,57,60"></svg></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="mock.js"></script>
+</body>
+</html>
