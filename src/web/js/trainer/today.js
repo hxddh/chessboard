@@ -330,7 +330,6 @@ export function createTodayUI(d) {
       if (!pick) { toast(t("daily.motifDone")); return false; }
       store.session.puzzleState.cat = pick.cat;
       savePuzzleState();
-      store.session.puzzleTierFilter = "all";
       const go = () => {
         const list = puzzlesInCat(pick.cat);
         startPuzzleAt(pick.cat, Math.max(0, list.findIndex((p) => p.id === pick.id)));
@@ -344,8 +343,6 @@ export function createTodayUI(d) {
     const cat = step.kind === "weak" ? step.cat : step.kind;
     store.session.puzzleState.cat = cat;
     savePuzzleState();
-    // same contract as 为你出一题: a browse filter must not hide the plan
-    store.session.puzzleTierFilter = "all";
     if (store.session.mode !== "puzzle") switchMode("puzzle");
     else { startPuzzles(); setSideTab("play", { top: true }); saveSettings(); sync(); }
     return true;

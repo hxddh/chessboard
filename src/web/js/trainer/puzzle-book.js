@@ -29,7 +29,7 @@ import { ChessPuzzleDb } from "../puzzle-db.js";
 import { CHESS_PUZZLES } from "../puzzles.js";
 import { ChessSrs } from "../srs.js";
 import { createBankReview, isBankId } from "./bank-review.js";
-import { isThemeCat, THEME_CAT } from "./puzzle-modes.js";
+import { isThemeCat, THEME_CAT, isGroupCat, GROUP_CAT } from "./puzzle-modes.js";
 
 /**
  * @param {object} d everything this module borrows from app.js, and the trainer's `Modes` forwarder
@@ -194,32 +194,6 @@ export function createPuzzleBook(d) {
    * @returns {"easy"|"mid"|"hard"}
    */
   const PUZZLE_TIER_CACHE = new Map();
-  /**
-   * Categories where difficulty is a real, separate axis.
-   *
-   * In the three mate categories it is not. `puzzleTier()`'s dominant term is
-   * (plies − 1) × 1.5, and for m1/m2/m3 the ply count is a written-in constant
-   * — 1, 3, 5 — contributing 0, 3 and 6 points, while every other term put
-   * together moves the score by at most ±4.5, which never crosses a 3-point
-   * band boundary. So the tier *was* the category: every mate-in-one came out
-   * easy, every mate-in-three hard, and seven of the eighteen
-   * category × difficulty combinations were empty. Picking one of those left
-   * the list blank — and the filter is remembered, so the next visit to that
-   * category looked like an empty puzzle set. 缺陷 14.
-   *
-   * The fix chosen is (A): stop offering a filter that is a second name for
-   * the category. "Mate in two" already says how hard it is. The four
-   * categories where the tier is derived from something else — the line's
-   * length for openings, how loud the key move is for real games, how many
-   * moves hold for defence, and the full score for tactics and captures —
-   * keep it.
-   *
-   * (B) — a solving-cost measure from the engine's first-choice margin —
-   * would be better and is not free: it needs an offline pass over 168
-   * puzzles and a new field in the data. It stays on the table.
-   */
-  const TIER_CATS = new Set(["tac", "win", "real", "def", "draw", "op"]);
-  function tierApplies(cat) { return TIER_CATS.has(cat); }
 
   function puzzleTier(p) {
     if (PUZZLE_TIER_CACHE.has(p.id)) return PUZZLE_TIER_CACHE.get(p.id);
@@ -376,7 +350,8 @@ export function createPuzzleBook(d) {
   /** "review" is a virtual category: every puzzle currently in the missed set. */
   function puzzlesInCat(cat) {
     if (isThemeCat(cat)) return Modes.themeList(cat.slice(THEME_CAT.length));
-    const base = cat === "review"
+    if (isGroupCat(cat)) return Modes.groupList(cat.slice(GROUP_CAT.length));
+    return cat === "review"
       // 6.0 (v6-plan Q3.3): what is due today, most overdue first, at most a
       // day's dose — the rest is scheduled forward by dueQueue() itself so a
       // fortnight away does not arrive as one afternoon. Only what can be served
@@ -391,17 +366,11 @@ export function createPuzzleBook(d) {
       : cat === "repdue" ? RepUI.due()
       : cat === "mine" ? store.session.mines.slice()
       : ALL_PUZZLES.filter((p) => p.cat === cat);
-    // "Review" is not a difficulty band — it is exactly the set of puzzles this
-    // player got wrong. Filtering it by an automatically derived tier hides the
-    // very puzzles they asked to redo (a queue of three could show as empty),
-    // so the tier row does not apply here.
-    if (cat === "review" || !tierApplies(cat) || store.session.puzzleTierFilter === "all") return base;
-    return base.filter((p) => puzzleTier(p) === store.session.puzzleTierFilter);
   }
 
   return {
     onMinedArrived, ALL_PUZZLES, Library, Mistakes, loadMines, saveMines, Progress, Planner,
-    saveProgress, bookNow, isOpeningCat, isRatedCat, openingTreeFor, tierApplies, puzzleTier,
+    saveProgress, bookNow, isOpeningCat, isRatedCat, openingTreeFor, puzzleTier,
     loadPuzzleState, savePuzzleState, Srs, Bank, Picker, owedNow, practiceLeft, reviewWaits,
     reviewBank, puzzlesInCat,
   };

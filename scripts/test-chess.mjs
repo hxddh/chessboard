@@ -3441,8 +3441,9 @@ for (const lang of CONTENT_LANGS) {
   // whole P3 rule about visible disabled controls applies here too
   assert(/practice\.hidden = !rest\.total/.test(appSrc),
     "a lesson with no matching puzzles hides the button instead of disabling it");
-  assert(/store\.session\.puzzleTierFilter = "all"/.test(appSrc),
-    "the jump clears a tier filter that would hide the puzzle it promised");
+  // 9.0 S3: there is no tier filter left to hide the puzzle the jump promised
+  assert(!/puzzleTierFilter/.test(appSrc),
+    "no difficulty filter stands between the jump and the puzzle it promised");
 }
 
 // PGN utilities: splitting a multi-game file must not lose games (importing a
@@ -4327,14 +4328,14 @@ for (const lang of CONTENT_LANGS) {
   assert(/for \(const id of r\.dropped\) \{\s*delete store\.session\.puzzleState\.solved\[id\];\s*delete store\.session\.puzzleState\.missed\[id\];/.test(appSrc),
     "a retired drill takes its solved/missed entries with it — no orphan reviews owed");
   // the tab exists exactly while the book does (P3), and the cat is real
-  assert(/if \(b\.dataset\.cat === "mine"\) b\.hidden = !store\.session\.mines\.length;/.test(appSrc),
-    "the 错题 tab is drawn only while the personal book holds drills");
+  assert(/if \(g === "mine"\) b\.hidden = !store\.session\.mines\.length;/.test(appSrc),
+    "the 我的错题 tile is drawn only while the personal book holds drills");
   assert(/"op", "rep", "mine", "review"\]/.test(appSrc) && /real: true, mine: true \}/.test(appSrc),
     "mine is a real category on the scripted-grading rail");
   assert(/\(cat === "review" \|\| cat === "mine" \|\| cat === "rep"\) && !puzzlesInCat\(cat\)\.length/.test(appSrc),
     "an emptied personal book does not strand the player");
   const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
-  assert(/data-cat="mine" hidden/.test(html), "…and the button starts hidden until the book says otherwise");
+  assert(/data-group="mine" hidden/.test(html), "…and the tile starts hidden until the book says otherwise");
 }
 
 // 摸得到的复盘: hovering the move list or a PV chip puts that position on the
@@ -5525,31 +5526,22 @@ for (const lang of CONTENT_LANGS) {
     }
   }
 
-  // --- every "category × difficulty" combination is non-empty, or absent ----
-  // P5 acceptance. puzzleTier()'s dominant term is (plies − 1) × 1.5, and in
-  // the three mate categories the ply count is a written-in constant (1/3/5),
-  // contributing 0, 3 and 6 while everything else together moves the score by
-  // at most ±4.5 — never across a 3-point band. So the tier was the category
-  // under another name, seven of the eighteen combinations were empty, and
-  // picking one showed a blank list. The filter is remembered, so the next
-  // visit to that category still looked empty. 缺陷 14.
-  //
-  // Fixed as (A): the categories where difficulty is not a separate axis do
-  // not offer the filter. This asserts both halves — the ones that offer it
-  // have every band populated, and the ones that do not are declared.
+  // --- one set of kinds (9.0 S3) --------------------------------------------
+  // 8.x offered a difficulty filter beside twelve categories and twenty-eight
+  // themes — three ways to slice one book, one of them (the tier) the mate
+  // categories under another name (缺陷 14). 9.0 has six kinds, the same in
+  // both books, and serves each near the player's rating; no filter is left.
   {
-    const appTier = appSrc.slice(appSrc.indexOf("const TIER_CATS = new Set("));
-    const declared = /const TIER_CATS = new Set\(\[([^\]]*)\]\)/.exec(appTier);
-    assert(!!declared, "the categories with a real difficulty axis are declared");
-    const cats = declared[1].match(/"(\w+)"/g).map((x) => x.replace(/"/g, ""));
-    for (const m of ["m1", "m2", "m3"]) {
-      assert(!cats.includes(m), m + " does not offer a filter that repeats its own name");
-    }
-    assert(cats.includes("tac") && cats.includes("def") && cats.includes("op") && cats.includes("real"),
-      "…and the four that do keep it — " + cats.join(", "));
-    assert(/!tierApplies\(cat\)/.test(appSrc), "the filter is bypassed where it does not apply");
-    assert(/avail\(el\("row-puzzle-tier"\), /.test(appSrc),
-      "…and the row is absent rather than dead");
+    const modesSrc = fs.readFileSync(path.join(root, "src/web/js/trainer/puzzle-modes.js"), "utf8");
+    const groups = /export const PUZZLE_GROUPS = \[([^\]]*)\]/.exec(modesSrc);
+    assert(groups && groups[1].replace(/\s/g, "") === '"mate","tactic","endgame","defense","opening","mine"',
+      "S3: six kinds — 杀棋 / 战术 / 残局 / 防守 / 开局 / 我的错题 (" + (groups ? groups[1] : "missing") + ")");
+    const tiles = [...html.matchAll(/data-group="([a-z]+)"/g)].map((m) => m[1]);
+    assert(tiles.join() === "mate,tactic,endgame,defense,opening,mine", "S3: a tile per kind, in that order (" + tiles.join() + ")");
+    assert(/function groupList\(g\) \{\s*return localInGroup\(g\)\.concat\(lcPool\(\)\.filter/.test(modesSrc),
+      "S3: a kind pools the built-in book and the Lichess bands");
+    assert(!/row-puzzle-tier|puzzle-tier-seg|puzzle-cat-seg|tierApplies/.test(html + appSrc),
+      "S3: no difficulty filter and no category row are left");
   }
 
   // --- the move list: figurine notation, one typeface -----------------------

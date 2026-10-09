@@ -100,6 +100,9 @@ export function createLessonsUI(d) {
     invalidateEngine();
     clearPreview();
     store.session.study = { ci: i };
+    // 9.0 S3: 名局 picks up at the game last opened
+    store.session.learnState.cl = i;
+    saveLearnState();
     const text = '[Event "' + c.event.replace(/"/g, "'") + '"]\n[White "' + c.white.replace(/"/g, "'") + '"]\n[Black "' + c.black.replace(/"/g, "'") + '"]\n[Date "' + c.year + '.??.??"]\n[Result "' + c.result + '"]\n\n' + c.pgn + " " + c.result + "\n";
     if (!gameLoadPgn(text, { sloppy: true })) { toast(t("msg.import.badPgn"), "fault"); return; }
     // the notes ride the tree as comments, so they show in the move list and
@@ -152,18 +155,52 @@ export function createLessonsUI(d) {
       const b = document.getElementById(id);
       if (b) b.hidden = true;
     }
-    document.querySelectorAll("#lesson-list button[data-c]").forEach((b) => b.classList.toggle("current", Number(b.dataset.c) === st.ci));
+    renderCatalog();
   }
 
   // v8-2-plan T3: 名局猜着 — the runner is a chunk (trainer/guess.js), made on
   // the first start; a run is `learn.gs`, so until then there is none to draw
   const Gs = { m: null };
   function startGuess(ci) {
+    store.session.learnState.cl = ci;
     if (Gs.m) { Gs.m.start(ci); return; }
     loadChunk("chunk-guess.js", "createGuess").then((create) => {
       Gs.m = Gs.m || create(Object.assign({ tdot, Chess, Engine: ChessEngine, Review: ChessReview, Grade: ChessReviewGrade, CLASSICS, classicText, carryToken, startClassic, saveLearnState }, d));
       Gs.m.start(ci);
     }, () => {}); // a failed load is retried on the next click
+  }
+
+  // --- 9.0 S3: 训练's segments ------------------------------------------------
+
+  /** The segment of what is on the board in 学习: 课程, 残局 or 名局 (null outside it). */
+  function learnSeg() {
+    if (store.session.mode !== "learn") return null;
+    const l = store.session.learn;
+    if (store.session.study || (l && l.gs)) return "classic";
+    return l && l.eg ? "endgame" : "course";
+  }
+  /** Read a classic, or guess it: 名局's one switch (store.ui.classicMode). */
+  const guessing = () => store.ui.classicMode === "guess";
+  /** Open classic `ci` the way the switch says. */
+  function openClassic(ci) { if (guessing()) startGuess(ci); else startClassic(ci); }
+  /**
+   * Into segment `seg` (学习 is on): where the player left it — the lesson
+   * bookmarked, the endgame last opened (or the first not done), the
+   * classic last opened.
+   */
+  function openSeg(seg) {
+    if (seg === learnSeg()) return;
+    if (seg === "course") startLesson(Math.max(0, Math.min(store.session.learnState.last || 0, LESSONS.length - 1)));
+    else if (seg === "endgame") {
+      Endgames.whenReady(() => {
+        if (store.session.mode !== "learn" || learnSeg() === "endgame") return;
+        const id = Endgames.resumeId();
+        if (id) startEndgame(id);
+        sync();
+      });
+      return;
+    } else if (seg === "classic") openClassic(Math.max(0, Math.min(store.session.learnState.cl || 0, CLASSICS.length - 1)));
+    sync();
   }
 
   function curLesson() { const l = store.session.learn; return (l.gs && Gs.m.lesson()) || (l.eg && Endgames.lesson(l.eg)) || LESSONS[l.li]; }
@@ -184,6 +221,9 @@ export function createLessonsUI(d) {
   /** v8-1-plan T2: open endgame `id` of the camp (learn mode must be on) */
   function startEndgame(id) {
     if (!Endgames.lesson(id)) return;
+    // 9.0 S3: 残局 picks up at the one last opened
+    Endgames.state().last = id;
+    saveLearnState();
     const li = store.session.learn ? store.session.learn.li : store.session.learnState.last || 0;
     store.session.study = null;
     // the token carries on from the run being left: an engine reply still in
@@ -772,40 +812,78 @@ export function createLessonsUI(d) {
       next.disabled = false;
       next.classList.toggle("primary", store.session.learn.done || (isLast && everDone));
     }
+    renderCatalog();
+  }
+
+  /**
+   * 9.0 S3: the catalog is the segment's — 120 lessons by unit, the 40
+   * classics once (read or guess is a switch, not a second list), or the
+   * camp's 90 endgames by group. From the lesson's sync and the classic's.
+   */
+  function renderCatalog() {
+    const l = store.session.learn;
+    const eg = l ? l.eg : null, gs = l ? l.gs : null;
+    const li = l ? l.li : -1;
+    const seg = learnSeg() || "course";
     const list = document.getElementById("lesson-list");
+    const mode = document.getElementById("classic-mode");
+    if (mode) {
+      mode.hidden = seg !== "classic";
+      mode.querySelectorAll("button[data-cmode]").forEach((b) => {
+        const on = b.dataset.cmode === (guessing() ? "guess" : "read");
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+    }
+    const head = document.getElementById("lesson-list-h");
+    const headText = seg === "classic" ? tf("train.allClassics", [CLASSICS.length])
+      : seg === "endgame" ? tf("train.allEndgames", [Endgames.total() || 90])
+      : tf("train.allLessons", [LESSONS.filter((x) => x.tasks.length).length]);
+    if (head && head.textContent !== headText) head.textContent = headText;
     if (list) {
       list.replaceChildren();
-      let lastPart = null;
-      LESSONS.forEach((x, i) => {
-        if (!x.tasks.length) return; // T1: an advanced lesson, its chunk still on the way
-        const xl = lessonText(x);
-        if (xl.part !== lastPart) {
-          lastPart = xl.part;
-          const h = document.createElement("div");
-          h.className = "lesson-part";
-          h.textContent = xl.part;
-          list.appendChild(h);
+      if (seg === "course") {
+        // a unit's head carries its progress, so the list reads as fourteen units
+        const units = new Map();
+        for (const x of LESSONS) {
+          if (!x.tasks.length) continue;
+          const part = lessonText(x).part;
+          const u = units.get(part) || { n: 0, done: 0 };
+          u.n++;
+          if (store.session.learnState.done[x.id]) u.done++;
+          units.set(part, u);
         }
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "lesson-item" + (!eg && !gs && i === store.session.learn.li ? " current" : "");
-        b.dataset.i = String(i);
-        const mark = store.session.learnState.done[x.id] ? "✓ " : "";
-        b.textContent = mark + (i + 1) + ". " + xl.title;
-        list.appendChild(b);
-      });
-      // 6.0: the annotated classics, after the course (v6-plan Q3.5); and
-      // v8-2-plan T3: the same games again, to guess (✓ once guessed through)
-      // v8-4-plan T2: the thirty more follow each ten, headed by their eras
-      const gsDone = store.session.learnState.gs || {};
-      More.ensure();
-      for (const k of CLASSICS.length ? ["c", "gs"] : []) {
-        const part = t(k === "c" ? "study.part" : "gs.part");
-        let head = null;
+        let lastPart = null;
+        LESSONS.forEach((x, i) => {
+          if (!x.tasks.length) return; // T1: an advanced lesson, its chunk still on the way
+          const xl = lessonText(x);
+          if (xl.part !== lastPart) {
+            lastPart = xl.part;
+            const h = document.createElement("div");
+            h.className = "lesson-part";
+            const u = units.get(xl.part);
+            h.textContent = tf("ui.pair", [xl.part, u.done + "/" + u.n]);
+            list.appendChild(h);
+          }
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "lesson-item" + (!eg && !gs && i === li ? " current" : "");
+          b.dataset.i = String(i);
+          const mark = store.session.learnState.done[x.id] ? "✓ " : "";
+          b.textContent = mark + (i + 1) + ". " + xl.title;
+          list.appendChild(b);
+        });
+      } else if (seg === "classic") {
+        // v8-4-plan T2: the thirty more follow each ten, headed by their eras
+        const gsDone = store.session.learnState.gs || {};
+        const key = guessing() ? "gs" : "c";
+        const cur = gs ? gs.ci : store.session.study ? store.session.study.ci : -1;
+        More.ensure();
+        let head2 = null;
         CLASSICS.forEach((c, i) => {
-          const want = c.g ? tdot(part, More.groupName(c.g)) : part;
-          if (want !== head) {
-            head = want;
+          const want = c.g ? More.groupName(c.g) : t("study.part");
+          if (want !== head2) {
+            head2 = want;
             const h = document.createElement("div");
             h.className = "lesson-part";
             h.textContent = want;
@@ -814,14 +892,12 @@ export function createLessonsUI(d) {
           const tx = classicText(c);
           const b = document.createElement("button");
           b.type = "button";
-          b.className = "lesson-item" + (k === "gs" && gs && gs.ci === i ? " current" : "");
-          b.dataset[k] = String(i);
-          b.textContent = (k === "gs" && gsDone[c.id] ? "✓ " : "") + tx.white + " – " + tx.black + " · " + c.year;
+          b.className = "lesson-item" + (i === cur ? " current" : "");
+          b.dataset[key] = String(i);
+          b.textContent = (gsDone[c.id] ? "✓ " : "") + tx.white + " – " + tx.black + " · " + c.year;
           list.appendChild(b);
         });
-      }
-      // v8-1-plan T2: the endgame camp, after the classics
-      Endgames.renderList(list, eg);
+      } else Endgames.renderList(list, eg);
     }
   }
 
@@ -865,13 +941,6 @@ export function createLessonsUI(d) {
       const rest = practiceLeft(L);
       if (!rest.total) return;
       const want = rest.all.find((p) => !store.session.puzzleState.solved[p.id]) || rest.all[0];
-      // The tier row is a filter over the whole category, so a "hard" filter can
-      // hide the very puzzle this button promised. Arriving somewhere other than
-      // where the button said is worse than losing a filter setting.
-      if (store.session.puzzleTierFilter !== "all") {
-        store.session.puzzleTierFilter = "all";
-        toast(t("pz.tierCleared"), "fix");
-      }
       invalidateEngine();
       stopLearn();
       store.session.mode = "puzzle";
@@ -883,6 +952,16 @@ export function createLessonsUI(d) {
       syncAutoFlip();
       sync();
       toast(tf("pz.fromLesson", [puzzleMotif(want)]));
+    };
+    // 9.0 S3: 名局's switch — the same game, read or guessed
+    const cmode = document.getElementById("classic-mode");
+    if (cmode) cmode.onclick = (ev) => {
+      const b = ev.target.closest("button[data-cmode]");
+      if (!b || b.dataset.cmode === (guessing() ? "guess" : "read")) return;
+      store.ui.classicMode = b.dataset.cmode;
+      saveSettings();
+      if (learnSeg() === "classic") openClassic(store.session.learnState.cl || 0);
+      sync();
     };
     document.getElementById("lesson-list").onclick = (ev) => {
       const b = ev.target.closest("button[data-i]");
@@ -899,6 +978,6 @@ export function createLessonsUI(d) {
     wireLessonPanel,
     LESSONS, loadLearnState, saveLearnState, startLearn, stopLearn, syncStudyUI,
     curTask, startLesson, startLearnTask, learnModel, learnClick, learnEngineReply, learnUndo,
-    learnHint, syncLearnUI, Endgames, startEndgame,
+    learnHint, syncLearnUI, Endgames, startEndgame, learnSeg, openSeg,
   };
 }

@@ -13,7 +13,8 @@
  * changed since; test-chess.mjs's T4 block checks the plural keys themselves.
  * v9-0-plan S6 changed two more on purpose: the puzzle rating's name
  * (谜题等级分 / パズルレーティング) and its provisional mark (「1500?」 →
- * 「1500（定级中）」), and 「部分着法按快速扫描评级」's last word.
+ * 「1500（定级中）」), and 「部分着法按快速扫描评级」's last word. S3 deleted the
+ * 复习·N tab label with the category row it sat in.
  *
  * Row: [id, (t, tf, tdot, diff) => text, zh-CN, en, ja]
  */
@@ -104,8 +105,6 @@ export const F4_RENDERS = [
     "第 5 手 · e4 （这一手没有注释）", "Move 5 · e4 (no note on this move)", "5 手目 · e4 （この手に注釈はありません）"],
   ["pz.moveN", (t, tf, tdot, diff) => "  " + tf("pz.moveN", [6]),
     "  6回合", "  6 moves", "  6手"],
-  ["pz.reviewN", (t, tf, tdot, diff) => tf("pz.reviewN", [4]),
-    "复习·4", "Review·4", "復習·4"],
   ["pz.mine.repeatWhy", (t, tf, tdot, diff) => tf("pz.mine.repeatWhy", ["WHY"]),
     "这正是实战里丢分的那一手 —— WHY", "That is exactly the move that lost the game its edge —— WHY", "それこそ実戦で形勢を失った一手です —— WHY"],
   ["pz.mine.strongerCost", (t, tf, tdot, diff) => tf("pz.mine.strongerCost", ["1.5"]),

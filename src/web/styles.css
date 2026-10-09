@@ -3955,9 +3955,54 @@ span[data-icon] { display: inline-grid; place-items: center; }
 #sec-puzzle { display: flex; flex-direction: column; gap: 8px; }
 #sec-puzzle > * { margin-top: 0; margin-bottom: 0; }
 #sec-puzzle > .pz-group { margin-top: 12px; }
-/* v8-0-plan B1: the rating curve on the puzzle view is a strip, not a card
-   of its own; and a run's numbers sit in one row */
-#sec-puzzle > #pz-rating-curve { height: 40px; }
+/* 9.0 S3 — 训练's switch over the panel, and 名局's read / guess */
+.train-seg { margin: 12px 0 4px; }
+.classic-mode { margin-top: 12px; }
+/* 9.0 S3 — the picker under the puzzle (v9.css .train__hero / .tiles /
+   .modes): the rating with its curve and 为你出一题 in one card, the review
+   queue as a row, the six kinds as tiles, the runs as two labelled rows.
+   The first block of the picker starts a group. */
+#sec-puzzle > .pz-hero { margin-top: 12px; }
+.pz-hero {
+  display: grid; gap: 12px; padding: 16px;
+  border: 1px solid var(--card-border); border-radius: var(--radius-md);
+  background: var(--card);
+}
+.pz-hero-top { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: 16px; }
+.pz-hero-r { display: grid; gap: 4px; }
+.pz-hero-v { font-size: 1.875rem; font-weight: 600; line-height: var(--lh-tight); }
+#pz-hero #pz-rating-curve { height: 40px; border-bottom: 0; }
+#puzzle-smart { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; }
+.pz-review {
+  appearance: none; cursor: pointer; font: inherit; color: var(--text); text-align: left;
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  min-height: var(--row-h); padding: 8px 12px;
+  border: 1px solid var(--card-border); border-radius: var(--radius-md);
+  background: var(--card);
+}
+.pz-review:hover, .pz-tile:hover { background: color-mix(in srgb, var(--card) 88%, var(--text)); }
+.pz-review.active, .pz-tile.active { background: var(--accent-soft); }
+.pz-review-ic, .pz-tile-ic { display: inline-flex; width: 20px; height: 20px; color: var(--muted); }
+.pz-review-txt b { display: block; font-size: 0.875rem; font-weight: 600; }
+.pz-review-txt small { display: block; font-size: 0.75rem; color: var(--muted); }
+.pz-review-n { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+.pz-groups-sec, .pz-modes { display: grid; gap: 8px; margin-top: 12px; }
+.pz-groups-sec > .side-h, .pz-modes > .side-h { margin: 0; }
+.pz-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.pz-tile {
+  appearance: none; cursor: pointer; font: inherit; color: var(--text); text-align: left;
+  display: grid; gap: 4px; align-content: start; min-width: 0;
+  padding: 12px; border: 1px solid var(--card-border); border-radius: var(--radius-md);
+  background: var(--card);
+}
+.pz-tile[hidden] { display: none; }
+.pz-tile-name { font-size: 0.875rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pz-tile-n { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+.pz-tile:focus-visible, .pz-review:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pz-modes-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 8px; }
+.pz-modes-row .act-btn.active { background: var(--accent-soft); }
+.pz-modes-row .act-btn[aria-busy="true"] { opacity: 0.6; }
+#pz-themes-row .tool-txt { margin-left: 0; }
 .pz-run-stats { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 /* v8-2-plan T2: the answer field and its button, one row */
 .pz-vis-row { display: flex; gap: 8px; margin-top: 8px; }
