@@ -698,6 +698,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "act.openBoard": "打开到棋盘",
       "act.editorLong": "编辑局面",
       "lib.filters": "筛选",
+      "keys.go": "前往：今天、下棋、训练、棋谱、我的",
       "nav.me": "我的", "tip.prefs": "设置（Ctrl 或 ⌘ 加逗号）",
       "prefs.look": "外观", "side.display": "显示",
       "ng.mode": "对手", 

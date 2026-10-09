@@ -155,7 +155,13 @@ async function toTrain(pg, seg) {
   });
   if (!(await lit())) { await pg.click('#rail button[data-view="train"]'); await pg.waitForTimeout(300); }
   if ((await lit()) !== seg) { await pg.click('#train-seg button[data-seg="' + seg + '"]'); await pg.waitForTimeout(300); }
+  // the list is drawn only while its fold is open (9.0 S3: a kind is thousands)
+  if (seg === "puzzle") await openPuzzleList(pg);
   return lit();
+}
+async function openPuzzleList(pg) {
+  const shut = await pg.evaluate(() => { const f = document.getElementById("pz-list-fold"); return !!f && !f.open; });
+  if (shut) { await pg.click("#pz-list-fold > summary"); await pg.waitForTimeout(200); }
 }
 
 /**
@@ -804,8 +810,8 @@ if (hasTab && REAL.length) {
   const goal = await pg.evaluate(() => document.getElementById("puzzle-task").textContent || "");
   assert(/e4/.test(goal) && /更强/.test(goal) && /3\.5/.test(goal),
     "题面写明实战走了 e4、当时亏 3.5 分", goal.trim());
+  await openPuzzleList(pg);
   const listNames = await pg.evaluate(() => {
-    document.getElementById("pz-list-fold").open = true;
     return document.getElementById("puzzle-list").textContent;
   });
   assert(/错题 11-1[45] · 第 3 手/.test(listNames), "题名是日期加手数,不是编造的棋名", listNames.slice(0, 60));
@@ -1380,7 +1386,7 @@ if (hasTab && REAL.length) {
   // the opening list opens on the Italian Game, not on 1.b3
   const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
   await c.addInitScript(() => {
-    localStorage.setItem("chess.settings", JSON.stringify({ mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false }));
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "puzzle", langId: "zh-CN", soundOn: false }));
     localStorage.setItem("chess.panelOpen", "1");
     localStorage.setItem("chess.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "op" }));
   });
@@ -1388,6 +1394,7 @@ if (hasTab && REAL.length) {
   pg.on("pageerror", (e) => errs.push(e.message));
   await pg.goto(`http://127.0.0.1:${PORT}/`);
   await pg.waitForTimeout(1000);
+  await openPuzzleList(pg);
   const first = await pg.evaluate(() => {
     const cur = document.querySelector("#puzzle-list .lesson-item.current");
     return cur ? cur.textContent.trim() : "";
@@ -1430,6 +1437,7 @@ if (hasTab && REAL.length) {
   assert(/^先清复习 1 题$/.test(h1.title), "#88: 今天的主卡片只欠还在书里的那 1 题", JSON.stringify(h1));
   await pg.click("#today-go");
   await pg.waitForTimeout(700);
+  await openPuzzleList(pg);
   const task = await pg.evaluate(() => ({
     cat: JSON.parse(localStorage.getItem("chess.puzzles")).cat,
     list: [...document.querySelectorAll("#puzzle-list .lesson-item")].length,
@@ -1508,7 +1516,8 @@ if (hasTab && REAL.length) {
 
   // the switch: the same game, guessed — then read again
   await pg.click('#classic-mode button[data-cmode="guess"]');
-  v = await until((x) => x.sw === "guess" && x.cur && x.cur.gs === "2");
+  // the guess runner is a chunk: its title is written once it is here
+  v = await until((x) => x.sw === "guess" && x.cur && x.cur.gs === "2" && /猜/.test(x.title));
   assert(v.sw === "guess" && v.n.gs === 40 && !v.n.c && v.cur.gs === "2" && v.cur.text === game2 && v.title.includes(game2.split(" · ")[0]) && /猜/.test(v.title),
     "S3 名局:开关拨到猜着,还是这一局,改成猜着", JSON.stringify(v));
   assert((await settings()).classicMode === "guess", "S3 名局:猜着存进设置", JSON.stringify(await settings()));
@@ -1545,7 +1554,8 @@ if (hasTab && REAL.length) {
   v = await until((x) => x.seg === "course" && /^第 9 课/.test(x.title));
   assert(v.seg === "course" && /^第 9 课/.test(v.title), "S3:重开以后从导航进训练,回到离开时的课程第 9 课", JSON.stringify(v));
   await pg.click('#train-seg button[data-seg="classic"]');
-  v = await until((x) => x.sw === "guess" && x.cur && x.cur.gs === "2");
+  // the guess runner is a chunk: its title is written once it is here
+  v = await until((x) => x.sw === "guess" && x.cur && x.cur.gs === "2" && /猜/.test(x.title));
   assert(v.sw === "guess" && v.cur && v.cur.gs === "2" && /猜/.test(v.title), "S3:重开以后名局还是猜着、还是第三局", JSON.stringify(v));
   await c.close();
 }

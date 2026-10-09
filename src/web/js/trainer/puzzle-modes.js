@@ -306,6 +306,8 @@ export function createPuzzleModes(d) {
     // far easier puzzle served first (the board says 正在载入 meanwhile)
     const r = seenRating().r;
     const nearHere = localInGroup(g).some((p) => !store.session.puzzleState.solved[p.id] && Math.abs(puzzleRating(p).r - r) <= 200);
+    // cleared first: a band already here seats the puzzle synchronously below
+    store.session.puzzle = null;
     withIndex(() => {
       const bands = groupBands(g).sort((a, b) => Math.abs(a + 100 - r) - Math.abs(b + 100 - r));
       // past the last band (none, or none would load): the book after all
@@ -313,9 +315,8 @@ export function createPuzzleModes(d) {
         : wantBand(bands[k], () => { serve(); for (const b of bands.slice(k + 1, k + 3)) wantBand(b, serve); }, () => from(k + 1)));
       from(0);
     });
-    store.session.puzzle = null;
     if (nearHere) serve();
-    else sync();
+    else if (!store.session.puzzle) sync();
   }
   /** A tile: into its group, on the board (开局 and 我的错题 are categories). */
   function goGroup(g) {

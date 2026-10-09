@@ -666,6 +666,7 @@
       "act.openBoard": "Open on the board",
       "act.editorLong": "Set up position",
       "lib.filters": "Filters",
+      "keys.go": "Go to: Today, Play, Train, Games, Me",
       "nav.me": "Me", "tip.prefs": "Settings (⌘, / Ctrl+,)",
       "prefs.look": "Appearance", "side.display": "Display",
       "ng.mode": "Opponent", 

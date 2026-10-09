@@ -52,11 +52,8 @@ export const KEY_HELP = [
   { keys: ["P"], k: "keys.panel", in: ANY, cmd: ["view.panel"] },
   // 9.0 S5: the settings page, every desktop app's key — and the five places
   { keys: [], k: "keys.prefs", in: ANY, cmd: ["go.settings"] },
-  { keys: [], k: "nav.home", in: ANY, cmd: ["go.home"] },
-  { keys: [], k: "nav.play", in: ANY, cmd: ["go.play"] },
-  { keys: [], k: "nav.train", in: ANY, cmd: ["go.train"] },
-  { keys: [], k: "nav.library", in: ANY, cmd: ["go.library"] },
-  { keys: [], k: "nav.me", in: ANY, cmd: ["go.me"] },
+  // one row for the five, in the rail's order: the sheet is one screen
+  { keys: [], k: "keys.go", in: ANY, cmd: ["go.home", "go.play", "go.train", "go.library", "go.me"] },
   { keys: ["N"], k: "keys.new", in: PLAY, cmd: ["game.new"] },
   { keys: ["N"], k: "keys.next", in: ["puzzle"] },
   { keys: ["R"], k: "keys.retry", in: ["learn", "puzzle"] },

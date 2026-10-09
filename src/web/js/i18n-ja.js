@@ -666,6 +666,7 @@
       "act.openBoard": "盤に開く",
       "act.editorLong": "局面を編集",
       "lib.filters": "絞り込み",
+      "keys.go": "移動：今日・対局・特訓・棋譜・マイ",
       "nav.me": "マイ", "tip.prefs": "設定（Ctrl または ⌘ とカンマ）",
       "prefs.look": "外観", "side.display": "表示",
       "ng.mode": "相手", 
