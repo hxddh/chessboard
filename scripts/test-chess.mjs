@@ -1741,7 +1741,11 @@ for (const lang of CONTENT_LANGS) {
   const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
 
   // spacing: an 8-step scale, and nothing between the steps
-  const SPACE = new Set(["0px", "2px", "4px", "6px", "8px", "12px", "16px", "20px", "24px"]);
+  // 9.0 V1 (设计语言 v2): the 8pt rhythm — 4 · 8 · 12 in a group · 16 in a
+  // card · 24 between blocks · 32 · 40 · 48, and 2 for a hairline's
+  // neighbour. 6 and 20 left the scale (they were 8.x's in-betweens); the
+  // page margins (32 / 40) joined it.
+  const SPACE = new Set(["0px", "2px", "4px", "8px", "12px", "16px", "24px", "32px", "40px", "48px"]);
   const strays = [];
   for (const m of stripped.matchAll(/\b(padding|margin|gap|row-gap|column-gap)(?:-\w+)?\s*:\s*([^;{}]+);/g)) {
     if (/var\(|calc/.test(m[2])) continue;
@@ -1905,7 +1909,12 @@ for (const lang of CONTENT_LANGS) {
   // scales the whole sheet together (v6-plan Q3.6)
   // 7.9 §2a: the panel moved up a step — 12px (0.75rem) left the scale and
   // 14px (0.875rem) took its place. Still seven.
-  const TYPE = new Set(["0.6875rem", "0.8125rem", "0.875rem", "0.9375rem", "1rem", "1.1875rem", "1.875rem"]);
+  // 9.0 V1 (设计语言 v2): four roles, not seven sizes — 30 a result figure
+  // (and a page's title) · 16 a card's or a block's title · 14 the body and
+  // every button · 12 what is said beside it — plus 13 for the two heading
+  // levels (section 600, field label 400) and 11 for coordinates and badges
+  // only. 15 and 19 had no role and left; 12 came back as the aside.
+  const TYPE = new Set(["0.6875rem", "0.75rem", "0.8125rem", "0.875rem", "1rem", "1.875rem"]);
   const badType = [...stripped.matchAll(/font-size:\s*([^;{}]+);/g)]
     .map((m) => m[1].trim())
     .filter((v) => /^\d/.test(v) && !TYPE.has(v));
@@ -1914,7 +1923,7 @@ for (const lang of CONTENT_LANGS) {
   // design-constraints.md: 字号 7 档、行高 3 档、时长 3 档 —— 不要新增档位.
   // The membership sets above are the scale, so widening one is how a step
   // gets added: this makes that edit fail here rather than pass quietly.
-  assert(TYPE.size === 7, "the type scale still has seven steps (" + TYPE.size + ")");
+  assert(TYPE.size === 6, "the type scale still has six steps (" + TYPE.size + ")");
 
   // The bundle targets Safari 15 (scripts/bundle.mjs), and container queries
   // arrived in Safari 16: a rule inside @container is simply not there on
@@ -1922,6 +1931,84 @@ for (const lang of CONTENT_LANGS) {
   // rules key on a class the page sets instead.
   assert(!/@container\b|\bcontainer(?:-type|-name)?\s*:/.test(stripped),
     "styles.css uses no container queries — the bundle targets Safari 15");
+
+  // 9.0 V1 — 设计语言 v2 (docs/design-constraints.md §0, design/v9-m0/v9.css).
+  // Measured on 8.4.0: nine button looks, six card looks, five heading
+  // styles, four segment implementations, dashed boxes inside solid cards.
+  {
+    // no dashed frame: a dashed box reads as a placeholder waiting for
+    // content, and every one of them was an empty state or a box in a box
+    assert(!/\bdashed\b/.test(stripped), "no dashed border or rule anywhere (9.0 V1)");
+    // one heading voice in every language: 13/600 muted, never in capitals
+    // with tracking — 「STATS」 beside 「统计」 was two systems for one level
+    assert(!/text-transform:\s*uppercase/.test(stripped), "no heading is set in capitals (9.0 V1)");
+    const tracked = [...stripped.matchAll(/letter-spacing:\s*([^;]+);/g)].map((m) => m[1].trim()).filter((v) => !/^0(px)?$/.test(v));
+    assert(tracked.length <= 1,
+      "no tracking but the frame's coordinates (" + tracked.join(", ") + ")");
+    for (const sel of [".side-h", ".act-k, .review-h"]) {
+      const r = new RegExp("\\n\\s*" + sel.replace(/[.]/g, "\\.") + " \\{([\\s\\S]*?)\\}").exec(stripped);
+      assert(r && /font-size:\s*0\.8125rem/.test(r[1]) && /font-weight:\s*600/.test(r[1]) && /color:\s*var\(--muted\)/.test(r[1]),
+        sel + " is the section heading: 13/600 in the muted ink");
+    }
+    // one accent, three uses: the primary button, the current move, the
+    // selected state (and the focus ring, which is the selected state of the
+    // keyboard). Every rule that paints with it says which in its selector;
+    // the register is the four that do not, and it only shrinks.
+    const ACCENT_OK = /primary|current|\.active|selected|pressed|expanded|focus|is-active|:hover|aria-current/;
+    const ACCENT_KNOWN = new Map([
+      [":root", "declares --accent-soft and --accent-line"],
+      [".think-dot", "the engine is thinking: the board's one live dot"],
+      [".range", "the volume slider's thumb (accent-color)"],
+      [".xp-mine", "「我的」 — your own book's move, the selected tint"],
+    ]);
+    const stray = [];
+    for (const m of stripped.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      if (!/var\(--accent(-soft|-line)?\)/.test(m[2])) continue;
+      const sel = m[1].trim().replace(/\s+/g, " ");
+      if (sel.startsWith("@") || ACCENT_OK.test(sel) || ACCENT_KNOWN.has(sel)) continue;
+      stray.push(sel);
+    }
+    assert(stray.length === 0,
+      "the accent paints only a primary button, the current move or a selected state" + (stray.length ? " — also: " + stray.join(" ;; ") : ""));
+    // four button kinds, each spelt once per family
+    for (const k of [".act-btn.primary {", ".tool-btn.primary {", ".act-btn.danger {", ".tool-btn.danger {"])
+      assert(stripped.split(k).length === 2, "one declaration of " + k.slice(0, -2));
+    // two surfaces: a card is opaque — no film of white over another card
+    for (const theme of ["wood", "night", "day", "notebook"]) {
+      const v = new RegExp("--" + theme + "-card:\\s*([^;]+);").exec(stripped);
+      assert(v && /^#[0-9a-f]{6}$/i.test(v[1].trim()), theme + ": a card is the raised surface, opaque (" + (v && v[1]) + ")");
+      const p = new RegExp("--" + theme + "-panel:\\s*([^;]+);").exec(stripped);
+      assert(p && p[1].trim() === v[1].trim(), theme + ": …the same raised surface a dialog is");
+      const a = new RegExp("--" + theme + "-accent:\\s*([^;]+);").exec(stripped);
+      const pf = new RegExp("--" + theme + "-primary-from:\\s*([^;]+);").exec(stripped);
+      const pt = new RegExp("--" + theme + "-primary-to:\\s*([^;]+);").exec(stripped);
+      assert(a && pf && pt && pf[1] === a[1] && pt[1] === a[1], theme + ": one accent — the primary is the accent (" + (a && a[1]) + ")");
+    }
+  }
+
+  // 9.0 V2: the bundled face — Inter (OFL), the Latin variable subset, first
+  // in the stack and ahead of the CJK faces, and shipped with its licence.
+  {
+    const face = /@font-face\s*\{([^}]*)\}/.exec(stripped);
+    assert(face && /font-family:\s*"Inter Var"/.test(face[1]) && /url\("fonts\/inter-latin-wght-normal\.woff2"\)/.test(face[1]) &&
+      /font-display:\s*swap/.test(face[1]) && /unicode-range:/.test(face[1]),
+      "Inter is declared once, from fonts/, swap, Latin only");
+    const woff = path.join(root, "src/web/fonts/inter-latin-wght-normal.woff2");
+    assert(fs.existsSync(woff) && fs.statSync(woff).size <= 60 * 1024,
+      "…the file is there and small (" + (fs.existsSync(woff) ? fs.statSync(woff).size : 0) + " bytes ≤ 60 KB)");
+    assert(fs.existsSync(path.join(root, "src/web/fonts/Inter-OFL.txt")) &&
+      /SIL Open Font License/.test(fs.readFileSync(path.join(root, "src/web/fonts/Inter-OFL.txt"), "utf8")),
+      "…with its SIL OFL beside it");
+    const ui = /--font-ui:\s*([^;]+);/.exec(stripped);
+    assert(ui && /^"Inter Var",\s*"PingFang SC"/.test(ui[1].trim()), "the interface stack opens Inter → PingFang SC (" + (ui && ui[1].slice(0, 40)) + ")");
+    const ja = /html:lang\(ja\)\s*\{\s*--font-ui:\s*([^;]+);/.exec(stripped);
+    assert(ja && /^"Inter Var",\s*"Hiragino Kaku Gothic ProN"/.test(ja[1].trim()), "…and the Japanese one Inter → the Japanese faces");
+    assert(/text-autospace:\s*ideograph-alpha/.test(stripped), "text-autospace is on where it is supported");
+    const sync = fs.readFileSync(path.join(root, "scripts/sync-dist.mjs"), "utf8");
+    assert(/"src\/web\/fonts\/inter-latin-wght-normal\.woff2", "fonts\/inter-latin-wght-normal\.woff2"/.test(sync) &&
+      /"src\/web\/fonts\/Inter-OFL\.txt", "licenses\/Inter-OFL\.txt"/.test(sync),
+      "sync-dist.mjs packages the font and its licence (macOS and Windows both build frontend/dist with it)");
+  }
 
   // 7.9 §2b: numbers are the interface face with tabular figures. The mono
   // stack made every counter, the accuracy figure and the clock look like
@@ -1938,7 +2025,7 @@ for (const lang of CONTENT_LANGS) {
     assert(users.length > 0 && users.every((b) => /font-variant-numeric: tabular-nums/.test(b)),
       "…and every rule that sets it asks for tabular figures (" + users.length + " rules)");
   }
-  assert(SPACE.size === 9, "the spacing scale still has nine steps (" + SPACE.size + ")");
+  assert(SPACE.size === 10, "the spacing scale still has ten steps (" + SPACE.size + ")");
 
   // leading: three steps, declared as tokens. 1.12 collapsed font-size and
   // left line-height running seven values including the UA's `normal`, which
@@ -1957,11 +2044,15 @@ for (const lang of CONTENT_LANGS) {
   }
 
   // weight: three, not five. 650 and 700 were doing 600's job under other names.
+  // 9.0 V1: two — 400 and 600. 500 was a third emphasis between them (a
+  // button's label, a setting's name, a toast) and the CJK faces have no
+  // honest 500 on Windows. The bundled face's @font-face declares the
+  // range it carries (100 900), which is not a weight anything is set in.
   {
-    const ws = [...stripped.matchAll(/font-weight:\s*(\d+)/g)].map((m) => m[1]);
-    const bad = ws.filter((w) => !["400", "500", "600"].includes(w));
+    const ws = [...stripped.replace(/@font-face\s*\{[^}]*\}/g, "").matchAll(/font-weight:\s*(\d+)/g)].map((m) => m[1]);
+    const bad = ws.filter((w) => !["400", "600"].includes(w));
     assert(bad.length === 0,
-      "three weights only" + (bad.length ? " — also found: " + [...new Set(bad)].join(", ") : ""));
+      "two weights only" + (bad.length ? " — also found: " + [...new Set(bad)].join(", ") : ""));
   }
 
   // The action rows, and the two ways this has been got wrong. As
@@ -1995,12 +2086,22 @@ for (const lang of CONTENT_LANGS) {
 
     // ONE control family. The segment buttons and the action buttons share a
     // single declaration block; if someone splits them again, this fails.
+    // 9.0 V1: what they share — type, one line, the press — is still that
+    // one block; the box is no longer shared: a segment is a place in a
+    // tray (.theme-row is the box), an action is a secondary button.
     assert(/\.theme-row button,\s*\.act-btn \{/.test(stripped),
       "the segment control and the action button are declared together, not twice");
     const box = /\.theme-row button,\s*\.act-btn \{([\s\S]*?)\}/.exec(stripped);
-    assert(box && /border:\s*1px solid/.test(box[1]), "…and that family has a box");
-    assert(box && !/white-space:\s*nowrap/.test(box[1]),
-      "a label too long for its cell wraps rather than being cut");
+    assert(box && /white-space:\s*nowrap/.test(box[1]) && /font-size:\s*0\.875rem/.test(box[1]) && /font-weight:\s*600/.test(box[1]),
+      "…one line, 14/600, for both (9.0 V1: a label never wraps — a row that cannot hold it steps its columns down)");
+    assert(!/overflow-wrap:\s*break-word|hyphens:\s*auto/.test((/\.theme-row button,\s*\.act-btn \{[^}]*\}\s*(\.theme-row button,\s*\.act-btn \{[^}]*\})?/.exec(stripped) || [""])[0]),
+      "…and no rule left that breaks a label over two lines");
+    const tray = /\n    \.theme-row \{([^}]*)\}/.exec(stripped);
+    assert(tray && /box-shadow:\s*inset 0 0 0 1px/.test(tray[1]) && /background:\s*var\(--card\)/.test(tray[1]),
+      "the segment's tray is the box: the raised surface and one hairline (9.0 V1)");
+    const act = /\n    \.act-btn \{([^}]*)\}/.exec(stripped);
+    assert(act && /border:\s*1px solid var\(--line-strong\)/.test(act[1]),
+      "…and an action is the secondary button — the strong hairline on the raised surface");
 
     // P3's acceptance criterion, at the level of the rule rather than the
     // screen: dimming a control that cannot be used is not a milder way of
@@ -2236,14 +2337,13 @@ for (const lang of CONTENT_LANGS) {
   // empties. Defect 8 — the eval bar's two hard-coded sides and the two
   // hard-coded blunder golds — was the last four, and left in P2.3. Anything not on this list fails, so the count only goes down.
   {
-    const KNOWN = new Map([
-      ["#fff", "two white paper fills (notebook theme's own surface)"],
-      ["#000", "two color-mix() darkening steps, not a paint colour"],
-      // (#9a3412 / #1e3a5f, the notebook theme's ♔ ♚ side marks, left with
-      // the match bar (7.7) — the strips draw each side as a disc in
-      // --side-white / --side-black)
-      ["#4a90d9", "var(--accent) fallback, never reached"],
-    ]);
+    // 9.0 V1 emptied it: #fff (the switch's knob, a hover mix) and #000 (a
+    // toast's darkening mix, a mask's opaque stop) became tokens, and
+    // #4a90d9 was a var(--accent) fallback that was never reached.
+    // (#9a3412 / #1e3a5f, the notebook theme's ♔ ♚ side marks, left with
+    // the match bar (7.7) — the strips draw each side as a disc in
+    // --side-white / --side-black)
+    const KNOWN = new Map([]);
     const found = new Set((body.match(/#[0-9a-fA-F]{3,8}\b/g) || []).map((c) => c.toLowerCase()));
     const fresh = [...found].filter((c) => !KNOWN.has(c));
     for (const c of fresh) console.error("  new bare colour outside the themes: " + c);
@@ -5534,8 +5634,9 @@ for (const lang of CONTENT_LANGS) {
     const num = /\.mlnum \{([^}]*)\}/.exec(cssM2);
     const mvRule = /\n\s*\.mlmove \{([^}]*)\}/.exec(cssM2);
     const sizeOf = (r) => ((r && /font-size: ([\d.]+rem)/.exec(r[1])) || [])[1];
-    // 7.9 §2a: 15px now, both of them
-    assert(num && sizeOf(num) === "0.9375rem" && sizeOf(num) === sizeOf(mvRule),
+    // 7.9 §2a: 15px now, both of them. 9.0 V1: 14px, the body step — the
+    // type scale lost its 15 (four roles: 30 / 16 / 14 / 12)
+    assert(num && sizeOf(num) === "0.875rem" && sizeOf(num) === sizeOf(mvRule),
       "the move number is the same size as the move beside it (" + sizeOf(num) + " / " + sizeOf(mvRule) + ")");
     // 7.9 §2c: no chip behind the number, and set like the move so the
     // baselines agree (the measurement is in test-layout-e2e)

@@ -2115,7 +2115,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
         let worst = 0;
         for (const [fx, fy] of [[0.1, 0.5], [0.9, 0.5], [0.5, 0.92]]) {
           const d = ctx2.getImageData(Math.round(c * step + step * fx), Math.round(r * step + step * fy), 1, 1).data;
-          worst = Math.max(worst, (d[0] - d[1]) - (base[0] - base[1]), (d[0] - d[2]) - (base[0] - base[2]) - 20);
+          // red pulls red away from green AND from blue; 9.0 V1's brass last
+          // move pulls it from blue alone (it is yellow), and is not red
+          worst = Math.max(worst, Math.min((d[0] - d[1]) - (base[0] - base[1]), (d[0] - d[2]) - (base[0] - base[2])));
         }
         out.push(worst);
       }

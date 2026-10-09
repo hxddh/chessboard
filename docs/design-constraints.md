@@ -18,14 +18,16 @@
 
 | 约束 | 检查 |
 |---|---|
-| 字号 7 档、行高 3 档、时长 3 档、圆角 token 化，**不要新增档位** | 值必须落在刻度上，且**刻度本身的档数**也被断言 —— 想加一档，得改测试里的那个数字，改动看得见（`the type scale still has seven steps`） |
+| 字号 6 档（9.0 V1，见 §0）、行高 3 档、时长 3 档、圆角 token 化，**不要新增档位** | 值必须落在刻度上，且**刻度本身的档数**也被断言 —— 想加一档，得改测试里的那个数字，改动看得见（`the type scale still has six steps`；间距 `ten steps`；字重 `two weights only`） |
 | 一条缓动曲线 | `one easing curve, everywhere` |
 | 格子颜色归主题 token，canvas 去读 | 四套主题各自必须定义 10 个 `--sq-*` / `--danger` / `--primary-from`；board.js 不得写死格子色 |
 | **每处格子平涂必须走 `cellRect()` 取整** | `every square fill goes through cellRect()`。目前登记着 1 处例外（缺陷 10），登记数只减不增 |
 | 棋子精灵只缓存一个尺寸 | `the sprite cache still holds one size` |
 | 动画时长统一读 `--dur-base`，canvas 也读它 | board.js 必须 `getPropertyValue("--dur-base")`，且不得留下写死的毫秒数 |
 | **每个 `var()` 都得指向真实存在的 token** | `no new var() names a missing token`。目前登记着 `--fg`（缺陷 9） |
-| **主题块以外不得新增裸色值** | `no colour is written in place that was not already there`。9 个已上线的写在册子里，其中 4 个是缺陷 8 —— 册子只减不增，P2 负责清空 |
+| **主题块以外不得新增裸色值** | `no colour is written in place that was not already there`。9 个已上线的写在册子里，其中 4 个是缺陷 8 —— 册子只减不增，P2 负责清空。9.0 V1 清空了最后 3 个（#fff / #000 / #4a90d9），册子现在是空的 |
+| **设计语言 v2**（§0） | `no dashed border or rule anywhere`、`no heading is set in capitals`、`.side-h is the section heading: 13/600 in the muted ink`、`the accent paints only a primary button, the current move or a selected state`（登记 4 条例外，只减不增）、四种按钮各声明一次、卡片是不透明的抬起面、每套主题主按钮 = 强调色 |
+| **打包字体**（§0） | `Inter is declared once, from fonts/, swap, Latin only`、文件 ≤ 60 KB 且 OFL 在旁、字体栈 Inter → CJK、`sync-dist.mjs packages the font and its licence` |
 | 内容翻译表按 id 取，不以文案为键 | `no content translation table is keyed by prose` |
 | 一个 i18n 键在一份字典里只能写一次 | `no key is defined twice in any dictionary`（缺陷 4 就是这条缺席的产物） |
 | 每个 i18n 键都得有控件在读 | `every one of the N keys is read by some control` |
@@ -35,6 +37,32 @@
 划掉，测试会提醒你划掉它。册子因此既是护栏也是待办清单。
 
 ---
+
+## 0 · 设计语言 v2（9.0 V1 / V2）
+
+9.0 M0 设计稿（`design/v9-m0/v9.css`）认可后搬进 `src/web/styles.css`。8.4.0 量到：按钮 9 种样子、卡片 6 种、区块标题 5 种（英文全大写宽字距、中文粗体灰字两套）、分段控件 4 种实现、虚线框套实线卡、7 档字号没有角色。v2 只留下面这些：
+
+| 方面 | 规则 | 理由 |
+|---|---|---|
+| 按钮 | **4 种 × 2 高 + 图标按钮**：主（强调色实底）/ 次（抬起面 + `--line-strong` 发丝线）/ 幽灵（无框，指针上来才有底）/ 危险（危险色字 + 45% 发丝线）× `--ctl-h` 36 / `--ctl-h-sm` 32；图标按钮是幽灵的正方形 | 同一件事一种样子；高度只有两档（7.9 §1e 起已守） |
+| 按钮文字 | **单行**（`white-space: nowrap`），14/600；一行放不下时由 fit-row.js 减列，**不折行、不截断**；一行只有一个按钮时按钮取自身宽度 | 「开局浏览器」「New opponent」折成两行是 8.x 的毛病 |
+| 分段控件 | **一种**：一条托盘（抬起面 + 1px 内描边，2px 内边距），段是托盘里的位置，选中 = `--accent-soft` + `--accent-line` 内描边；段高 32，托盘 36；列数仍由个数决定（等宽网格，§4） | 四种实现 → 一种 |
+| 页签 | 一种强调：选中 = 正文色 + 2px 强调色下划线，**不再同时填底** | 填底 + 下划线是两种强调 |
+| 表面 | **2 层**：`--surface`（页面、面板、侧栏）与 `--surface-raised`（卡片、玩家栏、对话框），明度差约 4%，靠 1px 发丝线分开；卡片**不透明**；对话框里的卡片与控件取页面面（`--card: var(--bg)`），所以永远只有两层 | 8.x 面板是 94% 的抬起色 + 22px 模糊，卡片再叠 4% 白膜：三层，两层半透明 |
+| 虚线 | **一条都没有** | 虚线框读起来像「等内容的占位」 |
+| 空状态 | 居中图标 + 一句话 + 一个动作，**不画框** | 8.x 是虚线框里再放一个带框的图标 |
+| 框中框 | 卡片里不再放带框的盒子：成就、欢迎卡的三扇门、「最接近完成」都成了卡片的行，用发丝线分 | 「box-in-box」 |
+| 标题 | **2 级**：区块标题 13/600 `--muted`、**任何语言都不转大写、不加字距**；字段标签 13/400 `--muted`。删掉重复标题（谜题页签已写「做题」，区块标题只留给读屏；偏好「外观」组里的「外观」行标签同理） | 中英日一条规则 |
+| 字号 | 角色 4 个：**30** 结果数字与页面标题 · **16** 区块 / 卡片标题 · **14** 正文与按钮 · **12** 辅助；外加 13（两级标题）与 11（**只给坐标和徽章**）。刻度 = 11 / 12 / 13 / 14 / 16 / 30，6 档 | 15、19 没有角色，删掉 |
+| 字重 | **400 / 600**，没有 500 | 500 是第三种强调；Windows 上 CJK 没有真正的 500 |
+| 行高 | 中日 1.6（长文 1.75），英文 1.45（长文 1.6），标题 1.25 | `html:lang(en)` 改两个 token |
+| 间距 | **8pt 节奏**：4 · 8 · **12 组内** · **16 卡内** · **24 区块** · 32 · 40 · 48（另有 2 给发丝线旁）；6 与 20 删掉 | |
+| 颜色 | 每套主题**一个强调色**，只用于主按钮、当前着、选中态（及键盘焦点环）；主按钮 = 强调色（日主题不再是蓝色主按钮 + 黄铜强调两个强调色）；状态色（`--win` / `--danger`）只表状态：胜负、加分、对错 | 测试列出所有用到强调色的规则，选择器必须说明是哪一种 |
+| 上一手 | 木纹棋盘：低饱和黄铜 `rgba(220,170,75, mid)`，选中同色相更深；仍受 mark-colour 的色度上限（47）、色相项（≤ 5）与标记间距（≥ 10.9）约束 | 橄榄绿在胡桃木上是外来色 |
+| 数据 | 曲线、进度、趋势用细线 + 淡填充，颜色走 `--data`；趋势图不再自带一个框 | |
+| 字体 | **Inter**（OFL，Latin 可变子集，48 KB，`src/web/fonts/`，打包进 `frontend/dist/fonts/`，许可在 `licenses/Inter-OFL.txt`）排在最前，后接 CJK 系统字体（PingFang SC → Hiragino → Microsoft YaHei → Noto Sans CJK）；日文同样 Inter 在前、日文字体在后；数字一律等宽（`tabular-nums`）；开 `text-autospace` | Windows 上 Latin 落到 YaHei 自带的拉丁字形，与 CJK 混排灰度不一致 |
+
+不变的：棋盘仍是 canvas、棋子集、动效纪律（§1）、棋盘在各视图里的矩形一致、分段控件等宽网格（§4）、不用容器查询（Safari 15）、每个 `var()` 都有定义。
 
 ## 1 · 动效
 
@@ -59,10 +87,10 @@
 
 ## 3 · 排版
 
-- 字号 7 档、行高 3 档、时长 3 档、圆角已 token 化 —— **不要新增档位**。
+- 字号 6 档（9.0 V1：11 / 12 / 13 / 14 / 16 / 30，见 §0）、字重 2 档、行高 3 档、时长 3 档、圆角已 token 化 —— **不要新增档位**。
 - 侧栏 42 处文本已收敛到 11 种组合。
 - 棋盘坐标 11px / 600 是可读下限，不要再小。
-- 数字用 `--font-num`（tabular）：时钟、评分、着法号已在用。
+- 数字用 `--font-num`（tabular）：时钟、评分、着法号已在用。9.0 V2 起它就是 Inter 的等宽数字。
 
 ## 4 · 布局
 

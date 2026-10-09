@@ -2726,7 +2726,12 @@ if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en",
       n: btns.length,
       heights: [...new Set(btns.map((b) => Math.round(b.getBoundingClientRect().height)))].sort((a, c) => a - c),
       sizes: [...new Set(btns.map((b) => getComputedStyle(b).fontSize))],
-      borderless: btns.filter((b) => getComputedStyle(b).borderStyle === "none").map((b) => b.id),
+      // 9.0 V1: a segment is a place in a tray — the tray carries the
+      // hairline (an inset box-shadow), not each segment; an action is a
+      // bordered button. Neither is a bare text link.
+      borderless: btns.filter((b) => b.matches(".theme-row button")
+        ? !/inset/.test(getComputedStyle(b.parentElement).boxShadow)
+        : getComputedStyle(b).borderStyle === "none").map((b) => b.id || b.textContent.trim().slice(0, 8)),
       primaries: [...document.querySelectorAll("#side .act-btn.primary")].filter(vis).map((b) => b.id),
       kinds: Object.entries(kinds).map(([k, v]) => k + " ← " + v.join(",")),
     };
@@ -2753,7 +2758,9 @@ if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en",
   const look = await page.evaluate(() => {
     const m = document.getElementById("prefs-modal");
     const vis = (e) => { const b = e.getBoundingClientRect(); return e.offsetParent !== null && b.width > 0 && b.height > 0; };
-    const k = (b) => getComputedStyle(b).fontSize + "|" + getComputedStyle(b).borderStyle;
+    // 9.0 V1: the box is the tray's (an inset hairline), so the kind is the
+    // segment's type and its tray's edge
+    const k = (b) => getComputedStyle(b).fontSize + "|" + getComputedStyle(b).borderStyle + "|" + /inset/.test(getComputedStyle(b.parentElement).boxShadow);
     const tiles = [...m.querySelectorAll(".look-grid button")].filter(vis);
     const segs = [...m.querySelectorAll(".theme-row:not(.look-grid) button")].filter(vis);
     return { open: m.classList.contains("show"), tiles: tiles.length, segs: segs.length,
@@ -3566,14 +3573,16 @@ if (scenario()) {
       const btn = await page.evaluate(() => {
         const ok = document.getElementById("confirm-ok");
         const probe = document.createElement("div");
-        probe.style.background = "var(--danger)";
+        probe.style.color = "var(--danger)";
         document.body.appendChild(probe);
-        const danger = getComputedStyle(probe).backgroundColor;
+        const danger = getComputedStyle(probe).color;
         probe.remove();
-        return { bg: getComputedStyle(ok).backgroundColor, danger, cls: ok.className };
+        return { fg: getComputedStyle(ok).color, danger, cls: ok.className };
       });
-      assert(btn.bg === btn.danger && /danger/.test(btn.cls),
-        "认输确认框的确认按钮背景取自 --danger(" + btn.bg + " vs " + btn.danger + ")");
+      // 9.0 V1: danger is the fourth button kind — the danger colour and its
+      // hairline, not a red slab (and never the accent)
+      assert(btn.fg === btn.danger && /danger/.test(btn.cls),
+        "认输确认框的确认按钮是危险按钮，字取自 --danger(" + btn.fg + " vs " + btn.danger + ")");
       await page.click("#confirm-ok");
     }, /白方胜|黑方胜/, /认输/],
     ["和棋", async (page) => {
@@ -4091,15 +4100,22 @@ if (scenario()) {
           rows,
           san: [...new Set([...document.querySelectorAll(".move-list .mlmove")].map((e) => getComputedStyle(e).fontSize))],
           tab: getComputedStyle(document.getElementById("tab-play")).fontSize,
-          twelve: texts.filter((e) => getComputedStyle(e).fontSize === "12px").map((e) => e.id || e.className),
+          // 9.0 V1: 12px is a role again — the aside, in the muted ink — and
+          // nothing in the panel is smaller but a badge or a tool's name (11)
+          twelve: texts.filter((e) => getComputedStyle(e).fontSize === "12px" &&
+            getComputedStyle(e).color !== getComputedStyle(document.getElementById("replay-pos")).color).map((e) => e.id || e.className),
+          small: texts.filter((e) => parseFloat(getComputedStyle(e).fontSize) < 12 &&
+            !e.matches(".tool-lbl, .mvtag, .pick-tag, .xp-book, .xp-mine, .xp-bar *, .curve-x *, .curve-y, .curve-y *, .daily-dot")).map((e) => e.id || e.className),
           hscroll: pane.scrollWidth - pane.clientWidth,
           docScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         };
       });
       const tag = `7.9 ${lang} ${vp.width}×${vp.height}`;
-      assert(r.san.length === 1 && r.san[0] === "15px", `§2a ${tag}：棋谱着法 15px（${r.san.join(" ")}）`);
+      // 9.0 V1: the notation is body text, 14px (four type roles, no 15)
+      assert(r.san.length === 1 && r.san[0] === "14px", `§2a ${tag}：棋谱着法 14px（${r.san.join(" ")}）`);
       assert(r.tab === "14px", `§2a ${tag}：面板正文 14px（页签 ${r.tab}）`);
-      assert(r.twelve.length === 0, `§2a ${tag}：面板里不再有 12px 的字` + (r.twelve.length ? "（" + r.twelve.slice(0, 4).join("，") + "）" : ""));
+      assert(r.twelve.length === 0, `§2a ${tag}：面板里 12px 的字都是旁注（次要色）` + (r.twelve.length ? "（" + r.twelve.slice(0, 4).join("，") + "）" : ""));
+      assert(r.small.length === 0, `§2a ${tag}：面板里没有小于 12px 的正文（11px 只给坐标与徽章）` + (r.small.length ? "（" + r.small.slice(0, 4).join("，") + "）" : ""));
       assert(r.hscroll <= 0 && r.docScroll <= 0, `§2a ${tag}：大一号之后没有横向滚动（窗格 ${r.hscroll}，页面 ${r.docScroll}）`);
       const off = r.rows.filter((x) => x.d == null || x.d > 1);
       assert(r.rows.length === 5 && off.length === 0,

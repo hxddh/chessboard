@@ -86,9 +86,11 @@ export function mount(container, deps) {
     return el;
   };
   const label = (el, key) => { el.setAttribute("data-i18n", key); el.textContent = t(key); return el; };
-  const row = (id, key, groupCls) => {
+  // 9.0 V1: `quiet` — the row's name is its group's heading already (外观
+  // under 外观), so it is kept for a screen reader and not drawn twice
+  const row = (id, key, groupCls, quiet) => {
     const r = make("div", "setting-row stack", { id: "row-" + id });
-    r.appendChild(label(make("span", "setting-k"), key));
+    r.appendChild(label(make("span", quiet ? "setting-k sr-only" : "setting-k"), key));
     const g = make("div", groupCls, { id: id + "-seg", role: "group", "aria-label": t(key), "data-i18n-aria": key });
     r.appendChild(g);
     container.appendChild(r);
@@ -101,7 +103,7 @@ export function mount(container, deps) {
   };
 
   // 外观: light / dark / system
-  const appearance = row("appearance", "look.appearance", "theme-row");
+  const appearance = row("appearance", "look.appearance", "theme-row", true);
   appearance.setAttribute("data-i18n-title", "tip.look.appearance");
   appearance.title = t("tip.look.appearance");
   for (const a of APPEARANCES) label(button(appearance, "appearance", a), LABELS.appearance[a]);
