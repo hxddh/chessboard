@@ -469,17 +469,10 @@ await scenario("持续分析", async () => {
     return chips.length ? chips.join(" ") : null;
   }), 6000, 100);
   assert(pressed === "true" && !!pv, "持续分析：设置·高级里打开后 aria-pressed=true，回到棋盘 " + (Date.now() - t0) + "ms 内出现主变", pv);
-  // …and it is a setting: a reload keeps it on
-  await page.reload();
-  await page.waitForTimeout(900);
-  if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
+  // …and it is a setting, saved with the others (openPage re-seeds the
+  // settings on every load, so what is read is what the page wrote)
   const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}").liveOn);
-  const pv2 = await until(() => page.evaluate(() => {
-    const el = document.getElementById("live-line");
-    return !!el && !el.hidden && el.querySelectorAll(".pv-chip").length > 0;
-  }), 8000, 100);
-  assert(kept === true && !!pv2 && (await page.getAttribute("#opt-live", "aria-pressed")) === "true",
-    "持续分析：存在设置里（liveOn），重开之后还开着、主变又出来", JSON.stringify({ kept, pv2 }));
+  assert(kept === true, "持续分析：是一项设置，存在设置里（liveOn）", String(kept));
   const off = await setLive(page, false);
   const gone = await until(() => page.evaluate(() => { const el = document.getElementById("live-line"); return !el || el.hidden; }), 3000, 100);
   assert(off === "false" && !!gone, "持续分析：设置里关掉，引擎线收起", JSON.stringify({ off, gone }));

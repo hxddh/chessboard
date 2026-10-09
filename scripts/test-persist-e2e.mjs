@@ -1662,6 +1662,54 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   }
 }
 
+// --- 9.0 S2: 持续分析 is a setting (设置 · 高级), and a setting is kept --------
+// It was a button over the review that lived as long as the window did; now
+// it is the switch #opt-live, saved as `liveOn`. Turned on, a restart finds it
+// on; turned off, a restart finds it off.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return; // the reloads read what the app wrote
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
+  });
+  const { page, errs } = await open(ctx);
+  const read = () => page.evaluate(() => ({
+    pressed: document.getElementById("opt-live").getAttribute("aria-pressed"),
+    saved: JSON.parse(localStorage.getItem("chess.settings") || "{}").liveOn,
+  }));
+  const toAdvanced = async () => {
+    await page.click('#rail button[data-view="settings"]');
+    await page.waitForTimeout(200);
+    await page.click("#cat-advanced");
+    await page.waitForTimeout(200);
+  };
+  await toAdvanced();
+  const off0 = await read();
+  assert(await page.isVisible("#opt-live") && off0.pressed === "false",
+    `S2 持续分析是设置 · 高级里的开关，默认关(${JSON.stringify(off0)})`);
+  await page.click("#opt-live");
+  await page.waitForTimeout(300);
+  const on = await read();
+  assert(on.pressed === "true" && on.saved === true, `S2 打开持续分析：开关按下、存进设置(${JSON.stringify(on)})`);
+  await page.reload();
+  await page.waitForTimeout(1200);
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  await toAdvanced();
+  const on2 = await read();
+  assert(on2.pressed === "true" && on2.saved === true, `S2 重新载入之后持续分析还开着(${JSON.stringify(on2)})`);
+  await page.click("#opt-live");
+  await page.waitForTimeout(300);
+  await page.reload();
+  await page.waitForTimeout(1200);
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  await toAdvanced();
+  const off2 = await read();
+  assert(off2.pressed === "false" && off2.saved === false, `S2 关掉之后重新载入，它还是关的(${JSON.stringify(off2)})`);
+  assert(errs.length === 0, `S2 持续分析设置：没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (RECORD) {

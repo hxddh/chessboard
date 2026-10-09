@@ -402,7 +402,9 @@ async function playRow(page, san) {
   const st = await page.evaluate(() => ({
     cat: JSON.parse(localStorage.getItem("chess.puzzles")).cat,
     task: document.getElementById("puzzle-task").textContent, prog: document.getElementById("puzzle-progress").textContent,
-    tab: document.querySelector('#puzzle-cat-seg button[data-cat="rep"]').classList.contains("active"),
+    // 9.0 S3: no category row — the 开局 tile is the one lit for a book drill, on 训练
+    tab: document.querySelector('#pz-groups button[data-group="opening"]').getAttribute("aria-pressed") === "true"
+      && document.getElementById("app").dataset.view === "train",
     p: window.__chess.rep().dueDrills()[0],
   }));
   assert(st.cat === "repdue" && st.tab && /还有 \d+ 着/.test(st.prog), "进了做题页的「开局书」，只练到期的着", JSON.stringify({ cat: st.cat, prog: st.prog }));
