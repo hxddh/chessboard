@@ -1961,37 +1961,7 @@
       letter-spacing: 0; text-transform: none;
       color: var(--muted);
     }
-    /* 今天的训练: one entrance for every mode, the width of the column, with
-       the plan it will walk written under it.
-       7.7 (v7-7-plan §1i): a card. It was a wide ghost button with no fill
-       and muted text over two lines of plain prose — it read as a disabled
-       text field, and nothing under it looked like it could be pressed. Now:
-       the head (title or 「第 1/3 步 · …」, and an arrow) is the button; each
-       step has a state dot; the step you would go to next is a control of
-       its own, with a hover and the same arrow. */
-    .daily {
-      display: flex; flex-direction: column; gap: 4px; margin-top: 8px;
-      padding: 8px;
-      border: 1px solid var(--card-border);
-      border-radius: var(--radius-md);
-      background: var(--card);
-    }
-    .daily-head {
-      appearance: none; border: 0; background: transparent;
-      font: inherit; color: var(--text); text-align: left;
-      display: flex; align-items: center; gap: 8px;
-      min-height: var(--ctl-h); padding: 0 8px;
-      border-radius: var(--radius-sm); cursor: pointer;
-      transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
-    }
-    .daily-head:hover { background: var(--btn-ghost); }
-    .daily-label {
-      flex: 1; min-width: 0;
-      font-size: 0.875rem; font-weight: 600;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .daily-go { color: var(--muted); font-size: 1rem; display: grid; }
-    #daily-note { padding: 0 8px; }
+    /* 今天的训练's plan (9.0 S1: on 今天's card — trainer/today.js) */
     /* 7.4 §5: each step is the second of 7.3 §4A's three rows — a label and
        one line saying why. It was the step and its reason side by side in one
        flex row, both in muted ink one step apart in size, so 「上一课新的」
@@ -4154,7 +4124,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
   align-items: start;
 }
-.page-sec, .home-card {
+.page-sec {
   min-width: 0;
   padding: 16px;
   border: 1px solid var(--card-border); border-radius: var(--radius-md);
@@ -4165,16 +4135,94 @@ span[data-icon] { display: inline-grid; place-items: center; }
   .page-inner { padding: 24px 16px; }
 }
 
-/* 首页 */
-.home-cards {
-  display: grid; gap: 24px;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-  align-items: stretch;
+/* 9.0 S1 — 今天 (v9.css .today): a greeting over two rows of cards and a
+   row of three. The hero is the one card with a board and the page's one
+   filled button; everything else is a card you click into. */
+.today-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.today-head .page-h { margin: 0; }
+.today-head > .act-btn, .today-acts > .act-btn { flex: none; width: auto; min-width: 128px; padding: 0 16px; }
+.today-date { margin: 4px 0 0; font-size: 0.875rem; color: var(--muted); }
+.today-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px; align-items: stretch; margin-bottom: 24px; }
+.today-card {
+  min-width: 0; padding: 16px;
+  border: 1px solid var(--card-border); border-radius: var(--radius-md);
+  background: var(--card);
 }
-.home-card { display: flex; flex-direction: column; gap: 8px; }
-.home-body { flex: 1; display: grid; align-content: start; gap: 4px; }
-.home-line { margin: 0; font-size: 0.875rem; line-height: var(--lh-body); color: var(--text); }
-.home-go { align-self: flex-start; }
+.today-block { min-width: 0; margin-bottom: 24px; }
+.today-row > .today-block { margin-bottom: 0; }
+.today-block > .side-h, .today-block > .side-h-row { margin: 0 0 8px; }
+.today-meta { margin: 0; font-size: 0.75rem; line-height: var(--lh-body); color: var(--muted); }
+.today-hero { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 24px; align-items: start; }
+.today-hero-text { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.today-hero-text > .side-h { margin: 0; }
+.today-hero-title { margin: 0; font-size: 1rem; font-weight: 600; line-height: var(--lh-tight); }
+.today-hero .daily-plan { margin: 4px 0 0; }
+.today-acts { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.today-acts .tool-txt { margin-left: 0; }
+.today-progress { display: grid; gap: 16px; align-content: start; }
+.today-progress .side-h { margin: 0; }
+.today-rings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; justify-items: center; }
+.today-ring {
+  --p: 0;
+  width: 72px; aspect-ratio: 1; border-radius: 50%;
+  display: grid; place-content: center; text-align: center;
+  background:
+    radial-gradient(closest-side, var(--card) 80%, transparent 81%),
+    conic-gradient(var(--text) calc(var(--p) * 1%), var(--line) 0);
+}
+.today-ring.done { background: radial-gradient(closest-side, var(--card) 80%, transparent 81%), conic-gradient(var(--success) 100%, var(--line) 0); }
+.today-ring b { font-size: 0.875rem; font-weight: 600; }
+.today-ring span { font-size: 0.75rem; color: var(--muted); }
+.today-cont { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.today-c {
+  appearance: none; cursor: pointer; font: inherit; color: var(--text); text-align: left;
+  display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; align-items: center;
+}
+.today-c:hover { background: color-mix(in srgb, var(--card) 88%, var(--text)); }
+.today-c:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.today-c-txt { display: grid; gap: 4px; min-width: 0; }
+.today-c-txt b { font-size: 0.875rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.today-c-txt small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.today-bar { --p: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.today-bar > i { height: 4px; border-radius: var(--radius-sm); background: linear-gradient(90deg, var(--text) calc(var(--p) * 1%), var(--line) 0); }
+.today-bar::after { content: attr(data-n); font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.today-games-card { padding: 0; }
+.today-games { list-style: none; margin: 0; padding: 0; }
+.today-games li { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 8px 16px; }
+.today-games li + li { border-top: 1px solid var(--line); }
+.today-games-card > .today-meta { padding: 16px; }
+.today-res { font-size: 0.75rem; font-weight: 600; text-align: center; }
+.today-res.win { color: var(--success); }
+.today-res.loss { color: var(--danger); }
+.today-res.draw { color: var(--muted); }
+.today-who { display: grid; min-width: 0; }
+.today-who b, .today-who small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.today-who b { font-size: 0.875rem; font-weight: 600; }
+.today-who small { font-size: 0.75rem; color: var(--muted); }
+.today-d { font-size: 0.75rem; }
+.today-d.neg { color: var(--danger); }
+.today-games .tool-txt { margin-left: 0; }
+.today-ratings { display: grid; gap: 16px; }
+.today-rating { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: 16px; }
+.today-rating > div { display: grid; gap: 4px; }
+.today-rating b { font-size: 1.875rem; font-weight: 600; line-height: var(--lh-tight); }
+.today-rating canvas { display: block; width: 100%; height: 40px; }
+/* the static board of a card (mini-board.js): the board's own colours */
+.mini-board {
+  display: grid; grid-template-columns: repeat(8, 1fr); aspect-ratio: 1;
+  border-radius: var(--radius-sm); overflow: hidden; box-shadow: inset 0 0 0 1px var(--board-edge);
+}
+.today-hero-board { width: 240px; }
+.mini-sq { position: relative; display: block; }
+.mini-sq.l { background: var(--sq-light); }
+.mini-sq.d { background: var(--sq-dark); }
+.mini-sq.last::before { content: ""; position: absolute; inset: 0; background: var(--sq-last); }
+.mini-sq img { position: relative; display: block; width: 100%; height: 100%; }
+@media (max-width: 900px) {
+  .today-row, .today-cont { grid-template-columns: minmax(0, 1fr); }
+  .today-hero { grid-template-columns: 128px minmax(0, 1fr); gap: 16px; }
+  .today-hero-board { width: 128px; }
+}
 
 /* The library's list, its diagnosis and the game history: sheets over the
    page they were opened from, the page's width rather than 460px. They are

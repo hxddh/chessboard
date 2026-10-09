@@ -12,6 +12,7 @@
  * @module trainer/today
  */
 import { tdot } from "../tdot.js";
+import { paintMini } from "../mini-board.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -22,8 +23,9 @@ export function createTodayUI(d) {
     avail, bookNow, drawRatingTrend, el, loadStats, motifKeyOf, owedNow, puzzlesInCat, ratingLabel,
     ratingTip, runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
-    sync, t, tf, toast,
+    sync, t, tf, toast, pieceSrc, game, isOver, isLive,
   } = d;
+  const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
   /** 做题战绩 — the tally the picker reads, drawn for the player. */
   function renderPuzzleTally() {
@@ -191,7 +193,7 @@ export function createTodayUI(d) {
       if (i === go) {
         row.type = "button";
         row.dataset.daily = "go";
-        row.onclick = () => el("daily-btn").click();
+        row.onclick = () => el("today-go").click();
       }
       const dot = document.createElement("span");
       dot.className = "daily-dot";
@@ -222,59 +224,100 @@ export function createTodayUI(d) {
     });
   }
 
+  /** 9.0 S1: the game still being played, for the card — null when there is none. */
+  function liveGame() {
+    const m = store.session.mode, n = sanHistory().length;
+    if ((m !== "ai" && m !== "pvp") || !n || isOver() || !isLive()) return null;
+    const last = game.history({ verbose: true }).pop();
+    return { title: t("today.liveTitle"), meta: tf("home.cont.live", [t(m === "pvp" ? "mode.pvp" : "mode.ai"), Math.ceil(n / 2)]),
+      fen: game.fen(), last: last ? last.from + last.to : "", flip: !!store.game.flipped };
+  }
+
+  /**
+   * 9.0 S1: a position for a step, for the hero's board — the puzzle or the
+   * lesson the step opens, where there is one; the starting position for a
+   * game, an opening line or the library's pass.
+   */
+  function stepFen(step) {
+    const fenOf = (p) => (p && p.fen) || null;
+    if (step.kind === "review") return fenOf(puzzlesInCat("review").find((p) => p.fen));
+    if (step.kind === "mine") return fenOf(store.session.mines.find((p) => p.fen && !store.session.puzzleState.solved[p.id]));
+    if (step.kind === "weak") return fenOf(ALL_PUZZLES.find((p) => p.cat === step.cat && p.fen && !store.session.puzzleState.solved[p.id]));
+    if (step.kind === "motif") return fenOf(bookNow().find((p) => p.fen && !store.session.puzzleState.solved[p.id] && motifKeyOf(p) === step.motif));
+    if (step.kind === "lesson") { const L = LESSONS[step.i]; return L && L.tasks[0] ? L.tasks[0].fen : null; }
+    return null;
+  }
+
+  /** The plan as it would start now: the steps, turned by 换一件事. */
+  function planNow() {
+    const steps = Planner.plan(dailySignals()).steps;
+    const k = steps.length ? (store.session.todayTurn || 0) % steps.length : 0;
+    return steps.slice(k).concat(steps.slice(0, k));
+  }
+
+  /**
+   * 今天's hero card (9.0 S1): the one thing to do next, on a board — the
+   * game still being played, else the plan's step (planner.js: the review
+   * debt, your own blunder, the weakest kind, the next lesson, a game). Its
+   * button starts the plan there, or goes on with it; 换一件事 offers the
+   * next one. Advancing earned steps is judged on counter deltas
+   * (planner.js), so this is safe on every session and game commit.
+   */
   function syncDailyUI() {
-    const btn = document.getElementById("daily-btn");
-    const label = document.getElementById("daily-label");
-    const note = document.getElementById("daily-note");
-    if (!btn || !label || !note) return;
-    // 7.7 (v7-7-plan §3, §10): while a game is being played the notation is
-    // what the page is for, and this card was the first screen of the drawer
-    // in a portrait window.
-    //
-    // 7.8 §1b: it steps aside whenever there is a game to look at, not only
-    // while one is live. Tied to isLive(), a step back in replay brought the
-    // card in and pushed the notation ~160px down, and the step forward took
-    // it away again — the panel jumped on every key press. Whether there is
-    // notation does not change while you walk through it, so neither does this.
-    //
-    // 7.9 §4b: and it is only ever on the two playing boards. In a lesson
-    // or a puzzle the person is already doing today's training — the card
-    // said 「学一节新课」 above the first lesson in progress and pushed the
-    // lesson ~140px down. It is for someone who does not know what to do
-    // next: the ai or pvp board with no game on it. The label below is still
-    // kept current, so the plan's step reads right when the card comes back.
-    const playing = store.session.mode === "ai" || store.session.mode === "pvp";
-    const hasGame = playing && !store.session.editor && sanHistory().length > 0;
-    avail(el("daily-row"), playing && !hasGame);
+    const title = el("today-hero-title"), meta = el("today-hero-meta"), go = el("today-go"), board = el("today-hero-board");
+    if (!title || !go) return;
     const d = store.session.daily;
-    if (!d) {
-      setText(label, t("daily.btn"));
-      const run = Progress.streak(store.session.progress, Date.now());
-      note.hidden = run < 2;
-      if (run >= 2) setText(note, tf("daily.streak", [run]));
-      renderDailyPlan(Planner.plan(dailySignals()).steps, -1);
-      return;
+    if (d) {
+      let after = Planner.snap(dailySnapSrc());
+      while (d.i < d.steps.length && Planner.stepDone(d.steps[d.i], d.before, after)) {
+        d.i++;
+        d.before = after;
+        after = Planner.snap(dailySnapSrc());
+      }
+      if (d.i >= d.steps.length) {
+        store.session.daily = null;
+        Progress.recordSession(store.session.progress, Date.now());
+        saveProgress();
+        const run = Progress.streak(store.session.progress, Date.now());
+        toast(tdot(t("daily.done"), run >= 2 && tf("daily.streak", [run])));
+      }
     }
-    let after = Planner.snap(dailySnapSrc());
-    while (d.i < d.steps.length && Planner.stepDone(d.steps[d.i], d.before, after)) {
-      d.i++;
-      d.before = after;
-      after = Planner.snap(dailySnapSrc());
+    const live = !store.session.todayPlanFirst ? liveGame() : null;
+    const run = store.session.daily;
+    const steps = run ? run.steps : planNow();
+    const at = run ? run.i : 0;
+    const paint = (fen, last, flip) => paintMini(board, fen || START, { last, flip, pieceSrc, set: store.ui.pieceSet });
+    if (live) {
+      setText(title, live.title);
+      setText(meta, live.meta);
+      setText(go, t("today.goGame"));
+      paint(live.fen, live.last, live.flip);
+      renderDailyPlan([], -1);
+    } else if (!steps.length) {
+      setText(title, t("daily.rest"));
+      setText(meta, "");
+      setText(go, t("train.puzzle"));
+      paint(START);
+      renderDailyPlan([], -1);
+    } else {
+      setText(title, dailyStepLabel(steps[at]));
+      setText(meta, tdot(t("daily.why." + steps[at].kind), steps.length > 1 && tf("daily.of", [at + 1, steps.length])));
+      setText(go, t(run ? "today.goOn" : "today.go"));
+      paint(stepFen(steps[at]));
+      renderDailyPlan(steps, run ? at : -1);
     }
-    if (d.i >= d.steps.length) {
-      store.session.daily = null;
-      Progress.recordSession(store.session.progress, Date.now());
-      saveProgress();
-      const run = Progress.streak(store.session.progress, Date.now());
-      toast(tdot(t("daily.done"), run >= 2 && tf("daily.streak", [run])));
-      setText(label, t("daily.btn"));
-      note.hidden = run < 2;
-      if (run >= 2) setText(note, tf("daily.streak", [run]));
-      return;
-    }
-    setText(label, tdot(tf("daily.of", [d.i + 1, d.steps.length]), dailyStepLabel(d.steps[d.i])));
-    note.hidden = true;
-    renderDailyPlan(d.steps, d.i);
+    avail(el("today-skip"), !!live || steps.length > 1);
+  }
+
+  /** 换一件事: from the game to the plan, or the plan's next step to the front. */
+  function skipToday() {
+    if (!store.session.todayPlanFirst && liveGame()) store.session.todayPlanFirst = true;
+    else if (store.session.daily) {
+      const d = store.session.daily;
+      // the step goes to the end of the sitting, not out of it
+      if (d.i < d.steps.length - 1) d.steps.push(d.steps.splice(d.i, 1)[0]);
+    } else store.session.todayTurn = (store.session.todayTurn || 0) + 1;
+    syncDailyUI();
   }
 
   /**
@@ -348,18 +391,21 @@ export function createTodayUI(d) {
     return true;
   }
 
-  /** 今天的训练's button — wired from app.js's boot as before (v8-0-plan F4). */
+  /** 今天's two buttons — wired from app.js's boot as before (v8-0-plan F4). */
   function wireDaily() {
-    document.getElementById("daily-btn").onclick = () => {
+    el("today-go").onclick = () => {
+      const live = !store.session.todayPlanFirst ? liveGame() : null;
+      if (live) { Shell.go("play"); return; }
       if (!store.session.daily) {
-        const p = Planner.plan(dailySignals());
-        if (!p.steps.length) { toast(t("daily.rest")); return; }
-        store.session.daily = { steps: p.steps, i: 0, before: Planner.snap(dailySnapSrc()) };
-        toast(tf("daily.begin", [p.steps.length]));
+        const steps = planNow();
+        if (!steps.length) { Shell.openTrain("puzzle"); return; }
+        store.session.daily = { steps, i: 0, before: Planner.snap(dailySnapSrc()) };
+        toast(tf("daily.begin", [steps.length]));
       }
       dailyJump(store.session.daily.steps[store.session.daily.i]);
       store.commit("session", "sync");
     };
+    el("today-skip").onclick = skipToday;
   }
   return {
     wireDaily,

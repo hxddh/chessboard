@@ -143,6 +143,8 @@ export function createEndgames(d) {
     return data ? data.ITEMS.filter((x) => (!g || x.g === g) && eg.done[x.id]).length : 0;
   }
   const total = () => (data ? data.ITEMS.length : 0);
+  /** How many endgames group `g` holds (9.0 S1's 继续 card). */
+  const groupSize = (g) => (data ? data.ITEMS.filter((x) => x.g === g).length : 0);
 
   /** The camp's part of the lesson list, after the classics; fetched on first draw. */
   function renderList(list, curId) {
@@ -209,5 +211,5 @@ export function createEndgames(d) {
     cont.onclick = () => { const f = data.ITEMS.find((x) => !state().done[x.id]); if (f) go(f.id); };
   }
 
-  return { ensure, ready, whenReady, resumeId, item, lesson, record, due, next, doneCount, total, renderList, renderMe, state };
+  return { ensure, ready, whenReady, resumeId, item, lesson, record, due, next, doneCount, total, groupSize, renderList, renderMe, state };
 }

@@ -4608,8 +4608,9 @@ for (const lang of CONTENT_LANGS) {
   assert(/function dailyJump\(step\) \{[\s\S]{0,400}switchMode\("learn"\)/.test(appSrc),
     "跳步走的是换模式的那一个函数(导航栏也走它),不是旁路");
   const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
-  assert(/id="daily-btn"/.test(html) && /id="trend-head" hidden/.test(html) && /id="trend-acc" hidden/.test(html),
-    "训练入口在,进步区默认不画,有数据才出现(P3)");
+  // 9.0 S1: the plan's entrance is 今天's card (its button and its steps)
+  assert(/id="today-go"/.test(html) && /id="daily-plan"/.test(html) && /id="trend-head" hidden/.test(html) && /id="trend-acc" hidden/.test(html),
+    "训练入口在(今天的主卡),进步区默认不画,有数据才出现(P3)");
 }
 
 // i18n: every key present in the base language must exist in the others, or
@@ -4858,7 +4859,6 @@ for (const lang of CONTENT_LANGS) {
       ["aria.cal", (n) => [18, n], "Played or solved on 1 day in the last 18 weeks", "Played or solved on 2 days in the last 18 weeks"],
       ["me.m.clockV", (n) => [n, n, "4%"], "1 blunder in 1 move on a low clock · 4% otherwise", "2 blunders in 2 moves on a low clock · 4% otherwise"],
       ["msg.analysis.kept", (n) => [n], "Analysis stopped · kept the first 1 ply", "Analysis stopped · kept the first 2 plies"],
-      ["home.next.review", (n) => [n], "1 missed puzzle is due for review", "2 missed puzzles are due for review"],
       ["rep.removeAsk", (n) => ["e4", "White", n, 1], "Take e4 out of your repertoire (White)? 1 line through it will be cut short, 1 of them removed entirely. You can undo this afterwards.",
         "Take e4 out of your repertoire (White)? 2 lines through it will be cut short, 1 of them removed entirely. You can undo this afterwards."],
       ["lib.addedNone", (n) => [n], "Nothing added: the file's 1 game was already in the library", "Nothing added: the file's 2 games were already in the library"],

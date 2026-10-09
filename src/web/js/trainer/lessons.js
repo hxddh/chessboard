@@ -666,7 +666,8 @@ export function createLessonsUI(d) {
       return;
     }
     if (!store.session.learnState.done[L.id]) {
-      store.session.learnState.done[L.id] = true;
+      // 9.0 S1: when, so 今天 can count the lessons finished today
+      if (!store.session.learnState.done[L.id]) store.session.learnState.done[L.id] = Date.now();
       saveLearnState();
       checkNewAchievements();
     }
@@ -978,6 +979,6 @@ export function createLessonsUI(d) {
     wireLessonPanel,
     LESSONS, loadLearnState, saveLearnState, startLearn, stopLearn, syncStudyUI,
     curTask, startLesson, startLearnTask, learnModel, learnClick, learnEngineReply, learnUndo,
-    learnHint, syncLearnUI, Endgames, startEndgame, learnSeg, openSeg,
+    learnHint, syncLearnUI, Endgames, startEndgame, learnSeg, openSeg, CLASSICS, classicText,
   };
 }

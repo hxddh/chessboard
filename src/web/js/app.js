@@ -33,6 +33,7 @@ import { createPuzzlesUI } from "./trainer/puzzles.js";
 import { createTodayUI } from "./trainer/today.js";
 import { createMePage } from "./me-page.js";
 import { createShell } from "./shell.js";
+import { createTodayPage } from "./today-page.js";
 import { createPrefsUI } from "./prefs-ui.js";
 import { ChessReview } from "./review.js";
 import { createAnalysis } from "./review/analysis.js";
@@ -861,19 +862,6 @@ import { loadChunk } from "./chunk.js";
   function baseGame() {
     const sf = startFen();
     return sf ? new Chess(sf) : new Chess();
-  }
-
-  /** Reset `game` itself to its starting position, keeping any FEN header. */
-  function resetGameToStart() {
-    // whatever was being previewed belonged to the game that just ended
-    if (store.ui.preview) clearPreview();
-    const sf = startFen();
-    if (sf) {
-      gameLoad(sf);
-      game.header("SetUp", "1", "FEN", sf);
-    } else {
-      gameReset();
-    }
   }
 
   /**
@@ -2375,10 +2363,8 @@ import { loadChunk } from "./chunk.js";
   const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;
   const closeDiagnosis = () => LibraryUI.closeDiagnosis();
   const closeLibList = () => LibraryUI.closeLibList();
-  const deepenLibraryGame = (id) => LibraryUI.deepenLibraryGame(id);
   const importPgnToLibrary = (text, label) => LibraryUI.importPgnToLibrary(text, label);
   const libNamesFrom = (text) => LibraryUI.libNamesFrom(text);
-  const loadFromLibrary = (id) => LibraryUI.loadFromLibrary(id);
   const loadLibraryEntry = (entry) => LibraryUI.loadLibraryEntry(entry);
   const openDiagnosis = () => LibraryUI.openDiagnosis();
   const openLibList = (pick, opts) => LibraryUI.openLibList(pick, opts);
@@ -2392,8 +2378,8 @@ import { loadChunk } from "./chunk.js";
     bookNow, drawRatingTrend, el, loadStats, motifKeyOf, owedNow, puzzlesInCat, ratingLabel,
     ratingTip, runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
-    sync, t, tf, toast,
-    Shell: { go: (id) => Shell.go(id) },
+    sync, t, tf, toast, pieceSrc: (k) => BoardView.pieceSrc(k), game, isOver: () => appGameOver(), isLive: () => isLive(),
+    Shell: { go: (id) => Shell.go(id), openTrain: (g) => Shell.openTrain(g) },
   });
   const {
     renderPuzzleTally, libPlayedAt, dailySignals, dailyStepLabel, syncDailyUI,
@@ -5216,13 +5202,14 @@ import { loadChunk } from "./chunk.js";
   });
   SettingsUI.wire();
   // v8-0-plan A1: the rail, the home page and the pages (shell.js)
-  const Shell = createShell({
-    doc: document, store, appEl, t, tf, switchMode, saveSettings, sanHistory,
-    requestNewGame: () => requestNewGame(), onSettings: (c) => PrefsUI.onCat(c), gameOver: () => appGameOver(),
-    onMe: () => MePage.onShow(), learnSeg: () => LessonsUI.learnSeg(), openSeg: (g) => LessonsUI.openSeg(g), recommendation, owed: owedNow, dailyStepLabel, dailyPlan: () => Planner.plan(dailySignals()).steps, dailyJump: (step) => dailyJump(step),
-    nextLesson: () => { const i = LESSONS.findIndex((L) => !store.session.learnState.done[L.id]); return i < 0 ? null : { i, n: i + 1, title: lessonText(LESSONS[i]).title }; },
-  });
+  const Shell = createShell({ doc: document, store, appEl, switchMode, saveSettings, onSettings: (c) => PrefsUI.onCat(c),
+    onHome: () => { TodayPage.render(); syncDailyUI(); }, onMe: () => MePage.onShow(), learnSeg: () => LessonsUI.learnSeg(), openSeg: (g) => LessonsUI.openSeg(g) });
   Shell.wire();
+  // 9.0 S1: 今天 — the page around the coach's card (today-page.js)
+  const TodayPage = createTodayPage({ doc: document, store, t, tf, tdot, Chess, pieceSrc: (k) => BoardView.pieceSrc(k), LESSONS, lessonText, Endgames: LessonsUI.Endgames,
+    CLASSICS: LessonsUI.CLASSICS, classicText: LessonsUI.classicText, loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText: () => ratingLabel(),
+    drawRatingTrend, Shell, requestNewGame: () => requestNewGame() });
+  TodayPage.wire();
   // v8-0-plan C3: 开局浏览器 — the key, the panel's state; the panel itself is a chunk
   createExplorerLazy({ store, t, tf, tdot, viewGame, movePath, startClockIfIdle, saveSettings, library: LibraryUI, repertoire: RepUI, saved: Persist.read("settings").value,
     toBoard: () => { Shell.go("play"); setSideTab("play"); } });

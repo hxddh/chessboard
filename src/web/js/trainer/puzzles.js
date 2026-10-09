@@ -784,7 +784,7 @@ export function createPuzzlesUI(d) {
       if (g === "mine") b.hidden = !store.session.mines.length;
       const n = g === "opening" ? ALL_PUZZLES.filter((p) => p.cat === "op").length
         : g === "mine" ? store.session.mines.length : Modes.groupCount(g);
-      setText(b.querySelector(".pz-tile-n"), tf("pz.countN", [n.toLocaleString()]));
+      setText(b.querySelector(".pz-tile-n"), tf("pz.countN", [n]));
     });
   }
 
