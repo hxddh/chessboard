@@ -275,6 +275,22 @@ export function createPuzzleModes(d) {
     });
     return best < 0 ? 0 : best;
   }
+  /**
+   * 下一题 in a pooled kind or a theme: the unsolved puzzle nearest the
+   * player's rating, not the next in list order — the list is the built-in
+   * book first and the bands after it, so order alone walked a 2300 player
+   * from a 2295 puzzle back to a built-in one of 1900 at most. -1: none left.
+   */
+  function nearestIdx(list, except) {
+    const r = seenRating().r;
+    let best = -1;
+    list.forEach((p, i) => {
+      if (i === except || store.session.puzzleState.solved[p.id]) return;
+      if (best < 0 || Math.abs(puzzleRating(p).r - r) < Math.abs(puzzleRating(list[best]).r - r)) best = i;
+    });
+    return best;
+  }
+
   /** Put group `g` on the board: startTheme's flow, over the group's bands. */
   function startGroup(g) {
     const cat = GROUP_CAT + g;
@@ -285,14 +301,21 @@ export function createPuzzleModes(d) {
       if (list.length) seatPuzzle(cat, groupStartIdx(list));
       else sync();
     };
+    // the built-in book is here at once, but it stops near 1900: when none
+    // of it is near the player, the near band is waited for rather than a
+    // far easier puzzle served first (the board says 正在载入 meanwhile)
+    const r = seenRating().r;
+    const nearHere = localInGroup(g).some((p) => !store.session.puzzleState.solved[p.id] && Math.abs(puzzleRating(p).r - r) <= 200);
     withIndex(() => {
-      const r = seenRating().r;
       const bands = groupBands(g).sort((a, b) => Math.abs(a + 100 - r) - Math.abs(b + 100 - r));
-      const from = (k) => wantBand(bands[k], () => { serve(); for (const b of bands.slice(k + 1, k + 3)) wantBand(b, serve); }, () => from(k + 1));
+      // past the last band (none, or none would load): the book after all
+      const from = (k) => (k >= bands.length ? serve()
+        : wantBand(bands[k], () => { serve(); for (const b of bands.slice(k + 1, k + 3)) wantBand(b, serve); }, () => from(k + 1)));
       from(0);
     });
     store.session.puzzle = null;
-    serve();
+    if (nearHere) serve();
+    else sync();
   }
   /** A tile: into its group, on the board (开局 and 我的错题 are categories). */
   function goGroup(g) {
@@ -639,5 +662,5 @@ export function createPuzzleModes(d) {
     };
   }
 
-  return { lcPool, themeList, startTheme, groupList, groupCount, startGroup, goGroup, rateThemes, runSolved, runMissed, runAnswer, endRun, parkRun, unparkRun, render, wire, closeThemes, startRun, finishRun };
+  return { lcPool, themeList, startTheme, groupList, groupCount, startGroup, goGroup, nearestIdx, rateThemes, runSolved, runMissed, runAnswer, endRun, parkRun, unparkRun, render, wire, closeThemes, startRun, finishRun };
 }

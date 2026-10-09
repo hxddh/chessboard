@@ -3339,7 +3339,7 @@ import { loadChunk } from "./chunk.js";
     for (const group of document.querySelectorAll(".act-group")) {
       // a status line (the engine being down) keeps its group on screen even
       // when it has taken every button with it
-      const live = [...group.querySelectorAll("button, [role=\"status\"]")].some((b) => !b.hidden);
+      const live = [...group.querySelectorAll("button, [role=\"status\"]")].some((b) => { for (let e = b; e && e !== group; e = e.parentElement) if (e.hidden) return false; return true; });
       // the review group waits behind its key during an engine game (7.7 §3)
       group.hidden = !live || (group.id === "review-actions" && reviewOptional() && !store.ui.reviewOpen);
     }

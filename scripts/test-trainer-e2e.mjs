@@ -819,6 +819,14 @@ async function solveCurrent(page, h) {
     assert(solved && !!next && next.id !== seated.id && MATE.includes(next.cat) &&
       (await page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles")).cat)) === "grp:mate",
       "m: 解出之后「下一题」还在杀棋这一池里", JSON.stringify({ solved, next: next && next.id }));
+    // …and near the rating as the first was: not the next in list order (the
+    // built-in book first, 1900 at most), the unsolved one nearest R
+    // (read off the card's 难度: the squares alone can match a built-in puzzle first)
+    const near2 = loadedLc.filter((p) => p.id !== seated.id).map((p) => p.rating);
+    const best2 = Math.min(...near2.map((x) => Math.abs(x - R)));
+    const shown2 = Number((/难度 (\d+)/.exec(await h.text("#puzzle-task") || "") || [])[1]);
+    assert(near2.includes(shown2) && Math.abs(shown2 - R) === best2,
+      "m: 「下一题」是离 " + R + " 最近的下一道，不是列表里的下一道", JSON.stringify({ shown2, best2 }));
   }
   // 开局 is the book's opening drills, with the side row
   await page.click('#pz-groups button[data-group="opening"]');

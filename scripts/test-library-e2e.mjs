@@ -220,7 +220,7 @@ async function openFilters(page) {
     "§4a …全是同一种:没有虚线，空状态不画框", JSON.stringify(r.cards));
   assert(r.cards.every((c) => c.primaries <= 1), "§4a …每张至多一个主按钮", JSON.stringify(r.cards));
   assert(r.outside.length === 0, "§4a …卡片外面没有按钮", r.outside.join(", "));
-  assert(r.libPrimary, "§4a 空棋谱库里「导入棋谱文件」是主按钮");
+  assert(r.libPrimary, "§4a 空棋谱库里「导入到库」是主按钮");
   assert(Math.abs(r.repBtns[0].w - r.repBtns[1].w) <= 1 && Math.abs(r.repBtns[0].top - r.repBtns[1].top) <= 1,
     "§4a 开局书的两个导入在卡片里并排、等宽", JSON.stringify(r.repBtns));
   // …and once there is a library the card gives way and the fill with it
@@ -229,7 +229,7 @@ async function openFilters(page) {
     empty: document.getElementById("lib-block").classList.contains("empty"),
     primary: document.getElementById("lib-import").classList.contains("primary"),
   }));
-  assert(!after.empty && !after.primary, "§4a 导入之后棋谱库不再是空状态,「导入棋谱文件」回到次要按钮",
+  assert(!after.empty && !after.primary, "§4a 导入之后棋谱库不再是空状态,「导入到库」回到次要按钮",
     JSON.stringify(after));
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();

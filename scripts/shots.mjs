@@ -5,7 +5,8 @@
  * sizes, four themes, two languages, and the states a player actually passes
  * through — the opening position, a selected piece, a piece in the hand, an
  * analysed game, the resign question, the end of a game, a lesson, a puzzle,
- * the record page. "精致" is only checkable if the same states can be taken
+ * the record page. (9.0 M2: 今天, the four segments of 训练 with the puzzle
+ * picker, and the new-game dialog joined them.) "精致" is only checkable if the same states can be taken
  * again after a change and put next to the old ones, so they are fixed here
  * rather than re-clicked from memory each time.
  *
@@ -116,6 +117,19 @@ async function analysed(page) {
   await stubEngine(page);
   await page.click("#an-run");
 }
+/** 9.0 S3: a segment of 训练, by its switch over the panel. */
+async function trainSeg(page, seg) {
+  await page.click(`#train-seg button[data-seg="${seg}"]`);
+  await page.waitForTimeout(1200); // 残局 and 名局 come in chunks
+}
+/** The new-game dialog (9.0 S2), opened the way a player does: 今天's 下一盘. */
+async function newGame(page) {
+  await page.click('#rail button[data-view="home"]');
+  await page.waitForTimeout(300);
+  await page.click("#today-new");
+  await page.waitForSelector("#newgame-modal.show", { timeout: 4000 }).catch(() => console.error("  ! 没等到新对局对话框"));
+  await page.waitForTimeout(350);
+}
 /** Until a toast is up (a picture without the toast is the wrong picture). */
 async function waitToast(page) {
   await page.waitForSelector("#toast.show", { timeout: 6000 }).catch(() => console.error("  ! 没等到 toast"));
@@ -131,21 +145,56 @@ const SHOTS = [
   // until 8.x, is the settings page's 棋盘 category below)
   { name: "play-1440-wood-zh", vp: WIDE, lang: "zh-CN", theme: "wood", mode: "ai" },
   { name: "settings-board-1440-wood-zh", vp: WIDE, lang: "zh-CN", theme: "wood", mode: "ai", view: "settings", cat: "board" },
-  // v8-0-plan A1: the top level — home, the pages, the settings
+  // v8-0-plan A1: the top level — 今天 (9.0 S1: the home view), the pages, the settings
   { name: "me-1440-wood-en", vp: WIDE, lang: "en", theme: "wood", mode: "ai", view: "me" },
-  { name: "home-1440-wood-zh", vp: WIDE, lang: "zh-CN", theme: "wood", mode: "ai", view: "home" },
+  { name: "today-1440-wood-zh", vp: WIDE, lang: "zh-CN", theme: "wood", mode: "ai", view: "home" },
+  // 9.0 S1: 今天 with a game still being played — the hero card is that game
+  { name: "today-live-1440-day-en", vp: WIDE, lang: "en", theme: "day", mode: "pvp",
+    at: async (page) => {
+      await play(page, ITALIAN.slice(0, 6));
+      await page.click('#rail button[data-view="home"]');
+      await page.waitForTimeout(500);
+    } },
   { name: "library-1440-wood-zh", vp: WIDE, lang: "zh-CN", theme: "wood", mode: "ai", view: "library" },
   // 9.0 S5: the preferences window is the settings page; opened the way it
   // was (⌘, / Ctrl+,), on its first category, 通用
   { name: "settings-general-1440-wood-zh", vp: WIDE, lang: "zh-CN", theme: "wood", mode: "ai", cat: "general",
     at: async (page) => { await page.keyboard.press(process.platform === "darwin" ? "Meta+Comma" : "Control+Comma"); await page.waitForTimeout(300); } },
-  { name: "home-760-wood-zh", vp: NARROW, lang: "zh-CN", theme: "wood", mode: "ai", view: "home" },
+  { name: "today-760-wood-zh", vp: NARROW, lang: "zh-CN", theme: "wood", mode: "ai", view: "home" },
   { name: "play-760-wood-en", vp: NARROW, lang: "en", theme: "wood", mode: "ai" },
-  { name: "home-600-day-zh", vp: TALL, lang: "zh-CN", theme: "day", mode: "ai", view: "home" },
+  { name: "today-600-day-zh", vp: TALL, lang: "zh-CN", theme: "day", mode: "ai", view: "home" },
   { name: "play-1440-notebook-en", vp: WIDE, lang: "en", theme: "notebook", mode: "ai" },
-  // reading modes: a wider panel, prose in it
-  { name: "learn-1440-wood-en", vp: WIDE, lang: "en", theme: "wood", mode: "learn" },
-  { name: "puzzle-1440-night-zh", vp: WIDE, lang: "zh-CN", theme: "night", mode: "puzzle" },
+  // reading modes: a wider panel, prose in it — 9.0 S3: one view, 训练, its
+  // four segments under the switch at the top of the panel
+  { name: "train-course-1440-wood-en", vp: WIDE, lang: "en", theme: "wood", mode: "learn", view: "train" },
+  { name: "train-puzzle-1440-night-zh", vp: WIDE, lang: "zh-CN", theme: "night", mode: "puzzle", view: "train" },
+  // the puzzle picker under the card: rating, 为你出一题, 复习, the six kinds, the runs
+  { name: "train-puzzle-picker-1440-wood-zh", vp: WIDE, lang: "zh-CN", theme: "wood", mode: "puzzle", view: "train",
+    at: async (page) => {
+      await page.evaluate(() => { const h = document.getElementById("pz-hero"); if (h) h.scrollIntoView({ block: "start" }); });
+      await page.waitForTimeout(300);
+    } },
+  { name: "train-endgame-1440-wood-zh", vp: WIDE, lang: "zh-CN", theme: "wood", mode: "learn", view: "train",
+    at: async (page) => { await trainSeg(page, "endgame"); } },
+  { name: "train-classic-guess-1440-wood-zh", vp: WIDE, lang: "zh-CN", theme: "wood", mode: "learn", view: "train",
+    at: async (page) => {
+      await trainSeg(page, "classic");
+      await page.click('#classic-mode button[data-cmode="guess"]');
+      await page.waitForTimeout(1200); // the guess runner is a chunk
+    } },
+  // 9.0 S2: the new-game dialog — eight opponents, four clocks, the side;
+  // and with 更多选项 open
+  { name: "newgame-1440-wood-zh", vp: WIDE, lang: "zh-CN", theme: "wood", mode: "ai",
+    at: async (page) => { await newGame(page); } },
+  { name: "newgame-more-1024-night-en", vp: MID, lang: "en", theme: "night", mode: "ai",
+    at: async (page) => {
+      await newGame(page);
+      await page.click("#ng-custom > summary");
+      await page.waitForTimeout(300);
+      // the dialog scrolls at this height: bring what the fold opened into view
+      await page.evaluate(() => { const r = document.getElementById("row-clock-more"); if (r) r.scrollIntoView({ block: "center" }); });
+      await page.waitForTimeout(200);
+    } },
   // a game in progress
   { name: "midgame-select-1440-wood-zh", vp: WIDE, lang: "zh-CN", theme: "wood", mode: "pvp",
     at: async (page) => { await play(page, ITALIAN); await clickSq(page, "c3"); } },
@@ -197,7 +246,8 @@ const SHOTS = [
   { name: "me-600-notebook-en", vp: TALL, lang: "en", theme: "notebook", mode: "ai", view: "me" },
   { name: "gameover-600-wood-zh", vp: TALL, lang: "zh-CN", theme: "wood", mode: "ai",
     at: async (page) => { await scholarVsEngine(page); await waitToast(page); } },
-  { name: "learn-600-wood-en", vp: TALL, lang: "en", theme: "wood", mode: "learn" },
+  { name: "train-course-600-wood-en", vp: TALL, lang: "en", theme: "wood", mode: "learn", view: "train" },
+  { name: "train-puzzle-600-day-zh", vp: TALL, lang: "zh-CN", theme: "day", mode: "puzzle", view: "train" },
   // the panel shut: the board alone
   { name: "closed-1440-wood-en", vp: WIDE, lang: "en", theme: "wood", mode: "ai", panel: "0" },
 ];

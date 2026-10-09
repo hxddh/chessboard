@@ -750,6 +750,12 @@ export function createPuzzlesUI(d) {
       startPuzzleAt("review", store.session.puzzle.idx % list.length);
       return;
     }
+    // 9.0 S3: a kind or a theme serves near the rating, as it started
+    const pc = store.session.puzzle.cat;
+    if (isGroupCat(pc) || isThemeCat(pc)) {
+      const near = Modes.nearestIdx(list, store.session.puzzle.idx);
+      if (near >= 0) { startPuzzleAt(pc, near); return; }
+    }
     // prefer the next unsolved one, wrapping around
     for (let d = 1; d <= list.length; d++) {
       const i = (store.session.puzzle.idx + d) % list.length;
@@ -861,8 +867,12 @@ export function createPuzzlesUI(d) {
     }
     const next = document.getElementById("puzzle-next");
     if (next) next.classList.toggle("primary", store.session.puzzle.done && !canPlayOn);
+    // 9.0 S3: a kind holds thousands of puzzles — the list is drawn only
+    // while its fold is open (opening it syncs), not on every sync
     const listEl = document.getElementById("puzzle-list");
-    if (listEl) {
+    const fold = document.getElementById("pz-list-fold");
+    if (listEl && fold && !fold.open) listEl.replaceChildren();
+    else if (listEl) {
       listEl.replaceChildren();
       list.forEach((p, i) => {
         const b = document.createElement("button");
@@ -945,6 +955,8 @@ export function createPuzzlesUI(d) {
     if (playOnEl) playOnEl.onclick = () => { playOnFromPuzzle(); };
     const drillSrcEl = document.getElementById("puzzle-source");
     if (drillSrcEl) drillSrcEl.onclick = () => { openDrillSource(); };
+    const fold = document.getElementById("pz-list-fold");
+    if (fold) fold.addEventListener("toggle", () => { if (fold.open) sync(); });
     document.getElementById("puzzle-list").onclick = (ev) => {
       const b = ev.target.closest("button[data-i]");
       if (b && store.session.puzzle) startPuzzleAt(store.session.puzzle.cat, Number(b.dataset.i));
