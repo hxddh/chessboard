@@ -1321,62 +1321,8 @@
     /* 7.8 §1b: blank but still taking its line, so the notation does not move */
     .opening-line.vacant { visibility: hidden; }
     .opening-line.vacant::before { content: "\00a0"; }
-    /* Mode used to be a nav row with its own idiom — an underline it shared
-       with the tab row, a `margin-top: 12px` from its life inside the panel,
-       and a group border drawn for a tab row that stopped sitting beneath it
-       when 2.0 moved the row into the chrome. In the chrome that margin
-       pushed the whole group 6px below the bar's centre line and 2.5px past
-       its bottom edge, where the border and the active underline stacked into
-       a 3px two-colour rule painted outside the bar. All of it is gone with
-       the row: mode is a `.theme-row.wrap` segment on the settings page now,
-       styled by the same rule as the difficulty, the persona and the theme,
-       and the panel is back to one navigation row. */
-
-    /* —— tabs —— */
-    .side-tabs { flex-shrink: 0; }
-    .side-tabs {
-      display: flex; align-items: stretch; gap: 4px;
-      padding: 4px 0 0;
-      /* 7.7 §1e: the pane scrolls up to the row's lower edge, and with nothing
-         marking that edge the half-cut line at the top of the pane (棋谱 row
-         10, measured) read as content showing through from under the tabs.
-         The row is solid — `inherit` lays the panel's own fill over the panel,
-         so it is the panel's colour, not a band of a new one — and above the
-         pane, so the rule under it is not painted over. The rule is --line,
-         and only while the pane below is scrolled: at the top there is
-         nothing passing under it to separate. */
-      position: relative; z-index: 1;
-      background: inherit;
-      transition: box-shadow var(--dur-quick) var(--ease);
-    }
-    /* 9.0 V1: the row sits on one hairline, and the selected tab is told by
-       one thing — its ink and the accent rule under it, no fill as well */
-    .side-tabs { box-shadow: inset 0 -1px 0 var(--line); }
-    .side-tabs.is-scrolled { box-shadow: inset 0 -1px 0 var(--line), 0 1px 0 var(--line); }
-    .side-tabs button[role="tab"] {
-      flex: 1;
-      appearance: none; border: 0; background: transparent;
-      color: var(--muted);
-      font: inherit; font-size: 0.875rem; font-weight: 600; white-space: nowrap;
-      /* same box as the mode row above it: they select a view, they sit one on
-         top of the other, and until now one was 37px tall at weight 600 and the
-         other 35 at 12px/500 */
-      min-height: var(--ctl-h);
-      display: flex; align-items: center; justify-content: center;
-      padding: 0 4px; border-radius: 0;
-      cursor: pointer;
-      border-bottom: 2px solid transparent;
-      transition: color var(--dur-quick) var(--ease), border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
-    }
-    .side-tabs button[role="tab"]:hover { color: var(--text); }
-    .side-tabs button[role="tab"][aria-selected="true"] {
-      color: var(--text);
-      border-bottom-color: var(--accent);
-    }
-    /* .side-close is gone: a ✕ the same height as the tabs, in the tab
-       row, aligned with them, reads as a fourth tab until you click it. The
-       topbar ☰ and the P key both close the panel and neither pretends to be
-       a tab. */
+    /* 9.0 S5: no tab row — the panel is one page (its 设置 tab is the
+       settings page now), and the pane starts at the panel's top */
     .side-pane {
       display: flex; flex-direction: column;
       flex: 1; min-height: 0;
@@ -1455,33 +1401,6 @@
     }
     .reading-index[open] > summary::after { transform: rotate(90deg); }
     .reading-index:not([open]) > *:not(summary) { display: none; }
-
-    /* --- a settings group that opens on request -------------------------- */
-    .setting-fold > summary {
-      display: flex; align-items: baseline; gap: 8px;
-      cursor: pointer; list-style: none;
-      min-height: var(--row-h);
-      border-radius: var(--radius-sm);
-    }
-    .setting-fold > summary::-webkit-details-marker { display: none; }
-    .setting-fold > summary::after {
-      content: "›"; margin-left: auto; color: var(--muted);
-      transition: transform var(--dur-quick) var(--ease);
-    }
-    .setting-fold[open] > summary::after { transform: rotate(90deg); }
-    /* the ›→⌄ chevron had a transition and the row it sits in did not, so the
-       arrow eased while the background it eased over snapped */
-    .setting-fold > summary { transition: background var(--dur-quick) var(--ease); }
-    .setting-fold > summary:hover { background: var(--btn-ghost); }
-    /* Explicit, for the same reason `[hidden]` needs !important here: the
-       author `display` on .setting-list wins over the closed <details>'s own
-       hiding, so a folded group would still be laid out — visible buttons in
-       a group that reads as shut. */
-    .setting-fold:not([open]) > *:not(summary) { display: none; }
-    .setting-sum {
-      font-size: 0.75rem; color: var(--muted);
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
 
     .setting-row {
       display: flex; align-items: center; justify-content: space-between;
@@ -2548,7 +2467,7 @@
       #app.panel-open.scrim-on .scrim { display: none; }
       /* a 900px-wide row of four mode buttons is a lot of nothing between
          labels; keep the sheet's contents at the density the panel was drawn for */
-      .side-tabs, .side-pane {
+      .side-pane {
         width: 100%; max-width: 620px;
         margin-left: auto; margin-right: auto;
       }
@@ -2705,7 +2624,7 @@
          move list (written for a full-height column) has to come down with it */
       .move-list { max-height: 176px; }
       /* up to 820px wide now: the same density cap as the desktop sheet */
-      .side-tabs, .side-pane {
+      .side-pane {
         width: 100%; max-width: 620px;
         margin-left: auto; margin-right: auto;
       }
@@ -2745,7 +2664,6 @@
 .side-pane:not([hidden]) {
   animation: pane-in var(--dur-base) var(--ease);
 }
-.setting-fold[open] > *:not(summary),
 .reading-index[open] > *:not(summary) {
   animation: reveal-in var(--dur-base) var(--ease);
 }
@@ -4236,8 +4154,51 @@ span[data-icon] { display: inline-grid; place-items: center; }
 }
 .modal-bg.page-sheet > .modal > .close-row:last-child { background: var(--bg); }
 
-/* 偏好设置: the settings page's rows, in a window of their own */
-.modal.prefs-modal { width: min(560px, calc(100vw - 32px)); }
+/* 9.0 S5: 设置 — the categories on the left, the open one on the right
+   (v9.css .settings__grid / .cats). One category at a time: the page never
+   scrolls through the others to reach the one you came for. */
+.set-grid {
+  display: grid; gap: 24px;
+  grid-template-columns: 232px minmax(0, 640px);
+  align-items: start;
+}
+.set-cats { display: grid; gap: 4px; position: sticky; top: 0; }
+.set-cat {
+  appearance: none; border: 0; background: transparent; cursor: pointer;
+  display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; align-items: start;
+  padding: 8px 12px; border-radius: var(--radius-sm);
+  font: inherit; text-align: left; color: var(--muted);
+}
+.set-cat-ic { display: inline-flex; width: 20px; height: 20px; margin-top: 2px; }
+.set-cat-txt b { display: block; font-weight: 600; color: var(--text); font-size: 0.875rem; line-height: var(--lh-body); }
+.set-cat-txt small {
+  display: block; font-size: 0.75rem; line-height: var(--lh-body);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.set-cat:hover { background: var(--btn-ghost); }
+.set-cat[aria-selected="true"] { background: var(--accent-soft); }
+.set-cat[aria-selected="true"] .set-cat-ic { color: var(--accent); }
+.set-cat:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.set-pane { display: grid; gap: 24px; }
+.set-pane[hidden] { display: none; }
+.set-sec {
+  min-width: 0; padding: 16px;
+  border: 1px solid var(--card-border); border-radius: var(--radius-md);
+  background: var(--card);
+}
+.set-sec > .side-h { margin: 0 0 8px; }
+.set-sec > .hint { margin: 8px 0 0; }
+@media (max-width: 900px) {
+  /* the categories become a row over the open one */
+  .set-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .set-cats {
+    position: static; display: flex; gap: 4px; overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .set-cat { grid-template-columns: 20px auto; align-items: center; flex: none; padding: 0 12px; height: 36px; }
+  .set-cat-ic { margin-top: 0; }
+  .set-cat-txt small { display: none; }
+}
 
 /* ------------------------------------------------------------------
    The play view stretches with its window (v8-0-plan §2 A2).

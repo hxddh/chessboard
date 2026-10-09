@@ -1,16 +1,11 @@
 /**
- * 偏好设置窗口：外观、语言、声音与数据。
+ * 设置页：外观的选择器、联网同步的开关，以及切到某一类时要做的事。
  *
- * v8-0-plan A1: the settings page keeps what belongs to a game — the
- * opponent, the side, the clock, the board's orientation, the engine — and
- * what belongs to the app moves here: how it looks, what language it speaks,
- * how it sounds, and the data it keeps. Opened by ⌘, on macOS and Ctrl+,
- * elsewhere (shell.js), and from the rail's last entry (design review #10).
- *
- * The rows are the settings page's own markup, moved into the window in
- * index.html with their ids, so their handlers (settings-ui.js) came along
- * untouched. The look pickers are A3's module (appearance-ui.js), mounted
- * here and nowhere else.
+ * 9.0 S5: the preferences window and the panel's 设置 tab are one page now
+ * (index.html #page-settings, shown by shell.js like 首页 and 我的). The rows
+ * are index.html's own markup with their ids, wired by settings-ui.js where
+ * they stand; this module owns the two things that are built or loaded: the
+ * look pickers (v8-0-plan A3, appearance-ui.js) and the sync switch's chunk.
  * @module prefs-ui
  */
 import { ChessDialog } from "./dialog.js";
@@ -24,10 +19,9 @@ import { loadChunk } from "./chunk.js";
 export function createPrefsUI(d) {
   const { doc, t, getLook, setLook, pieceSvgs } = d;
   const Dlg = ChessDialog;
-  const modal = doc.getElementById("prefs-modal");
   // the pickers once mounted: a handle, not app state (their state is store.ui)
   const mounted = { look: null };
-  // v8-0-plan C2: 允许联网同步 is this window's switch, and 从网站同步 on the
+  // v8-0-plan C2: 允许联网同步 is the settings page's switch, and 从网站同步 on the
   // library page the button behind it. All the bundle holds is the switch's
   // look and a loader: turning it, the dialog, the stored "sync" key's rules
   // and the claim are chunk-sync.js (sync-ui.js) — the first-paint budget
@@ -46,28 +40,29 @@ export function createPrefsUI(d) {
   }, () => {});
 
   /**
-   * The appearance half of the window, behind one call: 外观 / 棋盘 / 边框 /
-   * 棋子 (v8-0-plan A3, appearance-ui.js) built into `host`. The text size
-   * and coordinate rows after it are index.html's own markup.
+   * The look pickers, behind one call: 棋盘 / 边框 / 棋子 built into `host`
+   * (v8-0-plan A3, appearance-ui.js). Light or dark is 通用's, not the
+   * board's, so its row moves there once built.
    */
   function mountAppearance(host) {
-    if (host && !mounted.look) mounted.look = mountLook(host, { t, getLook, setLook, pieceSvgs });
+    if (!host || mounted.look) return;
+    mounted.look = mountLook(host, { t, getLook, setLook, pieceSvgs });
+    const row = doc.getElementById("row-appearance"), app = doc.getElementById("set-look-app");
+    if (row && app) app.appendChild(row);
   }
   /** Mark the current look in the pickers (settings-ui.js paintSettings). */
   function syncLook() {
     if (mounted.look) mounted.look.sync();
   }
 
-  function open() {
-    if (!modal || modal.classList.contains("show")) return;
-    paintSync();
-    Dlg.open(modal);
-    // the board previews were drawn while the window was hidden, at their
-    // fallback size; now that the row has a box, draw them at it
-    if (mounted.look) requestAnimationFrame(() => mounted.look.repaint());
-  }
-  function close() {
-    if (modal) Dlg.close(modal);
+  /**
+   * A category came into view (shell.js showCat). The board previews were
+   * drawn while their pane was hidden, at their fallback size; now that the
+   * row has a box, draw them at it. 数据 shows the sync switch as stored.
+   */
+  function onCat(cat) {
+    if (cat === "board" && mounted.look) requestAnimationFrame(() => mounted.look.repaint());
+    if (cat === "data") paintSync();
   }
 
   function wire() {
@@ -76,11 +71,7 @@ export function createPrefsUI(d) {
     const sw = doc.getElementById("opt-netsync"), go = doc.getElementById("lib-sync");
     if (net && sw) sw.onclick = () => withSync((s) => s.toggle());
     if (net && go) go.onclick = () => withSync((s) => s.open());
-    if (!modal) return;
-    const x = doc.getElementById("prefs-close");
-    if (x) x.onclick = close;
-    modal.addEventListener("click", (ev) => { if (ev.target === modal) close(); });
   }
 
-  return { open, close, wire, mountAppearance, syncLook };
+  return { onCat, wire, mountAppearance, syncLook };
 }

@@ -1825,10 +1825,10 @@ for (const lang of CONTENT_LANGS) {
       "every control height comes from a token" + (stray.length ? " — off it: " + [...new Set(stray)].join(", ") : ""));
     for (const tokName of ["--row-h", "--row-h-sm", "--label-h"])
       assert(new RegExp(tokName + ":\\s*\\d+px").test(stripped), tokName + " is defined");
-    // 7.9 §1e: a tab is a button, so its height is the buttons' token now
-    // (the same 36px, see the two-heights guard below)
-    const tabH = /\.side-tabs button\[role="tab"\]\s*\{[^}]*min-height:\s*var\(--ctl-h\)/.test(stripped);
-    assert(tabH, "the tab row's height comes from --ctl-h");
+    // 9.0 S5: a settings category is a button too — its height is the
+    // buttons' token in the narrow row (the two-heights guard below)
+    const catH = /\.set-cat \{[^}]*height: 36px/.test(stripped) || /\.set-cat\s*\{[^}]*min-height:\s*var\(--ctl-h\)/.test(stripped);
+    assert(catH, "the narrow settings row's categories are a control's height");
   }
 
   // The chrome is one strip, so everything standing in it is one height and one
@@ -2161,32 +2161,38 @@ for (const lang of CONTENT_LANGS) {
       "the mode segment is styled by the same rule as every other segment (" + (seg ? seg[1] : "missing") + ")");
   }
 
-  // The settings page, read top to bottom. Three claims that are about the
-  // order and the naming rather than about any one control, so they are
-  // cheapest to make against the markup.
+  // The settings page, read in order. Claims about the order and the
+  // naming rather than about any one control, so they are cheapest to make
+  // against the markup.
   {
     const markup = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
-    const pane = markup.slice(markup.indexOf('id="pane-setup"'), markup.indexOf("/pane-setup"));
     // the three dictionaries, wherever they live (v8-0-plan F5 split them)
     const i18nSrc = ["i18n.js", "i18n-en.js", "i18n-ja.js"]
       .map((f) => fs.readFileSync(path.join(root, "src/web/js", f), "utf8")).join("\n");
-    const headings = [...pane.matchAll(/data-i18n="(side\.[a-z]+)"[^>]*>/g)]
-      .map((m) => m[1]).filter((k) => ["side.mode", "side.game", "side.display", "side.engine", "side.danger", "side.language", "side.sound"].includes(k));
-    // v8-0-plan A1: the settings page is the game's. The mode went to the
-    // new-game dialog and the rail; the window's look, language, sound and
-    // data went to 偏好设置. What is left opens on the game and ends on the
-    // engine, and none of the app-level groups is on it.
-    assert(headings[0] === "side.game" && headings[headings.length - 1] === "side.engine",
-      "A1: the settings page runs 对局 → … → 引擎 (" + headings.join(" → ") + ")");
-    assert(!headings.some((k) => ["side.mode", "side.danger", "side.language", "side.sound"].includes(k)),
-      "A1: no mode, language, sound or deletion group on the settings page");
-    // …and in the preferences window, the deletions are still the last
-    // group: 2.1 had them in the middle of a page, the only red on it
-    const prefs = markup.slice(markup.indexOf('id="prefs-modal"'), markup.indexOf('id="prefs-close"'));
-    const pHeads = [...prefs.matchAll(/data-i18n="((?:side|prefs)\.[a-zA-Z]+)"[^>]*>/g)].map((m) => m[1])
-      .filter((k) => ["prefs.look", "side.language", "side.sound", "side.learning", "side.allData", "side.danger"].includes(k));
-    assert(pHeads[0] === "prefs.look" && pHeads[pHeads.length - 1] === "side.danger",
-      "A1: 偏好设置 runs 外观 → … → 清除数据 (" + pHeads.join(" → ") + ")");
+    // 9.0 S5: one place — six categories, in the list's order, each naming a
+    // pane that exists; no second settings surface in the panel or a window
+    const cats = [...markup.matchAll(/role="tab" class="set-cat" id="cat-([a-z]+)" data-cat="\1"[^>]*aria-controls="set-\1"/g)].map((m) => m[1]);
+    assert(cats.join() === "general,board,sound,game,data,advanced",
+      "S5: the settings page runs 通用 → 棋盘 → 声音 → 对局 → 数据 → 高级 (" + cats.join(" → ") + ")");
+    assert(cats.every((c) => markup.includes('<div class="set-pane" id="set-' + c + '"')),
+      "S5: every category points at a pane that exists");
+    assert(!/id="pane-setup"|id="prefs-modal"|id="tab-setup"/.test(markup),
+      "S5: no 设置 tab in the panel and no preferences window — the page is the one place");
+    // the language is the first thing on the first category (task i)
+    const general = markup.slice(markup.indexOf('id="set-general"'), markup.indexOf('id="set-board"'));
+    assert(general.indexOf('id="lang-seg"') > 0 && general.indexOf('id="lang-seg"') < general.indexOf('id="text-seg"'),
+      "S5: the language is the first row of 通用");
+    // the deletions are the last group of 数据: 2.1 had them in the middle
+    // of a page, the only red on it
+    const data = markup.slice(markup.indexOf('id="set-data"'), markup.indexOf('id="set-advanced"'));
+    const dHeads = [...data.matchAll(/data-i18n="((?:side|lib)\.[a-zA-Z]+)"[^>]*>/g)].map((m) => m[1])
+      .filter((k) => ["lib.sync", "side.learning", "side.allData", "side.danger"].includes(k));
+    assert(dHeads[dHeads.length - 1] === "side.danger",
+      "S5: 数据 ends on 清除数据 (" + dHeads.join(" → ") + ")");
+    // the next game's choices are the new-game dialog's, and only there
+    const ng = markup.slice(markup.indexOf('id="newgame-modal"'), markup.indexOf('id="confirm-modal"'));
+    assert(["row-difficulty", "row-persona", "row-color", "row-clock"].every((id) => ng.includes('id="' + id + '"')),
+      "S5: rung, style, side and clock live in the new-game dialog");
 
     // The heading is a promise about what is inside. 「外观」 once held the
     // language and the sound; since A1 each has its own group, and the rows
@@ -5119,14 +5125,11 @@ for (const lang of CONTENT_LANGS) {
       (pv - side) + "px of width vs " + (h - chrome) + "px of height)");
   }
 
-  // The panel is split into tabs — two since v8-0-plan A1, when 记录 became
-  // the 我的 and 棋谱库 pages. A section that ends up outside a pane is
-  // invisible in every tab — the failure mode is silent, so it gets a check.
+  // 9.0 S5: the panel is one pane (its 设置 tab became the settings page).
+  // A section that ends up outside it is invisible — the failure mode is
+  // silent, so it gets a check.
   const paneIds = [...html.matchAll(/<div class="side-pane" id="(pane-[a-z]+)"/g)].map((m) => m[1]);
-  assert(paneIds.length === 2, "found the two panel panes (" + paneIds.join(", ") + ")");
-  const tabControls = [...html.matchAll(/role="tab"[^>]*aria-controls="([^"]+)"/g)].map((m) => m[1]);
-  assert(tabControls.length === 2 && tabControls.every((c) => paneIds.includes(c)),
-    "every tab points at a pane that exists");
+  assert(paneIds.join() === "pane-play", "found the one panel pane (" + paneIds.join(", ") + ")");
   const aside = /<aside class="side"[\s\S]*?<\/aside>/.exec(html)[0];
   let orphan = 0;
   // walk the aside, tracking whether we are inside a pane when a section opens

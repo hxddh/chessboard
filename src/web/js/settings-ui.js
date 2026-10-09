@@ -25,14 +25,13 @@ import { ChessI18n } from "./i18n.js";
 import { ChessLazy } from "./lazy-content.js";
 import { lookAttrs } from "./look.js";
 import { TimeControl } from "./time-control.js";
-import { tdot } from "./tdot.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
  */
 export function createSettingsUI(d) {
   const {
-    doc, store, appEl, t, el, setText, DIFF_NAMES,
+    doc, store, appEl, t, setText,
     saveSettings, saveGame, toast, sync, draw, resetClocks,
     invalidateEngine, maybeEngineTurn, syncAutoFlip, applyLanguage,
     setAnalyzeUI, renderReview, drawEvalCurve, drawEvalBar, syncLook, onPaint,
@@ -96,13 +95,6 @@ export function createSettingsUI(d) {
     document.querySelectorAll("#mode-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.mode === ngMode);
     });
-    // the first tab holds the lesson or the puzzle in those modes, so it says
-    // so — 「对局」 over a lesson read as a page that had not changed
-    const playTab = document.getElementById("tab-play");
-    if (playTab) {
-      playTab.textContent = store.session.mode === "learn" ? t("mode.learn")
-        : store.session.mode === "puzzle" ? t("mode.puzzle") : t("tab.play");
-    }
     // two rows now: sparring tiers and engine-strength tiers (see index.html)
     // While the new-game dialog is open (v7-8-plan §4) these rows are in it
     // and show its draft — what the next game will be — not the game on the
@@ -156,43 +148,12 @@ export function createSettingsUI(d) {
       setText(colorRow.querySelector(".setting-k"), t(pvpPick ? "ng.pvpColor" : "side.color"));
     }
     if (clockRow) clockRow.hidden = ngMode !== "pvp" && ngMode !== "ai";
-    const coachRow = document.getElementById("row-coach");
-    if (coachRow) coachRow.hidden = store.session.mode !== "ai";
     const coachSwitch = document.getElementById("opt-coach");
     if (coachSwitch) coachSwitch.setAttribute("aria-pressed", store.session.coachOn ? "true" : "false");
-    const flipRow = document.getElementById("row-autoflip");
-    if (flipRow) flipRow.hidden = store.session.mode !== "pvp";
     const flipSwitch = document.getElementById("opt-autoflip");
     if (flipSwitch) flipSwitch.setAttribute("aria-pressed", store.ui.autoFlipPvp ? "true" : "false");
-    // The one line that answers "what am I set to" without opening anything.
-    // Only the rows that apply in this mode are in it — a summary that lists a
-    // clock in lesson mode is a summary of a different app.
-    const sum = el("game-summary");
-    if (sum) {
-      const parts = [];
-      if (store.session.mode === "ai") {
-        parts.push(DIFF_NAMES[store.session.difficulty] || store.session.difficulty);
-        if (store.session.personaId !== "off") parts.push(t("persona." + store.session.personaId));
-        parts.push(t(store.session.humanColor === "w" ? "color.white" : "color.black"));
-      }
-      if (store.session.mode === "ai" || store.session.mode === "pvp") {
-        parts.push(store.game.timeControl === "off" ? t("clock.off") : store.game.timeControl);
-      }
-      sum.textContent = tdot(...parts);
-    }
     // the reading modes get a wider column — see styles.css [data-mode]
     appEl.setAttribute("data-mode", store.session.mode);
-    // The whole section, not just the fold inside it. Hiding the <details>
-    // alone left the <section> standing: 33px of nothing with the group's
-    // dividing rule still drawn under it, which on the settings page of the
-    // two teaching modes read as a group that had failed to load.
-    const foldGame = el("fold-game");
-    const teaching = store.session.mode === "learn" || store.session.mode === "puzzle";
-    if (foldGame) {
-      foldGame.hidden = teaching;
-      const sec = foldGame.closest("section");
-      if (sec) sec.hidden = teaching;
-    }
 
     const secMoves = document.getElementById("sec-moves");
     const trainer = store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;

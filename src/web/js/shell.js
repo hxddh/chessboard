@@ -5,7 +5,7 @@
  * on the settings page (index.html's #sec-mode), the library and its
  * diagnosis were ~460px dialogs, and 统计 / 棋谱库 / 开局书 / 对局历史 / 成就
  * were stacked in the 400px side panel under 记录. This is the level above
- * all of that — six views, one of them showing at a time:
+ * all of that — seven views, one of them showing at a time:
  *
  *   home     首页: 继续上次 / 今天的训练 / 下一步建议
  *   play     下棋: the board with the panel — the geometry players know
@@ -13,6 +13,7 @@
  *   learn    学习: the same board view, in the lesson mode
  *   library  棋谱库: a page — the library, its diagnosis, the opening book
  *   me       我的: a page — statistics, history, achievements
+ *   settings 设置: a page — the one place settings live (9.0 S5)
  *
  * The three board views are the one stage in three modes, so the board's
  * rect is the same in all of them (test-layout-e2e). The two pages lie over
@@ -30,16 +31,18 @@ import { ChessDialog } from "./dialog.js";
 import { ChessBoardView } from "./board.js";
 
 /** The views, in the rail's order; `home` is the rail's head. */
-export const SHELL_VIEWS = ["home", "play", "puzzle", "learn", "library", "me"];
+export const SHELL_VIEWS = ["home", "play", "puzzle", "learn", "library", "me", "settings"];
 /** The views that are pages over the stage, and the page each one shows. */
-const PAGES = { home: "page-home", library: "page-library", me: "page-me" };
+const PAGES = { home: "page-home", library: "page-library", me: "page-me", settings: "page-settings" };
+/** 9.0 S5: the settings page's categories, in the list's order. */
+export const SETTING_CATS = ["general", "board", "sound", "game", "data", "advanced"];
 
 /**
  * @param {object} d everything this module borrows from app.js
  */
 export function createShell(d) {
   const {
-    doc, store, appEl, t, tf, switchMode, saveSettings, requestNewGame, openPrefs,
+    doc, store, appEl, t, tf, switchMode, saveSettings, requestNewGame, onSettings,
     sanHistory, gameOver, recommendation, nextLesson, owed, dailyPlan, dailyStepLabel, dailyJump, onMe,
   } = d;
   const Dlg = ChessDialog;
@@ -96,6 +99,7 @@ export function createShell(d) {
     if (want === "home") renderHome();
     // 我的 draws its charts at the width it opens at (me-page.js, v8-0-plan B5)
     else if (want === "me" && onMe) onMe();
+    else if (want === "settings") showCat(store.ui.setCat);
   }
 
   /**
@@ -156,67 +160,63 @@ export function createShell(d) {
     else if (store.ui.view === "home") renderHome();
   }
 
-  // --- the panel's tabs -----------------------------------------------------
+  // --- the panel -----------------------------------------------------------
   //
-  // Until 1.9 the panel was one 1788px scroll in a 900px window, ordered by
-  // when a setting is chosen rather than by how often it is used: theme and
-  // language sat above the fold while the move list, the replay bar and this
-  // game's own actions all started below it. Tabs split it by what the player
-  // is doing. v8-0-plan A1: two now — playing and configuring; looking back
-  // (记录) became the 我的 and 棋谱库 pages. Moved here from app.js with it.
-  const TABS = ["play", "setup"];
-
-  function setSideTab(id, opts) {
-    const want = TABS.includes(id) ? id : "play";
-    store.ui.sideTab = want;
-    // a flow that shows the panel's page shows the board it belongs to (A1)
+  // 9.0 S5: the panel is one page again. Its 设置 tab went to the settings
+  // page (the opponent, the side and the clock to the new-game dialog), and
+  // with one pane left the tab row went with it. The name stays for the
+  // flows that call it: "show the board, with the panel at its top".
+  function setSideTab(_id, opts) {
     toBoard();
-    // which tab is showing is a layout fact, not only a state one: the
-    // stylesheet reads it from an attribute rather than from a width this
-    // function would have to compute and keep in step
-    appEl.setAttribute("data-tab", want);
-    for (const tab of TABS) {
-      const btn = doc.getElementById("tab-" + tab);
-      const pane = doc.getElementById("pane-" + tab);
-      if (btn) btn.setAttribute("aria-selected", tab === want ? "true" : "false");
-      if (pane) {
-        pane.hidden = tab !== want;
-        // a pane left scrolled half-way reads as a broken tab when you return
-        if (tab === want && opts && opts.top) pane.scrollTop = 0;
+    const pane = doc.getElementById("pane-play");
+    if (pane && opts && opts.top) pane.scrollTop = 0;
+  }
+
+  // --- 设置 -------------------------------------------------------------------
+  //
+  // Six categories down the left, one shown on the right (Apple HIG's
+  // settings window; v9-0-plan S5). Which one was open is remembered, so ⌘,
+  // goes back to where the player was.
+  function showCat(cat) {
+    const want = SETTING_CATS.includes(cat) ? cat : "general";
+    store.ui.setCat = want;
+    for (const c of SETTING_CATS) {
+      const tab = doc.getElementById("cat-" + c);
+      const pane = doc.getElementById("set-" + c);
+      const on = c === want;
+      if (tab) {
+        tab.setAttribute("aria-selected", on ? "true" : "false");
+        tab.tabIndex = on ? 0 : -1;
       }
+      if (pane) pane.hidden = !on;
     }
-    syncTabRule();
-    saveSettings();
+    if (onSettings) onSettings(want);
   }
 
-  /** 7.7 §1e: the rule under the tab row, drawn while the pane is scrolled. */
-  function syncTabRule() {
-    const row = doc.querySelector(".side-tabs");
-    const pane = doc.getElementById("pane-" + store.ui.sideTab);
-    if (row) row.classList.toggle("is-scrolled", !!pane && pane.scrollTop > 0);
-  }
-
-  function wireTabs() {
-    for (const tab of TABS) {
-      const pane = doc.getElementById("pane-" + tab);
-      if (pane) pane.addEventListener("scroll", syncTabRule, { passive: true });
-    }
-    const tabRow = doc.querySelector(".side-tabs");
-    if (!tabRow) return;
-    tabRow.onclick = (ev) => {
-      const b = ev.target.closest("button[data-tab]");
-      if (b) setSideTab(b.dataset.tab, { top: true });
-    };
-    // ARIA tablist keyboard contract: arrows move between tabs
-    tabRow.onkeydown = (ev) => {
-      if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
-      const cur = TABS.indexOf(store.ui.sideTab);
-      const next = TABS[(cur + (ev.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length];
+  function wireCats() {
+    const list = doc.querySelector(".set-cats");
+    if (!list) return;
+    list.addEventListener("click", (ev) => {
+      const b = ev.target.closest("button[data-cat]");
+      if (!b) return;
+      showCat(b.dataset.cat);
+      saveSettings();
+    });
+    // a vertical tablist: up and down walk it, Home / End jump to its ends
+    list.addEventListener("keydown", (ev) => {
+      const keys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"];
+      if (!keys.includes(ev.key)) return;
+      const i = SETTING_CATS.indexOf(store.ui.setCat);
+      const n = SETTING_CATS.length;
+      const back = ev.key === "ArrowUp" || ev.key === "ArrowLeft";
+      const j = ev.key === "Home" ? 0 : ev.key === "End" ? n - 1 : (i + (back ? n - 1 : 1)) % n;
       ev.preventDefault();
-      setSideTab(next, { top: true });
-      const btn = doc.getElementById("tab-" + next);
-      if (btn) btn.focus();
-    };
+      ev.stopPropagation();
+      showCat(SETTING_CATS[j]);
+      saveSettings();
+      const b = doc.getElementById("cat-" + SETTING_CATS[j]);
+      if (b) b.focus();
+    });
   }
 
   // --- 首页 ------------------------------------------------------------------
@@ -301,13 +301,11 @@ export function createShell(d) {
   const isMac = /Mac|iPhone|iPad/.test((typeof navigator !== "undefined" && (navigator.platform || navigator.userAgent)) || "");
 
   function wire() {
-    wireTabs();
+    wireCats();
     if (rail) {
       rail.addEventListener("click", (ev) => {
         const b = ev.target.closest("button");
-        if (!b) return;
-        if (b.dataset.view) go(b.dataset.view);
-        else if (b.id === "prefs-open") openPrefs();
+        if (b && b.dataset.view) go(b.dataset.view);
       });
       // A column of links on a wide window, a row on a narrow one: both
       // arrow pairs walk it, Home / End jump to its ends. The keys stop
@@ -326,14 +324,14 @@ export function createShell(d) {
         all[j].focus();
       });
     }
-    // ⌘, on macOS, Ctrl+, elsewhere — every desktop app's preferences key
+    // ⌘, on macOS, Ctrl+, elsewhere — every desktop app's settings key
     // (design review #10). Capture phase: a focused control must not eat it.
     doc.defaultView.addEventListener("keydown", (ev) => {
       if (ev.key !== "," || ev.altKey || ev.shiftKey) return;
       if (!(isMac ? ev.metaKey && !ev.ctrlKey : ev.ctrlKey && !ev.metaKey)) return;
       ev.preventDefault();
       ev.stopPropagation();
-      openPrefs();
+      go("settings");
     }, true);
   }
 

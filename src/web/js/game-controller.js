@@ -28,7 +28,7 @@ export function createGameController(d) {
     t, tf, sideName, game, store, gameUndo, gameReset, switchLine, sanHistory, isLive, baseGame,
     clearPreview, toast, confirmNative, saveSettings, saveGame, OppUI, invalidateEngine, retryEngine,
     engineOut, engineDownToast, maybeEngineTurn, tcTag, resetClocks, learnUndo, evalScalar, newRecordId,
-    saveStats, loadStats, renderStats, afterPress, checkNewAchievements, timeoutIsDraw, ruleTerminated,
+    saveStats, loadStats, renderStats, checkNewAchievements, timeoutIsDraw, ruleTerminated,
     claimableDrawReason, naturalGameOver, appGameOver, el, playEnding, sync, syncSettingsUI, syncAutoFlip,
     goLive, stopEditor, refusePgnEdit, Shell, switchMode,
   } = d;
@@ -90,27 +90,6 @@ export function createGameController(d) {
     startNewGame();
   }
 
-  // The dialog hosts the settings page's own rows while it is open — the
-  // same four DOM nodes, moved, not a second copy that could drift from the
-  // first (their handlers, labels, tooltips and i18n all come along). They
-  // go back in front of 失着提醒 when it closes. Moving them is safe with
-  // respect to 7.6's rule because it never happens under a press: opening is
-  // a click (after pointerup) and closing waits for any press to end.
-  const NG_ROWS = ["row-difficulty", "row-persona", "row-color", "row-clock"];
-  function hostNewGameRows(inDialog) {
-    const host = el("ng-host");
-    const home = el("row-coach");
-    if (!host || !home) return;
-    for (const id of NG_ROWS) {
-      const row = el(id);
-      if (!row) continue;
-      // v8-0-plan B4: rung and style sit in the dialog's 自定义 fold, under the personas
-      const dest = id === "row-difficulty" || id === "row-persona" ? el("ng-custom-body") || host : host;
-      if (inDialog) { if (row.parentNode !== dest) dest.appendChild(row); }
-      else if (row.parentNode !== home.parentNode) home.parentNode.insertBefore(row, home);
-    }
-  }
-
   function openNewGame(opts) {
     const modal = el("newgame-modal");
     if (!modal) { startNewGame(); return; }
@@ -124,7 +103,6 @@ export function createGameController(d) {
     const warn = el("ng-warn");
     if (warn) warn.hidden = !(sanHistory().length && !appGameOver());
     if (opts && opts.switchOpponent) OppUI.applyAdvice();
-    hostNewGameRows(true);
     syncSettingsUI();
     // 换个对手 lands on the opponent (its persona card); everything else on 开始
     const card = OppUI.onOpen();
@@ -137,9 +115,8 @@ export function createGameController(d) {
     const modal = el("newgame-modal");
     store.ui.newGame = null;
     Dlg.close(modal);
-    // the seg rows read the store again, and go home once no button is held
+    // the seg rows read the store again
     syncSettingsUI();
-    afterPress(() => { if (!store.ui.newGame) hostNewGameRows(false); });
   }
 
   /** 开始: the draft becomes the settings, then the game starts. */

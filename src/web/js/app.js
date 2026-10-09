@@ -393,8 +393,8 @@ import { loadChunk } from "./chunk.js";
       ...LOOK_DEFAULT,
       /** pvp: flip the board to face the side to move after every move */
       autoFlipPvp: false,
-      /** which panel tab is showing: "play" | "setup" | "record" */
-      sideTab: "play",
+      /** 9.0 S5: the settings page's open category (shell.js SETTING_CATS) */
+      setCat: "general",
       /** UI language id (see i18n.js); lesson/puzzle content stays Chinese */
       langId: null,  // filled in below, where it can first be computed
       /** Is the app in front of somebody? Kept by the app:activate/deactivate
@@ -1461,7 +1461,7 @@ import { loadChunk } from "./chunk.js";
       if (typeof s.autoFlipPvp === "boolean") store.ui.autoFlipPvp = s.autoFlipPvp;
       if (I18n && typeof s.langId === "string") store.ui.langId = I18n.setLang(s.langId);
       if (["all", "easy", "mid", "hard"].includes(s.puzzleTier)) store.session.puzzleTierFilter = s.puzzleTier;
-      if (["play", "setup"].includes(s.sideTab)) store.ui.sideTab = s.sideTab;
+      if (typeof s.setCat === "string") store.ui.setCat = s.setCat;
       // v8-0-plan A1: the view and the last playing mode; shell.js vets both
       Object.assign(store.ui, { view: s.view, playMode: s.playMode });
       if (PERSONA_IDS.includes(s.personaId)) store.session.personaId = s.personaId;
@@ -1469,7 +1469,7 @@ import { loadChunk } from "./chunk.js";
   }
   function saveSettings() {
     try {
-      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
+      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, setCat: store.ui.setCat, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
         volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv, bgWorker: store.ui.bgWorker === true,
         textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
         // v8-0-plan A3: the look
@@ -3897,7 +3897,7 @@ import { loadChunk } from "./chunk.js";
     t, tf, sideName, game, store, gameUndo, gameReset, switchLine, sanHistory, isLive, baseGame,
     clearPreview, toast, confirmNative, saveSettings, saveGame, OppUI, invalidateEngine, retryEngine,
     engineOut, engineDownToast, maybeEngineTurn, tcTag, resetClocks, learnUndo, evalScalar, newRecordId,
-    saveStats, loadStats, renderStats, afterPress, checkNewAchievements, timeoutIsDraw, ruleTerminated,
+    saveStats, loadStats, renderStats, checkNewAchievements, timeoutIsDraw, ruleTerminated,
     claimableDrawReason, naturalGameOver, appGameOver, el, playEnding, sync, syncSettingsUI, syncAutoFlip,
     goLive, stopEditor, refusePgnEdit, Shell: { toBoard: () => Shell.toBoard() }, switchMode,
   });
@@ -5200,14 +5200,14 @@ import { loadChunk } from "./chunk.js";
     },
   });
 
-  // v8-0-plan A1: the preferences window (prefs-ui.js), with the A3 look
-  // pickers (appearance-ui.js) mounted in it; a pick goes to settings-ui.js
+  // 9.0 S5: the settings page's look pickers and sync switch (prefs-ui.js);
+  // a pick goes to settings-ui.js
   const PrefsUI = createPrefsUI({ doc: document, t, getLook: () => store.ui, setLook: (p) => SettingsUI.applyLook(p), pieceSvgs: BoardView.setSvgs, netSync: { store, Persist, tf, lib: LibraryUI } });
   PrefsUI.wire();
   // v8-0-plan F4: the settings page (settings-ui.js) — its view, the look
   // and the handlers behind its controls
   const SettingsUI = createSettingsUI({
-    doc: document, store, appEl, t, el, setText, DIFF_NAMES,
+    doc: document, store, appEl, t, setText,
     saveSettings, saveGame, toast, sync, draw, resetClocks,
     invalidateEngine, maybeEngineTurn, syncAutoFlip, applyLanguage,
     setAnalyzeUI, renderReview, drawEvalCurve, drawEvalBar, syncLook: PrefsUI.syncLook, onPaint: () => OppUI.paint(),
@@ -5216,7 +5216,7 @@ import { loadChunk } from "./chunk.js";
   // v8-0-plan A1: the rail, the home page and the pages (shell.js)
   const Shell = createShell({
     doc: document, store, appEl, t, tf, switchMode, saveSettings, sanHistory,
-    requestNewGame: () => requestNewGame(), openPrefs: () => PrefsUI.open(), gameOver: () => appGameOver(),
+    requestNewGame: () => requestNewGame(), onSettings: (c) => PrefsUI.onCat(c), gameOver: () => appGameOver(),
     onMe: () => MePage.onShow(), recommendation, owed: owedNow, dailyStepLabel, dailyPlan: () => Planner.plan(dailySignals()).steps, dailyJump: (step) => dailyJump(step),
     nextLesson: () => { const i = LESSONS.findIndex((L) => !store.session.learnState.done[L.id]); return i < 0 ? null : { i, n: i + 1, title: lessonText(LESSONS[i]).title }; },
   });
@@ -5629,7 +5629,6 @@ import { loadChunk } from "./chunk.js";
     Dlg.register(keysModal, closeKeyHelp);
     Dlg.register(noteModal, closeNoteModal);
     Dlg.register(aboutModal, () => Dlg.close(aboutModal));
-    Dlg.register(document.getElementById("prefs-modal"), () => PrefsUI.close());
   }
   wireDialogs();
   // the markup names its icons (<span data-icon="…">); draw them before the
@@ -5660,7 +5659,6 @@ import { loadChunk } from "./chunk.js";
   }
   const savedPanel = Persist.get("panelOpen");
   setPanelOpen(savedPanel === "1");
-  setSideTab(store.ui.sideTab);
   Shell.restore();
   const resumed = tryLoadSave();
   if (resumed) toast(t("msg.save.restored"));
