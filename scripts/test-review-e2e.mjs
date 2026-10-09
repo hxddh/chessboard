@@ -1355,14 +1355,26 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       const css = getComputedStyle(document.documentElement);
       const rgb = (v) => { const d = document.createElement("span"); d.style.color = v; document.body.appendChild(d);
         const c = getComputedStyle(d).color; d.remove(); return c; };
+      // 9.0 V1: the move the board stands on is the accent fill with
+      // --on-accent ink, graded or not (colour on colour otherwise), so
+      // the grade colours are read off the other moves
+      const cur = document.querySelector("#move-list .mlmove.current");
+      const curInk = cur ? getComputedStyle(cur).color : null;
+      // the opera game's one !! is its last move, where the board stands:
+      // read the grade colours with the highlight lifted for a moment
+      if (cur) cur.classList.remove("current");
       const one = (g) => { const e = document.querySelector("#move-list .mlmove.g-" + g); return e ? getComputedStyle(e).color : null; };
-      return { bad: one("blunder"), good: one("brilliant"), best: one("best"),
+      const graded = { bad: one("blunder"), good: one("brilliant"), best: one("best") };
+      if (cur) cur.classList.add("current");
+      return { ...graded,
         wantBad: rgb(css.getPropertyValue("--judge-bad")), wantGood: rgb(css.getPropertyValue("--judge-good")),
+        cur: curInk, wantCur: rgb(css.getPropertyValue("--on-accent")),
         n: document.querySelectorAll("#move-list .mlmove[class*=' g-']").length };
     });
     assert(ml.n === OPERA.length, "A4：棋谱里每一着都带分级（" + ml.n + " / " + OPERA.length + "）");
     assert(!!ml.bad && ml.bad === ml.wantBad && ml.good === ml.wantGood && ml.best !== ml.wantBad,
       "A4：棋谱按分级着色 —— ?? 是 --judge-bad，!! 是 --judge-good（" + [ml.bad, ml.good, ml.best].join(" / ") + "）");
+    assert(!!ml.cur && ml.cur === ml.wantCur, "9.0 V1：当前着是强调色底、--on-accent 字（" + ml.cur + " / " + ml.wantCur + "）");
   }
 
   // (6) key moments: three a side, stepped through, each with its three actions
