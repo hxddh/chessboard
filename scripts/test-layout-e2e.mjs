@@ -4922,6 +4922,24 @@ if (scenario()) {
   for (const [w, h] of [[1440, 900], [1024, 768], [600, 900]]) {
     const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: w, height: h });
     await a2Paste(page, pgn);
+    // diagnosis only (WebKit 1024×768): a frame-by-frame record of the list
+    // from the End press on — scrollTop, scrollHeight, the current row's top,
+    // and every row that changed size — printed when the check fails
+    await page.evaluate(() => {
+      const list = document.getElementById("move-list");
+      const log = window.__mlLog = [];
+      const t0 = performance.now();
+      const snap = (why) => { const c = list.querySelector(".current"); log.push([Math.round(performance.now() - t0), why, list.scrollTop, list.scrollHeight, list.clientHeight, c ? Math.round(c.getBoundingClientRect().top - list.getBoundingClientRect().top) : null]); };
+      new ResizeObserver((es) => snap("ro" + es.length)).observe(list);
+      const rows = new ResizeObserver((es) => snap("row" + es.length + ":" + es.map((e) => Math.round(e.contentRect.height * 10) / 10).slice(0, 3).join("/")));
+      for (const r of list.children) rows.observe(r);
+      new MutationObserver(() => { for (const r of list.children) rows.observe(r); snap("mo"); }).observe(list, { childList: true, subtree: true });
+      list.addEventListener("scroll", () => snap("scroll"));
+      let n = 0;
+      const tick = () => { snap("raf"); if (++n < 30) requestAnimationFrame(tick); };
+      window.__mlStart = () => { log.length = 0; n = 0; requestAnimationFrame(tick); };
+    });
+    await page.evaluate(() => window.__mlStart());
     await page.keyboard.press("End");
     await page.waitForTimeout(300);
     const r = await page.evaluate(() => {
@@ -4942,6 +4960,7 @@ if (scenario()) {
     });
     const at = `A2 ${w}×${h} 120 手：`;
     assert(r.rows >= 60, at + "棋谱有 " + r.rows + " 行");
+    if (!r.curInList) console.error("A2 timeline " + at + JSON.stringify(await page.evaluate(() => window.__mlLog.filter((e, i, a) => i === 0 || e.slice(2).join() !== a[i - 1].slice(2).join() || e[1] !== "raf"))));
     assert(r.curInList, at + "当前一着在棋谱的可见范围里（" + JSON.stringify({ cur: r.curBox, list: r.listBox }) + "）");
     assert(r.nav >= 0 && r.nav <= 16, at + "翻谱栏紧跟棋谱（" + r.nav + "px）");
     if (w > h) {

@@ -3007,8 +3007,8 @@ import { loadChunk } from "./chunk.js";
     // move 20. "Before the first move" is the top of the list.
     if (!cur) el.scrollTop = 0;
     else if (cur.scrollIntoView) {
-      // scroll only within the list container (by the boxes: a cell's offsetParent is its row, v8-0-plan A2)
-      el.scrollTop += cur.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientHeight / 2;
+      // within the list only (by the boxes, v8-0-plan A2); past the end is asked for as the end — WebKit clamped `+=` short of it (9.0)
+      const want = el.scrollTop + cur.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientHeight / 2; el.scrollTop = want >= el.scrollHeight - el.clientHeight - 1 ? el.scrollHeight : Math.max(0, want);
     }
   }
 

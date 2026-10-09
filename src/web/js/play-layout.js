@@ -151,7 +151,9 @@ function keepCurrentInView(list) {
     if (!cur) return;
     const c = cur.getBoundingClientRect(), l = list.getBoundingClientRect();
     if (c.top >= l.top - 0.5 && c.bottom <= l.bottom + 0.5) return;
-    list.scrollTop += c.top - l.top - list.clientHeight / 2;
+    // past the end is asked for as the end (app.js centreIn: WebKit)
+    const want = list.scrollTop + c.top - l.top - list.clientHeight / 2;
+    list.scrollTop = want >= list.scrollHeight - list.clientHeight - 1 ? list.scrollHeight : Math.max(0, want);
   };
   const soon = () => { if (!frame) frame = requestAnimationFrame(check); };
   const sizes = new ResizeObserver(soon);
