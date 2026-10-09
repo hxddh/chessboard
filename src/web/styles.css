@@ -871,12 +871,13 @@
     }
     .chrome > * { pointer-events: auto; }
 
-    /* 7.7 (v7-7-plan §2): the status pill is gone from sight. It said whose
-       move it was in the top-left corner, as far from the board as the bar
-       allowed; the lit player strip says it now, beside the side that is to
-       move. The sentence itself is still in the bar for a screen reader
-       (#status is .sr-only), and the end of a game is the result card. */
-    .chrome-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+    /* 9.0 V3: with the rail down the left (wider than 820px) the bar holds
+       nothing to see — ☰ is the top strip's last control — so it takes no
+       height and the board has those 32px. At 820 and under it is the
+       rail's row. The status sentence stays in it for a screen reader. */
+    @media (min-width: 821px) {
+      :root { --chrome-h: 0px; }
+    }
     /* 9.0 V1 — 设计语言 v2: four buttons, two heights, and an icon button.
          primary    .act-btn.primary / .tool-btn.primary — the accent, filled
          secondary  .act-btn / .tool-btn / .row-act — the raised surface with
@@ -929,7 +930,6 @@
            changes width drags its neighbour along. 80px clears the widest of
            the six labels in the three languages, measured: Thinking at 78. */
     .ps-tools .tool-btn { height: var(--ctl-h-sm); min-width: 80px; }
-    .chrome .icon-btn { width: var(--ctl-h-sm); height: var(--ctl-h-sm); }
     .ps-tools .slot-empty,
     .replay-bar .slot-empty { visibility: hidden; }
     .tool-btn:hover { background: var(--btn-hover); }
@@ -3664,7 +3664,6 @@ span[data-icon] { display: inline-grid; place-items: center; }
 /* the strip's two text actions carry their icon before the label */
 .ps-tools .tool-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .ps-tools .tool-btn > span[data-icon] { font-size: 1rem; }
-.chrome .icon-btn { font-size: 1rem; }
 .replay-bar button { display: grid; place-items: center; font-size: 1rem; }
 
 /* ------------------------------------------------------------------

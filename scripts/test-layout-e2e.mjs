@@ -337,10 +337,10 @@ if (scenario()) {
   assert(chrome.counter === 0, "…and so is the unlabelled move counter");
   assert(chrome.pill.length <= 16,
     "the status pill holds a phrase, not a sentence (" + chrome.pill.length + " chars: " + chrome.pill + ")");
-  assert(JSON.stringify(chrome.ids) === JSON.stringify(["toggle-panel"]),
-    "the bar is the panel key alone (" + chrome.ids.join(", ") + ")");
-  assert(JSON.stringify(chrome.tools) === JSON.stringify(["undo", "btn-hint"]),
-    "…and the strip's tools are take-back, hint — in that order (" + chrome.tools.join(", ") + ")");
+  // 9.0 V3: ☰ is the strip's last control; the bar has no buttons left
+  assert(chrome.ids.length === 0, "the bar has no buttons (" + chrome.ids.join(", ") + ")");
+  assert(JSON.stringify(chrome.tools) === JSON.stringify(["undo", "btn-hint", "toggle-panel"]),
+    "…and the strip's tools are take-back, hint, ☰ — in that order (" + chrome.tools.join(", ") + ")");
   assert(chrome.primaries === 0,
     "nothing over the board is styled as the action to take");
 
@@ -4573,15 +4573,15 @@ if (scenario()) {
                  frameR: wide ? inner : wrap.right, tools, chromeBtns };
       });
       assert(a.inTop, at + "§1a 悔棋/提示在对手那一行（上方的对阵条）里");
-      assert(a.tools.length === 2, at + "§1a 两步之后悔棋和提示都在（" + a.tools.map((t) => t.id).join(", ") + "）");
+      assert(a.tools.map((t) => t.id).join() === "undo,btn-hint,toggle-panel", at + "§1a 两步之后悔棋、提示都在，☰ 在它们右边（" + a.tools.map((t) => t.id).join(", ") + "）");
       const offMid = a.tools.map((t) => Math.abs(t.mid - a.rowMid));
       assert(offMid.every((d) => d <= 1),
         at + "§1a 控件的垂直中线 = 对手那一行的中线 ±1px（差 " + offMid.map((d) => d.toFixed(1)).join(" / ") + "）");
       const rightmost = Math.max(...a.tools.map((t) => t.r));
       assert(Math.abs(rightmost - a.frameR) <= 1,
         at + "§1a 最右一个控件的右缘 = 棋盘外框右缘 ±1px（" + rightmost.toFixed(1) + " vs " + a.frameR.toFixed(1) + "）");
-      assert(a.tools.every((t) => Math.abs(t.h - 32) < 0.5), at + "§1e 这两个控件是 --ctl-h-sm（" + a.tools.map((t) => t.h).join(", ") + "）");
-      assert(JSON.stringify(a.chromeBtns) === '["toggle-panel"]', at + "§1a 顶栏只剩 ☰（" + a.chromeBtns.join(", ") + "）");
+      assert(a.tools.every((t) => Math.abs(t.h - 32) < 0.5), at + "§1e 这三个控件是 --ctl-h-sm（" + a.tools.map((t) => t.h).join(", ") + "）");
+      assert(a.chromeBtns.length === 0, at + "9.0 V3 顶栏没有按钮（" + a.chromeBtns.join(", ") + "）");
 
       // Two states: the live position, where 本局 is 提和 / 新局 / 认输 and
       // English used to break 「Offer draw」; and one move back with 更多
@@ -4736,21 +4736,23 @@ if (scenario()) {
     }
   }
 
-  // §1a — ☰ opens and shuts the panel, so it stands on the panel's edge:
-  // beside it while it is open, in the window's top-right corner while it is
-  // shut; and the strip's tools follow the board when it turns
+  // §1a — 9.0 V3: ☰ is the opponent's strip's last control, open or shut
+  // (it stood on the panel's edge, outside the board); and the strip's tools
+  // follow the board when it turns
   {
     const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1440, height: 900 });
-    const openR = await page.evaluate(() => ({
-      btn: document.getElementById("toggle-panel").getBoundingClientRect().right,
-      side: document.getElementById("side").getBoundingClientRect().left,
-    }));
-    assert(openR.side - openR.btn >= 0 && openR.side - openR.btn <= 12,
-      "7.9 §1a 面板开着：☰ 贴着面板的边（右缘 " + openR.btn + "，面板左缘 " + openR.side + "）");
+    const where = () => page.evaluate(() => {
+      const b = document.getElementById("toggle-panel"), r = b.getBoundingClientRect();
+      const top = document.querySelector(".pstrip.at-top"), t = top.getBoundingClientRect();
+      return { last: b.parentElement.id === "strip-tools" && !b.nextElementSibling && top.contains(b),
+               inside: r.top >= t.top - 0.5 && r.bottom <= t.bottom + 0.5 };
+    });
+    const open1 = await where();
+    assert(open1.last && open1.inside, "9.0 V3 面板开着：☰ 是上方玩家栏最后一个控件（" + JSON.stringify(open1) + "）");
     await page.keyboard.press("p");
     await page.waitForTimeout(450);
-    const shut = await page.evaluate(() => document.getElementById("toggle-panel").getBoundingClientRect().right);
-    assert(Math.abs(1440 - 8 - shut) <= 1, "7.9 §1a 面板关着：☰ 在窗口右上角（右缘 " + shut + "）");
+    const shut = await where();
+    assert(shut.last && shut.inside, "9.0 V3 面板关着：☰ 仍在上方玩家栏里（" + JSON.stringify(shut) + "）");
     await page.keyboard.press("p");
     await page.waitForTimeout(450);
     await page.keyboard.press("f");

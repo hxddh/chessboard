@@ -63,13 +63,6 @@
            「白方走子」 in the order it always did, and the eye reads the lit
            strip instead of a pill in the corner. -->
       <span class="sr-only" id="status">白方走子</span>
-      <!-- 7.9 §1a: 悔棋 and 提示 moved to the opponent's strip (.ps-tools
-           below); what stays is ☰, which opens and shuts the panel, so it
-           stands at the panel's edge — the window's top-right corner while
-           the panel is shut. -->
-      <div class="chrome-actions">
-        <button type="button" class="icon-btn" id="toggle-panel" title="侧栏 (P)" data-i18n-title="tip.panel.toggle" aria-label="侧栏" data-i18n-aria="aria.panel"><span data-icon="menu" aria-hidden="true"></span></button>
-      </div>
     </header>
 
     <div class="scrim" id="scrim"></div>
@@ -119,6 +112,11 @@
                  with. At the head of the group it has nothing to push. -->
             <button type="button" class="tool-btn" id="undo" title="悔棋 (Z)" data-i18n-title="tip.undo"><span data-icon="undo-2" aria-hidden="true"></span><span class="btn-label" data-i18n="chrome.undo">悔棋</span></button>
             <button type="button" class="tool-btn" id="btn-hint" title="引擎提示 (H)" data-i18n-title="tip.hint"><span data-icon="lightbulb" aria-hidden="true"></span><span class="btn-label" id="btn-hint-label" data-i18n="chrome.hint">提示</span></button>
+            <!-- 9.0 V3: ☰, which opens and shuts the panel, is the strip's
+                 last control — it hung outside the board's top-right corner
+                 in a bar of its own, the one thing on the play view that
+                 belonged to no edge of the board -->
+            <button type="button" class="icon-btn" id="toggle-panel" title="侧栏 (P)" data-i18n-title="tip.panel.toggle" aria-label="侧栏" data-i18n-aria="aria.panel"><span data-icon="menu" aria-hidden="true"></span></button>
           </span>
           <span class="ps-result num" id="result-b" hidden></span>
           <span class="ps-clock num" id="clock-b" hidden>5:00</span>

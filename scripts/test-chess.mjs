@@ -1841,9 +1841,11 @@ for (const lang of CONTENT_LANGS) {
     // 7.7 (v7-7-plan §2): the status pill left the bar — whose move it is is
     // the lit player strip now, and the sentence is .sr-only. 7.9 §1a: 悔棋
     // and 提示 left it too, for the opponent's strip, so the bar holds ☰
-    // alone, at the small control height — which is the bar's own 32px.
-    assert(/\.chrome \.icon-btn \{[^}]*height:\s*var\(--ctl-h-sm\)/.test(stripped),
-      "the bar's one control is the small control height");
+    // alone, at the small control height. 9.0 V3: ☰ is the strip's last
+    // control now, and the icon button is the small control height wherever
+    // it stands.
+    assert(/\n    \.icon-btn \{[^}]*height:\s*var\(--ctl-h-sm\)/.test(stripped),
+      "the icon button (☰ among them) is the small control height");
     assert(/\.ps-tools \.tool-btn \{[^}]*height:\s*var\(--ctl-h-sm\)/.test(stripped),
       "…and so are the two tools on the opponent's strip (7.9 §1a)");
     const chrome = /\n    \.chrome \{([\s\S]*?)\n    \}/.exec(stripped);
