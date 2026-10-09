@@ -2073,12 +2073,13 @@ import { loadChunk } from "./chunk.js";
   const { renderMistakeList, renderWhyLine, retryModel, retryClick, renderRetry } = Retry;
   // v8-0-plan A4: the key moments and 从错误中学 live in review/moments.js, a chunk
   const Moments = createMomentsLazy({ doc: document, store, t, tf, tdot, sideName, analysisFor, sanHistory, startFen, boardMoveNo,
-    setViewIndex, writeSan, inModal, Retry });
+    setViewIndex, writeSan, inModal, Retry, // 9.0 M2: the summary speaks as the game's opponent
+    oppName: () => { const o = store.game.opp; return OppUI.strip(o ? o.diff : store.session.difficulty, o ? o.style : store.session.personaId).name; } });
 
   // v8-0-plan F4: the eval gauge, the curve and the marks' colours live in
   // review/eval-graph.js
   const EvalGraph = createEvalGraph({
-    doc: document, store, t, tf, setText, analysisFor, setViewIndex, verboseHistory, boardMoveNo, startFen,
+    doc: document, store, t, tf, setText, analysisFor, setViewIndex, verboseHistory, boardMoveNo, startFen, gameAt,
   });
   const { judgeColours, drawEvalBar, drawEvalCurve } = EvalGraph;
 

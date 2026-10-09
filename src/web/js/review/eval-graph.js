@@ -46,7 +46,7 @@ export function axisTicks(n, firstMover, moveNo, every) {
 
 export function createEvalGraph(d) {
   const {
-    doc, store, t, tf, setText, analysisFor, setViewIndex, verboseHistory, boardMoveNo, startFen,
+    doc, store, t, tf, setText, analysisFor, setViewIndex, verboseHistory, boardMoveNo, startFen, gameAt,
   } = d;
   const document = doc;
   const Review = ChessReview;
@@ -183,20 +183,20 @@ export function createEvalGraph(d) {
     const x = (i) => plotX(i, n, W, dpr);
     const y = (s) => 4 * dpr + (1 - Review.winPct(s) / 100) * (H - 8 * dpr);
     const css = getComputedStyle(document.documentElement);
-    const cMuted = css.getPropertyValue("--muted").trim() || "#999";
-    const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
-    const cPanel = css.getPropertyValue("--panel").trim() || cMuted;
+    const tok = (name, fallback) => css.getPropertyValue(name).trim() || fallback;
+    const cData = tok("--data", tok("--muted", "#999"));
+    const cLine = tok("--line", cData);
+    const cAccent = tok("--accent", cData);
+    const cPanel = tok("--panel", cData);
     const JC = judgeColours();
 
-    // v8-0-plan A4: White and Black split, the way Lichess draws it — the
-    // area under the line is White's colour and the area over it Black's, so
-    // the share of the height that is white IS White's win chance. It was
-    // two translucent wedges off the midline over the panel's own colour,
-    // which in the dark shells made "White is winning" a grey smudge. Each
-    // run of measured positions is its own pair of shapes; an unmeasured one
-    // leaves the card showing through — not a guess drawn as level.
-    const sideW = css.getPropertyValue("--side-white").trim() || "#f2f2ee";
-    const sideB = css.getPropertyValue("--side-black").trim() || "#1d1d1b";
+    // 9.0 M2: one thin line in the data colour over a faint fill of the
+    // same, on the panel — the shape is the game, nothing else is loud.
+    // v8-0-plan A4 painted the area under the line in White's colour and
+    // the area over it in Black's: right in principle (the white share of
+    // the height is White's chance), but in every theme it made the curve
+    // the brightest block on the screen. The fill is still White's share;
+    // an unmeasured stretch leaves a gap, not a guess drawn as level.
     let i0 = 0;
     while (i0 <= n) {
       if (a.scalars[i0] == null) { i0++; continue; }
@@ -204,31 +204,30 @@ export function createEvalGraph(d) {
       while (i1 + 1 <= n && a.scalars[i1 + 1] != null) i1++;
       // a single measured position still owns its column
       const l = i1 > i0 ? x(i0) : x(i0) - dpr, r = i1 > i0 ? x(i1) : x(i0) + dpr;
-      const edge = (from) => { for (let i = i0; i <= i1; i++) ctx.lineTo(x(i), y(a.scalars[i])); ctx.lineTo(r, from); };
-      for (const [from, fill] of [[H, sideW], [0, sideB]]) {
-        ctx.beginPath();
-        ctx.moveTo(l, from);
-        ctx.lineTo(l, y(a.scalars[i0]));
-        edge(from);
-        ctx.closePath();
-        ctx.fillStyle = fill;
-        ctx.fill();
-      }
+      ctx.beginPath();
+      ctx.moveTo(l, H);
+      ctx.lineTo(l, y(a.scalars[i0]));
+      for (let i = i0; i <= i1; i++) ctx.lineTo(x(i), y(a.scalars[i]));
+      ctx.lineTo(r, H);
+      ctx.closePath();
+      ctx.fillStyle = cData;
+      ctx.globalAlpha = 0.12;
+      ctx.fill();
+      ctx.globalAlpha = 1;
       i0 = i1 + 1;
     }
-    // the quarter lines and the midline, over both colours: level is a place
-    ctx.strokeStyle = cMuted;
+    // the midline: level is a place. One hairline, in the hairline colour.
+    ctx.strokeStyle = cLine;
     ctx.lineWidth = dpr;
-    for (const [f, alpha] of [[0.25, 0.25], [0.5, 0.6], [0.75, 0.25]]) {
-      const yy = Math.round(4 * dpr + f * (H - 8 * dpr)) + 0.5;
-      ctx.globalAlpha = alpha;
+    {
+      const yy = Math.round(4 * dpr + 0.5 * (H - 8 * dpr)) + 0.5;
       ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(W, yy); ctx.stroke();
     }
-    ctx.globalAlpha = 1;
 
-    // eval line (skip null gaps)
-    ctx.strokeStyle = cAccent;
-    ctx.lineWidth = 1.6 * dpr;
+    // the line itself (skip null gaps)
+    ctx.strokeStyle = cData;
+    ctx.lineWidth = 1.5 * dpr;
+    ctx.lineJoin = "round";
     ctx.beginPath();
     let pen = false;
     for (let i = 0; i <= n; i++) {
@@ -238,27 +237,27 @@ export function createEvalGraph(d) {
       else { ctx.moveTo(x(i), y(s)); pen = true; }
     }
     ctx.stroke();
-    // the marked moves, at the position after each: ? and ?? in the marks'
-    // colours, a graded pass's !! and ! in the praise colour (v8-0-plan A4)
+    // current view marker: the board's position, the one accent here
+    ctx.strokeStyle = cAccent;
+    ctx.lineWidth = 1.5 * dpr;
+    ctx.beginPath(); ctx.moveTo(x(store.game.viewIndex), 2 * dpr); ctx.lineTo(x(store.game.viewIndex), H - 2 * dpr); ctx.stroke();
+    // 9.0 M2: the marked moves as small diamonds at the position after each,
+    // ? and ?? in the marks' colours (--judge-*), a graded pass's !! and !
+    // in the praise colour (v8-0-plan A4), ringed in the panel's colour so
+    // they separate from the line they sit on
     for (const { i, tag } of curveMarks(a)) {
       const s = a.scalars[i + 1];
       if (s == null) continue;
-      // 7.7 §5: a dot you can find — 2.4px was a speck on a 60px curve —
-      // ringed in the panel's own colour so it separates from the fill
+      const cx = x(i + 1), cy = y(s), rr = (tag === "??" ? 5.5 : 4.5) * dpr;
       ctx.fillStyle = tag === "??" ? JC.bad : tag === "?" ? JC.mid : JC.good;
       ctx.strokeStyle = cPanel;
       ctx.lineWidth = 1.5 * dpr;
       ctx.beginPath();
-      ctx.arc(x(i + 1), y(s), (tag === "??" ? 4.5 : 3.5) * dpr, 0, Math.PI * 2);
+      ctx.moveTo(cx, cy - rr); ctx.lineTo(cx + rr, cy); ctx.lineTo(cx, cy + rr); ctx.lineTo(cx - rr, cy);
+      ctx.closePath();
       ctx.stroke();
       ctx.fill();
     }
-    // current view marker
-    ctx.strokeStyle = cAccent;
-    ctx.globalAlpha = 0.7;
-    ctx.lineWidth = dpr;
-    ctx.beginPath(); ctx.moveTo(x(store.game.viewIndex), 2 * dpr); ctx.lineTo(x(store.game.viewIndex), H - 2 * dpr); ctx.stroke();
-    ctx.globalAlpha = 1;
     drawMoveAxis(cv, n);
   }
 
@@ -301,6 +300,29 @@ export function createEvalGraph(d) {
       axis.appendChild(s);
     }
   }
+
+  /**
+   * 「应走 Nf3」 for ply `i` when it is a ? or ?? and the analysis kept a
+   * different best move for the position before it; "" otherwise.
+   */
+  function bestText(a, i) {
+    const tag = a.tags && a.tags[i];
+    const uci = a.bests && a.bests[i];
+    if ((tag !== "?" && tag !== "??") || !uci || uci.length < 4) return "";
+    // a hover asks once a pointer move: the answer is kept per analysis
+    let memo = bestMemo.get(a);
+    if (!memo) { memo = new Map(); bestMemo.set(a, memo); }
+    const key = i + "|" + store.ui.langId;
+    if (memo.has(key)) return memo.get(key);
+    const g = gameAt(i);
+    let mv = null;
+    try { mv = g.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" }); } catch (e) { mv = null; }
+    const played = verboseHistory()[i];
+    const out = mv && (!played || mv.san !== played.san) ? tf("curve.best", [mv.san]) : "";
+    memo.set(key, out);
+    return out;
+  }
+  const bestMemo = new WeakMap();
 
   /** The curve answers the pointer: a click or a drag walks the replay, a hover says where. */
   function wire() {
@@ -350,14 +372,17 @@ export function createEvalGraph(d) {
         const mv = i > 0 ? vh[i - 1] : null;
         const head = mv ? tf("curve.hover", [boardMoveNo(i - 1), (mv.color === "b" ? "…" : "") + mv.san, score])
           : tf("curve.atScore", [0, score]);
-        const hint = tipEl.lastElementChild;
-        if (!hint) {
+        if (tipEl.childElementCount !== 3) {
           const main = document.createElement("span");
+          const best = document.createElement("span");
+          best.className = "curve-tip-best";
           const h = document.createElement("span");
           h.className = "curve-tip-hint";
-          tipEl.replaceChildren(main, h);
+          tipEl.replaceChildren(main, best, h);
         }
         setText(tipEl.firstElementChild, head);
+        // 9.0 M2: on a ? or ??, what the engine would have played instead
+        setText(tipEl.children[1], i > 0 ? bestText(a, i - 1) : "");
         setText(tipEl.lastElementChild, t("tip.evalCurve"));
         tipEl.hidden = false;
         // centred on the point, kept inside the panel

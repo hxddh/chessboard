@@ -3029,13 +3029,18 @@
        in it was a line two pixels off the axis for most of its length.
        v8-0-plan A4: 180, the picture of the game in the health report, with
        its axes beside and under it (.curve-box). */
+    /* 9.0 M2: a thin line in the data colour over a faint fill of the same,
+       on the panel itself (eval-graph.js drawEvalCurve) — the white and
+       black blocks under and over it were the brightest thing on the
+       screen. Held and dragged sideways it scrubs the game; a vertical
+       swipe still scrolls the panel. */
     #eval-curve {
       display: block;
       width: 100%;
-      height: 180px;
+      height: 160px;
       border-radius: var(--radius-sm);
-      background: var(--card);
-      border: 1px solid var(--card-border);
+      background: transparent;
+      touch-action: pan-y;
     }
     /* 7.8 §2: what the pointer is over on the curve — move and score — above
        the curve at the pointer's x. Not interactive: it must never be what
@@ -3050,6 +3055,8 @@
       pointer-events: none;
     }
     .curve-tip-hint { color: var(--muted); margin-left: 8px; }
+    .curve-tip-best { color: var(--muted); margin-left: 8px; }
+    .curve-tip-best:empty { display: none; }
     /* v8-0-plan A4: the graph's frame — a caption, White's win chance up the
        left (100 / 50 / 0), the move numbers along the bottom under the
        positions where those moves begin (eval-graph.js drawMoveAxis) */
@@ -3071,6 +3078,26 @@
       font-size: 0.6875rem; line-height: var(--lh-tight); color: var(--muted);
     }
     .curve-x > span { position: absolute; top: 0; transform: translateX(-50%); }
+
+    /* 9.0 M2: the review's first line — the game in one sentence */
+    .rv-summary {
+      margin: 0 0 4px; font-size: 1rem; line-height: var(--lh-body); color: var(--text);
+    }
+    /* 9.0 M2: the second layer — accuracies, grades, 从错误中学 and every
+       ? / ??, folded under one quiet heading, shut until asked for */
+    .rv-full { margin-top: 12px; }
+    .rv-full > summary {
+      display: flex; align-items: center; gap: 8px;
+      min-height: var(--row-h); cursor: pointer; list-style: none;
+      font-size: 0.875rem; font-weight: 600; color: var(--muted); line-height: var(--lh-tight);
+    }
+    .rv-full > summary::-webkit-details-marker { display: none; }
+    .rv-full > summary::after {
+      content: "›"; color: var(--muted);
+      transition: transform var(--dur-quick) var(--ease);
+    }
+    .rv-full[open] > summary::after { transform: rotate(90deg); }
+    .rv-full > summary:hover { color: var(--text); }
 
     /* v8-0-plan A4: the key moments, one card at a time — the step keys in
        the head, the move and what it did, and the three things to do about

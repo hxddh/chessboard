@@ -27,7 +27,7 @@
 export function createMoments(d) {
   const {
     doc, store, t, tf, tdot, sideName, analysisFor, sanHistory, startFen, boardMoveNo, setViewIndex, writeSan,
-    inModal, Retry, Grade,
+    inModal, Retry, Grade, oppName,
   } = d;
   const document = doc;
 
@@ -86,6 +86,7 @@ export function createMoments(d) {
     if (v.at >= list.length) v.at = 0;
     const at = v.at, whyOpen = v.whyOpen;
     renderLearn(row, a);
+    renderSummary(a, list);
     if (!box) return;
     box.hidden = !list.length;
     if (!list.length) { box.dataset.key = ""; return; }
@@ -174,6 +175,39 @@ export function createMoments(d) {
     }
     card.appendChild(why);
     body.appendChild(card);
+  }
+
+  /**
+   * 9.0 M2: the review's first line — one sentence for the whole game,
+   * above the curve and the moments. Against the engine it is the
+   * opponent's, about you (7.8's rule for the personas' lines holds: facts
+   * — the move, the win chance — never a verdict); between two people or
+   * for an imported game it names the side. Built from the same moments
+   * the card steps through: the largest fall in win chance is the game's
+   * turning point, and a game without one says so.
+   */
+  function summaryText(a, list) {
+    const ai = store.session.mode === "ai";
+    const you = store.session.humanColor;
+    const drops = list.filter((m) => m.grade !== "brilliant" && m.grade !== "only" && (!ai || m.side === you));
+    const m = drops.reduce((w, x) => (!w || x.swing > w.swing ? x : w), null);
+    const pct = (x) => Math.round(x);
+    if (ai) {
+      const who = oppName ? oppName() : "";
+      if (!m) return tf("rv.sum.clean", [who]);
+      return m.before >= 50 && m.after < 50
+        ? tf("rv.sum.turn", [who, m.moveNo, pct(m.before)])
+        : tf("rv.sum.drop", [who, m.moveNo, pct(m.before), pct(m.after)]);
+    }
+    if (!m) return t("rv.sum.calm");
+    return tf("rv.sum.side", [Retry.plyLabel(m.ply) + m.san, sideName(m.side), pct(m.before), pct(m.after)]);
+  }
+  function renderSummary(a, list) {
+    const el = document.getElementById("rv-summary");
+    if (!el) return;
+    const text = a && !inModal() && !store.session.analyzing ? summaryText(a, list) : "";
+    el.hidden = !text;
+    if (el.textContent !== text) el.textContent = text;
   }
 
   /** 从错误中学, with how many there are to learn from — absent when none. */
