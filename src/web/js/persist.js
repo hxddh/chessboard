@@ -179,8 +179,9 @@ export function createPersist(host, onWriteFailure) {
   function load() {
     bag = {};
     for (const [name, key] of Object.entries(KEYS)) bag[name] = host.storageGet(key);
-    // long before anything writes: the profile as it was found. panelOpen is excluded — it is a window preference, not
-    // evidence that somebody has played.
+    // long before anything writes: the profile as it was found. panelOpen is
+    // excluded — it is a window preference, not evidence that somebody has
+    // played.
     foundEmpty = Object.entries(bag)
       .every(([name, v]) => name === "panelOpen" || v == null);
     // v8-0-plan F3: the revision the cache was at when first found. The boot
@@ -546,8 +547,8 @@ export function createPersist(host, onWriteFailure) {
   async function recover() {
     // v8-0-plan F3: unless the store is provably at the cache's revision,
     // every key is owed to it — a store written by nothing yet, one a crash
-    // or a failed write left behind, or one this launch could not read. Rewriting it whole is the one answer that is
-    // right in all of those.
+    // or a failed write left behind, or one this launch could not read.
+    // Rewriting it whole is the one answer that is right in all of those.
     let inSync = false;
     // 6.1: whatever happens below, the mirror gate opens exactly once on the
     // way out — a recover() that returns early must not leave the file

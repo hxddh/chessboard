@@ -407,7 +407,7 @@ async function bootRepertoire(d) {
   /** what the header says about the records */
   // held (M3 评审): what the header said, until a launch can read the shards
   function extra() {
-    return hold ? { n: header.n, sig: header.sig, gen: headGen }
+    return hold ? (header ? { n: header.n, sig: header.sig, gen: headGen } : {})
       : vouched ? { n: records.size, sig: indexedSig, gen } : {};
   }
 

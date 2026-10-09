@@ -720,7 +720,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
     `1. d4 d5 2. c4 e6 (2... c6) 3. Nf3 Nf6 *\n`;
   await importFile(page, REP, "#rep-import-w");
   await page.waitForTimeout(600);
-  const book = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.repertoire") || "null"));
+  const book = await page.evaluate(() => (window.__chess.rep() ? JSON.parse(window.__chess.rep().bag("{}")) : null));
   assert(book && book.w.length === 2, "主线和变着各成一条线", book ? book.w.length : "null");
   assert(book.b.length === 0, "执黑那本还是空的 —— 两本书，两套体系");
   body = await page.textContent("#rep-body");
@@ -733,7 +733,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   // 同一份再导一遍，书不会变成两倍
   await importFile(page, REP, "#rep-import-w");
   await page.waitForTimeout(500);
-  const again = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.repertoire")));
+  const again = await page.evaluate(() => (window.__chess.rep() ? JSON.parse(window.__chess.rep().bag("{}")) : null));
   assert(again.w.length === 2, "同一份导第二遍，还是两条", again.w.length);
 
   // 背它：开始背 → 做题页开在「开局书」这一档
@@ -792,7 +792,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   // the line the board actually finished — whichever one the drill opened as
   const fin = await page.evaluate(() => {
     const st = JSON.parse(localStorage.getItem("chess.puzzles"));
-    const book = JSON.parse(localStorage.getItem("chess.repertoire"));
+    const book = (window.__chess.rep() ? JSON.parse(window.__chess.rep().bag("{}")) : null);
     return { solved: Object.keys(st.solved).filter((k) => k.startsWith("rep-")), book: book.w,
       toast: document.getElementById("puzzle-feedback").textContent.trim(),   // 7.7: the card, not a toast
       body: document.getElementById("rep-body").textContent };
@@ -843,7 +843,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   await page.waitForTimeout(700);
   const afterClear = await page.evaluate(() => {
     const st = JSON.parse(localStorage.getItem("chess.puzzles"));
-    const book = JSON.parse(localStorage.getItem("chess.repertoire"));
+    const book = (window.__chess.rep() ? JSON.parse(window.__chess.rep().bag("{}")) : null);
     return { lines: book.w.length + book.b.length,
       orphan: Object.keys(st.missed || {}).filter((k) => k.startsWith("rep-")) };
   });
@@ -865,7 +865,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   await importFile(page, SETUP, "#rep-import-w");
   await page.waitForTimeout(600);
   const after = await page.evaluate(() => ({
-    book: JSON.parse(localStorage.getItem("chess.repertoire") || "null"),
+    book: (window.__chess.rep() ? JSON.parse(window.__chess.rep().bag("{}")) : null),
     toast: document.getElementById("toast").textContent.trim(),
     tab: (document.querySelector('#puzzle-cat-seg button[data-cat="rep"]') || {}).hidden,
   }));
@@ -889,7 +889,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   const { page, errs } = await open(ctx);
   await importFile(page, REP_B, "#rep-import-b");
   await page.waitForTimeout(500);
-  const book = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.repertoire")));
+  const book = await page.evaluate(() => (window.__chess.rep() ? JSON.parse(window.__chess.rep().bag("{}")) : null));
   assert(book.b.length === 1 && book.w.length === 0, "只有执黑那本有东西",
     JSON.stringify([book.w.length, book.b.length]));
   await page.click("#rep-drill");
