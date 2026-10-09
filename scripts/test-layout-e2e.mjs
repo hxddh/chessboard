@@ -2420,7 +2420,9 @@ const pickerFits = (page) => page.evaluate(() => {
     (cut(e) || (e.tagName !== "BUTTON" && e.getBoundingClientRect().height > lh(e) * 1.5)))
     .map((e) => e.textContent.trim() + " " + e.scrollWidth + "/" + e.clientWidth + "×" + Math.round(e.getBoundingClientRect().height)));
   const modeH = [...new Set(rows.flatMap((row) => [...row.querySelectorAll("button")]).map((b) => Math.round(b.getBoundingClientRect().height)))];
-  return { n: tiles.length, groups: tiles.map((b) => b.dataset.group).join(","),
+  const rv = document.getElementById("pz-review");
+  const review = rv && rv.offsetParent ? [...rv.querySelectorAll("b, small, .pz-review-n")].filter((e) => e.offsetParent && cut(e)).map((e) => e.textContent.trim()) : [];
+  return { n: tiles.length, groups: tiles.map((b) => b.dataset.group).join(","), review,
            cols: getComputedStyle(g).gridTemplateColumns.split(" ").length,
            heights: [...new Set(tiles.map((b) => Math.round(b.getBoundingClientRect().height)))],
            named: tiles.every((b) => b.querySelector(".pz-tile-name").textContent.trim()),
@@ -2435,6 +2437,7 @@ if (scenario()) {
     assert(seg.cols === 3, lang + ": the tiles lay out three across (" + seg.cols + ")");
     assert(seg.heights.length === 1 && seg.named, lang + ": every tile is one height and named (" + seg.heights.join(", ") + ")");
     assert(seg.tight.length === 0, lang + ": no kind's name or count is cut" + (seg.tight.length ? " — " + seg.tight.join(", ") : ""));
+    assert(seg.review.length === 0, lang + ": the 复习 card's name, line and count are whole" + (seg.review.length ? " — " + seg.review.join(", ") : ""));
     assert(seg.rows === 2 && seg.modeCut.length === 0 && seg.modeH.length === 1,
       lang + ": 换个练法's two rows: labels and buttons whole, one height (" + seg.modeCut.join(", ") + "; " + seg.modeH.join(", ") + ")");
     await ctx.close();
@@ -4131,11 +4134,19 @@ if (scenario()) {
       const head = document.querySelector(m === "learn" ? "#lesson-title" : "#puzzle-task");
       const daily = [...document.querySelectorAll("#side #today-go, #side .daily-plan, #side [id^='daily-']")]
         .filter((e) => e.offsetParent).map((e) => e.id);
-      return { daily, seg: !!seg.offsetParent, gap: head.getBoundingClientRect().top - seg.getBoundingClientRect().bottom };
+      const top = seg.getBoundingClientRect().bottom, end = head.getBoundingClientRect().top;
+      const sec = head.closest("section");
+      // what stands between the switch and the content: only the section's
+      // own heading row (its progress count) may — no card, no banner
+      const between = [...document.querySelectorAll("#pane-play *")].filter((e) => {
+        const r = e.getBoundingClientRect();
+        return r.height > 0 && e.checkVisibility() && r.top >= top - 1 && r.top < end - 1 && e !== sec && !e.closest(".side-h-row");
+      }).map((e) => e.id || e.className || e.tagName);
+      return { daily, between, seg: !!seg.offsetParent, gap: end - top };
     }, mode);
     assert(r.daily.length === 0, "§4b " + mode + ":「今天的训练」不在面板里(" + r.daily.join(", ") + ")");
-    assert(r.seg && r.gap >= 0 && r.gap < 40, "§4b " + mode + ":" + (mode === "learn" ? "课文标题" : "题目卡") +
-      "紧跟在训练的切换下面(相隔 " + Math.round(r.gap) + "px)");
+    assert(r.seg && r.gap >= 0 && r.between.length === 0, "§4b " + mode + ":" + (mode === "learn" ? "课文标题" : "题目卡") +
+      "紧跟在训练的切换下面,中间只有本节的标题行(相隔 " + Math.round(r.gap) + "px" + (r.between.length ? ";中间还有 " + r.between.join(", ") : "") + ")");
     await ctx.close();
   }
   for (const mode of ["ai", "pvp"]) {
@@ -4208,7 +4219,8 @@ if (scenario()) {
   for (const lang of LANGS) {
     for (const theme of ["wood", "night", "day", "notebook"]) {
       // 9.0 S5: the 设置 tab is the settings page, read a category at a time
-      for (const tab of ["play", "settings", "record"]) {
+      // 9.0 S1: and 今天 (下一盘, the hero's primary)
+      for (const tab of ["play", "settings", "record", "home"]) {
         const { ctx, page } = await open(lang, "pvp", tab, theme);
         await page.evaluate(() => { document.querySelectorAll("details").forEach((d) => { d.open = true; }); });
         const measure = () => page.evaluate(() => {
@@ -4248,14 +4260,20 @@ if (scenario()) {
 
   // §1b：「今天的训练」的文字不是等宽字体
   for (const lang of LANGS) {
-    const { ctx, page } = await open(lang, "ai", "play");
+    // 9.0 S1: the plan is 今天's hero; its steps are listed once it is begun
+    // (开始), so begin it, and come back to 今天 to read them
+    const { ctx, page } = await open(lang, "ai", "home");
+    await page.click("#today-go");
+    await page.waitForTimeout(600);
+    await page.click('#rail button[data-view="home"]');
+    await page.waitForTimeout(500);
     // 7.9 §2b: --font-num is the interface face itself now, so "not the
     // --font-num family" stopped meaning anything; ask the real question
     const r = await page.evaluate(() => {
       const first = "等宽字体";
       const monoRe = /SF Mono|Menlo|Consolas|ui-monospace|monospace/i;
       const els = [...document.querySelectorAll("#daily-plan .daily-what, #daily-plan .daily-why")];
-      return { n: els.length, first, mono: els.filter((e) => monoRe.test(getComputedStyle(e).fontFamily)).map((e) => e.textContent) };
+      return { n: els.filter((e) => e.offsetParent).length, first, mono: els.filter((e) => monoRe.test(getComputedStyle(e).fontFamily)).map((e) => e.textContent) };
     });
     assert(r.n > 0 && r.mono.length === 0, `§1b ${lang}：今天的训练 ${r.n} 段文字都不用 ${r.first}` + (r.mono.length ? " —— " + r.mono.join(" / ") : ""));
     await ctx.close();
@@ -4514,7 +4532,11 @@ if (scenario()) {
       return tops.filter((t, i) => i === 0 || t - tops[i - 1] >= 3).length;
     };
     return [...document.querySelectorAll("#side button")]
-      .filter((b) => b.checkVisibility({ visibilityProperty: true }) && !b.closest("#move-list, .daily-plan"))
+      // 9.0 S3: the puzzle picker's tiles and its 复习 card are cards (an
+      // icon, a name and a count on lines of their own, by design), entries
+      // of a menu rather than §1e's controls — measured as cards by
+      // pickerFits instead
+      .filter((b) => b.checkVisibility({ visibilityProperty: true }) && !b.closest("#move-list, .daily-plan, .pz-tile, .pz-review"))
       .map((b) => {
         const r = b.getBoundingClientRect();
         return { id: b.id || b.className, text: b.textContent.trim().slice(0, 24), h: Math.round(r.height * 10) / 10,
@@ -4698,6 +4720,13 @@ if (scenario()) {
         const wrapped = btns.filter((b) => b.text && (b.lines > 1 || b.over > 0));
         assert(wrapped.length === 0, at + "§1b 按钮文字都只有一行" +
           (wrapped.length ? " —— " + wrapped.map((b) => b.id + "「" + b.text + "」").join("；") : ""));
+        if (mode === "puzzle") {
+          const pk = await pickerFits(page);
+          assert(pk.heights.length === 1 && pk.tight.length === 0 && pk.review.length === 0,
+            at + "选题器的卡片一样高、名字/数目/复习说明都不被截 (" + pk.heights.join(", ") + "; " + pk.tight.concat(pk.review).join(", ") + ")");
+          assert(pk.modeCut.length === 0 && pk.modeH.length === 1 && pk.modeH.every((h) => h === 32 || h === 36),
+            at + "换个练法：标签一行不出格，按钮 32/36 (" + pk.modeCut.join(", ") + "; " + pk.modeH.join(", ") + ")");
+        }
         const ctl = await page.evaluate(() => [...document.querySelectorAll(".lesson-controls.fit-row button")]
           .filter((b) => b.checkVisibility()).map((b) => b.getBoundingClientRect().width));
         if (ctl.length) assert(Math.max(...ctl) - Math.min(...ctl) <= 1, at + "§1b 课程/做题那一行等宽（" + ctl.map(Math.round).join("/") + "）");
@@ -5828,7 +5857,8 @@ if (scenario()) {
     const kids = [...sec.children].filter((e) => e.getClientRects().length && e.getBoundingClientRect().height > 0);
     const gaps = [];
     for (let i = 1; i < kids.length; i++) gaps.push(Math.round((kids[i].getBoundingClientRect().top - kids[i - 1].getBoundingClientRect().bottom) * 10) / 10);
-    return { shown: !card.hidden && !!card.offsetParent, spill, text, row, gaps, nseg: seg.length,
+    const gapAt = gaps.map((g, i) => g + "→" + (kids[i + 1].id || kids[i + 1].className));
+    return { shown: !card.hidden && !!card.offsetParent, spill, text, row, gaps, gapAt, nseg: seg.length,
       lit: seg.filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.run),
       segH: [...new Set(seg.map((b) => Math.round(b.getBoundingClientRect().height)))],
       ctlH: [...new Set(ctl.filter((b) => b.tagName === "BUTTON").map((b) => Math.round(b.getBoundingClientRect().height)))],
@@ -5859,7 +5889,7 @@ if (scenario()) {
           assert(r.nseg === 4 && r.lit.join() === kind, `${at}: 换个练法的四个按钮都在，亮的是这一个 (${r.nseg}; ${r.lit.join(", ")})`);
           assert(r.segH.length === 1 && r.ctlH.length <= 1, `${at}: 换个练法四个按钮一样高、卡片的按钮一样高 (${r.segH.join(", ")}; ${r.ctlH.join(", ")})`);
           assert(r.spill.length === 0 && r.text.length === 0 && r.row, `${at}: 字不出框、输入框和「确定」一行 (${r.spill.join(", ") || "—"}; ${r.text.join(", ") || "—"})`);
-          assert(r.gaps.every((g) => Math.abs(g - 8) <= 0.5 || Math.abs(g - 20) <= 0.5), `${at}: 做题页的间距仍只有 8 / 20 (${r.gaps.join(", ")})`);
+          assert(r.gaps.every((g) => Math.abs(g - 8) <= 0.5 || Math.abs(g - 20) <= 0.5), `${at}: 做题页的间距仍只有 8 / 20 (${r.gapAt.join(", ")})`);
           assert(r.sideways <= 0, `${at}: 页面不横向滚动 (${r.sideways}px)`);
         }
       }
@@ -5914,7 +5944,8 @@ if (scenario()) {
           n: items.length,
           titles: adv.map((b) => b.textContent),
           want: A.lessons.map((L, i) => (97 + i) + ". " + word(L).title),
-          parts: [word(A.lessons[0]).part, word(A.lessons[23]).part].map((p) => heads.some((h) => h.textContent === p && h.offsetParent)),
+          // 9.0 S3: a unit's head carries its progress after its name (「计算 · 0/12」)
+          parts: [word(A.lessons[0]).part, word(A.lessons[23]).part].map((p) => heads.some((h) => h.textContent.startsWith(p) && /\d+\/\d+$/.test(h.textContent) && h.offsetParent)),
           cut: adv.concat(heads).filter((b) => b.offsetParent && (b.scrollWidth > b.clientWidth + 1 || b.getBoundingClientRect().right > box.right + 1))
             .map((b) => b.textContent.slice(0, 18)),
           longest,
@@ -5922,7 +5953,7 @@ if (scenario()) {
       }, lang);
       assert(list.n === 120 && list.titles.length === 24 && list.titles.every((t, i) => t === list.want[i]),
         `${tag}: 目录里是 120 课，进阶的 24 课按顺序排在第 97–120 课（${list.titles[0] || "—"} … ${list.titles[23] || "—"}）`);
-      assert(list.parts.length === 2 && list.parts.every(Boolean), `${tag}: 「计算」「局面型」两个部分的标题都在目录里`);
+      assert(list.parts.length === 2 && list.parts.every(Boolean), `${tag}: 「计算」「局面型」两个部分的标题(带本单元进度)都在目录里`);
       assert(list.cut.length === 0, `${tag}: 目录里进阶课程的行没有被裁掉的字` + (list.cut.length ? " — " + list.cut.join(", ") : ""));
       await page.evaluate((i) => {
         const items = document.querySelectorAll("#lesson-list .lesson-item:not([data-c]):not([data-eg]):not([data-gs])");

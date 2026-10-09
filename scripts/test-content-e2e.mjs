@@ -1291,7 +1291,10 @@ if (hasTab && REAL.length) {
         window.__dcl = {
           title: document.title,
           lang: document.documentElement.lang,
-          undo: (document.querySelector("[data-i18n]") || {}).textContent || "",
+          // the rail's labels: the first [data-i18n] on the page is the
+          // rail's 今天 now, and in Japanese that is all kanji (今日) — the
+          // rail as a whole says whether the words are the saved language's
+          undo: [...document.querySelectorAll("#rail [data-i18n]")].map((e) => e.textContent).join(" / "),
           chunks: res.filter((n) => /^chunk-/.test(n)),
           mined: !!window.MINED_PUZZLES,
           pz: (document.getElementById("puzzle-progress") || {}).textContent || "",
@@ -1494,7 +1497,8 @@ if (hasTab && REAL.length) {
   assert(/^第 9 课/.test(v.title), "S3 课程:目录里点开第 9 课", v.title);
 
   await pg.click('#train-seg button[data-seg="classic"]');
-  v = await until((x) => x.seg === "classic" && !!x.cur);
+  // the thirty more are a chunk: the list is the forty once it is in
+  v = await until((x) => x.seg === "classic" && !!x.cur && x.n.c === 40, 8000);
   assert(v.seg === "classic" && v.sw === "read" && v.n.c === 40 && !v.n.i && !v.n.gs && !v.n.eg && /全部 40 局/.test(v.head) && v.cur.c === "0" && v.title === v.cur.text,
     "S3 名局:默认读谱,目录是 40 局(没有课、没有猜着的第二份),从第一局读起", JSON.stringify(v));
   await pg.evaluate(() => document.querySelector('#lesson-list button[data-c="2"]').click());
@@ -1505,7 +1509,7 @@ if (hasTab && REAL.length) {
   // the switch: the same game, guessed — then read again
   await pg.click('#classic-mode button[data-cmode="guess"]');
   v = await until((x) => x.sw === "guess" && x.cur && x.cur.gs === "2");
-  assert(v.sw === "guess" && v.n.gs === 40 && !v.n.c && v.cur.gs === "2" && v.cur.text === game2 && v.title.startsWith(game2.split(" · ")[0]) && /猜/.test(v.title),
+  assert(v.sw === "guess" && v.n.gs === 40 && !v.n.c && v.cur.gs === "2" && v.cur.text === game2 && v.title.includes(game2.split(" · ")[0]) && /猜/.test(v.title),
     "S3 名局:开关拨到猜着,还是这一局,改成猜着", JSON.stringify(v));
   assert((await settings()).classicMode === "guess", "S3 名局:猜着存进设置", JSON.stringify(await settings()));
   await pg.click('#classic-mode button[data-cmode="read"]');
@@ -1609,7 +1613,8 @@ if (hasTab && REAL.length) {
     const parts = await pg.evaluate(() => [...document.querySelectorAll("#lesson-list .lesson-part")].map((h) => h.textContent));
     for (const grp of ["cl", "po"]) {
       const L = ADV.lessons.find((x) => x.id.startsWith(grp));
-      assert(parts.includes(words(lang, L).part), `T1 ${lang}:目录里有「${words(lang, L).part}」这一部分`);
+      // 9.0 S3: a unit's head carries its progress (「计算 0/12」)
+      assert(parts.some((h) => h === words(lang, L).part || h.startsWith(words(lang, L).part + " ")), `T1 ${lang}:目录里有「${words(lang, L).part}」这一部分`, parts.join(" | "));
     }
     let walked = 0;
     for (const [li, L] of ADV.lessons.entries()) {

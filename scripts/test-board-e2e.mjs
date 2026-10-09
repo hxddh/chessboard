@@ -595,8 +595,11 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(1000);
   await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
-  const daily = () => page.evaluate(() => !!document.getElementById("daily-row").offsetParent);
-  assert(await daily(), "§1b 零着时,「今天的训练」在");
+  // 9.0 S1: the panel's 今天的训练 row (#daily-row) is gone — the plan is 今天's
+  // hero card. What this guarded is kept: nothing in the panel shows or hides
+  // while the moves are stepped through (the panel's visible parts, as a list).
+  const daily = () => page.evaluate(() => [...document.querySelectorAll("#pane-play > *")]
+    .filter((e) => !e.hidden && e.getClientRects().length > 0).map((e) => e.id || e.className).join(","));
   const at = (s) => page.evaluate((n) => {
     const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
     const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
@@ -613,7 +616,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const top = () => page.evaluate(() => document.getElementById("move-list").getBoundingClientRect().top);
   const t0 = await top();
   const seen = new Set();
-  const cards = new Set();
+  const cards = new Set([await daily()]);
   for (const k of [...Array(22).fill("ArrowLeft"), ...Array(22).fill("ArrowRight")]) {
     await page.keyboard.press(k);
     await page.waitForTimeout(40);
@@ -622,7 +625,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   }
   assert(seen.size === 1 && seen.has(t0),
     `§1b 从最新退到开局再回到最新,每一步棋谱区上缘都在 ${t0}px(见过:${[...seen].join(", ")})`);
-  assert(!cards.has(true), "§1b …其间「今天的训练」一次也没有冒出来");
+  assert(cards.size === 1, "§1b …其间侧栏里没有卡片冒出来或收起(" + [...cards].join(" | ") + ")");
   await ctx.close();
 }
 
@@ -807,8 +810,13 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const why = () => page.evaluate(() => (document.getElementById("editor-error") || {}).textContent);
   const open = () => page.evaluate(() => !(document.getElementById("sec-editor") || {}).hidden);
   const read = () => page.evaluate(READ_BOARD);
+  // 9.0 S2: 编辑局面 is in the tool row's ⋯ (#more-row), not on the row itself
+  const openEditor = async () => {
+    if (!(await page.isVisible("#editor-open"))) { await page.click("#more-tools"); await page.waitForTimeout(150); }
+    await page.click("#editor-open");
+  };
 
-  await page.click("#editor-open");
+  await openEditor();
   await page.waitForTimeout(400);
   assert(await open(), "编辑器打开了");
   await page.click("#editor-clear");
@@ -839,10 +847,10 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.keyboard.press("Escape"); await page.waitForTimeout(300);  // 先关掉进入时的提示条
   await page.keyboard.press("Escape"); await page.waitForTimeout(400);
   assert(!(await open()), "Esc 退出编辑器,面板跟着收起(2.1.6 之前它会留在屏幕上)");
-  await page.click("#editor-open"); await page.waitForTimeout(400);
+  await openEditor(); await page.waitForTimeout(400);
   await page.click("#editor-cancel"); await page.waitForTimeout(400);
   assert(!(await open()), "「取消」退出,面板收起");
-  await page.click("#editor-open"); await page.waitForTimeout(400);
+  await openEditor(); await page.waitForTimeout(400);
   await page.click("#editor-clear"); await page.waitForTimeout(200);
   await brush("w", "k"); await tap("e1");
   await brush("b", "k"); await tap("e8");
@@ -1602,7 +1610,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   // dialog's own rows rather than nodes borrowed from the settings page)
   const inFold = await page.evaluate(() => ["row-difficulty", "row-persona"].every((id) => document.getElementById(id).closest("#ng-custom")));
   assert(JSON.stringify(s.rows) === JSON.stringify(["row-opponent", "row-color", "row-clock", "ng-custom"]) && inFold && s.rowsHome,
-    `……里面是角色卡、执子、棋钟,档位与风格收在「自定义」里(${s.rows.join(",")})`);
+    `……里面是角色卡、执子、棋钟,档位与风格收在「更多选项」里(${s.rows.join(",")})`);
   assert(s.focus === "ng-start", `……焦点在「开始」上,直接回车就是再来一盘同样的(${s.focus})`);
   // the draft is not the game: choosing 执黑 here changes nothing until 开始
   await page.click('#ng-host #color-seg button[data-color="b"]'); await page.waitForTimeout(200);
@@ -1621,11 +1629,14 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const wrapped = (await state()).focus;
   await page.keyboard.press("Shift+Tab"); await page.waitForTimeout(80);
   const back = (await state()).focus;
-  // v8-1-plan T1: the persona cards come a segment at a time, the three tabs first
-  assert(order[0] === "ai" && order.slice(2, 5).join() === "seg0,seg1,seg2" && order[5] === "ben" && order[order.length - 2] === "ng-cancel" && order[order.length - 1] === "ng-start" && wrapped === "人机" && back === "ng-start",
-    `Tab 顺序:对手(人机 / 双人) → 三个分段 → 这一段的角色卡 → … → 棋钟 → 取消 → 开始,从「开始」再 Tab 回到第一个(${order.slice(0, 6).join(",")}…${order.slice(-2).join(",")};${wrapped} / ${back})`);
-  // change the opponent and start: one step, the strip and the dialog's segment agree
-  await page.click('#ng-host #op-seg button[data-seg="1"]'); await page.waitForTimeout(150);
+  // v8-1-plan T1 → 9.0 S2: no segment tabs (入门 / 进阶 / 高手) any more — the
+  // eight cards around the pick (中级 is 索尔, so 本 … 艾瑞丝) come straight after 人机 / 双人
+  const cardsNow = () => page.evaluate(() => [...document.querySelectorAll("#op-grid .op-card")].filter((b) => !b.hidden)
+    .map((b) => b.dataset.op + (b.classList.contains("active") && b.getAttribute("aria-pressed") === "true" ? "*" : "")).join(","));
+  assert(order[0] === "ai" && order[1] === "pvp" && order.slice(2, 10).join() === "ben,nico,vera,sol,leo,ivy,max,iris" && order[order.length - 2] === "ng-cancel" && order[order.length - 1] === "ng-start" && wrapped === "人机" && back === "ng-start",
+    `Tab 顺序:对手(人机 / 双人) → 八张角色卡 → … → 棋钟 → 取消 → 开始,从「开始」再 Tab 回到第一个(${order.slice(0, 10).join(",")}…${order.slice(-2).join(",")};${wrapped} / ${back})`);
+  assert(!(await page.$("#op-seg")), "S2: 角色卡上面没有「入门 / 进阶 / 高手」分段了");
+  // change the opponent and start: one step, the strip and the dialog's cards agree
   await page.click('#ng-host #op-grid .op-card[data-op="max"]'); await page.waitForTimeout(150);
   await page.keyboard.press("Enter"); await page.waitForTimeout(500);
   s = await state();
@@ -1633,6 +1644,25 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   assert(s.settings.difficulty === "hard" && s.diffActive === "hard" && /高级/.test(s.level),
     `新档位写进设置、对话框里的分段同步、对阵条上是「${s.level}」`);
   assert(s.rowsHome, "……控件仍是对话框自己的,设置页上没有");
+
+  // 9.0 S2: the eight cards are a window on the ladder that holds the pick and
+  // moves with it — from a card, and from the rung chosen under 更多选项
+  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);
+  const w0 = await cardsNow();
+  assert(w0 === "sol,leo,ivy,max*,iris,otto,hugo,zoe", `S2:选了马克斯(高级)再开对话框,八张卡是他和他两边的人,他亮着(${w0})`);
+  await page.click("#ng-custom > summary"); await page.waitForTimeout(200);
+  await page.click('#ng-custom #diff-seg button[data-diff="beginner"]'); await page.waitForTimeout(200);
+  const w1 = await cardsNow();
+  assert(w1 === "pip*,tomo,lina,kai,ada,remy,ben,nico", `S2:在「更多选项」里选新手,八张卡挪到梯子底,皮普亮着(${w1})`);
+  await page.click('#ng-custom #diff-seg-engine button[data-diff="extreme"]'); await page.waitForTimeout(200);
+  const w2 = await cardsNow();
+  assert(w2 === "iris,otto,hugo,zoe,lars,nora,kit,fish*", `S2:再选全力,八张卡挪到梯子顶,菲什亮着(${w2})`);
+  await page.click('#ng-custom #diff-seg-engine button[data-diff="normal"]'); await page.waitForTimeout(200);
+  const w3 = await cardsNow();
+  assert(w3 === "ben,nico,vera,sol*,leo,ivy,max,iris", `S2:选回中级,窗口回到索尔两边(${w3})`);
+  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+  s = await state();
+  assert(!s.open && s.settings.difficulty === "hard", `……Esc 不开始:设置里还是高级(${s.settings.difficulty})`);
 
   // no moves: no warning. 随机 is offered, and remembered
   await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);   // hidden with no moves on the board; N and the menu reach the same handler
@@ -1678,10 +1708,14 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);   // hidden with no moves on the board; N and the menu reach the same handler
   await page.click('#ng-host #mode-seg button[data-mode="pvp"]'); await page.waitForTimeout(200);
   s = await state();
-  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-color", "row-clock"]),
-    `双人模式只显示「谁执白」和棋钟(${s.rows.join(",")})`);
+  // 9.0 S2: 更多选项 stays (the rarer clocks are in it); its rung and style rows hide
+  const pvpFold = await page.evaluate(() => ["row-difficulty", "row-persona"].map((id) => document.getElementById(id).hidden).join());
+  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-color", "row-clock", "ng-custom"]) && pvpFold === "true,true",
+    `双人模式只显示「谁执白」、棋钟和「更多选项」(里面没有档位与风格)(${s.rows.join(",")} / ${pvpFold})`);
   await page.click('#ng-host #color-seg button[data-color="b"]'); await page.waitForTimeout(150);
-  await page.click('#ng-host #clock-seg button[data-tc="5+3"]'); await page.waitForTimeout(150);
+  // 9.0 S2: 5+3 is under 更多选项, which stays in 双人 (its rung rows hide)
+  await page.click("#ng-custom > summary"); await page.waitForTimeout(150);
+  await page.click('#ng-custom #clock-seg-more button[data-tc="5+3"]'); await page.waitForTimeout(150);
   await page.click("#ng-start"); await page.waitForTimeout(400);
   s = await state();
   const flipped = await page.evaluate(() => !!document.querySelector('#orient-seg button[data-orient="b"].active'));
@@ -1694,8 +1728,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await toPlay(page);
   await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);
   s = await state();
-  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-clock"]),
-    `双人、自动转向开着:不问哪一方在下方,只有棋钟(${s.rows.join(",")})`);
+  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-clock", "ng-custom"]),
+    `双人、自动转向开着:不问哪一方在下方,只有棋钟(和收着更多棋钟的「更多选项」)(${s.rows.join(",")})`);
   await page.click("#ng-start"); await page.waitForTimeout(400);
   const white = await page.evaluate(() => !!document.querySelector('#orient-seg button[data-orient="w"].active'));
   assert(white, "双人、自动转向开着:开局白方在下方");

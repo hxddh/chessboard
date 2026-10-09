@@ -68,6 +68,25 @@ async function setLive(pg, on) {
   await pg.click('#rail button[data-view="play"]');
   await pg.waitForTimeout(200);
 }
+/**
+ * 9.0 S3: the classics are guessed from 训练 · 名局 with its switch on 猜着
+ * (the forty are one list, read or guessed); the list is the catalog's fold.
+ */
+async function toGuessList(pg) {
+  // clicked in the page, as this suite clicks the catalog: a pointer click
+  // would turn the board's keyboard cursor off (7.7 §1c, :focus-visible), and
+  // the keyboard checks below focus the board the way a key would leave it
+  for (const sel of ['#train-seg button[data-seg="classic"]', '#classic-mode button[data-cmode="guess"]']) {
+    const on = await pg.evaluate((q) => {
+      const b = document.querySelector(q);
+      if (b.getAttribute("aria-pressed") === "true") return true;
+      b.click();
+      return false;
+    }, sel);
+    if (!on) await pg.waitForTimeout(300);
+  }
+  await pg.evaluate(() => { document.getElementById("lesson-fold").open = true; });
+}
 /** 9.0 S2: 精析 is in 分析's ⋯ menu (details#an-more). */
 async function clickDeep(pg) {
   if (!(await pg.$eval("#an-more", (d) => d.open))) await pg.click("#an-more > summary");
@@ -1669,13 +1688,17 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.waitForTimeout(900);
   await pg.click("#pick-cancel", { timeout: 500 }).catch(() => {});
   assert(!served.slice(from).includes("/js/chunk-guess.js"), "T3：首屏不取 chunk-guess.js");
+  await toGuessList(pg);
   // v8-4-plan T2: ten from the bundle, thirty more once chunk-classics-more.js is in
   await pg.waitForFunction(() => document.querySelectorAll("#lesson-list button[data-gs]").length === 40, null, { timeout: 8000 }).catch(() => {});
   const entries = await pg.evaluate(() => [...document.querySelectorAll("#lesson-list button[data-gs]")].map((b) => b.textContent));
   assert(entries.length === 40, "T2（8.4）：学习目录里 40 局名局都能猜（" + entries.length + "）");
   assert(served.slice(from).includes("/js/chunk-classics-more.js"), "T2（8.4）：目录画出来以后才取 chunk-classics-more.js");
-  const eras = await pg.evaluate(() => [...document.querySelectorAll("#lesson-list .lesson-part")].map((h) => h.textContent).filter((x) => /名局猜着/.test(x)));
-  assert(eras.length === 5 && eras.slice(1).every((x) => / · /.test(x)), "T2（8.4）：名局猜着按时代分组（" + eras.join(" | ") + "）");
+  // 9.0 S3: one list of the forty (read or guessed is the switch): the ten
+  // under 名局, the thirty under their four eras
+  const eras = await pg.evaluate(() => [...document.querySelectorAll("#lesson-list .lesson-part")].map((h) => h.textContent));
+  assert(eras.length === 5 && eras[0] === "名局" && new Set(eras).size === 5 && eras.slice(1).every((x) => x && x !== "名局"),
+    "T2（8.4）：名局按时代分组（" + eras.join(" | ") + "）");
 
   // the scripted engine: White-view cp by position (the first four FEN fields)
   const master = [];
@@ -1829,17 +1852,20 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     }
   }
 
-  // (5) quitting mid-game reads the game instead; a reload mid-game is harmless,
+  // (5) quitting mid-game reads the game instead (9.0 S3: 名局's switch to 读谱,
+  // where the runner's own 读棋 button was); a reload mid-game is harmless,
   // and so is a learn key whose gs is not an object
-  await pg.click("#gs-quit");
+  await pg.evaluate(() => document.querySelector('#classic-mode button[data-cmode="read"]').click());
   await pg.waitForTimeout(400);
   const quit = await pg.evaluate(() => ({ panel: !!document.getElementById("gs-panel") && !!document.getElementById("gs-panel").offsetParent, title: document.getElementById("lesson-title").textContent }));
-  assert(!quit.panel && /1858/.test(quit.title), "T3：「读棋」离开猜着，读这一局（" + quit.title + "）");
+  assert(!quit.panel && /1858/.test(quit.title), "T3：「读谱」离开猜着，读这一局（" + quit.title + "）");
+  await toGuessList(pg);
   await pg.evaluate(() => document.querySelector('#lesson-list button[data-gs="8"]').click());
   assert(await waitAt(1), "T3：黑胜的一局默认猜黑方");
   await pg.evaluate(() => { const l = JSON.parse(localStorage.getItem("chess.learn")); l.gs = 7; localStorage.setItem("chess.learn", JSON.stringify(l)); });
   await pg.reload();
   await pg.waitForTimeout(1200);
+  await toGuessList(pg);
   await pg.evaluate(() => {
     document.querySelector("#sec-learn details.reading-index").open = true;
     document.querySelector('#lesson-list button[data-gs="0"]').click();
@@ -1862,7 +1888,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(/La Bourdonnais/.test(aboutEn) && !/[一-鿿]/.test(aboutEn + (await panel()).title), "T2（8.4）：英文下开场白与标题是英文（" + aboutEn.slice(0, 40) + "…）");
   await pg.evaluate(() => document.querySelector('#lang-seg button[data-lang="zh-CN"]').click());
   await pg.waitForTimeout(600);
-  await pg.click("#gs-quit");
+  await pg.click('#classic-mode button[data-cmode="read"]');   // 9.0 S3: 读谱, the switch
   await pg.waitForTimeout(400);
   const read = await pg.evaluate(() => document.getElementById("lesson-text").textContent);
   assert(/1834/.test(read) && /麦克唐奈/.test(read), "T2（8.4）：读棋第 0 步也有开场白（" + read.slice(0, 40) + "…）");
@@ -1879,7 +1905,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     if (sessionStorage.getItem("seeded")) return; // a reload keeps what the app wrote
     sessionStorage.setItem("seeded", "1");
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "learn", view: "learn", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", flipped: false }));
+      mode: "learn", view: "train", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", flipped: false }));
     localStorage.setItem("chess.panelOpen", "1");
     localStorage.setItem("chess.save", JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }));
   });
@@ -1897,6 +1923,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   }, [ply, phase], { timeout: 10000 }).then(() => true, () => false);
   const liveText = () => pg.evaluate(() => (document.getElementById("board-live") || {}).textContent || "");
   // P2-1: the default-black guess, then 下棋 and a reload: the saved setting is untouched
+  await toGuessList(pg);
   await pg.evaluate(() => {
     document.querySelector("#sec-learn details.reading-index").open = true;
     document.querySelector('#lesson-list button[data-gs="8"]').click();
@@ -1926,10 +1953,15 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.reload();
   await pg.waitForTimeout(1200);
   assert((await settings()).flipped === false, "M2：重新载入之后也还是原来的方向");
+  // 9.0 S3: 训练's segment and 名局's switch are settings: a reload keeps both
+  const kept = await settings();
+  assert(kept.classicMode === "guess" && kept.trainSeg === "classic",
+    "S3：名局的「猜着」开关与训练的分段存进设置，重新载入之后还在（" + JSON.stringify({ c: kept.classicMode, s: kept.trainSeg }) + "）");
 
   // P3-5: a library game opened mid-guess and 取消 — the run goes on
-  await pg.click('.rail-btn[data-view="learn"]');
+  await pg.click('.rail-btn[data-view="train"]');   // 9.0 S3: 训练, left on 名局
   await pg.waitForTimeout(500);
+  await toGuessList(pg);
   await pg.evaluate(() => {
     // a slow scripted engine: every position level, each answer 1.5 s away
     window.__chess.engine.isReady = () => true;
@@ -1962,7 +1994,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const a = await refuseLoad();
   await pg.waitForTimeout(3600); // both of the check's searches (1.5 s each) come back while the run is set aside
   if (a.asked) await pg.click("#confirm-cancel");
-  await pg.click('.rail-btn[data-view="learn"]');
+  await pg.click('.rail-btn[data-view="train"]');
   const resumedCheck = await gsAt(2);
   assert(a.asked && resumedCheck, "M2：猜着判分时读库被取消，回来之后判完、对方走、轮到第 2 手（问了替换：" + a.asked + "）");
   const say = await pg.evaluate(() => document.getElementById("gs-say").textContent);
@@ -1972,7 +2004,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const b = await refuseLoad();
   await pg.waitForTimeout(1000); // the other side's 0.7 s pass while the run is set aside
   if (b.asked) await pg.click("#confirm-cancel");
-  await pg.click('.rail-btn[data-view="learn"]');
+  await pg.click('.rail-btn[data-view="train"]');
   assert(b.asked && await gsAt(4), "M2：对方要走时读库被取消，回来之后对方照走、轮到第 3 手（" + Math.round(b.t) + " ms 内问了替换）");
   assert(errsM.length === 0, "M2：全程没有页面异常 — " + errsM.join(" / "));
   await ctxM.close();

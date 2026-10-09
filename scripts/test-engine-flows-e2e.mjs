@@ -276,12 +276,34 @@ async function openPgn(page, text) {
   await importVia(page, "#pgn-open", text, "flows-trap.pgn");
 }
 
+/**
+ * 9.0 S2: 持续分析 is the switch #opt-live in 设置·高级 (saved as liveOn), not
+ * the panel's #an-live button. Turn it on (or off) there and come back to the
+ * view the board was on; the switch's aria-pressed afterwards.
+ */
+async function setLive(page, on = true) {
+  const from = await page.getAttribute("#app", "data-view");
+  await page.click('#rail button[data-view="settings"]');
+  await page.click("#cat-advanced");
+  if ((await page.getAttribute("#opt-live", "aria-pressed")) !== String(on)) await page.click("#opt-live");
+  const pressed = await page.getAttribute("#opt-live", "aria-pressed");
+  await page.click(`#rail button[data-view="${from}"]`);
+  await page.waitForTimeout(200);
+  return pressed;
+}
+
+/** 9.0 S2: 精析 is in 分析's ⋯ menu (details#an-more): open it first. */
+async function showDeep(page) {
+  if (!(await page.evaluate(() => document.getElementById("an-more").open))) await page.click("#an-more > summary");
+}
+
 /** 分析 is running: its button has become the stop control. */
 const anBusy = (page) => page.evaluate(() => /停/.test(document.getElementById("an-run").textContent || ""));
 
 /** Press 分析 or 精析 and wait for the pass to finish; its wall time in ms. */
 async function runAn(page, sel, ms) {
   const t0 = Date.now();
+  if (sel === "#an-deep") await showDeep(page);
   await page.click(sel);
   await until(() => anBusy(page), 3000, 50);
   await until(async () => !(await anBusy(page)), ms);
@@ -408,6 +430,7 @@ await scenario("分析/精析", async () => {
   const busy = () => page.evaluate(() => /停/.test(document.getElementById("an-run").textContent || ""));
   const run = async (sel, ms) => {
     const t0 = Date.now();
+    if (sel === "#an-deep") await showDeep(page);
     await page.click(sel);
     await until(busy, 3000, 50);
     await until(async () => !(await busy()), ms);
@@ -437,8 +460,7 @@ await scenario("分析/精析", async () => {
 await scenario("持续分析", async () => {
   const { ctx, page, errs } = await openPage({ mode: "pvp" });
   await openPgn(page, TRAP);
-  await page.click("#an-live");
-  const pressed = await page.getAttribute("#an-live", "aria-pressed");
+  const pressed = await setLive(page);
   const t0 = Date.now();
   const pv = await until(() => page.evaluate(() => {
     const el = document.getElementById("live-line");
@@ -446,7 +468,21 @@ await scenario("持续分析", async () => {
     const chips = [...el.querySelectorAll(".pv-chip")].map((c) => c.textContent.trim()).filter(Boolean);
     return chips.length ? chips.join(" ") : null;
   }), 6000, 100);
-  assert(pressed === "true" && !!pv, "持续分析：打开后 aria-pressed=true，" + (Date.now() - t0) + "ms 内出现主变", pv);
+  assert(pressed === "true" && !!pv, "持续分析：设置·高级里打开后 aria-pressed=true，回到棋盘 " + (Date.now() - t0) + "ms 内出现主变", pv);
+  // …and it is a setting: a reload keeps it on
+  await page.reload();
+  await page.waitForTimeout(900);
+  if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
+  const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}").liveOn);
+  const pv2 = await until(() => page.evaluate(() => {
+    const el = document.getElementById("live-line");
+    return !!el && !el.hidden && el.querySelectorAll(".pv-chip").length > 0;
+  }), 8000, 100);
+  assert(kept === true && !!pv2 && (await page.getAttribute("#opt-live", "aria-pressed")) === "true",
+    "持续分析：存在设置里（liveOn），重开之后还开着、主变又出来", JSON.stringify({ kept, pv2 }));
+  const off = await setLive(page, false);
+  const gone = await until(() => page.evaluate(() => { const el = document.getElementById("live-line"); return !el || el.hidden; }), 3000, 100);
+  assert(off === "false" && !!gone, "持续分析：设置里关掉，引擎线收起", JSON.stringify({ off, gone }));
   assert(!errs.length, "持续分析：页面没有报错", errs.join(" / "));
   await ctx.close();
 });
@@ -574,7 +610,7 @@ await scenario("教学对练", async () => {
 await scenario("持续分析+棋谱库", async () => {
   const { ctx, page, errs } = await openPage({ mode: "pvp" });
   await openPgn(page, TRAP);
-  await page.click("#an-live");
+  await setLive(page);
   const livePv = () => page.evaluate(() => {
     const el = document.getElementById("live-line");
     return !!el && !el.hidden && el.querySelectorAll(".pv-chip").length > 0;
@@ -612,7 +648,7 @@ await scenario("持续分析+棋谱库", async () => {
     const gos = window.__uci.filter((m) => /^go\b/.test(m));
     return idle && /^go infinite/.test(gos[gos.length - 1] || "");
   }), 8000, 150);
-  const on = await page.getAttribute("#an-live", "aria-pressed");
+  const on = await page.getAttribute("#opt-live", "aria-pressed");
   assert(!!back && on === "true", "持续分析+棋谱库：分析跑完后持续分析自己接上");
   assert(!errs.length, "持续分析+棋谱库：页面没有报错", errs.join(" / "));
   await ctx.close();
@@ -636,6 +672,7 @@ await scenario("分析中锁棋谱", async () => {
   });
   const before = await state();
   const kDeep = await page.evaluate(() => window.__toasts.length);
+  await showDeep(page);
   await page.click("#an-deep");
   await until(busy, 3000, 50);
   // a couple of plies in, like the 7.5 walkthrough's 「停止 3/7」
@@ -698,7 +735,7 @@ await scenario("分析存盘", async () => {
   // search 7.5 already made and cancelled) — that is not what is measured here
   const p2 = await openPage({ mode: "pvp" },
     { "chess.analyses": kept, "chess.stats": JSON.stringify(stats) });
-  await p2.page.click('#rail button[data-view="me"]').catch(() => {});   // v8-0-plan A1: history is on 我的
+  await p2.page.click('#rail button[data-view="library"]').catch(() => {});   // 9.0 S4: history is on 棋谱 (was 我的)
   const row = await until(() => p2.page.isVisible('#hist-body button[data-hist="0"]'), 3000, 100);
   if (row) await p2.page.click('#hist-body button[data-hist="0"]');
   const r2 = await until(() => readAn(p2.page).then((r) => (r.acc && r.tags.length ? r : null)), 3000, 100);
@@ -849,7 +886,7 @@ await scenario("多主变", async () => {
   // the lighter ones, off the analysis
   const rvShapes = await page.evaluate(() => window.__chess.shapes().arrows.filter((a) => a.color === "E" || a.color === "e"));
   assert(rvShapes.length >= 1, "多主变：复盘时棋盘上有引擎的箭头", JSON.stringify(rvShapes));
-  await page.click("#an-live");
+  await setLive(page);
   const rows = await until(() => page.evaluate(() => {
     const el = document.getElementById("live-line");
     const n = el && !el.hidden ? [...el.querySelectorAll(".pv-row .pv-eval")].filter((b) => b.textContent).length : 0;
@@ -1003,7 +1040,7 @@ await scenario("再试一次·持续分析与升变", async () => {
     return b ? b.textContent.trim() : "";
   });
   assert(tag === "?" || tag === "??", "升变：1. Kf1 被标成 ? 或 ??", tag);
-  await page.click("#an-live");
+  await setLive(page);
   const liveUp = await until(() => page.evaluate(() => {
     const el = document.getElementById("live-line");
     return !!el && !el.hidden && /\d/.test(el.textContent);
@@ -1063,7 +1100,7 @@ await scenario("持续分析·悬停", async () => {
   const { ctx, page, errs } = await openPage({ mode: "pvp" });
   await openPgn(page, '[Event "flows"]\n[Site "-"]\n[Date "2026.09.26"]\n[White "hxddh"]\n[Black "rival"]\n[Result "*"]\n\n' +
     "1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. d3 Bc5 5. c3 d6 6. O-O O-O *\n");
-  await page.click("#an-live");
+  await setLive(page);
   const chip = '#live-line .pv-row[data-line="0"] .pv-chip';
   assert(!!(await until(() => page.evaluate((s) => !!document.querySelector(s), chip), 6000, 50)), "持续分析·悬停：引擎线出来了");
   await page.hover(chip);
@@ -1236,40 +1273,43 @@ await scenario("对手角色", async () => {
   await page.waitForTimeout(400);
   const dialog = () => page.evaluate(() => ({
     open: document.getElementById("newgame-modal").classList.contains("show"),
-    segs: [...document.querySelectorAll("#op-seg button")].map((b) => ({ label: b.textContent.trim(), on: b.getAttribute("aria-pressed") === "true" })),
     cards: [...document.querySelectorAll("#op-grid .op-card")].map((b) => ({
       id: b.dataset.op, shown: !b.hidden && !!b.offsetParent, name: b.querySelector(".op-name").textContent.trim(),
       rating: Number(b.querySelector(".op-rating").textContent), style: b.querySelector(".op-style").textContent.trim(),
       av: !!b.querySelector(".op-av svg"), on: b.classList.contains("active") })),
-    focus: document.activeElement && (document.activeElement.dataset.op || (document.activeElement.dataset.seg && "seg" + document.activeElement.dataset.seg)),
+    focus: document.activeElement && document.activeElement.dataset.op,
+    seg: !!document.getElementById("op-seg"),
   }));
   const dlg = await dialog();
   const shownIds = (d) => d.cards.filter((c) => c.shown).map((c) => c.id);
-  // v8-1-plan T1: one card per rung, a segment of them at a time
+  // v8-1-plan T1: one card per rung
   assert(dlg.open && dlg.cards.length >= 18 && dlg.cards.every((c) => c.name && c.av && c.rating > 0 && c.style),
     "对手角色：新对局对话框里每档一张角色卡，每张有头像、名字、等级分和风格", JSON.stringify(dlg.cards.slice(0, 3)));
   assert(dlg.cards.every((c, i) => i === 0 || c.rating > dlg.cards[i - 1].rating), "对手角色：等级分从弱到强排",
     dlg.cards.map((c) => c.rating).join(","));
-  assert(dlg.segs.map((x) => x.label).join("/") === "入门/进阶/高手" && dlg.segs[1].on && !dlg.segs[0].on && !dlg.segs[2].on,
-    "对手角色（T1）：卡片分入门 / 进阶 / 高手三段，打开时停在当前对手（中级）所在的「进阶」", JSON.stringify(dlg.segs));
+  // 9.0 S2: was T1's three segments 入门 / 进阶 / 高手, opening on the pick's
+  // one — now there are no segments: eight cards, the ladder around the pick
   const mid = shownIds(dlg);
-  assert(mid.includes("sol") && mid.includes("ben") && !mid.includes("pip") && !mid.includes("fish") && mid.length >= 4,
-    "对手角色（T1）：只显示这一段的卡片", mid.join(","));
+  assert(!dlg.seg && mid.join() === "ben,nico,vera,sol,leo,ivy,max,iris",
+    "对手角色（S2）：没有分段，打开时显示当前对手（中级·索尔）和他两边的八张卡", mid.join(","));
   assert(dlg.cards.filter((c) => c.on).length === 1 && dlg.focus === dlg.cards.find((c) => c.on).id,
     "对手角色：「换个对手」打开时，当前的角色亮着、焦点在它上面", JSON.stringify({ focus: dlg.focus }));
-  // a tab by keyboard: focus it, Enter
-  // (Space: Enter in this dialog is 开始)
-  await page.focus('#op-seg button[data-seg="2"]');
+  // a card by keyboard: focus it, Space (Enter in this dialog is 开始); the
+  // window moves with the pick, and focus stays on the card
+  await page.focus('#op-grid .op-card[data-op="iris"]');
   await page.keyboard.press("Space");
   await page.waitForTimeout(150);
   const top = await dialog();
-  assert(top.segs[2].on && shownIds(top).includes("fish") && shownIds(top).includes("otto") && !shownIds(top).includes("max") && top.focus === "seg2",
-    "对手角色（T1）：键盘空格换到「高手」，卡片跟着换，焦点留在分段上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
-  await page.click('#op-seg button[data-seg="0"]');
+  assert(top.cards.find((c) => c.id === "iris").on && shownIds(top).join() === "leo,ivy,max,iris,otto,hugo,zoe,lars" && top.focus === "iris",
+    "对手角色（S2）：键盘空格选艾瑞丝，八张卡挪到她两边，焦点留在她身上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
+  // the rung under 更多选项 moves the window too: 练习 is 莉娜's rung
+  await page.click("#ng-custom > summary");
+  await page.waitForTimeout(150);
+  await page.click('#ng-custom #diff-seg button[data-diff="learner"]');
   await page.waitForTimeout(150);
   const low = await dialog();
-  assert(low.segs[0].on && shownIds(low)[0] === "pip" && shownIds(low).includes("lina") && low.cards.find((c) => c.id === "sol").on,
-    "对手角色（T1）：换段只换显示的卡片，选中的对手不变", JSON.stringify(shownIds(low)));
+  assert(shownIds(low).join() === "pip,tomo,lina,kai,ada,remy,ben,nico" && !low.cards.find((c) => c.id === "iris").on,
+    "对手角色（S2）：在「更多选项」里换到练习档，八张卡挪到梯子底，莉娜在里面", JSON.stringify(shownIds(low)));
   await page.click('#op-grid .op-card[data-op="lina"]');
   await page.waitForTimeout(150);
   await page.click("#ng-start");
