@@ -132,13 +132,14 @@ function watchShape(app, view) {
 /** The White column: the first cell after each row's number. */
 const WHITE = ".mlrow > .mlnum + .mlmove";
 
-/** Keep --ml-w on `list` equal to its widest White cell. */
 /**
- * 9.0: the list centres the current move when it renders (app.js), but its
- * height can change afterwards — a row of buttons below it refits, a font
- * arrives — and the move it centred slides out of view (WebKit, a 120-move
- * game at 1024×768). When the list's box changes, bring the current move
- * back if it is no longer inside.
+ * 9.0: the list centres the current move when it renders (app.js), but what
+ * is inside it can grow afterwards without the list's own box changing — the
+ * White column is re-measured (--ml-w), a font arrives, a row refits — and
+ * the move it centred slides below the edge (WebKit, a 120-move game at
+ * 1024×768: scrollTop 1234 of 1278, the current move 44px under the edge).
+ * So the rows are watched as well as the list: when the list or any row
+ * changes size, bring the current move back if it is no longer inside.
  * @param {HTMLElement} list
  */
 function keepCurrentInView(list) {
@@ -153,16 +154,16 @@ function keepCurrentInView(list) {
     list.scrollTop += c.top - l.top - list.clientHeight / 2;
   };
   const soon = () => { if (!frame) frame = requestAnimationFrame(check); };
-  // the box changing (a row below refits) and the content changing after the
-  // render centred it (WebKit lays rows out again a frame later: scrollTop
-  // 1234 of 1278 with the last move 44px under the edge)
-  new ResizeObserver(soon).observe(list);
-  new MutationObserver(soon).observe(list, { childList: true, subtree: true });
-  // …and the bundled font arriving after the first layout, which changes the
-  // rows' metrics without touching the DOM or the list's own box
-  if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener("loadingdone", soon);
+  const sizes = new ResizeObserver(soon);
+  sizes.observe(list);
+  for (const row of list.children) sizes.observe(row);
+  new MutationObserver((recs) => {
+    for (const r of recs) for (const n of r.addedNodes) if (n.nodeType === 1 && n.parentNode === list) sizes.observe(n);
+    soon();
+  }).observe(list, { childList: true, subtree: true });
 }
 
+/** Keep --ml-w on `list` equal to its widest White cell. */
 function watchColumns(list) {
   if (typeof ResizeObserver !== "function") return;
   const widths = new WeakMap();
@@ -278,7 +279,7 @@ export function watchPlayLayout(d) {
   if (d.side) watchFitRows(d.side);
   // 9.0 V1: a label is one line everywhere (white-space: nowrap), so the
   // action rows on the pages and in 偏好设置 step their columns down too
-  for (const el of document.querySelectorAll(".page, #prefs-modal")) watchFitRows(el, { wide: false });
+  for (const el of document.querySelectorAll(".page")) watchFitRows(el, { wide: false });
   if (d.list) { watchColumns(d.list); keepCurrentInView(d.list); }
   if (d.list && d.strip) watchStrip(d.list, d.strip);
   if (d.opening && d.infoOpening) watchOpening(d.opening, d.infoOpening);
