@@ -4739,12 +4739,14 @@ if (scenario()) {
       return { rows: list.querySelectorAll(".mlrow").length, scrolls: list.scrollHeight > list.clientHeight + 1,
                barInPane: B.top >= P.top - 0.5 && B.bottom <= P.bottom + 0.5, paneTop: pane.scrollTop,
                curInList: !!cur && box(cur).top >= L.top - 0.5 && box(cur).bottom <= L.bottom + 0.5,
+               curBox: cur ? [Math.round(box(cur).top), Math.round(box(cur).bottom), cur.textContent] : null,
+               listBox: [Math.round(L.top), Math.round(L.bottom), list.scrollTop, list.scrollHeight, list.clientHeight],
                nav: B.top - L.bottom,
                stripCur: sc ? box(sc).right <= box(strip).right + 0.5 && box(sc).left >= box(strip).left - 0.5 : null };
     });
     const at = `A2 ${w}×${h} 120 手：`;
     assert(r.rows >= 60, at + "棋谱有 " + r.rows + " 行");
-    assert(r.curInList, at + "当前一着在棋谱的可见范围里");
+    assert(r.curInList, at + "当前一着在棋谱的可见范围里（" + JSON.stringify({ cur: r.curBox, list: r.listBox }) + "）");
     assert(r.nav >= 0 && r.nav <= 16, at + "翻谱栏紧跟棋谱（" + r.nav + "px）");
     if (w > h) {
       assert(r.scrolls, at + "棋谱自己滚动");
