@@ -283,7 +283,35 @@ function watchOpening(src, dst) {
  * all of `app`. The panel's action rows (fit-row.js, 7.9 §1b) are the
  * panel's half of the same job and are wired here with the rest.
  */
+/**
+ * 9.0 M3: the portrait drawer's three stops. Shut, half (the reserve under
+ * the board) and nine tenths (`sheet-full`); the grip drags between them —
+ * up to nine tenths, down to half and from half down to shut — and a tap on
+ * it trades half and nine tenths. Shut, it comes back at half.
+ */
+function wireSheet(app, grip, close) {
+  let y0 = null;
+  grip.addEventListener("pointerdown", (e) => {
+    y0 = e.clientY;
+    if (grip.setPointerCapture) grip.setPointerCapture(e.pointerId);
+  });
+  grip.addEventListener("pointercancel", () => { y0 = null; });
+  grip.addEventListener("pointerup", (e) => {
+    if (y0 == null) return;
+    const dy = e.clientY - y0, full = app.classList.contains("sheet-full");
+    y0 = null;
+    if (Math.abs(dy) < 8) app.classList.toggle("sheet-full", !full);
+    else if (dy < 0) app.classList.add("sheet-full");
+    else if (full) app.classList.remove("sheet-full");
+    else close();
+  });
+  new MutationObserver(() => {
+    if (!app.classList.contains("panel-open") && app.classList.contains("sheet-full")) app.classList.remove("sheet-full");
+  }).observe(app, { attributes: true, attributeFilter: ["class"] });
+}
+
 export function watchPlayLayout(d) {
+  if (d.app && d.grip && d.close) wireSheet(d.app, d.grip, d.close);
   if (d.app) watchShape(d.app, d.view || d.app);
   if (d.side) watchFitRows(d.side);
   // 9.0 V1: a label is one line everywhere (white-space: nowrap), so the

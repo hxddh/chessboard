@@ -5301,9 +5301,11 @@ if (scenario()) {
 // layout: the strips are the info column's top and bottom cards, flush with
 // the board's top and bottom edges, one --info-gap to its left.
 // (M2: a 1504×900 window, whose play view beside the 64px rail is the
-// 1440×900 the branch measured without one.)
+// 1440×900 the branch measured without one. 9.0 V3: the top bar's 32px went
+// to the board, and at 1440×900 the two-column board (816) is now the larger
+// one, so the wide layout starts at a 1463px view: 1664×900, view 1600×900.)
 if (scenario()) {
-  const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1504, height: 900 });
+  const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1664, height: 900 });
   for (const sq of A2_ITALIAN) await mv(page, sq);
   await page.waitForTimeout(300);
   const read = () => page.evaluate(() => {
@@ -5313,18 +5315,18 @@ if (scenario()) {
     return { wide: document.getElementById("app").classList.contains("pv-wide"),
              wrap: box(document.getElementById("board-wrap")), board: box(document.getElementById("board")),
              top: box(top), bot: box(bot), topId: top.id, side: box(document.getElementById("side")),
-             toolsIn: tools.length === 2 && tools.every((b) => b.l >= box(top).l && b.r <= box(top).r && b.t >= box(top).t && b.b <= box(top).b),
+             toolsIn: tools.length === 3 && tools.every((b) => b.l >= box(top).l && b.r <= box(top).r && b.t >= box(top).t && b.b <= box(top).b),
              opening: (() => { const o = document.getElementById("info-opening"); return o.hidden ? null : { text: o.textContent, ...box(o) }; })(),
              panelOpening: getComputedStyle(document.getElementById("opening-line")).display,
              gap: parseFloat(getComputedStyle(document.getElementById("app")).getPropertyValue("--info-gap")) };
   });
   const r = await read();
-  assert(r.wide, "A2 1504×900（下棋视图 1440×900）：宽布局");
+  assert(r.wide, "A2 1664×900（下棋视图 1600×900）：宽布局");
   assert(Math.abs(r.top.t - r.wrap.t) <= 1 && Math.abs(r.bot.b - r.wrap.b) <= 1,
     "A2：对手卡片顶 = 棋盘外框顶，自己的卡片底 = 棋盘外框底（" + [r.top.t, r.wrap.t, r.bot.b, r.wrap.b].map(Math.round).join(" / ") + "）");
   assert([r.top, r.bot].every((c) => Math.abs(c.r - (r.wrap.l - r.gap)) <= 1 && c.l >= 0),
     "A2：两张卡片在棋盘左边一个 --info-gap 处，在窗口里");
-  assert(r.toolsIn, "A2：悔棋 / 提示在对手的卡片里");
+  assert(r.toolsIn, "A2：悔棋 / 提示 / ☰ 在对手的卡片里");
   assert(!!r.opening && r.opening.text.startsWith("C54") && r.opening.r <= r.wrap.l && r.opening.t > r.top.b && r.opening.b < r.bot.t,
     "A2：开局名在两张卡片之间（" + JSON.stringify(r.opening) + "）");
   assert(r.panelOpening === "none", "A2：…面板里那一行让位，不说两遍");
@@ -5364,13 +5366,14 @@ if (scenario()) {
   }
 }
 
-// The cards at their narrowest (a 1280×800 play view: 192px), in three
+// The cards at their narrowest (a 1320×800 play view — 9.0 V3: the
+// narrowest that is wide at 800 high now the top bar's 32px is the board's), in three
 // languages, with a persona, a clock and both tools: nothing overflows a card
 // and no two of its pieces lie on each other (the same pairwise test as 5c).
-// (M2: the window is 1344×800, the play view beside the 64px rail 1280×800.)
+// (M2: the window is 1384×800, the play view beside the 64px rail 1320×800.)
 if (scenario()) {
   for (const lang of LANGS) {
-    const { ctx, page } = await open(lang, "ai", "play", "wood", { width: 1344, height: 800 });
+    const { ctx, page } = await open(lang, "ai", "play", "wood", { width: 1384, height: 800 });
     // 9.0 S5: style and clock are chosen in the new-game dialog
     await openNewGame(page);
     await page.click('#newgame-modal #persona-seg button[data-persona="principled"]');
@@ -5391,7 +5394,7 @@ if (scenario()) {
     }));
     for (const c of r) {
       assert(c.wide && c.over <= 0 && c.hits.length === 0 && c.out.length === 0,
-        `A2 ${lang} 1344×800（视图 1280×800）：${c.id} 卡片里没有溢出、没有叠在一起的东西（${JSON.stringify(c)}）`);
+        `A2 ${lang} 1384×800（视图 1320×800）：${c.id} 卡片里没有溢出、没有叠在一起的东西（${JSON.stringify(c)}）`);
     }
     await ctx.close();
   }

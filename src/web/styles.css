@@ -1136,6 +1136,8 @@
       clip: rect(0 0 0 0); white-space: nowrap; border: 0;
     }
 
+    /* the drawer's grip: a portrait window's only (9.0 M3, see there) */
+    .sheet-grip { display: none; }
     .side {
       position: absolute; top: 0; right: 0; bottom: 0;
       width: var(--side-w); z-index: 30;
@@ -2132,6 +2134,9 @@
       color: var(--text);
       border: 1px solid var(--line-strong);
       padding: 8px 16px; border-radius: 999px; font-size: 0.875rem; font-weight: 400;
+      /* 9.0 V3: one strip high (40px) at most, with an action in it — on a
+         wide window it lies over the top strip, ending where the board begins */
+      line-height: var(--lh-tight);
       box-shadow: 0 10px 30px rgba(0,0,0,.25);
       opacity: 0; pointer-events: none;
       transition: opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
@@ -2156,7 +2161,7 @@
       border: 1px solid currentColor;
       color: inherit; font: inherit; font-size: 0.8125rem; font-weight: 600;
       line-height: var(--lh-tight);
-      padding: 2px 8px; border-radius: var(--radius-sm);
+      padding: 0 8px; border-radius: var(--radius-sm);
       flex: none; cursor: pointer; opacity: 0.85;
       transition: opacity var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
     }
@@ -2184,7 +2189,7 @@
       border-color: transparent;
       max-width: min(420px, calc(100% - 32px));
       border-radius: var(--radius-md);
-      line-height: var(--lh-body);
+      line-height: var(--lh-tight);
       pointer-events: auto;
     }
 
@@ -2416,7 +2421,7 @@
        560×900 measured 514 shut, 408 open. At desktop widths that trade is
        the point of the rule; at the narrow end it is the jump
        design-constraints §1 argues against. */
-    @media (max-aspect-ratio: 1/1) and (min-width: 821px) {
+    @media (max-aspect-ratio: 1/1) and (min-width: 901px) {
       .side {
         top: auto; left: var(--rail-w); right: 0; bottom: 0;
         width: auto; height: min(46vh, 430px);
@@ -2525,7 +2530,7 @@
        At exactly 1/1 that rule matches too; this one comes later and sets
        everything it sets. app.js asks `matchMedia` with this exact text
        (SHEET_QUERY). */
-    @media (max-aspect-ratio: 1/1) and (max-width: 820px) {
+    @media (max-aspect-ratio: 1/1) and (max-width: 900px) {
       /* declared on :root, not bare in the media block — a custom property is
          a declaration and needs a rule to live in.
          The spare height is 100vh − chrome − 2·pad − (100vw − 2·pad): the pads
@@ -2546,12 +2551,19 @@
          height, so 7.6 §3f below still holds with the strips in: a lesson's
          board is the two-player board, and it is the sheet that is shorter
          (540×900: 470px against 494px before this, WebKit's CI caught it). */
+      /* 9.0 M3: up to 900px wide (it was 820), so a 821–900 window beside
+         the rail gets this drawer too — the widths below are the play
+         view's (100vw less the rail), not the window's. And the drawer's
+         half height is the reserve itself wherever the reserve is a
+         readable 160px or more: at 760×900 the 240px floor lay 60px over
+         the last rank. The near-square windows, with little or no reserve,
+         still bring it up at that readable minimum. */
       :root, #app.has-task {
         --sheet-h: clamp(0px,
-          max(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - 100vw + 8px,
-              min(240px - var(--task-h, 0px), 46vh, 100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - 80vw)),
+          max(100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - (100vw - var(--rail-w)) + 8px,
+              min(240px - var(--task-h, 0px), 46vh, 100vh - var(--chrome-h) - var(--task-h, 0px) - 2 * var(--strip-h) - 0.8 * (100vw - var(--rail-w)))),
           min(46vh, 430px));
-        --sheet-vis: max(var(--sheet-h), min(46vh, 240px) - var(--task-h, 0px));
+        --sheet-vis: max(var(--sheet-h), min(46vh, 160px) - var(--task-h, 0px));
       }
       /* 7.6 §3f: in a lesson the task strip over the board (.task-strip)
          takes its height out of the sheet's reserve, not out of the board:
@@ -2559,7 +2571,7 @@
          and the sheet is 40px shorter. (7.7: the rule above is declared on
          #app.has-task as well, so --task-h resolves where it is set.) */
       .side {
-        top: auto; left: 0; right: 0; bottom: 0;
+        top: auto; left: var(--rail-w); right: 0; bottom: 0;
         width: auto; height: var(--sheet-vis);
         padding: 12px 16px 16px;
         border-left: 0; border-top: 1px solid var(--panel-border);
@@ -2568,6 +2580,26 @@
         box-shadow: 0 -12px 40px rgba(0,0,0,.28);
       }
       #app.panel-open .side { transform: translateY(0); }
+      /* 9.0 M3: three stops — shut, half (the reserve: the board and the
+         drawer read together) and nine tenths (the drawer to read, over the
+         board). The grip at its top edge drags between them (play-layout.js
+         wireSheet); ☰ still opens and shuts it. */
+      #app.sheet-full .side { height: calc(0.9 * (100vh - var(--chrome-h))); }
+      .side { transition: transform var(--dur-slow) var(--ease), height var(--dur-base) var(--ease); }
+      .sheet-grip {
+        display: block; flex: none;
+        height: var(--ctl-h-sm); margin: -12px -16px 0;
+        cursor: ns-resize; touch-action: none;
+        position: relative;
+      }
+      .sheet-grip::before {
+        content: ""; position: absolute; left: 50%; top: 12px;
+        width: 40px; height: 4px; margin-left: -20px;
+        border-radius: var(--radius-sm); background: var(--line-strong);
+      }
+      /* one notation per stop: the strip at half, the list at nine tenths */
+      #app:not(.sheet-full) #sec-moves .move-list { display: none; }
+      #app.sheet-full .move-strip { display: none; }
       /* The sheet's place is reserved whether it is up or not, and the board
          is centred in what is left. Three things fall out of that, and all
          three are the point:
@@ -4007,7 +4039,11 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .pz-modes-row { display: contents; }
 .pz-modes-row > .setting-k { white-space: nowrap; }
 .pz-groups-sec > .side-h, .pz-modes > .side-h { margin: 0; }
-.pz-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+/* three across where a name and its count fit (the board grew by the top
+   bar's 32px in 9.0 V3, and a 1024×700 panel no longer holds three), two
+   where they do not */
+.pz-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
+.pz-tile > * { min-width: 0; }
 .pz-tile {
   appearance: none; cursor: pointer; font: inherit; color: var(--text); text-align: left;
   display: grid; gap: 4px; align-content: start; min-width: 0;
@@ -4120,7 +4156,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
      panel itself, which starts well right of the last button. */
   .rail {
     z-index: 26;
-    bottom: auto; right: calc(var(--ctl-h-sm) + 16px); width: auto;
+    bottom: auto; right: 0; width: auto;
     height: var(--chrome-h);
     flex-direction: row; align-items: center; gap: 2px;
     padding: 0 8px;
@@ -4142,6 +4178,11 @@ span[data-icon] { display: inline-grid; place-items: center; }
   .rail-lbl {
     position: absolute; width: 1px; height: 1px; overflow: hidden;
     clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  /* 9.0 M3: …except where you are, which the row names in words */
+  .rail-btn[aria-current="page"] .rail-lbl {
+    position: static; width: auto; height: auto; overflow: visible; clip: auto;
+    font-size: 0.875rem; line-height: var(--lh-tight);
   }
   /* 偏好 stays with the others: pushed to the far end it sat under the panel */
   .rail-end { margin-top: 0; }

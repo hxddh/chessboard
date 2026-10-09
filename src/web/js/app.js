@@ -1266,7 +1266,9 @@ import { loadChunk } from "./chunk.js";
     const cx = w.left + w.width / 2, half = el.offsetWidth / 2;
     const onSheet = (y) => !!s && s.width > 0 && a.top + y < s.bottom && a.top + y + h > s.top &&
       cx - half < s.right && cx + half > s.left;
-    let top = GAP;
+    // 9.0 V3: the top bar's row is gone on a wide window — over the top
+    // strip, then, ending where the board begins
+    let top = Math.max(0, Math.min(GAP, b.top - a.top - h));
     if (a.bottom - w.bottom >= h + LOW + GAP && !onSheet(a.height - LOW - h)) top = a.height - LOW - h;
     else if (b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP && !onSheet(b.bottom - a.top + GAP)) top = b.bottom - a.top + GAP;
     el.style.top = Math.round(top) + "px";
@@ -4434,10 +4436,10 @@ import { loadChunk } from "./chunk.js";
    * The same media query the stylesheet uses, asked of the same browser —
    * not a number copied into JS that can drift from the one in the CSS.
    * scripts/test-chess.mjs asserts the two strings are identical.
-   * 7.4 §3: every portrait window up to 820px, square included — in the
+   * 7.4 §3: every portrait window up to 820px (9.0 M3: 900), square included — in the
    * near-square ones the sheet does lie over the board's lower part.
    */
-  const SHEET_QUERY = "(max-aspect-ratio: 1/1) and (max-width: 820px)";
+  const SHEET_QUERY = "(max-aspect-ratio: 1/1) and (max-width: 900px)";
   function panelCoversBoard() {
     return typeof window.matchMedia === "function" && window.matchMedia(SHEET_QUERY).matches;
   }
@@ -4707,7 +4709,7 @@ import { loadChunk } from "./chunk.js";
   };
   document.getElementById("toggle-panel").onclick = togglePanel;
   // 7.9 §1b equal action cells; v8-0-plan A2 the play view stretches with its window
-  watchPlayLayout({ app: appEl, view: appEl.querySelector(".stage"), side: el("side"), list: el("move-list"), strip: el("move-strip"), opening: el("opening-line"), infoOpening: el("info-opening") });
+  watchPlayLayout({ app: appEl, view: appEl.querySelector(".stage"), side: el("side"), grip: el("sheet-grip"), close: () => setPanelOpen(false), list: el("move-list"), strip: el("move-strip"), opening: el("opening-line"), infoOpening: el("info-opening") });
   const moreBtn = document.getElementById("more-tools");
   if (moreBtn) {
     moreBtn.onclick = () => {
