@@ -5441,6 +5441,9 @@ if (scenario()) {
     await page.evaluate(() => {
       document.getElementById("rep-start").click();
       for (let i = 0; i < 18; i++) document.getElementById("rep-next").click();
+      // 9.0 M2: the report card is in the folded 完整报告 — open, so the
+      // fit below measures it too
+      document.getElementById("rv-full").open = true;
     });
     await page.waitForTimeout(300);
     for (const frame of ["flat", "frame"]) {

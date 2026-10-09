@@ -452,6 +452,8 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
   });
   assert(before && !before.disabled && /收进错题/.test(before.text),
     "转折点还没收进错题时,按钮可按 (" + JSON.stringify(before) + ")");
+  // 9.0 M2: the report card is in 完整报告, folded until opened
+  if (!(await page.evaluate(() => document.getElementById("rv-full").open))) await page.click("#rv-full > summary");
   await page.click("#review-body .review-bank");
   await page.waitForTimeout(400);
   const after = await page.evaluate(() => {
@@ -960,12 +962,20 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       await pgC.mouse.down();
       // 按下之后停一拍再动:不停的话第一段移动会和按下并成一次派发
       await pgC.waitForTimeout(180);
-      await pgC.mouse.move(box.x + box.w * 0.85, box.y, { steps: 6 });
-      await pgC.waitForTimeout(350);
+      // 9.0 M2:一步一量 —— 每挪一段,棋盘都已经站在指针下的那一手,不是攒到最后
+      const seen = [];
+      for (let k = 1; k <= 6; k++) {
+        await pgC.mouse.move(box.x + box.w * (0.15 + 0.7 * k / 6), box.y);
+        await pgC.waitForTimeout(80);
+        seen.push(await at());
+      }
+      await pgC.waitForTimeout(270);
       // 还没松手就量 —— 拖的定义就是「松手之前已经跟上了」
       const mid = await at();
       await pgC.mouse.up();
       assert(mid > 20, "按着从左往右拖,松手之前棋盘就已经跟到了那边(第 " + mid + " 手)");
+      assert(seen.every((v, i) => i === 0 || v > seen[i - 1]),
+        "M2:拖动途中每一段棋盘都跟到指针下的那一手(" + seen.join(" → ") + ")");
     }
     await pgC.close();
   }
@@ -995,22 +1005,24 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       const css = getComputedStyle(document.documentElement);
       const rgb = (v) => { const s = document.createElement("span"); s.style.color = v; document.body.appendChild(s);
         const c = getComputedStyle(s).color.match(/\d+/g).map(Number); s.remove(); return c; };
-      const sw = rgb(css.getPropertyValue("--side-white")), sb = rgb(css.getPropertyValue("--side-black"));
+      const sw = rgb(css.getPropertyValue("--side-white")), bad = rgb(css.getPropertyValue("--judge-bad"));
       const is = (k, c) => Math.abs(d[k] - c[0]) + Math.abs(d[k + 1] - c[1]) + Math.abs(d[k + 2] - c[2]) < 12;
-      let white = 0, black = 0;
-      // the opaque fills only: White's colour under the line, Black's over it
+      let white = 0, red = 0, faint = 0;
+      // 9.0 M2: the opaque pixels are the line and the marks; the area under
+      // the line is a faint wash, not White's colour
       for (let k = 0; k < d.length; k += 4) {
+        if (d[k + 3] > 0 && d[k + 3] < 64) faint++;
         if (d[k + 3] < 250) continue;
         if (is(k, sw)) white++;
-        else if (is(k, sb)) black++;
+        else if (is(k, bad)) red++;
       }
       const marks = [...document.querySelectorAll(".move-list .mvtag")].map((a) => a.textContent.trim());
-      return { h: el.getBoundingClientRect().height, white, black, marks };
+      return { h: el.getBoundingClientRect().height, white, red, faint, area: W * H, marks };
     });
     assert(g.marks.includes("??"), "这一盘棋里有一步 ?? (" + g.marks.join(" ") + ")");
     assert(g.h >= 120, "局势曲线至少 120px 高 (" + g.h + ")");
-    assert(g.white > 0 && g.black > 0,
-      "……白方的颜色、黑方的颜色都有一块,都不是空的 (白 " + g.white + " px / 黑 " + g.black + " px)");
+    assert(g.red > 20 && g.faint > g.area * 0.1 && g.white < g.area * 0.01,
+      "……?? 是一个 --judge-bad 色的小菱形,曲线下是淡填充,没有白色大块 (?? " + g.red + " px / 淡 " + g.faint + " / 白 " + g.white + ")");
     const box = await pgC.evaluate(() => {
       document.getElementById("eval-curve").scrollIntoView({ block: "center" });
       const r = document.getElementById("eval-curve").getBoundingClientRect();
@@ -1267,7 +1279,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 // --- v8-0-plan A4：复盘做成一张「对局体检报告」 -----------------------------
 // Morphy's Opera game with a fixed engine story (scripts/lib/opera-fixture.mjs):
 // marks on both sides, and 16.Qb8+ graded 妙着. Top: both accuracies and the
-// grade counts; then the win-rate graph, large, White and Black split, with
+// grade counts; then the win-rate graph, large (9.0 M2: a thin line on a faint fill), with
 // axes, its mistake points snapping a click; the mark on the board; the move
 // list coloured by grade; three key moments a side to step through, each with
 // 为什么 / 再试一次 / 看引擎线; 从错误中学 chaining every ? / ?? through
@@ -1307,18 +1319,41 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const G = rec ? rec.grades : [];
   const T = rec ? rec.tags : [];
 
-  // (1) the report heads the review: accuracies, then every grade counted
-  const top = await pg.evaluate(() => {
+  // (1) 9.0 M2: the review in two layers. On top the game in one sentence,
+  // the curve and the key moments — one screen, 再试一次 on the card; the
+  // accuracies, the grade table, 从错误中学 and the mistakes list are folded
+  // into 完整报告, shut by default.
+  const layer = await pg.evaluate(() => {
+    document.getElementById("rv-summary").scrollIntoView({ block: "start" });
     const wrap = document.getElementById("eval-wrap");
     const first = [...wrap.children].find((c) => !c.hidden && c.offsetParent);
+    const r = (id) => document.getElementById(id).getBoundingClientRect();
+    const full = document.getElementById("rv-full");
+    const retry = document.querySelector('#rv-km button[data-act="retry"]');
+    return { first: first && first.id, summary: document.getElementById("rv-summary").textContent,
+      sum: r("rv-summary").top, curve: r("eval-curve").top, km: r("rv-km").top, full: r("rv-full").top,
+      retryShown: !!retry && !retry.hidden && !!retry.offsetParent, retryBottom: retry ? retry.getBoundingClientRect().bottom : 1e9,
+      fold: window.innerHeight, open: full.open, fullShown: !full.hidden,
+      inFull: ["report-card", "rv-learn-row", "rv-mistakes"].every((id) => !!document.getElementById(id).closest("#rv-full")),
+      cardSeen: document.getElementById("report-card").checkVisibility() };
+  });
+  assert(layer.first === "rv-summary" && /^全盘的转折是 \d+(\.|…) ?\S+：(白方|黑方)胜率从 \d+% 掉到 \d+%。$/.test(layer.summary),
+    "M2：复盘区第一行是一句话总结，双人对局用中性口吻（「" + layer.summary + "」，首块 " + layer.first + "）");
+  assert(layer.sum < layer.curve && layer.curve < layer.km && layer.km < layer.full,
+    "M2：第一层自上而下是总结、胜率曲线、关键时刻，完整报告在它们之下");
+  assert(layer.retryShown && layer.retryBottom <= layer.fold,
+    "M2：总结、曲线和关键时刻卡上的「再试一次」在同一屏里（按钮底 " + Math.round(layer.retryBottom) + " ≤ " + layer.fold + "）");
+  assert(layer.fullShown && !layer.open && layer.inFull && !layer.cardSeen,
+    "M2：精准度/分级表、从错误中学和失误列表收在「完整报告」里，默认收起" + (layer.open || layer.cardSeen ? " — " + JSON.stringify(layer) : ""));
+  await pg.click("#rv-full > summary");
+  await pg.waitForTimeout(200);
+  const top = await pg.evaluate(() => {
     const rows = [...document.querySelectorAll("#review-body .rv-table tbody tr")].map((tr) => ({
       cls: tr.className, k: tr.querySelector("th").textContent, v: [...tr.querySelectorAll("td")].map((td) => td.textContent) }));
-    return { first: first && first.id, card: document.getElementById("report-card").getBoundingClientRect().top,
-      curve: document.getElementById("eval-curve").getBoundingClientRect().top,
+    return { label: document.querySelector("#rv-full > summary").textContent.trim(), card: document.getElementById("report-card").checkVisibility(),
       nums: [...document.querySelectorAll("#acc-line .acc-num")].map((e) => e.textContent), rows };
   });
-  assert(top.first === "report-card" && top.card < top.curve,
-    "A4：报告在复盘区最上面 —— 精准度与分级计数在胜率图之上（首块 " + top.first + "）");
+  assert(top.label === "完整报告" && top.card, "M2：点「完整报告」展开，精准度与分级计数就在里面（" + top.label + "）");
   assert(top.nums.length === 2 && top.nums.every((n) => /^\d+%$/.test(n)), "A4：顶部是双方精准度（" + top.nums.join(" / ") + "）");
   {
     const count = (side, g) => G.filter((x, i) => x === g && (i % 2 === 0) === (side === "w")).length;
@@ -1344,19 +1379,33 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     const ys = [...document.querySelectorAll("#curve-y span")].map((e) => e.textContent.trim());
     const xs = [...document.querySelectorAll("#curve-x span")].map((e) => e.textContent.trim());
     const ctx = cv.getContext("2d");
-    const px = (fx, fy) => [...ctx.getImageData(Math.round(cv.width * fx), Math.round(cv.height * fy), 1, 1).data].slice(0, 3);
+    const px = (fx, fy) => [...ctx.getImageData(Math.round(cv.width * fx), Math.round(cv.height * fy), 1, 1).data];
     const rgb = (v) => { const d = document.createElement("span"); d.style.color = v; document.body.appendChild(d);
       const c = getComputedStyle(d).color.match(/\d+/g).map(Number); d.remove(); return c; };
     const css = getComputedStyle(document.documentElement);
-    return { h: cv.clientHeight, ys, xs, low: px(fx(26), 0.9), high: px(fx(2), 0.25),
-      white: rgb(css.getPropertyValue("--side-white")), black: rgb(css.getPropertyValue("--side-black")) };
+    const all = ctx.getImageData(0, 0, cv.width, cv.height).data;
+    const data = rgb(css.getPropertyValue("--data")), white = rgb(css.getPropertyValue("--side-white"));
+    const near = (k, c, tol) => Math.abs(all[k] - c[0]) + Math.abs(all[k + 1] - c[1]) + Math.abs(all[k + 2] - c[2]) <= tol;
+    let line = 0, whiteBlock = 0, opaque = 0;
+    for (let k = 0; k < all.length; k += 4) {
+      if (all[k + 3] < 250) continue;
+      opaque++;
+      if (near(k, data, 24)) line++;
+      else if (near(k, white, 24)) whiteBlock++;
+    }
+    return { h: cv.clientHeight, ys, xs, low: px(fx(26), 0.9), high: px(fx(2), 0.25), line, whiteBlock, opaque,
+      area: cv.width * cv.height, bg: getComputedStyle(cv).backgroundColor };
   });
   const close = (a, b, tol) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
   assert(graph.h >= 160, "A4：胜率图够大（" + graph.h + "px ≥ 160）");
   assert(graph.ys.join("|") === "100%|50%|0%" && graph.xs.length >= 3 && graph.xs.every((x) => /^\d+$/.test(x)),
     "A4：有纵轴（" + graph.ys.join(" ") + "）和回合数横轴（" + graph.xs.join(" ") + "）");
-  assert(close(graph.low, graph.white, 40) && close(graph.high, graph.black, 40),
-    "A4：白黑分色 —— 曲线下是白方的颜色，上面是黑方的（" + graph.low + " / " + graph.high + "）");
+  // 9.0 M2: a thin line over a faint fill — no block of White's colour
+  // under it, nothing over it, the canvas itself transparent on the panel
+  assert(graph.low[3] > 0 && graph.low[3] < 64 && graph.high[3] === 0 && /rgba\(0, 0, 0, 0\)|transparent/.test(graph.bg),
+    "M2：曲线下是淡填充、曲线上不涂色（下 α" + graph.low[3] + " / 上 α" + graph.high[3] + "，底 " + graph.bg + "）");
+  assert(graph.line > 0 && graph.opaque < graph.area * 0.06 && graph.whiteBlock < graph.area * 0.01,
+    "M2：实色只有细线和标记（数据色线 " + graph.line + " px，实色 " + graph.opaque + " / " + graph.area + "，白块 " + graph.whiteBlock + "）");
 
   // (3) a click near a mistake point lands on that move, not on a neighbour
   {
@@ -1370,6 +1419,15 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       // the dot is at position i + 1; 0.6 of a step to the right rounds to i + 2
       return { x: r.left + 4 + (i + 1 + 0.6) * step, y: r.top + r.height * 0.1, step };
     }, worst);
+    // 9.0 M2: hovering the ?? point says what should have been played
+    await pg.mouse.move(p.x - 0.6 * p.step, p.y);
+    await pg.waitForTimeout(150);
+    const tip = await pg.evaluate(() => {
+      const el = document.getElementById("curve-tip");
+      return el && !el.hidden ? [...el.children].map((c) => c.textContent) : null;
+    });
+    assert(!!tip && /^应走 \S+$/.test(tip[1] || ""),
+      "M2：悬停在 ?? 点上，提示写「应走 …」（" + (tip && tip.join(" | ")) + "）");
     await pg.mouse.click(p.x, p.y);
     await pg.waitForTimeout(250);
     const at = await vi();
@@ -1663,6 +1721,53 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   }
   assert(errsA.length === 0, "A4：全程没有页面异常 — " + errsA.join(" / "));
   await ctxA.close();
+}
+
+// --- 9.0 M2：人机对局的一句话总结用对手的口吻 ----------------------------------
+// The Opera game, pasted while the mode is 人机 against 莉娜 (练习 · 重原则)
+// with you on Black: the summary is hers, about your largest fall in win
+// chance (9… b5 in the fixture), in facts — the move and the win chance.
+{
+  const ctxM = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
+  await ctxM.addInitScript(() => {
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "ai", difficulty: "learner", personaId: "principled",
+      humanColor: "b", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", view: "play" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    window.__clip = "";
+    window.zero = {
+      invoke: () => Promise.resolve(true), on: () => () => {}, off: () => {},
+      platform: { supports: () => Promise.resolve(false) },
+      clipboard: { readText: () => Promise.resolve(window.__clip), writeText: () => Promise.resolve(true) },
+    };
+  });
+  const pg = await ctxM.newPage();
+  const errsM = [];
+  pg.on("pageerror", (e) => errsM.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(900);
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  const pgn = '[Event "Opera"]\n[White "A"]\n[Black "B"]\n[Result "1-0"]\n\n' +
+    OPERA.map((s, i) => (i % 2 ? "" : (i / 2 + 1) + ". ") + s).join(" ") + " 1-0\n";
+  await pg.evaluate((x) => { window.__clip = x; }, pgn);
+  if (await pg.evaluate(() => !!document.getElementById("more-row").hidden)) { await pg.click("#more-tools"); await pg.waitForTimeout(250); }
+  await pg.click("#pgn-paste");
+  await pg.waitForTimeout(900);
+  if (await pg.isVisible("#confirm-modal.show").catch(() => false)) { await pg.click("#confirm-ok"); await pg.waitForTimeout(700); }
+  // the engine this server sends is a stub: in 人机 the boot fails and says
+  // so; a scripted one that is ready, and the notice's 重试, bring 分析 back
+  await pg.evaluate(() => {
+    const E = window.__chess.engine;
+    E.init = () => Promise.resolve(); E.retry = () => {}; E.isReady = () => true;
+    const b = document.querySelector("#engine-fault .toast-action");
+    if (b) b.click();
+  });
+  await pg.waitForTimeout(300);
+  await analyseOpera(pg);
+  const s = await pg.evaluate(() => { const e = document.getElementById("rv-summary"); return e && !e.hidden ? e.textContent : null; });
+  assert(!!s && /^莉娜：这盘最要紧的是第 9 步——你的胜率从 \d+% 掉到 \d+%。$/.test(s),
+    "M2：人机对局的总结是对手说的，讲你掉得最多的那一步（「" + s + "」）");
+  assert(errsM.length === 0, "M2：人机总结全程没有页面异常 — " + errsM.join(" / "));
+  await ctxM.close();
 }
 
 // --- v8-2-plan T3: 名局猜着 — a whole classic guessed, scored, and again ---

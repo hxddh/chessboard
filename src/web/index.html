@@ -512,17 +512,14 @@
                board — depth, and one row per line with its win chance. -->
           <div class="pv-line num" id="live-line" hidden></div>
         </div>
-        <!-- v8-0-plan A4: the review as a game health report, top to bottom —
-             the two accuracies and every grade counted, the win-rate graph,
-             the key moments to step through, 从错误中学, then the engine's
-             lines and 再试一次 for the position on the board. -->
+        <!-- 9.0 M2: the review in two layers. On top, what a player reads
+             first after an analysis: one sentence for the game (the
+             opponent's, in a game against the engine), the win-rate curve
+             (drag it: the board follows), and the key moments, each with
+             再试一次 on the card. Under them, folded, the full report: the
+             accuracies and every grade counted, 从错误中学 and every ? / ??. -->
         <div id="eval-wrap" hidden>
-          <!-- 7.7 §5: one card. The two accuracies are the headline, once —
-               they used to be a line above the report and a row inside it. -->
-          <div class="report-card" id="report-card" hidden>
-            <div class="acc-hero" id="acc-line" hidden title="按每一步的胜率变化换算，与在线平台的「准确率」同一口径" data-i18n-title="tip.accuracy"></div>
-            <div class="review" id="review-body" hidden></div>
-          </div>
+          <p class="rv-summary" id="rv-summary" hidden></p>
           <!-- v8-0-plan A4: the graph, large, with its axes: White's win
                chance up the side, the move numbers along the bottom -->
           <div class="curve-box">
@@ -552,11 +549,20 @@
             </div>
             <div class="km-body"></div>
           </section>
-          <div class="link-row fit-row" id="rv-learn-row" hidden>
-            <button type="button" class="act-btn" id="rv-learn" title="把本局所有 ? 与 ?? 串成一组「再试一次」，一处接一处练" data-i18n-title="tip.learn"></button>
-          </div>
-          <!-- 7.8 §3: every ? and ?? with its reason and 再试一次 (retry.js) -->
-          <div class="rv-mistakes" id="rv-mistakes" hidden></div>
+          <details class="rv-full" id="rv-full" hidden>
+            <summary data-i18n="rv.full">完整报告</summary>
+            <!-- 7.7 §5: one card. The two accuracies are the headline, once —
+                 they used to be a line above the report and a row inside it. -->
+            <div class="report-card" id="report-card" hidden>
+              <div class="acc-hero" id="acc-line" hidden title="按每一步的胜率变化换算，与在线平台的「准确率」同一口径" data-i18n-title="tip.accuracy"></div>
+              <div class="review" id="review-body" hidden></div>
+            </div>
+            <div class="link-row fit-row" id="rv-learn-row" hidden>
+              <button type="button" class="act-btn" id="rv-learn" title="把本局所有 ? 与 ?? 串成一组「再试一次」，一处接一处练" data-i18n-title="tip.learn"></button>
+            </div>
+            <!-- 7.8 §3: every ? and ?? with its reason and 再试一次 (retry.js) -->
+            <div class="rv-mistakes" id="rv-mistakes" hidden></div>
+          </details>
           <div class="pv-line num" id="pv-line" hidden></div>
           <!-- 7.8 §3: on a ? / ??, why it was one; and 再试一次 from the
                position before it (built by renderWhyLine / renderRetry). -->
