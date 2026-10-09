@@ -821,11 +821,14 @@ for (const lang of ["en", "ja"]) {
 // Codex on #86: 首页 stays current while it is open — a game commit (the
 // engine's reply) changes what 继续上次 says. Red before: only session
 // commits reached the home page, so the card still said 「还没有对局」.
+// 9.0 S1: 继续上次 is 今天's hero card: the live game when there is one.
 {
   const { ctx, page, errs } = await open({ mode: "pvp" });
   await page.click('#rail button[data-view="home"]');
   await page.waitForTimeout(300);
-  const said0 = await page.evaluate(() => document.getElementById("home-continue").textContent);
+  const heroText = () => page.evaluate(() => document.getElementById("today-hero-title").textContent
+    + "|" + document.getElementById("today-hero-meta").textContent + "|" + document.getElementById("today-hero-board").dataset.sig);
+  const said0 = await heroText();
   await page.click('#rail button[data-view="play"]');
   await page.waitForTimeout(300);
   const at = (sq) => page.evaluate((x) => {
@@ -835,14 +838,14 @@ for (const lang of ["en", "ja"]) {
   for (const sq of ["e2", "e4"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(150); }
   await page.click('#rail button[data-view="home"]');
   await page.waitForTimeout(300);
-  const said1 = await page.evaluate(() => document.getElementById("home-continue").textContent);
+  const said1 = await heroText();
   // now, with 首页 in front, take the move back through the menu path the
   // page does not own: the game changes under the open page
   await page.evaluate(() => document.getElementById("undo").click());
   await page.waitForTimeout(400);
-  const said2 = await page.evaluate(() => document.getElementById("home-continue").textContent);
-  assert(said0 !== said1, "首页:走了一步再回来,「继续上次」变了");
-  assert(said2 === said0, "首页开着时对局变了(悔掉那一步),「继续上次」跟着变回去(" + said2.trim().slice(0, 30) + ")");
+  const said2 = await heroText();
+  assert(said0 !== said1 && /这盘棋还没下完/.test(said1), "今天:走了一步再回来,主卡换成这盘没下完的棋(" + said1.slice(0, 40) + ")");
+  assert(said2 === said0, "今天开着时对局变了(悔掉那一步),主卡跟着变回去(" + said2.trim().slice(0, 30) + ")");
   assert(errs.length === 0, "首页刷新:没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
@@ -908,7 +911,8 @@ for (const v of ["home", "library", "me", "settings"]) {
   const { ctx, page, errs } = await open();
   await page.click('#rail button[data-view="home"]');
   await page.waitForTimeout(300);
-  await page.focus("#home-continue .home-go");
+  // 9.0 S1: was 继续上次's button; 下一盘 is the card that opens the dialog now
+  await page.focus("#today-new");
   await page.keyboard.press("Enter");
   await page.waitForTimeout(600);
   await page.keyboard.press("Escape");   // the new-game dialog the empty board opens
