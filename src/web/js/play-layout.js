@@ -246,6 +246,9 @@ function watchOpening(src, dst) {
 export function watchPlayLayout(d) {
   if (d.app) watchShape(d.app, d.view || d.app);
   if (d.side) watchFitRows(d.side);
+  // 9.0 V1: a label is one line everywhere (white-space: nowrap), so the
+  // action rows on the pages and in 偏好设置 step their columns down too
+  for (const el of document.querySelectorAll(".page, #prefs-modal")) watchFitRows(el, { wide: false });
   if (d.list) watchColumns(d.list);
   if (d.list && d.strip) watchStrip(d.list, d.strip);
   if (d.opening && d.infoOpening) watchOpening(d.opening, d.infoOpening);
