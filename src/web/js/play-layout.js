@@ -144,18 +144,22 @@ const WHITE = ".mlrow > .mlnum + .mlmove";
  */
 function keepCurrentInView(list) {
   if (typeof ResizeObserver !== "function") return;
-  let frame = 0;
+  let frame = 0, tries = 0;
   const check = () => {
     frame = 0;
     const cur = list.querySelector(".current");
     if (!cur) return;
     const c = cur.getBoundingClientRect(), l = list.getBoundingClientRect();
-    if (c.top >= l.top - 0.5 && c.bottom <= l.bottom + 0.5) return;
-    // past the end is asked for as the end (app.js centreIn: WebKit)
+    if (c.top >= l.top - 0.5 && c.bottom <= l.bottom + 0.5) { tries = 0; return; }
+    // past the end is asked for as the end (app.js renderMoveList: WebKit)
     const want = list.scrollTop + c.top - l.top - list.clientHeight / 2;
     list.scrollTop = want >= list.scrollHeight - list.clientHeight - 1 ? list.scrollHeight : Math.max(0, want);
+    // WebKit's scroll range can lag its own layout by a few frames with
+    // nothing to say it grew (1234 of 1278 for the first frames, then 1278,
+    // no resize, no mutation): look again on the next frames, a bounded number
+    if (++tries < 30) frame = requestAnimationFrame(check);
   };
-  const soon = () => { if (!frame) frame = requestAnimationFrame(check); };
+  const soon = () => { tries = 0; if (!frame) frame = requestAnimationFrame(check); };
   const sizes = new ResizeObserver(soon);
   sizes.observe(list);
   for (const row of list.children) sizes.observe(row);
