@@ -161,10 +161,13 @@ export function mount(container, deps) {
     pieces.addEventListener("focusin", loadKings, { once: true });
   }
 
-  // one click handler for the four groups; each patch is one field
-  container.addEventListener("click", (ev) => {
+  // one click handler for the four groups; each patch is one field. On the
+  // groups, not the container: the host may move a row out of it (9.0 S5 —
+  // light / dark is the settings page's 通用, the other three its 棋盘)
+  const groups = [appearance, boards, frame, pieces];
+  const onPick = (ev) => {
     const b = ev.target.closest("button");
-    if (!b || !container.contains(b)) return;
+    if (!b || !groups.some((g) => g.contains(b))) return;
     const look = deps.getLook();
     let patch = null;
     if (b.dataset.appearance && b.dataset.appearance !== look.appearance) patch = { appearance: b.dataset.appearance };
@@ -172,13 +175,14 @@ export function mount(container, deps) {
     else if (b.dataset.frame && b.dataset.frame !== look.boardFrame) patch = { boardFrame: b.dataset.frame };
     else if (b.dataset.pieceSet && b.dataset.pieceSet !== look.pieceSet) patch = { pieceSet: b.dataset.pieceSet };
     if (patch) deps.setLook(patch);
-  });
+  };
+  for (const g of groups) g.addEventListener("click", onPick);
 
   /** Mark the current choice in each row. Classes only — nothing is rebuilt. */
   function sync() {
     const look = deps.getLook();
     const mark = (sel, on) => {
-      for (const b of container.querySelectorAll(sel)) {
+      for (const b of groups.flatMap((g) => [...g.querySelectorAll(sel)])) {
         const yes = on(b);
         b.classList.toggle("active", yes);
         b.setAttribute("aria-pressed", yes ? "true" : "false");
@@ -192,7 +196,7 @@ export function mount(container, deps) {
   /**
    * Draw the board previews — by the caller, once the row is on screen and
    * has a size. Not at mount: paper and marble build their textures in code,
-   * and the preferences window this lives in is closed at launch and in most
+   * and the settings page this lives on is closed at launch and in most
    * sessions (Codex on #86).
    */
   function repaint() { for (const [cv, sw] of previews) paintBoardPreview(cv, sw); }

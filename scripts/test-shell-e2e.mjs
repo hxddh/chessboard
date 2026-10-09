@@ -1,7 +1,7 @@
 /**
  * Browser check for the top level (v8-0-plan A1): the navigation rail, the
- * home page, the two pages, the preferences window and the settings page that
- * is left once the app's own preferences went there.
+ * home page, the pages, and (9.0 S5) the one settings page that replaced the
+ * preferences window and the panel's 设置 tab.
  *
  * What the plan asks of it, each a claim only a running page can settle:
  *   - 下棋 / 谜题 / 学习 / 棋谱库 / 我的 on a left rail in a wide window, in
@@ -11,7 +11,9 @@
  *   - the mode segment out of the settings page (人机 / 双人 go with the new
  *     game, 谜题 / 学习 are the rail's);
  *   - appearance, language, sound (and the data) in a preferences window,
- *     ⌘, on macOS and Ctrl+, elsewhere.
+ *     ⌘, on macOS and Ctrl+, elsewhere. 9.0 S5: that window and the panel's
+ *     设置 tab are one page now, the rail's last entry (设置), six
+ *     categories down its left; the panel is one pane.
  * The geometry — the board not moving, no horizontal scroll on a page — is
  * test-layout-e2e.mjs's.
  *
@@ -60,7 +62,7 @@ async function open(settings = {}, viewport = WIDE) {
     if (sessionStorage.getItem("seeded")) return;
     sessionStorage.setItem("seeded", "1");
     localStorage.setItem("chess.settings", JSON.stringify(Object.assign(
-      { mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }, s)));
+      { mode: "ai", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }, s)));
     localStorage.setItem("chess.panelOpen", "1");
   }, settings);
   const page = await ctx.newPage();
@@ -82,13 +84,15 @@ const state = (page) => page.evaluate(() => {
     home: vis(document.getElementById("page-home")),
     library: vis(document.getElementById("page-library")),
     me: vis(document.getElementById("page-me")),
+    settings: vis(document.getElementById("page-settings")),
     puzzleSec: vis(document.getElementById("sec-puzzle")),
     learnSec: vis(document.getElementById("sec-learn")),
     stageInert: document.querySelector(".stage").hasAttribute("inert"),
   };
 });
 
-// --- 1. the rail: six views and the preferences, in the plan's order --------
+// --- 1. the rail: seven views, in the plan's order --------------------------
+// 9.0 S5: the preferences entry (#prefs-open) became the 设置 view, still last
 {
   const { ctx, page, errs } = await open();
   const rail = await page.evaluate(() => {
@@ -99,18 +103,19 @@ const state = (page) => page.evaluate(() => {
       tag: nav.tagName, label: nav.getAttribute("aria-label"),
       views: [...nav.querySelectorAll("button[data-view]")].map((b) => b.dataset.view),
       labels: [...nav.querySelectorAll("button")].map((b) => b.textContent.trim()),
-      prefs: !!nav.querySelector("#prefs-open"),
+      settings: (() => { const all = nav.querySelectorAll("button"), b = all[all.length - 1];
+        return !!b && b.dataset.view === "settings" && b.classList.contains("rail-end") && b.textContent.trim() === "设置"; })(),
       x: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height),
       // the controls take the app's two heights (or auto, the icon pill is --ctl-h-sm)
       pill: Math.round(nav.querySelector(".rail-ic").getBoundingClientRect().height),
     };
   });
   assert(rail && rail.tag === "NAV" && !!rail.label, "A1: 有一条带名字的 <nav> 导航栏");
-  assert(rail && JSON.stringify(rail.views) === JSON.stringify(["home", "play", "puzzle", "learn", "library", "me"]),
-    "A1: 入口依次是 首页 / 下棋 / 谜题 / 学习 / 棋谱库 / 我的(" + (rail && rail.views.join(" ")) + ")");
+  assert(rail && JSON.stringify(rail.views) === JSON.stringify(["home", "play", "puzzle", "learn", "library", "me", "settings"]),
+    "A1 × S5: 入口依次是 首页 / 下棋 / 谜题 / 学习 / 棋谱库 / 我的 / 设置(" + (rail && rail.views.join(" ")) + ")");
   assert(rail && JSON.stringify(rail.labels.slice(1, 6)) === JSON.stringify(["下棋", "谜题", "学习", "棋谱库", "我的"]),
     "A1: 五个入口的字(" + (rail && rail.labels.join(" / ")) + ")");
-  assert(rail && rail.prefs, "A1: 栏里有偏好设置的入口");
+  assert(rail && rail.settings, "S5: 栏尾是「设置」的入口(" + JSON.stringify(rail && rail.labels) + ")");
   assert(rail && rail.x === 0 && rail.w > 0 && rail.w <= 72 && rail.h === WIDE.height,
     "A1: 宽窗是左侧窄栏,不超过 72px 宽、通高(" + JSON.stringify(rail) + ")");
   assert(rail && rail.pill === 32, "A1: 图标底是 --ctl-h-sm(" + (rail && rail.pill) + "px)");
@@ -150,16 +155,17 @@ const state = (page) => page.evaluate(() => {
     learn: (s) => s.learnSec && s.mode === "learn",
     library: (s) => s.library && s.stageInert,
     me: (s) => s.me && s.stageInert,
+    settings: (s) => s.settings && s.stageInert && !s.me && !s.home && !s.library,
     play: (s) => !s.home && !s.library && !s.me && s.mode === "ai" && !s.puzzleSec && !s.learnSec,
   };
-  for (const v of ["home", "puzzle", "learn", "library", "me", "play"]) {
+  for (const v of ["home", "puzzle", "learn", "library", "me", "settings", "play"]) {
     await page.click('#rail button[data-view="' + v + '"]');
     await page.waitForTimeout(300);
     const s = await state(page);
     assert(s.view === v && s.current === v && EXPECT[v](s), "A1: 点「" + v + "」一次就到(" + JSON.stringify(s) + ")");
   }
   // …and from the home page, each of them is one click
-  for (const v of ["play", "puzzle", "learn", "library", "me"]) {
+  for (const v of ["play", "puzzle", "learn", "library", "me", "settings"]) {
     await page.click('#rail button[data-view="home"]');
     await page.waitForTimeout(200);
     await page.click('#rail button[data-view="' + v + '"]');
@@ -226,8 +232,9 @@ const state = (page) => page.evaluate(() => {
   await page.waitForTimeout(300);
   assert(f1 === "puzzle" && (await state(page)).view === "puzzle", "A1: ↓ 走到下一个入口,回车进去(" + f1 + ")");
   await page.keyboard.press("End");
-  const f2 = await page.evaluate(() => document.activeElement.id);
-  assert(f2 === "prefs-open", "A1: End 到栏尾(" + f2 + ")");
+  // 9.0 S5: the rail's end is the 设置 entry now (was #prefs-open)
+  const f2 = await page.evaluate(() => document.activeElement.dataset.view);
+  assert(f2 === "settings", "A1 × S5: End 到栏尾的「设置」(" + f2 + ")");
   await page.keyboard.press("Home");
   const f3 = await page.evaluate(() => document.activeElement.dataset.view);
   assert(f3 === "home", "A1: Home 到栏首(" + f3 + ")");
@@ -251,60 +258,155 @@ const state = (page) => page.evaluate(() => {
   assert(await page.evaluate(() => document.getElementById("keys-modal").classList.contains("show")),
     "A1: 页面上 ? 照样打开快捷键表");
   const prefsRow = await page.evaluate(() => /Ctrl\+,/.test(document.getElementById("keys-modal").textContent));
-  assert(prefsRow, "A1: 快捷键表里有偏好设置的键");
+  assert(prefsRow, "A1 × S5: 快捷键表里有设置页的键");
   await page.keyboard.press("Escape");
   await ctx.close();
 }
 
-// --- 6. the settings page keeps the game; the window's own things moved -------
+// --- 6. the panel is one pane; the settings live on the 设置 page ------------
+// 9.0 S5: was "the settings page (the panel's 设置 tab) keeps the game; the
+// preferences window holds the app's own things". Both went into one page:
+// the panel keeps no settings at all, the game's own choices (rung, clock,
+// side) are the new-game dialog's, and everything else is a category of 设置.
 {
+  // a 7.x/8.x profile that was left on the 设置 tab: the key is ignored now
   const { ctx, page, errs } = await open({ sideTab: "setup" });
-  const setup = await page.evaluate(() => {
-    const pane = document.getElementById("pane-setup");
+  const side = await page.evaluate(() => {
+    const pane = document.getElementById("pane-play");
     const has = (id) => !!pane.querySelector("#" + id);
+    const ng = document.getElementById("newgame-modal");
+    const at = (id, host) => !!document.querySelector("#" + host + " #" + id);
     return {
       mode: has("mode-seg"), theme: has("appearance-seg") || has("board-pick-seg"), lang: has("lang-seg"), sound: has("opt-sound"),
       pieces: has("piece-pick-seg"), data: has("alldata-export"), text: has("text-seg"), coords: has("opt-coords"),
       diff: has("diff-seg"), clock: has("clock-seg"), orient: has("orient-seg"), hash: has("hash-seg"),
-      tabs: [...document.querySelectorAll(".side-tabs [role=tab]")].map((b) => b.dataset.tab),
+      panes: document.querySelectorAll(".side-pane").length, paneShown: !pane.hidden && pane.getClientRects().length > 0,
+      tabs: document.querySelectorAll(".side-tabs, #tab-play, #tab-setup, #pane-setup, #prefs-modal, #prefs-open").length,
+      ngRows: ["row-color", "row-clock"].every((id) => !!ng.querySelector("#" + id)) && ["row-difficulty", "row-persona"].every((id) => at(id, "ng-custom-body")),
+      ngSegs: ["mode-seg", "diff-seg", "clock-seg", "color-seg"].every((id) => !!ng.querySelector("#" + id)),
+      orientAt: at("orient-seg", "set-board"), hashAt: at("hash-seg", "set-advanced"),
     };
   });
-  assert(!setup.mode, "A1: 模式分段不在设置页了");
-  assert(!setup.theme && !setup.lang && !setup.sound && !setup.pieces && !setup.data && !setup.text && !setup.coords,
-    "A1: 外观、语言、声音、数据都不在设置页(" + JSON.stringify(setup) + ")");
-  assert(setup.diff && setup.clock && setup.orient && setup.hash, "A1: 对局相关的项还在设置页");
-  assert(JSON.stringify(setup.tabs) === JSON.stringify(["play", "setup"]), "A1: 侧栏两个页签:对局 / 设置(" + setup.tabs + ")");
-  // Ctrl+, (⌘, on macOS) opens the preferences window with those rows in it
+  assert(!side.mode, "A1: 模式分段不在侧栏");
+  assert(!side.theme && !side.lang && !side.sound && !side.pieces && !side.data && !side.text && !side.coords,
+    "A1: 外观、语言、声音、数据都不在侧栏(" + JSON.stringify(side) + ")");
+  assert(!side.diff && !side.clock && !side.orient && !side.hash && side.ngRows && side.ngSegs && side.orientAt && side.hashAt,
+    "S5: 对局相关的项各有去处 —— 难度 / 风格 / 执子 / 棋钟常驻新对局对话框,棋盘方向在设置·棋盘,引擎内存在设置·高级(" + JSON.stringify(side) + ")");
+  assert(side.panes === 1 && side.paneShown && side.tabs === 0,
+    "S5: 侧栏只剩一页,没有页签、偏好窗口;存下的「设置」页签打开时落在这一页(" + JSON.stringify(side) + ")");
+  // Ctrl+, (⌘, on macOS) opens the settings page — a view, marked on the rail
   await page.keyboard.press(process.platform === "darwin" ? "Meta+Comma" : "Control+Comma");
   await page.waitForTimeout(300);
-  const prefs = await page.evaluate(() => {
-    const m = document.getElementById("prefs-modal");
-    const has = (id) => !!m.querySelector("#" + id);
-    return { open: m.classList.contains("show"), theme: has("appearance-seg"), board: has("board-pick-seg"),
-      frame: has("frame-seg"), lang: has("lang-seg"),
-      sound: has("opt-sound"), pieces: has("piece-pick-seg"), data: has("alldata-export"),
-      text: has("text-seg"), coords: has("opt-coords"), coordsAt: has("coords-seg"),
-      langs: m.querySelectorAll("#lang-seg button").length };
+  const opened = await state(page);
+  assert(opened.view === "settings" && opened.current === "settings" && opened.settings && opened.stageInert,
+    "S5: Ctrl+, 打开设置页,栏上标着「设置」(" + JSON.stringify(opened) + ")");
+  // six categories, a vertical tablist, one pane at a time (通用 first)
+  const cats = () => page.evaluate(() => {
+    const list = document.querySelector("#page-settings .set-cats");
+    const tabs = list ? [...list.querySelectorAll("[role=tab]")] : [];
+    return {
+      role: list && list.getAttribute("role"), orient: list && list.getAttribute("aria-orientation"),
+      ids: tabs.map((b) => b.id),
+      selected: tabs.filter((b) => b.getAttribute("aria-selected") === "true").map((b) => b.dataset.cat),
+      shown: [...document.querySelectorAll("#page-settings .set-pane")].filter((p) => !p.hidden && p.getClientRects().length > 0).map((p) => p.id),
+      controls: tabs.every((b) => b.getAttribute("aria-controls") === "set-" + b.dataset.cat),
+      tabbable: tabs.filter((b) => b.tabIndex === 0).map((b) => b.dataset.cat),
+      focus: document.activeElement && document.activeElement.dataset.cat,
+      saved: JSON.parse(localStorage.getItem("chess.settings") || "{}").setCat,
+    };
   });
-  assert(prefs.open, "A1: Ctrl+, 打开偏好设置");
-  assert(prefs.theme && prefs.board && prefs.frame && prefs.pieces && prefs.lang && prefs.sound && prefs.data && prefs.langs === 3,
-    "A1 × A3: 偏好设置里有外观 / 棋盘 / 边框 / 棋子、语言、声音、数据(" + JSON.stringify(prefs) + ")");
-  assert(prefs.text && prefs.coords && prefs.coordsAt, "A1: 字号与坐标两行在偏好设置里(" + JSON.stringify(prefs) + ")");
+  const c0 = await cats();
+  assert(c0.role === "tablist" && c0.orient === "vertical" && c0.controls &&
+    JSON.stringify(c0.ids) === JSON.stringify(["cat-general", "cat-board", "cat-sound", "cat-game", "cat-data", "cat-advanced"]),
+    "S5: 设置页左侧是竖排的六类:通用 / 棋盘 / 声音 / 对局 / 数据 / 高级(" + JSON.stringify(c0) + ")");
+  assert(JSON.stringify(c0.selected) === '["general"]' && JSON.stringify(c0.shown) === '["set-general"]' && JSON.stringify(c0.tabbable) === '["general"]',
+    "S5: 头一回打开是「通用」,只显示这一类(" + JSON.stringify(c0) + ")");
+  // where each row lives now: the window's rows and the old tab's rows, by category
+  const where = await page.evaluate(() => {
+    const at = (cat, id) => !!document.querySelector("#set-" + cat + " #" + id);
+    return {
+      general: at("general", "lang-seg") && at("general", "appearance-seg") && at("general", "text-seg")
+        && document.querySelectorAll("#set-general #lang-seg button").length === 3,
+      board: ["board-pick-seg", "frame-seg", "piece-pick-seg", "opt-coords", "coords-seg", "orient-seg", "opt-blind"].every((id) => at("board", id)),
+      sound: at("sound", "opt-sound"),
+      game: at("game", "row-coach") && at("game", "row-autoflip"),
+      data: ["opt-netsync", "alldata-export", "alldata-import", "learning-export", "about-open", "learn-reset", "stats-clear", "clear-save"].every((id) => at("data", id)),
+      advanced: ["hash-seg", "multipv-seg", "opt-engine-arrows", "opt-softmark"].every((id) => at("advanced", id)),
+    };
+  });
+  assert(Object.values(where).every(Boolean),
+    "A1 × A3 × S5: 外观 / 语言 / 字号在通用,棋盘 / 边框 / 棋子 / 坐标在棋盘,声音、对局、数据、高级各在其类(" + JSON.stringify(where) + ")");
+  // the ARIA tablist keyboard contract: ↓ / ↑ walk (and wrap), Home / End jump
+  await page.focus("#cat-general");
+  const walk = [];
+  for (const k of ["ArrowDown", "ArrowDown", "End", "ArrowDown", "ArrowUp", "Home", "ArrowUp"]) {
+    await page.keyboard.press(k);
+    await page.waitForTimeout(60);
+    const c = await cats();
+    walk.push(c.selected.join() + (c.focus === c.selected[0] && c.shown.join() === "set-" + c.selected[0] ? "" : "!"));
+  }
+  assert(walk.join(" ") === "board sound advanced general advanced general advanced",
+    "S5: 方向键在六类间走、首尾相接,Home / End 到两头,焦点与显示的一类跟着走(" + walk.join(" ") + ")");
+  // a click picks one, and the choice is remembered (setCat), page and all
+  await page.click("#cat-board");
+  await page.waitForTimeout(150);
+  const c1 = await cats();
+  assert(c1.selected.join() === "board" && c1.shown.join() === "set-board" && c1.saved === "board",
+    "S5: 点「棋盘」显示棋盘一类,并记下(" + JSON.stringify(c1) + ")");
   // a choice there still works: the board and the appearance change the page
+  // (棋盘 is on 棋盘, light / dark on 通用 since S5)
   await page.click('#board-pick-seg button[data-board-id="green"]');
+  await page.click("#cat-general");
+  await page.waitForTimeout(100);
+  await page.click('#appearance-seg button[data-appearance="light"]');
+  await page.waitForTimeout(200);
+  const lit = await page.evaluate(() => ({ theme: document.documentElement.getAttribute("data-theme"),
+    pressed: document.querySelector('#appearance-seg button[data-appearance="light"]').getAttribute("aria-pressed") }));
   await page.click('#appearance-seg button[data-appearance="dark"]');
   await page.waitForTimeout(200);
   const look = await page.evaluate(() => ({ theme: document.documentElement.getAttribute("data-theme"), board: document.documentElement.getAttribute("data-board"),
     pressed: document.querySelector('#appearance-seg button[data-appearance="dark"]').getAttribute("aria-pressed") }));
-  assert(look.theme === "night" && look.board === "green" && look.pressed === "true", "A1 × A3: 在偏好设置里换外观与棋盘照样生效(" + JSON.stringify(look) + ")");
+  assert(lit.theme !== "night" && lit.pressed === "true" && look.theme === "night" && look.board === "green" && look.pressed === "true",
+    "A1 × A3 × S5: 在设置页里换外观(浅 → 深)与棋盘照样生效(" + JSON.stringify({ lit, look }) + ")");
+  // the page is remembered as a view, on the category last open
+  await page.click("#cat-board");
+  await page.waitForTimeout(150);
+  await page.reload();
+  await page.waitForTimeout(900);
+  await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+  const back = await state(page);
+  const c2 = await cats();
+  assert(back.view === "settings" && back.settings && c2.selected.join() === "board" && c2.shown.join() === "set-board",
+    "S5: 停在设置·棋盘,重开还是设置·棋盘(" + JSON.stringify({ view: back.view, cat: c2.selected }) + ")");
+  // Escape is not how a page is left (as on 我的): it stays, and the panel behind stays open
   await page.keyboard.press("Escape");
   await page.waitForTimeout(200);
-  assert(!(await page.evaluate(() => document.getElementById("prefs-modal").classList.contains("show"))), "A1: Esc 关上偏好设置");
-  await page.click("#prefs-open");
-  await page.waitForTimeout(200);
-  assert(await page.evaluate(() => document.getElementById("prefs-modal").classList.contains("show")), "A1: 栏上的「偏好」也能打开");
-  await page.click("#prefs-close");
-  assert(errs.length === 0, "setup/prefs: 没有页面异常 " + errs.join(" / "));
+  const esc = await state(page);
+  assert(esc.view === "settings" && esc.settings && await page.evaluate(() => document.getElementById("app").classList.contains("panel-open")),
+    "S5: 设置是整页,Esc 不关它,也不去关背后的侧栏(" + JSON.stringify(esc) + ")");
+  // 9.0 S5: was "#prefs-close closes the window" — the rail leaves the page
+  await page.click('#rail button[data-view="play"]');
+  await page.waitForTimeout(300);
+  const left = await state(page);
+  assert(left.view === "play" && !left.settings && !left.stageInert, "S5: 从栏上回到下棋,设置页收起(" + JSON.stringify(left) + ")");
+  // 9.0 S5: was "the rail's 偏好 opens the window too" — the rail's 设置 opens the page
+  await page.click('#rail button[data-view="settings"]');
+  await page.waitForTimeout(300);
+  const again = await state(page);
+  assert(again.view === "settings" && again.settings && (await cats()).selected.join() === "board",
+    "S5: 栏上的「设置」也能打开,回到上次那一类(" + JSON.stringify(again) + ")");
+  // …and ⌘, from another page goes there too, then the rail brings the board back
+  await page.click('#rail button[data-view="me"]');
+  await page.waitForTimeout(300);
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+Comma" : "Control+Comma");
+  await page.waitForTimeout(300);
+  const fromMe = await state(page);
+  await page.click('#rail button[data-view="play"]');
+  await page.waitForTimeout(300);
+  const ret = await state(page);
+  assert(fromMe.view === "settings" && fromMe.settings && !fromMe.me && ret.view === "play" && !ret.stageInert,
+    "S5: 在「我的」上按 Ctrl+, 也到设置页,栏再带回棋盘(" + JSON.stringify({ fromMe: fromMe.view, ret: ret.view }) + ")");
+  assert(errs.length === 0, "settings: 没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
 
@@ -338,11 +440,13 @@ const state = (page) => page.evaluate(() => {
 // --- 8. what was saved comes back, and 7.x's 记录 tab has somewhere to land ----
 {
   const { ctx, page, errs } = await open({ sideTab: "record" });
-  const s = await page.evaluate(() => ({
-    tab: [...document.querySelectorAll(".side-tabs [role=tab]")].find((b) => b.getAttribute("aria-selected") === "true").dataset.tab,
-    view: document.getElementById("app").getAttribute("data-view"),
-  }));
-  assert(s.tab === "play" && s.view === "play", "A1: 7.x 存下的「记录」页签打开时回到对局(" + JSON.stringify(s) + ")");
+  // 9.0 S5: no tabs to select any more — the one pane is what shows
+  const s = await page.evaluate(() => {
+    const pane = document.getElementById("pane-play");
+    return { pane: !!pane && !pane.hidden && pane.getClientRects().length > 0,
+      view: document.getElementById("app").getAttribute("data-view") };
+  });
+  assert(s.pane && s.view === "play", "A1 × S5: 7.x 存下的「记录」页签打开时回到对局那一页(" + JSON.stringify(s) + ")");
   await page.click('#rail button[data-view="me"]');
   await page.waitForTimeout(300);
   await page.reload();
@@ -380,7 +484,7 @@ for (const lang of ["en", "ja"]) {
 {
   const ctx = await browser.newContext({ viewport: WIDE, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.settings", JSON.stringify({ mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "ai", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     window.__handlers = {};
     window.zero = {
@@ -400,7 +504,8 @@ for (const lang of ["en", "ja"]) {
     flipped: [...document.querySelectorAll("#orient-seg button")].filter((b) => b.classList.contains("active")).map((b) => b.dataset.orient)[0],
     panel: localStorage.getItem("chess.panelOpen") }));
   const fire = async (c) => { await page.evaluate((x) => window.__fire(x), c); await page.waitForTimeout(400); };
-  for (const v of ["home", "library", "me"]) {
+  // 9.0 S5: 设置 is one of the pages now
+  for (const v of ["home", "library", "me", "settings"]) {
     await page.click('#rail button[data-view="' + v + '"]');
     await page.waitForTimeout(400);
     const before = await look();
@@ -493,7 +598,8 @@ for (const lang of ["en", "ja"]) {
 // Codex on #86: the board previews (paper and marble build their textures
 // procedurally) are drawn when the preferences window opens, not at every
 // launch for a window most sessions never open. Red before: every preview
-// canvas already held pixels at startup.
+// canvas already held pixels at startup. 9.0 S5: the window is the settings
+// page's 棋盘 category; the previews are drawn when that category shows.
 {
   const { ctx, page, errs } = await open();
   const inked = () => page.evaluate(() => [...document.querySelectorAll("#prefs-look canvas.look-board")].map((cv) => {
@@ -503,11 +609,13 @@ for (const lang of ["en", "ja"]) {
     return false;
   }));
   const before = await inked();
-  assert(before.length > 0 && before.every((x) => !x), "启动时偏好窗口还没开,棋盘预览一张也没画(" + before.join(",") + ")");
-  await page.click("#prefs-open");
+  assert(before.length > 0 && before.every((x) => !x), "启动时设置页还没开,棋盘预览一张也没画(" + before.join(",") + ")");
+  await page.click('#rail button[data-view="settings"]');
+  await page.waitForTimeout(300);
+  await page.click("#cat-board");
   await page.waitForTimeout(500);
   const after = await inked();
-  assert(after.length === before.length && after.every(Boolean), "打开偏好设置,棋盘预览都画出来了(" + after.join(",") + ")");
+  assert(after.length === before.length && after.every(Boolean), "打开设置·棋盘,棋盘预览都画出来了(" + after.join(",") + ")");
   assert(errs.length === 0, "预览推迟绘制:没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
@@ -545,7 +653,8 @@ for (const lang of ["en", "ja"]) {
 // onto the board, and the board is what shows next — the same as a game from
 // the library or the history. Red before: the toast said it loaded, and the
 // page went on covering it.
-for (const v of ["home", "library", "me"]) {
+// 9.0 S5: 设置 is one of the pages now
+for (const v of ["home", "library", "me", "settings"]) {
   const { ctx, page, errs } = await open({ mode: "pvp" });
   await page.click('#rail button[data-view="' + v + '"]');
   await page.waitForTimeout(300);
@@ -609,7 +718,7 @@ for (const v of ["home", "library", "me"]) {
   const f = await page.evaluate(() => {
     const a = document.activeElement;
     return { tag: a && a.tagName, id: a && (a.id || a.dataset.view || ""), seen: !!a && a !== document.body && a.getClientRects().length > 0,
-      inPage: !!a && !!a.closest("#page-home, #page-library, #page-me") };
+      inPage: !!a && !!a.closest("#page-home, #page-library, #page-me, #page-settings") };
   });
   assert(f.seen && !f.inPage, "键盘点首页卡片离开整页后,焦点在看得见的地方(" + JSON.stringify(f) + ")");
   assert(errs.length === 0, "焦点:没有页面异常 " + errs.join(" / "));
@@ -653,7 +762,7 @@ for (const v of ["home", "library", "me"]) {
     await ctx.addInitScript((ks) => {
       if (sessionStorage.getItem("seeded")) return;
       sessionStorage.setItem("seeded", "1");
-      localStorage.setItem("chess.settings", JSON.stringify({ mode: "ai", langId: "zh-CN", sideTab: "play", view: "me", soundOn: false, appearance: "dark", boardId: "wood" }));
+      localStorage.setItem("chess.settings", JSON.stringify({ mode: "ai", langId: "zh-CN", view: "me", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
       // the profile keys, spelled out by the callers (persist.js KEYS)
       for (const [k, v] of Object.entries(ks)) localStorage.setItem(k, JSON.stringify(v));
@@ -723,15 +832,18 @@ for (const v of ["home", "library", "me"]) {
     assert(/捉双/.test(s.swText) && /牵制/.test(s.swText), "B5 强弱项读的是主题评级(" + s.swText + ")");
     assert(s.rows.length === 3 && /60%/.test(s.rows[0]) && /40%/.test(s.rows[1]) && /33%/.test(s.rows[2]),
       "B5 化优为胜 3/5、逆境求生 2/5、时间紧 10/30 步(" + JSON.stringify(s.rows) + ")");
-    // cleared under the page: the curve goes with the games it was drawn from
+    // cleared from 设置 (9.0 S5: a page, its 数据 category, rather than the
+    // window over 我的): the curve goes with the games it was drawn from
     await page.keyboard.press("Control+,");
     await page.waitForTimeout(300);
+    await page.click("#cat-data");
+    await page.waitForTimeout(200);
     await page.click("#stats-clear");
     await page.waitForTimeout(300);
     await page.click("#confirm-ok").catch(() => {});
     await page.waitForTimeout(400);
-    await page.click("#prefs-close").catch(() => {});
-    await page.waitForTimeout(300);
+    await page.click('#rail button[data-view="me"]');
+    await page.waitForTimeout(500);
     const after = await meState(page);
     assert(!after.rating && after.cal, "B5 清除统计之后:评级曲线跟着消失,日历还有棋谱库和做题(" + JSON.stringify({ rating: after.rating, cal: after.cal }) + ")");
     assert(errs.length === 0, "B5 满档案:没有页面异常 " + errs.join(" / "));
@@ -750,7 +862,7 @@ for (const v of ["home", "library", "me"]) {
     if (sessionStorage.getItem("seeded")) return;
     sessionStorage.setItem("seeded", "1");
     localStorage.setItem("chess.settings", JSON.stringify({ mode: "ai", difficulty: "casual", humanColor: "w",
-      langId: "zh-CN", sideTab: "play", view: "play", soundOn: false }));
+      langId: "zh-CN", view: "play", soundOn: false }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();

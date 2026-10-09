@@ -61,7 +61,7 @@ console.log("引擎:", ENGINE);
 const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
 await ctx.addInitScript(() => {
   localStorage.setItem("chess.settings", JSON.stringify({
-    mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
+    mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
   localStorage.setItem("chess.panelOpen", "1");
 });
 const page = await ctx.newPage();
@@ -430,7 +430,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctx2.addInitScript(() => {
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     window.__clip = "";
     window.zero = {
@@ -571,7 +571,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const ctx3 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctx3.addInitScript(() => {
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const pg = await ctx3.newPage();
@@ -613,11 +613,13 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 
   // 设置里把线数调到 3。走界面而不是塞 localStorage:验收说的是「MultiPV 3
   // 时」,那就得先证明那颗按钮真的把 3 送到了引擎。
-  await pg.click("#tab-setup");
+  // 9.0 S5:线数在设置页的「高级」里(原先是侧栏的「设置」页签),从栏上去、从栏上回。
+  await pg.click('#rail button[data-view="settings"]');
   await pg.waitForTimeout(200);
+  await pg.click("#cat-advanced");
   await pg.click('#multipv-seg button[data-multipv="3"]');
   await pg.waitForTimeout(200);
-  await pg.click("#tab-play");
+  await pg.click('#rail button[data-view="play"]');
   await pg.waitForTimeout(200);
 
   // 一份三条线的评估。三条线各走一个**不同**的合法首着,所以「三条」是不是
@@ -828,7 +830,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const ctxC = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctxC.addInitScript(() => {
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     window.__clip = "";
     window.zero = {
@@ -992,7 +994,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const ctxH = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctxH.addInitScript(() => {
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood", multipv: 3 }));
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", multipv: 3 }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const pgH = await ctxH.newPage();
@@ -1161,7 +1163,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const ctxS = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctxS.addInitScript(() => {
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const pgS = await ctxS.newPage();
@@ -1229,7 +1231,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 {
   const ctxA = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
   await ctxA.addInitScript(() => {
-    localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false,
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", soundOn: false,
       appearance: "dark", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett", view: "play" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
@@ -1629,7 +1631,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const ctxG = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctxG.addInitScript(() => {
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "learn", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
+      mode: "learn", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const pg = await ctxG.newPage();
@@ -1850,7 +1852,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     if (sessionStorage.getItem("seeded")) return; // a reload keeps what the app wrote
     sessionStorage.setItem("seeded", "1");
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "learn", view: "learn", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood", flipped: false }));
+      mode: "learn", view: "learn", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", flipped: false }));
     localStorage.setItem("chess.panelOpen", "1");
     localStorage.setItem("chess.save", JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }));
   });

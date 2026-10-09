@@ -39,7 +39,7 @@ console.log("引擎:", ENGINE);
 const c = await b.newContext({ viewport: { width: 1280, height: 900 }, locale: 'zh-CN' });
 await c.addInitScript(() => {
   localStorage.setItem('chess.settings', JSON.stringify({
-    mode: 'pvp', langId: 'zh-CN', sideTab: 'play', soundOn: false, timeControl: '3' }));
+    mode: 'pvp', langId: 'zh-CN', soundOn: false, timeControl: '3' }));
   localStorage.setItem('chess.panelOpen', '1');
   const listeners = {};
   window.zero = {
@@ -154,16 +154,17 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
     const t0 = Date.now(), real = Date.now;
     Date.now = () => t0 + (real() - t0) * 40;
     localStorage.setItem('chess.settings', JSON.stringify({
-      mode: 'pvp', langId: 'zh-CN', sideTab: 'setup', soundOn: false, appearance: 'dark', boardId: 'wood' }));
+      mode: 'pvp', langId: 'zh-CN', soundOn: false, appearance: 'dark', boardId: 'wood' }));
     localStorage.setItem('chess.panelOpen', '1');
   });
   const p2 = await c2.newPage();
   const errs2 = []; p2.on('pageerror', (e) => errs2.push(e.message));
   await p2.goto(`http://127.0.0.1:${PORT}/`); await p2.waitForTimeout(900);
   await p2.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
-  // 棋钟那一行在「对局」那段折叠里
-  await p2.click('#fold-game > summary'); await p2.waitForTimeout(300);
-  await p2.click('#clock-seg button[data-tc="3+2"]'); await p2.waitForTimeout(400);
+  // 9.0 S5:棋钟只在新对局对话框里选(设置页的「对局」折叠没了),开始之后才生效
+  await p2.click('#idle-new'); await p2.waitForTimeout(300);
+  await p2.click('#newgame-modal #clock-seg button[data-tc="3+2"]'); await p2.waitForTimeout(200);
+  await p2.click('#ng-start'); await p2.waitForTimeout(400);
 
   const secs2 = () => p2.evaluate(() => {
     const to = (t) => { const m = /^(\d+):(\d\d)$/.exec(t.trim()); return m ? +m[1] * 60 + +m[2] : null; };
@@ -227,7 +228,7 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
   const c3 = await b.newContext({ viewport: { width: 1280, height: 900 }, locale: 'zh-CN' });
   await c3.addInitScript(() => {
     localStorage.setItem('chess.settings', JSON.stringify({
-      mode: 'pvp', langId: 'zh-CN', sideTab: 'play', soundOn: false, timeControl: '3+2' }));
+      mode: 'pvp', langId: 'zh-CN', soundOn: false, timeControl: '3+2' }));
   });
   const p3 = await c3.newPage();
   const errs3 = [];
@@ -270,13 +271,15 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
 // 棋钟到 7.9 为止最长 10 分钟，也不能自己定。两个快棋时控直接是按钮；自定义把
 // 分钟和加秒写进它自己的 id（c20+5），跟预设一样存进设置、存进对局，重开还在。
 // 红：7.9 的钟行里没有这三个按钮，#tc-min / #tc-inc 也不存在。
+// 9.0 S5：钟行只在新对局对话框里，点了是草稿，「开始」之后才写进设置、才换钟；
+// 所以每个时控都是「打开对话框 → 选 → 开始」，并顺带确认开始前设置没被改。
 {
   const c4 = await b.newContext({ viewport: { width: 1280, height: 900 }, locale: 'zh-CN' });
   await c4.addInitScript(() => {
     if (!sessionStorage.getItem('seeded')) {
       sessionStorage.setItem('seeded', '1');
       localStorage.setItem('chess.settings', JSON.stringify({
-        mode: 'pvp', langId: 'zh-CN', sideTab: 'setup', soundOn: false, timeControl: 'off' }));
+        mode: 'pvp', langId: 'zh-CN', soundOn: false, timeControl: 'off' }));
       localStorage.setItem('chess.panelOpen', '1');
     }
   });
@@ -287,7 +290,6 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
   await p4.waitForSelector('#board');
   await p4.waitForTimeout(600);
   await p4.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
-  await p4.evaluate(() => { const f = document.getElementById('fold-game'); if (f) f.open = true; });
   await p4.waitForTimeout(200);
   const read = () => p4.evaluate(() => {
     const to = (x) => { const m = /^(\d+):(\d\d)$/.exec(x.trim()); return m ? +m[1] * 60 + +m[2] : null; };
@@ -296,35 +298,54 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
       tc: JSON.parse(localStorage.getItem('chess.settings') || '{}').timeControl,
       active: (document.querySelector('#clock-seg button.active') || {}).dataset?.tc,
       custom: !document.getElementById('clock-custom').hidden,
+      open: document.getElementById('newgame-modal').classList.contains('show'),
     };
   });
+  // no move on the board yet: 新局 is #idle-new; afterwards it is 本局's #btn-new
+  const openNg = async () => {
+    await p4.evaluate(() => (document.getElementById('idle-new') && document.getElementById('idle-new').offsetParent
+      ? document.getElementById('idle-new') : document.getElementById('btn-new')).click());
+    await p4.waitForTimeout(300);
+  };
+  const startNg = async () => { await p4.click('#ng-start'); await p4.waitForTimeout(400); };
   for (const [tc, secs] of [['15+10', 900], ['30', 1800]]) {
-    const btn = await p4.$(`#clock-seg button[data-tc="${tc}"]`);
-    chk(!!btn, `棋钟一行有「${tc}」`);
-    if (!btn) continue;
+    await openNg();
+    const btn = await p4.$(`#newgame-modal #clock-seg button[data-tc="${tc}"]`);
+    chk(!!btn, `新对局的棋钟一行有「${tc}」`);
+    if (!btn) { await p4.keyboard.press('Escape'); continue; }
+    const was = (await read()).tc;
     await btn.click(); await p4.waitForTimeout(250);
+    const draft = await read();
+    chk(draft.open && draft.active === tc && draft.tc === was, `选 ${tc}：对话框里亮起，开始前设置不变（仍是 ${was}）`, JSON.stringify(draft));
+    await startNg();
     const r = await read();
     chk(r.tc === tc && r.active === tc && r.secs[0] === secs && r.secs[1] === secs && !r.custom,
-      `选 ${tc}：两边各 ${secs / 60} 分钟，写进设置`, JSON.stringify(r));
+      `选 ${tc} 再开始：两边各 ${secs / 60} 分钟，写进设置`, JSON.stringify(r));
   }
-  const custom = await p4.$('#clock-seg button[data-tc="custom"]');
-  chk(!!custom, '棋钟一行有「自定义」');
+  await openNg();
+  const custom = await p4.$('#newgame-modal #clock-seg button[data-tc="custom"]');
+  chk(!!custom, '新对局的棋钟一行有「自定义」');
   if (custom) {
     await custom.click(); await p4.waitForTimeout(250);
     let r = await read();
-    chk(r.custom && /^c\d+\+\d+$/.test(r.tc) && r.active === 'custom', '点「自定义」：两个数字出现，时控成了一个自定义 id', JSON.stringify(r));
+    chk(r.custom && r.active === 'custom' && r.tc === '30', '点「自定义」：两个数字出现，自定义亮起（开始前设置还是 30）', JSON.stringify(r));
     await p4.fill('#tc-min', '20'); await p4.dispatchEvent('#tc-min', 'change');
     await p4.fill('#tc-inc', '5'); await p4.dispatchEvent('#tc-inc', 'change');
     await p4.waitForTimeout(300);
+    await startNg();
     r = await read();
-    chk(r.tc === 'c20+5' && r.secs[0] === 1200 && r.secs[1] === 1200, '改成 20 分钟 + 5 秒：设置里是 c20+5，两边各 20 分钟', JSON.stringify(r));
+    chk(r.tc === 'c20+5' && r.secs[0] === 1200 && r.secs[1] === 1200 && r.custom && r.active === 'custom',
+      '改成 20 分钟 + 5 秒再开始：设置里是 c20+5（自定义 id），两边各 20 分钟', JSON.stringify(r));
     // 超出范围的数字夹回界内，而不是存下一个读不回来的 id
+    await openNg();
     await p4.fill('#tc-min', '900'); await p4.dispatchEvent('#tc-min', 'change'); await p4.waitForTimeout(250);
+    await startNg();
     r = await read();
     chk(r.tc === 'c180+5', '分钟填 900：夹到 180', r.tc);
+    await openNg();
     await p4.fill('#tc-min', '20'); await p4.dispatchEvent('#tc-min', 'change'); await p4.waitForTimeout(250);
+    await startNg();
     // 走一步：+5 加上了（真实时钟，一步不到一秒）
-    await p4.click('#tab-play').catch(() => {}); await p4.waitForTimeout(200);
     const sq4 = async (n) => p4.evaluate((s) => {
       const cv = document.getElementById('board'), rr = cv.getBoundingClientRect();
       const f = s.charCodeAt(0) - 97, rk = 8 - +s[1], z = rr.width / 8;
@@ -352,7 +373,7 @@ chk(moved >= 1, '回到前台后时钟重新走起来', `2.5 秒里走了 ${move
   await c5.addInitScript(() => {
     if (!sessionStorage.getItem('seeded')) {
       sessionStorage.setItem('seeded', '1');
-      localStorage.setItem('chess.settings', JSON.stringify({ mode: 'pvp', langId: 'zh-CN', sideTab: 'play', soundOn: false, timeControl: 'off' }));
+      localStorage.setItem('chess.settings', JSON.stringify({ mode: 'pvp', langId: 'zh-CN', soundOn: false, timeControl: 'off' }));
       localStorage.setItem('chess.panelOpen', '1');
     }
   });

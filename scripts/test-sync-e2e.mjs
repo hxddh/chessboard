@@ -63,7 +63,7 @@ async function open({ bridge = true, lang = "zh-CN", seedSync = null, mode = "ai
   await ctx.addInitScript(({ bridge, lang, seedSync, mode, seedSave }) => {
     if (!sessionStorage.getItem("seeded")) {
       sessionStorage.setItem("seeded", "1");
-      localStorage.setItem("chess.settings", JSON.stringify({ mode, langId: lang, sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
+      localStorage.setItem("chess.settings", JSON.stringify({ mode, langId: lang, soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
       if (seedSync) localStorage.setItem("chess.sync", JSON.stringify(seedSync));
       if (seedSave) localStorage.setItem("chess.save", JSON.stringify(seedSave));
@@ -138,9 +138,11 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   const { ctx, page, errs } = await open();
   const sw0 = await page.evaluate(() => {
     const b = document.getElementById("opt-netsync");
-    return b && { pressed: b.getAttribute("aria-pressed"), label: b.getAttribute("aria-labelledby") && document.getElementById(b.getAttribute("aria-labelledby")).textContent };
+    return b && { pressed: b.getAttribute("aria-pressed"), label: b.getAttribute("aria-labelledby") && document.getElementById(b.getAttribute("aria-labelledby")).textContent,
+      // 9.0 S5: the preferences window is the settings page's 数据 category now
+      at: !!b.closest("#page-settings #set-data") };
   });
-  assert(sw0 && sw0.pressed === "false" && sw0.label === "允许联网同步", "C2: 偏好设置里有「允许联网同步」，默认关（" + JSON.stringify(sw0) + "）");
+  assert(sw0 && sw0.pressed === "false" && sw0.label === "允许联网同步" && sw0.at, "C2 × S5: 设置·数据里有「允许联网同步」，默认关（" + JSON.stringify(sw0) + "）");
   await toLibrary(page);
   await openSync(page);
   let d = await dlg(page);
@@ -281,12 +283,15 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   await page.waitForTimeout(150);
   d = await dlg(page);
   assert(!d.shown, "C2: Esc 关掉对话框");
-  // …and the preferences switch turns it back off
-  await page.click("#prefs-open");
+  // …and the settings switch turns it back off (9.0 S5: the preferences
+  // window became the settings page; the switch is in its 数据 category)
+  await page.click('#rail button[data-view="settings"]');
   await page.waitForTimeout(200);
+  await page.click("#cat-data");
+  await page.waitForTimeout(100);
   await page.click("#opt-netsync");
   const s = await stored(page, "chess.sync");
-  assert(s.on === false && s.user === "Sync_Tester", "C2: 在偏好设置里关掉，名字留着（" + JSON.stringify(s) + "）");
+  assert(s.on === false && s.user === "Sync_Tester", "C2: 在设置·数据里关掉，名字留着（" + JSON.stringify(s) + "）");
   assert(errs.length === 0, "success: 没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }

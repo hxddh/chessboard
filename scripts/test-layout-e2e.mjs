@@ -74,7 +74,8 @@ const browser = await launchBrowser();
 console.log("引擎:", ENGINE);
 
 /**
- * The app, opened in one language and one mode, panel open on a given tab.
+ * The app, opened in one language and one mode, on a given view (the board
+ * with its panel, or a page — 9.0 S5: the panel has no tabs any more).
  * The settings key is written before the page runs, which is how the app
  * itself restores them — nothing here clicks through the onboarding.
  */
@@ -97,12 +98,15 @@ async function open(lang, mode, tab, theme = "wood", viewport = { width: 1400, h
   // v8-0-plan A1: `tab` may name a page of the top level instead — 记录 is
   // the 我的 page now ("record" still opens it), and home / library / me are
   // restored the way the app restores them, from the saved view
-  const view = { record: "me", me: "me", home: "home", library: "library" }[tab] || "play";
-  await ctx.addInitScript(([l, m, tb, th, po, v]) => {
+  // 9.0 S5: the panel's 设置 tab and the preferences window are one page —
+  // "settings" opens it (on the category in `setCat`, 通用 unless a scenario
+  // clicks another; see showCat); "play" is the panel, which has no tabs now
+  const view = { record: "me", me: "me", home: "home", library: "library", settings: "settings" }[tab] || "play";
+  await ctx.addInitScript(([l, m, th, po, v]) => {
     localStorage.setItem("chess.settings", JSON.stringify(Object.assign({
-      mode: m, langId: l, sideTab: tb, soundOn: false, view: v }, th)));
+      mode: m, langId: l, soundOn: false, view: v }, th)));
     localStorage.setItem("chess.panelOpen", po);
-  }, [lang, mode, view === "play" ? tab : "play", lookOf(theme), panelOpen, view]);
+  }, [lang, mode, lookOf(theme), panelOpen, view]);
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));
@@ -116,26 +120,64 @@ async function open(lang, mode, tab, theme = "wood", viewport = { width: 1400, h
 
 const LANGS = ["zh-CN", "en", "ja"];
 
+// 9.0 S5: the settings page's categories (shell.js SETTING_CATS), one shown at
+// a time — a check that used to read the whole 设置 tab reads each of them
+const CATS = ["general", "board", "sound", "game", "data", "advanced"];
+/**
+ * Show one category of the settings page, through its tab's click handler.
+ * Not a pointer click: in this harness the engine is a stub, and at some
+ * window sizes its 「引擎没能启动」 banner lies over the category list.
+ */
+async function showCat(page, cat) {
+  await page.evaluate((c) => document.getElementById("cat-" + c).click(), cat);
+  await page.waitForTimeout(250);
+}
+/**
+ * 9.0 S5: 难度 / 风格 / 执子 / 棋钟 live in the new-game dialog only (they
+ * were the 设置 tab's 「对局」 fold, borrowed by the dialog while it was open).
+ * Opened the way 新局 / N open it; `custom` unfolds 自定义, where the rung and
+ * the style are. #btn-new is hidden with no move on the board, so its handler
+ * is reached through click() rather than a pointer.
+ */
+async function openNewGame(page, custom = true) {
+  await page.evaluate(() => document.getElementById("btn-new").click());
+  await page.waitForTimeout(400);
+  if (custom) {
+    await page.evaluate(() => { const d = document.getElementById("ng-custom"); if (d) d.open = true; });
+    await page.waitForTimeout(200);
+  }
+}
+/** 开始: the dialog's draft becomes the settings and the game starts. */
+async function startNewGame(page) {
+  await page.click("#ng-start");
+  await page.waitForTimeout(450);
+}
+
 // --- 1. no button in a wrapped row is wider than the others ----------------
 // The bug was specifically the *last* one on a short final line, so measuring
 // max/min across the row catches it without knowing which row wraps.
 if (scenario()) {
   for (const lang of LANGS) {
-    const { ctx, page, errs } = await open(lang, "ai", "setup");
+    const { ctx, page, errs } = await open(lang, "ai", "play");
     // The "are these buttons the same width" measurement moved to
     // test-chess.mjs (P2.8): equal widths are a consequence of the wrapped
     // segment being a grid with shared columns, and that is one declaration,
     // checkable in milliseconds and in every language at once. What a browser
     // is still needed for is whether the rows are *there* and whether opening
-    // the panel in this language throws.
-    // the game settings fold shut by default since P3.2 — open it, that is
-    // where the wrapped segments live
-    const rows = await page.evaluate(() => {
-      const f = document.getElementById("fold-game");
-      if (f) f.open = true;
-      return [...document.querySelectorAll(".theme-row.wrap")].filter((r) => r.offsetParent).length;
-    });
+    // them in this language throws.
+    // 9.0 S5: the wrapped segments (档位 / 风格 / 棋钟) are the new-game
+    // dialog's, under its 自定义 fold — the 设置 tab's 「对局」 fold is gone
+    await openNewGame(page);
+    const rows = await page.evaluate(() =>
+      [...document.querySelectorAll("#newgame-modal .theme-row.wrap")].filter((r) => r.offsetParent).length);
     assert(rows > 0, lang + ": the wrapped segments are on screen (" + rows + ")");
+    // …and the settings page's own wrapped rows (the look pickers, 棋盘)
+    await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+    await page.click('.rail-btn[data-view="settings"]'); await page.waitForTimeout(300);
+    await showCat(page, "board");
+    const look = await page.evaluate(() =>
+      [...document.querySelectorAll("#set-board .theme-row.wrap")].filter((r) => r.offsetParent).length);
+    assert(look > 0, lang + ": …and the settings page's 棋盘 pickers are (" + look + ")");
     assert(errs.length === 0, lang + ": no JS exception — " + errs.join(" / "));
     await ctx.close();
   }
@@ -208,7 +250,9 @@ if (scenario()) {
       engine: ["初級", "初級+", "中級−", "中級", "中級+", "上級−", "上級", "上級+", "エキスパート", "エキスパート+", "マスター", "マスター+", "強力", "強力+", "全力"] },
   };
   for (const lang of LANGS) {
-    const { ctx, page } = await open(lang, "ai", "setup");
+    // 9.0 S5: the rungs are the new-game dialog's (自定义), not the 设置 tab's
+    const { ctx, page } = await open(lang, "ai", "play");
+    await openNewGame(page);
     const labels = await page.evaluate(() => ({
       spar: [...document.querySelectorAll("#diff-seg button")].map((b) => b.textContent.trim()),
       engine: [...document.querySelectorAll("#diff-seg-engine button")].map((b) => b.textContent.trim()),
@@ -253,9 +297,12 @@ if (scenario()) {
   // v8-0-plan A1: and off the panel — 人机 / 双人 with the new game, the
   // trainers on the rail
   assert(!where.inPanel && where.inDialog, "…off the panel, in the new-game dialog");
-  assert(where.rail === "home,play,puzzle,learn,library,me", "…and the modes are the rail's (" + where.rail + ")");
-  assert(where.navRowsInPanel === 1,
-    "the panel still has one navigation row, not two (" + where.navRowsInPanel + ")");
+  // 9.0 S5: the rail ends in 设置 (the preferences window and the 设置 tab, one page)
+  assert(where.rail === "home,play,puzzle,learn,library,me,settings", "…and the modes are the rail's (" + where.rail + ")");
+  // 9.0 S5: the panel's tab row went with its 设置 tab — one pane, so no
+  // navigation row in the panel at all (it was "one, not two")
+  assert(where.navRowsInPanel === 0,
+    "the panel has no navigation row of its own (" + where.navRowsInPanel + ")");
 
   // …and the chrome carries one meaning per element: whose move, the two
   // actions for the move being made, the panel toggle. The wordmark and the
@@ -475,11 +522,11 @@ if (scenario()) {
 // (v8-0-plan A2: in the two-column layout; the wide one's clock is the last
 // line of its card, asserted with the A2 checks)
 if (scenario()) {
-  const { ctx, page } = await open("zh-CN", "pvp", "setup", "wood", { width: 1200, height: 900 });
-  await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
-  await page.waitForTimeout(200);
-  await page.click('#clock-seg button[data-tc="3+2"]');
-  await page.waitForTimeout(400);
+  const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1200, height: 900 });
+  // 9.0 S5: the clock is chosen with the game — the new-game dialog's 棋钟
+  await openNewGame(page, false);
+  await page.click('#newgame-modal #clock-seg button[data-tc="3+2"]');
+  await startNewGame(page);
   const c = await page.evaluate(() => {
     const w = document.getElementById("clock-w"), b = document.getElementById("clock-b");
     const sw = document.getElementById("strip-w"), sb = document.getElementById("strip-b");
@@ -518,12 +565,12 @@ if (scenario()) {
 // it belongs to, or the clock being pushed off it.
 if (scenario()) for (const [w, h] of [[1400, 900], [900, 700], [520, 520]]) {
   for (const lang of LANGS) {
-    const { ctx, page } = await open(lang, "ai", "setup", "wood", { width: w, height: h });
-    await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
-    await page.waitForTimeout(200);
-    await page.click('#persona-seg button[data-persona="principled"]');
-    await page.click('#clock-seg button[data-tc="3+2"]');
-    await page.waitForTimeout(350);
+    const { ctx, page } = await open(lang, "ai", "play", "wood", { width: w, height: h });
+    // 9.0 S5: style and clock are the new-game dialog's; 开始 makes them the game's
+    await openNewGame(page);
+    await page.click('#newgame-modal #persona-seg button[data-persona="principled"]');
+    await page.click('#newgame-modal #clock-seg button[data-tc="3+2"]');
+    await startNewGame(page);
     if (w <= 820) { await page.keyboard.press("p"); await page.waitForTimeout(400); }
     const r = await page.evaluate(() => {
       const ch = document.querySelector(".chrome");
@@ -659,10 +706,20 @@ if (scenario()) {
       await sqClick("a1"); await sqClick("a8");   // Ra8# — puzzle 1 is m1-backrank-r
       await page.waitForTimeout(1200);
     }],
-    ["双人·设置页", { mode: "pvp", tab: "setup" }, async (page) => {
-      await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
-      await page.waitForTimeout(300);
-    }],
+    // 9.0 S5: the 设置 tab's switches (自动翻转, 盲棋, 箭头, 存疑标注…) are on
+    // the settings page, a category at a time — each category its own state,
+    // its own pane's controls; the category list itself is pressed once.
+    // 数据 is not here, as the 偏好设置 window it came from never was: its
+    // buttons open the OS file chooser or a download, which a headless page
+    // cannot see happen.
+    ["双人·设置·棋盘", { mode: "pvp", tab: "settings", sel: "#page-settings .set-pane:not([hidden]) button[id], #page-settings .set-cat[id]", min: 7 },
+      async (page) => { await showCat(page, "board"); }],
+    ["双人·设置·声音", { mode: "pvp", tab: "settings", sel: "#page-settings .set-pane:not([hidden]) button[id]", min: 1 },
+      async (page) => { await showCat(page, "sound"); }],
+    ["双人·设置·对局", { mode: "pvp", tab: "settings", sel: "#page-settings .set-pane:not([hidden]) button[id]", min: 2 },
+      async (page) => { await showCat(page, "game"); }],
+    ["双人·设置·高级", { mode: "pvp", tab: "settings", sel: "#page-settings .set-pane:not([hidden]) button[id]", min: 2 },
+      async (page) => { await showCat(page, "advanced"); }],
   ];
   const ENGINE_BOUND = ["btn-hint"];
   for (const [label, cfg, prep] of STATES) {
@@ -714,12 +771,12 @@ if (scenario()) {
       }
     };
     const { ctx: c0, page: p0 } = await fresh();
-    const ids = await p0.evaluate(() => [...document.querySelectorAll("#side button[id], .chrome button[id], #strip-tools button[id]")]
+    const ids = await p0.evaluate((sel) => [...document.querySelectorAll(sel)]
       .filter((b) => b.offsetParent && !b.disabled && getComputedStyle(b).visibility === "visible")
       .filter((b) => b.getAttribute("aria-selected") !== "true")
-      .map((b) => b.id));
+      .map((b) => b.id), cfg.sel || "#side button[id], .chrome button[id], #strip-tools button[id]");
     await c0.close();
-    assert(ids.length >= 4, label + ":这个状态下数得到可以按的控件(" + ids.length + " 个)");
+    assert(ids.length >= (cfg.min || 4), label + ":这个状态下数得到可以按的控件(" + ids.length + " 个)");
 
     const dead = [];
     for (const id of ids) {
@@ -756,15 +813,16 @@ if (scenario()) {
 // it back to whoever is on move.
 if (scenario()) {
   // through the switch itself, which is also a control no test had ever pressed
-  const { ctx, page } = await open("zh-CN", "pvp", "setup");
-  await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
-  await page.waitForTimeout(250);
+  // 9.0 S5: 自动翻转 is the settings page's 「对局」 category now
+  const { ctx, page } = await open("zh-CN", "pvp", "settings");
+  await showCat(page, "game");
   await page.click("#opt-autoflip");
   await page.waitForTimeout(300);
   assert(await page.evaluate(() => document.getElementById("opt-autoflip").getAttribute("aria-pressed")) === "true",
     "自动翻转:开关按下去真的开了");
-  await page.click("#tab-play");
-  await page.waitForTimeout(300);
+  // back to the board by the rail (was: the panel's 对局 tab)
+  await page.click('.rail-btn[data-view="play"]');
+  await page.waitForTimeout(400);
   const view = () => page.evaluate(() => [...document.querySelectorAll("#orient-seg button")]
     .filter((b) => b.classList.contains("active")).map((b) => b.dataset.orient)[0]);
   const play = async (sqr) => {
@@ -809,28 +867,38 @@ if (scenario()) {
 // looked for by eye. The status pill is exempt: it ellipsizes on purpose.
 if (scenario()) for (const lang of LANGS) {
   for (const theme of ["wood", "day"]) {
-    const { ctx, page } = await open(lang, "ai", "setup");
-    await page.evaluate((th) => {
-      document.documentElement.setAttribute("data-theme", th);
-      const f = document.getElementById("fold-game");
-      if (f) f.open = true;
-    }, theme);
+    // 9.0 S5: what the 设置 tab held is the settings page (a category at a
+    // time, so each one is read) and the new-game dialog (its 「对局」 fold:
+    // 档位 / 风格 / 执子 / 棋钟)
+    const { ctx, page } = await open(lang, "ai", "settings");
+    await page.evaluate((th) => document.documentElement.setAttribute("data-theme", th), theme);
     await page.waitForTimeout(250);
-    const clipped = await page.evaluate(() => {
+    const readClipped = (where) => page.evaluate((w) => {
       const out = [];
       for (const e of document.querySelectorAll("button, .setting-k, .side-h, .act-k, .vs-role")) {
         if (!e.offsetParent) continue;
         if (e.id === "status" || e.closest("#status")) continue;   // ellipsizes on purpose
         if (e.classList.contains("switch")) continue;              // a knob, not a label
+        // 9.0 S5: 语言 / 外观 have a card heading, so their row labels are
+        // screen-reader text (.sr-only: a 1px box on purpose, not a clip)
+        if (e.closest(".sr-only")) continue;
         if (e.scrollWidth > e.clientWidth + 1) {
-          out.push((e.id || e.textContent.trim().slice(0, 14)) + " " + e.scrollWidth + ">" + e.clientWidth);
+          out.push(w + ":" + (e.id || e.textContent.trim().slice(0, 14)) + " " + e.scrollWidth + ">" + e.clientWidth);
         }
       }
       return out;
-    });
-    for (const c of clipped) console.error("  clipped: " + c);
+    }, where);
+    const clipped = [];
+    for (const cat of CATS) {
+      await showCat(page, cat);
+      clipped.push(...await readClipped(cat));
+    }
+    await page.click('.rail-btn[data-view="play"]'); await page.waitForTimeout(300);
+    await openNewGame(page);
+    clipped.push(...await readClipped("newgame"));
+    for (const c of new Set(clipped)) console.error("  clipped: " + c);
     assert(clipped.length === 0,
-      lang + "/" + theme + ":没有被裁掉的标签" + (clipped.length ? " —— " + clipped.join(", ") : ""));
+      lang + "/" + theme + ":没有被裁掉的标签" + (clipped.length ? " —— " + [...new Set(clipped)].join(", ") : ""));
     await ctx.close();
   }
 }
@@ -850,30 +918,53 @@ if (scenario()) for (const lang of LANGS) {
 // are silent by construction rather than by exception, because both are
 // pseudo-elements and neither is in the DOM: the switch's ::after hit target
 // (inset -6px -2px) and the disclosure ›, which is rotated 90° when open.
-if (scenario()) for (const tab of ["play", "setup"]) {
+// 9.0 S5: the 设置 tab (and with it the three deletions) is the settings
+// page; there the edge that clips is each category's card (.set-sec) and the
+// page itself, read one category at a time.
+if (scenario()) for (const tab of ["play", "settings"]) {
   const { ctx, page } = await open("zh-CN", "ai", tab);
   await page.evaluate(() => {
     for (const d of document.querySelectorAll("#side details")) d.open = true;
   });
   await page.waitForTimeout(300);
-  const out = await page.evaluate(() => {
-    const side = document.getElementById("side");
-    const edge = side.getBoundingClientRect().right;
+  const past = () => page.evaluate((onPage) => {
     const res = [];
-    for (const e of side.querySelectorAll("*")) {
+    if (!onPage) {
+      const side = document.getElementById("side");
+      const edge = side.getBoundingClientRect().right;
+      for (const e of side.querySelectorAll("*")) {
+        if (!e.offsetParent) continue;
+        const r = e.getBoundingClientRect();
+        if (r.width === 0) continue;
+        if (r.right > edge + 1) {
+          res.push((e.id || e.className || e.tagName) + " right=" + Math.round(r.right) +
+            " panel=" + Math.round(edge));
+        }
+      }
+      return res;
+    }
+    const pg = document.getElementById("page-settings");
+    const pageEdge = Math.min(pg.getBoundingClientRect().right, document.documentElement.clientWidth);
+    for (const e of pg.querySelectorAll(".set-pane:not([hidden]) *")) {
       if (!e.offsetParent) continue;
       const r = e.getBoundingClientRect();
       if (r.width === 0) continue;
+      const card = e.closest(".set-sec");
+      const edge = card ? Math.min(card.getBoundingClientRect().right, pageEdge) : pageEdge;
       if (r.right > edge + 1) {
         res.push((e.id || e.className || e.tagName) + " right=" + Math.round(r.right) +
-          " panel=" + Math.round(edge));
+          " card=" + Math.round(edge));
       }
     }
     return res;
-  });
+  }, tab === "settings");
+  const out = [];
+  if (tab === "settings") {
+    for (const cat of CATS) { await showCat(page, cat); out.push(...(await past()).map((o) => cat + ":" + o)); }
+  } else out.push(...await past());
   for (const o of out) console.error("  past the panel edge: " + o);
   assert(out.length === 0,
-    tab + " 标签页:没有控件被面板边缘裁掉" + (out.length ? " —— " + out.join(", ") : ""));
+    tab + (tab === "settings" ? " 页(六类):没有控件被卡片边缘裁掉" : " 面板:没有控件被面板边缘裁掉") + (out.length ? " —— " + out.join(", ") : ""));
   await ctx.close();
 }
 
@@ -882,25 +973,30 @@ if (scenario()) for (const tab of ["play", "setup"]) {
 // links that prompted this were in the *setup* tab, where 3d never looked:
 // `offsetParent` is null for anything in a pane that is not showing, so a
 // check that only ever opens one tab cannot see the other two.
-if (scenario()) for (const tab of ["play", "setup"]) {
+// 9.0 S5: the 设置 tab is the settings page — every category of it is read
+if (scenario()) for (const tab of ["play", "settings"]) {
   const { ctx, page } = await open("zh-CN", "ai", tab);
   await page.evaluate(() => {
     for (const d of document.querySelectorAll("#side details")) d.open = true;
   });
   await page.waitForTimeout(300);
-  const bad = await page.evaluate(() => {
+  const read = () => page.evaluate((sel) => {
     const out = [];
-    for (const b of document.querySelectorAll("#side button, #side input, #side select")) {
+    for (const b of document.querySelectorAll(sel)) {
       if (!b.disabled) continue;
       if (!b.offsetParent && getComputedStyle(b).position !== "fixed") continue;
       if (b.closest(".modal-bg")) continue;
       out.push(b.id || b.textContent.trim().slice(0, 12) || b.className);
     }
     return out;
-  });
+  }, tab === "settings" ? "#page-settings button, #page-settings input, #page-settings select"
+                        : "#side button, #side input, #side select");
+  const bad = [];
+  if (tab === "settings") for (const cat of CATS) { await showCat(page, cat); bad.push(...(await read()).map((b) => cat + ":" + b)); }
+  else bad.push(...await read());
   for (const b of bad) console.error("  visible but disabled: " + b);
   assert(bad.length === 0,
-    tab + " 标签页:侧栏里没有被禁用的可见控件" + (bad.length ? " —— " + bad.join(", ") : ""));
+    tab + (tab === "settings" ? " 页:设置里" : " 面板:侧栏里") + "没有被禁用的可见控件" + (bad.length ? " —— " + bad.join(", ") : ""));
   await ctx.close();
 }
 
@@ -928,7 +1024,7 @@ if (scenario()) {
     "--btn","--btn-hover","--btn-ghost","--card","--card-border",
     "--primary-from","--primary-to","--danger","--on-primary","--on-accent","--on-danger"];
   for (const theme of ["wood","night","day","notebook"]) {
-    const { ctx, page } = await open("zh-CN", "ai", "setup", theme);
+    const { ctx, page } = await open("zh-CN", "ai", "settings", theme);
     const empty = await page.evaluate((names) => {
       const cs = getComputedStyle(document.documentElement);
       return names.filter((n) => !cs.getPropertyValue(n).trim());
@@ -939,7 +1035,7 @@ if (scenario()) {
     await ctx.close();
   }
   // …and the stylesheet parsed whole: a swallowed block is a missing rule
-  const { ctx, page } = await open("zh-CN", "ai", "setup");
+  const { ctx, page } = await open("zh-CN", "ai", "settings");
   const sel = await page.evaluate(() => {
     const sh = [...document.styleSheets].find((s2) => (s2.href || "").includes("styles.css"));
     return [...sh.cssRules].map((r) => r.selectorText || "").filter(Boolean);
@@ -959,7 +1055,9 @@ if (scenario()) {
 // because the app once shipped with the UA default at about 1.0:1. It was
 // back to nothing.
 if (scenario()) {
-  const { ctx, page } = await open("zh-CN", "ai", "setup");
+  // 9.0 S5: the settings page (was the 设置 tab) — the walk goes through the
+  // rail, the category list and the open category's controls
+  const { ctx, page } = await open("zh-CN", "ai", "settings");
   const bad = [];
   for (let i = 0; i < 14; i++) {
     await page.keyboard.press("Tab");
@@ -998,10 +1096,10 @@ if (scenario()) {
 // 0–1, and reading those as 0–255 makes every mixed background look black —
 // which is what briefly "found" a 1.13:1 badge that is really 7:1.
 if (scenario()) for (const theme of ["wood", "night", "day", "notebook"]) {
-  const { ctx, page } = await open("zh-CN", "ai", "setup", theme);
-  await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
-  await page.waitForTimeout(250);
-  const low = await page.evaluate(() => {
+  // 9.0 S5: the 设置 tab's text is the settings page's (each category) and
+  // the new-game dialog's (the old 「对局」 fold); the bar and strip as before
+  const { ctx, page } = await open("zh-CN", "ai", "settings", theme);
+  const measure = (sel) => page.evaluate((sel) => {
     const cv = document.createElement("canvas"); cv.width = cv.height = 1;
     const g2 = cv.getContext("2d", { willReadFrequently: true });
     const rgba = (css) => { g2.clearRect(0, 0, 1, 1); g2.fillStyle = "#000"; g2.fillStyle = css;
@@ -1013,7 +1111,7 @@ if (scenario()) for (const theme of ["wood", "night", "day", "notebook"]) {
       const c = rgba(cs.backgroundColor); if (c[3] > 242) return c.slice(0, 3); n = n.parentElement; }
       return [255, 255, 255]; };
     const out = [];
-    for (const e of document.querySelectorAll("#side *, .chrome *, #strip-tools *")) {
+    for (const e of document.querySelectorAll(sel)) {
       if (!e.offsetParent) continue;
       if (![...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
       const cs = getComputedStyle(e);
@@ -1027,7 +1125,13 @@ if (scenario()) for (const theme of ["wood", "night", "day", "notebook"]) {
       if (cr < (big ? 3 : 4.5)) out.push((e.id || e.className || e.tagName) + " " + cr.toFixed(2));
     }
     return [...new Set(out)];
-  });
+  }, sel);
+  const low = [];
+  for (const cat of CATS) { await showCat(page, cat); low.push(...(await measure("#page-settings *")).map((l) => cat + ":" + l)); }
+  await page.click('.rail-btn[data-view="play"]'); await page.waitForTimeout(300);
+  low.push(...await measure(".chrome *, #strip-tools *"));
+  await openNewGame(page);
+  low.push(...(await measure("#newgame-modal *")).map((l) => "newgame:" + l));
   for (const l of low.slice(0, 6)) console.error("  low contrast in " + theme + ": " + l);
   assert(low.length === 0,
     theme + ":界面文字都达到 WCAG AA" + (low.length ? " —— " + low.length + " 处:" + low.slice(0, 3).join(", ") : ""));
@@ -1136,13 +1240,16 @@ if (scenario()) {
   // and a door goes where it says: 教学 mode, on the 对局 tab
   await page.click('.rec-door[data-mode="learn"]');
   await page.waitForTimeout(600);
+  // 9.0 S5: the panel has no tabs — "on the 对局 tab" is "on the 学习 board,
+  // with the lesson card showing in the panel's one pane"
   const went = await page.evaluate(() => ({
     mode: document.getElementById("app").dataset.mode,
-    tab: document.getElementById("tab-play").getAttribute("aria-selected"),
-    lesson: !!document.getElementById("sec-learn") && !document.getElementById("sec-learn").hidden,
+    view: document.getElementById("app").dataset.view,
+    lesson: !!document.getElementById("sec-learn") && !document.getElementById("sec-learn").hidden
+      && !!document.getElementById("sec-learn").offsetParent,
   }));
   assert(went.mode === "learn", "「上第 1 课」真的进了教学(" + went.mode + ")");
-  assert(went.tab === "true" && went.lesson, "……并且落在 对局 页的课程卡上");
+  assert(went.view === "learn" && went.lesson, "……并且落在学习页面板里的课程卡上(" + went.view + ")");
   await ctx.close();
 }
 
@@ -1164,9 +1271,24 @@ if (scenario()) {
   });
   assert(bare.length === 0, "每一个能按的东西都声明了过渡" + (bare.length ? " —— 没有的:" + bare.join(", ") : ""));
 
+  // 9.0 S5: the panel's tab row is gone; the block that is swapped like a tab
+  // pane now is the settings page's category (its vertical tablist) — and the
+  // page itself, which replaces the board view
+  await page.click('.rail-btn[data-view="settings"]');
+  await page.waitForTimeout(500);
+  const bareSet = await page.evaluate(() => {
+    const sel = 'button, [role="tab"], summary';
+    return [...new Set([...document.querySelectorAll("#page-settings " + sel.split(", ").join(", #page-settings "))]
+      .filter((e) => e.offsetParent)
+      .filter((e) => ["none", "all"].includes(getComputedStyle(e).transitionProperty))
+      .map((e) => e.id || e.className || e.tagName))];
+  });
+  assert(bareSet.length === 0, "设置页上能按的东西也都声明了过渡" + (bareSet.length ? " —— 没有的:" + bareSet.join(", ") : ""));
   const tab = await page.evaluate(async () => {
-    document.getElementById("tab-setup").click();
-    const pane = document.getElementById("pane-setup");
+    const cur = document.querySelector(".set-cat[aria-selected=\"true\"]");
+    const next = [...document.querySelectorAll(".set-cat")].find((b) => b !== cur);
+    next.click();
+    const pane = document.getElementById(next.getAttribute("aria-controls"));
     const anims = pane.getAnimations();
     const names = anims.map((a) => a.animationName);
     // wait for the animation itself rather than for a number of milliseconds:
@@ -1178,21 +1300,24 @@ if (scenario()) {
     return { names, settled: getComputedStyle(pane).opacity };
   });
   // v7-8-plan §5: a fade (pane-in), no longer the 4px reveal-in slide — a tab replaces the pane, it is not revealed from above
-  assert(tab.names.includes("pane-in"), "切页签的时候新页是淡入的(" + tab.names.join(", ") + ")");
+  assert(tab.names.includes("pane-in"), "切设置分类的时候新的一类是淡入的(" + tab.names.join(", ") + ")");
   assert(tab.settled === "1", "……而且走完就停在原地(" + tab.settled + ")");
+  await ctx.close();
 
-  const fold = await page.evaluate(async () => {
-    document.getElementById("tab-setup").click();
+  // 9.0 S5: the 设置 tab's 「对局」 fold (.setting-fold) is gone with the tab;
+  // the disclosure that keeps the reveal-in rule is the lesson index
+  const { ctx: c2, page: p2 } = await open("zh-CN", "learn", "play");
+  const fold = await p2.evaluate(async () => {
     await new Promise((r) => setTimeout(r, 400));
-    const d = document.querySelector(".setting-fold");
+    const d = document.querySelector("#sec-learn .reading-index");
     d.open = false;
     await new Promise((r) => setTimeout(r, 60));
     d.open = true;
     const body = [...d.children].find((c) => c.tagName !== "SUMMARY");
     return body ? body.getAnimations().map((a) => a.animationName) : [];
   });
-  assert(fold.includes("reveal-in"), "展开一组设置的时候里面的东西也是(" + fold.join(", ") + ")");
-  await ctx.close();
+  assert(fold.includes("reveal-in"), "展开一组(课程目录)的时候里面的东西也是(" + fold.join(", ") + ")");
+  await c2.close();
 }
 
 // --- 3n. every control has an accessible name -----------------------------
@@ -1200,15 +1325,20 @@ if (scenario()) {
 // "button, pressed" and nothing else. The sound switch beside them had a
 // title, so the row read differently to a sighted user and to a blind one.
 if (scenario()) {
-  const { ctx, page } = await open("zh-CN", "ai", "setup");
-  await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
-  await page.waitForTimeout(250);
-  const anon = await page.evaluate(() =>
+  // 9.0 S5: the switches are on the settings page (each category read) and
+  // the game's own rows in the new-game dialog
+  const { ctx, page } = await open("zh-CN", "ai", "settings");
+  const nameless = () => page.evaluate(() =>
     [...document.querySelectorAll("button, input, select, [role=tab]")]
       .filter((e) => e.offsetParent)
       .filter((e) => !(e.getAttribute("aria-label") || e.textContent.trim() ||
                        e.title || e.getAttribute("aria-labelledby")))
       .map((e) => e.id || e.className || e.tagName));
+  const anon = [];
+  for (const cat of CATS) { await showCat(page, cat); anon.push(...await nameless()); }
+  await page.click('.rail-btn[data-view="play"]'); await page.waitForTimeout(300);
+  await openNewGame(page);
+  anon.push(...await nameless());
   assert(anon.length === 0,
     "每个可见控件都有可读的名称" + (anon.length ? " —— 没有的:" + anon.join(", ") : ""));
   await ctx.close();
@@ -1255,21 +1385,26 @@ if (scenario()) {
 // four sparring styles, two colours, six clocks — in front of someone who
 // mostly wants to know what the current ones are. P3.2.
 if (scenario()) {
-  const { ctx, page } = await open("zh-CN", "ai", "setup");
+  // 9.0 S5: the 设置 tab's 「对局」 fold and its one-line summary are gone —
+  // the rungs and the styles are chosen with a game, folded under the new-game
+  // dialog's 自定义 (the persona cards above it say who you are playing). The
+  // summary-line assertion went with its line; the fold is asked of 自定义.
+  const { ctx, page } = await open("zh-CN", "ai", "play");
+  await openNewGame(page, false);
   const st = await page.evaluate(() => {
-    const f = document.getElementById("fold-game");
-    const shut = { open: f.open, text: document.getElementById("game-summary").textContent,
-      visibleButtons: [...f.querySelectorAll("button")].filter((b) => b.offsetParent).length };
+    const f = document.getElementById("ng-custom");
+    // a shut <details> keeps its content laid out under Chromium's
+    // ::details-content (content-visibility), so offsetParent alone reads
+    // the folded buttons as there; checkVisibility() asks whether they are drawn
+    const seen = (b) => !!b.offsetParent && b.checkVisibility();
+    const shut = { open: f.open,
+      visibleButtons: [...f.querySelectorAll("button")].filter(seen).length };
     f.open = true;
-    return { shut, openButtons: [...f.querySelectorAll("button")].filter((b) => b.offsetParent).length };
+    return { shut, openButtons: [...f.querySelectorAll("button")].filter(seen).length };
   });
-  assert(!st.shut.open, "the game settings start folded");
+  assert(!st.shut.open, "the rungs and styles start folded (自定义)");
   assert(st.shut.visibleButtons === 0, "…so none of the buttons is on screen (" + st.shut.visibleButtons + ")");
   assert(st.openButtons >= 14, "…and they are all there when you open it (" + st.openButtons + ")");
-  // the summary has to actually say the four things
-  const parts = st.shut.text.split(" · ").filter(Boolean);
-  assert(parts.length >= 3,
-    "the summary reads the current settings in one line — “" + st.shut.text + "”");
   await ctx.close();
 }
 
@@ -1286,13 +1421,17 @@ if (scenario()) {
     return {
       onPlayTab: danger.filter((b) => b.closest("#pane-play") && b.offsetParent).map((b) => b.id),
       inFoot: document.querySelectorAll(".side-foot").length,
-      // v8-0-plan A1: in the preferences window, off the game's settings too
-      grouped: [...document.querySelectorAll("#prefs-modal .act-btn.danger")].map((b) => b.id).sort(),
+      // v8-0-plan A1: in the preferences window, off the game's settings too;
+      // 9.0 S5: that window is the settings page's 「数据」 category
+      grouped: [...document.querySelectorAll("#set-data .act-btn.danger")].map((b) => b.id).sort(),
+      // …all of them, and under one heading (one card)
+      cards: new Set([...document.querySelectorAll("#page-settings .act-btn.danger")].map((b) => b.closest(".set-sec"))).size,
     };
   });
   assert(found.inFoot === 0, "nothing irreversible is pinned to the foot of the panel");
   assert(JSON.stringify(found.grouped) === JSON.stringify(["clear-save", "learn-reset", "stats-clear"]),
     "the three data deletions live together under one heading — " + found.grouped.join(", "));
+  assert(found.cards === 1, "…one card on the settings page, not spread over several (" + found.cards + ")");
   // resign is the exception, and it is a move rather than a deletion: it stays
   // with the game, and P3.3 already made it present only while one is running
   assert(found.onPlayTab.every((id) => id === "btn-resign"),
@@ -1311,12 +1450,14 @@ if (scenario()) {
 if (scenario()) {
   for (const lang of LANGS) {
     for (const mode of ["ai", "pvp", "learn", "puzzle"]) {
-      const { ctx, page } = await open(lang, mode, "setup");
-      const rows = await page.evaluate(() => {
-        const f = document.getElementById("fold-game");
-        if (f) f.open = true;
+      // 9.0 S5: the 设置 tab's segments are on the settings page (a category
+      // at a time) and, for a game, in the new-game dialog (its 自定义 open)
+      const { ctx, page } = await open(lang, mode, "settings");
+      const segs = (where) => page.evaluate((where) => {
         const out = [];
-        for (const g of document.querySelectorAll(".theme-row")) {
+        // the board view's panel stays laid out under the page, so the page
+        // (or the dialog) is the scope, as the 设置 tab's pane was
+        for (const g of document.querySelectorAll(where === "newgame" ? "#newgame-modal .theme-row" : "#page-settings .theme-row")) {
           if (!g.offsetParent) continue;
           const bs = [...g.querySelectorAll("button")];
           if (bs.length < 2) continue;
@@ -1325,11 +1466,18 @@ if (scenario()) {
             const t = Math.round(b.getBoundingClientRect().top);
             lines.set(t, (lines.get(t) || 0) + 1);
           }
-          out.push({ id: g.id || g.className, n: bs.length,
+          out.push({ id: where + ":" + (g.id || g.className), n: bs.length,
                      lines: [...lines.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1]) });
         }
         return out;
-      });
+      }, where);
+      const rows = [];
+      for (const cat of CATS) { await showCat(page, cat); rows.push(...await segs(cat)); }
+      if (mode === "ai" || mode === "pvp") {
+        await page.click('.rail-btn[data-view="play"]'); await page.waitForTimeout(300);
+        await openNewGame(page);
+        rows.push(...await segs("newgame"));
+      }
       assert(rows.length > 0, lang + "/" + mode + ": segments are on screen");
       for (const g of rows)
         assert(g.lines.length === 1 || g.lines[g.lines.length - 1] > 1,
@@ -1347,10 +1495,14 @@ if (scenario()) {
 // the 「本局」 heading standing over a single 「新局」 at move 0.
 if (scenario()) {
   for (const mode of ["ai", "pvp", "learn", "puzzle"]) {
-    for (const tab of ["play", "setup"]) {
-      const { ctx, page } = await open("zh-CN", mode, tab);
+    // 9.0 S5: the 设置 tab is the settings page — each category's cards
+    for (const tab of ["play", ...CATS.map((c) => "settings:" + c)]) {
+      const [view, cat] = tab.split(":");
+      const { ctx, page } = await open("zh-CN", mode, view);
+      if (cat) await showCat(page, cat);
       const empties = await page.evaluate(() => {
-        const pane = document.querySelector(".side-pane:not([hidden])");
+        const pane = document.querySelector("#page-settings:not([hidden]) .set-pane:not([hidden])")
+          || document.querySelector(".side-pane:not([hidden])");
         const out = [];
         for (const g of pane.querySelectorAll("section, .act-group")) {
           if (!g.offsetParent) continue;
@@ -1361,7 +1513,13 @@ if (scenario()) {
           const items = [...g.querySelectorAll("button, input, a")]
             .filter((e) => e.offsetParent && getComputedStyle(e).visibility === "visible");
           if (!heading) continue;
-          if (items.length <= 1 && !g.querySelector(".stats-body, .hist-body, .ach-body, .move-list, .lesson-text"))
+          // 9.0 S5: a settings card's unit is the labelled row — 「声音」 over
+          // 音效 (with the sound off, its volume and voice rows hide) or
+          // 「从网站同步」 over 允许联网同步 and its explanation is one setting
+          // with its name, not a heading over a stray button
+          const labelled = g.closest("#page-settings") && [...g.querySelectorAll(".setting-row")]
+            .some((r) => r.offsetParent && r.querySelector(".setting-k:not(.sr-only)") && r.querySelector("button, input"));
+          if (items.length <= 1 && !labelled && !g.querySelector(".stats-body, .hist-body, .ach-body, .move-list, .lesson-text"))
             out.push({ h: heading.textContent.trim(), n: items.length,
                        items: items.map((e) => e.textContent.trim().slice(0, 8)) });
         }
@@ -1947,7 +2105,9 @@ if (scenario()) {
 // 「确认」 — the most consequential dialog in the app, announced as nothing in
 // particular.
 if (scenario()) {
-  const { ctx, page } = await open("zh-CN", "ai", "setup");
+  // 9.0 S5: 清除全部存档 is on the settings page's 「数据」
+  const { ctx, page } = await open("zh-CN", "ai", "settings");
+  await showCat(page, "data");
   const dialogs = await page.evaluate(() =>
     [...document.querySelectorAll(".modal-bg")].map((d) => {
       const by = d.getAttribute("aria-labelledby");
@@ -2006,34 +2166,53 @@ if (scenario()) {
 // dialog and the rail have it) and the app's own look, language, sound and
 // data (偏好设置); there the deletions are — last, always last: 2.1 had them
 // in the middle of a page, the only red on it.
+// 9.0 S5: the 设置 tab and 偏好设置 are one page of six categories. The same
+// argument, read off it: 通用 first and opening on the language (语言第一屏),
+// no mode anywhere, the deletions the last card of 「数据」 and nowhere else,
+// the engine the last category. The game group: 难度 / 风格 / 执子 / 棋钟 are
+// the new-game dialog's in every mode, so the page has none of them — and
+// 「对局」 (失着提醒 / 自动翻转) is there in every mode (it was "present exactly
+// when there is a game to set"; S5 shows both switches always).
 if (scenario()) {
   for (const mode of ["ai", "learn"]) {
-    const { ctx, page } = await open("zh-CN", mode, "setup");
-    const secs = await page.evaluate(() =>
-      [...document.querySelectorAll("#pane-setup > section")]
-        .filter((s) => s.offsetParent)
-        .map((s) => (s.querySelector(".side-h") || {}).textContent || "?"));
-    assert(!secs.includes("模式") && !secs.includes("清除数据"),
-      mode + ": no mode and no deletions on the game's settings — " + secs.join(" → "));
-    assert(secs[secs.length - 1] === "引擎", mode + ": the engine comes last — " + secs.join(" → "));
-    const prefs = await page.evaluate(() => [...document.querySelectorAll("#prefs-modal .side-section")]
-      .map((s) => (s.querySelector(".side-h") || {}).textContent || "?"));
-    assert(prefs[0] === "外观" && prefs[prefs.length - 1] === "清除数据",
-      mode + ": 偏好设置 opens on 外观 and ends on the deletions — " + prefs.join(" → "));
-    assert(secs.includes("对局") === (mode === "ai"),
-      mode + ": the game group is present exactly when there is a game to set — " + secs.join(" → "));
+    const { ctx, page } = await open("zh-CN", mode, "settings");
+    const pg = await page.evaluate(() => ({
+      cats: [...document.querySelectorAll(".set-cats [role=tab]")].map((b) => b.dataset.cat),
+      open: (document.querySelector('.set-cat[aria-selected="true"]') || {}).id,
+      secs: Object.fromEntries([...document.querySelectorAll(".set-pane")].map((p) =>
+        [p.id.slice(4), [...p.querySelectorAll(":scope > section")].map((s) => (s.querySelector(".side-h") || {}).textContent || "?")])),
+      gameRows: ["row-difficulty", "row-persona", "row-color", "row-clock", "mode-seg"]
+        .filter((id) => document.getElementById(id) && document.getElementById(id).closest("#page-settings")),
+    }));
+    const all = Object.values(pg.secs).flat();
+    assert(JSON.stringify(pg.cats) === JSON.stringify(CATS),
+      mode + ": six categories, 通用 first and 高级 last — " + pg.cats.join(" → "));
+    assert(pg.open === "cat-general" && pg.secs.general[0] === "语言",
+      mode + ": the page opens on 通用, the language first — " + pg.open + " / " + pg.secs.general.join(" → "));
+    assert(!all.includes("模式") && pg.gameRows.length === 0,
+      mode + ": no mode and none of the game's own rows on the settings page — " + pg.gameRows.join(", "));
+    assert(all.filter((h) => h === "清除数据").length === 1 && pg.secs.data[pg.secs.data.length - 1] === "清除数据",
+      mode + ": the deletions are the last card of 数据, and only there — " + pg.secs.data.join(" → "));
+    assert(pg.secs.advanced[0] === "引擎", mode + ": the engine comes last (高级) — " + pg.secs.advanced.join(" → "));
+    await showCat(page, "game");
+    const game = await page.evaluate(() => ["row-coach", "row-autoflip"].map((id) => !!document.getElementById(id).offsetParent));
+    assert(game.every(Boolean), mode + ": 「对局」 shows 失着提醒 and 自动翻转 (" + game.join(", ") + ")");
     await ctx.close();
   }
 }
 
 // --- 4. the tab row holds tabs only ---------------------------------------
+// 9.0 S5: the panel's tab row is gone (one pane). The app's one tablist now is
+// the settings page's category list, and the rule is asked of it: tabs and
+// nothing else, each naming the pane it controls.
 if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play");
-  const kids = await page.evaluate(() => [...document.querySelector(".side-tabs").children]
-    .map((el) => el.getAttribute("role")));
-  // v8-0-plan A1: two since 记录 became the 我的 and 棋谱库 pages
-  assert(kids.length === 2 && kids.every((r) => r === "tab"),
-    "the tab row contains two tabs and nothing else — got " + JSON.stringify(kids));
+  const kids = await page.evaluate(() => [...document.querySelector(".set-cats").children]
+    .map((el) => el.getAttribute("role") + (document.getElementById(el.getAttribute("aria-controls") || "-") ? "" : "(no pane)")));
+  assert(kids.length === 6 && kids.every((r) => r === "tab"),
+    "the category list contains six tabs, each with its pane, and nothing else — got " + JSON.stringify(kids));
+  assert(await page.evaluate(() => !document.querySelector(".side-tabs, #side [role=tablist]")),
+    "…and the panel has no tab row");
   // and the panel is still closable without it
   await page.click("#toggle-panel");
   await page.waitForTimeout(400);
@@ -2160,7 +2339,7 @@ if (scenario()) {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: lang });
     await ctx.addInitScript(([l]) => {
       localStorage.setItem("chess.settings", JSON.stringify({
-        mode: "puzzle", langId: l, sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
+        mode: "puzzle", langId: l, soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
       localStorage.setItem("chess.mines", JSON.stringify({ v: 1, list: [{
         id: "mine:t1", cat: "mine", fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
@@ -2662,8 +2841,10 @@ if (scenario()) {
   // design (test-chess pins fr-FR → zh-CN), so it proves the fallback still
   // works rather than that everything is Chinese again.
   for (const [locale, lang, tab] of [
-    ["en-US", "en", "Play"], ["ja-JP", "ja", "対局"],
-    ["zh-CN", "zh-CN", "对局"], ["de-DE", "zh-CN", "对局"],
+    // 9.0 S5: read off the rail's 设置 (nav.settings) — the panel's 对局 tab,
+    // which this used to read, is gone with the tab row
+    ["en-US", "en", "Settings"], ["ja-JP", "ja", "設定"],
+    ["zh-CN", "zh-CN", "设置"], ["de-DE", "zh-CN", "设置"],
   ]) {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale });
     const page = await ctx.newPage();          // nothing seeded: a new install
@@ -2672,7 +2853,7 @@ if (scenario()) {
     const r = await page.evaluate(() => ({
       shown: document.getElementById("pick-modal").classList.contains("show"),
       items: document.querySelectorAll("#pick-list .pick-item").length,
-      firstTab: (document.getElementById("tab-play") || {}).textContent,
+      firstTab: (document.querySelector('.rail-btn[data-view="settings"] .rail-lbl') || {}).textContent,
       stored: JSON.parse(localStorage.getItem("chess.settings") || "{}").langId,
     }));
     assert(r.shown, locale + ": a new install opens the guide");
@@ -2707,7 +2888,10 @@ if (scenario()) {
 // 2.1.9 实测:设置页用的是有边框的分段控件,对局页用的是 12px 无边框无填充的
 // 文本链接 —— 同一块面板两种语言,而对局页恰恰是主屏。同时十六个动作一样重,
 // 「认输」和「PGN」看起来同样可点。这一节量的就是这两件事。
-if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"], ["ja", "ai", "setup"]]) {
+// 9.0 S5: the 设置 tab is the settings page; there the whole page is the
+// screen (all six categories measured together — each is shown alone, but
+// they are one family of controls)
+if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en", "pvp", "play"], ["ja", "ai", "settings"]]) {
   const { ctx, page } = await open(lang, mode, tab);
   // 7.7 §3: at 0 moves the play pane has no action buttons left to measure —
   // the tools became an icon row and 本局 waits for a game — so play one.
@@ -2720,17 +2904,19 @@ if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en",
     }
     await page.waitForTimeout(400);
   }
-  const shape = await page.evaluate(() => {
+  const shape = await page.evaluate((root) => {
     const vis = (e) => { const b = e.getBoundingClientRect();
       return e.offsetParent !== null && b.width > 0 && b.height > 0; };
+    const shut = root === "#page-settings" ? [...document.querySelectorAll(".set-pane[hidden]")] : [];
+    for (const p of shut) p.hidden = false;
     // the A3 picker tiles are not the panel's since the M2 merge (they live
     // in the preferences window, measured below), and are left out here
-    const btns = [...document.querySelectorAll("#side .act-btn, #side .theme-row:not(.look-grid) button")].filter(vis);
+    const btns = [...document.querySelectorAll(`${root} .act-btn, ${root} .theme-row:not(.look-grid) button`)].filter(vis);
     const kind = (e) => { const s = getComputedStyle(e);
       return [s.fontSize, s.fontWeight, s.borderStyle, Math.round(e.getBoundingClientRect().height)].join("|"); };
     const kinds = {};
     for (const b of btns) (kinds[kind(b)] ||= []).push(b.id || b.textContent.trim().slice(0, 6));
-    return {
+    const out = {
       n: btns.length,
       heights: [...new Set(btns.map((b) => Math.round(b.getBoundingClientRect().height)))].sort((a, c) => a - c),
       sizes: [...new Set(btns.map((b) => getComputedStyle(b).fontSize))],
@@ -2740,10 +2926,12 @@ if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en",
       borderless: btns.filter((b) => b.matches(".theme-row button")
         ? !/inset/.test(getComputedStyle(b.parentElement).boxShadow)
         : getComputedStyle(b).borderStyle === "none").map((b) => b.id || b.textContent.trim().slice(0, 8)),
-      primaries: [...document.querySelectorAll("#side .act-btn.primary")].filter(vis).map((b) => b.id),
+      primaries: [...document.querySelectorAll(`${root} .act-btn.primary`)].filter(vis).map((b) => b.id),
       kinds: Object.entries(kinds).map(([k, v]) => k + " ← " + v.join(",")),
     };
-  });
+    for (const p of shut) p.hidden = true;
+    return out;
+  }, tab === "settings" ? "#page-settings" : "#side");
   // 数量本身不是这一节要断言的东西:没有棋谱时 PGN/导出/分析/精析 是「不渲染」
   // 而不是「置灰」(见 .act-btn:disabled)，所以 0 手时对局页只剩四个。这条只是
   // 确认下面几条真的量到了东西。
@@ -2761,24 +2949,30 @@ if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en",
   // everything else (font, border). Since the M2 merge they live in the
   // preferences window (A1), so they are measured there, against that
   // window's own segments — and finding none is a failure, not a pass.
-  await page.click("#prefs-open");
+  // 9.0 S5: that window is the settings page (the tiles in 棋盘, measured
+  // against the segments of every category, as the window held them all)
+  await page.click('.rail-btn[data-view="settings"]');
   await page.waitForTimeout(300);
+  await showCat(page, "board");
   const look = await page.evaluate(() => {
-    const m = document.getElementById("prefs-modal");
+    const m = document.getElementById("page-settings");
+    const shut = [...m.querySelectorAll(".set-pane[hidden]")];
+    for (const p of shut) p.hidden = false;
     const vis = (e) => { const b = e.getBoundingClientRect(); return e.offsetParent !== null && b.width > 0 && b.height > 0; };
     // 9.0 V1: the box is the tray's (an inset hairline), so the kind is the
     // segment's type and its tray's edge
     const k = (b) => getComputedStyle(b).fontSize + "|" + getComputedStyle(b).borderStyle + "|" + /inset/.test(getComputedStyle(b.parentElement).boxShadow);
     const tiles = [...m.querySelectorAll(".look-grid button")].filter(vis);
     const segs = [...m.querySelectorAll(".theme-row:not(.look-grid) button")].filter(vis);
-    return { open: m.classList.contains("show"), tiles: tiles.length, segs: segs.length,
+    const out = { open: !m.hidden, tiles: tiles.length, segs: segs.length,
              tileKinds: [...new Set(tiles.map(k))], segKinds: [...new Set(segs.map(k))] };
+    for (const p of shut) p.hidden = true;
+    return out;
   });
   assert(look.open && look.tiles === 12 && look.segs >= 5,
-    `${lang}/${tab}: 偏好设置里量得到棋盘与棋子的图块(${look.tiles} / 12)和分段控件(${look.segs})`);
+    `${lang}/${tab}: 设置页里量得到棋盘与棋子的图块(${look.tiles} / 12)和分段控件(${look.segs})`);
   assert(look.tileKinds.length === 1 && look.segKinds.length === 1 && look.tileKinds[0] === look.segKinds[0],
     `${lang}/${tab}: 棋盘与棋子的图块和分段控件同一字号、同一边框(${look.tileKinds.join(" ")} vs ${look.segKinds.join(" ")})`);
-  await page.keyboard.press("Escape");
   await ctx.close();
 }
 
@@ -2835,7 +3029,7 @@ if (scenario()) {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
     await ctx.addInitScript((m) => {
       localStorage.setItem("chess.settings", JSON.stringify({
-        mode: m, langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
+        mode: m, langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
       window.__handlers = {};
       window.zero = {
@@ -2881,7 +3075,7 @@ if (scenario()) {
         await page.click("#ng-start"); await page.waitForTimeout(800);
       }
     }
-    await page.click("#tab-play"); await page.waitForTimeout(250);
+    // 9.0 S5: no 对局 tab to click — the panel is one pane, already showing
   };
 
   // 1. a game in progress, then into a trainer: the menu must not be able to
@@ -2980,7 +3174,7 @@ if (scenario()) {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
     await ctx.addInitScript(([a, sup]) => {
       localStorage.setItem("chess.settings", JSON.stringify({
-        mode: "ai", langId: "zh-CN", sideTab: "setup", soundOn: false, appearance: "dark", boardId: "wood" }));
+        mode: "ai", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
       localStorage.setItem("chess.stats", JSON.stringify({ v: 1, games: 3 }));
       window.__asked = [];
@@ -2996,10 +3190,12 @@ if (scenario()) {
     await page.goto(`http://127.0.0.1:${PORT}/`);
     await page.waitForTimeout(900);
     await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
-    // the deletions live behind their own fold
-    await page.evaluate(() => { for (const d of document.querySelectorAll("#side details")) d.open = true; });
-    await page.waitForTimeout(200);
     return { ctx, page };
+  };
+  // v8-0-plan A1: the deletions are in 偏好设置; 9.0 S5: the settings page's 「数据」
+  const toData = async (page) => {
+    await page.click('.rail-btn[data-view="settings"]'); await page.waitForTimeout(300);
+    await showCat(page, "data");
   };
   const asked = (page) => page.evaluate(() => window.__asked);
   const inPageUp = (page) => page.evaluate(() =>
@@ -3009,7 +3205,7 @@ if (scenario()) {
   // 1. it asks the platform, with the right shape, and takes "no" for an answer
   {
     const { ctx, page } = await openDialogBridge("secondary", true);
-    await page.click("#prefs-open");   // v8-0-plan A1: the deletions are in 偏好设置
+    await toData(page);
     await page.click("#clear-save");
     await page.waitForTimeout(500);
     const calls = await asked(page);
@@ -3025,7 +3221,7 @@ if (scenario()) {
   // 2. and takes "yes" for one
   {
     const { ctx, page } = await openDialogBridge("primary", true);
-    await page.click("#prefs-open");   // v8-0-plan A1: the deletions are in 偏好设置
+    await toData(page);
     await page.click("#clear-save");
     await page.waitForTimeout(900);
     assert((await saved(page)) === null, "答「清除」,存档真的没了");
@@ -3035,7 +3231,7 @@ if (scenario()) {
   // 3. a build with no native dialog still asks — in the page, as before
   {
     const { ctx, page } = await openDialogBridge("primary", false);
-    await page.click("#prefs-open");   // v8-0-plan A1: the deletions are in 偏好设置
+    await toData(page);
     await page.click("#clear-save");
     await page.waitForTimeout(500);
     assert((await asked(page)).length === 0, "平台说自己没有对话框时,不去调它");
@@ -3058,7 +3254,7 @@ if (scenario()) {
     const ctx = await browser.newContext({ viewport: { width: 1500, height: 950 }, locale: "zh-CN" });
     await ctx.addInitScript((t) => {
       localStorage.setItem("chess.settings", JSON.stringify({
-        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood", timeControl: t }));
+        mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", timeControl: t }));
       localStorage.setItem("chess.panelOpen", "0");
     }, tc);
     const page = await ctx.newPage();
@@ -3218,7 +3414,7 @@ if (scenario()) {
                                          reducedMotion: "reduce" });
   await ctx.addInitScript(() => {
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
+      mode: "ai", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
   });
   await ctx.addInitScript(PAGE_HOOK);
   const page = await ctx.newPage();
@@ -3443,9 +3639,12 @@ if (scenario()) {
   await mv(page, "e2"); await mv(page, "e4");
   await page.waitForTimeout(300);
   const zh = await page.evaluate(() => (document.querySelector("#move-list .mlmenu") || {}).title);
-  await page.click("#tab-setup");
-  await page.evaluate(() => document.querySelector('#lang-seg button[data-lang="en"]').click());
+  // 9.0 S5: the language is the settings page's (通用), not the 设置 tab's
+  await page.click('.rail-btn[data-view="settings"]'); await page.waitForTimeout(300);
+  await showCat(page, "general");
+  await page.click('#lang-seg button[data-lang="en"]');
   await page.waitForTimeout(400);
+  await page.click('.rail-btn[data-view="play"]'); await page.waitForTimeout(300);
   const en = await page.evaluate(() => {
     const m = document.querySelector("#move-list .mlmenu");
     return m ? { title: m.title, aria: m.getAttribute("aria-label") } : null;
@@ -3481,11 +3680,14 @@ if (scenario()) {
     let tabsTop = null;
     // v8-0-plan A1: …and every page of the top level — the board is laid
     // out under 首页 / 棋谱库 / 我的, so coming back to it moves nothing
-    for (const [mode, tab] of [["ai", "play"], ["ai", "setup"], ["ai", "record"], ["pvp", "play"], ["learn", "play"], ["puzzle", "play"], ["puzzle", "record"], ["ai", "home"], ["pvp", "library"]]) {
+    // 9.0 S5: the 设置 tab is the settings page, a page over the board like
+    // the other three; and with the tab row gone the panel's one pane is what
+    // sits at its top (was: the tab row, ≤ 12px from the window's top)
+    for (const [mode, tab] of [["ai", "play"], ["ai", "settings"], ["ai", "record"], ["pvp", "play"], ["learn", "play"], ["puzzle", "play"], ["puzzle", "record"], ["ai", "home"], ["pvp", "library"]]) {
       const { ctx, page } = await open("zh-CN", mode, tab, "wood", { width: w, height: h });
       const r = await page.evaluate(() => {
         const b = document.getElementById("board").getBoundingClientRect();
-        const t = document.querySelector('.side-tabs [role="tab"]').getBoundingClientRect();
+        const t = document.getElementById("pane-play").getBoundingClientRect();
         return { board: [b.left, b.top, b.width, b.height].map((v) => Math.round(v * 10) / 10), tabTop: t.top };
       });
       rects.set(mode + "/" + tab, JSON.stringify(r.board));
@@ -3493,12 +3695,12 @@ if (scenario()) {
       await ctx.close();
     }
     const distinct = [...new Set(rects.values())];
-    assert(distinct.length === 1, w + "x" + h + ": #board 在两个页签、四种模式、三张整页下逐像素相同(" +
+    assert(distinct.length === 1, w + "x" + h + ": #board 在四种模式、四张整页(含设置页)下逐像素相同(" +
       [...rects].map(([k, v]) => k + " " + v).join(" · ") + ")");
     const side = JSON.parse(distinct[0])[2];
     const old = OLD[w + "x" + h];
     assert(side >= 0.88 * old, w + "x" + h + ": 棋盘边长 " + side + " ≥ 7.6 的 88%(" + old + " → " + Math.round(side / old * 1000) / 10 + "%)");
-    assert(tabsTop <= 12, w + "x" + h + ": 侧栏页签贴顶(上缘 " + tabsTop + "px)");
+    assert(tabsTop <= 12, w + "x" + h + ": 侧栏(唯一一页)贴顶(上缘 " + tabsTop + "px)");
   }
 }
 
@@ -3620,7 +3822,7 @@ if (scenario()) {
       const t0 = Date.now(), real = Date.now;
       Date.now = () => t0 + (real() - t0) * 40;
       localStorage.setItem("chess.settings", JSON.stringify({
-        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood", timeControl: "3" }));
+        mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", timeControl: "3" }));
       localStorage.setItem("chess.panelOpen", "1");
     });
     const page = await ctx.newPage();
@@ -3730,7 +3932,11 @@ if (scenario()) for (const [when, mode, act] of [
   ["我的", "ai", async (page) => { await page.click('#rail button[data-view="me"]'); }],
   ["首页", "ai", async (page) => { await page.click('#rail button[data-view="home"]'); }],
   ["棋谱库", "ai", async (page) => { await page.click('#rail button[data-view="library"]'); }],
-  ["设置页", "pvp", async (page) => { await page.click("#tab-setup"); }],
+  // 9.0 S5: the 设置 tab is the settings page — every category of it
+  ...CATS.map((c) => ["设置页·" + c, "pvp", async (page) => {
+    await page.click('#rail button[data-view="settings"]'); await page.waitForTimeout(300);
+    await showCat(page, c);
+  }]),
 ]) {
   const { ctx, page } = await open("zh-CN", mode, "play");
   await act(page);
@@ -3850,10 +4056,11 @@ if (scenario()) {
   // 把整行一起撑高 —— 那时只要求不矮于 --row-h。标签太长是文案的事。
   for (const lang of LANGS) {
     for (const theme of ["wood", "night", "day", "notebook"]) {
-      for (const tab of ["play", "setup", "record"]) {
+      // 9.0 S5: the 设置 tab is the settings page, read a category at a time
+      for (const tab of ["play", "settings", "record"]) {
         const { ctx, page } = await open(lang, "pvp", tab, theme);
         await page.evaluate(() => { document.querySelectorAll("details").forEach((d) => { d.open = true; }); });
-        const r = await page.evaluate(() => {
+        const measure = () => page.evaluate(() => {
           const rowH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row-h"));
           const out = [];
           const linesOf = (b) => {
@@ -3876,8 +4083,13 @@ if (scenario()) {
           }
           return { rowH, bad: out, n: document.querySelectorAll(".act-btn").length };
         });
-        assert(r.bad.length === 0, `§1a ${lang}/${theme}/${tab}：可见的 .act-btn 左右内边距 ≥ 8px、单行高 ${r.rowH}px` +
-          (r.bad.length ? " —— " + r.bad.join("；") : ""));
+        for (const c of tab === "settings" ? CATS : [null]) {
+          if (c) await showCat(page, c);
+          const r = await measure();
+          const where = c ? "settings·" + c : tab;
+          assert(r.bad.length === 0, `§1a ${lang}/${theme}/${where}：可见的 .act-btn 左右内边距 ≥ 8px、单行高 ${r.rowH}px` +
+            (r.bad.length ? " —— " + r.bad.join("；") : ""));
+        }
         await ctx.close();
       }
     }
@@ -4028,40 +4240,10 @@ if (scenario()) {
     await ctx.close();
   }
 
-  // §1e：页签条不透明；窗格滚下去之后，页签下缘有一道 --line，页签矩形里
-  // 取到的只有页签自己
-  {
-    // The settings pane with every fold open: it overflows at this size in
-    // both engines. (It used to be the play pane after ten moves; 7.7 §3 made
-    // the move list scroll inside the pane, and on WebKit's narrower glyphs
-    // the pane itself no longer overflowed — scrollTop stayed 0.)
-    const { ctx, page } = await open("zh-CN", "pvp", "setup", "wood", { width: 1024, height: 700 });
-    await page.evaluate(() => { document.querySelectorAll("#pane-setup details").forEach((d) => { d.open = true; }); });
-    await page.waitForTimeout(200);
-    const before = await page.evaluate(() => document.querySelector(".side-tabs").classList.contains("is-scrolled"));
-    const r = await page.evaluate(async () => {
-      const pane = document.getElementById("pane-setup");
-      pane.scrollTop = 400;
-      await new Promise((res) => setTimeout(res, 150));
-      const row = document.querySelector(".side-tabs");
-      const rr = row.getBoundingClientRect();
-      const cs = getComputedStyle(row);
-      const probes = [0.1, 0.5, 0.9].flatMap((fx) => [0.2, 0.95].map((fy) =>
-        document.elementFromPoint(rr.left + rr.width * fx, rr.top + rr.height * fy)));
-      return {
-        scrolled: pane.scrollTop,
-        cls: row.classList.contains("is-scrolled"),
-        bg: cs.backgroundColor,
-        shadow: cs.boxShadow,
-        own: probes.every((el) => el && row.contains(el)),
-      };
-    });
-    assert(!before, "§1e 窗格在顶上时，页签下没有分隔线");
-    assert(r.scrolled > 0 && r.cls && r.shadow !== "none", `§1e 滚下去 ${r.scrolled}px，页签下缘有分隔线（${r.shadow}）`);
-    assert(r.bg !== "rgba(0, 0, 0, 0)" && r.bg !== "transparent", `§1e 页签条有自己的底色（${r.bg}）`);
-    assert(r.own, "§1e 页签矩形里取到的每一点都是页签自己");
-    await ctx.close();
-  }
+  // §1e（页签条不透明、窗格滚下去后页签下缘有一道 --line）: removed by 9.0 S5
+  // S5 — its subject, the panel's tab row, is gone; the pane starts at the
+  // panel's top and nothing scrolls under anything (the board-anchor section
+  // asserts the pane is at the top)
 }
 
 // --- 7.9 §2a / §2c：棋谱大一号，回合号与着法同一条基线 ----------------------
@@ -4107,7 +4289,9 @@ if (scenario()) {
         return {
           rows,
           san: [...new Set([...document.querySelectorAll(".move-list .mlmove")].map((e) => getComputedStyle(e).fontSize))],
-          tab: getComputedStyle(document.getElementById("tab-play")).fontSize,
+          // 9.0 S5: the panel's tabs are gone; the tabs now are the settings
+          // page's categories, whose names are body text too
+          tab: getComputedStyle(document.querySelector("#cat-general .set-cat-txt b")).fontSize,
           // 9.0 V1: 12px is a role again — the aside, in the muted ink — and
           // nothing in the panel is smaller but a badge or a tool's name (11)
           twelve: texts.filter((e) => getComputedStyle(e).fontSize === "12px" &&
@@ -4121,7 +4305,7 @@ if (scenario()) {
       const tag = `7.9 ${lang} ${vp.width}×${vp.height}`;
       // 9.0 V1: the notation is body text, 14px (four type roles, no 15)
       assert(r.san.length === 1 && r.san[0] === "14px", `§2a ${tag}：棋谱着法 14px（${r.san.join(" ")}）`);
-      assert(r.tab === "14px", `§2a ${tag}：面板正文 14px（页签 ${r.tab}）`);
+      assert(r.tab === "14px", `§2a ${tag}：正文 14px（设置分类名 ${r.tab}）`);
       assert(r.twelve.length === 0, `§2a ${tag}：面板里 12px 的字都是旁注（次要色）` + (r.twelve.length ? "（" + r.twelve.slice(0, 4).join("，") + "）" : ""));
       assert(r.small.length === 0, `§2a ${tag}：面板里没有小于 12px 的正文（11px 只给坐标与徽章）` + (r.small.length ? "（" + r.small.slice(0, 4).join("，") + "）" : ""));
       assert(r.hscroll <= 0 && r.docScroll <= 0, `§2a ${tag}：大一号之后没有横向滚动（窗格 ${r.hscroll}，页面 ${r.docScroll}）`);
@@ -4486,7 +4670,8 @@ if (scenario()) {
 if (scenario()) {
   for (const [w, h] of [[1920, 1080], [1440, 900], [1280, 800], [1024, 700]]) {
     const widths = new Set(), boards = new Set();
-    for (const [mode, tab] of [["ai", "play"], ["ai", "setup"], ["puzzle", "play"], ["learn", "play"], ["ai", "me"], ["ai", "library"]]) {
+    // 9.0 S5: the 设置 tab is the settings page (a page, like 我的 / 棋谱库)
+    for (const [mode, tab] of [["ai", "play"], ["ai", "settings"], ["puzzle", "play"], ["learn", "play"], ["ai", "me"], ["ai", "library"]]) {
       const { ctx, page } = await open("zh-CN", mode, tab, "wood", { width: w, height: h });
       const r = await page.evaluate(() => {
         const css = getComputedStyle(document.documentElement);
@@ -4501,7 +4686,7 @@ if (scenario()) {
       widths.add(r.side); boards.add(r.wrap + "/" + r.old + "/" + r.wide);
       await ctx.close();
     }
-    assert(widths.size === 1, w + "x" + h + ": 面板宽度只由窗口(下棋视图)决定 —— 两个页签、四种模式、两张整页一个宽度(" + [...widths].join(", ") + ")");
+    assert(widths.size === 1, w + "x" + h + ": 面板宽度只由窗口(下棋视图)决定 —— 三种模式、三张整页(含设置页)一个宽度(" + [...widths].join(", ") + ")");
     const [wrap, old, wide] = [...boards][0].split("/");
     assert(boards.size === 1 && (wide === "true" ? Number(wrap) >= Number(old) : wrap === old),
       w + "x" + h + ": 导航栏不占棋盘:棋盘框 " + wrap + "px " + (wide === "true" ? "≥" : "=") + " 没有栏时两栏公式的 " + old + "px" + (wide === "true" ? "(宽布局)" : "") + " " + [...boards].join(" | "));
@@ -4544,8 +4729,13 @@ if (scenario()) {
         const root = document.querySelector(q);
         if (!root || !root.getClientRects().length) return { missing: q };
         const edge = root.getBoundingClientRect().right;
+        // 9.0 S5: a row that scrolls sideways on purpose (设置's categories
+        // under 900px: .set-cats, overflow-x auto) clips what it holds; the
+        // row itself is still measured against the edge
+        const inScroller = (e) => { const n = e.parentElement && e.parentElement.closest(".set-cats");
+          return !!n && root.contains(n) && /auto|scroll/.test(getComputedStyle(n).overflowX); };
         const past = [...root.querySelectorAll("*")].filter((e) => e.getClientRects().length)
-          .filter((e) => e.getBoundingClientRect().right > edge + 1 && !e.closest(".sr-only"))
+          .filter((e) => e.getBoundingClientRect().right > edge + 1 && !e.closest(".sr-only") && !inScroller(e))
           .map((e) => (e.id || e.className || e.tagName) + "@" + Math.round(e.getBoundingClientRect().right));
         return { doc: document.scrollingElement.scrollWidth - innerWidth, own: root.scrollWidth - root.clientWidth, past: past.slice(0, 4) };
       }, sel);
@@ -4565,6 +4755,11 @@ if (scenario()) {
       await page.keyboard.press("Escape"); await page.waitForTimeout(200);
       await page.click('#rail button[data-view="me"]'); await page.waitForTimeout(300);
       await check("我的", "#page-me");
+      // 9.0 S5: 设置 is a page too (the 偏好设置 window and the 设置 tab), a
+      // category at a time
+      await page.click('#rail button[data-view="settings"]'); await page.waitForTimeout(300);
+      for (const cat of CATS) { await showCat(page, cat); await check("设置·" + cat, "#page-settings"); }
+      await page.click('#rail button[data-view="me"]'); await page.waitForTimeout(300);
       // …and a page is as wide as the window lets it be: the diagnosis was
       // cut at 460px
       if (w >= 1024) {
@@ -4706,11 +4901,12 @@ if (scenario()) {
         const c = r(cur), b = r(strip);
         return { text: cur.textContent, inStrip: c.left >= b.left - 0.5 && c.right <= b.right + 0.5,
                  inView: c.top >= 0 && c.bottom <= innerHeight, stripTop: b.top, sideTop: r(document.getElementById("side")).top,
-                 tabsTop: r(document.querySelector(".side-tabs")).top };
+                 // 9.0 S5: no tab row — the pane follows the strip directly
+                 tabsTop: r(document.getElementById("pane-play")).top };
       });
       assert(!!s && s.inStrip && s.inView && s.text === "exd4",
         at + "抽屉第一屏就有棋谱：当前一着 exd4 整个在横条里、在窗口里（" + JSON.stringify(s) + "）");
-      assert(!!s && s.stripTop < s.tabsTop, at + "…横条在页签之上，是抽屉的第一行");
+      assert(!!s && s.stripTop < s.tabsTop, at + "…横条在面板（唯一一页）之上，是抽屉的第一行");
       assert(m.first > was.first, at + `第一屏不滚动看得见的着法格 ${was.first} → ${m.first}`);
     }
     assert(errs.length === 0, at + "no JS exception — " + errs.join(" / "));
@@ -4864,7 +5060,8 @@ if (scenario()) {
   // narrower panel)
   for (const [w, h] of [[1440, 900], [1920, 1080], [1280, 800]]) {
     const seen = new Map();
-    for (const [mode, tab] of [["ai", "play"], ["ai", "setup"], ["ai", "record"], ["pvp", "play"], ["learn", "play"], ["puzzle", "play"]]) {
+    // 9.0 S5: the 设置 tab is the settings page (laid over the board)
+    for (const [mode, tab] of [["ai", "play"], ["ai", "settings"], ["ai", "record"], ["pvp", "play"], ["learn", "play"], ["puzzle", "play"]]) {
       const o = await open("zh-CN", mode, tab, "wood", { width: w, height: h });
       const s = await o.page.evaluate(() => {
         const b = document.getElementById("board").getBoundingClientRect();
@@ -4874,7 +5071,7 @@ if (scenario()) {
       await o.ctx.close();
     }
     const distinct = [...new Set(seen.values())];
-    assert(distinct.length === 1, `A2 ${w}×${h}：面板宽度与棋盘矩形在三个页签、四种模式下都相同（${[...seen].map(([k, v]) => k + " " + v).join(" · ")}）`);
+    assert(distinct.length === 1, `A2 ${w}×${h}：面板宽度与棋盘矩形在面板、设置页、我的、四种模式下都相同（${[...seen].map(([k, v]) => k + " " + v).join(" · ")}）`);
   }
 }
 
@@ -4884,12 +5081,12 @@ if (scenario()) {
 // (M2: the window is 1344×800, the play view beside the 64px rail 1280×800.)
 if (scenario()) {
   for (const lang of LANGS) {
-    const { ctx, page } = await open(lang, "ai", "setup", "wood", { width: 1344, height: 800 });
-    await page.evaluate(() => { for (const d of document.querySelectorAll("details")) d.open = true; });
-    await page.waitForTimeout(200);
-    await page.click('#persona-seg button[data-persona="principled"]');
-    await page.click('#clock-seg button[data-tc="3+2"]');
-    await page.waitForTimeout(350);
+    const { ctx, page } = await open(lang, "ai", "play", "wood", { width: 1344, height: 800 });
+    // 9.0 S5: style and clock are chosen in the new-game dialog
+    await openNewGame(page);
+    await page.click('#newgame-modal #persona-seg button[data-persona="principled"]');
+    await page.click('#newgame-modal #clock-seg button[data-tc="3+2"]');
+    await startNewGame(page);
     const r = await page.evaluate(() => [...document.querySelectorAll(".pstrip")].map((s) => {
       const leaves = [...s.querySelectorAll("*")]
         .filter((e) => e.offsetParent && !e.children.length && e.getBoundingClientRect().width > 0 && getComputedStyle(e).visibility === "visible")

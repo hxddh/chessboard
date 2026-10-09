@@ -70,7 +70,7 @@ async function freshContext(seed) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
+      mode: "pvp", langId: "zh-CN", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   if (seed) await ctx.addInitScript(seedLibrary, JSON.parse(seed));
@@ -393,8 +393,8 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   }
   const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
   const { page, errs } = await open(ctx);
+  // (9.0 S5: the panel has one page, so the rail's 下棋 is all it takes)
   await page.click('#rail button[data-view="play"]');
-  await page.click("#tab-play");
   await page.waitForTimeout(300);
   await page.click("#daily-btn");
   await page.waitForTimeout(500);
@@ -527,7 +527,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" });
     await ctx.addInitScript((ms) => {
       localStorage.setItem("chess.settings", JSON.stringify({
-        mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
+        mode: "puzzle", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
       localStorage.setItem("chess.mines", JSON.stringify({ v: 1, list: ms }));
       localStorage.setItem("chess.puzzles", JSON.stringify({ v: 1, solved: {}, missed: {}, cat: "mine" }));
@@ -619,7 +619,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" });
   await ctx.addInitScript((ms) => {
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
+      mode: "pvp", langId: "zh-CN", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     localStorage.setItem("chess.mines", JSON.stringify({ v: 1, list: ms }));
   }, mines);
@@ -1193,7 +1193,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
+      mode: "pvp", langId: "zh-CN", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   // seeded once: a reload must find what the pass saved, not the seed again
@@ -1259,7 +1259,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   const ctx = await browser.newContext({ viewport: { width: 1100, height: 1000 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
+      mode: "pvp", langId: "zh-CN", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const { page, errs } = await open(ctx);
@@ -1356,7 +1356,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
     const ctx = await browser.newContext({ viewport, locale: "zh-CN" });
     await ctx.addInitScript(([m, tb, po]) => {
       localStorage.setItem("chess.settings", JSON.stringify({
-        mode: m, langId: "zh-CN", sideTab: tb === "record" ? "play" : tb, view: tb === "record" ? "library" : "play", soundOn: false, appearance: "dark", boardId: "wood" }));
+        mode: m, langId: "zh-CN", view: tb === "record" ? "library" : "play", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", po);
     }, [mode, tab, panelOpen]);
     await ctx.addInitScript(seedLibrary, JSON.parse(seed));
@@ -1461,7 +1461,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
     await ctx.addInitScript(() => {
       localStorage.setItem("chess.settings", JSON.stringify({
-        mode: "learn", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
+        mode: "learn", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
       // a game in progress on the main board, so the load has to ask first
       localStorage.setItem("chess.save", JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }));
@@ -1502,6 +1502,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   }
 
   // §3e —— 从诊断的「第 N 回合」「母题」行筛出来的局，打开停在那一手，侧栏在对局页
+  // （9.0 S5：侧栏只剩一页 —— 「在对局页」就是回到下棋、那一页看得见）
   for (const kind of ["peak", "motif"]) {
     const { ctx, page, errs } = await openAt({ width: 1400, height: 900 }, "pvp", "record");
     await page.click("#lib-diagnose");
@@ -1522,13 +1523,14 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
       return {
         at: moves.findIndex((b) => b.classList.contains("current")) + 1,
         total: moves.length,
-        tab: document.getElementById("tab-play").getAttribute("aria-selected"),
+        tab: document.getElementById("app").getAttribute("data-view") === "play" &&
+          !document.getElementById("pane-play").hidden && document.getElementById("pane-play").getClientRects().length > 0,
       };
     });
     // 第 28 回合白方那一手是第 55 半着；第 20、36 回合是 39、71
     const want = kind === "motif" ? 55 : (pick.value - 1) * 2 + 1;
     assert(r.at === want, kind + "：打开停在出问题的那一手（第 " + r.at + " 半着，应为 " + want + "，共 " + r.total + "）");
-    assert(r.tab === "true", kind + "：侧栏切到了对局页");
+    assert(r.tab === true, kind + "：回到了下棋，侧栏的对局页看得见");
     assert(errs.length === 0, kind + "：没有 JS 异常", errs.join(" / "));
     await ctx.close();
   }
@@ -1538,7 +1540,8 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
 {
   // 一局分析过的库棋。7.5 实测：曲线在它所在的标签页隐藏时被重画，画布成了
   // 1×1，再被样式表拉成 60px 高的一整块红色 —— 从棋谱库打开一局，或者在设置页
-  // 换语言，都会这样。
+  // 换语言，都会这样。9.0 S5：设置不再是侧栏的页签，是盖在棋盘上的整页；
+  // 下面「去设置、再回来」走的是栏上的「设置」与「下棋」。
   // long enough that the curve is drawn at all (Review.longEnough)
   const sans = "e4 e5 Nf3 Nc6 Bb5 a6 b4 Bc5 Be2 Bd4 Bb5 b6 Nc3 Rb8 a3 Nf6 Kf1 Bc5 Ne1 d6 g4 h5 Qe2 Kd7 f3 Qf8 a4 Ke7 Qf2 Nh7 Ba3 Nd8 Qg2 Ng5 Bd7 Nge6 Rc1 f6 b5 Bb4";
   const n = sans.split(" ").length;
@@ -1554,7 +1557,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
+      mode: "pvp", langId: "zh-CN", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   await ctx.addInitScript(seedLibrary, { names: ["hxddh"], games: [game] });
@@ -1584,29 +1587,30 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   await page.waitForTimeout(400);
   await page.click("#lib-list button[data-lib]");
   await page.waitForTimeout(900);
-  if (!(await page.evaluate(() => document.getElementById("tab-play").getAttribute("aria-selected") === "true"))) {
-    await page.click("#tab-play");
+  if ((await page.getAttribute("#app", "data-view")) !== "play") {
+    await page.click('#rail button[data-view="play"]');
     await page.waitForTimeout(400);
   }
   let r = await curve();
   assert(sized(r), "从记录页打开一局，曲线按自己的尺寸画出来（" + JSON.stringify(r) + "）");
 
-  // 2) 在设置页换语言，再回对局页
-  await page.click("#tab-setup");
+  // 2) 在设置页（通用）换语言，再回对局页
+  await page.click('#rail button[data-view="settings"]');
   await page.waitForTimeout(200);
+  await page.click("#cat-general");
   await page.evaluate(() => document.querySelector('#lang-seg button[data-lang="en"]').click());
   await page.waitForTimeout(400);
-  await page.click("#tab-play");
+  await page.click('#rail button[data-view="play"]');
   await page.waitForTimeout(400);
   r = await curve();
   assert(sized(r), "在设置页换了语言再回来，曲线不是一块拉伸的单色（" + JSON.stringify(r) + "）");
 
-  // 3) 标签页藏着的时候窗口变了尺寸，回来时按新尺寸画
-  await page.click("#tab-setup");
+  // 3) 设置页盖着的时候窗口变了尺寸，回来时按新尺寸画
+  await page.click('#rail button[data-view="settings"]');
   await page.waitForTimeout(200);
   await page.setViewportSize({ width: 800, height: 900 }); // the panel becomes a full-width sheet
   await page.waitForTimeout(400);
-  await page.click("#tab-play");
+  await page.click('#rail button[data-view="play"]');
   await page.waitForTimeout(400);
   r = await curve();
   assert(sized(r), "藏着的时候窗口变了，回来时按新宽度重画（" + JSON.stringify(r) + "）");
@@ -1643,7 +1647,8 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
     await page.waitForTimeout(400);
     await page.click("#lib-list button[data-lib]");
     await page.waitForTimeout(900);
-    await page.click("#tab-play").catch(() => {});
+    // 9.0 S5: was a click on the 对局 tab; make sure of the play view instead
+    if ((await page.getAttribute("#app", "data-view")) !== "play") await page.click('#rail button[data-view="play"]');
     await page.waitForTimeout(300);
     const r = await page.evaluate(() => {
       const u = document.getElementById("undo");
@@ -1682,7 +1687,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
     for (const vp of [{ width: 1400, height: 1000 }, { width: 390, height: 800 }]) {
       const ctx = await browser.newContext({ viewport: vp, locale: lang });
       await ctx.addInitScript((l) => {
-        localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: l, sideTab: "play", view: "library", soundOn: false }));
+        localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: l, view: "library", soundOn: false }));
         localStorage.setItem("chess.panelOpen", "1");
       }, lang);
       await ctx.addInitScript(seedLibrary, { names: ["hxddh"], games });
@@ -1764,7 +1769,7 @@ async function c1Context(keys, init) {
     if (sessionStorage.getItem("c1.seeded")) return;
     sessionStorage.setItem("c1.seeded", "1");
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
+      mode: "pvp", langId: "zh-CN", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     for (const [key, v] of Object.entries(k || {})) localStorage.setItem(key, v);
   }, Object.fromEntries(Object.entries(keys || {}).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)])));
@@ -2286,7 +2291,7 @@ async function t5Move(page, from, to) {
   const a = await xy(from); await page.mouse.click(a.x, a.y); await page.waitForTimeout(150);
   const b = await xy(to); await page.mouse.click(b.x, b.y);
 }
-const AI_5_3 = { mode: "ai", difficulty: "beginner", humanColor: "w", timeControl: "5+3", langId: "zh-CN", sideTab: "play",
+const AI_5_3 = { mode: "ai", difficulty: "beginner", humanColor: "w", timeControl: "5+3", langId: "zh-CN",
   view: "play", soundOn: false, appearance: "dark", boardId: "wood" };
 
 // --- T5.1 a game played now records its clock; the speed filter finds it ------

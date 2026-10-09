@@ -4168,6 +4168,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; align-items: start;
   padding: 8px 12px; border-radius: var(--radius-sm);
   font: inherit; text-align: left; color: var(--muted);
+  transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
 }
 .set-cat-ic { display: inline-flex; width: 20px; height: 20px; margin-top: 2px; }
 .set-cat-txt b { display: block; font-weight: 600; color: var(--text); font-size: 0.875rem; line-height: var(--lh-body); }
@@ -4181,6 +4182,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .set-cat:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .set-pane { display: grid; gap: 24px; }
 .set-pane[hidden] { display: none; }
+.set-pane:not([hidden]) { animation: pane-in var(--dur-base) var(--ease); }
 .set-sec {
   min-width: 0; padding: 16px;
   border: 1px solid var(--card-border); border-radius: var(--radius-md);

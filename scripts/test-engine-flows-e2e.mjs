@@ -152,7 +152,7 @@ async function openPage(settings, seed, ctxOpts) {
   const ctx = await browser.newContext(Object.assign({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" }, ctxOpts));
   await ctx.addInitScript(([s, sd]) => {
     localStorage.setItem("chess.settings", JSON.stringify(Object.assign(
-      { langId: "zh-CN", sideTab: "play", soundOn: false }, s)));
+      { langId: "zh-CN", soundOn: false }, s)));
     localStorage.setItem("chess.panelOpen", "1");
     // stored state the scenario starts from — written on the first load only,
     // so a reload sees what the page itself wrote since
@@ -453,7 +453,7 @@ await scenario("持续分析", async () => {
 
 // --- 5. 棋谱库 ----------------------------------------------------------------
 await scenario("棋谱库", async () => {
-  const { ctx, page, errs } = await openPage({ mode: "pvp", sideTab: "record" });
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
   await page.click('#rail button[data-view="library"]').catch(() => {});
   await importVia(page, "#lib-import", LIB_PGN, "flows-lib.pgn");
   // the real path (v7-6-plan §6): type the name and go straight for 分析 —
@@ -696,7 +696,7 @@ await scenario("分析存盘", async () => {
   // pvp until the load: an ai board would offer the position to the engine
   // the moment it lands, before the record's colour is restored (the same
   // search 7.5 already made and cancelled) — that is not what is measured here
-  const p2 = await openPage({ mode: "pvp", sideTab: "record" },
+  const p2 = await openPage({ mode: "pvp" },
     { "chess.analyses": kept, "chess.stats": JSON.stringify(stats) });
   await p2.page.click('#rail button[data-view="me"]').catch(() => {});   // v8-0-plan A1: history is on 我的
   const row = await until(() => p2.page.isVisible('#hist-body button[data-hist="0"]'), 3000, 100);
@@ -714,7 +714,7 @@ await scenario("分析存盘", async () => {
 // and the old accuracy. The deeper look now goes back to the entry the way
 // 「再深一遍」 does, drills included (reviseMines).
 await scenario("精析回写库", async () => {
-  const { ctx, page, errs } = await openPage({ mode: "pvp", sideTab: "record" }, { "chess.mines": FAKE_MINES });
+  const { ctx, page, errs } = await openPage({ mode: "pvp" }, { "chess.mines": FAKE_MINES });
   const l0 = await libraryPass(page, "flows-lib-deep1.pgn");
   const trap0 = l0 && l0.games.find((g) => /Nxf7/.test(g.sans));
   const fake0 = (await minesOf(page)).some((m) => m.id === FAKE_DRILL.id);
@@ -725,7 +725,9 @@ await scenario("精析回写库", async () => {
   await page.waitForTimeout(300);
   await page.click(`#lib-list button[data-lib="${trap0.id}"]`);
   await page.waitForTimeout(500);
-  await page.click("#tab-play");
+  // 9.0 S5: was a click on the panel's 对局 tab; the panel is one page now,
+  // and a loaded game should already be on the board — make sure of the view
+  if ((await page.getAttribute("#app", "data-view")) !== "play") await page.click('#rail button[data-view="play"]');
   const ms = await runAn(page, "#an-deep", 90000);
   const shown = await readAn(page);
   const l1 = await libOf(page);
@@ -744,7 +746,7 @@ await scenario("精析回写库", async () => {
 
 // --- 11. 再深一遍 (v7-6-plan §6.2) ---------------------------------------------
 await scenario("再深一遍", async () => {
-  const { ctx, page, errs } = await openPage({ mode: "pvp", sideTab: "record" }, { "chess.mines": FAKE_MINES });
+  const { ctx, page, errs } = await openPage({ mode: "pvp" }, { "chess.mines": FAKE_MINES });
   const l0 = await libraryPass(page, "flows-lib-deep2.pgn");
   const trap0 = l0 && l0.games.find((g) => /Nxf7/.test(g.sans));
   await page.waitForTimeout(500);
@@ -860,9 +862,11 @@ await scenario("多主变", async () => {
   const live = await page.evaluate(() => window.__chess.shapes().arrows.filter((a) => a.color === "E"));
   assert(live.length === 1, "多主变：持续分析时棋盘上有第一条线的引擎箭头", JSON.stringify(live));
   // 「显示引擎箭头」 off: no engine arrow at all
-  await page.click("#tab-setup");
+  // 9.0 S5: the switch is on the settings page (高级), not the panel's 设置 tab
+  await page.click('#rail button[data-view="settings"]');
+  await page.click("#cat-advanced");
   await page.click("#opt-engine-arrows");
-  await page.click("#tab-play");
+  await page.click('#rail button[data-view="play"]');
   await page.waitForTimeout(300);
   const offArrows = await page.evaluate(() => window.__chess.shapes().arrows.filter((a) => a.color === "E" || a.color === "e"));
   assert(offArrows.length === 0, "多主变：关掉「显示引擎箭头」，棋盘上就没有引擎箭头", JSON.stringify(offArrows));
@@ -1359,13 +1363,16 @@ await scenario("你将死引擎", async () => {
     "你将死引擎：记为你赢，计入人机等级分", JSON.stringify({ ready, last: after.last }));
   assert(/^对局等级分 \d+（定级中），本局 (\+\d+|±0)/.test(after.rate), "你将死引擎：结果卡当场写着新分数（不等下一次重画）", after.rate);
   // Codex #89: clearing the statistics takes the filing off the result card too
+  // (9.0 S5: Ctrl+, opens the settings page; 清除统计 is in its 数据 category,
+  // and the rail, not the window's ×, goes back to the board)
   await page.keyboard.press("Control+,");
   await page.waitForTimeout(300);
+  await page.click("#cat-data");
   await page.click("#stats-clear");
   await page.waitForTimeout(300);
   await page.click("#confirm-ok").catch(() => {});
   await page.waitForTimeout(400);
-  await page.click("#prefs-close").catch(() => {});
+  await page.click('#rail button[data-view="play"]');
   await page.waitForTimeout(300);
   const cleared = await page.evaluate(() => ({ stats: localStorage.getItem("chess.stats"),
     rate: document.getElementById("go-rating").hidden ? "" : document.getElementById("go-rating").textContent.trim() }));
