@@ -583,7 +583,7 @@
       "mat.takenW": "Pieces White has captured", "mat.takenB": "Pieces Black has captured",
       // v8-0-plan A1: the rail, the home page; 9.0 S5: the settings page
       "nav.aria": "Main navigation", "nav.home": "Today", "nav.play": "Play",
-      "nav.library": "Library",
+      "nav.library": "Games",
       "nav.settings": "Settings",
       "set.catsAria": "Settings categories",
       "set.general": "General",
@@ -665,12 +665,13 @@
       "act.moreAnalysis": "More analysis",
       "act.openBoard": "Open on the board",
       "act.editorLong": "Set up position",
+      "lib.filters": "Filters",
       "nav.me": "Me", "tip.prefs": "Settings (⌘, / Ctrl+,)",
       "prefs.look": "Appearance", "side.display": "Display",
       "ng.mode": "Opponent", 
       "home.cont.live": "{0} game in progress · move {1}", 
       // 7.0 game library
-      "lib.title": "Game library", "lib.import": "Import a PGN file", "lib.diagnose": "See the diagnosis",
+      "lib.title": "Game library", "lib.import": "Import to library", "lib.diagnose": "See the diagnosis",
       "lib.sync": "Sync from a site", "sync.user": "User name", "sync.go": "Sync", "sync.allow": "Allow online sync", "sync.hint": "Off by default. When on, the app contacts Lichess or Chess.com only when you press Sync, and sends only the user name.", "sync.noHost": "Online sync is available in the desktop app only.", "sync.fetching": "Fetching games from {0}…", "sync.offline": "Can't reach {0}. Check the connection and try again.", "sync.rate": "{0} is limiting requests for now. Try again in a minute.", "sync.notFound": "{0} has no user {1}.", "sync.empty": "{1} has no games on {0} yet.", "sync.failed": "The sync did not finish ({0}).", "sync.badName": "A user name is 2 to 30 letters, digits, - or _.",
       "sync.limit": "New games since last time, at most", "sync.analyse": "Analyse the games after syncing", "sync.progress": "Fetching games from {0}… {1:game|games} so far", "sync.none": "{1} has no new games on {0}.", "sync.timeout": "{0} took too long to answer. Please try again later.", "sync.busy": "The previous sync has not finished yet. Please try again shortly.",
       "pz.repBook": "the book plays {0}",

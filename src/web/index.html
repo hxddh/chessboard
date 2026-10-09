@@ -30,7 +30,7 @@
       <button type="button" class="rail-btn" data-view="home" title="今天" data-i18n-title="nav.home"><span class="rail-ic" data-icon="sun" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.home">今天</span></button>
       <button type="button" class="rail-btn" data-view="play" title="下棋" data-i18n-title="nav.play"><span class="rail-ic" data-icon="swords" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.play">下棋</span></button>
       <button type="button" class="rail-btn" data-view="train" title="训练" data-i18n-title="nav.train"><span class="rail-ic" data-icon="target" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.train">训练</span></button>
-      <button type="button" class="rail-btn" data-view="library" title="棋谱库" data-i18n-title="nav.library"><span class="rail-ic" data-icon="library" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.library">棋谱库</span></button>
+      <button type="button" class="rail-btn" data-view="library" title="棋谱" data-i18n-title="nav.library"><span class="rail-ic" data-icon="library" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.library">棋谱</span></button>
       <button type="button" class="rail-btn" data-view="me" title="我的" data-i18n-title="nav.me"><span class="rail-ic" data-icon="user" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.me">我的</span></button>
       <button type="button" class="rail-btn rail-end" data-view="settings" title="设置（Ctrl 或 ⌘ 加逗号）" data-i18n-title="tip.prefs"><span class="rail-ic" data-icon="settings" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.settings">设置</span></button>
     </nav>
@@ -700,7 +700,7 @@
          had its right column cut at 460px. -->
     <main class="page" id="page-library" aria-labelledby="library-h" hidden>
       <div class="page-inner">
-        <h1 class="page-h" id="library-h" data-i18n="nav.library">棋谱库</h1>
+        <h1 class="page-h" id="library-h" data-i18n="nav.library">棋谱</h1>
         <div class="page-cols">
           <section class="side-section page-sec" id="sec-library">
             <!-- 7.0: 棋谱库. 对局历史 below is what this app watched you play;
@@ -732,7 +732,7 @@
               <p class="hint" id="lib-names-hint" data-i18n="lib.namesHint">用逗号分隔多个账号名;大小写不论。认不出来的棋局会照样留着,只是不算进「你的」数字里。</p>
             </div>
             <div class="close-row split" id="lib-acts">
-              <button type="button" class="act-btn" id="lib-import" data-i18n="lib.import">导入棋谱文件</button>
+              <button type="button" class="act-btn" id="lib-import" data-i18n="lib.import">导入到库</button>
               <!-- v8-0-plan C2: the games from Lichess / Chess.com in one step
                    instead of five (prefs-ui.js loads the dialog, sync-ui.js, a chunk) -->
               <button type="button" class="act-btn" id="lib-sync" data-i18n="lib.sync">从网站同步</button>
@@ -759,6 +759,15 @@
               <button type="button" class="act-btn" id="lib-claim-no" data-i18n="lib.claimNo">不是</button>
             </div>
             </div>
+          </section>
+          <section class="side-section page-sec" id="sec-history">
+            <div class="side-h-row">
+              <h2 class="side-h" data-i18n="hist.title">对局历史</h2>
+              <!-- label is "全部 N 局": renderHistory() fills in both the count and
+                   the language, so the markup deliberately carries no text -->
+              <button type="button" class="act-btn" id="hist-open" hidden title="查看全部对局历史" data-i18n-title="hist.open"></button>
+            </div>
+            <div class="hist-body" id="hist-body"></div>
           </section>
           <section class="side-section page-sec" id="sec-rep">
             <!-- 我的开局书 (7.2, v7-2-plan §3). The trainer's built-in book
@@ -1110,15 +1119,6 @@
               <button type="button" class="act-btn" id="vis-blind"></button>
             </div>
           </section>
-          <section class="side-section page-sec" id="sec-history">
-            <div class="side-h-row">
-              <h2 class="side-h" data-i18n="hist.title">对局历史</h2>
-              <!-- label is "全部 N 局": renderHistory() fills in both the count and
-                   the language, so the markup deliberately carries no text -->
-              <button type="button" class="act-btn" id="hist-open" hidden title="查看全部对局历史" data-i18n-title="hist.open"></button>
-            </div>
-            <div class="hist-body" id="hist-body"></div>
-          </section>
           <section class="side-section page-sec" id="sec-ach">
             <div class="side-h-row">
               <h2 class="side-h" data-i18n="side.ach">成就</h2>
@@ -1215,6 +1215,12 @@
         <div class="hist-filters">
           <label class="setting-k" for="lib-q" data-i18n="lib.search">搜索</label>
           <input type="search" id="lib-q" class="text-input" spellcheck="false" placeholder="对手、开局、ECO 或赛事" data-i18n-placeholder="lib.searchPh" />
+        </div>
+        <!-- 9.0 S4: the search and the results first; the other six filters
+             are a fold — a list you search is not a form you fill in -->
+        <details class="lib-filters" id="lib-filters">
+          <summary class="setting-summary"><h4 class="side-h" data-i18n="lib.filters">筛选</h4></summary>
+        <div class="hist-filters">
           <span class="setting-k" id="lib-src-k" data-i18n="lib.bySrc">来源</span>
           <div class="theme-row" id="lib-src-seg" role="group" aria-labelledby="lib-src-k">
             <button type="button" data-lsrc="all" class="active" data-i18n="hist.any">全部</button>
@@ -1261,6 +1267,7 @@
             <button type="button" data-lsort="acc" data-i18n="lib.sortWorst">我下得最差</button>
           </div>
         </div>
+        </details>
         <p class="hint" id="lib-pos-note" hidden></p>
         <div class="pick-list" id="lib-list"></div>
         <button type="button" class="act-btn" id="lib-more" hidden></button>

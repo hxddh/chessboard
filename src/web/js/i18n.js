@@ -615,7 +615,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "mat.takenW": "白方已吃掉的子", "mat.takenB": "黑方已吃掉的子",
       // v8-0-plan A1: the rail, the home page; 9.0 S5: the settings page
       "nav.aria": "主导航", "nav.home": "今天", "nav.play": "下棋",
-      "nav.library": "棋谱库",
+      "nav.library": "棋谱",
       "nav.settings": "设置",
       "set.catsAria": "设置分类",
       "set.general": "通用",
@@ -697,12 +697,13 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "act.moreAnalysis": "更多分析",
       "act.openBoard": "打开到棋盘",
       "act.editorLong": "编辑局面",
+      "lib.filters": "筛选",
       "nav.me": "我的", "tip.prefs": "设置（Ctrl 或 ⌘ 加逗号）",
       "prefs.look": "外观", "side.display": "显示",
       "ng.mode": "对手", 
       "home.cont.live": "{0}对局进行中 · 第 {1} 回合", 
       // 7.0 棋谱库
-      "lib.title": "棋谱库", "lib.import": "导入棋谱文件", "lib.diagnose": "看诊断",
+      "lib.title": "棋谱库", "lib.import": "导入到库", "lib.diagnose": "看诊断",
       "lib.sync": "从网站同步", "sync.user": "用户名", "sync.go": "同步", "sync.allow": "允许联网同步", "sync.hint": "默认关闭。打开后只在你点「同步」时联网，只发送用户名。", "sync.noHost": "只有桌面应用能联网同步。", "sync.fetching": "正在从 {0} 取棋…", "sync.offline": "连不上 {0}，请检查网络。", "sync.rate": "{0} 暂时限制了请求，请一分钟后再试。", "sync.notFound": "{0} 上没有用户 {1}", "sync.empty": "{0} 上还没有 {1} 的对局", "sync.failed": "同步没有完成（{0}）", "sync.badName": "用户名是 2 到 30 个字母、数字、- 或 _",
       "sync.limit": "上次以来的新对局，最多取", "sync.analyse": "同步完就开始分析", "sync.progress": "正在从 {0} 取棋…已取到 {1} 局", "sync.none": "{0} 上没有 {1} 的新对局", "sync.timeout": "{0} 迟迟没有应答，请稍后再试。", "sync.busy": "上一次同步还没有结束，请稍后再试。",
       "pz.repBook": "书上走的是 {0}",
