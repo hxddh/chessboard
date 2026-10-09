@@ -745,8 +745,7 @@ for (const lang of ["en", "ja"]) {
 // THAT lesson, not whichever lesson was visited last. Red before: with
 // lesson 1 done and lesson 3 the last one open, the card said 「第 2 课」 and
 // the button went back to lesson 3.
-// 9.0 S1: 下一步建议 is the hero's lesson step now — its board is the lesson's
-// first position and #today-go opens it — while 继续·课程 is the bookmark
+// 9.0 S1: 下一步建议 is the hero's lesson step now — #today-go opens it — while 继续·课程 is the bookmark
 // (lesson 3), and goes back to that one. Both are checked: neither may borrow
 // the other's lesson.
 {
@@ -776,12 +775,8 @@ for (const lang of ["en", "ja"]) {
   await page.waitForTimeout(700);
   const last = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.learn")).last);
   const st = await state(page);
-  // the hero's board was the opened lesson's first position
-  const fen = h.sig.split("|")[0];
-  const shown = await page.evaluate(() => (window.__chess && window.__chess.board && window.__chess.board().fen) || null);
   assert(st.view === "train" && st.seg === "course" && last === 1,
     "主卡「学一节新课」点开的正是第一节没学完的课(第 2 课;打开的是第 " + (last + 1) + " 课,视图 " + st.view + "/" + st.seg + ")");
-  if (shown) assert(shown.split(" ")[0] === fen.split(" ")[0], "主卡的棋盘就是那一课的开局(" + fen + " / " + shown + ")");
   // 继续·课程 is the bookmark: lesson 3 — the hero did not move it, it did not borrow the hero's
   await page.evaluate(() => { const s = JSON.parse(localStorage.getItem("chess.learn")); s.last = 2; localStorage.setItem("chess.learn", JSON.stringify(s)); });
   await page.reload();

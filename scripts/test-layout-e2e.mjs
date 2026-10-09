@@ -4551,6 +4551,19 @@ if (scenario()) {
           await page.waitForTimeout(250);
         }
         const st = at + "[" + state + "] ";
+        // 9.0 S2: 精析 is in 分析's ⋯ menu — opened, it is a panel button like
+        // the others (measured below with them), named, inside the column
+        if (state === "back") {
+          await page.click("#an-more > summary");
+          await page.waitForTimeout(250);
+          const m = await page.evaluate(() => {
+            const sum = document.querySelector("#an-more > summary"), deep = document.getElementById("an-deep");
+            const side = document.getElementById("side").getBoundingClientRect(), r = deep.getBoundingClientRect();
+            return { named: !!(sum.getAttribute("aria-label") || "").trim(), shown: deep.checkVisibility(),
+                     inside: r.left >= side.left - 0.5 && r.right <= side.right + 0.5, h: Math.round(sum.getBoundingClientRect().height) };
+          });
+          assert(m.named && m.shown && m.inside && m.h >= 32, st + "分析的 ⋯ 有名字、打开后精析在面板里 (" + JSON.stringify(m) + ")");
+        }
         const btns = await panelButtons(page);
 
         // §1b — one line, in its box, every button in the panel
