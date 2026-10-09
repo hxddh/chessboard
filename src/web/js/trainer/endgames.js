@@ -50,7 +50,7 @@ export function createEndgames(d) {
         data = m;
         onReady();
         for (const fn of later.splice(0)) fn();
-        if (meLater) { const go = meLater; meLater = null; renderMe(go); }
+        if (meLater) { meLater = null; renderMe(); }
       }, () => { asked = null; }); // a failed load is retried next time something asks
   }
   const ready = () => !!data;
@@ -173,17 +173,15 @@ export function createEndgames(d) {
   }
 
   /**
-   * 「我的」: the camp's section — per theme done/total, what is due, and the
-   * two ways in. Drawn from the first visit, at 0/90: it is a door as much
-   * as a record, like the entry card's three doors (the lesson list's camp
-   * sits folded under 目录). Hidden only until its chunk is here.
-   * @param {(id:string) => void} go open an endgame in 学习
+   * 「我的」: the camp's section — per theme done/total and what is due.
+   * Drawn from the first visit, at 0/90. 9.0 S3: a record only; the way in
+   * is 训练 · 残局. Hidden only until its chunk is here.
    */
-  function renderMe(go) {
+  function renderMe() {
     const sec = document.getElementById("sec-endgame");
     if (!sec) return;
     const eg = state();
-    if (!data) { meLater = go; sec.hidden = true; ensure(); return; }
+    if (!data) { meLater = true; sec.hidden = true; ensure(); return; }
     sec.hidden = false;
     const meta = document.getElementById("eg-meta");
     if (meta) meta.textContent = doneCount() + "/" + total();
@@ -200,15 +198,18 @@ export function createEndgames(d) {
       row.append(k, v);
       return row;
     }));
+    // 9.0 S3: a record, not a second way in — the camp is 训练 · 残局; what
+    // is due is a line here (and ↻ in that catalog)
     const soon = due();
-    const rev = document.getElementById("eg-review");
-    rev.hidden = !soon.length;
-    rev.textContent = tf("eg.reviewN", [soon.length]);
-    rev.onclick = () => { const q = due(); if (q.length) go(q[0]); };
-    const cont = document.getElementById("eg-go");
-    const first = data.ITEMS.find((x) => !eg.done[x.id]);
-    cont.hidden = !first;
-    cont.onclick = () => { const f = data.ITEMS.find((x) => !state().done[x.id]); if (f) go(f.id); };
+    if (soon.length) {
+      const row = document.createElement("div");
+      row.className = "stat-row";
+      const k = document.createElement("span");
+      k.className = "stat-k";
+      k.textContent = tf("eg.reviewN", [soon.length]);
+      row.appendChild(k);
+      body.appendChild(row);
+    }
   }
 
   return { ensure, ready, whenReady, resumeId, item, lesson, record, due, next, doneCount, total, groupSize, renderList, renderMe, state };

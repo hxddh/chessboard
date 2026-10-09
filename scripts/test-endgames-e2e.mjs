@@ -204,14 +204,14 @@ const occ = (page, sq) => page.evaluate((q) => {
   await until(() => page.evaluate(() => !document.getElementById("sec-endgame").hidden), 6000);
   const me = await page.evaluate(() => ({
     shown: !document.getElementById("sec-endgame").hidden, meta: document.getElementById("eg-meta").textContent,
-    rows: document.querySelectorAll("#eg-body .stat-row").length, review: !document.getElementById("eg-review").hidden,
-    go: !document.getElementById("eg-go").hidden,
+    rows: document.querySelectorAll("#eg-body .stat-row").length,
+    doors: document.querySelectorAll("#sec-endgame button").length,
   }));
-  assert(me.shown && me.meta === "1/90" && me.rows === 5 && !me.review && me.go, "我的：训练营 1/90，五行，没有到期的复习", JSON.stringify(me));
-  await page.click("#eg-go");
-  await page.waitForTimeout(600);
+  // 9.0 S3: a record, not a second way in — the camp is 训练 · 残局
+  assert(me.shown && me.meta === "1/90" && me.rows === 5 && me.doors === 0, "我的：训练营 1/90，五行，没有到期的复习，也没有第二个入口", JSON.stringify(me));
+  await toEndgames(page);
   const opened = await page.evaluate(() => ({ view: document.getElementById("page-me").hidden, title: document.getElementById("lesson-title").textContent }));
-  assert(opened.view && /关键格/.test(opened.title) && (await trainSeg(page)) === "endgame", "进训练营：回到训练 · 残局，打开第一个没做过的（关键格）", JSON.stringify(opened));
+  assert(opened.view && /关键格/.test(opened.title) && (await trainSeg(page)) === "endgame", "回到训练 · 残局：接着上次的（关键格）", JSON.stringify(opened));
   // 9.0 S3: each segment opens where it was left — 课程 and back to 残局 is 关键格 again
   await page.click('#train-seg button[data-seg="course"]');
   await page.waitForTimeout(500);
@@ -283,8 +283,8 @@ const occ = (page, sq) => page.evaluate((q) => {
       await page.click('#rail button[data-view="me"]').catch(() => {});
       await until(() => page.evaluate(() => !document.getElementById("sec-endgame").hidden), 6000);
       const meCut = await cut("#sec-endgame");
-      const rev = await page.evaluate(() => !document.getElementById("eg-review").hidden && document.getElementById("eg-review").textContent);
-      assert(meCut.length === 0 && !!rev, tag + "：「我的」训练营一节没有被裁掉的字，复习按钮在（" + rev + "）", meCut.join(", "));
+      const rev = await page.evaluate(() => { const r = [...document.querySelectorAll("#eg-body .stat-row")].pop(); return r ? r.textContent : ""; });
+      assert(meCut.length === 0 && /\d/.test(rev), tag + "：「我的」训练营一节没有被裁掉的字，到期复习写成一行（" + rev + "）", meCut.join(", "));
       const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       assert(sideways <= 0, tag + "：页面不横向滚动（" + sideways + "px）");
       assert(!errs.length, tag + "：页面没有报错", errs.join(" / "));

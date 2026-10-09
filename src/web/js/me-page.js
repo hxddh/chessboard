@@ -25,7 +25,7 @@ import { tdot } from "./tdot.js";
 export function createMePage(d) {
   const {
     ACH, Icons, Progress, evalAch, libPlayedAt, loadStats, setSideTab, store, switchMode, t, tf,
-    Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName, Endgames, startEndgame, Vis,
+    Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName, Endgames, Vis,
   } = d;
 
   /**
@@ -465,16 +465,11 @@ export function createMePage(d) {
   window.addEventListener("resize", () => invalidate());
 
   /**
-   * v8-1-plan T2: 残局训练营 — progress by theme and the review queue
-   * (trainer/endgames.js draws it); its buttons open the position in 学习.
+   * v8-1-plan T2: 残局训练营 — progress by theme and what is due
+   * (trainer/endgames.js draws it). 9.0 S3: a record; the way in is 训练 · 残局.
    */
   function renderEndgames() {
-    if (!Endgames) return;
-    Endgames.renderMe((id) => {
-      if (store.session.mode !== "learn") switchMode("learn");
-      startEndgame(id);
-      setSideTab("play", { top: true });
-    });
+    if (Endgames) Endgames.renderMe();
   }
 
   return {

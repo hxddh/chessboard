@@ -923,20 +923,15 @@ export function createVisualModes(d) {
       row.className = "stat-row";
       const a = document.createElement("span");
       a.className = "stat-k";
-      a.textContent = t("pz.cat." + k);
+      // 9.0 S3: what is due is said on the row; the way in is 训练 · 谜题
+      const n = due(k, now).length;
+      a.textContent = n ? w("meDue", [t("pz.cat." + k), n]) : t("pz.cat." + k);
       const b = document.createElement("span");
       b.className = "stat-v num";
       b.textContent = w("meRow", [m.rating ? ratingText(m.rating) : "—", m.solve || 0, m.miss || 0, (st.runs && st.runs[k] && st.runs[k].best) || 0]);
       row.append(a, b);
       return row;
     }));
-    for (const k of kinds) {
-      const b = el("vis-" + k);
-      if (!b) continue;
-      const n = due(k, now).length;
-      b.textContent = n ? w("meDue", [t("pz.cat." + k), n]) : t("pz.cat." + k);
-      b.onclick = () => startRun(k);
-    }
   }
 
   // wired once, when the chunk arrives

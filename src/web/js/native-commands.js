@@ -50,8 +50,13 @@ const PLAY = ["ai", "pvp"];
    row for the current mode does not run — the same answer its letter gives. */
 export const KEY_HELP = [
   { keys: ["P"], k: "keys.panel", in: ANY, cmd: ["view.panel"] },
-  // v8-0-plan A1: the preferences window, every desktop app's key
-  { keys: ["⌘,", "Ctrl+,"], k: "keys.prefs", in: ANY },
+  // 9.0 S5: the settings page, every desktop app's key — and the five places
+  { keys: [], k: "keys.prefs", in: ANY, cmd: ["go.settings"] },
+  { keys: [], k: "nav.home", in: ANY, cmd: ["go.home"] },
+  { keys: [], k: "nav.play", in: ANY, cmd: ["go.play"] },
+  { keys: [], k: "nav.train", in: ANY, cmd: ["go.train"] },
+  { keys: [], k: "nav.library", in: ANY, cmd: ["go.library"] },
+  { keys: [], k: "nav.me", in: ANY, cmd: ["go.me"] },
   { keys: ["N"], k: "keys.new", in: PLAY, cmd: ["game.new"] },
   { keys: ["N"], k: "keys.next", in: ["puzzle"] },
   { keys: ["R"], k: "keys.retry", in: ["learn", "puzzle"] },
@@ -101,6 +106,12 @@ export const MENU_ACCEL = {
   "view.prev": { key: "[", mods: ["primary"] },
   "view.next": { key: "]", mods: ["primary"] },
   "help.keys": { key: "/", mods: ["primary"] },
+  "go.home": { key: "1", mods: ["primary"] },
+  "go.play": { key: "2", mods: ["primary"] },
+  "go.train": { key: "3", mods: ["primary"] },
+  "go.library": { key: "4", mods: ["primary"] },
+  "go.me": { key: "5", mods: ["primary"] },
+  "go.settings": { key: ",", mods: ["primary"] },
 };
 /**
  * One accelerator, spelled for a reader on `mac`-or-not.
@@ -214,6 +225,13 @@ export function createNativeCommands(d) {
     "view.escape": () => d.escapeKey(),
     "help.keys": () => openKeyHelp(),
     // v8-2-plan T4: the 棋谱库 page, at its 我的开局书 section
+    // 9.0 S5: the menu bar's 前往 — the rail's six doors
+    "go.home": () => d.go("home"),
+    "go.play": () => d.go("play"),
+    "go.train": () => d.go("train"),
+    "go.library": () => d.go("library"),
+    "go.me": () => d.go("me"),
+    "go.settings": () => d.go("settings"),
     "view.repertoire": () => {
       d.go("library");
       const sec = doc.getElementById("sec-rep");
@@ -241,7 +259,7 @@ export function createNativeCommands(d) {
     // …nor behind a page of the top level (v8-0-plan A1), as the letter keys
     // are not: the board and its panel are inert under it (Codex on #86).
     // 开局书 goes to a page itself (v8-2-plan T4), so a page is no obstacle
-    if (d.pageShown && d.pageShown() && id !== "view.repertoire") return;
+    if (d.pageShown && d.pageShown() && id !== "view.repertoire" && !id.startsWith("go.")) return;
     if (!commandModes(id).has(store.session.mode)) return;
     NATIVE_COMMANDS[id]();
   }

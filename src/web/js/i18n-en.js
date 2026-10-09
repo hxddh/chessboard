@@ -768,7 +768,7 @@
       "keys.step": "Step through the moves: previous / next (in cursor mode: move the cursor)", "keys.ends": "Jump to the start / the latest move (in cursor mode: to the corners)",
       "keys.tab": "Move focus between controls (the browser\u2019s own behaviour \u2014 this app does not take it)",
       "keys.esc": "Close a dialog, leave the editor, collapse the panel",
-      "keys.prefs": "Open preferences (⌘ on macOS, Ctrl elsewhere)",
+      "keys.prefs": "Open settings",
       "keys.help": "Open this list",
       "keys.promo": "Choose queen / rook / bishop / knight when promoting",
       "keys.board": "Board cursor mode: Tab onto the board or press Enter to start; arrows move the cursor, Enter picks up and puts down, Esc leaves",

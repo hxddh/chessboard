@@ -800,7 +800,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "keys.step": "翻棋谱：上一手 / 下一手（光标模式里是移动光标）", "keys.ends": "翻棋谱：回到开局 / 跳到最新（光标模式里是跳到角上）",
       "keys.tab": "在界面控件之间移动焦点（浏览器行为，本应用不占用）",
       "keys.esc": "关闭对话框、退出编辑器、收起侧栏",
-      "keys.prefs": "打开偏好设置（macOS 用 ⌘，其余用 Ctrl）",
+      "keys.prefs": "打开设置",
       "keys.help": "打开这份快捷键表",
       "keys.promo": "升变时选后 / 车 / 象 / 马",
       "keys.board": "棋盘光标模式：Tab 移到棋盘或按回车进入；方向键移动光标，回车选子与落子，Esc 退出",

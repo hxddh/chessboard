@@ -5687,8 +5687,7 @@ if (scenario()) {
       });
       assert(me.shown && me.meta === "2/90" && me.n === 2, `${tag}: 「我的」有训练营一节，2/90，进训练营 + 复习两个按钮`);
       assert(me.tall.length === 0, `${tag}: 五个主题各一行` + (me.tall.length ? " — " + me.tall.join(", ") : ""));
-      assert(me.heights.length === 1 && me.spill.length === 0 && me.sideways <= 0,
-        `${tag}: 按钮一样高、字不出框，页面不横向滚动 (${me.heights.join(", ")}; ${me.spill.join(", ") || "—"}; ${me.sideways}px)`);
+      assert(me.sideways <= 0, `${tag}: 页面不横向滚动 (${me.sideways}px)`);
       assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
       await ctx.close();
     }
@@ -5906,10 +5905,10 @@ if (scenario()) {
           spill: bs.filter((b) => b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1 || b.getBoundingClientRect().right > box.right + 1).map((b) => b.textContent.trim()),
           nb: bs.length, sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
       });
-      assert(me.shown && me.n === 2 && me.nb === 2 && me.h, `${tag}: 「我的」有计算专项一节，两行两个按钮（${me.h}）`);
+      // 9.0 S3: a record, not a second way in (看 N 步 / 盲走 are 训练 · 谜题's)
+      assert(me.shown && me.n === 2 && me.nb === 0 && me.h, `${tag}: 「我的」有计算专项一节，两行，没有第二个入口（${me.h}）`);
       assert(me.tall.length === 0, `${tag}: 每个模式一行` + (me.tall.length ? " — " + me.tall.join(", ") : ""));
-      assert(me.heights.length === 1 && me.spill.length === 0 && me.sideways <= 0,
-        `${tag}: 按钮一样高、字不出框，页面不横向滚动 (${me.heights.join(", ")}; ${me.spill.join(", ") || "—"}; ${me.sideways}px)`);
+      assert(me.sideways <= 0, `${tag}: 页面不横向滚动 (${me.sideways}px)`);
       assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
       await ctx.close();
     }
