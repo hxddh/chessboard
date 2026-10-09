@@ -107,6 +107,13 @@ async function importFile(page, text, button) {
 const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   .map((id) => (document.getElementById(id) || {}).textContent || "").join("\n"));
 
+/** 9.0 S4: the list's filters other than the search are a fold, closed until
+    asked for. Open it the way a person does — its summary — where a filter is used. */
+async function openFilters(page) {
+  if (!(await page.$eval("#lib-filters", (d) => d.open))) await page.click("#lib-filters > summary");
+  await page.waitForTimeout(100);
+}
+
 
 // --- 1. every game in the file, not one of them -----------------------------
 {
@@ -197,8 +204,8 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
       libPrimary: document.getElementById("lib-import").classList.contains("primary"),
     };
   });
-  // v8-0-plan A1: 记录 is two pages — 我的 (the entry, stats, history) and
-  // 棋谱库 (the library, the opening book); each is read while it shows
+  // v8-0-plan A1: 记录 is two pages — 我的 (the entry, stats) and 棋谱 (the
+  // library, the opening book, and since 9.0 S4 the history); each is read while it shows
   await page.click('#rail button[data-view="me"]');
   const onMe = await read();
   await page.click('#rail button[data-view="library"]');
@@ -313,7 +320,19 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   assert(/精准度/.test(firstRow) && /1 处失误/.test(firstRow),
     "每一行写着我这局下得怎么样,不只是个日期", firstRow);
 
+  // 9.0 S4: the list opens on the search and the games; the six filters are a
+  // closed fold until asked for
+  const fold = await page.evaluate(() => ({
+    open: document.getElementById("lib-filters").open,
+    search: !!document.getElementById("lib-q").offsetParent,
+    result: !!document.querySelector('#lib-result-seg button[data-lres="loss"]').offsetParent,
+  }));
+  assert(!fold.open && fold.search && !fold.result,
+    "S4 列表打开时只露搜索：其余筛选收在「筛选」里，默认收起", JSON.stringify(fold));
+
   // 筛选
+  await openFilters(page);
+  assert(await page.isVisible('#lib-result-seg button[data-lres="loss"]'), "S4 点开「筛选」，按结果筛选就在那儿");
   await page.click('#lib-result-seg button[data-lres="loss"]');
   await page.waitForTimeout(200);
   assert((await rowCount()) === 16, "「只看输的」筛出 16 局", String(await rowCount()));
@@ -393,11 +412,10 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   }
   const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
   const { page, errs } = await open(ctx);
-  // (9.0 S5: the panel has one page, so the rail's 下棋 is all it takes)
-  await page.click('#rail button[data-view="play"]');
-  await page.waitForTimeout(300);
-  await page.click("#daily-btn");
+  // 9.0 S1: the plan is on 今天, laid out before it is started
+  await page.click('#rail button[data-view="home"]');
   await page.waitForTimeout(500);
+  assert(await page.isVisible("#daily-plan"), "S1 今天：计划的步骤摆在主卡里");
   const plan = await page.textContent("#daily-plan");
   assert(/捉双/.test(plan),
     "题库战绩一片空白时，弱项从他自己的棋里读出来 —— 「捉双」", plan);
@@ -745,7 +763,9 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   await page.waitForTimeout(900);
   const started = await page.evaluate(() => ({
     cat: JSON.parse(localStorage.getItem("chess.puzzles")).cat,
-    tabShown: !document.querySelector('#puzzle-cat-seg button[data-cat="rep"]').hidden,
+    // 9.0 S3: no category row; the 开局 tile is the lit one while a book line is on the board
+    tabShown: (document.querySelector('#pz-groups button[data-group="opening"]') || { getAttribute: () => null }).getAttribute("aria-pressed") === "true"
+      && document.getElementById("app").dataset.view === "train",
     task: (document.getElementById("puzzle-task") || {}).textContent || "",
   }));
   assert(started.cat === "rep" && started.tabShown, "「开始背」把你放在开局书那一档",
@@ -871,13 +891,14 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   const after = await page.evaluate(() => ({
     book: (window.__chess.rep() ? JSON.parse(window.__chess.rep().bag("{}")) : null),
     toast: document.getElementById("toast").textContent.trim(),
-    tab: (document.querySelector('#puzzle-cat-seg button[data-cat="rep"]') || {}).hidden,
+    // 9.0 S3: the category row is gone; the one way into the book's drills is 开始背
+    tab: document.getElementById("rep-drill").hidden,
   }));
   assert(!after.book || (after.book.w.length === 0 && after.book.b.length === 0),
     "从别的局面出发的局，一条都不进书", JSON.stringify(after.book));
   assert(/起始局面|跳过/.test(after.toast),
     "……并且说清了为什么，而不是默默地什么都不做", after.toast);
-  assert(after.tab !== false, "书还是空的，「开局书」那一档也就不出现");
+  assert(after.tab === true, "书还是空的，「开始背」也就不出现 —— 没有一条路进得去一本空书");
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
 }
@@ -1129,7 +1150,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   await page.waitForTimeout(300);
   await page.click("#confirm-ok");
   await page.waitForTimeout(500);
-  await page.click('#rail button[data-view="puzzle"]');   // back to the puzzle on the board
+  await page.click('#rail button[data-view="train"]');   // back to the puzzle on the board (9.0 S3: 训练)
   await mv("e2", "e4");   // 书上是 d4：这是一步错棋
   assert((await missedRep()).length === 0,
     "书已经清空，屏幕上那道题走错了也不写进复习队列 —— 不留一道谁也端不出来的题",
@@ -1490,7 +1511,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
     await page.waitForTimeout(900);
     const asked = await page.isVisible("#confirm-cancel");
     if (asked) { await page.click("#confirm-cancel"); await page.waitForTimeout(600); }
-    await page.click('#rail button[data-view="learn"]');
+    await page.click('#rail button[data-view="train"]');   // 9.0 S3: 教学 is 训练's 课程
     await page.waitForTimeout(300);
     const after = await task();
     const st = await settingsOf(page);
@@ -1985,6 +2006,7 @@ function tenThousand() {
   // the page: typing into the search box, the position switch, a segment
   await page.click("#lib-open");
   await page.waitForTimeout(400);
+  await openFilters(page);   // 9.0 S4: the position switch and the segments are in the fold
   const ui = await page.evaluate(() => {
     const q = document.getElementById("lib-q");
     const t0 = performance.now();
@@ -2169,11 +2191,19 @@ function tenThousand() {
   const ctx = await c1Context({ "chess.stats": STATS, "chess.library": V1.clocked });
   const { page, errs } = await open(ctx);
   await c1Ready(page);
-  await page.click('#rail button[data-view="me"]');
+  // 9.0 S4: 对局历史 is on 棋谱 now, under the library — not on 我的
+  await page.click('#rail button[data-view="library"]');
   await page.waitForTimeout(300);
+  const home = await page.evaluate(() => ({
+    lib: !!document.querySelector("#page-library #sec-history"),
+    me: !!document.querySelector("#page-me #sec-history"),
+    shown: !!document.getElementById("sec-history").offsetParent,
+  }));
+  assert(home.lib && !home.me && home.shown, "S4 对局历史在「棋谱」页上，不在「我的」", JSON.stringify(home));
   const label = (await page.textContent("#hist-open")).trim();
   await page.click("#hist-open");
   await page.waitForTimeout(500);
+  await openFilters(page);
   const r = await page.evaluate(() => ({
     open: document.getElementById("lib-list-modal").classList.contains("show"),
     src: document.querySelector("#lib-src-seg .active") && document.querySelector("#lib-src-seg .active").dataset.lsrc,
@@ -2182,7 +2212,7 @@ function tenThousand() {
       pgn: !!row.querySelector("[data-loc-pgn]"), text: row.textContent })),
   }));
   assert(label === "全部 2 局" && r.open && r.src === "local" && r.rows.length === 2 && r.rows.every((x) => x.loc && x.tag === "本机" && x.pgn),
-    `C1 「我的」→ 对局历史「全部 N 局」打开的是棋谱库，只看本机，每行标「本机」、能复制 PGN(${label}; ${JSON.stringify(r.rows.map((x) => x.tag))})`);
+    `C1 「棋谱」→ 对局历史「全部 N 局」打开的是棋谱库，只看本机，每行标「本机」、能复制 PGN(${label}; ${JSON.stringify(r.rows.map((x) => x.tag))})`);
   // all sources: the two imported games and the two local ones, one list
   await page.click('#lib-src-seg [data-lsrc="all"]');
   const all = await page.$$eval("#lib-list .hist-row", (rows) => rows.length);
@@ -2193,20 +2223,21 @@ function tenThousand() {
   await page.waitForTimeout(900);
   const board = await page.evaluate(() => ({
     list: document.getElementById("lib-list-modal").classList.contains("show"),
-    page: !document.getElementById("page-me").hidden && document.getElementById("page-me").offsetParent !== null,
+    page: !document.getElementById("page-library").hidden && document.getElementById("page-library").offsetParent !== null,
     view: JSON.parse(localStorage.getItem("chess.settings")).view,
     mode: JSON.parse(localStorage.getItem("chess.settings")).mode,
     pgn: JSON.parse(localStorage.getItem("chess.save")).pgn,
   }));
-  assert(!board.list && !board.page && board.mode === "ai" && /Qxf7#/.test(board.pgn) && board.view !== "me",
-    `C1 点本机那一局：列表关掉、离开「我的」回到棋盘、人机模式、就是那一局，而且记下了(${JSON.stringify({ view: board.view, mode: board.mode })})`);
-  // the preview rows on 我的 still load a game
-  await page.click('#rail button[data-view="me"]');
+  assert(!board.list && !board.page && board.mode === "ai" && /Qxf7#/.test(board.pgn) && board.view !== "library",
+    `C1 点本机那一局：列表关掉、离开「棋谱」回到棋盘、人机模式、就是那一局，而且记下了(${JSON.stringify({ view: board.view, mode: board.mode })})`);
+  // the preview rows on 棋谱 still load a game
+  await page.click('#rail button[data-view="library"]');
   await page.waitForTimeout(300);
-  assert(await page.$$eval("#hist-body [data-hist]", (b) => b.length) === 2, "C1 「我的」上的对局历史预览还在(2 行)");
+  assert(await page.$$eval("#hist-body [data-hist]", (b) => b.length) === 2, "C1 「棋谱」上的对局历史预览还在(2 行)");
   // search the merged list: by the engine level, and by the position on the board
   await page.click("#hist-open");
   await page.waitForTimeout(300);
+  await openFilters(page);
   await page.click('#lib-src-seg [data-lsrc="all"]');
   await page.fill("#lib-q", "高级");
   const hard = await page.$$eval("#lib-list [data-loc]", (b) => b.map((x) => x.dataset.loc));
@@ -2309,6 +2340,7 @@ const AI_5_3 = { mode: "ai", difficulty: "beginner", humanColor: "w", timeContro
   assert(last && last.result === "win" && last.tc === "300+3", `T5 新下完的一局记下棋钟：5+3 → TimeControl 300+3(${JSON.stringify(last && { r: last.result, tc: last.tc })})`);
   await page.evaluate(() => window.__chess.libDb().openList(null, { src: "local" }));
   await page.waitForTimeout(600);
+  await openFilters(page);
   await page.click('#lib-tc-seg [data-ltc="blitz"]');
   const blitz = await page.$$eval("#lib-list [data-loc]", (b) => b.map((x) => x.dataset.loc));
   await page.click('#lib-tc-seg [data-ltc="rapid"]');
@@ -2395,6 +2427,7 @@ let t5Export = "";
   const onlyImp = fs.readFileSync(await dl1.path(), "utf8");
   assert(!/\[LibId "loc:/.test(onlyImp) && (onlyImp.match(/\[LibId "lib:/g) || []).length === 2,
     "T5 来源选「导入」时导出的只有导入的 2 局");
+  await openFilters(page);
   await page.click('#lib-src-seg [data-lsrc="all"]');
   const [dl2] = await Promise.all([page.waitForEvent("download"), page.click("#lib-export")]);
   t5Export = fs.readFileSync(await dl2.path(), "utf8");

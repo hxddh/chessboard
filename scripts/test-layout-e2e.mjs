@@ -147,6 +147,16 @@ async function openNewGame(page, custom = true) {
     await page.waitForTimeout(200);
   }
 }
+/**
+ * 9.0 S2: 存档槽 / 编辑局面 / 导出复盘图 left the tool row for its 更多
+ * (#more-row). Reached the way a player reaches them: ⋯ first, when the
+ * row is shut. Throws if the button is not then on screen, so a check that
+ * needs the editor or the slots never measures a page without them.
+ */
+async function pressMore(page, id) {
+  if (!(await page.isVisible("#" + id))) { await page.click("#more-tools", { timeout: 3000 }); await page.waitForTimeout(250); }
+  await page.click("#" + id, { timeout: 3000 });
+}
 /** 开始: the dialog's draft becomes the settings and the game starts. */
 async function startNewGame(page) {
   await page.click("#ng-start");
@@ -289,6 +299,9 @@ if (scenario()) {
       inChrome: !!(seg && seg.closest(".chrome")),
       inPanel: !!(seg && seg.closest(".side")),
       navRowsInPanel: document.querySelectorAll(".side .mode-nav, .side .side-tabs").length,
+      // 9.0 S3: 训练's segment switch is the panel's only row of ways in, and
+      // only while training — 下棋 does not carry it
+      trainSegShown: (() => { const t = document.getElementById("train-seg"); return !!(t && !t.hidden && t.offsetParent); })(),
       inDialog: !!(seg && seg.closest("#newgame-modal")),
       rail: [...document.querySelectorAll("#rail button[data-view]")].map((b) => b.dataset.view).join(","),
     };
@@ -298,7 +311,9 @@ if (scenario()) {
   // trainers on the rail
   assert(!where.inPanel && where.inDialog, "…off the panel, in the new-game dialog");
   // 9.0 S5: the rail ends in 设置 (the preferences window and the 设置 tab, one page)
-  assert(where.rail === "home,play,puzzle,learn,library,me,settings", "…and the modes are the rail's (" + where.rail + ")");
+  // 9.0 S3: 谜题 and 学习 are one entry, 训练 (its segments over the panel)
+  assert(where.rail === "home,play,train,library,me,settings", "…and the modes are the rail's (" + where.rail + ")");
+  assert(!where.trainSegShown, "…and 下棋's panel does not carry 训练's segment switch");
   // 9.0 S5: the panel's tab row went with its 设置 tab — one pane, so no
   // navigation row in the panel at all (it was "one, not two")
   assert(where.navRowsInPanel === 0,
@@ -524,8 +539,9 @@ if (scenario()) {
 if (scenario()) {
   const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1200, height: 900 });
   // 9.0 S5: the clock is chosen with the game — the new-game dialog's 棋钟
-  await openNewGame(page, false);
-  await page.click('#newgame-modal #clock-seg button[data-tc="3+2"]');
+  // 9.0 S2: 3+2 is one of the rarer clocks, under 更多选项 (#clock-seg-more)
+  await openNewGame(page);
+  await page.click('#newgame-modal #clock-seg-more button[data-tc="3+2"]');
   await startNewGame(page);
   const c = await page.evaluate(() => {
     const w = document.getElementById("clock-w"), b = document.getElementById("clock-b");
@@ -569,7 +585,7 @@ if (scenario()) for (const [w, h] of [[1400, 900], [900, 700], [520, 520]]) {
     // 9.0 S5: style and clock are the new-game dialog's; 开始 makes them the game's
     await openNewGame(page);
     await page.click('#newgame-modal #persona-seg button[data-persona="principled"]');
-    await page.click('#newgame-modal #clock-seg button[data-tc="3+2"]');
+    await page.click('#newgame-modal #clock-seg-more button[data-tc="3+2"]');
     await startNewGame(page);
     if (w <= 820) { await page.keyboard.press("p"); await page.waitForTimeout(400); }
     const r = await page.evaluate(() => {
@@ -1132,6 +1148,16 @@ if (scenario()) for (const theme of ["wood", "night", "day", "notebook"]) {
   low.push(...await measure(".chrome *, #strip-tools *"));
   await openNewGame(page);
   low.push(...(await measure("#newgame-modal *")).map((l) => "newgame:" + l));
+  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+  // 9.0 S1 / S3: 今天, and 训练's panel — its switch, the lesson card and the
+  // puzzle picker (the rating, the review card, the six tiles, 换个练法)
+  await page.click('.rail-btn[data-view="home"]'); await page.waitForTimeout(400);
+  low.push(...(await measure("#page-home *")).map((l) => "today:" + l));
+  await page.click('.rail-btn[data-view="train"]'); await page.waitForTimeout(500);
+  for (const seg of ["course", "puzzle"]) {
+    await page.click('#train-seg button[data-seg="' + seg + '"]'); await page.waitForTimeout(600);
+    low.push(...(await measure("#pane-play *")).map((l) => "train." + seg + ":" + l));
+  }
   for (const l of low.slice(0, 6)) console.error("  low contrast in " + theme + ": " + l);
   assert(low.length === 0,
     theme + ":界面文字都达到 WCAG AA" + (low.length ? " —— " + low.length + " 处:" + low.slice(0, 3).join(", ") : ""));
@@ -1249,7 +1275,13 @@ if (scenario()) {
       && !!document.getElementById("sec-learn").offsetParent,
   }));
   assert(went.mode === "learn", "「上第 1 课」真的进了教学(" + went.mode + ")");
-  assert(went.view === "learn" && went.lesson, "……并且落在学习页面板里的课程卡上(" + went.view + ")");
+  // 9.0 S3: 学习 is 训练's 课程 segment — the view is train, the switch on 课程
+  const seg = await page.evaluate(() => {
+    const b = document.querySelector('#train-seg button[aria-pressed="true"]');
+    return b ? b.dataset.seg : null;
+  });
+  assert(went.view === "train" && went.lesson, "……并且落在训练页面板里的课程卡上(" + went.view + ")");
+  assert(seg === "course", "……训练的切换停在「课程」上(" + seg + ")");
   await ctx.close();
 }
 
@@ -1339,6 +1371,18 @@ if (scenario()) {
   await page.click('.rail-btn[data-view="play"]'); await page.waitForTimeout(300);
   await openNewGame(page);
   anon.push(...await nameless());
+  // 9.0 S1 / S3: 今天 (its cards are buttons with a mini board in them), and
+  // 训练's panel in each of its four segments
+  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+  await page.click('.rail-btn[data-view="home"]'); await page.waitForTimeout(400);
+  const todayN = await page.evaluate(() => [...document.querySelectorAll("#page-home button")].filter((e) => e.offsetParent).length);
+  assert(todayN >= 5, "今天 has its buttons on screen (" + todayN + ")");
+  anon.push(...(await nameless()).map((x) => "today:" + x));
+  await page.click('.rail-btn[data-view="train"]'); await page.waitForTimeout(500);
+  for (const seg of ["course", "puzzle", "endgame", "classic"]) {
+    await page.click('#train-seg button[data-seg="' + seg + '"]'); await page.waitForTimeout(700);
+    anon.push(...(await nameless()).map((x) => "train." + seg + ":" + x));
+  }
   assert(anon.length === 0,
     "每个可见控件都有可读的名称" + (anon.length ? " —— 没有的:" + anon.join(", ") : ""));
   await ctx.close();
@@ -1457,7 +1501,9 @@ if (scenario()) {
         const out = [];
         // the board view's panel stays laid out under the page, so the page
         // (or the dialog) is the scope, as the 设置 tab's pane was
-        for (const g of document.querySelectorAll(where === "newgame" ? "#newgame-modal .theme-row" : "#page-settings .theme-row")) {
+        const scope = where === "newgame" ? "#newgame-modal .theme-row"
+          : where.startsWith("train") ? "#pane-play .theme-row" : "#page-settings .theme-row";
+        for (const g of document.querySelectorAll(scope)) {
           if (!g.offsetParent) continue;
           const bs = [...g.querySelectorAll("button")];
           if (bs.length < 2) continue;
@@ -1477,6 +1523,18 @@ if (scenario()) {
         await page.click('.rail-btn[data-view="play"]'); await page.waitForTimeout(300);
         await openNewGame(page);
         rows.push(...await segs("newgame"));
+      } else {
+        // 9.0 S3: 训练's own segments are in the panel — the four-way switch
+        // over it, and 名局's 读谱 / 猜着 (shown on the 名局 segment)
+        await page.click('.rail-btn[data-view="train"]'); await page.waitForTimeout(400);
+        rows.push(...await segs("train"));
+        if (mode === "learn") {
+          await page.click('#train-seg button[data-seg="classic"]'); await page.waitForTimeout(600);
+          const cl = await segs("train:classic");
+          assert(cl.some((g) => /classic-mode/.test(g.id)), lang + "/" + mode + ": 名局's 读谱/猜着 switch is measured (" + cl.map((g) => g.id).join(", ") + ")");
+          rows.push(...cl);
+        }
+        assert(rows.some((g) => /train-seg/.test(g.id)), lang + "/" + mode + ": 训练's switch is measured");
       }
       assert(rows.length > 0, lang + "/" + mode + ": segments are on screen");
       for (const g of rows)
@@ -1703,8 +1761,11 @@ if (scenario()) {
   // 5.1: switching the theme no longer raises a toast (the panel repaints, and
   // that is the receipt), so the sample receipt is 今天的训练 — 「这一节共 N
   // 步」 or 「没有欠账」, either one an ok-tier message.
+  // 9.0 S1: the plan's button is 今天's primary (#today-go), on that page
+  await page.click('.rail-btn[data-view="home"]');
+  await page.waitForTimeout(400);
   const ok = await page.evaluate(async () => {
-    document.getElementById("daily-btn").click();
+    document.getElementById("today-go").click();
     await new Promise((r) => setTimeout(r, 300));
     const el = document.getElementById("toast");
     return { role: el.getAttribute("role"), live: el.getAttribute("aria-live"),
@@ -2270,8 +2331,9 @@ if (scenario()) {
 if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "play");
-    await page.click("#editor-open", { timeout: 2000 }).catch(() => {});
+    await pressMore(page, "editor-open");
     await page.waitForTimeout(500);
+    assert(await page.isVisible("#sec-editor"), lang + ": 编辑局面 (from 更多) opened the editor");
     const spilled = await page.evaluate(() =>
       [...document.querySelectorAll("button")]
         .filter((b) => b.offsetParent && b.scrollHeight > b.clientHeight + 1)
@@ -2297,44 +2359,54 @@ if (scenario()) {
 }
 
 // --- 3x. a segment of ten is still one control -----------------------------
-// The puzzle type filter is the only segment in the app with more than four
+// The puzzle type filter was the only segment in the app with more than four
 // items, and it was the one the `.theme-row.wrap` comment claimed to have
 // handled: "five or more fall back to three". It did not — `auto-fit` with a
 // 64px floor resolves to four columns in a 335px panel — and at four columns
 // 「Win material」 needed 79px in a 78px cell. One label one pixel too wide,
 // and `grid-auto-rows: 1fr` passed its wrapped height to all ten buttons: the
 // whole control half again as tall, in English only.
+// 9.0 S3: the ten types are six tiles (#pz-groups: 杀棋 战术 残局 防守 开局,
+// and 我的错题 once the personal book holds drills) over 换个练法's two rows.
+// The same claims, of them: three across, one height, no name or count cut
+// (a tile's name ellipsizes, so "cut" is its own scrollWidth), and the two
+// rows' labels and buttons whole too.
+const pickerFits = (page) => page.evaluate(() => {
+  const g = document.getElementById("pz-groups");
+  const tiles = [...g.querySelectorAll(".pz-tile")].filter((b) => !b.hidden && b.offsetParent);
+  const cut = (e) => e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1;
+  const tight = [];
+  for (const b of tiles) {
+    const r = b.getBoundingClientRect();
+    for (const e of b.querySelectorAll(".pz-tile-name, .pz-tile-n")) {
+      const er = e.getBoundingClientRect();
+      if (cut(e) || er.right > r.right + 0.5 || er.left < r.left - 0.5) tight.push(b.dataset.group + ":" + e.textContent.trim());
+    }
+  }
+  const rows = [...document.querySelectorAll("#pz-modes .pz-modes-row")];
+  const modeCut = rows.flatMap((row) => [...row.children].filter((e) => e.offsetParent && cut(e)).map((e) => e.textContent.trim()));
+  const modeH = [...new Set(rows.flatMap((row) => [...row.querySelectorAll("button")]).map((b) => Math.round(b.getBoundingClientRect().height)))];
+  return { n: tiles.length, groups: tiles.map((b) => b.dataset.group).join(","),
+           cols: getComputedStyle(g).gridTemplateColumns.split(" ").length,
+           heights: [...new Set(tiles.map((b) => Math.round(b.getBoundingClientRect().height)))],
+           named: tiles.every((b) => b.querySelector(".pz-tile-name").textContent.trim()),
+           tight, modeCut, modeH, rows: rows.length };
+});
 if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "puzzle", "play");
-    const seg = await page.evaluate(() => {
-      const g = document.getElementById("puzzle-cat-seg");
-      // drawn buttons only: the 错题 tab exists in the DOM but is hidden until
-      // the personal book holds drills (P3) — a control that is not drawn has
-      // no height, and this section's claim is about the drawn layout
-      const bs = [...g.querySelectorAll("button")].filter((b) => !b.hidden);
-      const one = bs.map((b) => {
-        const c = b.cloneNode(true);
-        c.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap;width:auto";
-        g.appendChild(c);
-        const need = Math.ceil(c.getBoundingClientRect().width);
-        c.remove();
-        return { t: b.textContent.trim(), need, w: Math.round(b.getBoundingClientRect().width) };
-      });
-      return { cols: getComputedStyle(g).gridTemplateColumns.split(" ").length,
-               heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
-               tight: one.filter((x) => x.need > x.w) };
-    });
-    assert(seg.cols === 3, lang + ": ten items lay out three across (" + seg.cols + ")");
-    assert(seg.heights.length === 1 && seg.heights[0] < 40,
-      lang + ": every type is one line tall (" + seg.heights.join(", ") + ")");
-    assert(seg.tight.length === 0,
-      lang + ": no type name is wider than its cell" +
-      (seg.tight.length ? " — " + seg.tight.map((x) => "「" + x.t + "」 " + x.need + " in " + x.w).join(", ") : ""));
+    const seg = await pickerFits(page);
+    assert(seg.n === 5 && seg.groups === "mate,tactic,endgame,defense,opening",
+      lang + ": five kinds, 我的错题 not drawn with no drills (" + seg.groups + ")");
+    assert(seg.cols === 3, lang + ": the tiles lay out three across (" + seg.cols + ")");
+    assert(seg.heights.length === 1 && seg.named, lang + ": every tile is one height and named (" + seg.heights.join(", ") + ")");
+    assert(seg.tight.length === 0, lang + ": no kind's name or count is cut" + (seg.tight.length ? " — " + seg.tight.join(", ") : ""));
+    assert(seg.rows === 2 && seg.modeCut.length === 0 && seg.modeH.length === 1,
+      lang + ": 换个练法's two rows: labels and buttons whole, one height (" + seg.modeCut.join(", ") + "; " + seg.modeH.join(", ") + ")");
     await ctx.close();
   }
-  // …and when the personal book holds drills the 错题 tab is drawn: eleven
-  // items must still be one line each, in the widest language too
+  // …and when the personal book holds drills the 我的错题 tile is drawn: six
+  // must still be one height each, in the widest language too
   for (const lang of LANGS) {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: lang });
     await ctx.addInitScript(([l]) => {
@@ -2349,26 +2421,11 @@ if (scenario()) {
     const page = await ctx.newPage();
     await page.goto(`http://127.0.0.1:${PORT}/`);
     await page.waitForTimeout(900);
-    const seg = await page.evaluate(() => {
-      const g = document.getElementById("puzzle-cat-seg");
-      const bs = [...g.querySelectorAll("button")].filter((b) => !b.hidden);
-      const one = bs.map((b) => {
-        const c = b.cloneNode(true);
-        c.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap;width:auto";
-        g.appendChild(c);
-        const need = Math.ceil(c.getBoundingClientRect().width);
-        c.remove();
-        return { t: b.textContent.trim(), need, w: Math.round(b.getBoundingClientRect().width) };
-      });
-      return { n: bs.length,
-               heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
-               tight: one.filter((x) => x.need > x.w) };
-    });
-    assert(seg.n === 11 && seg.heights.length === 1 && seg.heights[0] < 40,
-      lang + ": with the personal book drawn, eleven types are still one line tall (" + seg.heights.join(", ") + ")");
+    const seg = await pickerFits(page);
+    assert(seg.n === 6 && /mine/.test(seg.groups) && seg.heights.length === 1,
+      lang + ": with the personal book drawn, six kinds are still one height (" + seg.groups + "; " + seg.heights.join(", ") + ")");
     assert(seg.tight.length === 0,
-      lang + ": the 错题 label fits its cell" +
-      (seg.tight.length ? " — " + seg.tight.map((x) => "「" + x.t + "」 " + x.need + " in " + x.w).join(", ") : ""));
+      lang + ": the 我的错题 tile fits its cell" + (seg.tight.length ? " — " + seg.tight.join(", ") : ""));
     await ctx.close();
   }
 }
@@ -2757,7 +2814,7 @@ if (scenario()) {
     await page.reload();
     await page.waitForTimeout(900);
     await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
-    await page.click("#slots-open", { timeout: 2500 }).catch(() => {});
+    await pressMore(page, "slots-open");
     await page.waitForTimeout(400);
     const r = await page.evaluate(() => {
       const rows = [...document.querySelectorAll("#slots-list > *")].filter((e) => e.offsetParent);
@@ -3066,7 +3123,13 @@ if (scenario()) {
   // v8-0-plan A1: a trainer is the rail's; 双人 comes with a new game
   const toSetup = async (page, mode) => {
     if (mode === "puzzle" || mode === "learn") {
-      await page.click(`#rail button[data-view="${mode}"]`); await page.waitForTimeout(800);
+      // 9.0 S3: one rail entry, 训练; the mode is its segment (谜题 / 课程)
+      await page.click('#rail button[data-view="train"]'); await page.waitForTimeout(500);
+      const seg = mode === "puzzle" ? "puzzle" : "course";
+      if (await page.evaluate((s) => document.querySelector('#train-seg button[data-seg="' + s + '"]').getAttribute("aria-pressed") !== "true", seg))
+        await page.click(`#train-seg button[data-seg="${seg}"]`);
+      await page.waitForTimeout(800);
+      assert(await page.evaluate((m) => document.getElementById("app").dataset.mode === m, mode), "训练 → " + seg + " puts the board in " + mode);
     } else {
       await page.click('#rail button[data-view="play"]'); await page.waitForTimeout(400);
       if (await page.evaluate((m) => JSON.parse(localStorage.getItem("chess.settings")).mode !== m, mode)) {
@@ -3732,11 +3795,18 @@ if (scenario()) {
              rows: list.children.length,
              review: vis(document.getElementById("review-actions")),
              reviewKey: vis(document.getElementById("review-open")),
-             daily: vis(document.getElementById("daily-row")),
+             // 9.0 S1: the plan left the panel for 今天 — nothing of it is in the panel
+             daily: [...document.querySelectorAll("#side #today-go, #side .daily-plan, #side [id^='daily-']")].filter(vis).map((e) => e.id),
              primaries: [...document.querySelectorAll("#side .primary, .chrome .primary")].filter(vis).map((b) => b.id),
-             tertiary: ["pgn-copy", "pgn-download", "slots-open", "editor-open"].map((id) => {
+             // 9.0 S2: the row is five fixed places; 存档槽 / 编辑局面 are under 更多
+             toolRow: [...document.querySelectorAll("#tool-row button")].map((b) => b.id),
+             tertiary: ["review-open", "explorer-open", "pgn-copy", "pgn-download", "more-tools"].map((id) => {
                const b = document.getElementById(id);
-               return b.classList.contains("tool-ic") && !!b.title && !!b.getAttribute("aria-label");
+               return !!b && b.classList.contains("tool-ic") && !!b.title && !!b.getAttribute("aria-label");
+             }),
+             folded: ["slots-open", "editor-open", "report-export"].map((id) => {
+               const b = document.getElementById(id);
+               return !!b && !!b.closest("#more-row") && !vis(b);
              }) };
   });
   // v8-0-plan A2 supersedes "the list takes ≥ 45% of the column": taking the
@@ -3744,9 +3814,20 @@ if (scenario()) {
   // the bar follows the last one (a long game: see the A2 section)
   assert(r.rows === 1 && r.nav >= 0 && r.nav <= 16, "对局中,翻谱栏紧跟最后一行棋谱(" + r.nav + "px ≤ 16)");
   assert(!r.review && r.reviewKey, "…复盘的按钮收在「复盘」键后面,不是对局中的常驻家具");
-  assert(!r.daily, "…「今天的训练」在对局进行中让位");
+  assert(r.daily.length === 0, "…「今天的训练」不在对局的面板里(" + r.daily.join(", ") + ")");
   assert(r.primaries.length === 0, "…对局中没有主按钮(" + r.primaries.join(", ") + ")");
-  assert(r.tertiary.every(Boolean), "PGN / 导出 / 存档槽 / 编辑局面 是第三级:图标 + tooltip + 可读名");
+  assert(JSON.stringify(r.toolRow) === JSON.stringify(["review-open", "explorer-open", "pgn-copy", "pgn-download", "more-tools"]),
+    "工具行固定五个位置(" + r.toolRow.join(", ") + ")");
+  assert(r.tertiary.every(Boolean), "复盘 / 开局 / 复制 / 导出 / 更多 是第三级:图标 + tooltip + 可读名");
+  assert(r.folded.every(Boolean), "…存档槽 / 编辑局面 / 导出复盘图 收在「更多」里,对局中不露面");
+  // 9.0 S1: and on 今天 the next thing is this game — the plan gives way to it
+  await page.click('.rail-btn[data-view="home"]');
+  await page.waitForTimeout(400);
+  const hero = await page.evaluate(() => ({ go: document.getElementById("today-go").textContent.trim(),
+    plan: !!document.getElementById("daily-plan").offsetParent }));
+  assert(hero.go === "接着下" && !hero.plan, "…对局进行中,「今天」的主卡是这一盘(「" + hero.go + "」),计划让位");
+  await page.click('.rail-btn[data-view="play"]');
+  await page.waitForTimeout(400);
   await page.click("#review-open");
   await page.waitForTimeout(200);
   assert(await page.evaluate(() => !!document.getElementById("review-actions").offsetParent), "…按「复盘」键,它们就出来");
@@ -3928,6 +4009,9 @@ if (scenario()) {
 if (scenario()) for (const [when, mode, act] of [
   ["教学·第 1 课", "learn", async () => {}],
   ["做题·第 1 题", "puzzle", async () => {}],
+  // 9.0 S3: 训练's other two segments are the same lesson panel with other content
+  ["训练·残局", "learn", async (page) => { await page.click('#train-seg button[data-seg="endgame"]'); await page.waitForTimeout(600); }],
+  ["训练·名局", "learn", async (page) => { await page.click('#train-seg button[data-seg="classic"]'); await page.waitForTimeout(600); }],
   ["人机·开局前", "ai", async () => {}],
   ["我的", "ai", async (page) => { await page.click('#rail button[data-view="me"]'); }],
   ["首页", "ai", async (page) => { await page.click('#rail button[data-view="home"]'); }],
@@ -3943,7 +4027,7 @@ if (scenario()) for (const [when, mode, act] of [
   await page.waitForTimeout(400);
   const p = await page.evaluate(() => [...document.querySelectorAll(".primary")].filter((e) => !!e.offsetParent && !e.closest(".modal-bg")).map((e) => e.id));
   assert(p.length <= 1, when + ":可见的主按钮 ≤ 1(" + p.join(", ") + ")");
-  if (mode === "learn") {
+  if (when === "教学·第 1 课") {
     const dots = await page.evaluate(() => document.querySelectorAll("#lesson-dots .lesson-dot").length);
     assert(dots >= 1, "教学:课程进度是一排圆点(" + dots + " 个)");
   }
@@ -3976,28 +4060,36 @@ if (scenario()) {
 // 7.8.0 在教学里,第一课正在上,面板最上面仍是「今天的训练:学一节新课」,把课文
 // 往下推了约 140px;做题页同理。量法:卡片藏着时课文标题的纵坐标,对比把卡片
 // 临时放回来时的纵坐标 —— 后者就是 7.8.0 的位置。
+// 9.0 S1: the card left the panel altogether — the plan is 今天's hero. The
+// claim is re-asked of where things are now: while training, the panel opens
+// on the lesson or the puzzle (right under 训练's switch, nothing between);
+// and with no game on, the plan is still one click away, on 今天, in words.
 if (scenario()) {
   for (const mode of ["learn", "puzzle"]) {
     const { ctx, page } = await open("zh-CN", mode, "play");
     const r = await page.evaluate((m) => {
-      const row = document.getElementById("daily-row");
-      const head = document.querySelector(m === "learn" ? "#lesson-title" : "#sec-puzzle .side-h-row");
-      const shown = !!row.offsetParent;
-      const now = head.getBoundingClientRect().top;
-      row.hidden = false;
-      const was = head.getBoundingClientRect().top;
-      row.hidden = true;
-      return { shown, now, was };
+      const seg = document.getElementById("train-seg");
+      const head = document.querySelector(m === "learn" ? "#lesson-title" : "#puzzle-task");
+      const daily = [...document.querySelectorAll("#side #today-go, #side .daily-plan, #side [id^='daily-']")]
+        .filter((e) => e.offsetParent).map((e) => e.id);
+      return { daily, seg: !!seg.offsetParent, gap: head.getBoundingClientRect().top - seg.getBoundingClientRect().bottom };
     }, mode);
-    assert(!r.shown, "§4b " + mode + ":「今天的训练」不出现");
-    assert(r.was - r.now >= 40, "§4b " + mode + ":" + (mode === "learn" ? "课文标题" : "做题标题") +
-      "上移 " + Math.round(r.was - r.now) + "px(" + Math.round(r.was) + " → " + Math.round(r.now) + ")");
+    assert(r.daily.length === 0, "§4b " + mode + ":「今天的训练」不在面板里(" + r.daily.join(", ") + ")");
+    assert(r.seg && r.gap >= 0 && r.gap < 40, "§4b " + mode + ":" + (mode === "learn" ? "课文标题" : "题目卡") +
+      "紧跟在训练的切换下面(相隔 " + Math.round(r.gap) + "px)");
     await ctx.close();
   }
   for (const mode of ["ai", "pvp"]) {
     const { ctx, page } = await open("zh-CN", mode, "play");
-    assert(await page.evaluate(() => !!document.getElementById("daily-row").offsetParent),
-      "§4b " + mode + ":没有对局时「今天的训练」在");
+    await page.click('#rail button[data-view="home"]');
+    await page.waitForTimeout(500);
+    const h = await page.evaluate(() => {
+      const go = document.getElementById("today-go");
+      return { shown: !!go.offsetParent, go: go.textContent.trim(),
+               title: document.getElementById("today-hero-title").textContent.trim() };
+    });
+    assert(h.shown && h.title && h.go !== "接着下",
+      "§4b " + mode + ":没有对局时「今天」的主卡是今天的训练(「" + h.title + "」·「" + h.go + "」)");
     await ctx.close();
   }
 }
@@ -4637,7 +4729,8 @@ if (scenario()) {
     });
     const first = await railBox();
     const seen = new Set();
-    for (const v of ["home", "puzzle", "learn", "library", "me", "play"]) {
+    // 9.0 S3: 谜题 / 学习 are one entry, 训练; the six are now with 设置
+    for (const v of ["home", "train", "library", "me", "settings", "play"]) {
       await page.click('#rail button[data-view="' + v + '"]');
       await page.waitForTimeout(350);
       const b = await railBox();
@@ -5104,7 +5197,7 @@ if (scenario()) {
     // 9.0 S5: style and clock are chosen in the new-game dialog
     await openNewGame(page);
     await page.click('#newgame-modal #persona-seg button[data-persona="principled"]');
-    await page.click('#newgame-modal #clock-seg button[data-tc="3+2"]');
+    await page.click('#newgame-modal #clock-seg-more button[data-tc="3+2"]');
     await startNewGame(page);
     const r = await page.evaluate(() => [...document.querySelectorAll(".pstrip")].map((s) => {
       const leaves = [...s.querySelectorAll("*")]
@@ -5260,60 +5353,55 @@ if (scenario()) {
   }
 }
 // --- v8-1-plan T1: the new-game dialog's personas, a segment at a time -------
-// Twenty-odd cards are three segments (入门 / 进阶 / 高手) over the grid: the
-// tabs are equal thirds to the tenth of a pixel in every language, no label
-// is cut, and each segment's cards sit inside the dialog without a sideways
-// scroll — in a wide window and at phone width.
+// Twenty-odd cards were three segments (入门 / 进阶 / 高手) over the grid.
+// 9.0 S2: the segments are gone — the grid is a window of eight cards around
+// the one picked (opponents-ui SHOWN), every rung and style under 更多选项.
+// What T1 asked of the cards still holds of the eight: no name or rating is
+// cut and every card sits inside the dialog without a sideways scroll — in a
+// wide window and at phone width, in three languages; and now also that the
+// window is eight with the pick inside it, and that 更多选项 opened keeps the
+// dialog as tidy (its clocks, rungs and styles inside it, no label cut).
+// (The three tabs' equal-thirds and one-height checks went with the tabs.)
 if (scenario()) {
   for (const lang of LANGS) {
     for (const viewport of [{ width: 1400, height: 900 }, { width: 390, height: 700 }]) {
       const { ctx, page, errs } = await open(lang, "ai", "play", "wood", viewport);
-      await page.waitForFunction(() => document.querySelectorAll("#op-seg button").length === 3, null, { timeout: 5000 }).catch(() => {});
+      await page.waitForFunction(() => document.querySelectorAll("#op-grid .op-card").length > 8, null, { timeout: 5000 }).catch(() => {});
       await page.evaluate(() => document.getElementById("btn-new").click());
       await page.waitForTimeout(400);
       // this file stubs the engine, whose fault banner then lands over a
       // phone-width dialog's top: out of the way, it is not what is measured
-      const unfault = () => page.evaluate(() => { const f = document.getElementById("engine-fault"); if (f) f.style.display = "none"; });
-      for (const k of [0, 1, 2]) {
-        await unfault();
-        await page.click('#op-seg button[data-seg="' + k + '"]', { timeout: 5000 }).catch((e) => console.log("  click seg " + k + ": " + e.message.split("\n")[0]));
-        await page.waitForFunction((x) => { const b = document.querySelector('#op-seg button[data-seg="' + x + '"]'); return b && b.getAttribute("aria-pressed") === "true"; }, k, { timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(100);
-        // v8-4-plan D1: the click leaves the pressed segment easing back from
-        // `:active { transform: scale(0.97) }` (--dur-quick); WebKit 27.2 was
-        // still mid-transition at 100 ms (133.41 vs 134.00). Measure the
-        // layout, not the press: wait for the segments' transitions to end.
-        await page.evaluate(() => Promise.all([...document.querySelectorAll("#op-seg button")]
-          .flatMap((b) => (b.getAnimations ? b.getAnimations() : []).map((a) => a.finished.catch(() => {})))));
-        const r = await page.evaluate(() => {
-          const seg = document.getElementById("op-seg");
-          const bs = [...seg.querySelectorAll("button")];
-          const modal = document.querySelector("#newgame-modal .modal");
-          const mr = modal.getBoundingClientRect();
-          const cards = [...document.querySelectorAll("#op-grid .op-card")].filter((c) => !c.hidden && c.offsetParent);
-          const cut = (e) => e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1;
-          return {
-            shown: !seg.hidden && !!seg.offsetParent, n: bs.length,
-            on: bs.filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.seg),
-            widths: bs.map((b) => b.getBoundingClientRect().width),
-            heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
-            spill: bs.filter(cut).map((b) => b.textContent.trim()),
-            labels: bs.map((b) => b.textContent.trim()),
-            cards: cards.length,
-            cardSpill: cards.filter((c) => [...c.querySelectorAll(".op-name, .op-meta")].some(cut)).map((c) => c.dataset.op),
-            past: cards.concat(bs).filter((e) => e.getBoundingClientRect().right > mr.right + 0.5 || e.getBoundingClientRect().left < mr.left - 0.5).length,
-            sideways: modal.scrollWidth - modal.clientWidth,
-          };
-        });
-        const tag = `T1 对手分段 (${lang}, ${viewport.width}×${viewport.height}, 第 ${k + 1} 段)`;
-        assert(r.shown && r.n === 3 && r.on.join() === String(k), `${tag}: 三段都在，按下的是这一段 (${r.on.join()})`);
-        assert(Math.max(...r.widths) - Math.min(...r.widths) < 0.1, `${tag}: 三段等宽 (${r.widths.map((w) => w.toFixed(2)).join(", ")})`);
-        assert(r.heights.length === 1 && r.labels.every(Boolean) && r.spill.length === 0,
-          `${tag}: 一样高、字不出按钮 (${r.labels.join(" / ")}; ${r.spill.join(", ") || "—"})`);
-        assert(r.cards >= 4 && r.cardSpill.length === 0 && r.past === 0 && r.sideways <= 0,
-          `${tag}: ${r.cards} 张卡片都在对话框里、名字和分数没被截 (${r.cardSpill.join(", ") || "—"}; ${r.sideways}px)`);
-      }
-      assert(errs.length === 0, `T1 对手分段 (${lang}, ${viewport.width}): 没有页面异常 — ` + errs.join(" / "));
+      await page.evaluate(() => { const f = document.getElementById("engine-fault"); if (f) f.style.display = "none"; });
+      const measure = () => page.evaluate(() => {
+        const modal = document.querySelector("#newgame-modal .modal");
+        const mr = modal.getBoundingClientRect();
+        const all = [...document.querySelectorAll("#op-grid .op-card")];
+        const cards = all.filter((c) => !c.hidden && c.offsetParent);
+        const cut = (e) => e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1;
+        const outside = (e) => e.getBoundingClientRect().right > mr.right + 0.5 || e.getBoundingClientRect().left < mr.left - 0.5;
+        const more = [...document.querySelectorAll("#ng-custom-body button")].filter((b) => b.checkVisibility());
+        return {
+          ladder: all.length, cards: cards.length,
+          picked: cards.filter((c) => c.getAttribute("aria-pressed") === "true").map((c) => c.dataset.op),
+          cardSpill: cards.filter((c) => [...c.querySelectorAll(".op-name, .op-meta")].some(cut)).map((c) => c.dataset.op),
+          past: cards.filter(outside).length,
+          more: more.length, moreSpill: more.filter(cut).map((b) => b.textContent.trim()), morePast: more.filter(outside).length,
+          sideways: modal.scrollWidth - modal.clientWidth,
+        };
+      });
+      const tag = `T1 对手卡 (${lang}, ${viewport.width}×${viewport.height})`;
+      const r = await measure();
+      assert(r.ladder > 8 && r.cards === 8, `${tag}: 阶梯 ${r.ladder} 位对手里露出 8 张卡 (${r.cards})`);
+      assert(r.picked.length === 1, `${tag}: 选中的那位在这 8 张里 (${r.picked.join(", ") || "—"})`);
+      assert(r.cardSpill.length === 0 && r.past === 0 && r.sideways <= 0,
+        `${tag}: ${r.cards} 张卡片都在对话框里、名字和分数没被截 (${r.cardSpill.join(", ") || "—"}; ${r.sideways}px)`);
+      assert(r.more === 0, `${tag}: 「更多选项」收着时里面的按钮一个也不露 (${r.more})`);
+      await page.evaluate(() => { document.getElementById("ng-custom").open = true; });
+      await page.waitForTimeout(250);
+      const o = await measure();
+      assert(o.more >= 14 && o.moreSpill.length === 0 && o.morePast === 0 && o.sideways <= 0,
+        `${tag}: 打开「更多选项」，${o.more} 个按钮都在对话框里、字不出按钮、不横向滚动 (${o.moreSpill.join(", ") || "—"}; ${o.sideways}px)`);
+      assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
       await ctx.close();
     }
   }
@@ -5385,6 +5473,8 @@ if (scenario()) {
       await page.reload();
       await page.waitForTimeout(900);
       await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+      // 9.0 S3: the camp is 训练's 残局 segment; 目录 lists that segment only
+      await page.click('#train-seg button[data-seg="endgame"]');
       await page.waitForFunction(() => document.querySelectorAll("#lesson-list button[data-eg]").length === 90, null, { timeout: 8000 }).catch(() => {});
       await page.evaluate(() => {
         const d = document.querySelector("#sec-learn details.reading-index");
@@ -5403,10 +5493,13 @@ if (scenario()) {
         const row = sec.querySelector(".lesson-controls");
         const bs = [...row.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent);
         return { cut: out, items: sec.querySelectorAll("#lesson-list button[data-eg]").length,
+          others: sec.querySelectorAll("#lesson-list .lesson-item:not([data-eg])").length,
+          head: document.getElementById("lesson-list-h").textContent,
           title: document.getElementById("lesson-title").textContent,
           heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))], n: bs.length };
       });
       assert(learn.items === 90 && /·/.test(learn.title), `${tag}: 目录里 90 个，卡片是这个残局（${learn.title}）`);
+      assert(learn.others === 0 && /90/.test(learn.head), `${tag}: 目录只列残局这一段（另有 ${learn.others} 项；「${learn.head}」）`);
       assert(learn.cut.length === 0, `${tag}: 学习卡片与目录没有被裁掉的字` + (learn.cut.length ? " — " + learn.cut.join(", ") : ""));
       assert(learn.n === 2 && learn.heights.length === 1, `${tag}: 重来 / 下一个残局 一排、一样高 (${learn.n}; ${learn.heights.join(", ")})`);
       await page.click('#rail button[data-view="me"]', { timeout: 1500 }).catch(() => {});
@@ -5462,6 +5555,10 @@ if (scenario()) {
     return { cut: out, n: bs.length, rows: tops.size,
       heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
       spill: bs.filter((b) => b.scrollHeight > b.clientHeight + 1).map((b) => b.textContent.trim()),
+      mode: (() => { const m = [...document.querySelectorAll("#classic-mode button")].filter((b) => b.offsetParent);
+        return { n: m.length, on: (m.find((b) => b.getAttribute("aria-pressed") === "true") || { dataset: {} }).dataset.cmode,
+          heights: [...new Set(m.map((b) => Math.round(b.getBoundingClientRect().height)))],
+          spill: m.filter((b) => b.scrollHeight > b.clientHeight + 1 || b.scrollWidth > b.clientWidth + 1).map((b) => b.textContent.trim()) }; })(),
       say: (document.getElementById("gs-say") || {}).textContent || "",
       worst: (document.getElementById("gs-worst") || {}).textContent || "",
       sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
@@ -5494,6 +5591,11 @@ if (scenario()) {
   for (const lang of LANGS) {
     {
       const { ctx, page, errs } = await open(lang, "learn", "play", "wood", WIDE);
+      // 9.0 S3: the forty are 训练's 名局 segment, guessed when its switch says 猜着
+      await page.click('#train-seg button[data-seg="classic"]');
+      await page.waitForTimeout(500);
+      await page.click('#classic-mode button[data-cmode="guess"]');
+      await page.waitForFunction(() => document.querySelectorAll("#lesson-list button[data-gs]").length === 40, null, { timeout: 8000 }).catch(() => {});
       await page.evaluate(() => {
         window.__chess.engine.isReady = () => true;
         window.__chess.engine.analyze = async (fen) => {
@@ -5518,8 +5620,11 @@ if (scenario()) {
             const tag = `T3 猜着 (${lang}, ${v.width}×${v.height})`;
             assert(/1\. d4/.test(mid.say), `${tag}: 猜错一步后，判语在卡片上（${mid.say}）`);
             assert(mid.cut.length === 0 && mid.sideways <= 0, `${tag}: 猜到一半，卡片、任务行与任务条没有被裁掉的字，页面不横向滚动` + (mid.cut.length ? " — " + mid.cut.join(", ") : ""));
-            assert(mid.n === 2 && mid.rows === 1 && mid.heights.length === 1 && mid.spill.length === 0,
-              `${tag}: 猜到一半，换一方 / 读棋 一排、一样高、字在框里 (${mid.n}; ${mid.rows} 行; ${mid.heights.join(", ")})`);
+            // 9.0 S3: 读棋 is 名局's 读谱 / 猜着 switch now, not a button on the card
+            assert(mid.n === 1 && mid.rows === 1 && mid.heights.length === 1 && mid.spill.length === 0,
+              `${tag}: 猜到一半，换一方 一个按钮、字在框里 (${mid.n}; ${mid.rows} 行; ${mid.heights.join(", ")})`);
+            assert(mid.mode.n === 2 && mid.mode.on === "guess" && mid.mode.heights.length === 1 && mid.mode.spill.length === 0,
+              `${tag}: 读谱 / 猜着 开关在，停在猜着，一样高、字在框里 (${JSON.stringify(mid.mode)})`);
           }
         }
       }
@@ -5528,8 +5633,8 @@ if (scenario()) {
         const tag = `T3 猜着 (${lang}, ${v.width}×${v.height})`;
         assert(/1\. d4/.test(end.worst), `${tag}: 终局卡有最大偏差（${end.worst}）`);
         assert(end.cut.length === 0 && end.sideways <= 0, `${tag}: 终局卡没有被裁掉的字，页面不横向滚动` + (end.cut.length ? " — " + end.cut.join(", ") : ""));
-        assert(end.n === 3 && end.rows === 1 && end.heights.length === 1 && end.spill.length === 0,
-          `${tag}: 看这一步 / 换一方 / 读棋 一排、一样高、字在框里 (${end.n}; ${end.rows} 行; ${end.heights.join(", ")}; ${end.spill.join(", ") || "—"})`);
+        assert(end.n === 2 && end.rows === 1 && end.heights.length === 1 && end.spill.length === 0,
+          `${tag}: 看这一步 / 换一方 一排、一样高、字在框里 (${end.n}; ${end.rows} 行; ${end.heights.join(", ")}; ${end.spill.join(", ") || "—"})`);
       }
       // v8-4-plan T2: of the forty, the game with the longest names and the
       // one with the longest intro in this language — the card before the
@@ -5559,7 +5664,8 @@ if (scenario()) {
 }
 // --- v8-2-plan T2: 看 N 步 / 盲走 — the two doors, the card, 「我的」's section ---
 // In three languages, at the widest window and the narrowest: the 玩法 row
-// with its five segments one height and their words inside; the question
+// with its five segments one height and their words inside (9.0 S3: the
+// four buttons of 换个练法 — 冲刺 · 连胜 · 看 N 步 · 盲走); the question
 // card's field and buttons inside the panel, the field and 确定 on one line;
 // the block rhythm of 做题 still 8 / 20; 「我的」's 计算专项 one line a mode,
 // its two buttons one height; nothing past the page's edge.
@@ -5569,7 +5675,8 @@ if (scenario()) {
       blind: { rating: { r: 1450, rd: 200, vol: 0.06 }, solve: 2, miss: 1, q: {} } } });
   const cardFits = (page) => page.evaluate(() => {
     const sec = document.getElementById("sec-puzzle"), box = sec.getBoundingClientRect();
-    const seg = [...document.querySelectorAll("#pz-mode-seg button")];
+    // 9.0 S3: the 玩法 segment became 换个练法's four buttons (挑战 · 专项)
+    const seg = [...document.querySelectorAll("#pz-modes button[data-run]")].filter((b) => b.offsetParent);
     const card = document.getElementById("pz-vis");
     const ctl = [...card.querySelectorAll("button, input")].filter((b) => !b.hidden && b.offsetParent);
     const spill = seg.concat(ctl).filter((b) => b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1 ||
@@ -5580,7 +5687,8 @@ if (scenario()) {
     const kids = [...sec.children].filter((e) => e.getClientRects().length && e.getBoundingClientRect().height > 0);
     const gaps = [];
     for (let i = 1; i < kids.length; i++) gaps.push(Math.round((kids[i].getBoundingClientRect().top - kids[i - 1].getBoundingClientRect().bottom) * 10) / 10);
-    return { shown: !card.hidden && !!card.offsetParent, spill, text, row, gaps,
+    return { shown: !card.hidden && !!card.offsetParent, spill, text, row, gaps, nseg: seg.length,
+      lit: seg.filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.dataset.run),
       segH: [...new Set(seg.map((b) => Math.round(b.getBoundingClientRect().height)))],
       ctlH: [...new Set(ctl.filter((b) => b.tagName === "BUTTON").map((b) => Math.round(b.getBoundingClientRect().height)))],
       sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
@@ -5594,7 +5702,7 @@ if (scenario()) {
       await page.waitForTimeout(900);
       await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
       for (const kind of ["look", "blind"]) {
-        await page.click(`#pz-mode-seg button[data-run="${kind}"]`);
+        await page.click(`#pz-modes button[data-run="${kind}"]`);
         await page.waitForFunction(() => !document.getElementById("pz-vis").hidden, null, { timeout: 6000 }).catch(() => {});
         await page.waitForTimeout(300);
         for (const when of ["asked", "answered"]) {
@@ -5607,7 +5715,8 @@ if (scenario()) {
           const r = await cardFits(page);
           const at = `${tag} ${kind}/${when}`;
           assert(r.shown, `${at}: 卡片出现`);
-          assert(r.segH.length === 1 && r.ctlH.length <= 1, `${at}: 玩法五段一样高、卡片的按钮一样高 (${r.segH.join(", ")}; ${r.ctlH.join(", ")})`);
+          assert(r.nseg === 4 && r.lit.join() === kind, `${at}: 换个练法的四个按钮都在，亮的是这一个 (${r.nseg}; ${r.lit.join(", ")})`);
+          assert(r.segH.length === 1 && r.ctlH.length <= 1, `${at}: 换个练法四个按钮一样高、卡片的按钮一样高 (${r.segH.join(", ")}; ${r.ctlH.join(", ")})`);
           assert(r.spill.length === 0 && r.text.length === 0 && r.row, `${at}: 字不出框、输入框和「确定」一行 (${r.spill.join(", ") || "—"}; ${r.text.join(", ") || "—"})`);
           assert(r.gaps.every((g) => Math.abs(g - 8) <= 0.5 || Math.abs(g - 20) <= 0.5), `${at}: 做题页的间距仍只有 8 / 20 (${r.gaps.join(", ")})`);
           assert(r.sideways <= 0, `${at}: 页面不横向滚动 (${r.sideways}px)`);
