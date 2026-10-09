@@ -164,7 +164,10 @@ function keepCurrentInView(list) {
   sizes.observe(list);
   for (const row of list.children) sizes.observe(row);
   new MutationObserver((recs) => {
-    for (const r of recs) for (const n of r.addedNodes) if (n.nodeType === 1 && n.parentNode === list) sizes.observe(n);
+    for (const r of recs) {
+      for (const n of r.removedNodes) if (n.nodeType === 1) sizes.unobserve(n);
+      for (const n of r.addedNodes) if (n.nodeType === 1 && n.parentNode === list) sizes.observe(n);
+    }
     soon();
   }).observe(list, { childList: true, subtree: true });
 }
