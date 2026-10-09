@@ -133,6 +133,25 @@ function watchShape(app, view) {
 const WHITE = ".mlrow > .mlnum + .mlmove";
 
 /** Keep --ml-w on `list` equal to its widest White cell. */
+/**
+ * 9.0: the list centres the current move when it renders (app.js), but its
+ * height can change afterwards — a row of buttons below it refits, a font
+ * arrives — and the move it centred slides out of view (WebKit, a 120-move
+ * game at 1024×768). When the list's box changes, bring the current move
+ * back if it is no longer inside.
+ * @param {HTMLElement} list
+ */
+function keepCurrentInView(list) {
+  if (typeof ResizeObserver !== "function") return;
+  new ResizeObserver(() => {
+    const cur = list.querySelector(".current");
+    if (!cur) return;
+    const c = cur.getBoundingClientRect(), l = list.getBoundingClientRect();
+    if (c.top >= l.top - 0.5 && c.bottom <= l.bottom + 0.5) return;
+    list.scrollTop += c.top - l.top - list.clientHeight / 2;
+  }).observe(list);
+}
+
 function watchColumns(list) {
   if (typeof ResizeObserver !== "function") return;
   const widths = new WeakMap();
@@ -249,7 +268,7 @@ export function watchPlayLayout(d) {
   // 9.0 V1: a label is one line everywhere (white-space: nowrap), so the
   // action rows on the pages and in 偏好设置 step their columns down too
   for (const el of document.querySelectorAll(".page, #prefs-modal")) watchFitRows(el, { wide: false });
-  if (d.list) watchColumns(d.list);
+  if (d.list) { watchColumns(d.list); keepCurrentInView(d.list); }
   if (d.list && d.strip) watchStrip(d.list, d.strip);
   if (d.opening && d.infoOpening) watchOpening(d.opening, d.infoOpening);
 }
