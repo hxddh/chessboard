@@ -368,6 +368,13 @@ const PLACEMENT = STUDY.split(" ")[0];
   assert(ach >= 1, `成就真的落了盘(解锁 ${ach} 个)`);
 
   // v8-0-plan C1: 「全部 N 局」 opens the library's list on its 本机 games
+  // (9.0 S4: 对局历史 is on 棋谱 now, not on 我的)
+  await page.click('#rail button[data-view="library"]');
+  await page.waitForTimeout(400);
+  const preview = await page.evaluate(() => ({
+    onLib: !!document.querySelector("#page-library #sec-history"),
+    rows: document.querySelectorAll("#hist-body [data-hist]").length }));
+  assert(preview.onLib && preview.rows === 1, `对局历史在「棋谱」页上，预览里就是这一局(${JSON.stringify(preview)})`);
   await page.click("#hist-open");
   await page.waitForTimeout(800);
   const rows = await page.evaluate(() =>
