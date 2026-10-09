@@ -143,13 +143,24 @@ const WHITE = ".mlrow > .mlnum + .mlmove";
  */
 function keepCurrentInView(list) {
   if (typeof ResizeObserver !== "function") return;
-  new ResizeObserver(() => {
+  let frame = 0;
+  const check = () => {
+    frame = 0;
     const cur = list.querySelector(".current");
     if (!cur) return;
     const c = cur.getBoundingClientRect(), l = list.getBoundingClientRect();
     if (c.top >= l.top - 0.5 && c.bottom <= l.bottom + 0.5) return;
     list.scrollTop += c.top - l.top - list.clientHeight / 2;
-  }).observe(list);
+  };
+  const soon = () => { if (!frame) frame = requestAnimationFrame(check); };
+  // the box changing (a row below refits) and the content changing after the
+  // render centred it (WebKit lays rows out again a frame later: scrollTop
+  // 1234 of 1278 with the last move 44px under the edge)
+  new ResizeObserver(soon).observe(list);
+  new MutationObserver(soon).observe(list, { childList: true, subtree: true });
+  // …and the bundled font arriving after the first layout, which changes the
+  // rows' metrics without touching the DOM or the list's own box
+  if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener("loadingdone", soon);
 }
 
 function watchColumns(list) {
