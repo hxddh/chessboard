@@ -169,7 +169,9 @@ function legibility(img) {
   assert(/\.hint\.empty-note::before \{[^}]*background: currentColor/.test(body) && /\.hint\.empty-note \{[^}]*color: var\(--muted\)/.test(body),
     "空状态的图标用次要色（品牌色只给字标）");
   assert(!/empty-note[^{]*\{[^}]*var\(--brand\)/.test(body), "……空状态里不再有品牌色");
-  assert(/id="home-h"[^>]*class="[^"]*wordmark|class="[^"]*wordmark[^"]*"[^>]*id="home-h"/.test(html), "首页的标题是字标");
+  // 9.0 S1：今天页的标题是问候语，字标在它上面
+  const head = html.slice(html.indexOf('<header class="today-head">'), html.indexOf('</header>', html.indexOf('<header class="today-head">')));
+  assert(/class="wordmark[^"]*"[^>]*id="today-brand"/.test(head) && head.indexOf('id="today-brand"') < head.indexOf('id="home-h"'), "今天页的页头有字标，在问候语上面");
   assert(/id="about-modal"[\s\S]{0,400}class="[^"]*wordmark/.test(html), "关于里有字标");
 }
 

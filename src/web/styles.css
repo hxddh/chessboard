@@ -4150,6 +4150,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
    filled button; everything else is a card you click into. */
 .today-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
 .today-head .page-h { margin: 0; }
+.today-brand { margin: 0 0 8px; font-size: 0.875rem; }
 .today-head > .act-btn, .today-acts > .act-btn { flex: none; width: auto; min-width: 128px; padding: 0 16px; }
 .today-date { margin: 4px 0 0; font-size: 0.875rem; color: var(--muted); }
 .today-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px; align-items: stretch; margin-bottom: 24px; }
