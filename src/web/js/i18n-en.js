@@ -41,7 +41,7 @@
       "about.licenseText": "GPLv3 — free software; the source ships with every release", "about.creditsText": "Stockfish 19 (GPLv3) · chess.js (BSD-2) · cburnett piece set (Colin M.L. Burnett, GPLv2+; the Classic set is its Wikimedia redrawing, multi-licensed GFDL / BSD / GPL / CC BY-SA 3.0) · Merida piece set (Armando Hernandez Marroquin, GPLv2+) · Chessnut piece set (Alexis Luengas, Apache 2.0) · Fantasy / Celtic / Spatial piece sets (Maurizio Monge, MIT) · lichess chess-openings (CC0) · Lichess game database (CC0, the built-in master move tree) · wooden sound set made for this project (rendered from a physical model, GPLv3) · Lucide icons (ISC; ten derived from Feather, MIT)",
       // 7.7 (v7-7-plan §2–§4, §7): the result card, the puzzle feedback card,
       // the lesson dots and the tool row's tooltips
-      "go.analyse": "Analyse this game",
+      "go.analyse": "Review this game",
       "go.again": "Play again",
       "go.switch": "New opponent",
       "go.youWin": "You won",

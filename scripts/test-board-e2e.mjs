@@ -1693,14 +1693,12 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     `在新对局里选了白方开局,下次对话框预选白方,不再是「随机」(${fixed};设置 ${picked.humanColor} / 随机 ${picked.colorRandom})`);
   await page.click("#ng-cancel"); await page.waitForTimeout(300);
 
-  // the result card's two buttons open the same dialog; 换个对手 lands on the opponent
+  // the result bar's 再来一盘 opens the same dialog (9.0 M1: 换个对手 was
+  // the same dialog again, and is gone)
   await page.evaluate(() => document.getElementById("go-again").click()); await page.waitForTimeout(300);
   s = await state();
   assert(s.open && s.view === "play" && !s.settingsShown, `「再来一盘」打开同一个对话框,留在棋盘上(${s.view})`);
-  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
-  await page.evaluate(() => document.getElementById("go-switch").click()); await page.waitForTimeout(300);
-  s = await state();
-  assert(s.open && s.view === "play" && !s.settingsShown && s.focus === "max", `「换个对手」也是它,不再跳去设置页,焦点落在当前的角色上(${s.view} / ${s.focus})`);
+  assert(await page.evaluate(() => !document.getElementById("go-switch")), "结果条上不再有「换个对手」，再来一盘就是那个对话框");
   await page.keyboard.press("Escape"); await page.waitForTimeout(300);
 
   // two players: only who plays White (the bottom side) and the clock.
@@ -2084,10 +2082,10 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     const step = cv.width / 8;
     let f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
     if (fl) { f = 7 - f; rk = 7 - rk; }
-    // the reveal badges' corner (board.js): centre 0.24 of a square in,
-    // radius 0.21 — read near its top, clear of the glyph or the tick
-    const x = w === "badge" ? (f + 1) * step - step * 0.24 : f * step + step * (w === "edge" ? 0.12 : 0.5);
-    const y = w === "badge" ? rk * step + step * 0.24 - step * 0.21 * 0.7 : rk * step + step * (w === "edge" ? 0.88 : 0.5);
+    // the reveal badges' corner (board.js): centre 0.19 of a square in,
+    // radius 0.15 — read near its top, clear of the glyph or the tick
+    const x = w === "badge" ? (f + 1) * step - step * 0.19 : f * step + step * (w === "edge" ? 0.12 : 0.5);
+    const y = w === "badge" ? rk * step + step * 0.19 - step * 0.15 * 0.7 : rk * step + step * (w === "edge" ? 0.88 : 0.5);
     const d = cv.getContext("2d").getImageData(Math.round(x), Math.round(y), 1, 1).data;
     return [d[0], d[1], d[2]];
   }, [sq, flip, where]);
@@ -2101,7 +2099,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   }, name);
   const near = (a, b, tol = 14) => a.length === 3 && b.length === 3 && a.every((v, i) => Math.abs(v - b[i]) <= tol);
 
-  // (1) the end of a game: the kings carry the result, the card floats over the board
+  // (1) the end of a game: the kings carry the result, the bar takes the bottom strip's place
   {
     const { ctx, page, errs } = await openA5({ mode: "pvp" });
     for (const [a, b] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"], ["d8", "h4"]]) { await tap(page, a); await tap(page, b); await page.waitForTimeout(200); }
@@ -2114,11 +2112,13 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       const c = document.getElementById("go-card"), w = document.getElementById("board-wrap");
       await Promise.all((c.getAnimations ? c.getAnimations() : []).map((a) => a.finished.catch(() => {})));
       const r = c.getBoundingClientRect(), b = w.getBoundingClientRect();
-      return { shown: !!c.offsetParent, inBoard: w.contains(c) && r.left >= b.left && r.right <= b.right && r.top >= b.top && r.bottom <= b.bottom,
-        centred: Math.abs((r.left + r.right) / 2 - (b.left + b.right) / 2) <= 2 && Math.abs((r.top + r.bottom) / 2 - (b.top + b.bottom) / 2) <= 2,
-        result: document.getElementById("go-result").textContent };
+      const cv = document.getElementById("board").getBoundingClientRect();
+      const s = document.querySelector(".pstrip.at-bottom");
+      return { shown: !!c.offsetParent, clear: r.top >= cv.bottom - 0.5, under: Math.abs(r.left - b.left) <= 1 && Math.abs(r.right - b.right) <= 1,
+        strip: getComputedStyle(s).visibility, result: document.getElementById("go-result").textContent };
     });
-    assert(card.shown && card.inBoard && card.centred, `A5 终局：结果卡浮在棋盘正中（${JSON.stringify(card)}）`);
+    assert(card.shown && card.clear && card.under && card.strip === "hidden",
+      `9.0 M1 终局：结果条在棋盘下沿、占底部玩家栏的位置，不压 64 格（${JSON.stringify(card)}）`);
     if (SHOTS) await page.screenshot({ path: SHOTS + "/end-of-game.png" });
     // stepping back into the game: the card and the badges step aside
     await page.click("#rep-prev");

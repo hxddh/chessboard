@@ -102,7 +102,7 @@ export function createGameController(d) {
     };
     const warn = el("ng-warn");
     if (warn) warn.hidden = !(sanHistory().length && !appGameOver());
-    if (opts && opts.switchOpponent) OppUI.applyAdvice();
+    if (opts && (opts.switchOpponent || opts.again)) OppUI.applyAdvice();
     syncSettingsUI();
     // 换个对手 lands on the opponent (its persona card); everything else on 开始
     const card = OppUI.onOpen();

@@ -927,8 +927,11 @@ import { easeFromCss } from "./motion.js";
     for (const b of badgesOf(m)) {
       const { sr, sc } = screenPos(b.sq, m.flipped);
       const k = b.reveal ? 0.6 + 0.4 * grow : 1;
-      const r = step * (b.reveal ? 0.21 : 0.19) * k;
-      const cx = (sc + 1) * step - step * (b.reveal ? 0.24 : 0.22), cy = sr * step + step * (b.reveal ? 0.24 : 0.22);
+      // 9.0 M1: the result and a puzzle move's verdict are the corner's
+      // small badge (the analysis mark's size, ~24px on a desktop board) —
+      // the ring the check already draws carries the mated king
+      const r = step * (b.reveal ? 0.15 : 0.19) * k;
+      const cx = (sc + 1) * step - step * (b.reveal ? 0.19 : 0.22), cy = sr * step + step * (b.reveal ? 0.19 : 0.22);
       const fill = P[b.fill];
       ctx.save();
       if (b.reveal) ctx.globalAlpha = grow;

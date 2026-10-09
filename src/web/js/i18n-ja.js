@@ -41,7 +41,7 @@
       "about.licenseText": "GPLv3 —— 自由ソフトウェア。ソースコードは各リリースに付属", "about.creditsText": "Stockfish 19（GPLv3）· chess.js（BSD-2）· cburnett 駒セット（Colin M.L. Burnett、GPLv2+。「クラシック」はその Wikimedia 版の描き直しで GFDL / BSD / GPL / CC BY-SA 3.0 の複数ライセンス）· Merida 駒セット（Armando Hernandez Marroquin、GPLv2+）· Chessnut 駒セット（Alexis Luengas、Apache 2.0）· Fantasy / Celtic / Spatial 駒セット（Maurizio Monge、MIT）· lichess chess-openings（CC0）· Lichess 対局データベース（CC0、内蔵の強豪着手ツリー）· 木製の効果音は本プロジェクト製（物理モデルで実時間合成、GPLv3）· Lucide アイコン（ISC。うち 10 個は Feather 由来で MIT）",
       // 7.7 (v7-7-plan §2–§4, §7): the result card, the puzzle feedback card,
       // the lesson dots and the tool row's tooltips
-      "go.analyse": "この対局を解析",
+      "go.analyse": "この対局を振り返る",
       "go.again": "もう一局",
       "go.switch": "相手を変える",
       "go.youWin": "あなたの勝ち",

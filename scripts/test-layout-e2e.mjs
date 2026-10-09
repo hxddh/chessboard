@@ -3106,7 +3106,7 @@ if (scenario()) {
     return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
   }, sq);
   const primaries = () => page.evaluate(() =>
-    // v8-0-plan A5: the result card is over the board now, not in the panel
+    // 9.0 M1: the result is a bar under the board, not in the panel
     [...document.querySelectorAll("#side .act-btn.primary, #go-card .act-btn.primary")].filter((b) => b.offsetParent).map((b) => b.id));
   const play = async (a, b) => {
     for (const sq of [a, b]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(140); }
@@ -3118,11 +3118,11 @@ if (scenario()) {
   await play("g2", "g4"); await play("d8", "h4");   // 愚人将杀
   await page.waitForTimeout(600);
   const after = await primaries();
-  // 7.7 §4: the one to press now sits on the result card (分析这盘); the review
+  // 7.7 §4: the one to press now sits on the result bar (复盘这局); the review
   // row's 分析 takes the fill back once the card is put away — the §4 block
   // near the end of this file checks that half.
   assert(JSON.stringify(after) === '["go-analyse"]',
-    `这局下完了,结果卡上的「分析这盘」成为唯一的主按钮(实际 ${JSON.stringify(after)})`);
+    `这局下完了,结果条上的「复盘这局」成为唯一的主按钮(实际 ${JSON.stringify(after)})`);
   await ctx.close();
 }
 
@@ -3898,18 +3898,19 @@ if (scenario()) {
 
 // --- 7.7 (v7-7-plan §4): every ending gets the result card ------------------
 // Mate, flag, resignation and a draw — the card is there, says the right
-// thing and carries at most one filled button. v8-0-plan A5 replaces 7.7's
-// "never lies on the board": the card floats over the board now, so the rule
-// is that it lies wholly inside the board's frame, centred on it.
+// thing and carries at most one filled button. 9.0 M1: v8-0-plan A5 floated
+// it over the middle of the board; it is a bar in the bottom strip's place
+// now (a card in the wide layout's column), so the rule is that it covers
+// none of the 64 squares and lies wholly in the window.
 if (scenario()) {
   const cardState = (page) => page.evaluate(async () => {
     const c = document.getElementById("go-card");
     // measured where it comes to rest: the reveal (result-in) moves it 4%
     await Promise.all((c.getAnimations ? c.getAnimations() : []).map((a) => a.finished.catch(() => {})));
-    const b = document.getElementById("board-wrap").getBoundingClientRect();
+    const b = document.getElementById("board").getBoundingClientRect();
     const r = c.getBoundingClientRect();
-    const hit = r.left >= b.left - 0.5 && r.right <= b.right + 0.5 && r.top >= b.top - 0.5 && r.bottom <= b.bottom + 0.5 &&
-      Math.abs((r.left + r.right) / 2 - (b.left + b.right) / 2) <= 2 && Math.abs((r.top + r.bottom) / 2 - (b.top + b.bottom) / 2) <= 2;
+    const clear = r.left >= b.right - 0.5 || r.right <= b.left + 0.5 || r.top >= b.bottom - 0.5 || r.bottom <= b.top + 0.5;
+    const hit = clear && r.left >= -0.5 && r.top >= -0.5 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5;
     const vis = (e) => !!e.offsetParent;
     return { shown: vis(c), hit, result: document.getElementById("go-result").textContent.trim(),
              reason: document.getElementById("go-reason").textContent.trim(),
@@ -3952,8 +3953,8 @@ if (scenario()) {
     const s = await cardState(page);
     assert(s.shown, what + ":终局卡出现");
     assert(resultRe.test(s.result) && reasonRe.test(s.reason), what + ":写着结果和原因(" + s.result + " · " + s.reason + ")");
-    assert(s.hit, what + ":终局卡浮在棋盘正中,整张在棋盘框里(v8-0-plan A5)(卡 / 框 " + s.rect + ")");
-    assert(s.primaries.length === 1 && s.primaries[0] === "go-analyse", what + ":唯一的主按钮是「分析这盘」(" + s.primaries.join(", ") + ")");
+    assert(s.hit, what + ":结果条不压 64 格,整条在窗口里(9.0 M1)(条 / 盘 " + s.rect + ")");
+    assert(s.primaries.length === 1 && s.primaries[0] === "go-analyse", what + ":唯一的主按钮是「复盘这局」(" + s.primaries.join(", ") + ")");
     assert(!s.toast, what + ":结局不再由 toast 宣布(" + s.toast + ")");
     await ctx.close();
   }
@@ -3983,7 +3984,7 @@ if (scenario()) {
     await page.waitForTimeout(1500);
     const s = await cardState(page);
     assert(s.shown && /白方胜/.test(s.result) && /超时/.test(s.reason), "超时:终局卡出现(" + s.result + " · " + s.reason + ")");
-    assert(s.hit, "超时:终局卡浮在棋盘正中,整张在棋盘框里(1024x700)");
+    assert(s.hit, "超时:结果条不压 64 格,整条在窗口里(1024x700)");
     await ctx.close();
   }
   // ✕ puts it away, and 分析 in the review row takes the fill back
@@ -4008,7 +4009,7 @@ if (scenario()) {
     await ctx.close();
   }
   // Codex on #82: a game opened already mated — a [FEN] header and no moves —
-  // has an ending but nothing to analyse, and 分析这盘 on its card led straight
+  // has an ending but nothing to analyse, and 复盘这局 on its card led straight
   // to "no game to analyse". (The FEN dialog refuses such a position; a PGN
   // does not.) The engine is marked ready so only the missing history decides.
   {
@@ -4025,7 +4026,7 @@ if (scenario()) {
     await page.waitForTimeout(800);
     const s = await cardState(page);
     const analyse = await page.evaluate(() => !!document.getElementById("go-analyse").offsetParent);
-    assert(s.shown && !analyse, "打开一局已将死、没有着法的棋谱：终局卡在，但不给「分析这盘」(" + JSON.stringify({ shown: s.shown, analyse }) + ")");
+    assert(s.shown && !analyse, "打开一局已将死、没有着法的棋谱：终局卡在，但不给「复盘这局」(" + JSON.stringify({ shown: s.shown, analyse }) + ")");
     await ctx.close();
   }
   // Codex on #82 (second round): importing the same finished game again goes
@@ -4062,7 +4063,7 @@ if (scenario()) {
     await page.waitForTimeout(500);
     const s = await cardState(page);
     assert(s.shown && s.hit && /黑方胜/.test(s.result) && /将杀/.test(s.reason) && !s.toast,
-      "面板收起时终局：结果卡就在棋盘上,说一次结果和原因(" + s.result + " · " + s.reason + (s.toast ? " · toast " + s.toast : "") + ")");
+      "面板收起时终局：结果条就在棋盘下沿,说一次结果和原因(" + s.result + " · " + s.reason + (s.toast ? " · toast " + s.toast : "") + ")");
     await ctx.close();
   }
 }

@@ -343,7 +343,7 @@ import { loadChunk } from "./chunk.js";
       coachPending: null,
       drawOfferPending: false,
       /** 7.7 §4: the ending whose result card was put away with ✕ */
-      goDismissed: null,
+      goDismissed: null, goAch: null,
       goAnnounced: null,
       /** 7.7 §4: puzzles solved clean in a row, this sitting */
       pzStreak: 0,
@@ -2097,7 +2097,7 @@ import { loadChunk } from "./chunk.js";
   // v8-0-plan F4 (M4): how the game ended and the result card live in
   // game-end.js
   const GameEnd = createGameEnd({
-    store, t, tf, sideName, game, el, setText, avail, toast, sanHistory, analysisFor,
+    store, t, tf, sideName, game, el, setText, avail, toast, sanHistory, analysisFor, Icons,
     appGameOver, resultFromFile: () => resultFromFile(), gameResultToken: () => gameResultToken(), timeoutIsDraw, autoDrawReason, isLive, kingSquare, onMainline,
     onEnding: (end, show) => { OppUI.syncOffer(!!end); if (show) OppUI.paintCard(end); },
   });
@@ -2659,7 +2659,8 @@ import { loadChunk } from "./chunk.js";
       Persist.setJson("achievements", { seen: Array.from(store.session.achSeen) });
       // one toast per unlock, each shown for its whole life before the next
       // (v8-0-plan A5: with the badge's picture, and long enough to read)
-      fresh.forEach((r, i) => setTimeout(() => toast(tdot(t("ach.unlocked"), r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name), "ach", { icon: r.ach.icon }), i * TOAST_MS.ach));
+      // 9.0 M1: one unlocked by the ending is a badge on the result bar
+      (GameEnd.takeAch(fresh[0].ach) ? fresh.slice(1) : fresh).forEach((r, i) => setTimeout(() => toast(tdot(t("ach.unlocked"), r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name), "ach", { icon: r.ach.icon }), i * TOAST_MS.ach));
     }
     renderAchievements();
     renderRecordEntry();
@@ -5006,10 +5007,10 @@ import { loadChunk } from "./chunk.js";
 
   // the result card (7.7 §4)
   document.getElementById("go-analyse").onclick = () => { analyzeGame(SCAN_BUDGET); };
-  // v7-8-plan §4: both open the new-game dialog — 换个对手 no longer sends
-  // you to the settings page to find the opponent in a fold
+  // v7-8-plan §4: the new-game dialog, the last choices in it — with the
+  // rung the result line suggested, if it suggested one (9.0 M1: the bar's
+  // second button, 换个对手, was the same dialog with that one change)
   document.getElementById("go-again").onclick = () => { requestNewGame({ again: true }); };
-  document.getElementById("go-switch").onclick = () => { requestNewGame({ switchOpponent: true }); };
   document.getElementById("idle-new").onclick = () => { requestNewGame({ switchOpponent: store.session.mode === "ai" }); };
   {
     const ngModal = el("newgame-modal");

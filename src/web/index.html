@@ -155,31 +155,30 @@
              child: the badge is a live region, and a button inside one is
              read out as a status change. -->
         <button type="button" class="preview-try" id="preview-try" data-i18n="act.tryHere" hidden>从这里试走</button>
-        <!-- 7.7 (v7-7-plan §4): how the game ended — the result in large
-             type, the reason under it, and what to do next. Not a dialog:
-             nothing is blocked and ✕ puts it away. v8-0-plan A5: it floats
-             over the board (it was a card at the top of the panel, and the
-             board said nothing about the ending), on the final position
-             only; the kings carry the result in their corners. One filled
-             button: 分析这盘 while the game is unanalysed, 再来一盘 once it
+        <!-- 9.0 M1: how the game ended, as a bar under the board — the
+             result, the reason and your rating under it, and what to do
+             next. It takes the bottom strip's place (the wide layout puts it
+             in the column beside the board), so nothing of the 64 squares
+             is covered at the moment the final position is worth reading.
+             Not a dialog: nothing is blocked and ✕ puts it away. One filled
+             button: 复盘这局 while the game is unanalysed, 再来一盘 once it
              has been. -->
         <section class="go-card" id="go-card" aria-labelledby="go-result" hidden>
-          <div class="go-head">
-            <span class="go-mark num" id="go-mark"></span>
-            <div class="go-txt">
-              <p class="go-result" id="go-result"></p>
-              <p class="go-reason" id="go-reason"></p>
-              <!-- v8-0-plan B4: the persona's line, and your engine-game rating -->
-              <p class="go-say" id="go-say" hidden></p>
-              <p class="go-rating num" id="go-rating" hidden></p>
-            </div>
-            <button type="button" class="go-close" id="go-close" aria-label="关闭" data-i18n-aria="act.close" title="关闭" data-i18n-title="act.close"><span data-icon="x" aria-hidden="true"></span></button>
+          <span class="go-mark num" id="go-mark"></span>
+          <div class="go-txt">
+            <p class="go-result" id="go-result"></p>
+            <p class="go-sub"><span class="go-reason" id="go-reason"></span><span class="go-rating num" id="go-rating" hidden></span></p>
+            <!-- v8-0-plan B4: the persona's line (the wide column shows it;
+                 the bar carries it as its tooltip) -->
+            <p class="go-say" id="go-say" hidden></p>
           </div>
+          <!-- an achievement the ending unlocked (game-end.js takeAch) -->
+          <span class="go-ach" id="go-ach" hidden></span>
           <div class="go-acts">
-            <button type="button" class="act-btn" id="go-analyse" data-i18n="go.analyse">分析这盘</button>
+            <button type="button" class="act-btn" id="go-analyse" data-i18n="go.analyse">复盘这局</button>
             <button type="button" class="act-btn" id="go-again" data-i18n="go.again">再来一盘</button>
-            <button type="button" class="act-btn" id="go-switch" data-i18n="go.switch">换个对手</button>
           </div>
+          <button type="button" class="go-close" id="go-close" aria-label="关闭" data-i18n-aria="act.close" title="关闭" data-i18n-title="act.close"><span data-icon="x" aria-hidden="true"></span></button>
         </section>
       </div>
     </div>

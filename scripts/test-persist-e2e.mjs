@@ -338,8 +338,11 @@ const PLACEMENT = STUDY.split(" ")[0];
   const toasts = await page.evaluate(() => window.__toasts || []);
   const status = await page.evaluate(() => (document.getElementById("status") || {}).textContent);
   assert(/将死/.test(status), `下到将死(状态「${status}」)`);
-  assert(toasts.some((x) => /成就/.test(x)),
-    `…而且当场报出了解锁的成就(这段时间里的提示条:${JSON.stringify(toasts.map((x) => x.slice(0, 14)))})`);
+  // 9.0 M1: the first achievement the ending unlocks is a badge on the
+  // result bar; only a second one (or more) is a toast
+  const badge = await page.evaluate(() => { const b = document.getElementById("go-ach"); return b && b.offsetParent ? b.textContent.trim() : ""; });
+  assert(!!badge && !toasts.some((x) => x.includes(badge)),
+    `…而且当场在结果条上报出了解锁的成就(徽章「${badge}」;提示条:${JSON.stringify(toasts.map((x) => x.slice(0, 14)))})`);
 
   const saved = await page.evaluate(() => {
     const raw = localStorage.getItem("chess.stats");

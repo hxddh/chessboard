@@ -71,7 +71,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "about.licenseText": "GPLv3 —— 自由软件，源码随发布提供", "about.creditsText": "Stockfish 19（GPLv3）· chess.js（BSD-2）· cburnett 棋子（Colin M.L. Burnett，GPLv2+；「经典」一套为其 Wikimedia 重绘版，GFDL / BSD / GPL / CC BY-SA 3.0 多重许可）· Merida 棋子（Armando Hernandez Marroquin，GPLv2+）· Chessnut 棋子（Alexis Luengas，Apache 2.0）· Fantasy / Celtic / Spatial 棋子（Maurizio Monge，MIT）· lichess chess-openings（CC0）· Lichess 对局库（CC0，内置的大师着法树）· 木质音效为本项目自制（物理模型实时合成，GPLv3）· Lucide 图标（ISC；其中 10 个源自 Feather，MIT）",
       // 7.7 (v7-7-plan §2–§4, §7): the result card, the puzzle feedback card,
       // the lesson dots and the tool row's tooltips
-      "go.analyse": "分析这盘",
+      "go.analyse": "复盘这局",
       "go.again": "再来一盘",
       "go.switch": "换个对手",
       "go.youWin": "你赢了",
