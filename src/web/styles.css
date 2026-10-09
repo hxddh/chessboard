@@ -3835,11 +3835,11 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .go-say { display: none; }
 /* an achievement the ending unlocked: a quiet pill, not a toast */
 .go-ach {
-  flex: 0 1 auto; min-width: 0; height: var(--ctl-h-sm); padding: 0 8px; align-self: center;
+  flex: none; height: var(--ctl-h-sm); padding: 0 8px; align-self: center;
   display: inline-flex; align-items: center; gap: 4px;
   border-radius: var(--radius-sm); background: var(--card); border: 1px solid var(--card-border);
   font-size: 0.75rem; font-weight: 600; line-height: var(--lh-tight); color: var(--text);
-  overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .go-ach[hidden] { display: none; }
 .go-ach svg { flex: none; width: 16px; height: 16px; color: var(--win); }

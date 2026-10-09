@@ -1246,6 +1246,8 @@ import { loadChunk } from "./chunk.js";
    *     is room there, and only a window with neither lets it overlap, at the
    *     top, as little as it can.
    */
+  // 9.0 M1: the result bar holds the bottom strip's place — not under a toast
+  const barUp = () => { const c = document.getElementById("go-card"); return !!c && !c.hidden && !appEl.classList.contains("pv-wide"); };
   function placeToast(el) {
     const board = document.getElementById("board");
     const wrap = document.getElementById("board-wrap");
@@ -1270,7 +1272,7 @@ import { loadChunk } from "./chunk.js";
     // strip, then, ending where the board begins
     let top = Math.max(0, Math.min(GAP, b.top - a.top - h));
     if (a.bottom - w.bottom >= h + LOW + GAP && !onSheet(a.height - LOW - h)) top = a.height - LOW - h;
-    else if (b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP && !onSheet(b.bottom - a.top + GAP)) top = b.bottom - a.top + GAP;
+    else if (b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP && !onSheet(b.bottom - a.top + GAP) && !barUp()) top = b.bottom - a.top + GAP;
     el.style.top = Math.round(top) + "px";
     el.style.left = Math.round(w.left - a.left + w.width / 2) + "px";
   }

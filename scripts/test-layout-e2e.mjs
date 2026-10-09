@@ -4438,6 +4438,9 @@ if (scenario()) {
     for (const vp of SIZES) {
       const { ctx, page } = await open(lang, "pvp", "play", "wood", vp);
       for (const sq of ITALIAN) await tap(page, sq);
+      // 9.0 M3: a portrait drawer shows the list at nine tenths only (the
+      // strip stands in for it at half) — the grip's tap takes it there
+      await page.evaluate(() => { const g = document.getElementById("sheet-grip"); if (g && g.offsetParent) document.getElementById("app").classList.add("sheet-full"); });
       await page.waitForTimeout(300);
       const r = await page.evaluate(() => {
         const vis = (e) => { const b = e.getBoundingClientRect(); return e.offsetParent !== null && b.width > 0 && b.height > 0; };
