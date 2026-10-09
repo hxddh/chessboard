@@ -205,7 +205,11 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   const r = Object.assign({}, onLib, { cards: onMe.cards.concat(onLib.cards), outside: onMe.outside.concat(onLib.outside) });
   assert(r.cards.length >= 5, "§4a 全新档案的记录页:入口、统计、棋谱库、开局书、对局历史,五张空状态卡片",
     JSON.stringify(r.cards));
-  assert(r.cards.every((c) => c.dashed === "dashed"), "§4a …全是同一种:虚线卡片", JSON.stringify(r.cards));
+  // 9.0 V1: no dashed boxes anywhere; an empty state is an icon, a line and
+  // one action on the surface it sits on (no box), the 我的 entry card aside
+  assert(r.cards.every((c) => c.dashed !== "dashed") &&
+    r.cards.filter((c) => c.id !== "record-empty").every((c) => c.dashed === "none"),
+    "§4a …全是同一种:没有虚线，空状态不画框", JSON.stringify(r.cards));
   assert(r.cards.every((c) => c.primaries <= 1), "§4a …每张至多一个主按钮", JSON.stringify(r.cards));
   assert(r.outside.length === 0, "§4a …卡片外面没有按钮", r.outside.join(", "));
   assert(r.libPrimary, "§4a 空棋谱库里「导入棋谱文件」是主按钮");
