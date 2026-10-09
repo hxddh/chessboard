@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en" data-theme="wood">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Today · 9.0 mockup</title>
+<link rel="stylesheet" href="v9.css">
+</head>
+<body>
+<div class="shell">
+  <nav class="rail" aria-label="Destinations">
+    <div class="rail__logo"><i data-piece="wn"></i></div>
+    <a href="today.html" aria-current="page"><span data-icon="sun"></span><span class="lbl">Today</span></a>
+    <a href="#"><span data-icon="swords"></span><span class="lbl">Play</span></a>
+    <a href="train-puzzles.html"><span data-icon="target"></span><span class="lbl">Train</span></a>
+    <a href="#"><span data-icon="library"></span><span class="lbl">Library</span></a>
+    <a href="#"><span data-icon="user"></span><span class="lbl">Me</span></a>
+    <div class="rail__spacer"></div>
+    <a href="settings.html" class="rail__gear"><span data-icon="settings"></span><span class="lbl">Settings</span></a>
+  </nav>
+
+  <main class="page">
+    <div class="page__inner today">
+      <header class="page__head">
+        <div>
+          <h1>Good afternoon</h1>
+          <p class="t-meta">Friday, October 9</p>
+        </div>
+        <a class="btn btn--secondary" href="#"><span data-icon="plus"></span>New game</a>
+      </header>
+
+      <!-- 第一行：主卡（2）+ 今日进度（1） -->
+      <div class="today__row">
+        <section class="card hero" aria-label="Up next">
+          <div class="board" data-fen="r3k2r/ppp2ppp/2n5/3N4/4P3/8/PPP2PPP/R3K2R w KQkq - 0 1" data-last="b4d5" style="--size:240px"></div>
+          <div class="hero__text">
+            <div class="section-title">Up next <span class="badge badge--count">11 more due</span></div>
+            <h2 class="t-title">Review: Double attack</h2>
+            <p class="t-meta">Review due · about 3 min · White to move</p>
+            <p class="hero__note">Last time you played <span class="san">Nb6</span> and won only a pawn. This time, find the move that hits the king and the rook at once.</p>
+            <ul class="facts">
+              <li><span data-icon="rotate-ccw" data-icon-class="ic-sm"></span>2nd review</li>
+              <li><span data-icon="clock" data-icon-class="ic-sm"></span>Last seen 3 days ago</li>
+              <li><span data-icon="check" data-icon-class="ic-sm"></span>Two clean solves to master</li>
+            </ul>
+            <div class="hero__actions">
+              <a class="btn btn--primary" href="#">Start review</a>
+              <a class="btn btn--ghost" href="#">Something else</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="card progress" aria-label="Today's progress">
+          <div class="section-title">Today <span class="streak"><span data-icon="flame" data-icon-class="ic-sm"></span>6-day streak</span></div>
+          <div class="rings">
+            <div class="ring is-done" data-value="1" data-max="1"><b class="num">1/1</b><span>Lesson</span></div>
+            <div class="ring" data-value="7" data-max="10"><b class="num">7/10</b><span>Puzzles</span></div>
+            <div class="ring" data-value="0" data-max="1"><b class="num">0/1</b><span>Game</span></div>
+          </div>
+          <p class="progress__note">3 more puzzles and 1 game to reach today's goal.</p>
+        </section>
+      </div>
+
+      <!-- 第二行：继续 -->
+      <section class="today__block">
+        <h2 class="section-title">Continue</h2>
+        <div class="continue">
+          <a class="card card--hover cont" href="#">
+            <div class="board" data-fen="4k3/8/8/3n4/8/8/3N4/4K3 w - - 0 1" data-coords="none" style="--size:64px"></div>
+            <div class="cont__text">
+              <p class="t-meta">Course · Unit 3</p>
+              <p class="t-strong">Lesson 23 · Double attack</p>
+              <div class="cont__bar"><div class="bar"><i style="width:57%"></i></div><span class="t-meta num">4/7</span></div>
+            </div>
+            <span data-icon="chevron-right" class="cont__go"></span>
+          </a>
+          <a class="card card--hover cont" href="#">
+            <div class="board" data-fen="1K1k4/1P6/8/8/8/8/r7/2R5 w - - 0 1" data-coords="none" style="--size:64px"></div>
+            <div class="cont__text">
+              <p class="t-meta">Endgame · Rook and pawn</p>
+              <p class="t-strong">The Lucena position</p>
+              <div class="cont__bar"><div class="bar"><i style="width:33%"></i></div><span class="t-meta num">1/3</span></div>
+            </div>
+            <span data-icon="chevron-right" class="cont__go"></span>
+          </a>
+          <a class="card card--hover cont" href="#">
+            <div class="board" data-fen="rn2kb1r/p3qppp/2p2n2/1N2p1B1/2B1P3/1Q6/PPP2PPP/R3K2R b KQkq - 0 10" data-coords="none" style="--size:64px"></div>
+            <div class="cont__text">
+              <p class="t-meta">Classic · Paris, 1858</p>
+              <p class="t-strong">Morphy · The Opera Game</p>
+              <div class="cont__bar"><div class="bar"><i style="width:59%"></i></div><span class="t-meta num">10/17</span></div>
+            </div>
+            <span data-icon="chevron-right" class="cont__go"></span>
+          </a>
+        </div>
+      </section>
+
+      <!-- 第三行：最近对局（2）+ 等级分（1） -->
+      <div class="today__row">
+        <section>
+          <h2 class="section-title">Recent games <a class="link t-meta" href="#">All games<span data-icon="chevron-right"></span></a></h2>
+          <div class="card card--flush">
+            <ul class="games">
+              <li><span class="res win">W</span><span class="avatar avatar--piece"><i data-piece="bn"></i></span><div class="games__who"><p class="t-strong">Sol <span class="t-muted num">1500</span></p><p class="t-meta">Légal trap · 7 moves · Today</p></div><span class="games__d num">+18</span><a class="btn btn--ghost btn--sm" href="#">Review</a></li>
+              <li><span class="res loss">L</span><span class="avatar avatar--piece"><i data-piece="bb"></i></span><div class="games__who"><p class="t-strong">Mira <span class="t-muted num">1450</span></p><p class="t-meta">Italian Game · 41 moves · Yesterday</p></div><span class="games__d num neg">−12</span><a class="btn btn--ghost btn--sm" href="#">Review</a></li>
+              <li><span class="res draw">D</span><span class="avatar avatar--piece"><i data-piece="br"></i></span><div class="games__who"><p class="t-strong">Zhou <span class="t-muted num">1550</span></p><p class="t-meta">Queen's Gambit · 58 moves · Oct 6</p></div><span class="games__d num">+2</span><a class="btn btn--ghost btn--sm" href="#">Review</a></li>
+              <li><span class="res win">W</span><span class="avatar avatar--piece"><i data-piece="bn"></i></span><div class="games__who"><p class="t-strong">Sol <span class="t-muted num">1500</span></p><p class="t-meta">Sicilian Defence · 36 moves · Oct 5</p></div><span class="games__d num">+15</span><a class="btn btn--ghost btn--sm" href="#">Review</a></li>
+            </ul>
+          </div>
+        </section>
+
+        <section>
+          <h2 class="section-title">Rating</h2>
+          <div class="card rating">
+            <div class="rating__row">
+              <div><p class="field-label">Games</p><p class="t-display">1486</p><p class="t-meta">This week <span class="gain">+21</span></p></div>
+              <div class="spark"><svg class="curve" data-w="160" data-h="48" data-mid="0" data-series="38,40,36,42,45,41,47,50,48,55,58,62"></svg></div>
+            </div>
+            <div class="divider"></div>
+            <div class="rating__row">
+              <div><p class="field-label">Puzzles</p><p class="t-display">1540</p><p class="t-meta">This week <span class="gain">+34</span></p></div>
+              <div class="spark"><svg class="curve" data-w="160" data-h="48" data-mid="0" data-series="30,34,33,40,38,44,49,47,52,51,57,60"></svg></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="mock.js"></script>
+</body>
+</html>

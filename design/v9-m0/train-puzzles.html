@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="wood">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>训练 · 谜题 · 9.0 设计稿</title>
+<link rel="stylesheet" href="v9.css">
+</head>
+<body>
+<!--
+  为什么是「面板 + 棋盘」而不是整页：
+  1. 训练是在棋盘上做的事。选题的那一刻，棋盘上已经摆着「为你出一题」会出的那道，
+     点主按钮不换页、不换布局，只是开始计时——从选到做是零距离。
+  2. 与下棋、复盘同一个骨架（舞台 + 面板 / 窄窗里的抽屉），五个去处里有棋盘的三个长得一样，
+     M3 的窄窗规则因此只写一次。
+  3. 面板宽 320–420 恰好装下 1 个主按钮 + 6 类 + 复习 = 8 个主要选择，逼着我们不往里加东西；
+     整页会留出放第 9、第 10 个按钮的地方。
+  挑战（冲刺 / 连胜）和专项（看 N 步 / 盲走）是次一级的入口：小号次按钮，收在一张卡里。
+-->
+<div class="shell">
+  <nav class="rail" aria-label="去处">
+    <div class="rail__logo"><i data-piece="wn"></i></div>
+    <a href="today.html"><span data-icon="sun"></span><span class="lbl">今天</span></a>
+    <a href="play-gameover.html"><span data-icon="swords"></span><span class="lbl">下棋</span></a>
+    <a href="train-puzzles.html" aria-current="page"><span data-icon="target"></span><span class="lbl">训练</span></a>
+    <a href="#"><span data-icon="library"></span><span class="lbl">棋谱</span></a>
+    <a href="#"><span data-icon="user"></span><span class="lbl">我的</span></a>
+    <div class="rail__spacer"></div>
+    <a href="settings.html" class="rail__gear"><span data-icon="settings"></span><span class="lbl">设置</span></a>
+  </nav>
+
+  <div class="board-view">
+    <section class="stage">
+      <div class="table">
+        <div class="pbar">
+          <span class="avatar"><span data-icon="puzzle"></span></span>
+          <div class="pbar__who"><span class="pbar__name">下一题 · 杀棋</span><span class="pbar__meta num">难度 1520</span></div>
+          <div class="pbar__end"><span class="badge">两步杀</span></div>
+        </div>
+        <div class="board" data-fen="1r4k1/p4ppp/1p6/8/3Q4/1q6/5PPP/3R2K1 w - - 0 1" data-last="e6b3"></div>
+        <div class="pbar">
+          <span class="avatar"><span data-icon="user"></span></span>
+          <div class="pbar__who"><span class="pbar__name">白先</span><span class="pbar__meta">找到将杀</span></div>
+          <div class="pbar__end"><button class="btn btn--ghost btn--sm">换一题</button></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel" data-snap="half">
+      <div class="panel__handle" aria-hidden="true"></div>
+      <div class="panel__head">
+        <div class="seg" role="tablist" aria-label="训练">
+          <button>课程</button><button class="is-on" aria-pressed="true">谜题</button><button>残局</button><button>名局</button>
+        </div>
+      </div>
+      <div class="panel__body train">
+        <section class="train__group">
+          <div class="card train__hero">
+            <div class="train__rating">
+              <div>
+                <p class="field-label">等级分</p>
+                <p class="t-display">1540</p>
+                <p class="t-meta">本周 <span class="gain">+34</span> · 今天 7 题</p>
+              </div>
+              <div class="spark"><svg class="curve" data-w="150" data-h="48" data-mid="0" data-series="30,34,33,40,38,44,49,47,52,51,57,60"></svg></div>
+            </div>
+            <a class="btn btn--primary btn--block" href="#"><span data-icon="zap"></span>为你出一题</a>
+          </div>
+          <a class="card card--hover train__review" href="#">
+            <span class="avatar"><span data-icon="rotate-ccw"></span></span>
+            <div><p class="t-strong">复习</p><p class="t-meta">做错过的题，隔几天再来一次</p></div>
+            <span class="badge badge--count num">到期 12 道</span>
+            <span data-icon="chevron-right" class="cont__go"></span>
+          </a>
+        </section>
+
+        <section>
+          <h2 class="section-title">按类做题</h2>
+          <div class="tiles">
+            <a class="card card--hover tile" href="#"><span data-icon="crown"></span><p class="t-strong">杀棋</p><p class="t-meta num">1,820 题</p><div class="bar"><i style="width:42%"></i></div></a>
+            <a class="card card--hover tile" href="#"><span data-icon="swords"></span><p class="t-strong">战术</p><p class="t-meta num">2,960 题</p><div class="bar"><i style="width:18%"></i></div></a>
+            <a class="card card--hover tile" href="#"><span data-icon="hourglass"></span><p class="t-strong">残局</p><p class="t-meta num">1,140 题</p><div class="bar"><i style="width:9%"></i></div></a>
+            <a class="card card--hover tile" href="#"><span data-icon="shield"></span><p class="t-strong">防守</p><p class="t-meta num">860 题</p><div class="bar"><i style="width:5%"></i></div></a>
+            <a class="card card--hover tile" href="#"><span data-icon="book-open"></span><p class="t-strong">开局</p><p class="t-meta num">1,230 题</p><div class="bar"><i style="width:12%"></i></div></a>
+            <a class="card card--hover tile" href="#"><span data-icon="x-circle"></span><p class="t-strong">我的错题</p><p class="t-meta num">37 题</p><div class="bar"><i style="width:60%"></i></div></a>
+          </div>
+        </section>
+
+        <section>
+          <h2 class="section-title">换个练法</h2>
+          <div class="card card--flush modes">
+            <div class="modes__row">
+              <span class="field-label">挑战</span>
+              <button class="btn btn--secondary btn--sm"><span data-icon="zap"></span>冲刺</button>
+              <button class="btn btn--secondary btn--sm"><span data-icon="flame"></span>连胜</button>
+            </div>
+            <div class="modes__row">
+              <span class="field-label">专项</span>
+              <button class="btn btn--secondary btn--sm"><span data-icon="eye"></span>看 N 步</button>
+              <button class="btn btn--secondary btn--sm"><span data-icon="eye-off"></span>盲走</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </aside>
+  </div>
+</div>
+<script src="mock.js"></script>
+</body>
+</html>
