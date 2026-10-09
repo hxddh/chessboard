@@ -736,6 +736,15 @@ if (scenario()) {
       async (page) => { await showCat(page, "game"); }],
     ["双人·设置·高级", { mode: "pvp", tab: "settings", sel: "#page-settings .set-pane:not([hidden]) button[id]", min: 2 },
       async (page) => { await showCat(page, "advanced"); }],
+    // 9.0 S3: 训练's own controls — the switch over the panel (the segment
+    // you are on excepted, as the tab you are on is), and the puzzle picker:
+    // 为你出一题, 复习, the six kinds, 换个练法, 按主题细分. Most carry no id,
+    // so they are found again by their group and their data attribute.
+    ["训练·谜题·选题器", { mode: "puzzle", tab: "play", min: 12,
+      sel: "#train-seg button, #pz-hero button, #pz-review, #pz-groups button, #pz-modes button, #pz-themes-row button" },
+      async () => {}],
+    ["训练·名局·读谱", { mode: "learn", tab: "play", min: 4, sel: "#train-seg button, #classic-mode button" },
+      async (page) => { await page.click('#train-seg button[data-seg="classic"]'); await page.waitForTimeout(700); }],
   ];
   const ENGINE_BOUND = ["btn-hint"];
   for (const [label, cfg, prep] of STATES) {
@@ -790,22 +799,29 @@ if (scenario()) {
     const ids = await p0.evaluate((sel) => [...document.querySelectorAll(sel)]
       .filter((b) => b.offsetParent && !b.disabled && getComputedStyle(b).visibility === "visible")
       .filter((b) => b.getAttribute("aria-selected") !== "true")
-      .map((b) => b.id), cfg.sel || "#side button[id], .chrome button[id], #strip-tools button[id]");
+      // a segment switch's lit segment is the view you are on (训练, 名局)
+      .filter((b) => !(b.closest("#train-seg, #classic-mode") && b.getAttribute("aria-pressed") === "true"))
+      .map((b) => {
+        if (b.id) return "#" + CSS.escape(b.id);
+        const host = b.parentElement.closest("[id]");
+        const attr = [...b.attributes].find((a) => a.name.startsWith("data-") && !a.name.startsWith("data-i18n") && a.name !== "data-icon");
+        return "#" + CSS.escape(host.id) + " button" + (attr ? "[" + attr.name + '="' + attr.value + '"]' : "");
+      }), cfg.sel || "#side button[id], .chrome button[id], #strip-tools button[id]");
     await c0.close();
     assert(ids.length >= (cfg.min || 4), label + ":这个状态下数得到可以按的控件(" + ids.length + " 个)");
 
     const dead = [];
     for (const id of ids) {
-      if (ENGINE_BOUND.includes(id)) continue;
+      if (ENGINE_BOUND.includes(id.slice(1))) continue;
       const { ctx, page } = await fresh();
       // focus the button first: clicking it would otherwise also blur the
       // canvas, and erasing the keyboard cursor is a canvas change worth
       // exactly 3384 pixels that has nothing to do with the button
-      await page.evaluate((i) => document.getElementById(i).focus(), id);
+      await page.evaluate((i) => document.querySelector(i).focus(), id);
       await page.waitForTimeout(200);
       await quiet(page);
       const before = await snapshot(page);
-      await page.click("#" + id, { timeout: 2000 }).catch(() => {});
+      await page.click(id, { timeout: 2000 }).catch(() => {});
       await page.waitForTimeout(800);
       if (await snapshot(page) === before) dead.push(id);
       await ctx.close();
@@ -2397,7 +2413,12 @@ const pickerFits = (page) => page.evaluate(() => {
     }
   }
   const rows = [...document.querySelectorAll("#pz-modes .pz-modes-row")];
-  const modeCut = rows.flatMap((row) => [...row.children].filter((e) => e.offsetParent && cut(e)).map((e) => e.textContent.trim()));
+  // a label that wraps is as unreadable a row as one that spills (ja's
+  // チャレンジ stood three lines tall in a 48px column)
+  const lh = (e) => parseFloat(getComputedStyle(e).lineHeight) || parseFloat(getComputedStyle(e).fontSize) * 1.5;
+  const modeCut = rows.flatMap((row) => [...row.children].filter((e) => e.offsetParent &&
+    (cut(e) || (e.tagName !== "BUTTON" && e.getBoundingClientRect().height > lh(e) * 1.5)))
+    .map((e) => e.textContent.trim() + " " + e.scrollWidth + "/" + e.clientWidth + "×" + Math.round(e.getBoundingClientRect().height)));
   const modeH = [...new Set(rows.flatMap((row) => [...row.querySelectorAll("button")]).map((b) => Math.round(b.getBoundingClientRect().height)))];
   return { n: tiles.length, groups: tiles.map((b) => b.dataset.group).join(","),
            cols: getComputedStyle(g).gridTemplateColumns.split(" ").length,

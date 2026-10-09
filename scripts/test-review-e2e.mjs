@@ -51,6 +51,28 @@ await new Promise((r) => server.listen(0, r));
 const PORT = server.address().port;
 
 let failed = 0;
+
+/**
+ * 9.0 S2: 持续分析 is a switch in 设置 · 高级 (#opt-live), not a button over
+ * the review. Turn it on or off there, through the rail, and come back to the
+ * board — the way a person would.
+ */
+async function setLive(pg, on) {
+  await pg.click('#rail button[data-view="settings"]');
+  await pg.waitForTimeout(150);
+  await pg.click("#cat-advanced");
+  await pg.waitForTimeout(100);
+  const now = await pg.getAttribute("#opt-live", "aria-pressed");
+  if ((now === "true") !== on) await pg.click("#opt-live");
+  await pg.waitForTimeout(100);
+  await pg.click('#rail button[data-view="play"]');
+  await pg.waitForTimeout(200);
+}
+/** 9.0 S2: 精析 is in 分析's ⋯ menu (details#an-more). */
+async function clickDeep(pg) {
+  if (!(await pg.$eval("#an-more", (d) => d.open))) await pg.click("#an-more > summary");
+  await pg.click("#an-deep");
+}
 const assert = (cond, msg) => {
   if (cond) console.log("ok:", msg);
   else { failed++; console.error("FAIL:", msg); }
@@ -202,6 +224,13 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
 {
   // browser path: no bridge, so it goes down the <a download> branch. Intercept
   // the click so nothing actually downloads, and check what it was handed.
+  // 9.0 S2: 导出复盘图 is in the tool row's 更多 (#more-row)
+  assert(await page.evaluate(() => !!document.querySelector("#more-row #report-export")),
+    "导出复盘图 sits in the tool row's 更多 row");
+  if (await page.evaluate(() => !!document.getElementById("more-row").hidden)) {
+    await page.click("#more-tools"); await page.waitForTimeout(250);
+  }
+  assert(await page.isVisible("#report-export"), "…and 更多 shows it");
   const shot = await page.evaluate(async () => {
     const out = { name: null, type: null, bytes: 0 };
     const realClick = HTMLAnchorElement.prototype.click;
@@ -597,12 +626,12 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   {
     const g = await pg.evaluate(() => ({
       group: document.getElementById("review-actions").hidden,
-      live: document.getElementById("an-live").hidden,
+      more: document.getElementById("an-more").hidden,
       run: document.getElementById("an-run").hidden,
       lineBox: document.getElementById("live-line").hidden,
     }));
     assert(g.group, "一着未走时「复盘」整组收起,没有一个光头的组名");
-    assert(g.live && g.run, "……组里那几个按钮本来就不该在(持续分析 / 分析)");
+    assert(g.more && g.run, "……组里那几个按钮本来就不该在(分析 / 它的 ⋯ 菜单)");
     assert(g.lineBox, "……引擎行也不在");
   }
 
@@ -688,15 +717,15 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     head: (document.querySelector("#live-line > .pv-head > .pv-label") || {}).textContent || "",
     // 7.8 §2: the win chance is the score box's tooltip now, beside its score
     rows: [...document.querySelectorAll("#live-line .pv-row .pv-eval")].map((x) => x.textContent + " " + x.title),
-    pressed: document.getElementById("an-live").getAttribute("aria-pressed"),
+    pressed: document.getElementById("opt-live").getAttribute("aria-pressed"),
     fens: window.__live.fens.length,
     stops: window.__live.stops,
   }));
 
   await pg.click("#rep-end");
   await pg.waitForTimeout(300);
-  await pg.click("#an-live");
-  await pg.waitForTimeout(700);
+  await setLive(pg, true);
+  await pg.waitForTimeout(500);
   const on = await liveState();
   assert(on.pressed === "true" && !on.hidden, "「持续分析」按下之后引擎行出现了");
   assert(/深度/.test(on.head), "……行首写着深度 (「" + on.head + "」)");
@@ -720,8 +749,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     "……再退一手再变一次 (「" + back1.rows[0] + "」→「" + back2.rows[0] + "」)");
 
   // 关掉:最后一条搜索被停,面板收走,再动游标也不会再问引擎
-  await pg.click("#an-live");
-  await pg.waitForTimeout(500);
+  await setLive(pg, false);
+  await pg.waitForTimeout(300);
   const off = await liveState();
   assert(off.pressed === "false" && off.hidden && off.rows.length === 0,
     "关掉之后引擎行连同它的三条线一起收走");
@@ -1053,8 +1082,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   // --- (a) 持续分析开着，连点「新局」10 次，每次都生效 -------------------
   await tap("e2"); await tap("e4");
   await pgH.waitForTimeout(250);
-  await pgH.click("#an-live");
-  await pgH.waitForTimeout(500);
+  await setLive(pgH, true);
+  await pgH.waitForTimeout(300);
   const liveRows = await pgH.evaluate(() => document.querySelectorAll("#live-line .pv-row").length);
   assert(liveRows === 3, "持续分析开着，multipv=3 的三条线都在 (" + liveRows + ")");
   let worst = 0, took = 0, lost = [];
@@ -1083,8 +1112,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   // 先有一份分析，开局那一手带一条五着的主变；再开一遍精析，让它慢慢跑。
   for (const s of ["e2", "e4", "e7", "e5", "f1", "c4", "b8", "c6", "d1", "h5", "g8", "f6", "h5", "f7"]) await tap(s);
   await pgH.waitForTimeout(300);
-  await pgH.click("#an-live");
-  await pgH.waitForTimeout(200);
+  await setLive(pgH, false);
   await pgH.evaluate(() => {
     window.__chess.engine.analyze = async (fen, movetime) => {
       const turn = fen.split(" ")[1];
@@ -1101,7 +1129,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pgH.waitForTimeout(300);
   const chips = await pgH.evaluate(() => document.querySelectorAll("#pv-line button.pv-chip").length);
   assert(chips === 5, "开局那一手的引擎线是五个可以按的着法 (" + chips + ")");
-  await pgH.click("#an-deep");
+  await clickDeep(pgH);
   await pgH.waitForTimeout(400);
   const busy = await pgH.evaluate(() => /停止/.test(document.getElementById("an-run").textContent));
   assert(busy, "精析在跑");
@@ -1139,11 +1167,10 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   });
   await pgH.evaluate(() => { const b = document.getElementById("rep-start"); if (!b.disabled) b.click(); });
   await pgH.waitForTimeout(200);
-  if (await pgH.evaluate(() => document.getElementById("an-live").getAttribute("aria-pressed") === "true")) {
-    await pgH.click("#an-live"); await pgH.waitForTimeout(200);
-  }
-  await pgH.click("#an-live");
-  await pgH.waitForTimeout(1000);
+  // (switched off and on again, so the new scripted engine is the one asked)
+  await setLive(pgH, false);
+  await setLive(pgH, true);
+  await pgH.waitForTimeout(800);
   const lc = await heldClick(pgH, '#live-line .pv-row[data-line="0"] button.pv-chip[data-k="1"]', { hold: 600 });
   console.log("  持续分析中按住引擎线上的着法：位移 " + lc.drift + "px，节点" + (lc.replaced ? "被换掉了" : "还是原来那个"));
   assert(!lc.replaced && !lc.mutated && lc.drift === 0,

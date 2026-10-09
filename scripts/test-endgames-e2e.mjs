@@ -259,6 +259,9 @@ const occ = (page, sq) => page.evaluate((q) => {
         const box = scope.getBoundingClientRect();
         for (const e of scope.querySelectorAll("button, .side-h, .stat-k, .stat-v, .lesson-title, .lesson-task, .lesson-part, #lesson-text p")) {
           if (!e.offsetParent) continue;
+          // 9.0 S3: the 教学 heading is for a screen reader only (sr-only:
+          // a 1px box by design) — the switch over the panel names the segment
+          if (e.classList.contains("sr-only")) continue;
           const r = e.getBoundingClientRect();
           if (e.scrollWidth > e.clientWidth + 1 || r.right > box.right + 1) out.push((e.id || e.textContent.trim().slice(0, 16)) + " " + e.scrollWidth + ">" + e.clientWidth);
         }

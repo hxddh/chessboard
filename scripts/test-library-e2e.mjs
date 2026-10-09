@@ -324,8 +324,10 @@ async function openFilters(page) {
   // closed fold until asked for
   const fold = await page.evaluate(() => ({
     open: document.getElementById("lib-filters").open,
-    search: !!document.getElementById("lib-q").offsetParent,
-    result: !!document.querySelector('#lib-result-seg button[data-lres="loss"]').offsetParent,
+    // checkVisibility: a closed <details> keeps its content laid out under
+    // content-visibility: hidden in Chromium, so offsetParent alone says nothing
+    search: document.getElementById("lib-q").checkVisibility(),
+    result: document.querySelector('#lib-result-seg button[data-lres="loss"]').checkVisibility(),
   }));
   assert(!fold.open && fold.search && !fold.result,
     "S4 列表打开时只露搜索：其余筛选收在「筛选」里，默认收起", JSON.stringify(fold));
