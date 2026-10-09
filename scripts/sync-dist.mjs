@@ -17,6 +17,8 @@
  *      and the module sources are build inputs, not product.
  *   4. copy LICENSE and third_party/stockfish/COPYING.txt into licenses/
  *      next to index.html (GPLv3 §4: the product has to carry the licence).
+ *   5. (9.0 V2) copy the bundled font, src/web/fonts/inter-latin-wght-normal.woff2,
+ *      to fonts/, and its SIL OFL to licenses/Inter-OFL.txt.
  *
  * Same sanity checks as package.sh: the bundle must be the whole app and
  * engine-src must carry the full wasm payload, not a stub.
@@ -41,6 +43,7 @@ run("bundle.mjs");
 fs.rmSync(DIST, { recursive: true, force: true });
 fs.mkdirSync(path.join(DIST, "js"), { recursive: true });
 fs.mkdirSync(path.join(DIST, "licenses"), { recursive: true });
+fs.mkdirSync(path.join(DIST, "fonts"), { recursive: true });
 
 /** [source relative to ROOT, destination relative to DIST] */
 const FILES = [
@@ -50,6 +53,10 @@ const FILES = [
   ["src/web/js/engine-src.js", "js/engine-src.js"],
   ["LICENSE", "licenses/LICENSE.txt"],
   ["third_party/stockfish/COPYING.txt", "licenses/stockfish-COPYING.txt"],
+  // 9.0 V2: the one bundled face, Inter (Latin, variable, ~48 KB), which
+  // styles.css loads as fonts/…; its OFL travels with the other licences
+  ["src/web/fonts/inter-latin-wght-normal.woff2", "fonts/inter-latin-wght-normal.woff2"],
+  ["src/web/fonts/Inter-OFL.txt", "licenses/Inter-OFL.txt"],
   // 6.1: the on-demand chunks. Read from the bundler's own list rather than
   // typed again here — a chunk that is built but not packaged is an app whose
   // opening names silently never appear, and a list in two places is how that
