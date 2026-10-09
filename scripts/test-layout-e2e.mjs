@@ -1316,6 +1316,19 @@ if (scenario()) {
       .map((e) => e.id || e.className || e.tagName))];
   });
   assert(bareSet.length === 0, "设置页上能按的东西也都声明了过渡" + (bareSet.length ? " —— 没有的:" + bareSet.join(", ") : ""));
+  // 9.0 S1 / S3: 今天's cards and 训练's switch, tiles and review card too
+  const bareIn = (root) => page.evaluate((r) => [...new Set([...document.querySelectorAll(r + " button, " + r + " summary")]
+    .filter((e) => e.offsetParent)
+    .filter((e) => ["none", "all"].includes(getComputedStyle(e).transitionProperty))
+    .map((e) => e.id || e.className || e.tagName))], root);
+  await page.click('.rail-btn[data-view="home"]'); await page.waitForTimeout(400);
+  const bareToday = await bareIn("#page-home");
+  await page.click('.rail-btn[data-view="train"]'); await page.waitForTimeout(400);
+  await page.click('#train-seg button[data-seg="puzzle"]'); await page.waitForTimeout(600);
+  const bareTrain = await bareIn("#pane-play");
+  assert(bareToday.length === 0 && bareTrain.length === 0, "今天页与训练面板上能按的东西也都声明了过渡" +
+    (bareToday.length + bareTrain.length ? " —— 没有的:" + bareToday.concat(bareTrain).join(", ") : ""));
+  await page.click('.rail-btn[data-view="settings"]'); await page.waitForTimeout(400);
   const tab = await page.evaluate(async () => {
     const cur = document.querySelector(".set-cat[aria-selected=\"true\"]");
     const next = [...document.querySelectorAll(".set-cat")].find((b) => b !== cur);
@@ -2430,6 +2443,22 @@ if (scenario()) {
   }
 }
 
+/**
+ * 9.0 S4: the list dialog shows its search; the other filters are the fold
+ * 筛选 (details#lib-filters), shut by default. Opened through its summary,
+ * as a player would, so the rows below are measured open — the only state
+ * in which "this filter has a label you can see" means anything.
+ */
+async function openLibFilters(page) {
+  const was = await page.evaluate(() => {
+    const d = document.getElementById("lib-filters"), q = document.getElementById("lib-q");
+    return { wasShut: !!d && !d.open, search: !!q && !!q.offsetParent && q.checkVisibility() };
+  });
+  await page.click("#lib-filters > summary");
+  await page.waitForTimeout(300);
+  return { ...was, open: await page.evaluate(() => document.getElementById("lib-filters").open) };
+}
+
 // --- 3y. a refusal is heard, not only seen ---------------------------------
 // Two places tell you why the app will not do what you asked, and both wrote
 // into a plain <p>: the editor's reason the position is illegal (which is also
@@ -2543,8 +2572,15 @@ if (scenario()) {
     await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
     // v8-0-plan C1: 「全部 N 局」 opens the library's list on its 本机 games —
     // the history's own dialog is gone, and the same ruler applies to this one
-    await page.click("#hist-open", { timeout: 2500 }).catch(() => {});
+    // 9.0 S4: the history is 棋谱's now (moved from 我的)
+    await page.click('#rail button[data-view="library"]');
+    await page.waitForTimeout(400);
+    assert(await page.evaluate(() => !!document.getElementById("sec-history").closest("#page-library")
+      && !!document.getElementById("hist-open").offsetParent), lang + ": 对局历史 and its 「全部 N 局」 are on 棋谱");
+    await page.click("#hist-open", { timeout: 2500 });
     await page.waitForTimeout(800);
+    const fold = await openLibFilters(page);
+    assert(fold.wasShut && fold.search, lang + ": the list opens on its search, the other filters folded (" + JSON.stringify(fold) + ")");
     const r = await page.evaluate(() => {
       const rows = [...document.querySelectorAll("#lib-list .hist-row")].filter((e) => e.offsetParent);
       // 7.1: scoped to the dialog under test. Unscoped, this also swept up the
@@ -2615,6 +2651,8 @@ if (scenario()) {
     await page.click('#rail button[data-view="library"]', { timeout: 2000 }).catch(() => {});
     await page.click("#lib-open", { timeout: 2500 }).catch(() => {});
     await page.waitForTimeout(500);
+    const fold = await openLibFilters(page);
+    assert(fold.wasShut && fold.search, lang + ": 列表先给搜索，其余筛选收着 (" + JSON.stringify(fold) + ")");
     const r = await page.evaluate(() => {
       const rows = [...document.querySelectorAll("#lib-list .hist-row")].filter((e) => e.offsetParent);
       const segs = [...document.querySelectorAll("#lib-list-modal .hist-filters .theme-row")].map((seg) => {
@@ -4786,6 +4824,58 @@ if (scenario()) {
   }
 }
 
+/**
+ * 9.0 S1: 今天 — what a page owes the window (5.x / A1), asked of its own
+ * parts: the greeting, the hero card with its board, the three rings, the
+ * three 继续 cards, the recent games and the two ratings. No text cut (a
+ * card title ellipsizes, so "cut" is its own scrollWidth), every button one
+ * line inside itself, the three cards one height, the boards square and
+ * drawn, and the recent games listed (four at most) with the ratings shown.
+ */
+const seedTodayStats = () => {
+  const games = [];
+  for (let i = 0; i < 6; i++) games.push({ id: "tg" + i, t: Date.now() - i * 864e5, diff: "normal", color: i % 2 ? "b" : "w",
+    result: ["win", "loss", "draw"][i % 3], moves: 30 + i, pgn: '[Event "?"]\n\n1. e4 e5 2. Nf3 Nc6 1/2-1/2', ending: "", acc: 70, acpl: 40 });
+  localStorage.setItem("chess.stats", JSON.stringify({ v: 2, games }));
+};
+async function todayChecks(tag, page) {
+  if (!(await page.isVisible("#page-home"))) {
+    await page.click('#rail button[data-view="home"]'); await page.waitForTimeout(400);
+  }
+  // the camp's card waits for its chunk (today-page.js renderContinue)
+  await page.waitForFunction(() => !document.querySelector('#today-cont .today-c[data-seg="endgame"]').hidden, null, { timeout: 6000 }).catch(() => {});
+  const r = await page.evaluate(() => {
+    const home = document.getElementById("page-home");
+    const vis = (e) => !!e.offsetParent && e.getClientRects().length;
+    const cut = (e) => e.scrollWidth > e.clientWidth + 1;
+    const texts = [...home.querySelectorAll("h1, h2, p, b, small, .today-ring span, .today-res, .today-d, .setting-k, li")]
+      .filter((e) => vis(e) && e.textContent.trim() && getComputedStyle(e).display !== "inline");
+    const btns = [...home.querySelectorAll(".act-btn, .tool-txt")].filter(vis);
+    const cards = [...home.querySelectorAll("#today-cont .today-c")].filter(vis);
+    const boards = [...home.querySelectorAll(".mini-board")].filter(vis).map((b) => b.getBoundingClientRect());
+    const lh = (e) => parseFloat(getComputedStyle(e).lineHeight) || parseFloat(getComputedStyle(e).fontSize) * 1.5;
+    return {
+      cut: texts.filter(cut).map((e) => (e.id || e.className || e.tagName) + "「" + e.textContent.trim().slice(0, 16) + "」"),
+      btnBad: btns.filter((b) => cut(b) || b.scrollHeight > b.clientHeight + 1 || b.getBoundingClientRect().height > lh(b) * 1.6 + 16)
+        .map((b) => (b.id || b.className) + "「" + b.textContent.trim() + "」" + Math.round(b.getBoundingClientRect().height)),
+      cards: cards.length, cardH: [...new Set(cards.map((c) => Math.round(c.getBoundingClientRect().height)))],
+      boards: boards.length, square: boards.every((b) => Math.abs(b.width - b.height) <= 1 && b.width >= 48),
+      drawn: [...home.querySelectorAll(".mini-board")].filter(vis).every((b) => b.querySelectorAll(".mini-sq").length === 64 && b.querySelector("img")),
+      rings: [...home.querySelectorAll(".today-ring")].filter(vis).length,
+      games: home.querySelectorAll("#today-games li").length,
+      ratings: ["today-r-game", "today-r-pz"].map((id) => document.getElementById(id).textContent.trim()),
+      hero: document.getElementById("today-hero-title").textContent.trim(), go: document.getElementById("today-go").textContent.trim(),
+    };
+  });
+  assert(r.cut.length === 0, tag + ": 今天页上没有被截掉的字" + (r.cut.length ? " — " + r.cut.slice(0, 6).join(", ") : ""));
+  assert(r.btnBad.length === 0, tag + ": 今天页的按钮一行、字在框里" + (r.btnBad.length ? " — " + r.btnBad.join(", ") : ""));
+  assert(r.cards === 3 && r.cardH.length === 1, tag + ": 继续的三张卡都在、一样高 (" + r.cards + "; " + r.cardH.join(", ") + ")");
+  assert(r.boards === 4 && r.square && r.drawn, tag + ": 主卡与三张卡的小棋盘方正、摆着棋子 (" + r.boards + ")");
+  assert(r.rings === 3 && r.games >= 1 && r.games <= 4 && r.ratings.every(Boolean),
+    tag + ": 三个进度环、最近对局 " + r.games + " 局、两个等级分 (" + r.ratings.join(" / ") + ")");
+  assert(r.hero && r.go, tag + ": 主卡说了接下来做什么,按钮有字 (「" + r.hero + "」·「" + r.go + "」)");
+}
+
 // --- v8-0-plan A1: a page is as wide as the window, never wider --------------
 // The pages took the records out of a 400px panel and the diagnosis out of a
 // 460px dialog; the one way a page can go wrong the panel could not is to be
@@ -4816,6 +4906,7 @@ if (scenario()) {
       const tag = w + "x" + h + "/" + lang;
       const { ctx, page, errs } = await open(lang, "ai", "home", "wood", { width: w, height: h });
       await page.evaluate(seedLibrary, JSON.parse(lib));
+      await page.evaluate(seedTodayStats);
       await page.reload();
       await page.waitForTimeout(900);
       const overflow = (sel) => page.evaluate((q) => {
@@ -4838,6 +4929,7 @@ if (scenario()) {
           tag + ": " + what + " 没有横向滚动,也没有东西伸出右缘(" + JSON.stringify(o) + ")");
       };
       await check("首页", "#page-home");
+      await todayChecks(tag, page);
       await page.click('#rail button[data-view="library"]'); await page.waitForTimeout(300);
       await check("棋谱库", "#page-library");
       await page.click("#lib-diagnose"); await page.waitForTimeout(900);
@@ -4865,6 +4957,21 @@ if (scenario()) {
       assert(errs.length === 0, tag + ": 没有页面异常 " + errs.join(" / "));
       await ctx.close();
     }
+  }
+
+  // 9.0 S1: 今天 in the third language too (the page above is zh-CN / en only)
+  for (const [w, h] of [[1024, 768], [1440, 900], [600, 900]]) {
+    const tag = w + "x" + h + "/ja";
+    const { ctx, page, errs } = await open("ja", "ai", "home", "wood", { width: w, height: h });
+    await page.evaluate(seedTodayStats);
+    await page.reload();
+    await page.waitForTimeout(900);
+    const o = await page.evaluate(() => ({ doc: document.scrollingElement.scrollWidth - innerWidth,
+      own: document.getElementById("page-home").scrollWidth - document.getElementById("page-home").clientWidth }));
+    assert(o.doc <= 0 && o.own <= 0, tag + ": 今天页没有横向滚动 (" + JSON.stringify(o) + ")");
+    await todayChecks(tag, page);
+    assert(errs.length === 0, tag + ": 没有页面异常 " + errs.join(" / "));
+    await ctx.close();
   }
 }
 

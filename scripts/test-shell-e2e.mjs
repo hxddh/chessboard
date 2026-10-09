@@ -4,12 +4,15 @@
  * preferences window and the panel's 设置 tab.
  *
  * What the plan asks of it, each a claim only a running page can settle:
- *   - 下棋 / 谜题 / 学习 / 棋谱库 / 我的 on a left rail in a wide window, in
- *     the top bar in a narrow one; keyboard-walkable, current entry marked;
- *   - 首页 with 继续上次 / 今天的训练 / 下一步建议, and every view one click
- *     away from it;
+ *   - 今天 / 下棋 / 训练 / 棋谱 / 我的 on a left rail in a wide window, in
+ *     the top bar in a narrow one; keyboard-walkable, current entry marked
+ *     (9.0 S3: 谜题 and 学习 are one view, 训练, with a segment switch —
+ *     课程 / 谜题 / 残局 / 名局 — over the panel);
+ *   - 今天 (9.0 S1: was 首页's three cards): the hero card — the live game
+ *     first, else the plan's step, 换一件事 moving on — the three 继续 cards
+ *     into 训练, 下一盘; every view one click away from it;
  *   - the mode segment out of the settings page (人机 / 双人 go with the new
- *     game, 谜题 / 学习 are the rail's);
+ *     game, 谜题 / 学习 are 训练's);
  *   - appearance, language, sound (and the data) in a preferences window,
  *     ⌘, on macOS and Ctrl+, elsewhere. 9.0 S5: that window and the panel's
  *     设置 tab are one page now, the rail's last entry (设置), six
@@ -88,11 +91,15 @@ const state = (page) => page.evaluate(() => {
     puzzleSec: vis(document.getElementById("sec-puzzle")),
     learnSec: vis(document.getElementById("sec-learn")),
     stageInert: document.querySelector(".stage").hasAttribute("inert"),
+    // 9.0 S3: 训练's segment switch over the panel, and the segment lit on it
+    segShown: vis(document.getElementById("train-seg")),
+    seg: [...document.querySelectorAll('#train-seg button[aria-pressed="true"]')].map((b) => b.dataset.seg).join(),
   };
 });
 
-// --- 1. the rail: seven views, in the plan's order --------------------------
-// 9.0 S5: the preferences entry (#prefs-open) became the 设置 view, still last
+// --- 1. the rail: six views, in the plan's order ----------------------------
+// 9.0 S5: the preferences entry (#prefs-open) became the 设置 view, still last;
+// 9.0 S3: 谜题 and 学习 became one entry, 训练 (S1/S4: 首页 → 今天, 棋谱库 → 棋谱)
 {
   const { ctx, page, errs } = await open();
   const rail = await page.evaluate(() => {
@@ -111,16 +118,17 @@ const state = (page) => page.evaluate(() => {
     };
   });
   assert(rail && rail.tag === "NAV" && !!rail.label, "A1: 有一条带名字的 <nav> 导航栏");
-  assert(rail && JSON.stringify(rail.views) === JSON.stringify(["home", "play", "puzzle", "learn", "library", "me", "settings"]),
-    "A1 × S5: 入口依次是 首页 / 下棋 / 谜题 / 学习 / 棋谱库 / 我的 / 设置(" + (rail && rail.views.join(" ")) + ")");
-  assert(rail && JSON.stringify(rail.labels.slice(1, 6)) === JSON.stringify(["下棋", "谜题", "学习", "棋谱库", "我的"]),
-    "A1: 五个入口的字(" + (rail && rail.labels.join(" / ")) + ")");
+  assert(rail && JSON.stringify(rail.views) === JSON.stringify(["home", "play", "train", "library", "me", "settings"]),
+    "A1 × S3 × S5: 入口依次是 今天 / 下棋 / 训练 / 棋谱 / 我的 / 设置(" + (rail && rail.views.join(" ")) + ")");
+  assert(rail && JSON.stringify(rail.labels.slice(0, 5)) === JSON.stringify(["今天", "下棋", "训练", "棋谱", "我的"]),
+    "A1 × S1 × S3: 五个入口的字(" + (rail && rail.labels.join(" / ")) + ")");
   assert(rail && rail.settings, "S5: 栏尾是「设置」的入口(" + JSON.stringify(rail && rail.labels) + ")");
   assert(rail && rail.x === 0 && rail.w > 0 && rail.w <= 72 && rail.h === WIDE.height,
     "A1: 宽窗是左侧窄栏,不超过 72px 宽、通高(" + JSON.stringify(rail) + ")");
   assert(rail && rail.pill === 32, "A1: 图标底是 --ctl-h-sm(" + (rail && rail.pill) + "px)");
   const s = await state(page);
   assert(s.view === "play" && s.current === "play", "A1: 人机模式打开时在「下棋」,栏上标着当前项(" + JSON.stringify(s) + ")");
+  assert(!s.segShown, "S3: 下棋时没有训练的分段(" + JSON.stringify(s) + ")");
   assert(errs.length === 0, "rail: 没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
@@ -150,22 +158,24 @@ const state = (page) => page.evaluate(() => {
 {
   const { ctx, page, errs } = await open();
   const EXPECT = {
-    home: (s) => s.home && s.stageInert,
-    puzzle: (s) => s.puzzleSec && s.mode === "puzzle" && !s.stageInert,
-    learn: (s) => s.learnSec && s.mode === "learn",
+    home: (s) => s.home && s.stageInert && !s.segShown,
+    // 9.0 S3: was the 谜题 and 学习 views — 训练 is the board in the lesson or
+    // the puzzle mode, the switch over the panel naming the segment
+    train: (s) => !s.stageInert && s.segShown && ((s.mode === "puzzle" && s.puzzleSec && s.seg === "puzzle")
+      || (s.mode === "learn" && s.learnSec && ["course", "endgame", "classic"].includes(s.seg))),
     library: (s) => s.library && s.stageInert,
     me: (s) => s.me && s.stageInert,
     settings: (s) => s.settings && s.stageInert && !s.me && !s.home && !s.library,
-    play: (s) => !s.home && !s.library && !s.me && s.mode === "ai" && !s.puzzleSec && !s.learnSec,
+    play: (s) => !s.home && !s.library && !s.me && s.mode === "ai" && !s.puzzleSec && !s.learnSec && !s.segShown,
   };
-  for (const v of ["home", "puzzle", "learn", "library", "me", "settings", "play"]) {
+  for (const v of ["home", "train", "library", "me", "settings", "play"]) {
     await page.click('#rail button[data-view="' + v + '"]');
     await page.waitForTimeout(300);
     const s = await state(page);
     assert(s.view === v && s.current === v && EXPECT[v](s), "A1: 点「" + v + "」一次就到(" + JSON.stringify(s) + ")");
   }
   // …and from the home page, each of them is one click
-  for (const v of ["play", "puzzle", "learn", "library", "me", "settings"]) {
+  for (const v of ["play", "train", "library", "me", "settings"]) {
     await page.click('#rail button[data-view="home"]');
     await page.waitForTimeout(200);
     await page.click('#rail button[data-view="' + v + '"]');
@@ -177,48 +187,207 @@ const state = (page) => page.evaluate(() => {
   await ctx.close();
 }
 
-// --- 4. 首页: three cards, each a sentence and a button that goes somewhere ---
+// --- 3b. 9.0 S3: 训练's switch — four segments, each opening where it was left
+{
+  const { ctx, page, errs } = await open();
+  // the course bookmarked at lesson 5 (an older profile's shape: no stamps)
+  await page.evaluate(() => localStorage.setItem("chess.learn", JSON.stringify({ v: 1, done: {}, last: 4 })));
+  await page.reload();
+  await page.waitForTimeout(900);
+  await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+  const look = () => page.evaluate(() => ({
+    title: document.getElementById("lesson-title").textContent.trim(),
+    list: document.getElementById("lesson-list-h").textContent.trim(),
+    cmode: (() => { const r = document.getElementById("classic-mode"); return !r.hidden && r.getClientRects().length > 0; })(),
+    last: JSON.parse(localStorage.getItem("chess.learn") || "{}").last,
+    saved: JSON.parse(localStorage.getItem("chess.settings") || "{}").trainSeg,
+  }));
+  const seg = async (k) => {
+    await page.click('#train-seg button[data-seg="' + k + '"]');
+    // 残局 is a chunk: the segment lights when the camp has arrived
+    await page.waitForFunction((x) => !!document.querySelector('#train-seg button[data-seg="' + x + '"][aria-pressed="true"]'),
+      k, { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(300);
+  };
+  await page.click('#rail button[data-view="train"]');
+  await page.waitForTimeout(400);
+  const s0 = await state(page);
+  const l0 = await look();
+  assert(s0.view === "train" && s0.current === "train" && s0.segShown && s0.seg === "course" && s0.mode === "learn" && s0.learnSec,
+    "S3: 第一次点「训练」是课程,分段开关在侧栏顶上(" + JSON.stringify(s0) + ")");
+  assert(l0.last === 4 && !!l0.title, "S3: 课程打开在书签那一课(第 5 课:" + l0.title + ")");
+  await seg("puzzle");
+  const s1 = await state(page);
+  assert(s1.view === "train" && s1.current === "train" && s1.seg === "puzzle" && s1.mode === "puzzle" && s1.puzzleSec && !s1.learnSec,
+    "S3: 点「谜题」是谜题模式,仍在训练(" + JSON.stringify(s1) + ")");
+  await seg("endgame");
+  const s2 = await state(page);
+  const l2 = await look();
+  assert(s2.view === "train" && s2.seg === "endgame" && s2.mode === "learn" && s2.learnSec,
+    "S3: 点「残局」是学习模式里的残局(" + JSON.stringify(s2) + ")");
+  await seg("classic");
+  const s3 = await state(page);
+  const l3 = await look();
+  assert(s3.seg === "classic" && s3.mode === "learn" && l3.cmode,
+    "S3: 点「名局」,读谱 / 猜着的开关出现(" + JSON.stringify({ seg: s3.seg, cmode: l3.cmode }) + ")");
+  assert(!l0.cmode && !l2.cmode, "S3: 读谱 / 猜着只在名局出现");
+  assert(new Set([l0.list, l2.list, l3.list]).size === 3,
+    "S3: 目录只列当前一段(" + [l0.list, l2.list, l3.list].join(" / ") + ")");
+  await seg("course");
+  const l4 = await look();
+  assert(l4.title === l0.title && l4.last === 4, "S3: 回到「课程」,还是离开时那一课(" + l4.title + ")");
+  // 谜题 left last: 下棋 hides the switch, and 训练 comes back on 谜题
+  await seg("puzzle");
+  await page.click('#rail button[data-view="play"]');
+  await page.waitForTimeout(300);
+  const p0 = await state(page);
+  assert(p0.view === "play" && p0.mode === "ai" && !p0.segShown, "S3: 下棋时分段开关不在(" + JSON.stringify(p0) + ")");
+  await page.click('#rail button[data-view="train"]');
+  await page.waitForTimeout(400);
+  const p1 = await state(page);
+  assert(p1.view === "train" && p1.seg === "puzzle" && p1.mode === "puzzle" && p1.segShown,
+    "S3: 从下棋回「训练」,回到离开时的谜题(" + JSON.stringify(p1) + ")");
+  await page.click('#rail button[data-view="home"]');
+  await page.waitForTimeout(300);
+  const h0 = await state(page);
+  await page.click('#rail button[data-view="train"]');
+  await page.waitForTimeout(400);
+  const h1 = await state(page);
+  assert(!h0.segShown && h1.seg === "puzzle" && h1.mode === "puzzle", "S3: 今天页上没有分段;再回训练还是谜题(" + JSON.stringify({ h0: h0.segShown, h1: h1.seg }) + ")");
+  assert((await look()).saved === "puzzle", "S3: 训练的分段记在设置里(trainSeg)");
+  await page.reload();
+  await page.waitForTimeout(900);
+  await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+  const r = await state(page);
+  assert(r.view === "train" && r.current === "train" && r.seg === "puzzle" && r.segShown, "S3: 重开还在训练·谜题(" + JSON.stringify(r) + ")");
+  assert(errs.length === 0, "训练分段:没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 4. 今天: the page the app opens on, each part going somewhere --------------
+// 9.0 S1: was 首页's three cards (继续上次 / 今天的训练 / 下一步建议, each a
+// sentence and a .home-go). What each did is somewhere on 今天 now: 继续上次
+// with no game is 下一盘 (#today-new); 今天的训练 is the hero's button
+// (#today-go); 下一步建议's "to a board view" is the three 继续 cards, each
+// into 训练 at its segment.
 {
   const { ctx, page, errs } = await open({ view: "home" });
-  const cards = await page.evaluate(() => ["home-continue", "home-daily", "home-next"].map((id) => {
-    const c = document.getElementById(id);
-    if (!c) return null;
+  // 残局's card waits for the camp's chunk
+  await page.waitForFunction(() => { const c = document.querySelector('#today-cont .today-c[data-seg="endgame"]'); return !!c && !c.hidden; },
+    null, { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(200);
+  const today = await page.evaluate(() => {
+    const vis = (el) => !!el && !el.hidden && el.getClientRects().length > 0;
+    const txt = (id) => { const e = document.getElementById(id); return e ? e.textContent.trim() : ""; };
     return {
-      title: (c.querySelector("h2") || {}).textContent,
-      body: c.querySelector(".home-body").textContent.trim(),
-      go: c.querySelector(".home-go").textContent.trim(),
-      visible: c.getClientRects().length > 0,
+      head: txt("home-h"), date: txt("today-date"), hero: txt("today-hero-title"), go: txt("today-go"),
+      newGame: vis(document.getElementById("today-new")) ? txt("today-new") : "",
+      heroBoard: document.querySelectorAll("#today-hero-board .mini-sq").length,
+      rings: [...document.querySelectorAll("#today-rings .today-ring")].map((r) => r.dataset.k + ":" + r.querySelector("b").textContent),
+      note: txt("today-prog-note"),
+      cont: [...document.querySelectorAll("#today-cont .today-c")].filter(vis)
+        .map((c) => c.dataset.seg + ":" + c.querySelector("b").textContent.trim() + ":" + c.querySelectorAll(".mini-sq").length),
+      gamesEmpty: vis(document.getElementById("today-games-empty")),
+      ratings: [txt("today-r-game"), txt("today-r-pz")],
     };
-  }));
-  assert(cards.every((c) => c && c.visible && c.body && c.go),
-    "A1: 首页三张卡都有内容和按钮(" + JSON.stringify(cards) + ")");
-  assert(cards.map((c) => c && c.title).join("/") === "继续上次/今天的训练/下一步建议",
-    "A1: 三张卡是 继续上次 / 今天的训练 / 下一步建议");
-  assert((await state(page)).view === "home", "A1: 上次停在首页,打开还是首页");
-  // 继续上次, with no game on the board, starts one: the new-game dialog
-  await page.click("#home-continue .home-go");
+  });
+  assert(!!today.head && !!today.date && !!today.hero && !!today.go && today.heroBoard === 64 && today.newGame === "下一盘",
+    "S1: 今天页有问候、日期,主卡是一句话 + 一块小棋盘 + 按钮,旁边是「下一盘」(" + JSON.stringify(today) + ")");
+  assert(today.rings.join() === "lesson:0/1,puzzle:0/5,game:0/1" && !!today.note,
+    "S1: 今天的三项进度:课 0/1、题 0/5、局 0/1,下面说还差什么(" + today.rings.join() + " · " + today.note + ")");
+  assert(today.cont.length === 3 && today.cont.map((c) => c.split(":")[0]).join() === "course,endgame,classic"
+    && today.cont.every((c) => c.split(":")[1] && c.split(":")[2] === "64") && /第 1 课/.test(today.cont[0]),
+    "S1: 「继续」三张卡 课程 / 残局 / 名局,各有名字和棋盘;课程停在第 1 课(" + JSON.stringify(today.cont) + ")");
+  assert(today.gamesEmpty && today.ratings.every(Boolean), "S1: 还没有对局时说没有;两个等级分都有字(" + JSON.stringify(today.ratings) + ")");
+  assert((await state(page)).view === "home", "A1: 上次停在今天,打开还是今天");
+  // 下一盘, with no game on the board, starts one: the new-game dialog
+  await page.click("#today-new");
   await page.waitForTimeout(400);
   const after = await page.evaluate(() => ({
     view: document.getElementById("app").getAttribute("data-view"),
     ng: document.getElementById("newgame-modal").classList.contains("show"),
   }));
-  assert(after.view === "play" && after.ng, "A1: 没有对局时「继续上次」→ 下棋 + 新对局对话框(" + JSON.stringify(after) + ")");
+  assert(after.view === "play" && after.ng, "A1 × S1: 「下一盘」→ 下棋 + 新对局对话框(" + JSON.stringify(after) + ")");
   await page.click("#ng-cancel");
-  // 今天的训练 starts the plan: its first step, on the view it happens in
+  // the hero's button starts the plan: its first step, on the view it happens in
   await page.click('#rail button[data-view="home"]');
   await page.waitForTimeout(200);
-  await page.click("#home-daily .home-go");
+  await page.click("#today-go");
   await page.waitForTimeout(500);
   const dv = await state(page);
-  assert(dv.view !== "home" && !dv.home, "A1: 「今天的训练」的按钮带你去第一步(" + dv.view + ")");
-  // 下一步建议 goes to a board view
+  assert(dv.view !== "home" && !dv.home, "A1 × S1: 主卡的按钮带你去计划的第一步(" + dv.view + ")");
+  // each 继续 card goes to 训练, at its segment
+  for (const k of ["course", "endgame", "classic"]) {
+    await page.click('#rail button[data-view="home"]');
+    await page.waitForTimeout(300);
+    await page.click('#today-cont .today-c[data-seg="' + k + '"]');
+    await page.waitForFunction((x) => !!document.querySelector('#train-seg button[data-seg="' + x + '"][aria-pressed="true"]'),
+      k, { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const st = await state(page);
+    assert(st.view === "train" && st.current === "train" && st.seg === k && st.mode === "learn" && !st.stageInert,
+      "S1 × S3: 「继续·" + k + "」落在训练的这一段(" + JSON.stringify(st) + ")");
+  }
+  assert(errs.length === 0, "today: 没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 4b. 9.0 S1: the hero puts the game still being played first; 换一件事 moves on
+{
+  const { ctx, page, errs } = await open({ mode: "pvp" });
+  const hero = () => page.evaluate(() => ({
+    title: document.getElementById("today-hero-title").textContent.trim(),
+    go: document.getElementById("today-go").textContent.trim(),
+    skip: !document.getElementById("today-skip").hidden,
+    plan: !document.getElementById("daily-plan").hidden,
+    sig: document.getElementById("today-hero-board").dataset.sig || "",
+  }));
   await page.click('#rail button[data-view="home"]');
-  await page.waitForTimeout(200);
-  await page.click("#home-next .home-go");
-  await page.waitForTimeout(500);
-  const nx = await state(page);
-  assert(["learn", "puzzle", "play"].includes(nx.view), "A1: 「下一步建议」的按钮落在一个棋盘视图上(" + nx.view + ")");
-  assert(errs.length === 0, "home: 没有页面异常 " + errs.join(" / "));
+  await page.waitForTimeout(300);
+  const h0 = await hero();
+  assert(h0.title !== "这盘棋还没下完" && !!h0.title, "S1: 没有对局时,主卡是计划的一步(" + h0.title + ")");
+  await page.click('#rail button[data-view="play"]');
+  await page.waitForTimeout(300);
+  const at = (sq) => page.evaluate((x) => {
+    const r = document.getElementById("board").getBoundingClientRect();
+    return { x: r.left + (x.charCodeAt(0) - 97 + 0.5) * (r.width / 8), y: r.top + (8 - Number(x[1]) + 0.5) * (r.height / 8) };
+  }, sq);
+  for (const sq of ["e2", "e4"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(150); }
+  await page.click('#rail button[data-view="home"]');
+  await page.waitForTimeout(300);
+  const h1 = await hero();
+  assert(h1.title === "这盘棋还没下完" && h1.go === "接着下" && h1.skip && /^rnbqkbnr\/pppppppp\/8\/8\/4P3\/8\/PPPP1PPP\/RNBQKBNR b/.test(h1.sig) && /\|e2e4\|/.test(h1.sig),
+    "S1: 有一盘没下完,主卡先是它:棋盘上是这一盘,最后一步亮着,按钮是「接着下」(" + JSON.stringify(h1) + ")");
+  // 换一件事: from the game to the plan
+  await page.click("#today-skip");
+  await page.waitForTimeout(300);
+  const h2 = await hero();
+  assert(h2.title !== h1.title && h2.go !== "接着下" && !!h2.title, "S1: 「换一件事」从这盘棋换到计划的一步(" + JSON.stringify(h2) + ")");
+  // …and on through the plan, when it has more than one step
+  if (h2.skip) {
+    await page.click("#today-skip");
+    await page.waitForTimeout(300);
+    const h3 = await hero();
+    assert(h3.title !== h2.title || h3.sig !== h2.sig, "S1: 再点「换一件事」换到计划的下一步(" + JSON.stringify({ h2: h2.title, h3: h3.title }) + ")");
+  }
+  // the live game's own button goes back to it: back on the page, it is first again
+  await page.reload();
+  await page.waitForTimeout(900);
+  await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+  await page.click('#rail button[data-view="home"]');
+  await page.waitForTimeout(300);
+  const h4 = await hero();
+  if (h4.title === "这盘棋还没下完") {
+    await page.click("#today-go");
+    await page.waitForTimeout(400);
+    const st = await state(page);
+    const rows = await page.evaluate(() => document.querySelectorAll("#move-list .mlrow").length);
+    assert(st.view === "play" && st.mode === "pvp" && rows === 1, "S1: 「接着下」回到这一盘(" + JSON.stringify({ view: st.view, mode: st.mode, rows }) + ")");
+  } else {
+    // a reload starts a new sitting — but the game is the same game
+    assert(false, "S1: 重开之后主卡又先是这盘没下完的棋(" + JSON.stringify(h4) + ")");
+  }
+  assert(errs.length === 0, "today hero: 没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
 
@@ -230,7 +399,7 @@ const state = (page) => page.evaluate(() => {
   const f1 = await page.evaluate(() => document.activeElement.dataset.view);
   await page.keyboard.press("Enter");
   await page.waitForTimeout(300);
-  assert(f1 === "puzzle" && (await state(page)).view === "puzzle", "A1: ↓ 走到下一个入口,回车进去(" + f1 + ")");
+  assert(f1 === "train" && (await state(page)).view === "train", "A1 × S3: ↓ 走到下一个入口(训练),回车进去(" + f1 + ")");
   await page.keyboard.press("End");
   // 9.0 S5: the rail's end is the 设置 entry now (was #prefs-open)
   const f2 = await page.evaluate(() => document.activeElement.dataset.view);
@@ -453,14 +622,15 @@ const state = (page) => page.evaluate(() => {
   await page.waitForTimeout(900);
   const back = await state(page);
   assert(back.view === "me" && back.me, "A1: 停在「我的」,重开还是「我的」(" + JSON.stringify(back) + ")");
+  // 9.0 S4: 对局历史 moved from 我的 to 棋谱
   const moved = await page.evaluate(() => ({
     stats: !!document.querySelector("#page-me #stats-body"),
     ach: !!document.querySelector("#page-me #ach-body"),
-    hist: !!document.querySelector("#page-me #hist-body"),
+    hist: !!document.querySelector("#page-library #sec-history #hist-body") && !document.querySelector("#page-me #hist-body"),
     lib: !!document.querySelector("#page-library #lib-body"),
     rep: !!document.querySelector("#page-library #rep-body"),
   }));
-  assert(Object.values(moved).every(Boolean), "A1: 统计/历史/成就在「我的」,棋谱库/开局书在「棋谱库」(" + JSON.stringify(moved) + ")");
+  assert(Object.values(moved).every(Boolean), "A1 × S4: 统计/成就在「我的」,棋谱库/开局书/对局历史在「棋谱」(" + JSON.stringify(moved) + ")");
   assert(errs.length === 0, "restore: 没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
@@ -469,7 +639,7 @@ const state = (page) => page.evaluate(() => {
 for (const lang of ["en", "ja"]) {
   const { ctx, page, errs } = await open({ langId: lang });
   const labels = await page.evaluate(() => [...document.querySelectorAll("#rail .rail-lbl")].map((s) => s.textContent.trim()));
-  assert(labels.length === 7 && labels.every(Boolean), lang + ": 栏上七个字都有(" + labels.join(" / ") + ")");
+  assert(labels.length === 6 && labels.every(Boolean), lang + ": 栏上六个字都有(" + labels.join(" / ") + ")");
   if (lang === "en") assert(!labels.some((l) => /[一-鿿]/.test(l)), "en: 栏上没有中文");
   const fits = await page.evaluate(() => [...document.querySelectorAll("#rail .rail-lbl")].every((s) => s.scrollWidth <= s.clientWidth + 1));
   assert(fits, lang + ": 栏上的字都放得下");
@@ -528,6 +698,7 @@ for (const lang of ["en", "ja"]) {
 // Codex on #86: a game opened from 对局历史 on 我的 is loaded onto the board,
 // so the board is what shows next — as a library game already does. Red
 // before: the sheet closed, and the 我的 page went on covering the new game.
+// 9.0 S4: 对局历史 is on 棋谱 now; the same two doors, from there.
 {
   const { ctx, page, errs } = await open();
   await page.evaluate(() => {
@@ -541,9 +712,9 @@ for (const lang of ["en", "ja"]) {
   await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
   // v8-0-plan C1: 「全部 N 局」 opens the library's list on its 本机 games,
   // and a row there loads the same way the history's own rows did; the
-  // preview rows on 我的 are the second door
+  // preview rows on 棋谱 (9.0 S4: was 我的) are the second door
   for (const door of ["#lib-list [data-loc]", "#hist-body [data-hist]"]) {
-    await page.click('#rail button[data-view="me"]');
+    await page.click('#rail button[data-view="library"]');
     await page.waitForTimeout(400);
     if (door.startsWith("#lib-list")) {
       await page.click("#hist-open");
@@ -556,8 +727,8 @@ for (const lang of ["en", "ja"]) {
     const st = await state(page);
     const rows = await page.evaluate(() => document.querySelectorAll(".mlrow").length);
     assert(rows === 2, door + ":从对局历史打开的一局载入了棋盘(" + rows + " 行)");
-    assert(!st.me && st.current === "play" && !st.stageInert,
-      door + ":……载入之后看见的是棋盘,不是还盖着的「我的」(" + JSON.stringify({ me: st.me, current: st.current, inert: st.stageInert }) + ")");
+    assert(!st.library && st.current === "play" && !st.stageInert,
+      door + ":……载入之后看见的是棋盘,不是还盖着的「棋谱」(" + JSON.stringify({ library: st.library, current: st.current, inert: st.stageInert }) + ")");
     // Codex #89: the opponent comes back with the game — 练习档 × 重原则 is 莉娜 —
     // not whoever is chosen today (the default: no persona); both doors
     await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 8000 }).catch(() => {});
@@ -574,6 +745,10 @@ for (const lang of ["en", "ja"]) {
 // THAT lesson, not whichever lesson was visited last. Red before: with
 // lesson 1 done and lesson 3 the last one open, the card said 「第 2 课」 and
 // the button went back to lesson 3.
+// 9.0 S1: 下一步建议 is the hero's lesson step now — its board is the lesson's
+// first position and #today-go opens it — while 继续·课程 is the bookmark
+// (lesson 3), and goes back to that one. Both are checked: neither may borrow
+// the other's lesson.
 {
   const { ctx, page, errs } = await open();
   await page.evaluate(() => {
@@ -584,13 +759,41 @@ for (const lang of ["en", "ja"]) {
   await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
   await page.click('#rail button[data-view="home"]');
   await page.waitForTimeout(300);
-  const said = await page.evaluate(() => document.getElementById("home-next").textContent);
-  await page.click("#home-next .home-go");
+  const hero = () => page.evaluate(() => ({ title: document.getElementById("today-hero-title").textContent.trim(),
+    sig: document.getElementById("today-hero-board").dataset.sig || "",
+    skip: !document.getElementById("today-skip").hidden }));
+  // the plan's steps come in its own order; 换一件事 turns to the lesson step
+  let h = await hero();
+  for (let i = 0; i < 8 && h.title !== "学一节新课" && h.skip; i++) {
+    await page.click("#today-skip");
+    await page.waitForTimeout(200);
+    h = await hero();
+  }
+  const card = await page.evaluate(() => document.querySelector('#today-cont .today-c[data-seg="course"] b').textContent.trim());
+  assert(h.title === "学一节新课", "S1: 计划里有「学一节新课」这一步(" + h.title + ")");
+  assert(/^第 3 课/.test(card), "S1: 「继续·课程」是书签那一课(第 3 课:" + card + ")");
+  await page.click("#today-go");
   await page.waitForTimeout(700);
   const last = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.learn")).last);
   const st = await state(page);
-  assert(st.view === "learn" && last === 1,
-    "「下一步建议」点开的正是卡上说的那一课(第 2 课;打开的是第 " + (last + 1) + " 课,视图 " + st.view + ";卡上:" + said.trim().slice(0, 40) + ")");
+  // the hero's board was the opened lesson's first position
+  const fen = h.sig.split("|")[0];
+  const shown = await page.evaluate(() => (window.__chess && window.__chess.board && window.__chess.board().fen) || null);
+  assert(st.view === "train" && st.seg === "course" && last === 1,
+    "主卡「学一节新课」点开的正是第一节没学完的课(第 2 课;打开的是第 " + (last + 1) + " 课,视图 " + st.view + "/" + st.seg + ")");
+  if (shown) assert(shown.split(" ")[0] === fen.split(" ")[0], "主卡的棋盘就是那一课的开局(" + fen + " / " + shown + ")");
+  // 继续·课程 is the bookmark: lesson 3 — the hero did not move it, it did not borrow the hero's
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem("chess.learn")); s.last = 2; localStorage.setItem("chess.learn", JSON.stringify(s)); });
+  await page.reload();
+  await page.waitForTimeout(900);
+  await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+  await page.click('#rail button[data-view="home"]');
+  await page.waitForTimeout(300);
+  await page.click('#today-cont .today-c[data-seg="course"]');
+  await page.waitForTimeout(600);
+  const last2 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.learn")).last);
+  const st2 = await state(page);
+  assert(st2.view === "train" && st2.seg === "course" && last2 === 2, "S1: 「继续·课程」打开书签那一课(第 " + (last2 + 1) + " 课)");
   assert(errs.length === 0, "下一步建议:没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }

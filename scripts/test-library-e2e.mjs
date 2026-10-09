@@ -205,7 +205,7 @@ async function openFilters(page) {
     };
   });
   // v8-0-plan A1: 记录 is two pages — 我的 (the entry, stats) and 棋谱 (the
-  // library, the opening book, and since 9.0 S4 the history); each is read while it shows
+  // library, the opening book, and the history (9.0 S4)); each is read while it shows
   await page.click('#rail button[data-view="me"]');
   const onMe = await read();
   await page.click('#rail button[data-view="library"]');
