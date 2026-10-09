@@ -1245,6 +1245,9 @@
     }
     .ps-level:empty { display: none; }
     .pstrip:not(.is-active) .ps-name { color: color-mix(in srgb, var(--text) 82%, transparent); }
+    /* 9.0 V3: a lesson with no sparring partner names itself on that line —
+       a label, not a player: no side's colour on its disc */
+    .pstrip.is-label .ps-av { background: var(--card); color: var(--muted); }
 
     /* captured pieces, grouped by kind: a second pawn tucks under the first
        the way a pile of taken men sits beside a real board */

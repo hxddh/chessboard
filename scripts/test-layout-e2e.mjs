@@ -2315,22 +2315,24 @@ if (scenario()) {
   await ctx.close();
 }
 
-// --- 5. a lesson with no opponent draws no opponent ------------------------
+// --- 5. a lesson with no opponent names the lesson there --------------------
 if (scenario()) {
   const { ctx, page } = await open("zh-CN", "learn", "play");
-  // 7.7: the opponent's strip keeps its place (the board must not move
-  // between modes) and draws nothing in it
+  // 7.7 kept the opponent's strip's place (the board must not move between
+  // modes) and drew nothing in it; 9.0 V3: it names the lesson, a label
+  // rather than a player (never the side to move)
   const vs = await page.evaluate(() => {
     const top = document.getElementById("strip-b");
     return {
-      empty: top.classList.contains("is-empty"),
+      label: top.classList.contains("is-label") && !top.classList.contains("is-empty"),
       shown: getComputedStyle(top).visibility === "visible",
-      role: document.getElementById("black-role").textContent.trim(),
+      active: top.classList.contains("is-active"),
+      name: document.getElementById("black-role").textContent.trim(),
+      title: document.getElementById("lesson-title").textContent.trim(),
     };
   });
-  assert(vs.empty, "lesson 1 has no sparring partner, so the opponent's strip is empty");
-  assert(!vs.shown, "…and it is not drawn at all");
-  assert(vs.role !== "—", "…rather than drawn with an em dash for a name");
+  assert(vs.label && vs.shown && !vs.active, "lesson 1 has no sparring partner, so the opponent's strip is the lesson's label (" + JSON.stringify(vs) + ")");
+  assert(!!vs.name && vs.name === vs.title, "…and it reads the lesson's title (" + vs.name + " / " + vs.title + ")");
   await ctx.close();
 }
 

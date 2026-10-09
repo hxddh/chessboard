@@ -972,7 +972,7 @@ export function createPuzzlesUI(d) {
     wirePuzzlePanel,
     onMinedArrived, ALL_PUZZLES, Library, Mistakes, loadMines, saveMines, Progress, Planner,
     saveProgress, bookNow, loadPuzzleState, savePuzzleState, Srs, Picker,
-    owedNow, ratingLabel, ratingTip, practiceLeft, puzzlesInCat,
+    owedNow, ratingLabel, ratingTip, practiceLeft, puzzlesInCat, puzzleRatingOf,
     startPuzzleAt, startPuzzles, stopPuzzles, puzzleModel, puzzleHumanSide, puzzleClick,
     showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, closeThemes: () => Modes.closeThemes(), Vis,
   };

@@ -3120,19 +3120,22 @@ import { loadChunk } from "./chunk.js";
       return store.session.humanColor === "w" ? { w: you, b: engine } : { w: engine, b: you };
     }
     if (mode === "learn") {
-      // A lesson that is not a drill has no opponent: that strip's place is
-      // kept (so the board does not move between modes) and left empty.
+      // A lesson that is not a drill has no opponent: 9.0 V3 — that strip
+      // names the lesson instead of standing empty over the board
       const drill = !!(store.session.learn && curTask().type === "drill");
+      const title = (el("lesson-title") || {}).textContent || "";
       return {
         w: { icon: "graduation-cap", name: t("role.student"), level: "" },
-        b: drill ? { icon: "bot", name: t(store.session.learn.eg ? "eg.engine" : "role.sparring"), level: "" } : null,
+        b: drill ? { icon: "bot", name: t(store.session.learn.eg ? "eg.engine" : "role.sparring"), level: "" }
+          : title ? { icon: "book-open", name: title, level: "", label: true } : null,
       };
     }
     if (mode === "puzzle") {
       // black drills swap the chairs: the book plays White, you answer
       const asBlack = !!(store.session.puzzle && store.session.puzzle.p.side === "b");
       const you = { icon: "user", name: t(asBlack ? "role.youB" : "role.you"), level: "" };
-      const book = { icon: "puzzle", name: t("role.puzzle"), level: "" };
+      const pr = store.session.puzzle ? PuzzlesUI.puzzleRatingOf(store.session.puzzle.p) : null;
+      const book = { icon: "puzzle", name: t("role.puzzle"), level: pr != null ? String(pr) : "" };
       return asBlack ? { w: book, b: you } : { w: you, b: book };
     }
     // Two players: a loaded game names its players — the file's [White] /
@@ -3197,7 +3200,8 @@ import { loadChunk } from "./chunk.js";
       setIcon(el("av-" + side), p.icon);
       setText(el(side === "w" ? "white-role" : "black-role"), p.name);
       setText(el(side === "w" ? "white-level" : "black-level"), p.level);
-      const active = !over && !done && !store.session.editor && !!g && g.turn() === side &&
+      strip.classList.toggle("is-label", !!p.label);
+      const active = !p.label && !over && !done && !store.session.editor && !!g && g.turn() === side &&
         !(mode === "learn" && !trainerG);
       strip.classList.toggle("is-active", active);
       // the engine is the one that thinks; its disc breathes while it does
