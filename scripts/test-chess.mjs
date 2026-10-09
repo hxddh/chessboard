@@ -2684,10 +2684,12 @@ for (const lang of CONTENT_LANGS) {
 
   // personas: one per rung (v8-1-plan T1: 8–12 until the ladder was re-stepped), a style persona.js knows, an icon icons.js draws
   assert(O.PERSONAS.length === O.LEVELS.length, "B4: a persona for every rung (" + O.PERSONAS.length + ")");
-  // v8-1-plan T1: the dialog's three segments, in ladder order, none empty
-  assert(O.SEGMENTS.length === 3 && O.LEVELS.every((id, i) => i === 0 || O.segmentOf(id) >= O.segmentOf(O.LEVELS[i - 1])) &&
-    [0, 1, 2].every((k) => O.LEVELS.some((id) => O.segmentOf(id) === k)) && O.segmentOf("easy") === 1 && O.segmentOf("solid") === 0,
-    "T1: the rungs fall into 入门 / 进阶 / 高手 in ladder order, 进阶 from 初级 on");
+  // 9.0 S2: the dialog shows eight personas, the ladder around the pick —
+  // in ladder order, so a window of the list is a stretch of the ladder
+  assert(O.PERSONAS.every((p, i) => i === 0 || O.LEVELS.indexOf(p.level) > O.LEVELS.indexOf(O.PERSONAS[i - 1].level)),
+    "S2: the personas run in ladder order, so eight in a row are neighbours");
+  assert(/const SHOWN = 8;/.test(fs.readFileSync(path.join(root, "src/web/js/opponents-ui.js"), "utf8")),
+    "S2: the dialog shows eight opponent cards");
   assert(new Set(O.PERSONAS.map((p) => p.level)).size === O.PERSONAS.length && O.PERSONAS.every((p) => O.LEVELS.includes(p.level)),
     "B4: each persona is its own rung of the ladder");
   assert(O.PERSONAS.every((p) => ctx.ChessPersona.IDS.includes(p.style)), "B4: each persona's style is one persona.js plays");
@@ -2712,8 +2714,7 @@ for (const lang of CONTENT_LANGS) {
     const T = LINES[lang];
     // the end-of-game line is the persona's own or the shared `bye`
     const gaps = O.PERSONAS.filter((p) => !T[p.id] || !T[p.id].name || !T[p.id].hello).map((p) => p.id)
-      .concat(["say", "bye", "noOpening", "segAria"].filter((k) => !T[k]))
-      .concat(Array.isArray(T.seg) && T.seg.length === O.SEGMENTS.length && T.seg.every((x) => /\S/.test(x)) ? [] : ["seg"]);
+      .concat(["say", "bye", "noOpening"].filter((k) => !T[k]));
     assert(gaps.length === 0, "B4: " + lang + " names every persona and gives it both lines" + (gaps.length ? " — " + gaps.slice(0, 4) : ""));
     if (lang !== "zh-CN") {
       const same = O.PERSONAS.filter((p) => p.id !== "fish" && T[p.id].hello === LINES["zh-CN"][p.id].hello);

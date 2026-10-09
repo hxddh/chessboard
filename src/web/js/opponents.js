@@ -382,20 +382,6 @@ function ratingOfStats(stats) {
   return memo.r;
 }
 
-/**
- * v8-1-plan T1: the new-game dialog shows the personas a segment at a time —
- * 入门 / 进阶 / 高手 — each the rungs from its first one up to the next
- * segment's first. 入门 is the hand-weakened rungs (they play a step below
- * UCI_Elo's floor); 进阶 starts at 初级, the first Stockfish-limited rung.
- */
-const SEGMENTS = [null, "easy", "expert"]; // where each starts (the first at the bottom)
-function segmentOf(level) {
-  const i = LEVELS.indexOf(level);
-  let seg = 0;
-  SEGMENTS.forEach((id, k) => { if (id && i >= LEVELS.indexOf(id)) seg = k; });
-  return seg;
-}
-
 /** The persona one rung up or down from `level`. */
 function neighbour(level, dir) {
   const i = LEVELS.indexOf(level) + (dir === "up" ? 1 : -1);
@@ -407,5 +393,4 @@ export const Opponents = {
   LEVELS, RATING, RATING_SE, LADDER, RATING_80, PERSONAS, EN_NAME, PACE_CAP_MS, NODES_PER_MS,
   personaById, personaFor, ratingOf, thinkPlan, shouldResign, shouldOfferDraw, acceptsDraw,
   opponentOf, rateGame, rateHistory, fileRating, validRating, ratingOfStats, performance, advice, neighbour,
-  SEGMENTS, segmentOf,
 };
