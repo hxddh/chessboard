@@ -171,8 +171,9 @@ export function createOpponentsUI(d) {
     return grid && on ? grid.querySelector('[data-op="' + on.id + '"]') : null;
   }
 
+  /** 「1402」, or 「1104（定级中）」 while provisional (v9-0-plan S6: not 「1104?」) */
   function fmtRating(r) {
-    return Math.round(r.r) + (r.rd > 110 ? "?" : "");
+    return ChessRating.isProvisional(r) ? tf("rating.prov", [Math.round(r.r)]) : String(Math.round(r.r));
   }
 
   // --- the strip and the two lines -----------------------------------------

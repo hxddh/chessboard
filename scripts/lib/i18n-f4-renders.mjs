@@ -11,6 +11,9 @@
  * change for another day, not part of a refactor). That day was v8-3-plan
  * T4: the stats.hint.noAcc row now reads "1 game", the one English render
  * changed since; test-chess.mjs's T4 block checks the plural keys themselves.
+ * v9-0-plan S6 changed two more on purpose: the puzzle rating's name
+ * (谜题等级分 / パズルレーティング) and its provisional mark (「1500?」 →
+ * 「1500（定级中）」), and 「部分着法按快速扫描评级」's last word.
  *
  * Row: [id, (t, tf, tdot, diff) => text, zh-CN, en, ja]
  */
@@ -82,7 +85,7 @@ export const F4_RENDERS = [
   ["msg.analysis.kept", (t, tf, tdot, diff) => tf("msg.analysis.kept", [17]),
     "已停止分析 · 保留前 17 步结果", "Analysis stopped · kept the first 17 plies", "解析を中止しました · 最初の 17 手分を残しました"],
   ["msg.analysis.doneBad", (t, tf, tdot, diff) => tdot(tf("msg.analysis.doneBad", [3]), tf("msg.mined", [2]), "", "", t("msg.analysis.deepStopped")),
-    "分析完成 · 3 处失着 · 收进 2 道错题 · 加深已停止，部分着法按快速扫描评级", "Analysis complete · 3 flagged · 2 mistakes banked as drills · deeper check stopped, some moves graded on the quick scan", "解析完了 · 3 個の悪手 · 失着 2 件をドリルに収録 · 深掘りは中止、一部の手はクイックスキャンで評価"],
+    "分析完成 · 3 处失着 · 收进 2 道错题 · 加深已停止，部分着法只做了快速评估", "Analysis complete · 3 flagged · 2 mistakes banked as drills · deeper check stopped, some moves graded on the quick scan", "解析完了 · 3 個の悪手 · 失着 2 件をドリルに収録 · 深掘りは中止、一部の手はクイックスキャンで評価"],
   ["lm.doneNext", (t, tf, tdot, diff) => tf("lm.doneThen", [t("lm.tapNext")]),
     "完成！点「下一课」继续", "Done! Tap “Next lesson” to continue", "できました！ 「次のレッスン」で進みましょう"],
   ["lm.doneEg", (t, tf, tdot, diff) => tf("lm.doneThen", [t("eg.allDone")]),
@@ -129,8 +132,8 @@ export const F4_RENDERS = [
     "停止 12/40", "Stop 12/40", "中止 12/40"],
   ["curve.atScore", (t, tf, tdot, diff) => tf("curve.atScore", [0, "+0.3"]),
     "第 0 着 +0.3", "Ply 0 +0.3", "0 手目 +0.3"],
-  ["rec.rating", (t, tf, tdot, diff) => tdot(tf("ui.pair", [t("rec.rating"), "1500?"]), tf("rec.due", [2, 1])),
-    "做题评级 1500? · 复习到期 2 · 明天 1", "Puzzle rating 1500? · Reviews due 2 · tomorrow 1", "パズルのレーティング 1500? · 復習の期限 2 · 明日 1"],
+  ["rec.rating", (t, tf, tdot, diff) => tdot(tf("ui.pair", [t("rec.rating"), tf("rating.prov", [1500])]), tf("rec.due", [2, 1])),
+    "谜题等级分 1500（定级中） · 复习到期 2 · 明天 1", "Puzzle rating 1500 (provisional) · Reviews due 2 · tomorrow 1", "パズルレーティング 1500（判定中） · 復習の期限 2 · 明日 1"],
   ["opp.level", (t, tf, tdot, diff) => tf("ui.pair", [t("diff.normal"), 1400]),
     "中级 1400", "Intermediate 1400", "中級 1400"],
   ["lib.sfPlayer", (t, tf, tdot, diff) => tf("lib.sfPlayer", [t("diff.normal")]),

@@ -243,32 +243,32 @@
               <button type="button" data-diff="beginner" title="会主动犯错的陪练,适合教学毕业第一局" data-i18n-title="tip.diff.beginner" data-i18n="diff.beginner">新手</button>
               <button type="button" data-diff="casual" title="比新手准一些,但还会犯错 —— 打赢新手之后的下一格" data-i18n-title="tip.casual" data-i18n="diff.casual">休闲</button>
               <!-- v8-0-plan B4: four rungs between 休闲 and 初级 (engine.js) -->
-              <button type="button" data-diff="learner" title="按胜率损失抽样、只算两步的陪练" data-i18n-title="tip.diff.learner" data-i18n="diff.learner">练习</button>
+              <button type="button" data-diff="learner" title="只看两步，常走次一点的着 —— 休闲之上的第一档" data-i18n-title="tip.diff.learner" data-i18n="diff.learner">练习</button>
               <button type="button" data-diff="improver" title="比练习档少犯一些错" data-i18n-title="tip.diff.improver" data-i18n="diff.improver">进步</button>
               <button type="button" data-diff="steady" title="算三步，大失误少见" data-i18n-title="tip.diff.steady" data-i18n="diff.steady">稳健</button>
               <button type="button" data-diff="solid" title="算四步，初级之前的最后一档" data-i18n-title="tip.diff.solid" data-i18n="diff.solid">扎实</button>
             </div>
             <span class="diff-group" data-i18n="diff.groupEngine">棋力档</span>
             <div class="theme-row wrap" id="diff-seg-engine" role="group" aria-label="难度" data-i18n-aria="side.difficulty">
-              <button type="button" data-diff="easy" title="Stockfish UCI_Elo 1320(该选项的下限)" data-i18n-title="tip.diffEasy" data-i18n="diff.easy">初级</button>
-              <button type="button" data-diff="easyplus" title="Stockfish UCI_Elo 1500 · MultiPV 6" data-i18n-title="tip.diff.easyplus" data-i18n="diff.easyplus">初级+</button>
-              <button type="button" data-diff="normalminus" title="Stockfish UCI_Elo 1500" data-i18n-title="tip.diff.normalminus" data-i18n="diff.normalminus">中级−</button>
-              <button type="button" data-diff="normal" class="active" title="Stockfish UCI_Elo 1700" data-i18n-title="tip.diffNormal" data-i18n="diff.normal">中级</button>
+              <button type="button" data-diff="easy" title="等级分 1320，棋力档的起点" data-i18n-title="tip.diffEasy" data-i18n="diff.easy">初级</button>
+              <button type="button" data-diff="easyplus" title="等级分 1420，不总走最好的那一步" data-i18n-title="tip.diff.easyplus" data-i18n="diff.easyplus">初级+</button>
+              <button type="button" data-diff="normalminus" title="等级分 1542" data-i18n-title="tip.diff.normalminus" data-i18n="diff.normalminus">中级−</button>
+              <button type="button" data-diff="normal" class="active" title="等级分 1700" data-i18n-title="tip.diffNormal" data-i18n="diff.normal">中级</button>
               <!-- v8-1-plan T1: the rungs re-stepped by what the games measured
                    (engine.js TIERS). An Elo value is not a word: its tooltip
                    is the same in every language and needs no key. -->
-              <button type="button" data-diff="normalplus" title="Stockfish UCI_Elo 1840" data-i18n="diff.normalplus">中级+</button>
-              <button type="button" data-diff="hardminus" title="Stockfish UCI_Elo 2080" data-i18n="diff.hardminus">高级−</button>
-              <button type="button" data-diff="hard" title="Stockfish UCI_Elo 2290" data-i18n-title="tip.diffHard" data-i18n="diff.hard">高级</button>
-              <button type="button" data-diff="hardplus" title="Stockfish UCI_Elo 2450" data-i18n="diff.hardplus">高级+</button>
-              <button type="button" data-diff="expert" title="Stockfish UCI_Elo 2570" data-i18n="diff.expert">专家</button>
-              <button type="button" data-diff="expertplus" title="Stockfish UCI_Elo 2670" data-i18n="diff.expertplus">专家+</button>
-              <button type="button" data-diff="master" title="Stockfish UCI_Elo 2750" data-i18n="diff.master">大师</button>
+              <button type="button" data-diff="normalplus" title="等级分 1797" data-i18n-title="tip.diff.normalplus" data-i18n="diff.normalplus">中级+</button>
+              <button type="button" data-diff="hardminus" title="等级分 1876" data-i18n-title="tip.diff.hardminus" data-i18n="diff.hardminus">高级−</button>
+              <button type="button" data-diff="hard" title="等级分 1982" data-i18n-title="tip.diffHard" data-i18n="diff.hard">高级</button>
+              <button type="button" data-diff="hardplus" title="等级分 2104" data-i18n-title="tip.diff.hardplus" data-i18n="diff.hardplus">高级+</button>
+              <button type="button" data-diff="expert" title="等级分 2239" data-i18n-title="tip.diff.expert" data-i18n="diff.expert">专家</button>
+              <button type="button" data-diff="expertplus" title="等级分 2339" data-i18n-title="tip.diff.expertplus" data-i18n="diff.expertplus">专家+</button>
+              <button type="button" data-diff="master" title="等级分 2460" data-i18n-title="tip.diff.master" data-i18n="diff.master">大师</button>
               <!-- full strength by node count past the last Elo rung (engine.js) -->
-              <button type="button" data-diff="masterplus" title="Stockfish · nodes 150" data-i18n="diff.masterplus">大师+</button>
-              <button type="button" data-diff="strong" title="Stockfish · nodes 600" data-i18n="diff.strong">强力</button>
-              <button type="button" data-diff="strongplus" title="Stockfish · nodes 2500" data-i18n="diff.strongplus">强力+</button>
-              <button type="button" data-diff="extreme" title="Stockfish 满强度" data-i18n-title="tip.diff.extreme" data-i18n="diff.extreme">满强度</button>
+              <button type="button" data-diff="masterplus" title="等级分 2574，出手快，想得浅" data-i18n-title="tip.diff.masterplus" data-i18n="diff.masterplus">大师+</button>
+              <button type="button" data-diff="strong" title="等级分 2683，比大师+ 想得深" data-i18n-title="tip.diff.strong" data-i18n="diff.strong">强力</button>
+              <button type="button" data-diff="strongplus" title="等级分 2807，想得更深" data-i18n-title="tip.diff.strongplus" data-i18n="diff.strongplus">强力+</button>
+              <button type="button" data-diff="extreme" title="最强的一档，等级分 2877 —— 仍是每步想 1.2 秒，不是无限时间；只比强力+ 强一点，两者对下多是和棋" data-i18n-title="tip.diff.extreme" data-i18n="diff.extreme">全力</button>
             </div>
           </div>
           <div class="setting-row stack" id="row-persona">
@@ -357,7 +357,7 @@
           </div>
           <div class="setting-row">
             <span class="setting-k" data-i18n="side.softMark">存疑标注</span>
-            <button type="button" class="switch" id="opt-softmark" aria-pressed="false" title="复盘里显示 ?! —— 实测两遍只有约一半重合，默认不显示" data-i18n-title="tip.softMark">
+            <button type="button" class="switch" id="opt-softmark" aria-pressed="false" title="复盘里也标出 ?!（值得商榷的一手）—— 这类判断不太稳定，所以默认不显示" data-i18n-title="tip.softMark">
               <span class="switch-knob"></span>
             </button>
           </div>
@@ -382,8 +382,8 @@
         <h2 class="side-h" data-i18n="side.engine">引擎</h2>
         <div class="setting-list">
           <div class="setting-row stack">
-            <span class="setting-k" data-i18n="side.hash">置换表</span>
-            <div class="theme-row" id="hash-seg" role="group" aria-label="置换表" data-i18n-aria="side.hash" title="引擎的置换表大小（MB）" data-i18n-title="tip.hash">
+            <span class="setting-k" data-i18n="side.hash">引擎内存</span>
+            <div class="theme-row" id="hash-seg" role="group" aria-label="引擎内存" data-i18n-aria="side.hash" title="引擎可用的内存（MB）：大一些，长时间分析更顺" data-i18n-title="tip.hash">
               <button type="button" data-hash="16">16</button>
               <button type="button" data-hash="32" class="active">32</button>
               <button type="button" data-hash="64">64</button>
@@ -480,10 +480,10 @@
         <!-- v8-0-plan B1: the rating is on this view at all times, with its
              curve — the number the whole page is working on. -->
         <div class="setting-row" id="pz-rating">
-          <span class="setting-k" data-i18n="rec.rating">做题评级</span>
+          <span class="setting-k" data-i18n="rec.rating">谜题等级分</span>
           <span class="num" id="pz-rating-v"></span>
         </div>
-        <canvas id="pz-rating-curve" aria-label="做题评级走势" data-i18n-aria="aria.trendRating" title="最近 60 次首答后的评级" data-i18n-title="tip.trendRating"></canvas>
+        <canvas id="pz-rating-curve" aria-label="谜题等级分走势" data-i18n-aria="aria.trendRating" title="最近 60 次首答后的谜题等级分" data-i18n-title="tip.trendRating"></canvas>
         <!-- v8-0-plan B1: practice, or one of the two runs (trainer/runs.js);
              v8-2-plan T2 adds 看 N 步 and 盲走 (trainer/visual.js) -->
         <div class="setting-row stack" id="row-pz-mode">
@@ -540,7 +540,7 @@
              its own: two actions share a .link-row's grid, and at 1440 wide
              「Practise by theme」 wrapped to two lines beside 为你出一题. -->
         <div class="link-row">
-          <button type="button" class="act-btn" id="pz-themes-open" title="全部主题，各有多少题、你做过几道、你在这个主题上的评级" data-i18n-title="tip.theme.browse" data-i18n="theme.browse">按主题练</button>
+          <button type="button" class="act-btn" id="pz-themes-open" title="全部主题，各有多少题、你做过几道、你在这个主题上的谜题等级分" data-i18n-title="tip.theme.browse" data-i18n="theme.browse">按主题练</button>
         </div>
         <!-- The theme being practised (a theme is a category of its own). -->
         <div class="setting-row" id="row-pz-theme" hidden>
@@ -767,8 +767,8 @@
         <div class="act-group" id="review-actions">
           <span class="act-k" data-i18n="act.groupReview">复盘</span>
           <div class="link-row fit-row">
-            <button type="button" class="act-btn" id="an-run" data-i18n="act.analyze" title="快速评估每一步(120ms/步),标注失着" data-i18n-title="tip.analysis.run">分析</button>
-            <button type="button" class="act-btn" id="an-deep" title="深度评估每一步(400ms/步),更准但更慢" data-i18n-title="tip.analysis.deep" data-i18n="act.deep">精析</button>
+            <button type="button" class="act-btn" id="an-run" data-i18n="act.analyze" title="快速过一遍每一步，标出失着" data-i18n-title="tip.analysis.run">分析</button>
+            <button type="button" class="act-btn" id="an-deep" title="仔细评估每一步，更准但更慢" data-i18n-title="tip.analysis.deep" data-i18n="act.deep">精析</button>
             <button type="button" class="act-btn" id="an-live" aria-pressed="false" title="引擎持续分析棋盘上的局面，跟随复盘游标" data-i18n-title="tip.live" data-i18n="act.live">持续分析</button>
           </div>
           <p class="hint" id="engine-state" role="status" hidden></p>
@@ -784,7 +784,7 @@
           <!-- 7.7 §5: one card. The two accuracies are the headline, once —
                they used to be a line above the report and a row inside it. -->
           <div class="report-card" id="report-card" hidden>
-            <div class="acc-hero" id="acc-line" hidden title="由平均失分换算的近似准确率,非官方评级" data-i18n-title="tip.accuracy"></div>
+            <div class="acc-hero" id="acc-line" hidden title="按每一步的胜率变化换算，与在线平台的「准确率」同一口径" data-i18n-title="tip.accuracy"></div>
             <div class="review" id="review-body" hidden></div>
           </div>
           <!-- v8-0-plan A4: the graph, large, with its axes: White's win
@@ -1046,7 +1046,7 @@
             </div>
             <!-- 6.0 (v6-plan Q3.1): the number that can go up. Drawn only once a
                  first attempt has moved it, like everything else on this page. -->
-            <canvas id="trend-rating" hidden aria-label="做题评级走势" data-i18n-aria="aria.trendRating" title="最近 60 次首答后的评级" data-i18n-title="tip.trendRating"></canvas>
+            <canvas id="trend-rating" hidden aria-label="谜题等级分走势" data-i18n-aria="aria.trendRating" title="最近 60 次首答后的谜题等级分" data-i18n-title="tip.trendRating"></canvas>
             <div class="stats-body" id="puzzle-tally-body" hidden></div>
             <!-- 进步 — change over time, not totals (progress.js). The accuracy
                  sparkline reads what stats.games already stores; the weekly rows
@@ -1071,10 +1071,10 @@
             </div>
             <canvas id="me-cal" role="img" hidden></canvas>
             <div class="side-h-row" id="me-rating-head" hidden>
-              <h2 class="side-h" data-i18n="me.gameRating">对局评级</h2>
+              <h2 class="side-h" data-i18n="me.gameRating">对局等级分</h2>
               <span class="side-h-meta num" id="me-rating-meta"></span>
             </div>
-            <canvas id="me-rating" hidden aria-label="对局评级走势" data-i18n-aria="aria.gameRating"></canvas>
+            <canvas id="me-rating" hidden aria-label="对局等级分走势" data-i18n-aria="aria.gameRating"></canvas>
             <div class="me-sw" id="me-sw" hidden></div>
             <div class="side-h-row" id="me-metrics-head" hidden>
               <h2 class="side-h" data-i18n="me.metrics">跨局指标</h2>
@@ -1444,7 +1444,7 @@
                  the oscillator set every version until 7.6 played. -->
             <div class="setting-row stack" id="row-sound-set">
               <span class="setting-k" data-i18n="side.soundSet">音色</span>
-              <div class="theme-row" id="sound-set-seg" role="group" aria-label="音色" data-i18n-aria="side.soundSet" title="木质：木头棋子落在木头棋盘上；经典：7.6 以前的合成音" data-i18n-title="tip.soundSet">
+              <div class="theme-row" id="sound-set-seg" role="group" aria-label="音色" data-i18n-aria="side.soundSet" title="木质：木头棋子落在木头棋盘上；经典：清脆的电子音" data-i18n-title="tip.soundSet">
                 <button type="button" data-sound-set="wood" class="active" data-i18n="soundSet.wood">木质</button>
                 <button type="button" data-sound-set="classic" data-i18n="soundSet.classic">经典</button>
               </div>

@@ -140,9 +140,9 @@ const W = {
   hidden: ["棋子已隐藏，凭记忆走：输入着法，或点起点再点终点", "Pieces hidden — play from memory: type the move, or click from and to", "駒を隠しました。記憶で指す：指し手を入力、または元のマス→行き先をクリック"],
   reply: ["对方应 {0}，轮到你", "Reply: {0} — your move", "相手の応手 {0}。あなたの番"],
   played: ["已走：{0}", "Played: {0}", "指した手：{0}"],
-  rating: ["{0}评级 {1}", "{0} rating {1}", "{0}のレーティング {1}"],
+  rating: ["{0}等级分 {1}", "{0} rating {1}", "{0}のレーティング {1}"],
   meH: ["计算专项", "Calculation", "読みの特訓"],
-  meRow: ["评级 {0} · 对 {1} / 错 {2} · 最佳 {3}", "Rating {0} · {1} right / {2} wrong · best {3}", "レーティング {0} · 正解 {1} / 不正解 {2} · 最高 {3}"],
+  meRow: ["等级分 {0} · 对 {1} / 错 {2} · 最佳 {3}", "Rating {0} · {1} right / {2} wrong · best {3}", "レーティング {0} · 正解 {1} / 不正解 {2} · 最高 {3}"],
   meDue: ["{0} · 复习 {1} 题", "{0} · review {1}", "{0} · 復習 {1} 問"],
   white: ["白方", "White", "白"],
   black: ["黑方", "Black", "黒"],
@@ -479,7 +479,8 @@ export function createVisualModes(d) {
   const sideW = (c) => w(c === "b" ? "black" : "white");
   /** "Black knight", 「黑马」, 「黒のナイト」 */
   const manW = (pc) => w("man", [w(pc.color === "b" ? "blackS" : "whiteS"), w(pc.type)]);
-  const ratingText = (r) => Math.round(r.r) + (ChessRating.isProvisional(r) ? "?" : "");
+  // v9-0-plan S6: a provisional rating says 定级中 in words, not 「1104?」
+  const ratingText = (r) => (ChessRating.isProvisional(r) ? tf("rating.prov", [Math.round(r.r)]) : String(Math.round(r.r)));
 
   // worked out again only when the book grows (the mined set joining late)
   const pools = { at: "", look: null, blind: null };

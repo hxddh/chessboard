@@ -2625,6 +2625,90 @@ for (const lang of CONTENT_LANGS) {
     assert(judged.length === 0, "B4: " + lang + " persona lines state facts only (7.8)" + (judged.length ? " — " + judged[0] : ""));
   }
 
+  // --- v9-0-plan S6: the interface speaks the player's words ---------------
+  // 8.4 told the player 「Stockfish 限制在 UCI_Elo 1700」, 「置换表」,
+  // 「MultiPV 6」, 「（120ms/步）」, 「结论已查 Syzygy 残局库核对」, 「7.6 以前的
+  // 合成音」 and 「1500?」 — engine settings, version numbers and a statistic's
+  // error bar, where the player wanted to know what the thing does for them.
+  // Nothing user-facing — the three dictionaries, the persona lines, the
+  // fallback text and tooltips in index.html — may say these again. The
+  // register is for a key in the 高级 (engine) settings group that truly needs
+  // one of the words in its tooltip; it may only shrink (S6 left it empty).
+  {
+    const TECH = /UCI_Elo|UCI_LimitStrength|MultiPV|Syzygy|ms\/步|ms\/move|\d\s?ms\b|毫秒|ミリ秒|\bnodes?\b|节点|ノード|置换表|置換表|hash table|ハッシュ表|\d\.\d+\s?(以前|之前|より前)|before \d\.\d|实测|実測|measured:|一半重合|agree about half|一致するのは約半分|±\{\d\}/i;
+    const ALLOWED = {}; // key → why the 高级 group needs the word; may only shrink
+    const ALLOWED_MAX = 0;
+    assert(Object.keys(ALLOWED).length <= ALLOWED_MAX, "S6: the technical-word register only shrinks (" + Object.keys(ALLOWED).length + " of at most " + ALLOWED_MAX + ")");
+    const leaks = [];
+    for (const [lang, dict] of Object.entries(ctx.ChessI18n.DICT)) {
+      for (const [k, v] of Object.entries(dict)) {
+        if (!TECH.test(v)) continue;
+        if (ALLOWED[k] && k.startsWith("tip.")) continue;
+        leaks.push(lang + " " + k + ": " + v);
+      }
+      // a register entry the dictionaries no longer need is a stale one
+      for (const k of Object.keys(ALLOWED)) assert(TECH.test(dict[k] || ""), "S6: " + k + " no longer needs its register entry — drop it");
+    }
+    for (const [lang, T] of Object.entries(LINES)) {
+      for (const p of O.PERSONAS) for (const line of ["hello", "bye"]) {
+        if (TECH.test(T[p.id][line] || "")) leaks.push(lang + " op." + p.id + "." + line + ": " + T[p.id][line]);
+      }
+    }
+    // index.html's own text and tooltips, outside comments and scripts
+    const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8")
+      .replace(/<!--[\s\S]*?-->/g, "").replace(/<script[\s\S]*?<\/script>/g, "").replace(/<style[\s\S]*?<\/style>/g, "");
+    for (const m of html.matchAll(/\s(?:title|aria-label|placeholder)="([^"]*)"|>([^<>]+)</g)) {
+      const s = m[1] != null ? m[1] : m[2];
+      if (TECH.test(s)) leaks.push("index.html: " + s.trim());
+    }
+    for (const l of leaks) console.error("  implementation detail on screen — " + l);
+    assert(leaks.length === 0, "S6: no engine settings, version numbers or error bars in the interface's words" + (leaks.length ? " — " + leaks.length + " leak(s)" : ""));
+
+    // one thing, one number: a persona's lines and a rung's tooltip quote
+    // the rating the card shows (opponents.js, measured), never another
+    const TIP_OF = { easy: "tip.diffEasy", normal: "tip.diffNormal", hard: "tip.diffHard", casual: "tip.casual" };
+    const wrong = [];
+    for (const p of O.PERSONAS) {
+      const want = String(O.ratingOf(p.level));
+      const texts = Object.entries(LINES).flatMap(([lang, T]) => [[lang + " op." + p.id + ".hello", T[p.id].hello], [lang + " op." + p.id + ".bye", T[p.id].bye || ""]])
+        .concat(Object.entries(ctx.ChessI18n.DICT).map(([lang, d]) => { const k = TIP_OF[p.level] || "tip.diff." + p.level; return [lang + " " + k, d[k] || ""]; }));
+      for (const [where, s] of texts) {
+        for (const m of s.replace(/(\d),(\d{3})/g, "$1$2").matchAll(/(?<![\d.])\d{3,4}(?![\d.])/g)) {
+          if (m[0] !== want) wrong.push(where + " says " + m[0] + ", the card says " + want);
+        }
+      }
+    }
+    for (const w of wrong) console.error("  " + w);
+    assert(wrong.length === 0, "S6: every rating a persona line or rung tooltip quotes is the one on its card" + (wrong.length ? " — " + wrong.length + " differ" : ""));
+
+    // a provisional rating says so in words; it is not a number with a 「?」
+    const provSrc = ["src/web/js/opponents-ui.js", "src/web/js/trainer/puzzle-rating.js", "src/web/js/trainer/puzzle-modes.js",
+      "src/web/js/trainer/visual-modes.js", "src/web/js/trainer/puzzles.js"]
+      .map((f) => [f, fs.readFileSync(path.join(root, f), "utf8")]);
+    const marked = provSrc.filter(([, s]) => /(isProvisional\([^)]*\)|\.provisional|\.rd > \d+)\s*\?\s*"\?"/.test(s)).map(([f]) => f);
+    assert(marked.length === 0, "S6: a provisional rating reads 定级中 / Provisional / 判定中, not 「1500?」" + (marked.length ? " — " + marked : ""));
+    for (const [lang, want] of [["zh-CN", "定级中"], ["en", "Provisional"], ["ja", "判定中"]]) {
+      assert(new RegExp(want, "i").test(ctx.ChessI18n.DICT[lang]["rating.prov"] || ""), "S6: " + lang + " calls a provisional rating " + want);
+    }
+    // the two ratings have one name each (M0): 对局等级分 and 谜题等级分
+    const NAMES = { "zh-CN": ["对局等级分", "谜题等级分", /评级/], en: ["Game rating", "Puzzle rating", /(?!)/], ja: ["対局レーティング", "パズルレーティング", /パズルのレーティング|問題レーティング|エンジン戦のレーティング/] };
+    for (const [lang, [game, puzzle, old]] of Object.entries(NAMES)) {
+      const d = ctx.ChessI18n.DICT[lang];
+      assert(d["me.gameRating"] === game && d["rec.rating"] === puzzle, "S6: " + lang + " names the ratings " + game + " / " + puzzle + " (" + d["me.gameRating"] + " / " + d["rec.rating"] + ")");
+      const stale = Object.entries(d).filter(([, v]) => old.test(v)).map(([k]) => k);
+      assert(stale.length === 0, "S6: " + lang + " has no other name for a rating left" + (stale.length ? " — " + stale.slice(0, 5) : ""));
+    }
+    // and the strongest rung has one name: its label is what the endgame
+    // camp calls its engine, and what index.html's fallback text says
+    for (const [lang, d] of Object.entries(ctx.ChessI18n.DICT)) {
+      assert(d["eg.engine"].includes(d["diff.extreme"]), "S6: " + lang + " endgame engine is the top rung by name (" + d["eg.engine"] + " / " + d["diff.extreme"] + ")");
+      // 8.4's achievement called it a fourth thing: 「极限」 / "Max level" / 「最強」
+      assert(d["ach.extreme-win.d"].includes(d["diff.extreme"]), "S6: " + lang + " achievement names the top rung as the button does (" + d["ach.extreme-win.d"] + ")");
+    }
+    const fallback = /data-diff="extreme"[^>]*>([^<]*)</.exec(fs.readFileSync(path.join(root, "src/web/index.html"), "utf8"));
+    assert(fallback && fallback[1] === ctx.ChessI18n.DICT["zh-CN"]["diff.extreme"], "S6: index.html's top rung reads " + ctx.ChessI18n.DICT["zh-CN"]["diff.extreme"] + " too (" + (fallback && fallback[1]) + ")");
+  }
+
   // the clock: presets, a custom control in its own id, and nothing else
   assert(TC.parse("15+10").base === 900 && TC.parse("15+10").inc === 10 && TC.parse("30").base === 1800 && TC.parse("30").inc === 0,
     "B4: 15+10 and 30+0 are presets");
@@ -5028,13 +5112,10 @@ for (const lang of CONTENT_LANGS) {
   // list has to be maintained by hand, which is the point: each entry is a
   // decision someone made, not an oversight that slipped through.
   const SHARED_WITH_ZH = {
-    // The two plain Elo tooltips are a product name and a number — there is
-    // nothing in them to translate. (The labels themselves are words: 1.24
-    // briefly put the Elo values ON the buttons, which was wrong. UCI_Elo is
-    // an engine setting, its floor of 1320 is already above a real beginner.
-    // v8-0-plan B4 gave the player a rating, and the ratings shown beside it
-    // are the measured ones on the persona cards, not these.) The two rungs
-    // B4 added between 1320 and 1700 are the same kind of tooltip.
+    // (Through 8.4 the rungs' tooltips were 「Stockfish UCI_Elo 1700」 — a
+    // product name and an engine setting, the same in every language and
+    // listed here. v9-0-plan S6 made them the card's rating in words, so they
+    // are translated now and the list lost them.)
     // `lm.tip2` is a drill's outcome and the technique it teaches, two
     // sentences. Japanese and Chinese both end a sentence with 。 — it is
     // translated, and the translation is the same mark.
@@ -5049,8 +5130,10 @@ for (const lang of CONTENT_LANGS) {
     // whose value is 「3 · 2 · 1」, term lining up with term; spelling them out
     // as words is what the row is getting away from.
     ja: new Set(["act.fen", "hist.pgn", "live.pieceW", "ed.crK", "ed.crQ", "rv.marks",
-      "tip.diffNormal", "tip.diffHard", "lm.tip2", "ui.dot", "rv.dot", "ui.pair", "pz.catNo", "lib.sfPlayer",
-      "tip.diff.easyplus", "tip.diff.normalminus"]),
+      "lm.tip2", "ui.dot", "rv.dot", "ui.pair", "pz.catNo", "lib.sfPlayer",
+      // the strongest rung (v9-0-plan S6): 全力 is the Japanese word too —
+      // the ja persona lines said 「全力の Stockfish」 before it was a name
+      "diff.extreme"]),
   };
   let untranslated = 0;
   for (const id of langs) {

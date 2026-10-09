@@ -149,8 +149,8 @@ const occ = (page, sq) => page.evaluate((q) => {
     opp: document.getElementById("black-role") ? document.getElementById("black-role").textContent : "",
   }));
   assert(/马拦兵/.test(card.title) && /守和/.test(card.task), "卡片写着名字和目标（守和）", JSON.stringify(card).slice(0, 200));
-  assert(/Syzygy/.test(card.text), "出处一行写明用 Syzygy 核对过", card.text.slice(-80));
-  assert(/满强度/.test(card.opp), "对手是满强度的引擎", card.opp);
+  assert(/残局库/.test(card.text) && !/Syzygy/.test(card.text), "出处一行写明查过残局库（v9-0-plan S6：不写 Syzygy 这个名字）", card.text.slice(-80));
+  assert(/全力/.test(card.opp), "对手是全力档的引擎", card.opp);
   assert((await occ(page, "d1")) && (await occ(page, "c2")), "局面摆上了（d1 马、c2 兵）");
   // wrong: Kf2 lets the pawn run; the engine queens at full strength
   await clickMove(page, "g2", "f2");
@@ -238,7 +238,7 @@ const occ = (page, sq) => page.evaluate((q) => {
       await page.waitForTimeout(400);
       const pendCut = await cut("#sec-learn");
       const pendSrc = await page.evaluate(() => [...document.querySelectorAll("#lesson-text p")].map((p) => p.textContent).join(" "));
-      assert(pendCut.length === 0 && /Stockfish|Syzygy/.test(pendSrc), tag + "：第二部的卡片（出处一行最长的那张）没有被裁掉的字",
+      assert(pendCut.length === 0 && /残局库|tablebase|テーブルベース/.test(pendSrc), tag + "：第二部的卡片（出处一行最长的那张）没有被裁掉的字",
         pendCut.join(", ") + " | " + pendSrc.slice(-60));
       const strip = await page.evaluate(() => { const e = document.getElementById("task-strip-text"); return e && e.offsetParent ? { t: e.textContent, over: e.scrollWidth > e.clientWidth + 1 } : null; });
       assert(!strip || !strip.over || strip.t.length > 0, tag + "：任务条有字", JSON.stringify(strip));

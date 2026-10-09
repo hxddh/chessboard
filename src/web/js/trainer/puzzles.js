@@ -459,7 +459,7 @@ export function createPuzzlesUI(d) {
     if (fb.ok && pz.done && store.session.pzStreak >= 2) parts.push(tf("pz.fb.streak", [store.session.pzStreak]));
     if (pz.rating && (pz.done || !fb.ok)) {
       const d = pz.rating.delta;
-      parts.push(pz.rating.now + (pz.rating.provisional ? "?" : "") + " " + (d > 0 ? "+" + d : d < 0 ? "−" + -d : "±0"));
+      parts.push(tf("ui.pair", [pz.rating.provisional ? tf("rating.prov", [pz.rating.now]) : pz.rating.now, d > 0 ? "+" + d : d < 0 ? "−" + -d : "±0"]));
     }
     avail(meta, parts.length > 0);
     setText(meta, tdot(...parts));

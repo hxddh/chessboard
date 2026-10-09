@@ -188,16 +188,19 @@ if (scenario()) {
   // The top rung is 不限档 / Unrated / 無制限 since P5.8: 「满强度」 promised
   // unlimited strength and read as unlimited time, while the search is still
   // 1.2 seconds a move like every other tier. 缺陷 31.
+  // v9-0-plan S6: 全力 / Strongest / 全力 — 「不限档」 said 档 (a word only
+  // the code used) and "Unrated" stopped being true when the rung was rated
+  // 2877; the tooltip still says 1.2 seconds a move.
   // v8-0-plan B4: six sparring rungs (the four new win-chance rungs join the
   // handicapped pair) and six Elo rungs (1450 and 1575 between 初级 and 中级);
   // v8-1-plan T1: six and fifteen, the ladder re-stepped
   const EXPECT = {
     "zh-CN": { spar: ["新手", "休闲", "练习", "进步", "稳健", "扎实"],
-      engine: ["初级", "初级+", "中级−", "中级", "中级+", "高级−", "高级", "高级+", "专家", "专家+", "大师", "大师+", "强力", "强力+", "不限档"] },
+      engine: ["初级", "初级+", "中级−", "中级", "中级+", "高级−", "高级", "高级+", "专家", "专家+", "大师", "大师+", "强力", "强力+", "全力"] },
     en: { spar: ["Gentle", "Casual", "Practice", "Improving", "Steady", "Solid"],
-      engine: ["Novice", "Novice+", "Intermediate−", "Intermediate", "Intermediate+", "Advanced−", "Advanced", "Advanced+", "Expert", "Expert+", "Master", "Master+", "Strong", "Strong+", "Unrated"] },
+      engine: ["Novice", "Novice+", "Intermediate−", "Intermediate", "Intermediate+", "Advanced−", "Advanced", "Advanced+", "Expert", "Expert+", "Master", "Master+", "Strong", "Strong+", "Strongest"] },
     ja: { spar: ["やさしい", "お気軽", "練習", "上達", "堅実", "手堅い"],
-      engine: ["初級", "初級+", "中級−", "中級", "中級+", "上級−", "上級", "上級+", "エキスパート", "エキスパート+", "マスター", "マスター+", "強力", "強力+", "無制限"] },
+      engine: ["初級", "初級+", "中級−", "中級", "中級+", "上級−", "上級", "上級+", "エキスパート", "エキスパート+", "マスター", "マスター+", "強力", "強力+", "全力"] },
   };
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "setup");

@@ -1357,7 +1357,7 @@ await scenario("你将死引擎", async () => {
   const after = await filedOf(page);
   assert(ready && after.last && after.last.r === "win" && after.last.diff === "beginner" && Number.isFinite(after.last.ra),
     "你将死引擎：记为你赢，计入人机等级分", JSON.stringify({ ready, last: after.last }));
-  assert(/^等级分 \d+\?（(\+\d+|±0)）/.test(after.rate), "你将死引擎：结果卡当场写着新分数（不等下一次重画）", after.rate);
+  assert(/^对局等级分 \d+（定级中），本局 (\+\d+|±0)/.test(after.rate), "你将死引擎：结果卡当场写着新分数（不等下一次重画）", after.rate);
   // Codex #89: clearing the statistics takes the filing off the result card too
   await page.keyboard.press("Control+,");
   await page.waitForTimeout(300);
@@ -1395,7 +1395,7 @@ await scenario("续下后结果卡", async () => {
   await page.waitForTimeout(600);
   const again = await filedOf(page);
   const card = await page.evaluate(() => !document.getElementById("go-card").hidden);
-  assert(/^等级分 /.test(first.rate) && card && again.n === first.n && again.rate === "",
+  assert(/^对局等级分 /.test(first.rate) && card && again.n === first.n && again.rate === "",
     "续下后结果卡：续下再将死，结果卡在，但不再挂着上一个结局的等级分行", JSON.stringify({ first: first.rate, again: again.rate, n: [first.n, again.n], card }));
   assert(!errs.length, "续下后结果卡：页面没有报错", errs.join(" / "));
   await ctx.close();
@@ -1427,7 +1427,7 @@ await scenario("中途换档", async () => {
   await restart();
   await resign(page);
   const one = await filedOf(page);
-  assert(!!one.last && one.last.diff === "beginner" && Number.isFinite(one.last.ra) && /^等级分 /.test(one.rate),
+  assert(!!one.last && one.last.diff === "beginner" && Number.isFinite(one.last.ra) && /^对局等级分 /.test(one.rate),
     "中途换档：同一档下完（中间重开过），按这一档计分", JSON.stringify(one));
   // two: 新手 for the engine's reply, then 满强度 before resigning → unrated
   await newGame();

@@ -122,7 +122,8 @@ export function createPuzzleModes(d) {
     const rec = store.session.puzzleState.themes && store.session.puzzleState.themes[id];
     return rec && rec.rating ? rec.rating : null;
   }
-  const ratingText = (r) => Math.round(r.r) + (ChessRating.isProvisional(r) ? "?" : "");
+  // v9-0-plan S6: a provisional rating says 定级中 in words, not 「1104?」
+  const ratingText = (r) => (ChessRating.isProvisional(r) ? tf("rating.prov", [Math.round(r.r)]) : String(Math.round(r.r)));
   /**
    * The player's rating for showing: the trainer's (idle days charged) once
    * there is one, else a fresh one that is NOT filed — a view must not write
@@ -219,7 +220,7 @@ export function createPuzzleModes(d) {
       b.textContent = r.name;
       const sub = doc.createElement("span");
       sub.className = "pick-sub";
-      sub.textContent = tdot(tf("theme.sub", [r.n, r.tried]), r.rating ? tf("pz.ratingOf", [ratingText(r.rating)]) : "");
+      sub.textContent = tdot(tf("theme.sub", [r.n, r.tried]), r.rating ? tf("me.sw.theme", [ratingText(r.rating)]) : "");
       b.appendChild(sub);
       return b;
     }));
@@ -440,7 +441,7 @@ export function createPuzzleModes(d) {
     const theme = !run && isThemeCat(cat) ? cat.slice(THEME_CAT.length) : null;
     const tr = theme ? themeRating(theme) : null;
     setText(v, tdot(ratingText(seenRating()), theme && tf("ui.pair", [themeName(theme), tr ? ratingText(tr) : "—"])));
-    if (v) v.title = ChessRating.isProvisional(seenRating()) ? tf("rec.ratingRd", [Math.round(seenRating().rd)]) : "";
+    if (v) v.title = ChessRating.isProvisional(seenRating()) ? t("tip.ratingProv") : "";
     const cv = el("pz-rating-curve");
     if (cv && cv.clientWidth) {
       const ys = (Array.isArray(st.rhist) ? st.rhist : []).map((h) => h.r);

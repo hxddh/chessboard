@@ -235,7 +235,7 @@ const hasMateIn = (g, n) => {
     rhist: [{ t: now - 3000, r: 1500 }, { t: now - 2000, r: 1540 }, { t: now - 1000, r: 1520 }] });
   const h = helpers(page);
   assert(await h.shown("#pz-rating"), "c: 谜题页常驻评级一行");
-  assert(/^1520(?!\?)/.test(await h.text("#pz-rating-v") || ""), "c: 评级数值就是存下的评级", await h.text("#pz-rating-v"));
+  assert(/^1520(?!\?|（)/.test(await h.text("#pz-rating-v") || ""), "c: 评级数值就是存下的评级", await h.text("#pz-rating-v"));
   const inked = await page.evaluate(() => {
     const c = document.getElementById("pz-rating-curve");
     if (!c || !c.width) return 0;
@@ -248,7 +248,7 @@ const hasMateIn = (g, n) => {
   await ctx.close();
   const fresh = await open(null);
   const hf = helpers(fresh.page);
-  assert(/^\d+\?/.test(await hf.text("#pz-rating-v") || ""), "c: 新档案也有评级，标「?」", await hf.text("#pz-rating-v"));
+  assert(/^\d+（定级中）/.test(await hf.text("#pz-rating-v") || ""), "c: 新档案也有评级，标「定级中」（v9-0-plan S6：不是「?」）", await hf.text("#pz-rating-v"));
   // …shown, not filed: a rating is written by an answer, never by the view
   // (test-library-e2e: a rote drill must leave `rating` unset)
   await fresh.page.click('#pz-mode-seg button[data-run="practice"]').catch(() => {});
@@ -381,7 +381,7 @@ const hasMateIn = (g, n) => {
   await page.click('#theme-prog-seg button[data-tprog="started"]');
   await page.waitForTimeout(150);
   r = await rows();
-  assert(["m1", "m2", "def"].every((id) => r.some((x) => x.id === id)) && /评级/.test(r[0].text), "b: 「练过」列出做过的主题，带评级", r.map((x) => x.id).join(","));
+  assert(["m1", "m2", "def"].every((id) => r.some((x) => x.id === id)) && /谜题等级分/.test(r[0].text), "b: 「练过」列出做过的主题，带谜题等级分", r.map((x) => x.id).join(","));
   await page.keyboard.press("Escape");
   await page.waitForTimeout(200);
 
