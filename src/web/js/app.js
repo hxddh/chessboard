@@ -1450,6 +1450,7 @@ import { loadChunk } from "./chunk.js";
       if (typeof s.autoFlipPvp === "boolean") store.ui.autoFlipPvp = s.autoFlipPvp;
       if (I18n && typeof s.langId === "string") store.ui.langId = I18n.setLang(s.langId);
       if (typeof s.setCat === "string") store.ui.setCat = s.setCat;
+      if (typeof s.liveOn === "boolean") store.session.liveOn = s.liveOn;
       if (typeof s.trainSeg === "string") store.ui.trainSeg = s.trainSeg;
       if (s.classicMode === "guess") store.ui.classicMode = "guess";
       // v8-0-plan A1: the view and the last playing mode; shell.js vets both
@@ -1459,7 +1460,7 @@ import { loadChunk } from "./chunk.js";
   }
   function saveSettings() {
     try {
-      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, setCat: store.ui.setCat, trainSeg: store.ui.trainSeg, classicMode: store.ui.classicMode, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
+      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, setCat: store.ui.setCat, liveOn: store.session.liveOn, trainSeg: store.ui.trainSeg, classicMode: store.ui.classicMode, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
         volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv, bgWorker: store.ui.bgWorker === true,
         textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
         // v8-0-plan A3: the look
@@ -2042,7 +2043,7 @@ import { loadChunk } from "./chunk.js";
   // v8-0-plan F4: the analysis — the pass and what it leaves behind — lives
   // in review/analysis.js. The panel and the library are made below it.
   const Analysis = createAnalysis({
-    store, game, Persist, t, tf, toast, sync, sanHistory, baseGame, bootEngine,
+    store, game, Persist, t, tf, toast, sync, sanHistory, baseGame, bootEngine, saveSettings,
     setAnalyzeUI: () => setAnalyzeUI(), stopLiveAnalysis,
     LibraryUI: { adoptBoardAnalysis: (...args) => LibraryUI.adoptBoardAnalysis(...args) },
     boardDrillSource, saveMines, savePuzzleState, saveProgress,
@@ -3501,7 +3502,7 @@ import { loadChunk } from "./chunk.js";
     // time anyone wonders where 分析 went (5.1, work package E)
     const engineDown = !ChessEngine || !!store.session.engineDown;
     avail(el("an-run"), !engineDown && (hasGame || store.session.analyzing));
-    avail(el("an-deep"), !engineDown && hasGame && !store.session.analyzing);
+    avail(el("an-more"), !engineDown && hasGame && !store.session.analyzing);
     // …said exactly where 分析 would have stood: once there is a game to
     // analyse. An empty board has nothing for the engine to do yet, and a
     // heading over one line of apology is still a heading over nothing.

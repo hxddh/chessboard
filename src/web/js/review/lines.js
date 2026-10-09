@@ -69,17 +69,11 @@ export function createLines(d) {
   }
   function syncLiveAnalysis() {
     const el = document.getElementById("live-line");
-    const btn = document.getElementById("an-live");
-    if (btn) {
-      btn.classList.toggle("active", store.session.liveOn);
-      btn.setAttribute("aria-pressed", store.session.liveOn ? "true" : "false");
-      // like 分析: it stands above a game, not above an empty board — and the
-      // group is re-collapsed here because this runs after renderGameActions
-      // and is the last thing to change a button in it (layout e2e 4b)
-      avail(btn, !!ChessEngine && !store.session.engineDown && sanHistory().length > 0 &&
-        (store.session.mode === "ai" || store.session.mode === "pvp"));
-      collapseEmptyGroups();
-    }
+    const sw = document.getElementById("opt-live");
+    if (sw) sw.setAttribute("aria-pressed", store.session.liveOn ? "true" : "false");
+    // the group is re-collapsed here because this runs after renderGameActions
+    // and is the last thing to change a button in it (layout e2e 4b)
+    collapseEmptyGroups();
     if (!liveAllowed()) {
       stopLiveAnalysis();
       if (el && (!store.session.liveOn || store.session.retry)) { el.hidden = true; el.replaceChildren(); el.style.minHeight = ""; }
