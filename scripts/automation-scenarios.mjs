@@ -25,8 +25,8 @@
  *                  20 `wait` acks while idle; (R5) no connection to anywhere
  *                  but loopback from the app's process; the page: 允许联网同步
  *                  off, a book written into the header
- *   rep-index      the page: the boot moved it into chessboard.replines and
- *                  chessboard.repertoire, a card due today (R17)
+ *   rep-index      the page: the boot moved it into chessboard.book, with
+ *                  records and a card due today (R17)
  *   rep-read       the page: the same records and lines after a restart (R17)
  *   sync           the fake server (scripts/fake-sync-server.mjs) streams
  *                  100 games at 100 ms each; a `wait` every 50 ms meanwhile

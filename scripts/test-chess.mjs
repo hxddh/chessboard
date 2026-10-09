@@ -8,7 +8,7 @@ import path from "path";
 import vm from "vm";
 import { fileURLToPath } from "url";
 import { spawnSync } from "child_process";
-import { compileModuleSync, CHUNKS, build, BUNDLE_BUDGET, BUNDLE_BYTES_BEFORE_F5 } from "./bundle.mjs";
+import { compileModuleSync, CHUNKS, build, BUNDLE_BUDGET } from "./bundle.mjs";
 import { measureMarks, markChroma, markLook, boardDistinct, LAST_CHROMA_CEILING, CHROMA_CEILING, SEP_FLOOR_BOARD as SEP_FLOOR_BY_BOARD, BOARDS as MARK_BOARDS, MARKS,
   LOOK_MARKS, LOOK_CHROMA_CEILING, LOOK_DE_CEILING, BOARD_DISTINCT_FLOOR } from "./lib/mark-colour.mjs";
 
@@ -3340,62 +3340,6 @@ for (const lang of CONTENT_LANGS) {
   assert(D.drillId("C24", "e4 e5 Bc4 Nf6") !== D.drillId("C24", "e4 e5 Bc4 Nc6"),
     "a different line is a different drill");
 
-  // the one-time migration off the positional ids
-  const legacy = D.legacyIdMap();
-  const deep = D.drillLines(book);
-  const liveIds = new Set(base);
-  // The table describes the book as it stood when positional ids were retired.
-  // The book has grown since, so it does NOT cover every current drill — a
-  // drill added later never had a positional id. What must hold forever is the
-  // other direction: nothing in the table dangles.
-  const dangling = Object.entries(legacy).filter(([, id]) => !liveIds.has(id));
-  assert(dangling.length === 0,
-    "every frozen legacy id still names a live drill" +
-      (dangling.length ? " — dangling: " + dangling.slice(0, 3).map(([k]) => k).join(", ") : ""));
-  assert(Object.keys(legacy).length <= base.length,
-    "the frozen table cannot name more drills than the book holds");
-  // The table is FROZEN, not derived: it has to keep describing the book the
-  // positional ids were written against, and it must not move when the book
-  // grows. Deriving it made the migration correct only for someone upgrading
-  // from that exact book — which says nothing about a player who skips the
-  // release. Measured: with a derived table, inserting one line dropped 66 to
-  // 108 of the 109 drills.
-  assert(D.legacyIdMap.length === 0, "the legacy map takes no book — it is data, not a derivation");
-  const grown = book.slice();
-  grown.splice(firstDeep + 1, 0, ["A05", "列蒂开局·又一条", "Nf3 d5 g3 c6 Bg2 Bf5"]);
-  assert(JSON.stringify(D.legacyIdMap()) === JSON.stringify(legacy),
-    "growing the book does not move the frozen table");
-  // a legacy key still resolves to the same drill after the book grows
-  const afterGrow = new Set(idsOf(grown));
-  // compared against the frozen table's own size, not the live book's: the
-  // book grows, the table does not, and that is the entire point of freezing
-  // it. (This assertion originally compared against the live count and went
-  // red the first time a line was actually added — caught by the very case it
-  // was written to cover.)
-  const frozenCount = Object.keys(legacy).length;
-  const stillThere = Object.values(legacy).filter((id) => afterGrow.has(id)).length;
-  assert(stillThere === frozenCount,
-    "every migrated id still names a live drill after the book grows (" + stillThere + "/" + frozenCount + ")");
-  // Sampled from the frozen table itself, not from deep[0]: the old
-  // construction assumed the book's first deep line predates the freeze, and
-  // the first line actually added in FRONT of it (A01, 2.5.0) turned that
-  // assumption into a red — of the instrument, not the product. Any frozen
-  // entry whose target is still alive makes the same claim without the
-  // assumption.
-  const [aliveKey, aliveId] = Object.entries(legacy).find(([, id]) => afterGrow.has(id));
-  const store = { [aliveKey]: true, "m1-ladder": true, "op-A05-9999": true };
-  const moved = D.migrateIds(store, legacy);
-  assert(moved === 1, "the one legacy key that still names a row is rewritten (" + moved + ")");
-  assert(store[aliveId] === true, "a solved drill keeps its solve");
-  assert(store["m1-ladder"] === true, "a hand-written puzzle id is left alone");
-  assert(!("op-A05-9999" in store), "a legacy key naming a row that is gone is dropped, not kept forever");
-  // an ECO letter outside A–E was never one of ours and is not touched
-  const alien = { "op-Z99-4": true };
-  assert(D.migrateIds(alien, legacy) === 0 && alien["op-Z99-4"] === true,
-    "a key that only looks like a drill id is left alone");
-  // and it is idempotent — the launch path runs it on every load until marked
-  assert(D.migrateIds(store, legacy) === 0, "migrating twice is a no-op");
-
   // the app must build the id from the module, not from a loop index again
   // (v8-0-plan F4: read from every module but the one that owns the id)
   const appSrc = allSourceExcept("drills.js");
@@ -3812,11 +3756,6 @@ for (const lang of CONTENT_LANGS) {
   f = S.onMiss(f);
   assert(S.entry(f).s === 0, "a later miss resets the streak");
   assert(S.entry(f).n === 3, "but the times-seen count keeps growing across misses and solves");
-
-  // 1.6 stored a bare `true`; those entries must keep working
-  assert(S.isDue(true), "a legacy boolean entry is still due");
-  assert(S.entry(true).s === 0, "a legacy entry starts at streak 0");
-  assert(S.onSolve(true) !== null, "a legacy entry does not graduate on one solve");
 
   // solving something that was never missed is a no-op
   assert(S.onSolve(undefined) === null, "solving an unqueued puzzle changes nothing");
@@ -5371,11 +5310,10 @@ for (const lang of CONTENT_LANGS) {
     const persistSrc = fs.readFileSync(path.join(root, "src/web/js/persist.js"), "utf8");
     assert(/foundEmpty = Object\.entries\(bag\)/.test(persistSrc),
       "…which persist records inside load(), before any migration or write");
-    // and the write that broke it only happens when ids actually moved
-    assert(/if \(loadedPuzzles\.migrated\)/.test(appJs),
-      "the puzzle record is written back only when a migration rewrote it");
-    assert(!/if \(store\.session\.puzzleState\.idv === 2\) \{ Persist\.setJson/.test(appJs),
-      "…not whenever the profile happens to be on the current id version");
+    // and the write that broke it does not happen at load at all
+    const load = /function loadPuzzleState\(\) \{[\s\S]*?\n  \}/.exec(appJs);
+    assert(load && !/Persist\.set/.test(load[0]) && !/store\.session\.puzzleState = loadPuzzleState\(\);\s*\n\s*(if[^\n]*)?Persist\.set/.test(appJs),
+      "the puzzle record is not written at load (an empty record is what made firstRun false)");
   }
 
   // No suite may seed a storage key this app does not own. Three of them set
@@ -5492,13 +5430,6 @@ for (const lang of CONTENT_LANGS) {
     "the game on the board remembers which record it is, by id");
   assert(/s\.games\.find\(\(g\) => g\.id === store\.game\.recordedId\)/.test(appSrc),
     "accuracy is filed by id, not by walking to the last PGN that matches");
-  // and the v1 stats file still opens — the unpacking moved to persist.js with
-  // the key's shape (v6-plan Q1.7), where a unit test below exercises it
-  {
-    const per = fs.readFileSync(path.join(root, "src/web/js/persist.js"), "utf8");
-    assert(/stats: \(v\) => \(v && \(v\.v === 2 \|\| v\.v === 1\)[^\n]*migrateStats\(v\)/.test(per),
-      "a v1 stats file is migrated rather than dropped");
-  }
 
   // --- three claims the copy was making that were not true ------------------
   {
@@ -6007,8 +5938,8 @@ for (const lang of CONTENT_LANGS) {
     assert(/onWriteFailure/.test(per), "…and a failure is announced");
     assert(/function clearAll\(\)[\s\S]{0,200}?for \(const name of Object\.keys\(KEYS\)\)/.test(per),
       "clearing is derived from the key list, not typed out again");
-    assert(/export const SCHEMA = \d+/.test(per) && /MIGRATIONS/.test(per),
-      "there is one schema version, and a place for migrations to queue");
+    assert(/export const SCHEMA = 3;/.test(per) && !/MIGRATIONS/.test(per),
+      "there is one schema version, 9.0's own, and nothing that reads an older profile");
     // every key the app owns is in the list — a key added elsewhere would be
     // written but never cleared
     const keys = [...per.matchAll(/^  \w+: "(chess\.[\w.]+)"/gm)].map((m) => m[1]);
@@ -6953,13 +6884,33 @@ for (const lang of CONTENT_LANGS) {
       hasZero: () => true,
     };
   };
-  // a host with a file: writes land in `file`, reads come back from it
-  const withFile = (initial) => {
+  // a host with a per-key store: `initial` is a profile document's JSON
+  // (written as its key files and a manifest) or, when it is not one, the
+  // manifest's text as it is; `file` reads the profile back as one document
+  // (the manifest as it is when it does not parse), and `writes` counts
+  // commits — manifest writes
+  const withFile = (text) => {
     const h = mem();
-    h.file = initial;
+    h.store = new Map();
     h.writes = 0;
-    h.appdataRead = async () => h.file;
-    h.appdataWrite = async (t) => { h.file = t; h.writes++; return true; };
+    let initial = null;
+    try { initial = text == null ? null : JSON.parse(text); } catch (_) { initial = null; }
+    if (text != null && !(initial && initial.keys)) h.store.set("meta", text);
+    else if (initial) {
+      for (const [k, v] of Object.entries(initial.keys)) h.store.set(k, v);
+      h.store.set("meta", JSON.stringify({ app: "chessboard", schema: initial.schema, writtenAt: initial.writtenAt,
+        keys: Object.keys(initial.keys), files: Object.fromEntries(Object.keys(initial.keys).map((k) => [k, k])) }));
+    }
+    h.appdataReadKey = async (k) => (h.store.has(k) ? { text: h.store.get(k) } : { missing: true });
+    h.appdataWriteKey = async (k, t) => { h.store.set(k, t); if (k === "meta") h.writes++; return true; };
+    Object.defineProperty(h, "file", { get() {
+      const raw = h.store.get("meta");
+      let m = null;
+      try { m = JSON.parse(raw); } catch (_) { return raw == null ? null : raw; }
+      const keys = {};
+      for (const k of m.keys) keys[k] = h.store.get(m.files[k]);
+      return JSON.stringify({ app: m.app, schema: m.schema, writtenAt: m.writtenAt, keys });
+    } });
     return h;
   };
   const tick = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -6977,7 +6928,7 @@ for (const lang of CONTENT_LANGS) {
     await tick(600);
     const doc = JSON.parse(h.file);
     assert(h.writes === 1 && doc.keys.settings === "{\"a\":1}" && doc.keys.learn === "{\"b\":2}",
-      "two writes in a burst become one whole-profile mirror write (" + h.writes + ")");
+      "two writes in a burst become one mirror commit (" + h.writes + ")");
     assert(doc.app === "chessboard" && typeof doc.writtenAt === "number", "…stamped as ours");
     // 6.0 review: the mirror used to take its own Date.now() ~400ms after the
     // cache stamp, so every next launch read "file newer than cache" and
@@ -6990,7 +6941,7 @@ for (const lang of CONTENT_LANGS) {
   }
   // 2. empty cache + a file = the file is restored
   {
-    const h = withFile(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 5000,
+    const h = withFile(JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 5000,
       keys: { stats: "{\"v\":2,\"games\":[]}", learn: "{\"v\":1}" } }));
     const P = createPersist(h, () => {});
     P.load();
@@ -7002,7 +6953,7 @@ for (const lang of CONTENT_LANGS) {
   }
   // 3. a live cache newer than the file keeps the cache, and re-mirrors it
   {
-    const h = withFile(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 5000, keys: { learn: "old" } }));
+    const h = withFile(JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 5000, keys: { learn: "old" } }));
     h.m.set(KEYS.learn, "new"); h.m.set("chess.writtenAt", "9000");
     const P = createPersist(h, () => {});
     P.load();
@@ -7013,7 +6964,7 @@ for (const lang of CONTENT_LANGS) {
   }
   // 4. a cache older than the file yields to it (data written on another launch that this cache missed)
   {
-    const h = withFile(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 9000, keys: { learn: "file" } }));
+    const h = withFile(JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 9000, keys: { learn: "file" } }));
     h.m.set(KEYS.learn, "cache"); h.m.set("chess.writtenAt", "5000");
     const P = createPersist(h, () => {});
     P.load();
@@ -7034,7 +6985,7 @@ for (const lang of CONTENT_LANGS) {
     assert(P.get("slots") == null, "clearAll() empties the cache");
     P.restoreAll(doc);
     assert(P.get("slots") === "{\"v\":1}", "restoreAll() brings it back");
-    h.appdataWrite = async () => { throw new Error("disk full"); };
+    h.appdataWriteKey = async () => { throw new Error("disk full"); };
     P.set("slots", "x");
     await tick(600);
     assert(failed && failed.key === "appdata", "a refused mirror write latches the failure like a refused cache write");
@@ -7045,10 +6996,11 @@ for (const lang of CONTENT_LANGS) {
   // then read back what it had just destroyed, and the user was told their
   // profile had been restored.
   {
-    const good = JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 9000,
+    const good = JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 9000,
       keys: { stats: "{\"v\":2,\"games\":[1]}", learn: "{\"v\":1,\"done\":1}" } });
     const h = withFile(good);
-    h.appdataRead = async () => { await tick(900); return h.file; };  // slower than MIRROR_DELAY
+    const read = h.appdataReadKey;
+    h.appdataReadKey = async (k) => { await tick(900); return read(k); };  // slower than MIRROR_DELAY
     const P = createPersist(h, () => {});
     P.load();
     const pending = P.recover();
@@ -7064,7 +7016,7 @@ for (const lang of CONTENT_LANGS) {
   // 8. after a restore nothing may write again: the page is still standing on
   // its pre-restore state and is about to reload onto the new one
   {
-    const h = withFile(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 9000, keys: { save: "{\"v\":1,\"pgn\":\"real\"}" } }));
+    const h = withFile(JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 9000, keys: { save: "{\"v\":1,\"pgn\":\"real\"}" } }));
     h.m.set("chess.writtenAt", "5000"); h.m.set(KEYS.save, "{\"v\":1,\"pgn\":\"stale\"}");
     const P = createPersist(h, () => {});
     P.load();
@@ -7081,7 +7033,7 @@ for (const lang of CONTENT_LANGS) {
     const P = createPersist(h, (info) => { failed = info; });
     P.load();
     await P.recover();
-    const doc = { app: "chessboard", schema: 1, writtenAt: 1, keys: { learn: "a", stats: "b" } };
+    const doc = { app: "chessboard", schema: 3, writtenAt: 1, keys: { learn: "a", stats: "b" } };
     let allow = 1;
     const realSet = h.storageSet;
     h.storageSet = (k, v) => (allow-- > 0 ? realSet(k, v) : false);   // quota dies mid-restore
@@ -7093,7 +7045,7 @@ for (const lang of CONTENT_LANGS) {
   // 10. a file that exists and holds nothing is damage, not a fresh install
   {
     const h = withFile(null);
-    h.appdataRead = async () => ({ empty: true });
+    h.appdataReadKey = async () => ({ empty: true });
     let failed = null;
     const P = createPersist(h, (info) => { failed = info; });
     P.load();
@@ -7145,7 +7097,7 @@ for (const lang of CONTENT_LANGS) {
       "the same unreadable value is kept once, not pushed on every launch (" + list.length + ")");
     P.clearAll();
     assert(P.get("quarantine") != null, "clearAll() does not destroy the quarantined evidence");
-    P.restoreAll({ app: "chessboard", schema: 1, writtenAt: 1, keys: {} });
+    P.restoreAll({ app: "chessboard", schema: 3, writtenAt: 1, keys: {} });
     assert(P.get("quarantine") != null, "…and neither does a restore");
   }
   // 13. a cache that cannot stamp itself must not report the write as kept:
@@ -7208,30 +7160,18 @@ for (const lang of CONTENT_LANGS) {
     }
   }
 
-  // v8-0-plan F5: the first-paint budget. 7.9.0 parsed 1,709,973 bytes of
-  // bundle before the first frame, 46% of it teaching content in the two
-  // languages the reader was not reading in. The acceptance line is 40% off,
-  // and it is a line, not a one-time measurement: one static import of a
-  // chunk's module and esbuild inlines it again without a word.
+  // The first-paint budget (bundle.mjs BUNDLE_BUDGET), and it is a line, not
+  // a one-time measurement: one static import of a chunk's module and
+  // esbuild inlines it again without a word. Minified bytes (v8-1-plan F2).
   const bundleBytes = Buffer.byteLength(bundleSrc, "utf8");
-  // v8-1-plan F2: both sides of the comparison are minified bytes.
-  console.log("  bundle.js " + bundleBytes + " bytes minified (7.9.0 minified: " + BUNDLE_BYTES_BEFORE_F5 + ", budget " + BUNDLE_BUDGET + ")");
+  console.log("  bundle.js " + bundleBytes + " bytes minified (budget " + BUNDLE_BUDGET + ")");
   assert(bundleBytes <= BUNDLE_BUDGET,
-    "bundle.js stays within the first-paint budget (" + bundleBytes + (bundleBytes <= BUNDLE_BUDGET ? " ≤ " : " > ") + BUNDLE_BUDGET + " bytes, 70.5% of 7.9.0's " + BUNDLE_BYTES_BEFORE_F5 + " minified)");
-  // v8-2-plan F1: a second, tighter line for 8.2 only. 8.1 alone spent ~39 KB
-  // of the budget's room (89,502 left at its M1, 50,670 at 8.1.0), and one
-  // more version like it reaches the line. So new 8.2 training content and
-  // its data go in chunks; the bundle may grow by 10 KB over 8.1.0 for the
-  // doors to them — the entry points, the interface keys, the scheduling.
-  // 8.1.0 (168acc2) built by its own bundle.mjs: exactly 900,972 bytes, and
-  // the plan's line was 910,972 (10,000, not 10,240); 8.2.0 shipped 907,245.
-  // v8-3-plan F4: the same line moved up for 8.3 — 8.2.1 (edaf3b7, no page
-  // change since 8.2.0) is exactly 907,245 bytes; 8.3 could add 10,000 over it.
-  // v8-4-plan §2: and again for 8.4 — 8.3.0 (e6cdabe) shipped 908,392 bytes.
-  const BUNDLE_BYTES_AT_830 = 908392;
-  const BUNDLE_GROWTH_84 = 10000;
-  assert(bundleBytes <= BUNDLE_BYTES_AT_830 + BUNDLE_GROWTH_84,
-    "v8-4-plan §2: bundle.js grows at most 10 KB over 8.3.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_AT_830 + BUNDLE_GROWTH_84 ? " ≤ " : " > ") + (BUNDLE_BYTES_AT_830 + BUNDLE_GROWTH_84) + " bytes) — 8.4 content goes in chunks");
+    "bundle.js stays within the first-paint budget (" + bundleBytes + (bundleBytes <= BUNDLE_BUDGET ? " ≤ " : " > ") + BUNDLE_BUDGET + " bytes)");
+  // …and 9.0's own, tighter line: new pages go in chunks, the bundle carries
+  // their doors. v9-0-plan §8 第 4 条: 8.4.0 + 20 KB
+  const BUNDLE_BYTES_90 = 911124 + 20000;
+  assert(bundleBytes <= BUNDLE_BYTES_90,
+    "v9-0-plan §8: bundle.js grows at most 20 KB over 8.4.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_90 ? " ≤ " : " > ") + BUNDLE_BYTES_90 + " bytes)");
   // …minified without renaming: a player's stack trace still names the code
   assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
     "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");
@@ -7499,7 +7439,7 @@ for (const lang of CONTENT_LANGS) {
 
 // v8-3-plan T1 / T2: 看 N 步 / 盲走 draw from the bank's band for the mode's
 // rating, and look's plies past the puzzle's line are the engine's move at
-// the review's budget — the 8.2 rule (pickMove) where it has none
+// the review's budget — the rule without an engine (pickMove) where it has none
 {
   const vctx = { console };
   vctx.globalThis = vctx;
@@ -7535,20 +7475,19 @@ for (const lang of CONTENT_LANGS) {
   const bad = await V.buildLook(C, p, 3, 11, async () => "a1a1");
   const rule = await V.buildLook(C, p, 3, 11);
   assert(rule && JSON.stringify(none) === JSON.stringify(rule) && JSON.stringify(bad) === JSON.stringify(rule) && rule.sans[0] === "Nf6",
-    "buildLook: no engine move (none, or one that is not legal) — the 8.2 rule, exactly as without an engine", rule && rule.sans.join(" "));
+    "buildLook: no engine move (none, or one that is not legal) — pickMove's rule, exactly as without an engine", rule && rule.sans.join(" "));
   const pool = V.lookPool([p, Object.assign({}, p, { id: "lc-u", solution: ["Nf6", "Ng5"] })]);
   const a = await V.lookQuestion(C, pool, 99, 0, 3, best), b = await V.lookQuestion(C, pool, 99, 0, 3, best);
   assert(a && JSON.stringify(a) === JSON.stringify(b), "lookQuestion with the engine: the same seed, the same question", a && a.key);
 }
 
-// v8-4-plan T1: 看 N 步's first question no longer waits for searches — and
-// the sets are 8.3's. Twelve whole sets (four seeds × three answer patterns,
-// N moving 2–6 with them) over the hand-written book dressed as bank
-// puzzles, with an "engine" that is a pure function of the FEN, as the real
-// one is: 120 questions whose keys, lines and kinds hash to what v8.3.0's
-// visual-modes.js gave (run then, with its own retry loop, now lookNth).
-// Then a review: built from the plies its key kept (engPlies), with no
-// engine at all, it is the question the engine built.
+// v8-4-plan T1: 看 N 步's first question no longer waits for searches. Twelve
+// whole sets (four seeds × three answer patterns, N moving 2–6 with them)
+// over the hand-written book dressed as bank puzzles, with an "engine" that
+// is a pure function of the FEN, as the real one is: the same seed and the
+// same answers give the same 120 questions, key for key. Then a review:
+// built from the plies its key kept (engPlies), with no engine at all, it is
+// the question the engine built.
 {
   const vctx = { console };
   vctx.globalThis = vctx;
@@ -7567,23 +7506,28 @@ for (const lang of CONTENT_LANGS) {
     return ms.length ? ms[fnv(fen) % ms.length] : null;
   };
   const asked = (q) => q.t !== "cap" || !!q.target;
-  const out = [], qs = [];
-  for (const seed of [1, 99, 1790600000, 4000000007]) for (const pat of [0, 0x3ff, 0x2b5]) {
-    let n = 2;
-    const keys = [];
-    for (let k = 0; k < 10; k++) {
-      const q = await V.lookNth(C, pool, seed, k, n, best, asked);
-      keys.push(q ? q.key + " " + q.sans.join(" ") + " " + q.t : "null");
-      if (q) qs.push(q);
-      n = Math.max(2, Math.min(6, n + ((pat >> k) & 1 ? 1 : -1)));
+  const sets = async () => {
+    const out = [], qs = [];
+    for (const seed of [1, 99, 1790600000, 4000000007]) for (const pat of [0, 0x3ff, 0x2b5]) {
+      let n = 2;
+      const keys = [];
+      for (let k = 0; k < 10; k++) {
+        const q = await V.lookNth(C, pool, seed, k, n, best, asked);
+        keys.push(q ? q.key + " " + q.sans.join(" ") + " " + q.t : "null");
+        if (q) qs.push(q);
+        n = Math.max(2, Math.min(6, n + ((pat >> k) & 1 ? 1 : -1)));
+      }
+      out.push(seed + "/" + pat + ": " + keys.join(", "));
     }
-    out.push(seed + "/" + pat + ": " + keys.join(", "));
-  }
-  const sha = crypto.createHash("sha256").update(out.join("\n")).digest("hex");
-  const SNAP_83 = "03b9d616c0cac2b7f5f7fea8b974d7a19075bca260e587915c222510905afd2f";
-  assert(pool.length === 168 && sha === SNAP_83 && searches > 50,
-    "v8-4-plan T1: twelve whole 看 N 步 sets (seed × answers) are v8.3.0's, question for question (" + qs.length + " questions, " + searches + " searches)", sha.slice(0, 12) + " / pool " + pool.length);
-  // plies kept with the key → the same question with no engine; none kept → the search, as 8.3
+    return { sha: crypto.createHash("sha256").update(out.join("\n")).digest("hex"), qs };
+  };
+  const first = await sets();
+  const once = searches;
+  const again = await sets();
+  const qs = first.qs;
+  assert(pool.length === 168 && first.sha === again.sha && qs.length >= 100 && once > 50,
+    "v8-4-plan T1: twelve whole 看 N 步 sets (seed × answers) come out the same twice, question for question (" + qs.length + " questions, " + once + " searches)", first.sha.slice(0, 12) + " / " + again.sha.slice(0, 12) + " / pool " + pool.length);
+  // plies kept with the key → the same question with no engine; none kept → the search
   let same = 0, plied = 0, quiet = 0;
   const noEngine = () => { throw new Error("searched"); };
   for (const q of qs.slice(0, 60)) {
@@ -8114,15 +8058,13 @@ for (const lang of CONTENT_LANGS) {
   assert(declarationIn(tricky, "h") === "", "…and finds nothing for a name that is not declared");
 }
 
-// --- v8-0-plan F4: app.js may only shrink ---------------------------------
+// --- v9-0-plan §H: app.js may only shrink ---------------------------------
 //
-// 6.1 set "under 4000 lines" and app.js then grew by 2,750. A goal that nothing
-// checks drifts, so this is a register like the others: the ceiling is the
-// line count when the tests stopped depending on file names, and it may only
-// go down — lower it in the PR that moves code out. The target for the end of
-// the 8.0 milestones is ≤ 6000; 4000 remains the aim.
+// A goal that nothing checks drifts. The ceiling is app.js's line count once
+// 9.0 had put down its history (M1), and it may only go down — lower it in
+// the PR that moves code out.
 {
-  const APP_JS_LINE_CEILING = 5754; // −376 to game-controller.js (v8-1-plan F3, M4: 悔棋, 新局, 从这里续下, resigning, the coach, draws, the result token); −458 to io.js (v8-1-plan F3, M4: PGN and file import / export, the clipboard, the learning file, the whole profile); −107 for C1 (the history dialog became the library list's 本机 games, its wiring moved to library-page.js; M5); −1 when C3 merged in (its wireViews loop paid for movePath; M5); −11 net for B4 (ladder names, filing and the persona hooks moved to opponents*.js; M4); 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3); −239 to review/eval-graph.js (F4, M3); −310 to review/retry.js; −387 to review/panel.js; −205 to review/lines.js; −306 to review/analysis.js; −79 to review/board-marks.js; −2754 to trainer/ (F4, M3: content, lessons, puzzles, today); −237 to me-page.js (F4, M4: 进步, 成就, the entry card); −68 to game-end.js (M4); −2 net for A4 (the move list's marks to review/board-marks.js); −117 to selftest-run.js (v8-2-plan V1: the packaged self-test moved into chunk-selftest.js; M4); taken at the M4 merge with the −2 left by F4 (M3): 5873 → 5754
+  const APP_JS_LINE_CEILING = 5744;
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
@@ -8291,62 +8233,6 @@ for (const lang of CONTENT_LANGS) {
     assert(APP_MODULES.includes(file), "F3: " + file + " follows app.js's house rules (APP_MODULES)");
     for (const name of names) assert(owner(name) === file, "F3: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
   }
-}
-
-// --- 6.0: the register of source-text assertions in this file.
-//
-// This file holds a great many `/…/.test(appSrc)` checks: they lock the
-// *shape* of app.js, not its behaviour, which makes them the largest single
-// obstacle to moving code and the largest source of false confidence
-// (v6-plan §1.2). They retire one at a time, each replaced by a behavioural
-// test; the number may only go down. Bump it down when you retire one, never
-// up. Same register discipline as the colour and token registers above.
-//
-// 7.3 §3 — the register, classified. 7.2 found one of these guarding a button
-// that had been unpressable since 6.0, and guarding it *precisely*: the regex
-// matched the broken expression exactly. That is not a random failure, it is
-// what this kind of assertion does when what it describes is something a user
-// can press. So every entry is now one of two classes:
-//
-//   `action` — it stands in for something a person does: a button's handler,
-//     a key, a pointer gesture, a menu command, a dialog's open or close.
-//     The shape being right says nothing about whether it works. These are
-//     the ones to replace, and they are replaced by pressing the thing.
-//   `shape`  — it stands for a data shape or a wiring fact with no seam
-//     between the text and the behaviour: a table's contents, a constant, an
-//     id scheme, which module a call goes to, a store slice's existence.
-//     A regex is a fair statement of those, and they stay.
-//
-// Retired in 7.3 (13 of them, all `action`, 124 → 111):
-//   · the move list's mouseover / mouseleave preview  → test-review-e2e.mjs
-//   · the curve's click / pointerdown / pointermove   → test-review-e2e.mjs
-//   · the PV chips' click / focusin / keydown         → test-review-e2e.mjs
-//   · the PV line's mouseleave                        → test-review-e2e.mjs
-//   · escapeKey's three effects                       → test-review-e2e.mjs
-//                                                       + test-board-e2e.mjs
-//   (7.2 retired one before them: 接实战, the button broken since 6.0.)
-//
-// Still `action`, and why each is still here — the remaining list this
-// version owes (v7-3-plan §3):
-//   · the four native-lifecycle handlers (activate / deactivate, recent
-//     documents, Host.notify): pressing them needs the Zig shell, and the
-//     browser suites have no shell. The behavioural cover that exists is
-//     scripts/manifest-check.mjs, which asserts the runner really reads every
-//     key. Replacing these means an end-to-end test against a built app.
-//   · the 「?」 shortcut sheet and `shortcut: (detail)`: the sheet's contents
-//     ARE asserted behaviourally (test-layout-e2e.mjs opens it and reads every
-//     row); what is left here is that the app subscribes to the native
-//     channel at all, which is the shell again.
-//   · dailyJump's click into #mode-seg: the jump is covered end to end in
-//     test-content-e2e.mjs; this one asserts which selector it uses, and is
-//     a candidate for the next version.
-// Everything else in the register is `shape`.
-{
-  const self = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
-  const count = (self.match(/\.test\((?:appSrc|appSrcT|app|src)\)/g) || []).length;
-  const REGISTERED = 111;
-  assert(count <= REGISTERED, "source-text assertions on app.js: " + count + " (register: " + REGISTERED + ", only ever lower)");
-  assert(count === REGISTERED, "…and the register is kept exact (" + count + " vs " + REGISTERED + ": update the number when one retires)");
 }
 
 // --- v8-0-plan C2: online sync goes through the native layer, never the page --

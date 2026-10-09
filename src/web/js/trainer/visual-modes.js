@@ -56,27 +56,24 @@
  * is added, in the nearest band holding a set's worth of both mates. The
  * band is chosen and loaded when the set is made, and kept for the set, so
  * the seed and that band's chunk decide it; a band that does not load leaves
- * the set on the local book, as in 8.2. A bank puzzle's review key ends in
- * its band (`id|band`, `id|N|seed|band`), so a review waits for that chunk.
+ * the set on the local book. A bank puzzle's review key ends in its band
+ * (`id|band`, `id|N|seed|band`), so a review waits for that chunk.
  *
  * v8-3-plan T2: look's plies past the puzzle's own line are the engine's best
  * move at the review's budget (LOOK_BUDGET, a fixed node count searched from
  * `ucinewgame`, as trainer/guess.js asks, at a Hash of its own), worked out
  * when the question is built — the first with the set, each next one once the
  * answer before it is in — never while one is being answered. Without the
- * engine, pickMove (8.2). Only a bank puzzle's: a key without a band (8.2's,
- * a local puzzle's) is built by 8.2's rule alone, so an 8.2 review is the
- * question that was missed (M2 评审 P2-2).
+ * engine, pickMove: the rule a question is built by when there is no search.
+ * Only a bank puzzle's plies are searched: a key without a band (a local
+ * puzzle's) is built by pickMove alone, so its review is the question that
+ * was missed (M2 评审 P2-2).
  *
- * v8-4-plan T1: the wait for a set's first question was a review's searches
- * (up to N − 3 of them) on an engine still booting. A missed question's
- * engine answers now go with its key (vis.look.eng, tag of the position →
- * UCI; engPlies), so the review is built again without searching — the same
- * question, the search being a pure function of the position; a key without
- * them (8.3's) searches as before. A session keeps what it built by key, and
- * the engine boots once the first question is up. Which positions are asked
- * about, and at what budget, is 8.3's: test-chess runs whole sets against
- * 8.3's snapshot.
+ * v8-4-plan T1: a missed question's engine answers go with its key
+ * (vis.look.eng, tag of the position → UCI; engPlies), so the review is
+ * built again without searching — the same question, the search being a pure
+ * function of the position; a key without them searches. A session keeps
+ * what it built by key, and the engine boots once the first question is up.
  *
  * Words are [zh-CN, en, ja], as in endgames.js: the chunk carries all three.
  * @module trainer/visual-modes
@@ -221,7 +218,7 @@ function matesOf(g) {
  *   move (UCI) or null; the plies past a bank puzzle's line are its, and
  *   pickMove's where it has none — or where its move ends the game, which
  *   would leave nothing to ask (M2 评审 P2-2). A local puzzle never asks it:
- *   its key has no band, and 8.2 built that key by pickMove alone.
+ *   its key has no band, and is built by pickMove alone.
  */
 export async function buildLook(Chess, p, n, qseed, best) {
   const r = rng(qseed);
@@ -300,8 +297,8 @@ export async function lookQuestion(Chess, pool, seed, k, n, best) {
  * Question k of the look set with seed `seed` at `n` plies, as a set asks
  * for it: a question `ok` cannot put into words is drawn again from the seed
  * mixed with the attempt, four attempts in all (M2 review); `stop()` true
- * throws STOP before each. v8-4-plan T1: lifted out of createVisualModes,
- * unchanged, so test-chess can run a whole set against 8.3's snapshot.
+ * throws STOP before each. v8-4-plan T1: lifted out of createVisualModes, so
+ * test-chess can run a whole set.
  */
 export async function lookNth(Chess, pool, seed, k, n, best, ok, stop) {
   let q = null;
@@ -513,14 +510,6 @@ export function createVisualModes(d) {
     return e.p;
   }
   const bankNow = (b) => (b == null || !banks.has(b) ? null : banks.get(b).v);
-  /**
-   * v8-4-plan T3: band `b` with the rows earlier imports shipped there
-   * (puzzle-db.js full) — where a review key's puzzle is looked for when a
-   * later import no longer has it. Never drawn from for a new question.
-   * Null while that is not all here (a review then waits, as for its band).
-   */
-  const fullOf = (b) => (b != null && Db && Db.full ? Db.full(b) : []);
-  const ensureFull = (b) => (b != null && Db && Db.ensureFull ? Db.ensureFull(b).catch(() => null) : null);
   /** The band a new set of `kind` draws from, or null before the bank's index is here. */
   function bandOf(kind) {
     if (!Db || !Db.indexReady()) return null;
@@ -537,7 +526,7 @@ export function createVisualModes(d) {
   /** v8-3-plan T2: the engine's best move at the review's budget, for `run`; null when it has none */
   const bestFor = (run) => (fen) => (Engine ? askEngine(Engine, fen, () => gone(run)) : Promise.resolve(null));
 
-  /** puzzleState.vis[kind], made whole: an old save has none, a hand-edited one may be anything */
+  /** puzzleState.vis[kind], made whole: a fresh profile has none, a hand-edited one may be anything */
   function rec(kind) {
     const st = store.session.puzzleState;
     if (!st.vis || typeof st.vis !== "object") st.vis = {};
@@ -568,13 +557,13 @@ export function createVisualModes(d) {
     const owed = due(kind, now);
     const m = rec(kind);
     // v8-4-plan T1: the engine boots alongside the chunks when the first
-    // question is a bank review with no plies kept (8.3's) — it will search
+    // question is a bank review with no plies kept — it will search
     const boot = () => { if (Engine && Engine.init) Promise.resolve().then(() => Engine.init()).catch(() => {}); };
     if (kind === "look" && owed.length && keyBand(owed[0]) != null && !(m.eng || {})[owed[0]]) boot();
-    await Promise.all([...new Set([run.band, ...owed.map(keyBand)])].map(bank).concat([...new Set(owed.map(keyBand))].map(ensureFull)));
+    await Promise.all([...new Set([run.band, ...owed.map(keyBand)])].map(bank));
     if (!bankNow(run.band)) run.band = null;
     // a bank review whose band did not come waits for a set where it does
-    run.due = owed.filter((k) => keyBand(k) == null || (bankNow(keyBand(k)) && fullOf(keyBand(k)))).slice(0, REVIEW_MAX);
+    run.due = owed.filter((k) => keyBand(k) == null || bankNow(keyBand(k))).slice(0, REVIEW_MAX);
     if (kind === "look") {
       if (m.eng && typeof m.eng === "object") { for (const key in m.eng) if (!m.q[key]) delete m.eng[key]; } else delete m.eng;
       await prepare(run).p;
@@ -587,7 +576,7 @@ export function createVisualModes(d) {
     delete run.alive;
     return run;
   }
-  /** The look pool of band `b`: the bank's, or the local book's (8.2) when there is none. */
+  /** The look pool of band `b`: the bank's, or the local book's when there is none. */
   const lookOf = (b) => (bankNow(b) || book()).look;
 
   /**
@@ -619,7 +608,7 @@ export function createVisualModes(d) {
       const hit = built.get(key);
       if (hit) return { key, q: hit.q, eng: hit.eng };
       const [pid, n, qs] = key.split("|");
-      const p = lookOf(keyBand(key)).find((x) => x.id === pid) || lookPool(fullOf(keyBand(key)) || []).find((x) => x.id === pid);
+      const p = lookOf(keyBand(key)).find((x) => x.id === pid);
       return done(p ? await buildLook(Chess, p, Number(n), Number(qs) >>> 0, tee(engFrom((rec("look").eng || {})[key]))) : null);
     }
     // a question that cannot be put into words is skipped for another,
@@ -671,7 +660,7 @@ export function createVisualModes(d) {
       const local = book().blind;
       const bk = bankNow(run.band);
       const kid = key && key.split("|")[0];
-      let p = key ? ((bankNow(keyBand(key)) || {}).blind || local).flat().find((x) => x.id === kid) || blindPool(fullOf(keyBand(key)) || []).flat().find((x) => x.id === kid)
+      let p = key ? ((bankNow(keyBand(key)) || {}).blind || local).flat().find((x) => x.id === kid)
         : blindNext(bk && bk.blind, local, run.seed, k, run.lvl, run.used);
       if (key && !p) { delete rec("blind").q[key]; savePuzzleState(); serve(run); return; }
       if (!p) { run.why = "spent"; finishRun(run); return; }

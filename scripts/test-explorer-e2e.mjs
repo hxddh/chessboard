@@ -17,6 +17,7 @@ import path from "path";
 import vm from "vm";
 import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+import { seedLibrary } from "./lib/library-view.mjs";
 import { heldClick } from "./lib/held-click.mjs";
 import { compileModuleSync } from "./bundle.mjs";
 
@@ -69,12 +70,12 @@ async function context(opts) {
   await ctx.addInitScript((o) => {
     if (sessionStorage.getItem("seeded")) return; // a reload keeps what the app saved
     sessionStorage.setItem("seeded", "1");
-    const s = { mode: o.mode, langId: o.lang, sideTab: "play", view: o.view, soundOn: false, themeId: "wood" };
+    const s = { mode: o.mode, langId: o.lang, sideTab: "play", view: o.view, soundOn: false, appearance: "dark", boardId: "wood" };
     if (o.explorer) s.explorer = o.explorer;
-    localStorage.setItem("chess.v1.settings", JSON.stringify(s));
+    localStorage.setItem("chess.settings", JSON.stringify(s));
     localStorage.setItem("chess.panelOpen", "1");
-    if (o.games) localStorage.setItem("chess.v1.library", JSON.stringify({ v: 1, games: o.games, names: [] }));
   }, o);
+  if (o.games) await ctx.addInitScript(seedLibrary, { games: o.games, names: [], once: true });
   return ctx;
 }
 
@@ -293,7 +294,7 @@ for (const [lang, key, label, row] of [
   await ctx.addInitScript(() => {
     if (sessionStorage.getItem("seeded2")) return;
     sessionStorage.setItem("seeded2", "1");
-    localStorage.setItem("chess.v1.stats", JSON.stringify({ v: 2, games: [
+    localStorage.setItem("chess.stats", JSON.stringify({ v: 2, games: [
       { id: "h1", t: Date.now() - 864e5, diff: "learner", color: "w", result: "win", moves: 3,
         pgn: '[Event "?"]\n\n1. e4 e5 2. Nf3 *', ending: "", acc: 70 },
     ] }));

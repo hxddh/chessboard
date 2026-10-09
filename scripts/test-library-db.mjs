@@ -5,8 +5,8 @@
  *   * library-query.js: the position key and index, the search, the name
  *     claim, the whole-library PGN;
  *   * library-db.js: the store over a Map backend (the same interface as the
- *     IndexedDB one), where the v1 → IndexedDB migration is run against the
- *     shapes 7.0 … the pre-C1 builds wrote, and made to fail half way;
+ *     IndexedDB one), where the games read back from the native shards are
+ *     taken in, and made to fail half way;
  *   * library.js: the 10,000-game cap, and what entryFrom now keeps.
  *
  * 跑：node scripts/test-library-db.mjs
@@ -237,18 +237,18 @@ const ids = (q) => Q.query(all, q, pkOf).map((g) => g.event || g.id).join(",");
   assert(over.list.length === 10000 && over.dropped.join() === "x0,x1", "past the cap the oldest imports go first");
 }
 
-// --- 7. library-db.js: the migration, against every shape v1 was written in --
-/** v1 libraries as each release wrote them (library.js entryFrom, then the pass). */
+// --- 7. library-db.js: importRecords, the games read back from the native shards --
+/** Entries as the importer and the analysis pass leave them. */
 const FIXTURES = {
-  // 7.0: no budget on the analysis, no eco, no clock
-  "7.0": { v: 1, names: ["hxddh"], games: [
+  // an analysed game, and one never analysed
+  plain: { v: 1, games: [
     { id: "lib:70a", t: T0, white: "hxddh", black: "r1", date: "2026.01.01", event: "e", result: "1-0", plies: 4,
       sans: "e4 e5 Nf3 Nc6", fen: "", side: "w", outcome: "win",
-      an: { acc: { w: 81.2, b: 60 }, acpl: { w: 30, b: 90 }, tags: [null, "?", null, "??"], losses: [0, 120, 5, 400], scalars: [20, 25, -100, -90, -500] } },
+      an: { acc: { w: 81.2, b: 60 }, acpl: { w: 30, b: 90 }, tags: [null, "?", null, "??"], losses: [0, 120, 5, 400], scalars: [20, 25, -100, -90, -500], budget: 120 } },
     { id: "lib:70b", t: T0 + 1, white: "x", black: "y", date: "?", event: "", result: "*", plies: 2, sans: "d4 d5", fen: "", side: null, outcome: null, an: null },
   ] },
-  // 7.2: a budget, motifs, an unplayable game, eco filled by 7.1
-  "7.2": { v: 1, names: ["hxddh", "alt"], games: [
+  // motifs, an unplayable game, an opening
+  marked: { v: 1, games: [
     { id: "lib:72a", t: T0 + 2, white: "alt", black: "r2", date: "2026.02.02", event: "e", result: "0-1", plies: 2, sans: "f3 e5",
       fen: "", side: "w", outcome: "loss", eco: "A00", ecoName: "Barnes Opening",
       an: { acc: { w: 20, b: 90 }, acpl: { w: 200, b: 10 }, tags: ["?", null], losses: [150, 0], scalars: [20, -130, -120], bests: ["e2e4", null], budget: 200 },
@@ -256,32 +256,29 @@ const FIXTURES = {
     { id: "lib:72b", t: T0 + 3, white: "hxddh", black: "r3", date: "2026.02.03", event: "e", result: "1-0", plies: 3, sans: "e4 Ke7 Qh5",
       fen: "", side: "w", outcome: "win", an: null, unplayable: true },
   ] },
-  // 8.0 before C1: a clock, a [FEN] start, a deepened analysis
-  "8.0-dev": { v: 1, names: ["hxddh"], games: [
+  // a clock, a [FEN] start, a deepened analysis
+  clocked: { v: 1, games: [
     { id: "lib:80a", t: T0 + 4, white: "hxddh", black: "coach", date: "2026.09.04", event: "Study", result: "1-0", plies: 3,
       sans: "Kd5 Kd2 Ke4", fen: "8/8/4k3/8/8/8/4P3/4K3 b - - 3 40", side: "w", outcome: "win", clk: [30, 29, 28],
       an: { acc: { w: 99, b: 99 }, acpl: { w: 0, b: 0 }, tags: [null, null, null], losses: [0, 0, 0], scalars: [0, 0, 0, 0], budget: 400 } },
   ] },
 };
-// the 6.x profile had no library at all — nothing to migrate, and nothing lost
-for (const [ver, v1] of Object.entries(FIXTURES)) {
+for (const [shape, lib] of Object.entries(FIXTURES)) {
   const be = D.memoryBackend();
   const st = D.createLibraryStore({ backend: be, Chess });
-  const raw = JSON.stringify(v1);
-  const r = await st.migrate(raw);
-  assert(r.ok && r.moved === v1.games.length, `${ver}: migrate() moves ${v1.games.length} games (${JSON.stringify(r)})`);
-  const same = v1.games.every((g) => JSON.stringify(be.games.get(g.id)) === JSON.stringify(g));
-  assert(same && be.games.size === v1.games.length, `${ver}: every game is in the store exactly as it was, field for field`);
-  const backup = [...be.meta.entries()].find(([k]) => k.startsWith("v1:"));
-  assert(backup && backup[1].raw === raw, `${ver}: …and the whole v1 value is kept as found, before anything was written`);
+  const r = await st.importRecords(lib.games);
+  assert(r.ok && r.moved === lib.games.length, `${shape}: importRecords() takes ${lib.games.length} games in (${JSON.stringify(r)})`);
+  const same = lib.games.every((g) => JSON.stringify(be.games.get(g.id)) === JSON.stringify(g));
+  assert(same && be.games.size === lib.games.length, `${shape}: every game is in the store exactly as it was, field for field`);
+  assert(be.meta.size === 0, `${shape}: …and no second copy of them is kept (M5 review P3-3)`);
   await st.load();
   await st.indexMissing(50, async () => {});
   const indexed = st.games.filter((g) => st.pkOf(g)).map((g) => g.id).sort().join(",");
-  const want = v1.games.filter((g) => Q.keysOfGame(g, Chess)).map((g) => g.id).sort().join(",");
-  assert(indexed === want, `${ver}: load + index: every replayable game gets its position index (${indexed})`);
+  const want = lib.games.filter((g) => Q.keysOfGame(g, Chess)).map((g) => g.id).sort().join(",");
+  assert(indexed === want, `${shape}: load + index: every replayable game gets its position index (${indexed})`);
   const shardsOut = [...st.shards().keys()].map((s) => JSON.parse(st.shardText(s)).games).flat();
-  assert(shardsOut.length === v1.games.length && shardsOut.every((g) => !("pk" in g) && JSON.stringify(g) === JSON.stringify(v1.games.find((x) => x.id === g.id))),
-    `${ver}: the native shards hold the same entries, without the index`);
+  assert(shardsOut.length === lib.games.length && shardsOut.every((g) => !("pk" in g) && JSON.stringify(g) === JSON.stringify(lib.games.find((x) => x.id === g.id))),
+    `${shape}: the native shards hold the same entries, without the index`);
 }
 
 // a refused write (the quota): nothing claims success, nothing is half-written
@@ -289,12 +286,12 @@ for (const [ver, v1] of Object.entries(FIXTURES)) {
   const be = D.memoryBackend();
   be.fail.put = "QuotaExceededError";
   const st = D.createLibraryStore({ backend: be, Chess });
-  const r = await st.migrate(JSON.stringify(FIXTURES["7.0"]));
+  const r = await st.importRecords(FIXTURES.plain.games);
   assert(!r.ok && r.error === "QuotaExceededError" && be.games.size === 0,
-    "a quota error: migrate() says so (the caller keeps the v1 header), and no game is half-moved (" + JSON.stringify(r) + ")");
+    "a quota error: importRecords() says so, and no game is half-written (" + JSON.stringify(r) + ")");
   delete be.fail.put;
-  const again = await st.migrate(JSON.stringify(FIXTURES["7.0"]));
-  assert(again.ok && be.games.size === 2, "…the next launch simply migrates again");
+  const again = await st.importRecords(FIXTURES.plain.games);
+  assert(again.ok && be.games.size === 2, "…the next launch simply takes them in again");
 }
 
 // a write that "succeeds" and loses a game: caught by the read-back
@@ -303,21 +300,21 @@ for (const [ver, v1] of Object.entries(FIXTURES)) {
   const put = be.put;
   be.put = async (records) => put(records.slice(1));
   const st = D.createLibraryStore({ backend: be, Chess });
-  const r = await st.migrate(JSON.stringify(FIXTURES["7.2"]));
-  assert(!r.ok && r.error === "readback" && r.missing === 1, "a game missing on read-back fails the migration (" + JSON.stringify(r) + ")");
+  const r = await st.importRecords(FIXTURES.marked.games);
+  assert(!r.ok && r.error === "readback" && r.missing === 1, "a game missing on read-back fails the import (" + JSON.stringify(r) + ")");
 }
 
-// interrupted: half the games already in the store (a migration cut short, or
-// a second window that got there first) — no duplicate, no loss
+// half the games already in the store (a recovery cut short, or a second
+// window that got there first) — no duplicate, no loss, the stored copy stands
 {
   const be = D.memoryBackend();
-  const v1 = FIXTURES["7.0"];
-  await be.put([Object.assign({}, v1.games[0], { pk: new Float64Array([1, 2]) })]);
+  const lib = FIXTURES.plain;
+  await be.put([Object.assign({}, lib.games[0], { pk: new Float64Array([1, 2]), an: null })]);
   const st = D.createLibraryStore({ backend: be, Chess });
-  const r = await st.migrate(JSON.stringify(v1));
-  assert(r.ok && be.games.size === 2 && be.games.get("lib:70a").pk.length === 2,
-    "an interrupted migration run again: two games, not three, and the stored index kept");
-  // two windows migrating at once, under the store lock
+  const r = await st.importRecords(lib.games);
+  assert(r.ok && r.moved === 1 && be.games.size === 2 && be.games.get("lib:70a").pk.length === 2 && be.games.get("lib:70a").an === null,
+    "an import run again: two games, not three, and the stored copy (with its index) stands");
+  // two windows taking the same games in at once, under the store lock
   const be2 = D.memoryBackend();
   let inLock = 0, maxIn = 0;
   const q = [];
@@ -329,16 +326,8 @@ for (const [ver, v1] of Object.entries(FIXTURES)) {
   };
   const a = D.createLibraryStore({ backend: be2, Chess, withLock });
   const b = D.createLibraryStore({ backend: be2, Chess, withLock });
-  const [ra, rb] = await Promise.all([a.migrate(JSON.stringify(FIXTURES["7.2"])), b.migrate(JSON.stringify(FIXTURES["7.2"]))]);
-  assert(ra.ok && rb.ok && be2.games.size === 2 && maxIn === 1, "two windows migrating together: one at a time under the lock, the same two games");
-}
-
-// an older build analysed a game deeper after this one migrated it
-{
-  const keep = D.mergeEntry({ id: "a", an: { budget: 200 }, clk: [5] }, { id: "a", an: { budget: 400 } });
-  assert(keep.an.budget === 400 && keep.clk[0] === 5, "the deeper analysis wins, and the clock either copy has is kept");
-  const stay = D.mergeEntry({ id: "a", an: { budget: 400 } }, { id: "a", an: null, eco: "B00" });
-  assert(stay.an.budget === 400 && !stay.eco, "…otherwise the stored copy stands, whole");
+  const [ra, rb] = await Promise.all([a.importRecords(FIXTURES.marked.games), b.importRecords(FIXTURES.marked.games)]);
+  assert(ra.ok && rb.ok && be2.games.size === 2 && maxIn === 1, "two windows importing together: one at a time under the lock, the same two games");
 }
 
 // restoreShards: an exported or native copy replaces the imported games, in
@@ -346,10 +335,10 @@ for (const [ver, v1] of Object.entries(FIXTURES)) {
 {
   const be = D.memoryBackend();
   const st = D.createLibraryStore({ backend: be, Chess });
-  await st.migrate(JSON.stringify(FIXTURES["7.2"]));
+  await st.importRecords(FIXTURES.marked.games);
   await be.put([{ id: "loc:9", src: "local", sans: "e4", plies: 1 }]);
   await st.load();
-  const text = JSON.stringify({ v: 1, games: FIXTURES["8.0-dev"].games });
+  const text = JSON.stringify({ v: 1, games: FIXTURES.clocked.games });
   const n = await st.restoreShards({ lib12: text });
   assert(n === 1 && be.games.has("lib:80a") && !be.games.has("lib:72a") && be.games.has("loc:9") && st.games.length === 1,
     "restoreShards: the document's games replace the imported ones; the 本机 cache stays");
@@ -383,19 +372,6 @@ for (const [ver, v1] of Object.entries(FIXTURES)) {
     "P2-2: a restore while indexing is not followed by the old games coming back (" + [...r.be.games.keys()].slice(0, 4).join(",") + "…)");
   r = await during(async () => {});
   assert(r.be.games.size === 50 && [...r.be.games.values()].every((g) => g.pk), "P2-2: …left alone, every game is indexed and written");
-}
-
-// M5 review P3-3: pulling the games back from the native shards is not a
-// migration of a value found in localStorage — keeping it in "meta" was a
-// second full copy of the library, a new one on every recovery
-{
-  const be = D.memoryBackend();
-  const st = D.createLibraryStore({ backend: be, Chess });
-  await st.migrate(JSON.stringify(FIXTURES["7.2"]));
-  assert(be.meta.size === 1, "(a real v1 migration keeps its backup)");
-  await new Promise((r) => setTimeout(r, 5));   // the backup is keyed by the millisecond
-  const r = await st.migrate(JSON.stringify({ v: 1, games: FIXTURES["8.0-dev"].games }), { backup: false });
-  assert(r.ok && be.meta.size === 1 && be.games.has("lib:80a"), "P3-3: recovery from the shards writes the games and no second copy (" + be.meta.size + " in meta)");
 }
 
 // --- 8. v8-1-plan F3: the list's summary, kept beside the games ------------------
@@ -491,18 +467,20 @@ for (const [ver, v1] of Object.entries(FIXTURES)) {
   c = check(be);
   assert(c.ok && c.rows.get(entries[2].id).eco === "D06", "F3 summary: …and the retry writes both" + c.why);
 
-  // merge: the recovery path's migrate after load (an older build's copy, deeper)
-  const deeper = Object.assign({}, entries[0], { an: { acc: { w: 90, b: 10 }, tags: [], budget: 800 } });
-  const r = await st.migrate(JSON.stringify({ v: 1, games: [deeper] }), { backup: false });
+  // the recovery path's import after load: a game the store holds stays as
+  // stored, a new one comes in with its row
+  const other = Object.assign({}, entries[0], { an: { acc: { w: 90, b: 10 }, tags: [], budget: 800 } });
+  const fresh = Object.assign({}, entries[0], { id: "lib:import-new" });
+  const r = await st.importRecords([other, fresh]);
   c = check(be);
-  assert(r.ok && c.ok && c.rows.get(entries[0].id).an === 800 && c.rows.get(entries[0].id).acc === 90,
-    "F3 summary: a merge through migrate() leaves the row of the copy that won" + c.why);
+  assert(r.ok && r.moved === 1 && c.ok && c.rows.get(entries[0].id).an !== 800 && c.rows.has("lib:import-new"),
+    "F3 summary: importRecords() keeps the stored copy's row and adds the new game's" + c.why);
 
   // restore from the native shards: the imported rows replaced, 本机 rows kept
   await st.save([loc]);
   // the page keeps the store's list current (library-page.js save: st.games = list)
   st.games = [...be.games.values()].filter((g) => g.src !== "local").map(({ pk: _k, ...g }) => g);
-  await st.restoreShards({ lib00: JSON.stringify({ v: 1, games: FIXTURES["8.0-dev"].games }) });
+  await st.restoreShards({ lib00: JSON.stringify({ v: 1, games: FIXTURES.clocked.games }) });
   c = check(be);
   assert(c.ok && c.rows.size === 2 && c.rows.has("lib:80a") && c.rows.has("loc:g1"),
     "F3 summary: restoreShards replaces the imported rows in the same transaction, keeps 本机 (" + [...c.rows.keys()] + ")" + c.why);
@@ -514,8 +492,8 @@ for (const [ver, v1] of Object.entries(FIXTURES)) {
     "F3 summary: a clear empties the summary with the store" + c.why);
 }
 
-// the summary written by someone who does not keep it (8.0, a window that
-// never heard of a game) is never handed out wrong, and the next boot mends it
+// the summary written by someone who does not keep it (a window that never
+// heard of a game) is never handed out wrong, and the next boot mends it
 {
   const be = D.memoryBackend();
   const pk = new Map();
@@ -524,11 +502,11 @@ for (const [ver, v1] of Object.entries(FIXTURES)) {
   await a.load();
   const id = await a.syncSummary(50, null);
   await a.save(es.slice(0, 3));
-  // 8.0 imports two games (it writes records only) — its header drops `sum`,
-  // and even under the old id the count gives it away
+  // a writer that keeps no summary imports two games (records only): even
+  // under the old id the count gives it away
   await be.put(es.slice(3).map((g) => Object.assign({}, g)));
   assert((await a.readSummary(id)) === null, "F3 summary: records the summary does not cover → no summary (the list waits for the games)");
-  // 8.0 re-analyses a game in place (same count): the row is stale until the next boot's sync
+  // …and re-analyses a game in place (same count): the row is stale until the next boot's sync
   const stale = Object.assign({}, es[0], { an: { acc: { w: 55, b: 45 }, tags: [], budget: 400 } });
   await be.put([stale]);
   const b = D.createLibraryStore({ backend: be, Chess });
@@ -595,10 +573,9 @@ for (const [ver, v1] of Object.entries(FIXTURES)) {
   const store = (v) => ({ getItem: () => v });
   const g = globalThis;
   const got = (raw) => { g[S.PREFETCH_GLOBAL] = null; const r = S.bootPrefetch(store(raw), null); const p = g[S.PREFETCH_GLOBAL]; g[S.PREFETCH_GLOBAL] = null; return r && !!p; };
-  assert(got(JSON.stringify({ v: 1, games: [], names: [], db: 2, n: 5, sum: "s1" })) &&
-    !got(JSON.stringify({ v: 1, games: [], names: [], db: 2, n: 5 })) &&
-    !got(JSON.stringify({ v: 1, games: [{ id: "x" }], names: [] })) && !got(null),
-    "F3: chunk-boot.js asks for the summary only for a header with the games in IndexedDB and a summary id");
+  assert(got(JSON.stringify({ v: 1, names: [], n: 5, sum: "s1" })) &&
+    !got(JSON.stringify({ v: 1, names: [], n: 5 })) && !got(null),
+    "F3: chunk-boot.js asks for the summary only for a header with a summary id");
   assert(S.opensOnLibrary(JSON.stringify({ view: "library" })) && !S.opensOnLibrary(JSON.stringify({ view: "play" })) && !S.opensOnLibrary("{x"),
     "F3: …and puts the library's chunk ahead of the bundle only when the app opens on the library page");
 }

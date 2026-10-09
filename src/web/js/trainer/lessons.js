@@ -46,18 +46,11 @@ export function createLessonsUI(d) {
   const LESSONS = (CHESS_LESSONS || []).concat(Adv.stubs);
 
   function loadLearnState() {
-    const s = Persist.read("learn").value;
-    // v8-2-plan V3: 8.0 / 8.1 have the first 96 lessons, and opening 学习
-    // there bookmarks the last of them over a part-3 bookmark; `l2` is the
-    // bookmark as this build last wrote it, which they leave alone
-    if (s && s.last === CHESS_LESSONS.length - 1 && s.l2 > s.last) s.last = s.l2;
-    return s || { v: 1, done: {}, last: 0 };
+    return Persist.read("learn").value || { v: 1, done: {}, last: 0 };
   }
   store.session.learnState = loadLearnState();
   function saveLearnState() {
-    const s = store.session.learnState;
-    s.l2 = s.last;
-    Persist.setJson("learn", s);
+    Persist.setJson("learn", store.session.learnState);
   }
   // v8-1-plan T2: the endgame camp — its content is a chunk, its runs are
   // one-task drills in this runner (`learn.eg` names the position)

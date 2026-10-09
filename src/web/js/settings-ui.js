@@ -215,7 +215,6 @@ export function createSettingsUI(d) {
     const at = lookAttrs(store.ui, dark);
     const root = document.documentElement;
     const reframed = root.getAttribute("data-frame") !== at.frame;
-    store.ui.themeId = at.theme;
     root.setAttribute("data-theme", at.theme);
     root.setAttribute("data-board", at.board);
     root.setAttribute("data-frame", at.frame);
