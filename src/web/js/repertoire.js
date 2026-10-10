@@ -258,7 +258,44 @@ function gaps(ecos, covered, minGames) {
     .slice(0, 8);
 }
 
+/**
+ * v10-0-plan T4: where a game left this side's book, as the review asks it.
+ *
+ * Walked by move order from the start (a transposition into a book position
+ * is not followed — the book is lines, and so is the question). At each of
+ * the side's own moves, the book's answers are the moves its lines play
+ * there:
+ *
+ *   empty    the side has no book at all
+ *   silent   the lines that reached this position stop before the side's move
+ *   differs  the book plays something else here (`book`: what it plays)
+ *   left     the opponent played a move no line has — not the player's to fix
+ *   inBook   the game followed the book for all of the first `maxPly` plies
+ *
+ * @param {object[]} lines the side's book ({sans})
+ * @param {string[]} sans the game's moves from the starting position
+ * @param {"w"|"b"} side whose book
+ * @param {number} [maxPly] how far the opening reaches (24 plies)
+ * @returns {{kind: string, ply?: number, book?: string[]}}
+ */
+function checkGame(lines, sans, side, maxPly) {
+  if (!lines || !lines.length) return { kind: "empty" };
+  const until = Math.min((sans || []).length, Number.isFinite(maxPly) ? maxPly : 24);
+  let live = lines.map((l) => l.sans.split(" "));
+  for (let i = 0; i < until; i++) {
+    const next = new Set(live.filter((m) => m.length > i).map((m) => m[i]));
+    const mine = side === "b" ? i % 2 === 1 : i % 2 === 0;
+    // the lines stop here: the side's move now, or the one after the
+    // opponent's reply, is the first the book does not answer
+    if (!next.size) return mine ? { kind: "silent", ply: i } : i + 1 < until ? { kind: "silent", ply: i + 1 } : { kind: "inBook" };
+    if (!next.has(sans[i])) return mine ? { kind: "differs", ply: i, book: [...next] } : { kind: "left", ply: i };
+    live = live.filter((m) => m[i] === sans[i]);
+  }
+  return { kind: "inBook" };
+}
+
 export const ChessRepertoire = {
+  checkGame,
   MAX_LINES, MIN_PLIES, MAX_PLIES, START_FEN,
   normalize, pathsOf, linesFrom, addLines, rowsOf, coveredEcos, gaps,
 };

@@ -2097,7 +2097,7 @@ import { loadChunk } from "./chunk.js";
     savedToast: (name, path, revealed) => savedToast(name, path, revealed), pgnFileName: () => pgnFileName(),
     deskHead, lineRows, paintLineRow, reviewLines, savePvAsVariation, lockPgnEdits,
     drawEvalCurve, drawEvalBar, judgeColours, renderWhyLine, renderRetry, renderMistakeList, renderMoments: Moments.render,
-    boardDrillSource, saveMines, savePuzzleState,
+    boardDrillSource, saveMines, savePuzzleState, rep: { lines: (s) => RepUI.linesOf(s), add: (s, sans) => RepUI.edit(s, sans) },
   });
   const { setAnalyzeUI, renderReview, exportReport } = ReviewPanel;
 
@@ -2425,7 +2425,7 @@ import { loadChunk } from "./chunk.js";
   // read the library's diagnosis: the openings you actually play and have
   // nothing written down about, worst record first.
   const RepUI = createRepertoireUI({
-    doc: document, store, Persist, t, tf, toast, confirmNative, openPgnFile: (sink) => openPgnFile(sink), sync, library: LibraryUI,
+    doc: document, store, Persist, t, tf, toast, confirmNative, openPgnFile: (sink) => openPgnFile(sink), sync, library: LibraryUI, pickFromList: (...a) => pickFromList(...a),
     exportText: (name, text, mime, title, recent) => exportText(name, text, mime, title, recent),
     // the gap list compares the book against the openings this player has
     // actually played, and that comparison is only as good as the ECO codes

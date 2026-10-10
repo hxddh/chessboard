@@ -812,6 +812,38 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   }
 }
 
+// --- v10-0-plan T4: a book from the built-in lines, and a game against a book
+{
+  const rctx = loadAppModules(["src/web/js/openings.js", "src/web/js/drills.js", "src/web/js/repertoire.js", "src/web/js/rep-seed.js"]);
+  const R = rctx.ChessRepertoire, Sd = rctx.ChessRepSeed, rows = rctx.CHESS_OPENINGS;
+  for (const sys of Sd.SYSTEMS) {
+    const lines = Sd.linesFor(sys, rows).map((l) => l.split(" "));
+    assert(lines.length >= 5, "T4 " + sys.id + ": at least five lines to learn (" + lines.length + ")");
+    assert(lines.every((m) => sys.prefix.split(" ").every((x, i) => m[i] === x)), "T4 " + sys.id + ": every line begins with the system");
+    const ours = (i) => (sys.side === "b" ? i % 2 === 1 : i % 2 === 0);
+    const at = new Map();
+    let clash = 0;
+    for (const m of lines) for (let i = 0; i < m.length; i++) {
+      if (!ours(i)) continue;
+      const k = m.slice(0, i).join(" ");
+      if (at.has(k) && at.get(k) !== m[i]) clash++;
+      at.set(k, m[i]);
+    }
+    assert(clash === 0, "T4 " + sys.id + ": one move of ours in each position the book reaches");
+    const kept = R.addLines([], lines.map((m) => m.join(" ")), null);
+    assert(kept.added === lines.length, "T4 " + sys.id + ": no line is a prefix of another — every offered line is kept");
+  }
+  const book = [{ sans: "e4 c5 Nf3 d6 d4 cxd4" }, { sans: "e4 c5 Nc3 Nc6" }];
+  assert(R.checkGame([], ["e4", "c5"], "b").kind === "empty", "T4 checkGame: no book");
+  assert(R.checkGame(book, "e4 c5 Nf3 d6 d4 cxd4 Nxd4".split(" "), "b").kind === "inBook", "T4 checkGame: followed to the book's end");
+  const dif = R.checkGame(book, "e4 c5 Nf3 Nc6".split(" "), "b");
+  assert(dif.kind === "differs" && dif.ply === 3 && dif.book.join() === "d6", "T4 checkGame: the book plays d6 where the game played Nc6");
+  assert(R.checkGame(book, "e4 c5 c3 d5".split(" "), "b").kind === "left", "T4 checkGame: the opponent left the book — not ours to fix");
+  const sil = R.checkGame(book, "e4 c5 Nc3 Nc6 g3 g6".split(" "), "b");
+  assert(sil.kind === "silent" && sil.ply === 5, "T4 checkGame: the book stops at Nc6; after g3, our g6 is the first it does not answer");
+  assert(R.checkGame([{ sans: "e4 e5" }], ["e4", "e5", "Nf3"], "w").kind === "silent", "T4 checkGame: White's next move past the book");
+}
+
 // --- v8-0-plan B1: the theme list and the two runs (trainer/themes.js, runs.js)
 {
   const tctx = loadAppModules(["src/web/js/trainer/themes.js", "src/web/js/trainer/runs.js"]);

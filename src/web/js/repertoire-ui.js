@@ -29,6 +29,8 @@ import { ChessEco } from "./eco-lookup.js";
 import { ChessOpeningTree } from "./opening-tree.js";
 import { ChessPgnParser } from "./pgn-parser.js";
 import { ChessRepertoire } from "./repertoire.js";
+import { ChessRepSeed } from "./rep-seed.js";
+import { CHESS_OPENINGS } from "./openings.js";
 import { tdot } from "./tdot.js";
 
 /**
@@ -151,6 +153,17 @@ export function createRepertoireUI(d) {
     // it is the wrong kind of file, and saying which is the whole difference
     if (!into.w.length && !into.b.length && read.skipped) { toast(tf("rep.skippedSetUp", [read.skipped]), "fix"); return; }
     if (!into.w.length && !into.b.length) { toast(t("msg.import.badPgn"), "fault"); return; }
+    mergeInto(into, label);
+    if (read.skipped) toast(tf("rep.skippedSetUp", [read.skipped]), "fix");
+    if (bad) toast(tf("rep.badGames", [bad]), "fix");
+  }
+
+  /**
+   * Lines into the two books — the import's tail, and 从内置开局生成's
+   * (v10-0-plan T4): the same merge, the same cleanup, the same toasts.
+   * @returns {number} lines added
+   */
+  function mergeInto(into, label) {
     const r = { added: 0, dup: 0, dropped: [], replaced: [] };
     for (const s of ["w", "b"]) {
       if (!into[s].length) continue;
@@ -167,8 +180,24 @@ export function createRepertoireUI(d) {
     // only the cap is news: a short line a deeper one grew out of did not
     // leave the book, it got longer (7.4 D3)
     if (r.dropped.length) toast(tf("rep.dropped", [Rep.MAX_LINES, r.dropped.length]), "fix");
-    if (read.skipped) toast(tf("rep.skippedSetUp", [read.skipped]), "fix");
-    if (bad) toast(tf("rep.badGames", [bad]), "fix");
+    return r.added;
+  }
+
+  /**
+   * 从内置开局生成 (v10-0-plan T4): pick a system, its lines go into that
+   * side's book, and 开始背 begins — no file needed for a first repertoire.
+   */
+  async function seed() {
+    if (importing) return;
+    const systems = ChessRepSeed.SYSTEMS.map((s) => Object.assign({ lines: ChessRepSeed.linesFor(s, CHESS_OPENINGS) }, s));
+    const pick = await d.pickFromList(t("rep.seedTitle"), systems.map((s) => ({
+      label: t("rep.sys." + s.id), sub: tf("rep.seedSub", [t(s.side === "b" ? "color.black" : "color.white"), s.lines.length]) })));
+    const s = systems[pick];
+    if (!s) return;
+    await settled();
+    const into = { w: s.side === "w" ? s.lines : [], b: s.side === "b" ? s.lines : [] };
+    // …and the drills begin in the chair the book was made for
+    if (mergeInto(into, t("rep.sys." + s.id))) { store.session.puzzleState.opSide = s.side; d.startDrills(); }
   }
 
   async function clearBook() {
@@ -482,6 +511,8 @@ export function createRepertoireUI(d) {
   function wire() {
     const impW = doc.getElementById("rep-import-w");
     if (impW) impW.onclick = () => { openPgnFile((text, label) => importInto("w", text, label)); };
+    const sd = doc.getElementById("rep-seed");
+    if (sd) sd.onclick = () => { seed(); };
     const impB = doc.getElementById("rep-import-b");
     if (impB) impB.onclick = () => { openPgnFile((text, label) => importInto("b", text, label)); };
     const drill = doc.getElementById("rep-drill");

@@ -1769,6 +1769,16 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const s = await pg.evaluate(() => { const e = document.getElementById("rv-summary"); return e && !e.hidden ? e.textContent : null; });
   assert(!!s && /^莉娜：这盘最要紧的是第 9 步——你的胜率从 \d+% 掉到 \d+%。$/.test(s),
     "M2：人机对局的总结是对手说的，讲你掉得最多的那一步（「" + s + "」）");
+  // v10-0-plan T4: with no Black book, the report offers to keep this
+  // game's opening; kept, it points at the first move the book stops before
+  if (!(await pg.evaluate(() => document.getElementById("rv-full").open))) await pg.click("#rv-full > summary");
+  const bookNote = () => pg.evaluate(() => { const e = document.querySelector("#review-body .rv-book"); return e ? e.textContent : ""; });
+  const n0 = await bookNote();
+  assert(/你还没有执黑的开局书/.test(n0) && /加入开局书/.test(n0), "T4：复盘里，没有执黑开局书时提议把这局的开局记下来", n0);
+  await pg.click("#review-body .rv-book button");
+  await pg.waitForTimeout(900);
+  const n1 = await bookNote();
+  assert(/第 7 回合的 Qe7，你的开局书还没写到这里/.test(n1), "T4：记下之后，指出开局书还没写到的那一步（第 7 回合 Qe7）", n1);
   assert(errsM.length === 0, "M2：人机总结全程没有页面异常 — " + errsM.join(" / "));
   await ctxM.close();
 }
