@@ -233,6 +233,13 @@
           <h2 class="side-h sr-only" data-i18n="side.learn">教学</h2>
           <span class="side-h-meta num" id="learn-progress" title="已完成的课数" data-i18n-title="learn.doneOf">0/0</span>
         </div>
+        <!-- 9.0 S3: 名局 is one list of the forty, read or guessed — a switch,
+             on the page rather than in the folded list. 10.0 M0: above the
+             title, as the page's own choice (it stood under the actions) -->
+        <div class="theme-row classic-mode" id="classic-mode" role="group" aria-label="名局" data-i18n-aria="train.classic" hidden>
+          <button type="button" data-cmode="read" aria-pressed="true" title="一步一步读，带注释" data-i18n-title="tip.classic.read" data-i18n="train.read">读谱</button>
+          <button type="button" data-cmode="guess" aria-pressed="false" title="每一步先猜大师走什么，再看他走的" data-i18n-title="tip.classic.guess" data-i18n="train.guess">猜着</button>
+        </div>
         <div class="lesson-title" id="lesson-title"></div>
         <!-- 7.7 (v7-7-plan §4): where you are in this lesson, as a row of
              dots — one per task, the finished ones filled, the current one
@@ -245,12 +252,6 @@
           <button type="button" class="tool-btn" id="lesson-demo" title="重看本任务的走法演示" data-i18n-title="tip.lesson.demo" data-i18n="act.demo">演示</button>
           <button type="button" class="tool-btn" id="lesson-practice" data-i18n="act.practice" title="用同一母题的题目接着练" data-i18n-title="tip.lesson.practice">接着练</button>
           <button type="button" class="tool-btn" id="lesson-next" data-i18n="act.next" title="进入下一课" data-i18n-title="tip.lesson.next">下一课</button>
-        </div>
-        <!-- 9.0 S3: 名局 is one list of the forty, read or guessed — a switch,
-             on the page rather than in the folded list -->
-        <div class="theme-row classic-mode" id="classic-mode" role="group" aria-label="名局" data-i18n-aria="train.classic" hidden>
-          <button type="button" data-cmode="read" aria-pressed="true" title="一步一步读，带注释" data-i18n-title="tip.classic.read" data-i18n="train.read">读谱</button>
-          <button type="button" data-cmode="guess" aria-pressed="false" title="每一步先猜大师走什么，再看他走的" data-i18n-title="tip.classic.guess" data-i18n="train.guess">猜着</button>
         </div>
         <details class="reading-index" id="lesson-fold">
           <summary class="setting-summary"><h2 class="side-h" id="lesson-list-h">目录</h2></summary>

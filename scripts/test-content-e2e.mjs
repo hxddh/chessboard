@@ -1492,6 +1492,9 @@ if (hasTab && REAL.length) {
     return {
       seg: (document.querySelector("#train-seg button.active") || { dataset: {} }).dataset.seg || null,
       title: document.getElementById("lesson-title").textContent,
+      // 10.0 M0: a classic's players are the line over the board; the card's
+      // title is where it was played (or, guessing, what you are doing)
+      game: document.getElementById("lesson-title").dataset.strip || "",
       head: document.getElementById("lesson-list-h").textContent,
       n: { i: document.querySelectorAll("#lesson-list button[data-i]").length, c: document.querySelectorAll("#lesson-list button[data-c]").length,
         gs: document.querySelectorAll("#lesson-list button[data-gs]").length, eg: document.querySelectorAll("#lesson-list button[data-eg]").length },
@@ -1513,23 +1516,23 @@ if (hasTab && REAL.length) {
   await pg.click('#train-seg button[data-seg="classic"]');
   // the thirty more are a chunk: the list is the forty once it is in
   v = await until((x) => x.seg === "classic" && !!x.cur && x.n.c === 40, 8000);
-  assert(v.seg === "classic" && v.sw === "read" && v.n.c === 40 && !v.n.i && !v.n.gs && !v.n.eg && /全部 40 局/.test(v.head) && v.cur.c === "0" && v.title === v.cur.text,
+  assert(v.seg === "classic" && v.sw === "read" && v.n.c === 40 && !v.n.i && !v.n.gs && !v.n.eg && /全部 40 局/.test(v.head) && v.cur.c === "0" && v.game === v.cur.text,
     "S3 名局:默认读谱,目录是 40 局(没有课、没有猜着的第二份),从第一局读起", JSON.stringify(v));
   await pg.evaluate(() => document.querySelector('#lesson-list button[data-c="2"]').click());
   v = await until((x) => x.cur && x.cur.c === "2");
   const game2 = v.cur.text;
-  assert(v.cur.c === "2" && v.title === game2, "S3 名局:点开第三局,读的就是它", JSON.stringify(v));
+  assert(v.cur.c === "2" && v.game === game2, "S3 名局:点开第三局,读的就是它", JSON.stringify(v));
 
   // the switch: the same game, guessed — then read again
   await pg.click('#classic-mode button[data-cmode="guess"]');
   // the guess runner is a chunk: its title is written once it is here
   v = await until((x) => x.sw === "guess" && x.cur && x.cur.gs === "2" && /猜/.test(x.title));
-  assert(v.sw === "guess" && v.n.gs === 40 && !v.n.c && v.cur.gs === "2" && v.cur.text === game2 && v.title.includes(game2.split(" · ")[0]) && /猜/.test(v.title),
+  assert(v.sw === "guess" && v.n.gs === 40 && !v.n.c && v.cur.gs === "2" && v.cur.text === game2 && v.game === game2 && /猜/.test(v.title) && !v.title.includes(game2.split(" – ")[0]),
     "S3 名局:开关拨到猜着,还是这一局,改成猜着", JSON.stringify(v));
   assert((await settings()).classicMode === "guess", "S3 名局:猜着存进设置", JSON.stringify(await settings()));
   await pg.click('#classic-mode button[data-cmode="read"]');
   v = await until((x) => x.sw === "read" && x.cur && x.cur.c === "2");
-  assert(v.sw === "read" && v.cur.c === "2" && v.title === game2, "S3 名局:拨回读谱,还是这一局,读谱", JSON.stringify(v));
+  assert(v.sw === "read" && v.cur.c === "2" && v.game === game2, "S3 名局:拨回读谱,还是这一局,读谱", JSON.stringify(v));
 
   // each segment where it was left
   await pg.click('#train-seg button[data-seg="course"]');
@@ -1542,7 +1545,7 @@ if (hasTab && REAL.length) {
   assert(pz.mode === "puzzle" && pz.view === "train" && !pz.learn && pz.picker, "S3:谜题这一段是做题,换了面板", JSON.stringify(pz));
   await pg.click('#train-seg button[data-seg="classic"]');
   v = await until((x) => x.seg === "classic" && x.cur && x.cur.c === "2");
-  assert(v.cur && v.cur.c === "2" && v.title === game2, "S3:做完题再回名局,还是第三局", JSON.stringify(v));
+  assert(v.cur && v.cur.c === "2" && v.game === game2, "S3:做完题再回名局,还是第三局", JSON.stringify(v));
   const lk = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.learn")));
   assert(lk.last === 8 && lk.cl === 2, "S3:learn 键记着课程的书签和名局的那一局", JSON.stringify({ last: lk.last, cl: lk.cl }));
 

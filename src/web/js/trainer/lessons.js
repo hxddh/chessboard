@@ -133,7 +133,9 @@ export function createLessonsUI(d) {
     const task = document.getElementById("lesson-task");
     const prog = document.getElementById("learn-progress");
     if (prog) prog.textContent = t("study.head");
-    if (title) title.textContent = tx.white + " – " + tx.black + " · " + c.year;
+    // 10.0 M0: the players are the line over the board; the card's title is
+    // where the game was played
+    if (title) { title.textContent = tdot(tx.event, c.year); title.dataset.strip = tx.white + " – " + tx.black + " · " + c.year; }
     if (body) {
       body.replaceChildren();
       const at = store.game.viewIndex;
@@ -726,7 +728,11 @@ export function createLessonsUI(d) {
     if (prog) prog.textContent = gs ? Gs.m.progress() : tf("learn.doneN", eg ? [Endgames.doneCount(), Endgames.total()] : [doneCount, LESSONS.length]);
     const loc = lessonText(L);
     const title = document.getElementById("lesson-title");
-    if (title) title.textContent = tdot(!eg && !gs && tf("learn.lessonN", [store.session.learn.li + 1]), loc.part, loc.title);
+    if (title) {
+      title.textContent = tdot(!eg && !gs && tf("learn.lessonN", [store.session.learn.li + 1]), loc.part, loc.title);
+      // the line over the board names the game being guessed (app.js stripPeople)
+      if (L.game) title.dataset.strip = L.game; else delete title.dataset.strip;
+    }
     // 7.7 (v7-7-plan §4): the lesson's tasks as a row of dots — done filled,
     // current ringed; a finished lesson is a full row
     const dots = el("lesson-dots");

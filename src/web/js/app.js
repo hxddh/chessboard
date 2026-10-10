@@ -3128,7 +3128,7 @@ import { loadChunk } from "./chunk.js";
       // A lesson that is not a drill has no opponent: 9.0 V3 — that strip
       // names the lesson instead of standing empty over the board
       const drill = !!(store.session.learn && curTask().type === "drill");
-      const title = (el("lesson-title") || {}).textContent || "";
+      const lt = el("lesson-title"), title = lt ? lt.dataset.strip || lt.textContent : "";
       return {
         w: { icon: "graduation-cap", name: t("role.student"), level: "" },
         b: drill ? { icon: "bot", name: t(store.session.learn.eg ? "eg.engine" : "role.sparring"), level: "" }

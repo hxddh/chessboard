@@ -1056,7 +1056,7 @@ if (scenario()) for (const tab of ["play", "settings"]) {
 if (scenario()) {
   const TOKENS = ["--bg","--panel","--panel-border","--text","--muted","--accent","--win",
     "--btn","--btn-hover","--btn-ghost","--card","--card-border",
-    "--primary-from","--primary-to","--danger","--on-primary","--on-accent","--on-danger"];
+    "--danger","--on-accent","--on-danger"];
   for (const theme of ["wood","night","day","notebook"]) {
     const { ctx, page } = await open("zh-CN", "ai", "settings", theme);
     const empty = await page.evaluate((names) => {

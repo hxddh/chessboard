@@ -261,8 +261,10 @@ export function createGuess(d) {
   function lesson() {
     const s = run();
     const c = CLASSICS[s.ci], tx = classicText(c);
-    return { id: "gs:" + c.id, part: t("gs.part"), title: tdot(tx.white + " – " + tx.black, c.year, tf("gs.as", [sideName(s.side)])),
-      text: [], tasks: [{ type: "guess" }] };
+    // 10.0 M0: the game is the opponent's line over the board (`game`); the
+    // card's title says what you are doing — it said both, three lines long
+    return { id: "gs:" + c.id, part: t("gs.part"), title: tf("gs.as", [sideName(s.side)]),
+      game: tdot(tx.white + " – " + tx.black, c.year), text: [], tasks: [{ type: "guess" }] };
   }
 
   /** The task strip and the card's task line. */

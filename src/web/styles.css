@@ -61,9 +61,10 @@
                         translucent film over another card
          three inks     --ink, --ink-muted, --ink-faint
          one accent     the primary button, the current move, the selected
-                        state — and nothing else; --primary-from/to are the
-                        accent itself now (no second "press me" colour: 日
-                        had a blue primary beside a brass accent)
+                        state — and nothing else; there is no second "press
+                        me" colour (日 had a blue primary beside a brass
+                        accent; 10.0 M0 removed the --primary-from/-to names
+                        that were left over, unread)
          status         --success (a win, a gain) and --danger, only for
                         status
        ------------------------------------------------------------------ */
@@ -95,9 +96,6 @@
       --wood-win: #6cc282;
       --wood-chrome-bg: linear-gradient(180deg, rgba(36,26,18,.88), rgba(36,26,18,.4) 75%, transparent);
       --wood-danger: #e07a6a;
-      --wood-primary-from: #e8c39e;
-      --wood-primary-to: #e8c39e;
-      --wood-on-primary: #2a1c10;
       --wood-on-accent: #2a1c10;
       --wood-on-danger: #2a1613;
       --wood-card: #30241a;
@@ -125,9 +123,6 @@
       --success: var(--wood-win);
       --veil: var(--wood-chrome-bg);
       --danger: var(--wood-danger);
-      --primary-from: var(--wood-primary-from);
-      --primary-to: var(--wood-primary-to);
-      --on-primary: var(--wood-on-primary);
       --on-accent: var(--wood-on-accent);
       --on-danger: var(--wood-on-danger);
       --card-fill: var(--wood-card);
@@ -170,9 +165,6 @@
       --night-win: #66c78a;
       --night-chrome-bg: linear-gradient(180deg, rgba(8,18,15,.9), rgba(8,18,15,.35) 75%, transparent);
       --night-danger: #e8705c;
-      --night-primary-from: #7dcea0;
-      --night-primary-to: #7dcea0;
-      --night-on-primary: #07130e;
       --night-on-accent: #07130e;
       --night-on-danger: #0b1210;
       --night-card: #111d1a;
@@ -196,9 +188,6 @@
       --success: var(--night-win);
       --veil: var(--night-chrome-bg);
       --danger: var(--night-danger);
-      --primary-from: var(--night-primary-from);
-      --primary-to: var(--night-primary-to);
-      --on-primary: var(--night-on-primary);
       --on-accent: var(--night-on-accent);
       --on-danger: var(--night-on-danger);
       --card-fill: var(--night-card);
@@ -241,9 +230,6 @@
       --day-win: #23813d;
       --day-chrome-bg: linear-gradient(180deg, rgba(247,241,224,.95), rgba(247,241,224,.4) 75%, transparent);
       --day-danger: #b8382a;
-      --day-primary-from: #8a5a24;
-      --day-primary-to: #8a5a24;
-      --day-on-primary: #ffffff;
       --day-on-accent: #ffffff;
       --day-on-danger: #fdf6f4;
       --day-card: #f8f1e4;
@@ -267,9 +253,6 @@
       --success: var(--day-win);
       --veil: var(--day-chrome-bg);
       --danger: var(--day-danger);
-      --primary-from: var(--day-primary-from);
-      --primary-to: var(--day-primary-to);
-      --on-primary: var(--day-on-primary);
       --on-accent: var(--day-on-accent);
       --on-danger: var(--day-on-danger);
       --card-fill: var(--day-card);
@@ -302,9 +285,6 @@
       --notebook-win: #257a44;
       --notebook-chrome-bg: linear-gradient(180deg, rgba(244,247,254,.96), rgba(244,247,254,.45) 75%, transparent);
       --notebook-danger: #b0301f;
-      --notebook-primary-from: #3b6ea5;
-      --notebook-primary-to: #3b6ea5;
-      --notebook-on-primary: #ffffff;
       --notebook-on-accent: #ffffff;
       --notebook-on-danger: #fbf3f2;
       --notebook-card: #f4f7fe;
@@ -328,9 +308,6 @@
       --success: var(--notebook-win);
       --veil: var(--notebook-chrome-bg);
       --danger: var(--notebook-danger);
-      --primary-from: var(--notebook-primary-from);
-      --primary-to: var(--notebook-primary-to);
-      --on-primary: var(--notebook-on-primary);
       --on-accent: var(--notebook-on-accent);
       --on-danger: var(--notebook-on-danger);
       --card-fill: var(--notebook-card);
@@ -1952,7 +1929,7 @@
     /* grouped action links */
     .act-group { margin-top: 16px; }
     .act-group:first-of-type { margin-top: 8px; }
-    .act-k, .review-h {
+    .act-k {
       /* same pinned label box as .side-h — these are the same kind of thing,
          and before this one was a 2px-margin inline span and the other a
          12px-margin block, which is most of why the group spacings came out

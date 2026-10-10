@@ -1947,7 +1947,7 @@ for (const lang of CONTENT_LANGS) {
     const tracked = [...stripped.matchAll(/letter-spacing:\s*([^;]+);/g)].map((m) => m[1].trim()).filter((v) => !/^0(px)?$/.test(v));
     assert(tracked.length <= 1,
       "no tracking but the frame's coordinates (" + tracked.join(", ") + ")");
-    for (const sel of [".side-h", ".act-k, .review-h"]) {
+    for (const sel of [".side-h", ".act-k"]) {
       const r = new RegExp("\\n\\s*" + sel.replace(/[.]/g, "\\.") + " \\{([\\s\\S]*?)\\}").exec(stripped);
       assert(r && /font-size:\s*0\.8125rem/.test(r[1]) && /font-weight:\s*600/.test(r[1]) && /color:\s*var\(--muted\)/.test(r[1]),
         sel + " is the section heading: 13/600 in the muted ink");
@@ -1982,9 +1982,10 @@ for (const lang of CONTENT_LANGS) {
       const p = new RegExp("--" + theme + "-panel:\\s*([^;]+);").exec(stripped);
       assert(p && p[1].trim() === v[1].trim(), theme + ": …the same raised surface a dialog is");
       const a = new RegExp("--" + theme + "-accent:\\s*([^;]+);").exec(stripped);
-      const pf = new RegExp("--" + theme + "-primary-from:\\s*([^;]+);").exec(stripped);
-      const pt = new RegExp("--" + theme + "-primary-to:\\s*([^;]+);").exec(stripped);
-      assert(a && pf && pt && pf[1] === a[1] && pt[1] === a[1], theme + ": one accent — the primary is the accent (" + (a && a[1]) + ")");
+      // 10.0 M0: one accent, and no second name for it — --primary-from/-to
+      // and --on-primary were declared in all four themes and read by nothing
+      assert(a && !new RegExp("--" + theme + "-(primary-from|primary-to|on-primary):").test(stripped),
+        theme + ": one accent, with no second set of names for it (" + (a && a[1]) + ")");
     }
   }
 
@@ -2372,7 +2373,7 @@ for (const lang of CONTENT_LANGS) {
     assert(blk, theme + " theme block found");
     // layer 2, the whole of what a theme declares
     for (const v of ["--surface", "--surface-raised", "--ink", "--ink-muted",
-                     "--accent", "--danger", "--control", "--line", "--primary-from"]) {
+                     "--accent", "--danger", "--control", "--line"]) {
       assert(blk[1].includes(v + ":"), theme + " declares the " + v + " role");
     }
     // …and nothing from layer 3: a theme that names a component variable is a
@@ -5705,23 +5706,57 @@ for (const lang of CONTENT_LANGS) {
     // 7.2: the 棋谱库 markup is built in library-ui.js now, so the app's
     // source alone no longer accounts for every class it wears
     // 7.9: and fit-row.js sets the panel's width class (.side-wide)
-    const appC = appSrc + fs.readFileSync(path.join(root, "src/web/js/library-ui.js"), "utf8") +
-      fs.readFileSync(path.join(root, "src/web/js/fit-row.js"), "utf8");
-    // class selectors the stylesheet defines, minus state/modifier suffixes
-    const defined = new Set([...cssC.matchAll(/^\s*\.([a-z][a-z0-9-]*)/gm)].map((m) => m[1]));
+    // 10.0 M0: every hand-written module, not app.js and two others — the
+    // classes a page wears are set all over src/web/js now
+    const appC = [];
+    const walkJs = (dir) => {
+      for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, f.name);
+        if (f.isDirectory()) walkJs(p);
+        else if (/\.js$/.test(f.name) && !/^(bundle|chunk-|engine-src)/.test(f.name)) appC.push(fs.readFileSync(p, "utf8"));
+      }
+    };
+    walkJs(path.join(root, "src/web/js"));
+    const jsC = appC.join("\n");
+    // 10.0 M0: every class a selector names, wherever it stands in the
+    // selector — it used to read only the ones that began a line (346 of
+    // 435), and .review-h, the second of a pair, had outlived its markup
+    const sels = [];
+    {
+      let buf = "";
+      for (const ch of cssC.replace(/\/\*[\s\S]*?\*\//g, "")) {
+        if (ch === "{") { sels.push(buf); buf = ""; } else if (ch === "}" || ch === ";") buf = ""; else buf += ch;
+      }
+    }
+    const defined = new Set();
+    for (const sel of sels) if (!/^\s*@/.test(sel)) for (const m of sel.matchAll(/\.([a-zA-Z][\w-]*)/g)) defined.add(m[1]);
+    // classes put together at run time: the grade on a move (" g-" + grade,
+    // app.js) and a retry's verdict ("is-" + verdict, review/retry.js)
+    const BUILT = [[/^g-/, /" g-" \+/], [/^is-(right|wrong)$/, /"is-" \+ r\.verdict/]];
     const orphans = [];
     for (const c of defined) {
-      // a word-boundary search of the markup and the app: classes are set as
-      // literals, as parts of a multi-class string ("mlnum num"), and as
-      // concatenations ("mvtag " + tier), so anything narrower reports rules
-      // that are very much in use
-      const used = new RegExp("\\b" + c.replace(/-/g, "\\-") + "\\b");
-      if (!used.test(htmlC) && !used.test(appC)) orphans.push(c);
+      // a search of the markup and the modules: classes are set as literals,
+      // as parts of a multi-class string ("mlnum num"), and as concatenations
+      // ("mvtag " + tier), so anything narrower reports rules that are very
+      // much in use. A hyphen is part of a class name, so it bounds the match.
+      const used = new RegExp("(?<![\\w-])" + c.replace(/-/g, "\\-") + "(?![\\w-])");
+      if (used.test(htmlC) || used.test(jsC)) continue;
+      if (BUILT.some(([name, maker]) => name.test(c) && maker.test(jsC))) continue;
+      orphans.push(c);
     }
     for (const c of orphans) console.error("  no markup uses ." + c);
     assert(orphans.length === 0,
       "every class the stylesheet defines is worn by something" +
       (orphans.length ? " — " + orphans.length + " orphan(s)" : " (" + defined.size + " classes)"));
+    // 10.0 M0: and every custom property it declares is read — by a var()
+    // in the sheet, or by the app (getPropertyValue / setProperty / markup)
+    const cssNoComments = cssC.replace(/\/\*[\s\S]*?\*\//g, "");
+    const declared = new Set([...cssNoComments.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
+    const readVar = new Set([...cssNoComments.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]));
+    const unread = [...declared].filter((v) => !readVar.has(v) && !jsC.includes(v) && !htmlC.includes(v));
+    for (const v of unread) console.error("  nothing reads " + v);
+    assert(unread.length === 0, "every custom property the stylesheet declares is read (" + declared.size + " declared)" +
+      (unread.length ? " — unread: " + unread.join(", ") : ""));
   }
 
   // --- the board's marks sit on one scale ----------------------------------
