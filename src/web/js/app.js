@@ -24,7 +24,7 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
 import { createA11y } from "./a11y.js";
 import { createNativeCommands } from "./native-commands.js";
 import { createLibraryUI } from "./library-ui.js";
-import { LOOK_DEFAULT, migrateLook } from "./look.js";
+import { LOOK_DEFAULT, readLook } from "./look.js";
 import { createRepertoireUI } from "./repertoire-ui.js";
 import { createSettingsUI } from "./settings-ui.js";
 import { createTrainerContent } from "./trainer/content.js";
@@ -33,6 +33,7 @@ import { createPuzzlesUI } from "./trainer/puzzles.js";
 import { createTodayUI } from "./trainer/today.js";
 import { createMePage } from "./me-page.js";
 import { createShell } from "./shell.js";
+import { createTodayPage } from "./today-page.js";
 import { createPrefsUI } from "./prefs-ui.js";
 import { ChessReview } from "./review.js";
 import { createAnalysis } from "./review/analysis.js";
@@ -133,9 +134,8 @@ import { loadChunk } from "./chunk.js";
     showStorageFault();
     toast(t("msg.storage.failed"), "fault");
   });
-  // One pass over storage, before anything reads from it: migrations get to
-  // see a whole profile, and no later reader has to wonder whether some other
-  // key moved under it.
+  // One pass over storage, before anything reads from it: no later reader
+  // has to wonder whether some other key moved under it.
   Persist.load();
 
   const canvas = document.getElementById("board");
@@ -338,14 +338,12 @@ import { loadChunk } from "./chunk.js";
       progress: null,
       /** 今天的训练 — the active sitting {steps, i, before}, or null (planner.js) */
       daily: null,
-      /** active difficulty filter: "all" | "easy" | "mid" | "hard" */
-      puzzleTierFilter: "all",
       /** editor runtime: {board, turn, castling, brush} | null */
       editor: null,
       coachPending: null,
       drawOfferPending: false,
       /** 7.7 §4: the ending whose result card was put away with ✕ */
-      goDismissed: null,
+      goDismissed: null, goAch: null,
       goAnnounced: null,
       /** 7.7 §4: puzzles solved clean in a row, this sitting */
       pzStreak: 0,
@@ -392,12 +390,13 @@ import { loadChunk } from "./chunk.js";
       textSize: "m",
       /** v8-0-plan A3: the look, four answers (look.js) — first-run values */
       ...LOOK_DEFAULT,
-      /** the shell palette the look resolves to right now (look.js shellFor) */
-      themeId: "wood",
       /** pvp: flip the board to face the side to move after every move */
       autoFlipPvp: false,
-      /** which panel tab is showing: "play" | "setup" | "record" */
-      sideTab: "play",
+      /** 9.0 S5: the settings page's open category (shell.js SETTING_CATS) */
+      setCat: "general",
+      /** 9.0 S3: 训练's last segment (shell.js TRAIN_SEGS), and 名局 read or guessed */
+      trainSeg: "course",
+      classicMode: "read",
       /** UI language id (see i18n.js); lesson/puzzle content stays Chinese */
       langId: null,  // filled in below, where it can first be computed
       /** Is the app in front of somebody? Kept by the app:activate/deactivate
@@ -865,19 +864,6 @@ import { loadChunk } from "./chunk.js";
     return sf ? new Chess(sf) : new Chess();
   }
 
-  /** Reset `game` itself to its starting position, keeping any FEN header. */
-  function resetGameToStart() {
-    // whatever was being previewed belonged to the game that just ended
-    if (store.ui.preview) clearPreview();
-    const sf = startFen();
-    if (sf) {
-      gameLoad(sf);
-      game.header("SetUp", "1", "FEN", sf);
-    } else {
-      gameReset();
-    }
-  }
-
   /**
    * The tree node for ply `i` of the game on the board, or null when the
    * line and chess.js are not in step (mid-replay inside a batch) — the
@@ -1191,7 +1177,7 @@ import { loadChunk } from "./chunk.js";
     }
     el.replaceChildren();
     const text = document.createElement("span");
-    text.textContent = t("msg.engine.bootFailed");
+    text.textContent = text.title = t("msg.engine.bootFailed");
     const retry = document.createElement("button");
     retry.type = "button";
     retry.className = "toast-action";
@@ -1260,6 +1246,8 @@ import { loadChunk } from "./chunk.js";
    *     is room there, and only a window with neither lets it overlap, at the
    *     top, as little as it can.
    */
+  // 9.0 M1: the result bar holds the bottom strip's place — not under a toast
+  const barUp = () => { const c = document.getElementById("go-card"); return !!c && !c.hidden && !appEl.classList.contains("pv-wide"); };
   function placeToast(el) {
     const board = document.getElementById("board");
     const wrap = document.getElementById("board-wrap");
@@ -1280,9 +1268,11 @@ import { loadChunk } from "./chunk.js";
     const cx = w.left + w.width / 2, half = el.offsetWidth / 2;
     const onSheet = (y) => !!s && s.width > 0 && a.top + y < s.bottom && a.top + y + h > s.top &&
       cx - half < s.right && cx + half > s.left;
-    let top = GAP;
+    // 9.0 V3: the top bar's row is gone on a wide window — over the top
+    // strip, then, ending where the board begins
+    let top = Math.max(0, Math.min(GAP, b.top - a.top - h));
     if (a.bottom - w.bottom >= h + LOW + GAP && !onSheet(a.height - LOW - h)) top = a.height - LOW - h;
-    else if (b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP && !onSheet(b.bottom - a.top + GAP)) top = b.bottom - a.top + GAP;
+    else if (b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP && !onSheet(b.bottom - a.top + GAP) && !barUp()) top = b.bottom - a.top + GAP;
     el.style.top = Math.round(top) + "px";
     el.style.left = Math.round(w.left - a.left + w.width / 2) + "px";
   }
@@ -1449,9 +1439,8 @@ import { loadChunk } from "./chunk.js";
       if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
       store.ui.bgWorker = s.bgWorker === true; // v8-1-plan F4: a second engine for passes, off unless set (§8.7)
       if (["s", "m", "l"].includes(s.textSize)) store.ui.textSize = s.textSize;
-      // v8-0-plan A3: 7.x's themeId / followSystem / pieceSet, or 8.0's four
-      // fields — migrateLook reads either
-      Object.assign(store.ui, migrateLook(s));
+      // v8-0-plan A3: the look's four fields
+      Object.assign(store.ui, readLook(s));
       if (typeof s.flipped === "boolean") store.game.flipped = s.flipped;
       if (["ai", "pvp", "learn", "puzzle"].includes(s.mode)) store.session.mode = s.mode;
       // DIFF_IDS, not a second copy of it — this list was written out by hand
@@ -1464,8 +1453,10 @@ import { loadChunk } from "./chunk.js";
       if (typeof s.coachOn === "boolean") store.session.coachOn = s.coachOn;
       if (typeof s.autoFlipPvp === "boolean") store.ui.autoFlipPvp = s.autoFlipPvp;
       if (I18n && typeof s.langId === "string") store.ui.langId = I18n.setLang(s.langId);
-      if (["all", "easy", "mid", "hard"].includes(s.puzzleTier)) store.session.puzzleTierFilter = s.puzzleTier;
-      if (["play", "setup"].includes(s.sideTab)) store.ui.sideTab = s.sideTab;
+      if (typeof s.setCat === "string") store.ui.setCat = s.setCat;
+      if (typeof s.liveOn === "boolean") store.session.liveOn = s.liveOn;
+      if (typeof s.trainSeg === "string") store.ui.trainSeg = s.trainSeg;
+      if (s.classicMode === "guess") store.ui.classicMode = "guess";
       // v8-0-plan A1: the view and the last playing mode; shell.js vets both
       Object.assign(store.ui, { view: s.view, playMode: s.playMode });
       if (PERSONA_IDS.includes(s.personaId)) store.session.personaId = s.personaId;
@@ -1473,21 +1464,19 @@ import { loadChunk } from "./chunk.js";
   }
   function saveSettings() {
     try {
-      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, themeId: store.ui.themeId, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, puzzleTier: store.session.puzzleTierFilter, sideTab: store.ui.sideTab, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
+      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, setCat: store.ui.setCat, liveOn: store.session.liveOn, trainSeg: store.ui.trainSeg, classicMode: store.ui.classicMode, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
         volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv, bgWorker: store.ui.bgWorker === true,
         textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
-        // v8-0-plan A3: the look; themeId and followSystem still written, for
-        // a 7.x build opening this profile (it reads those two and not these)
+        // v8-0-plan A3: the look
         appearance: store.ui.appearance, boardId: store.ui.boardId, boardFrame: store.ui.boardFrame,
-        followSystem: store.ui.appearance === "system",
         soundSet: store.ui.soundSet, explorer: store.ui.explorer }));
     } catch (_) {}
   }
   function saveGame() {
     try {
-      // the PGN is the mainline, whatever line the cursor is on: it is what
-      // a save written before 6.0 held, and the tree beside it carries the
-      // rest — variations, comments, shapes and the line itself (Q2.1)
+      // the PGN is the mainline, whatever line the cursor is on, and the
+      // tree beside it carries the rest — variations, comments, shapes and
+      // the line itself (Q2.1)
       const payload = { v: 1, pgn: mainlinePgn(), savedAt: Date.now() };
       payload.tree = ChessTree.serialize(store.game.tree);
       payload.line = store.game.line.slice();
@@ -1535,9 +1524,8 @@ import { loadChunk } from "./chunk.js";
   }
 
   /**
-   * The tree of a save, if it has one and it still describes this game. A
-   * save from before 6.0 has none, and the tree the load just built from
-   * its PGN is the whole of what it knew.
+   * The tree of a save, if it still describes this game; otherwise the tree
+   * the load just built from its PGN stands.
    */
   function restoreTree(s) {
     if (s.imported === true) store.game.imported = true;
@@ -1577,9 +1565,7 @@ import { loadChunk } from "./chunk.js";
         store.game.timeControl = s.clock.tc;
         store.game.clock = { w: Math.max(0, s.clock.w), b: Math.max(0, s.clock.b) };
         store.game.flagFall = s.clock.flag === "w" || s.clock.flag === "b" ? s.clock.flag : null;
-        // an archive from before 7.0 has no `started`; a game with moves in it
-        // was already ticking, so restoring it must not hand out a free move
-        store.game.clockStarted = typeof s.clock.started === "boolean" ? s.clock.started : sanHistory().length >= 1;
+        store.game.clockStarted = s.clock.started === true;
       }
       if (s.resigned === "w" || s.resigned === "b") store.game.resigned = s.resigned;
       if (s.drawAgreed === true) store.game.drawAgreed = true;
@@ -2061,7 +2047,7 @@ import { loadChunk } from "./chunk.js";
   // v8-0-plan F4: the analysis — the pass and what it leaves behind — lives
   // in review/analysis.js. The panel and the library are made below it.
   const Analysis = createAnalysis({
-    store, game, Persist, t, tf, toast, sync, sanHistory, baseGame, bootEngine,
+    store, game, Persist, t, tf, toast, sync, sanHistory, baseGame, bootEngine, saveSettings,
     setAnalyzeUI: () => setAnalyzeUI(), stopLiveAnalysis,
     LibraryUI: { adoptBoardAnalysis: (...args) => LibraryUI.adoptBoardAnalysis(...args) },
     boardDrillSource, saveMines, savePuzzleState, saveProgress,
@@ -2089,12 +2075,13 @@ import { loadChunk } from "./chunk.js";
   const { renderMistakeList, renderWhyLine, retryModel, retryClick, renderRetry } = Retry;
   // v8-0-plan A4: the key moments and 从错误中学 live in review/moments.js, a chunk
   const Moments = createMomentsLazy({ doc: document, store, t, tf, tdot, sideName, analysisFor, sanHistory, startFen, boardMoveNo,
-    setViewIndex, writeSan, inModal, Retry });
+    setViewIndex, writeSan, inModal, Retry, // 9.0 M2: the summary speaks as the game's opponent
+    oppName: () => { const o = store.game.opp; return OppUI.strip(o ? o.diff : store.session.difficulty, o ? o.style : store.session.personaId).name; } });
 
   // v8-0-plan F4: the eval gauge, the curve and the marks' colours live in
   // review/eval-graph.js
   const EvalGraph = createEvalGraph({
-    doc: document, store, t, tf, setText, analysisFor, setViewIndex, verboseHistory, boardMoveNo, startFen,
+    doc: document, store, t, tf, setText, analysisFor, setViewIndex, verboseHistory, boardMoveNo, startFen, gameAt,
   });
   const { judgeColours, drawEvalBar, drawEvalCurve } = EvalGraph;
 
@@ -2115,7 +2102,7 @@ import { loadChunk } from "./chunk.js";
   // v8-0-plan F4 (M4): how the game ended and the result card live in
   // game-end.js
   const GameEnd = createGameEnd({
-    store, t, tf, sideName, game, el, setText, avail, toast, sanHistory, analysisFor,
+    store, t, tf, sideName, game, el, setText, avail, toast, sanHistory, analysisFor, Icons,
     appGameOver, resultFromFile: () => resultFromFile(), gameResultToken: () => gameResultToken(), timeoutIsDraw, autoDrawReason, isLive, kingSquare, onMainline,
     onEnding: (end, show) => { OppUI.syncOffer(!!end); if (show) OppUI.paintCard(end); },
   });
@@ -2382,10 +2369,8 @@ import { loadChunk } from "./chunk.js";
   const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;
   const closeDiagnosis = () => LibraryUI.closeDiagnosis();
   const closeLibList = () => LibraryUI.closeLibList();
-  const deepenLibraryGame = (id) => LibraryUI.deepenLibraryGame(id);
   const importPgnToLibrary = (text, label) => LibraryUI.importPgnToLibrary(text, label);
   const libNamesFrom = (text) => LibraryUI.libNamesFrom(text);
-  const loadFromLibrary = (id) => LibraryUI.loadFromLibrary(id);
   const loadLibraryEntry = (entry) => LibraryUI.loadLibraryEntry(entry);
   const openDiagnosis = () => LibraryUI.openDiagnosis();
   const openLibList = (pick, opts) => LibraryUI.openLibList(pick, opts);
@@ -2399,8 +2384,8 @@ import { loadChunk } from "./chunk.js";
     bookNow, drawRatingTrend, el, loadStats, motifKeyOf, owedNow, puzzlesInCat, ratingLabel,
     ratingTip, runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
-    sync, t, tf, toast,
-    Shell: { go: (id) => Shell.go(id) },
+    sync, t, tf, toast, pieceSrc: (k) => BoardView.pieceSrc(k), game, isOver: () => appGameOver(), isLive: () => isLive(),
+    Shell: { go: (id) => Shell.go(id), openTrain: (g) => Shell.openTrain(g) },
   });
   const {
     renderPuzzleTally, libPlayedAt, dailySignals, dailyStepLabel, syncDailyUI,
@@ -2474,7 +2459,6 @@ import { loadChunk } from "./chunk.js";
     // which chair to sit in is `seatRepSide`'s rule, and startPuzzles() below
     // applies it — one rule, one place
     store.session.puzzleState.cat = due ? "repdue" : "rep";   // v8-1-plan T3: 复习到期的着
-    store.session.puzzleTierFilter = "all";
     savePuzzleState();
     store.session.mode = "puzzle";
     saveSettings();
@@ -2680,7 +2664,8 @@ import { loadChunk } from "./chunk.js";
       Persist.setJson("achievements", { seen: Array.from(store.session.achSeen) });
       // one toast per unlock, each shown for its whole life before the next
       // (v8-0-plan A5: with the badge's picture, and long enough to read)
-      fresh.forEach((r, i) => setTimeout(() => toast(tdot(t("ach.unlocked"), r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name), "ach", { icon: r.ach.icon }), i * TOAST_MS.ach));
+      // 9.0 M1: one unlocked by the ending is a badge on the result bar
+      (GameEnd.takeAch(fresh[0].ach) ? fresh.slice(1) : fresh).forEach((r, i) => setTimeout(() => toast(tdot(t("ach.unlocked"), r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name), "ach", { icon: r.ach.icon }), i * TOAST_MS.ach));
     }
     renderAchievements();
     renderRecordEntry();
@@ -3016,8 +3001,8 @@ import { loadChunk } from "./chunk.js";
     // move 20. "Before the first move" is the top of the list.
     if (!cur) el.scrollTop = 0;
     else if (cur.scrollIntoView) {
-      // scroll only within the list container (by the boxes: a cell's offsetParent is its row, v8-0-plan A2)
-      el.scrollTop += cur.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientHeight / 2;
+      // within the list only (by the boxes, v8-0-plan A2); past the end is asked for as the end — WebKit clamped `+=` short of it (9.0)
+      const want = el.scrollTop + cur.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientHeight / 2; el.scrollTop = want >= el.scrollHeight - el.clientHeight - 1 ? el.scrollHeight : Math.max(0, want);
     }
   }
 
@@ -3140,19 +3125,22 @@ import { loadChunk } from "./chunk.js";
       return store.session.humanColor === "w" ? { w: you, b: engine } : { w: engine, b: you };
     }
     if (mode === "learn") {
-      // A lesson that is not a drill has no opponent: that strip's place is
-      // kept (so the board does not move between modes) and left empty.
+      // A lesson that is not a drill has no opponent: 9.0 V3 — that strip
+      // names the lesson instead of standing empty over the board
       const drill = !!(store.session.learn && curTask().type === "drill");
+      const title = (el("lesson-title") || {}).textContent || "";
       return {
         w: { icon: "graduation-cap", name: t("role.student"), level: "" },
-        b: drill ? { icon: "bot", name: t(store.session.learn.eg ? "eg.engine" : "role.sparring"), level: "" } : null,
+        b: drill ? { icon: "bot", name: t(store.session.learn.eg ? "eg.engine" : "role.sparring"), level: "" }
+          : title ? { icon: "book-open", name: title, level: "", label: true } : null,
       };
     }
     if (mode === "puzzle") {
       // black drills swap the chairs: the book plays White, you answer
       const asBlack = !!(store.session.puzzle && store.session.puzzle.p.side === "b");
       const you = { icon: "user", name: t(asBlack ? "role.youB" : "role.you"), level: "" };
-      const book = { icon: "puzzle", name: t("role.puzzle"), level: "" };
+      const pr = store.session.puzzle ? PuzzlesUI.puzzleRatingOf(store.session.puzzle.p) : null;
+      const book = { icon: "puzzle", name: t("role.puzzle"), level: pr != null ? String(pr) : "" };
       return asBlack ? { w: book, b: you } : { w: you, b: book };
     }
     // Two players: a loaded game names its players — the file's [White] /
@@ -3217,7 +3205,8 @@ import { loadChunk } from "./chunk.js";
       setIcon(el("av-" + side), p.icon);
       setText(el(side === "w" ? "white-role" : "black-role"), p.name);
       setText(el(side === "w" ? "white-level" : "black-level"), p.level);
-      const active = !over && !done && !store.session.editor && !!g && g.turn() === side &&
+      strip.classList.toggle("is-label", !!p.label);
+      const active = !p.label && !over && !done && !store.session.editor && !!g && g.turn() === side &&
         !(mode === "learn" && !trainerG);
       strip.classList.toggle("is-active", active);
       // the engine is the one that thinks; its disc breathes while it does
@@ -3360,7 +3349,7 @@ import { loadChunk } from "./chunk.js";
     for (const group of document.querySelectorAll(".act-group")) {
       // a status line (the engine being down) keeps its group on screen even
       // when it has taken every button with it
-      const live = [...group.querySelectorAll("button, [role=\"status\"]")].some((b) => !b.hidden);
+      const live = [...group.querySelectorAll("button, [role=\"status\"]")].some((b) => { for (let e = b; e && e !== group; e = e.parentElement) if (e.hidden) return false; return true; });
       // the review group waits behind its key during an engine game (7.7 §3)
       group.hidden = !live || (group.id === "review-actions" && reviewOptional() && !store.ui.reviewOpen);
     }
@@ -3523,7 +3512,7 @@ import { loadChunk } from "./chunk.js";
     // time anyone wonders where 分析 went (5.1, work package E)
     const engineDown = !ChessEngine || !!store.session.engineDown;
     avail(el("an-run"), !engineDown && (hasGame || store.session.analyzing));
-    avail(el("an-deep"), !engineDown && hasGame && !store.session.analyzing);
+    avail(el("an-more"), !engineDown && hasGame && !store.session.analyzing);
     // …said exactly where 分析 would have stood: once there is a game to
     // analyse. An empty board has nothing for the engine to do yet, and a
     // heading over one line of apology is still a heading over nothing.
@@ -3589,8 +3578,9 @@ import { loadChunk } from "./chunk.js";
       : over && unanalysed ? "an-run" : null;
     for (const b of document.querySelectorAll(".act-btn.primary")) {
       // 7.9 §4a: the record page's empty library spends its own fill, on a
-      // tab of its own (library-ui.js renderLibrary) — not this function's
-      if (b.id !== wants && !b.closest(".page")) b.classList.remove("primary");
+      // tab of its own (library-ui.js renderLibrary) — not this function's;
+      // nor is 为你出一题, the puzzle picker's one fill (9.0 S3)
+      if (b.id !== wants && !b.closest(".page, .pz-hero")) b.classList.remove("primary");
     }
     if (wants) {
       const b = el(wants);
@@ -3906,7 +3896,7 @@ import { loadChunk } from "./chunk.js";
     t, tf, sideName, game, store, gameUndo, gameReset, switchLine, sanHistory, isLive, baseGame,
     clearPreview, toast, confirmNative, saveSettings, saveGame, OppUI, invalidateEngine, retryEngine,
     engineOut, engineDownToast, maybeEngineTurn, tcTag, resetClocks, learnUndo, evalScalar, newRecordId,
-    saveStats, loadStats, renderStats, afterPress, checkNewAchievements, timeoutIsDraw, ruleTerminated,
+    saveStats, loadStats, renderStats, checkNewAchievements, timeoutIsDraw, ruleTerminated,
     claimableDrawReason, naturalGameOver, appGameOver, el, playEnding, sync, syncSettingsUI, syncAutoFlip,
     goLive, stopEditor, refusePgnEdit, Shell: { toBoard: () => Shell.toBoard() }, switchMode,
   });
@@ -4198,8 +4188,7 @@ import { loadChunk } from "./chunk.js";
    * A slot's one-line description, localised *at render time*.
    *
    * Slots store the mode and difficulty ids rather than a finished label, so a
-   * game saved in Chinese still reads as English after a language switch;
-   * `slot.label` is only the fallback for slots written before 1.6.
+   * game saved in Chinese still reads as English after a language switch.
    */
   /**
    * A slot in two lines, the same shape the game-history rows use: what kind
@@ -4217,7 +4206,7 @@ import { loadChunk } from "./chunk.js";
    */
   function slotWhat(slot) {
     if (!slot) return "";
-    if (!slot.mode) return slot.label || "";
+    if (!slot.mode) return "";
     return tdot(t(slot.mode === "ai" ? "mode.ai" : "mode.pvp"), slot.mode === "ai" && diffName(slot.diff));
   }
   function slotWhen(slot) {
@@ -4450,10 +4439,10 @@ import { loadChunk } from "./chunk.js";
    * The same media query the stylesheet uses, asked of the same browser —
    * not a number copied into JS that can drift from the one in the CSS.
    * scripts/test-chess.mjs asserts the two strings are identical.
-   * 7.4 §3: every portrait window up to 820px, square included — in the
+   * 7.4 §3: every portrait window up to 820px (9.0 M3: 900), square included — in the
    * near-square ones the sheet does lie over the board's lower part.
    */
-  const SHEET_QUERY = "(max-aspect-ratio: 1/1) and (max-width: 820px)";
+  const SHEET_QUERY = "(max-aspect-ratio: 1/1) and (max-width: 900px)";
   function panelCoversBoard() {
     return typeof window.matchMedia === "function" && window.matchMedia(SHEET_QUERY).matches;
   }
@@ -4723,7 +4712,7 @@ import { loadChunk } from "./chunk.js";
   };
   document.getElementById("toggle-panel").onclick = togglePanel;
   // 7.9 §1b equal action cells; v8-0-plan A2 the play view stretches with its window
-  watchPlayLayout({ app: appEl, view: appEl.querySelector(".stage"), side: el("side"), list: el("move-list"), strip: el("move-strip"), opening: el("opening-line"), infoOpening: el("info-opening") });
+  watchPlayLayout({ app: appEl, view: appEl.querySelector(".stage"), side: el("side"), grip: el("sheet-grip"), close: () => setPanelOpen(false), list: el("move-list"), strip: el("move-strip"), opening: el("opening-line"), infoOpening: el("info-opening") });
   const moreBtn = document.getElementById("more-tools");
   if (moreBtn) {
     moreBtn.onclick = () => {
@@ -5027,10 +5016,10 @@ import { loadChunk } from "./chunk.js";
 
   // the result card (7.7 §4)
   document.getElementById("go-analyse").onclick = () => { analyzeGame(SCAN_BUDGET); };
-  // v7-8-plan §4: both open the new-game dialog — 换个对手 no longer sends
-  // you to the settings page to find the opponent in a fold
+  // v7-8-plan §4: the new-game dialog, the last choices in it — with the
+  // rung the result line suggested, if it suggested one (9.0 M1: the bar's
+  // second button, 换个对手, was the same dialog with that one change)
   document.getElementById("go-again").onclick = () => { requestNewGame({ again: true }); };
-  document.getElementById("go-switch").onclick = () => { requestNewGame({ switchOpponent: true }); };
   document.getElementById("idle-new").onclick = () => { requestNewGame({ switchOpponent: store.session.mode === "ai" }); };
   {
     const ngModal = el("newgame-modal");
@@ -5210,27 +5199,28 @@ import { loadChunk } from "./chunk.js";
     },
   });
 
-  // v8-0-plan A1: the preferences window (prefs-ui.js), with the A3 look
-  // pickers (appearance-ui.js) mounted in it; a pick goes to settings-ui.js
+  // 9.0 S5: the settings page's look pickers and sync switch (prefs-ui.js);
+  // a pick goes to settings-ui.js
   const PrefsUI = createPrefsUI({ doc: document, t, getLook: () => store.ui, setLook: (p) => SettingsUI.applyLook(p), pieceSvgs: BoardView.setSvgs, netSync: { store, Persist, tf, lib: LibraryUI } });
   PrefsUI.wire();
   // v8-0-plan F4: the settings page (settings-ui.js) — its view, the look
   // and the handlers behind its controls
   const SettingsUI = createSettingsUI({
-    doc: document, store, appEl, t, el, setText, DIFF_NAMES,
+    doc: document, store, appEl, t, setText,
     saveSettings, saveGame, toast, sync, draw, resetClocks,
     invalidateEngine, maybeEngineTurn, syncAutoFlip, applyLanguage,
     setAnalyzeUI, renderReview, drawEvalCurve, drawEvalBar, syncLook: PrefsUI.syncLook, onPaint: () => OppUI.paint(),
   });
   SettingsUI.wire();
   // v8-0-plan A1: the rail, the home page and the pages (shell.js)
-  const Shell = createShell({
-    doc: document, store, appEl, t, tf, switchMode, saveSettings, sanHistory,
-    requestNewGame: () => requestNewGame(), openPrefs: () => PrefsUI.open(), gameOver: () => appGameOver(),
-    onMe: () => MePage.onShow(), recommendation, owed: owedNow, dailyStepLabel, dailyPlan: () => Planner.plan(dailySignals()).steps, dailyJump: (step) => dailyJump(step),
-    nextLesson: () => { const i = LESSONS.findIndex((L) => !store.session.learnState.done[L.id]); return i < 0 ? null : { i, n: i + 1, title: lessonText(LESSONS[i]).title }; },
-  });
+  const Shell = createShell({ doc: document, store, appEl, switchMode, saveSettings, onSettings: (c) => PrefsUI.onCat(c),
+    onHome: () => { TodayPage.render(); syncDailyUI(); }, onMe: () => MePage.onShow(), learnSeg: () => LessonsUI.learnSeg(), openSeg: (g) => LessonsUI.openSeg(g) });
   Shell.wire();
+  // 9.0 S1: 今天 — the page around the coach's card (today-page.js)
+  const TodayPage = createTodayPage({ doc: document, store, t, tf, tdot, Chess, pieceSrc: (k) => BoardView.pieceSrc(k), LESSONS, lessonText, Endgames: LessonsUI.Endgames,
+    CLASSICS: LessonsUI.CLASSICS, classicText: LessonsUI.classicText, loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText: () => ratingLabel(),
+    drawRatingTrend, Shell, requestNewGame: () => requestNewGame() });
+  TodayPage.wire();
   // v8-0-plan C3: 开局浏览器 — the key, the panel's state; the panel itself is a chunk
   createExplorerLazy({ store, t, tf, tdot, viewGame, movePath, startClockIfIdle, saveSettings, library: LibraryUI, repertoire: RepUI, saved: Persist.read("settings").value,
     toBoard: () => { Shell.go("play"); setSideTab("play"); } });
@@ -5639,7 +5629,6 @@ import { loadChunk } from "./chunk.js";
     Dlg.register(keysModal, closeKeyHelp);
     Dlg.register(noteModal, closeNoteModal);
     Dlg.register(aboutModal, () => Dlg.close(aboutModal));
-    Dlg.register(document.getElementById("prefs-modal"), () => PrefsUI.close());
   }
   wireDialogs();
   // the markup names its icons (<span data-icon="…">); draw them before the
@@ -5670,7 +5659,6 @@ import { loadChunk } from "./chunk.js";
   }
   const savedPanel = Persist.get("panelOpen");
   setPanelOpen(savedPanel === "1");
-  setSideTab(store.ui.sideTab);
   Shell.restore();
   const resumed = tryLoadSave();
   if (resumed) toast(t("msg.save.restored"));

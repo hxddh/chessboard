@@ -29,6 +29,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
 
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+import { seedLibrary } from "./lib/library-view.mjs";
 import { read as readMeasured, record } from "./measurements.mjs";
 // the app's own rules engine, for reading an export back the way a reader would
 import { Chess } from "../src/web/js/chess.js";
@@ -61,8 +62,8 @@ console.log("引擎:", ENGINE);
 async function freshContext() {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   return ctx;
@@ -110,7 +111,7 @@ const PLACEMENT = STUDY.split(" ")[0];
   await page.click("#fen-load");
   await page.waitForTimeout(500);
 
-  const saved = await page.evaluate(() => localStorage.getItem("chess.v1.save"));
+  const saved = await page.evaluate(() => localStorage.getItem("chess.save"));
   const savedPgn = saved ? JSON.parse(saved).pgn : "";
   assert(/\[FEN "/.test(savedPgn), "loading a FEN writes an autosave that names the position");
   assert(!/\d+\.\s/.test(savedPgn), "…and it has no movetext yet, which is the whole difficulty");
@@ -118,7 +119,7 @@ const PLACEMENT = STUDY.split(" ")[0];
   // restart: a new page against the same storage is exactly what a relaunch is
   await page.close();
   const second = await open(ctx);
-  const back = await second.page.evaluate(() => localStorage.getItem("chess.v1.save"));
+  const back = await second.page.evaluate(() => localStorage.getItem("chess.save"));
   const backPgn = back ? JSON.parse(back).pgn : "";
   assert(/\[FEN "/.test(backPgn),
     "the position is still in the autosave after a restart — got " + JSON.stringify(backPgn));
@@ -153,7 +154,7 @@ const PLACEMENT = STUDY.split(" ")[0];
   await page.close();
   const second = await open(ctx);
   const moves = await second.page.evaluate(() => {
-    const raw = localStorage.getItem("chess.v1.save");
+    const raw = localStorage.getItem("chess.save");
     return raw ? JSON.parse(raw).pgn : "";
   });
   assert(/e4/.test(moves), "a move played into a custom position survives the restart");
@@ -178,7 +179,7 @@ const PLACEMENT = STUDY.split(" ")[0];
   await page.click("#slots-open");
   await page.click("#slots-list button[data-save='0']");
   await page.waitForTimeout(300);
-  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.slots") || "{}"));
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.slots") || "{}"));
   const slot0 = stored && stored.slots && stored.slots[0];
   assert(!!slot0, "a position with no moves yet can be parked in a slot");
   assert(slot0 && slot0.pgn.includes(STUDY), "…and the slot holds the position itself");
@@ -214,7 +215,7 @@ const PLACEMENT = STUDY.split(" ")[0];
   await page.waitForTimeout(400);
   await page.close();
   const second = await open(ctx);
-  const pgn = await second.page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.save") || "{}").pgn || "");
+  const pgn = await second.page.evaluate(() => JSON.parse(localStorage.getItem("chess.save") || "{}").pgn || "");
   assert(/1\. e4 e5/.test(pgn), "a game from the standard array still restores — got " + JSON.stringify(pgn));
   assert(!/\[FEN "/.test(pgn), "…without inventing a SetUp header for it");
   await ctx.close();
@@ -247,8 +248,8 @@ const PLACEMENT = STUDY.split(" ")[0];
       window.__wrote = [];
       // a fresh profile opens on the first-run picker, which sits over the
       // panel; and the export links live on the play tab with the panel open
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
       if (!sh.zero) return;
       window.zero = {
@@ -299,9 +300,9 @@ const PLACEMENT = STUDY.split(" ")[0];
 {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
+    localStorage.setItem("chess.settings", JSON.stringify({
       mode: "ai", humanColor: "w", difficulty: "beginner",
-      langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+      langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const { page, errs } = await open(ctx);
@@ -337,11 +338,14 @@ const PLACEMENT = STUDY.split(" ")[0];
   const toasts = await page.evaluate(() => window.__toasts || []);
   const status = await page.evaluate(() => (document.getElementById("status") || {}).textContent);
   assert(/将死/.test(status), `下到将死(状态「${status}」)`);
-  assert(toasts.some((x) => /成就/.test(x)),
-    `…而且当场报出了解锁的成就(这段时间里的提示条:${JSON.stringify(toasts.map((x) => x.slice(0, 14)))})`);
+  // 9.0 M1: the first achievement the ending unlocks is a badge on the
+  // result bar; only a second one (or more) is a toast
+  const badge = await page.evaluate(() => { const b = document.getElementById("go-ach"); return b && b.offsetParent ? b.textContent.trim() : ""; });
+  assert(!!badge && !toasts.some((x) => x.includes(badge)),
+    `…而且当场在结果条上报出了解锁的成就(徽章「${badge}」;提示条:${JSON.stringify(toasts.map((x) => x.slice(0, 14)))})`);
 
   const saved = await page.evaluate(() => {
-    const raw = localStorage.getItem("chess.v1.stats");
+    const raw = localStorage.getItem("chess.stats");
     return raw ? (JSON.parse(raw).games || []) : [];
   });
   assert(saved.length === 1 && saved[0].result === "win" && saved[0].diff === "beginner" &&
@@ -357,9 +361,9 @@ const PLACEMENT = STUDY.split(" ")[0];
   const stats = await page.evaluate(() =>
     (document.getElementById("sec-stats") || {}).textContent.replace(/\s+/g, " "));
   assert(/1\s*胜/.test(stats) && /0\s*负/.test(stats), `统计段记到了这一胜(「${stats.slice(0, 40)}」)`);
-  // the key is chess.v1.achv — persist.js KEYS, not the name the section has
+  // the key is chess.achv — persist.js KEYS, not the name the section has
   const ach = await page.evaluate(() => {
-    const raw = localStorage.getItem("chess.v1.achv");
+    const raw = localStorage.getItem("chess.achv");
     if (!raw) return 0;
     const got = JSON.parse(raw);
     return Array.isArray(got) ? got.length : Object.keys(got).filter((k) => k !== "v").length;
@@ -367,6 +371,13 @@ const PLACEMENT = STUDY.split(" ")[0];
   assert(ach >= 1, `成就真的落了盘(解锁 ${ach} 个)`);
 
   // v8-0-plan C1: 「全部 N 局」 opens the library's list on its 本机 games
+  // (9.0 S4: 对局历史 is on 棋谱 now, not on 我的)
+  await page.click('#rail button[data-view="library"]');
+  await page.waitForTimeout(400);
+  const preview = await page.evaluate(() => ({
+    onLib: !!document.querySelector("#page-library #sec-history"),
+    rows: document.querySelectorAll("#hist-body [data-hist]").length }));
+  assert(preview.onLib && preview.rows === 1, `对局历史在「棋谱」页上，预览里就是这一局(${JSON.stringify(preview)})`);
   await page.click("#hist-open");
   await page.waitForTimeout(800);
   const rows = await page.evaluate(() =>
@@ -392,8 +403,8 @@ const PLACEMENT = STUDY.split(" ")[0];
   // only stands up on one of them is a section that does not stand up.
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     window.__clip = "";
     window.zero = {
@@ -489,8 +500,8 @@ const PLACEMENT = STUDY.split(" ")[0];
 {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", timeControl: "3+2" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood", timeControl: "3+2" }));
     localStorage.setItem("chess.panelOpen", "1");
     window.__writes = [];
     window.zero = {
@@ -597,7 +608,7 @@ const PLACEMENT = STUDY.split(" ")[0];
   await page.waitForTimeout(800);
   const ended = await page.evaluate(() => ({
     status: document.getElementById("status").textContent.trim(),
-    save: JSON.parse(localStorage.getItem("chess.v1.save") || "null"),
+    save: JSON.parse(localStorage.getItem("chess.save") || "null"),
   }));
   assert(/和棋/.test(ended.status), `答应之后这局就是和棋(「${ended.status}」)`);
   assert(ended.save && ended.save.drawAgreed === true, "……而且存档里记着它是协议和的");
@@ -631,8 +642,8 @@ const PLACEMENT = STUDY.split(" ")[0];
   const openBridged = async (o) => {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
     await ctx.addInitScript(([opts, pgn]) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
       window.__calls = [];
       window.zero = {
@@ -734,10 +745,10 @@ const PLACEMENT = STUDY.split(" ")[0];
   const bridged = async (init) => {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
     await ctx.addInitScript((extra) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
-      if (extra.corruptStats) localStorage.setItem("chess.v1.stats", "{not json");
+      if (extra.corruptStats) localStorage.setItem("chess.stats", "{not json");
       window.__writes = [];
       window.zero = {
         on: () => () => {}, off: () => {},
@@ -783,11 +794,11 @@ const PLACEMENT = STUDY.split(" ")[0];
       return el && !el.hidden ? el.textContent : "";
     });
     assert(/stats/.test(banner), `坏掉的记录有横幅,并点名是哪一份(「${banner.slice(0, 40)}」)`);
-    const q = await page.evaluate(() => localStorage.getItem("chess.v1.quarantine") || "");
+    const q = await page.evaluate(() => localStorage.getItem("chess.quarantine") || "");
     assert(/\{not json/.test(q), "……原值原样进了隔离区");
     // 走一步,让 stats 有机会被重写;隔离区里的那份还在
     await page.evaluate(() => { window.__chess.engine.isReady = () => true; });
-    const q2 = await page.evaluate(() => localStorage.getItem("chess.v1.quarantine") || "");
+    const q2 = await page.evaluate(() => localStorage.getItem("chess.quarantine") || "");
     assert(/\{not json/.test(q2), "……之后也没有被清掉");
     assert(errs.length === 0, "D2:全程没有页面异常");
     await ctx.close();
@@ -797,8 +808,8 @@ const PLACEMENT = STUDY.split(" ")[0];
   {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
     await ctx.addInitScript(() => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", difficulty: "easy", humanColor: "w" }));
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood", difficulty: "easy", humanColor: "w" }));
       localStorage.setItem("chess.panelOpen", "1");
     });
     const { page, errs } = await open(ctx);
@@ -837,7 +848,8 @@ const PLACEMENT = STUDY.split(" ")[0];
 // 事,所以它们各自在这里再走一遍,连着真正的重新载入。
 //
 // 桥沿用本文件第 8 节的假桥办法,只是这次假的是 chess.appdataRead /
-// appdataWrite。那个「文件」和这一段自己的记账放在 sessionStorage 里:它跨得
+// appdataWrite。那个「存储」(每个键一个文件,外加清单 meta)和这一段自己的
+// 记账放在 sessionStorage 里:它跨得
 // 过一次 location.reload()(这一段的一半问题只有跨过那次重新载入才看得见),
 // 又不在应用的 localStorage 命名空间里 —— 测试脚手架不该混进档案的键里,
 // test-chess.mjs 有一条守卫专门盯着这件事。
@@ -847,16 +859,17 @@ const PLACEMENT = STUDY.split(" ")[0];
   const CACHE_PGN = '[Event "?"]\n[Site "?"]\n[Date "????.??.??"]\n[Round "?"]\n' +
     '[White "?"]\n[Black "?"]\n[Result "*"]\n\n1. e4 e5 *';
   const SETTINGS = JSON.stringify({
-    mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" });
+    mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" });
   const profileDoc = (pgn, writtenAt) => JSON.stringify({
-    app: "chessboard", schema: 1, writtenAt,
+    app: "chessboard", schema: 3, writtenAt,
     keys: { save: JSON.stringify({ v: 1, pgn }), settings: SETTINGS } });
 
   /**
    * 一个装着假档案文件的浏览器上下文。
    *
-   * `file` 是文件的内容:null = 这台机器上还没有这个文件,"" = 文件在但是空
-   * 的(写了一半被打断),别的字符串 = 文件里就是这些字节。
+   * `file` 是存储里的档案:null = 这台机器上还没有存储,"" = 清单文件在但是
+   * 空的(写了一半被打断),一份档案文档 = 每个键一个文件外加清单,别的字符串
+   * = 清单文件里就是这些字节。
    * `cachePgn` 是启动时 localStorage 里已经存着的那一局。
    * `readDelay` 让桥上的读慢下来 —— 6.1 的第一处丢档就发生在读还没回来、
    * 启动时的写已经排上队的那几百毫秒里(MIRROR_DELAY 是 400 ms)。
@@ -871,13 +884,19 @@ const PLACEMENT = STUDY.split(" ")[0];
       // 看到的是上一遍留下的状态,不是重新摆好的现场
       if (S.getItem("e2e.armed") == null) {
         S.setItem("e2e.armed", "1");
-        if (file != null) S.setItem("e2e.file", file);
+        let doc = null;
+        try { doc = file ? JSON.parse(file) : null; } catch (_) { doc = null; }
+        if (doc && doc.keys) {
+          for (const [k, v] of Object.entries(doc.keys)) S.setItem("e2e.store." + k, v);
+          S.setItem("e2e.store.meta", JSON.stringify({ app: doc.app, schema: doc.schema, writtenAt: doc.writtenAt,
+            keys: Object.keys(doc.keys), files: Object.fromEntries(Object.keys(doc.keys).map((k) => [k, k])) }));
+        } else if (file != null) S.setItem("e2e.store.meta", file);
         S.setItem("e2e.writes", "0");
         S.setItem("e2e.writesBeforeRead", "0");
         S.setItem("e2e.reloads", "0");
         if (cachePgn) {
-          localStorage.setItem("chess.v1.save", JSON.stringify({ v: 1, pgn: cachePgn }));
-          localStorage.setItem("chess.v1.settings", settings);
+          localStorage.setItem("chess.save", JSON.stringify({ v: 1, pgn: cachePgn }));
+          localStorage.setItem("chess.settings", settings);
         }
       } else {
         bump("e2e.reloads");
@@ -894,9 +913,8 @@ const PLACEMENT = STUDY.split(" ")[0];
         return new TextDecoder().decode(u);
       };
       let readDone = false;
-      // v8-0-plan F3:带 key 的读写是分键存储里的那一个文件(store/<key>.json),
-      // 不带的是 6.x–7.x 那一整份 chessboard.json —— 迁移就是从后者读、往前者写
-      const slot = (arg) => (arg && arg.key ? "e2e.store." + arg.key : "e2e.file");
+      // v8-0-plan F3:每次读写都是分键存储里的一个文件(profile/<key>.json)
+      const slot = (arg) => "e2e.store." + arg.key;
       window.zero = {
         on: () => () => {}, off: () => {},
         platform: { supports: () => Promise.resolve(false) },
@@ -924,13 +942,13 @@ const PLACEMENT = STUDY.split(" ")[0];
       // 重新载入之前页面还会做什么 —— 这个探针住在页面里,因为「恢复之后、
       // 重新载入之前」那 1.2 秒是页面自己的时间,测试进程插不进去
       const watch = () => {
-        const save = localStorage.getItem("chess.v1.save") || "";
+        const save = localStorage.getItem("chess.save") || "";
         if (/1\. d4/.test(save)) {
           if (S.getItem("e2e.probed") == null) {
             S.setItem("e2e.probed", "1");
             // beforeunload → saveGame():单测第 8 条说的就是这一下
             window.dispatchEvent(new Event("beforeunload"));
-            S.setItem("e2e.saveAfterUnload", localStorage.getItem("chess.v1.save") || "");
+            S.setItem("e2e.saveAfterUnload", localStorage.getItem("chess.save") || "");
           }
           return;
         }
@@ -942,7 +960,7 @@ const PLACEMENT = STUDY.split(" ")[0];
     return { ctx, page, errs };
   };
   const probe = (page, k) => page.evaluate((key) => sessionStorage.getItem(key), k);
-  const lsSave = (page) => page.evaluate(() => localStorage.getItem("chess.v1.save") || "");
+  const lsSave = (page) => page.evaluate(() => localStorage.getItem("chess.save") || "");
   const moves = (page) => page.evaluate(() =>
     [...document.querySelectorAll(".move-list .mlmove")].map((m) => m.getAttribute("aria-label")).join(" "));
   const toastNow = (page) => page.evaluate(() => {
@@ -971,16 +989,11 @@ const PLACEMENT = STUDY.split(" ")[0];
     const line = await moves(page);
     assert(line === "d4 d5 c4", `重新载入之后应用跑在文件里的那局上(「${line}」)`);
     assert(/1\. d4/.test(await lsSave(page)), "……localStorage 里也换成了文件里的那份");
-    assert(/1\. d4/.test(await probe(page, "e2e.file") || ""),
-      "……而文件还是文件:没有被启动时的空档案盖过");
-    // v8-0-plan F3:重新载入之后的那一趟把这份档案迁进了分键存储 —— 每个键一个
-    // 文件,外加一份清单;旧的整份文件原样留着,给降级回 7.x 的人
-    await page.waitForFunction(() => sessionStorage.getItem("e2e.store.meta") != null, null, { timeout: 5000 }).catch(() => {});
+    // v8-0-plan F3:每个键一个文件,外加一份清单;恢复的那一局还是那一局
     const meta = JSON.parse(await probe(page, "e2e.store.meta") || "null");
-    assert(!!meta && meta.schema === 2 && meta.keys.includes("save") && meta.keys.includes("settings"),
-      `迁移:分键存储有了清单,schema 2,列着 save 与 settings(${JSON.stringify(meta)})`);
-    assert(/1\. d4/.test(await probe(page, "e2e.store.save") || ""),
-      "迁移:save 这个键单独成了一个文件,内容就是旧文件里那一局");
+    const saveFile = meta && meta.files ? await probe(page, "e2e.store." + meta.files.save) : null;
+    assert(!!meta && meta.schema === 3 && meta.keys.includes("save") && meta.keys.includes("settings") && /1\. d4/.test(saveFile || ""),
+      `……而存储还是那份存储:没有被启动时的空档案盖过,清单 schema 3、列着 save 与 settings(${JSON.stringify(meta)})`);
 
     // (b) 恢复之后到重新载入之间,页面再做什么都不许盖掉刚恢复的东西
     assert((await probe(page, "e2e.probed")) === "1", "恢复与重新载入之间的那一下探针真的按下去了");
@@ -1007,7 +1020,7 @@ const PLACEMENT = STUDY.split(" ")[0];
     // —— 用户被告知留着的那一份,正是他唯一能拿去恢复的副本。这条 e2e 把
     // 它抓了出来,persist.js 现在遇到读不出来的文件就把镜像闸死一整场。
     await page.waitForTimeout(1500);
-    const still = await probe(page, "e2e.file");
+    const still = await probe(page, "e2e.store.meta");
     assert(still === "{not json at all",
       "坏文件原样还在,一个字节没动 —— 文案承诺的「原文件未被覆盖」是真的");
     assert((await probe(page, "e2e.writes")) === "0", "……整场一次镜像写都没发生");
@@ -1072,8 +1085,8 @@ function fakeNative(opts) {
     for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
     return u;
   };
-  // the native store: key → bytes ("" is the 6.x–7.x chessboard.json). With
-  // `persist` it lives in sessionStorage so it survives a reload, like a disk.
+  // the native store: key → bytes. With `persist` it lives in sessionStorage
+  // so it survives a reload, like a disk.
   const store = new Map();
   if (opts.persist) {
     for (let i = 0; i < S.length; i++) {
@@ -1295,34 +1308,48 @@ function seedProfile(mb) {
       headers: [["Event", "Rated blitz"], ["White", "hxddh"], ["Black", "rival" + i], ["Result", "1-0"]],
       pgn: '[White "hxddh"]\n[Black "rival' + i + '"]\n\n' + line.repeat(8) + "1-0" });
   }
-  localStorage.setItem("chess.v1.stats", JSON.stringify(stats));
-  localStorage.setItem("chess.v1.library", JSON.stringify(library));
-  localStorage.setItem("chess.v1.save", JSON.stringify({ v: 1, pgn: '[Event "?"]\n[Result "*"]\n\n1. e4 e5 *' }));
+  localStorage.setItem("chess.stats", JSON.stringify(stats));
+  // the library as the app keeps it: the games in IndexedDB, a header counting them
+  // (scripts/lib/library-view.mjs seedLibrary — inline, as this runs in the page)
+  localStorage.setItem("chess.library", JSON.stringify({ v: 1, names: library.names, n: library.games.length }));
+  const req = indexedDB.open("chessboard.games", 1);
+  req.onupgradeneeded = () => {
+    req.result.createObjectStore("games", { keyPath: "id" });
+    req.result.createObjectStore("meta");
+  };
+  req.onsuccess = () => {
+    const t = req.result.transaction(["games"], "readwrite");
+    for (const g of library.games) t.objectStore("games").add(g);
+    t.oncomplete = () => req.result.close();
+  };
+  localStorage.setItem("chess.save", JSON.stringify({ v: 1, pgn: '[Event "?"]\n[Result "*"]\n\n1. e4 e5 *' }));
 }
 
 const PROFILE_KEYS = ["save", "settings", "stats", "learn", "puzzles", "mines", "progress", "achv", "slots",
-  "library", "repertoire", "analyses"].map((k) => "chess.v1." + k).concat(["chess.panelOpen"]);
+  "library", "repertoire", "analyses"].map((k) => "chess." + k).concat(["chess.panelOpen"]);
 const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((k) => [k, localStorage.getItem(k)])), PROFILE_KEYS);
 
 {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   await ctx.addInitScript(seedProfile, 2);
   await ctx.addInitScript(fakeNative, { persist: false });
-  // v8-1-plan F3: the same launch moves the 1,543 games into IndexedDB, and
-  // each put() clones its record on the spot. A run of puts with no gap
-  // between them is one task's worth; the whole library in one run was a
-  // 34–45 ms task in the middle of the mirror's write.
+  // v8-1-plan F3: putting the whole library back into IndexedDB (导入全部数据,
+  // (d) below) puts every record in one transaction, and each put() clones
+  // its record on the spot. A run of puts with no gap between them is one
+  // task's worth; the whole library in one run was a 34–45 ms task. Kept
+  // across the import's reload in sessionStorage.
   await ctx.addInitScript(() => {
-    const p = window.__puts = { last: -1e9, start: 0, max: 0, n: 0 };
+    window.__puts = { last: -1e9, start: 0, max: 0, n: 0 };
     const S = window.IDBObjectStore && window.IDBObjectStore.prototype;
     if (!S) return;
     const put = S.put;
     S.put = function () {
+      const p = window.__puts;
       const t = performance.now();
       if (t - p.last > 1) p.start = t;
       try { return put.apply(this, arguments); } finally {
@@ -1331,19 +1358,20 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
         p.max = Math.max(p.max, p.last - p.start);
       }
     };
+    window.addEventListener("pagehide", () => { try { sessionStorage.setItem("f3.puts", JSON.stringify(window.__puts)); } catch (_) { /* a frame without storage */ } });
   });
   const { page, errs } = await open(ctx);
 
   // (a) the first launch writes the whole profile into the per-key store —
   // the largest mirror write there is. No slice of it may hold the main
-  // thread past a frame. v8-0-plan C1: the library moves into IndexedDB on
-  // this launch, so its games reach the store as the 64 shards (lib00 …
-  // lib3f) under a small header, not as one `library` file.
+  // thread past a frame. v8-0-plan C1: the library's games reach the store
+  // as the 64 shards (lib00 … lib3f) under a small header, not as one
+  // `library` file.
   const shardBytes = () => page.evaluate(() => {
     const dec = (u8) => (u8 ? new TextDecoder().decode(u8) : "");
     let meta = null;
     try { meta = JSON.parse(dec(window.__store.get("meta"))); } catch (_) { meta = null; }
-    if (!meta || !/"db":2/.test(dec(window.__store.get((meta.files && meta.files.library) || "library")))) return -1;
+    if (!meta || !/"n":/.test(dec(window.__store.get((meta.files && meta.files.library) || "library")))) return -1;
     let n = 0, games = 0;
     for (const k of meta.keys) {
       if (!/^lib[0-3][0-9a-f]$/.test(k)) continue;
@@ -1359,7 +1387,7 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
     const dec = (u8) => (u8 ? new TextDecoder().decode(u8) : "");
     try {
       const meta = JSON.parse(dec(window.__store.get("meta")));
-      if (!/"db":2/.test(dec(window.__store.get((meta.files && meta.files.library) || "library")))) return false;
+      if (!/"n":/.test(dec(window.__store.get((meta.files && meta.files.library) || "library")))) return false;
       let games = 0;
       for (const k of meta.keys) if (/^lib[0-3][0-9a-f]$/.test(k)) games += JSON.parse(dec(window.__store.get(meta.files[k] || k))).games.length;
       return games === want;
@@ -1368,17 +1396,14 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   const shards = await shardBytes();
   const full = await page.evaluate(() => ({ meta: window.__store.has("meta"), seg: window.__seg.max, big: window.__big, puts: window.__puts, worst: window.__seg.worst, boot: window.__seg.boot || 0 }));
   console.log(`  ……写之前（启动读档之后）最长一段 ${full.boot.toFixed(1)} ms —— 只记录，不计入写入（v8-1-plan F3 冷启动一条）`);
-  console.log(`  镜像·整份写入(2 MB):最长一段主线程 ${full.seg.toFixed(1)} ms,棋谱库 ${libCount} 局在分片里 ${shards.n} 字节;` +
-    `搬进 IndexedDB 一口气 put 最长 ${full.puts.max.toFixed(1)} ms(共 ${full.puts.n} 次)`);
+  console.log(`  镜像·整份写入(2 MB):最长一段主线程 ${full.seg.toFixed(1)} ms,棋谱库 ${libCount} 局在分片里 ${shards.n} 字节`);
   assert(full.meta && shards.n > 1024 * 1024 && shards.games === libCount,
     `2 MB 的档案整份进了原生存储:棋谱库的 ${libCount} 局都在分片里(${shards.games} 局,${shards.n} 字节)`);
   assert(full.big === 0, `……没有一帧超过桥的 1 MiB(被拒 ${full.big} 次)`);
-  Object.assign(firstWrite, { sliceMs: +full.seg.toFixed(1), putRunMs: +full.puts.max.toFixed(1), games: libCount, shardBytes: shards.n, longest: full.worst, bootSliceMs: +full.boot.toFixed(1) });
+  Object.assign(firstWrite, { sliceMs: +full.seg.toFixed(1), games: libCount, shardBytes: shards.n, longest: full.worst, bootSliceMs: +full.boot.toFixed(1) });
   // always printed: on an engine CI runs and this machine cannot, this line is the profile
   console.log(`  ……最长那一段是什么:${JSON.stringify(full.worst)}`);
   assert(full.seg <= 16, `……写的过程中,主线程上最长的一段 ≤ 16 ms(${full.seg.toFixed(1)} ms)`);
-  assert(full.puts.n >= libCount && full.puts.max <= 16,
-    `……同一次启动把棋谱库搬进 IndexedDB,一个任务里连着 put 最长 ≤ 16 ms(${full.puts.max.toFixed(1)} ms,${full.puts.n} 次)`);
 
   // (b) export: one file, compact, the whole of it — through one stage_lost
   // on the last piece (the fake above), so the retry is on the way too
@@ -1452,6 +1477,7 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   assert(typical <= 16, `一次普通保存的镜像写,主线程上每段 ≤ 16 ms(${typical.toFixed(1)} ms)`);
 
   // (d) clear → import the file → every key is what was exported
+  await page.evaluate(() => { window.__puts = { last: -1e9, start: 0, max: 0, n: 0 }; });
   await page.evaluate((keys) => { for (const k of keys) localStorage.removeItem(k); }, PROFILE_KEYS);
   await page.evaluate(() => document.getElementById("alldata-import").click());
   await page.waitForFunction(() => /已导入全部数据/.test((document.getElementById("toast") || {}).textContent || ""),
@@ -1459,7 +1485,7 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   await page.waitForTimeout(2500);   // the import reloads the page after 900 ms
   const after = await snapshot(page);
   const diff = PROFILE_KEYS.filter((k) => {
-    const name = k.replace(/^chess\.(v1\.)?/, "").replace(/^achv$/, "achievements");
+    const name = k.replace(/^chess\./, "").replace(/^achv$/, "achievements");
     const want = doc.keys[name] == null ? null : doc.keys[name];
     return after[k] !== want;
   });
@@ -1472,105 +1498,15 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   const back = await page.evaluate(() => window.__chess.library().games.length);
   assert(shardsInFile.length > 0 && back === libCount,
     `整份导出里有棋谱库的 ${shardsInFile.length} 个分片;清空再导回,${libCount} 局一局不少(${back})`);
+  const puts = JSON.parse(await page.evaluate(() => sessionStorage.getItem("f3.puts")) || "null") || { n: 0, max: 0 };
+  firstWrite.putRunMs = +puts.max.toFixed(1);
+  assert(puts.n >= libCount && puts.max <= 16,
+    `……导回时把棋谱库放回 IndexedDB,一个任务里连着 put 最长 ≤ 16 ms(${puts.max.toFixed(1)} ms,${puts.n} 次)`);
   assert(errs.length === 0, `2 MB 导出导入:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
   await ctx.close();
 }
 
-// --- 12. v8-0-plan F3:从 7.x 的整份文件迁到分键存储,之后只写变过的键 ----------
-{
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
-  await ctx.addInitScript(() => {
-    const S = sessionStorage;
-    if (S.getItem("f3.armed")) return;
-    S.setItem("f3.armed", "1");
-    // a 7.x profile: schema 1 in the cache, and the one-document mirror file
-    // holding the same revision
-    const settings = JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" });
-    const games = [];
-    for (let i = 0; i < 80; i++) {
-      games.push({ id: "lib:" + i, sans: "e4 e5 Nf3 Nc6 Bb5 a6", plies: 6, added: 1758000000000 + i,
-        headers: [["White", "hxddh"], ["Black", "r" + i]], pgn: "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 *" });
-    }
-    const keys = {
-      settings,
-      save: JSON.stringify({ v: 1, pgn: '[Event "?"]\n[Result "*"]\n\n1. d4 d5 *' }),
-      stats: JSON.stringify({ v: 1, games: [{ t: 1, sig: "e4 e5#mate", result: "1-0" }] }),
-      library: JSON.stringify({ v: 1, names: ["hxddh"], games }),
-      learn: JSON.stringify({ v: 1, done: { a: 1 } }),
-      panelOpen: "1",
-    };
-    const map = { settings: "chess.v1.settings", save: "chess.v1.save", stats: "chess.v1.stats",
-      library: "chess.v1.library", learn: "chess.v1.learn", panelOpen: "chess.panelOpen" };
-    for (const [n, v] of Object.entries(keys)) localStorage.setItem(map[n], v);
-    localStorage.setItem("chess.schema", "1");
-    localStorage.setItem("chess.writtenAt", "5000");
-    const doc = JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 5000, keys });
-    const u8 = new TextEncoder().encode(doc);
-    let bin = ""; for (const b of u8) bin += String.fromCharCode(b);
-    S.setItem("f3.store.", btoa(bin));
-    S.setItem("f3.legacy", doc);
-  });
-  await ctx.addInitScript(fakeNative, { persist: true });
-  const { page, errs } = await open(ctx);
-  await page.waitForFunction(() => window.__store.has("meta"), null, { timeout: 15000 }).catch(() => {});
-  // v8-0-plan C1: …and the library's migration into IndexedDB has reached the store
-  await page.waitForFunction(() => {
-    try {
-      const meta = JSON.parse(new TextDecoder().decode(window.__store.get("meta")));
-      return /"db":2/.test(new TextDecoder().decode(window.__store.get((meta.files && meta.files.library) || "library")));
-    } catch (_) { return false; }
-  }, null, { timeout: 15000, polling: 200 }).catch(() => {});
-  await page.waitForTimeout(600);
-  const got = await page.evaluate(() => {
-    const dec = (u8) => (u8 ? new TextDecoder().decode(u8) : null);
-    const legacy = JSON.parse(sessionStorage.getItem("f3.legacy"));
-    const meta = JSON.parse(dec(window.__store.get("meta")) || "null");
-    const lsKey = (n) => (n === "panelOpen" ? "chess.panelOpen" : "chess.v1." + n);
-    const file = (n) => dec(window.__store.get((meta && meta.files && meta.files[n]) || n));
-    const unequal = Object.keys(legacy.keys).filter((n) => file(n) !== localStorage.getItem(lsKey(n)));
-    // v8-0-plan C1: the library's games moved to IndexedDB and reach the
-    // store as shards; the old file's games are all in them, unchanged
-    const want = JSON.parse(legacy.keys.library).games;
-    const got = [];
-    for (const k of (meta && meta.keys) || []) if (/^lib[0-3][0-9a-f]$/.test(k)) got.push(...JSON.parse(file(k)).games);
-    const byId = new Map(got.map((g) => [g.id, JSON.stringify(g)]));
-    return { meta, unequal, legacyKept: dec(window.__store.get("")) === sessionStorage.getItem("f3.legacy"),
-      schema: localStorage.getItem("chess.schema"),
-      libSame: got.length === want.length && want.every((g) => byId.get(g.id) === JSON.stringify(g)) && /"db":2/.test(file("library")) };
-  });
-  assert(!!got.meta && got.meta.schema === 2 && got.meta.app === "chessboard",
-    `7.x 的档案第一次用分键存储打开:分键存储有了清单,schema 2(${JSON.stringify(got.meta && { schema: got.meta.schema, keys: got.meta.keys })})`);
-  assert(got.unequal.length === 0 && got.libSame, `……旧文件里的每个键都成了自己的文件,内容逐字相等;棋谱库的 80 局在分片里,一局不差(不等:${got.unequal.join(", ") || "无"})`);
-  assert(got.legacyKept, "……旧的整份 chessboard.json 一个字节没动,留给降级的人");
-  assert(got.schema === "2", `……缓存的 schema 记成了 2(${got.schema})`);
-
-  // second launch: nothing changed, so nothing big is rewritten
-  await page.evaluate(() => sessionStorage.setItem("f3.log", "[]"));
-  await page.reload();
-  await page.waitForTimeout(1800);
-  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
-  const boot2 = await page.evaluate(() => JSON.parse(sessionStorage.getItem("f3.log") || "[]").map((e) => e[0]));
-  assert(!boot2.includes("library") && !boot2.includes("stats"),
-    `第二次启动:没变的大键不重写(这一趟写了:${boot2.join(", ") || "无"})`);
-
-  // one move: the save changes, the library does not
-  await page.evaluate(() => sessionStorage.setItem("f3.log", "[]"));
-  const at = (sq) => page.evaluate((n) => {
-    const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
-    const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
-    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
-  }, sq);
-  for (const sq of ["c2", "c4"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(170); }
-  await page.waitForTimeout(1200);
-  const moved = await page.evaluate(() => JSON.parse(sessionStorage.getItem("f3.log") || "[]").map((e) => e[0]));
-  assert(moved.includes("save") && moved.includes("meta"), `走一步:save 和清单写了(${moved.join(", ")})`);
-  assert(!moved.includes("library") && !moved.includes("stats") && !moved.includes(""),
-    "……棋谱库、战绩和旧的整份文件都没有被重写");
-  assert(errs.length === 0, `迁移:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
-  await ctx.close();
-}
-
-// --- 13. v8-0-plan C1:IndexedDB 没了,原生存储里的分片把棋谱库找回来 ----------
+// --- 12. v8-0-plan C1:IndexedDB 没了,原生存储里的分片把棋谱库找回来 ----------
 // The games live in IndexedDB now, which is the WebView's — "remove website
 // data" takes it, and localStorage with it or not. Either way the store's
 // shards are what a restore comes from.
@@ -1581,12 +1517,12 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
       event: "x", result: "1-0", plies: 4, sans: "e4 e5 Nf3 Nc6", fen: "", side: "w", outcome: "win", an: null });
   }
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
-  await ctx.addInitScript((lib) => {
+  await ctx.addInitScript(() => {
     if (sessionStorage.getItem("c1.seeded")) return;
     sessionStorage.setItem("c1.seeded", "1");
-    localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
-    localStorage.setItem("chess.v1.library", lib);
-  }, JSON.stringify({ v: 1, names: ["hxddh"], games }));
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
+  });
+  await ctx.addInitScript(seedLibrary, { names: ["hxddh"], games, once: true });
   await ctx.addInitScript(fakeNative, { persist: true });
   const { page, errs } = await open(ctx);
   const ready = () => page.waitForFunction(() => window.__chess && window.__chess.library && window.__chess.library().ready,
@@ -1608,11 +1544,11 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
     } catch (_) { return false; }
   }, null, { timeout: 15000, polling: 200 }).catch(() => {});
   await page.waitForTimeout(800);
-  assert(await inStore() === 5, `C1:迁移之后,五局都在原生存储的分片里(${await inStore()})`);
+  assert(await inStore() === 5, `C1:五局都在原生存储的分片里(${await inStore()})`);
 
   // (a) IndexedDB gone, localStorage kept: the header counts five, the store has them
   await page.evaluate(() => new Promise((res) => {
-    const r = indexedDB.deleteDatabase("chessboard.library");
+    const r = indexedDB.deleteDatabase("chessboard.games");
     r.onsuccess = r.onerror = r.onblocked = () => res();
   }));
   await page.reload();
@@ -1622,42 +1558,22 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   const a = await page.evaluate(() => ({ n: window.__chess.library().games.length, toast: document.getElementById("toast").textContent }));
   assert(a.n === 5 && /找回 5 局/.test(a.toast), `C1:IndexedDB 被清掉、localStorage 还在:从分片里找回五局,并且说了(${a.n};「${a.toast}」)`);
   // M5 review P3-3: the shards read back are the native copy already — no
-  // second full library kept in IndexedDB's meta store for them (the v1
-  // backups are "v1:<time>"; the list's summary shares the store since
-  // v8-1-plan F3, as "sum:<shard>" and "sumId")
+  // second full library kept in IndexedDB's meta store for them (the list's
+  // summary shares the store since v8-1-plan F3, as "sum:<shard>" and "sumId")
   const metaCopies = await page.evaluate(() => new Promise((res) => {
-    const r = indexedDB.open("chessboard.library");
+    const r = indexedDB.open("chessboard.games");
     r.onsuccess = () => {
       const all = r.result.transaction(["meta"], "readonly").objectStore("meta").getAllKeys();
-      all.onsuccess = () => { res(all.result.filter((k) => String(k).startsWith("v1:")).length); r.result.close(); };
+      all.onsuccess = () => { res(all.result.filter((k) => !/^sum/.test(String(k))).length); r.result.close(); };
     };
   }));
   assert(metaCopies === 0, `P3-3:从分片找回不另存一份整库备份(meta 里 ${metaCopies} 份)`);
 
-  // (d) M5 review P3-1: an 8.0 dev build ran in between and committed a
-  // manifest without the shards, at the cache's revision. The games are in
-  // IndexedDB; nothing is owed by the stamps — they must still reach the store.
-  await page.waitForTimeout(800);
-  await page.evaluate(() => {
-    const meta = JSON.parse(new TextDecoder().decode(window.__store.get("meta")));
-    meta.keys = meta.keys.filter((k) => !/^lib[0-3][0-9a-f]$/.test(k));
-    for (const k of Object.keys(meta.files || {})) if (/^lib[0-3][0-9a-f]$/.test(k)) delete meta.files[k];
-    meta.writtenAt = Number(localStorage.getItem("chess.writtenAt"));   // in step with the cache
-    const u8 = new TextEncoder().encode(JSON.stringify(meta));
-    let s = "";
-    for (const b of u8) s += String.fromCharCode(b);
-    sessionStorage.setItem("f3.store.meta", btoa(s));
-  });
-  await page.reload();
-  await page.waitForTimeout(900);
-  await ready();
-  await page.waitForTimeout(1500);
-  assert(await inStore() === 5, `P3-1:降级版本写掉了清单里的分片,回到新版后五局重新进了原生存储(${await inStore()})`);
-
-  // (c) M5 review P2-1: IndexedDB will not open this session. The header says
-  // the games moved there; they are shown from the shards, read-only, and the
-  // shards, the manifest and the header all come through the session whole —
-  // even after a launch that owes the store every key.
+  // (c) M5 review P2-1: IndexedDB will not open this session. The games come
+  // back from the shards and the session keeps them in memory; what it adds
+  // goes into the shards, and the shards, the manifest and the header come
+  // through the session whole — even after a launch that owes the store
+  // every key.
   await page.evaluate(() => {
     sessionStorage.setItem("c1.noidb", "1");
     localStorage.setItem("chess.writtenAt", String(Date.now() + 5));
@@ -1670,24 +1586,22 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   await page.waitForTimeout(900);
   await ready();
   await page.waitForTimeout(500);
-  const c = await page.evaluate(() => ({ n: window.__chess.library().games.length, mode: window.__chess.library().mode,
-    toast: document.getElementById("toast").textContent, header: JSON.parse(localStorage.getItem("chess.v1.library") || "null") }));
-  assert(c.n === 5 && c.mode === "legacy" && /读不出来/.test(c.toast),
-    `P2-1:IndexedDB 打不开:五局从分片读出来给你看,并且说了(${c.n}, ${c.mode};「${c.toast}」)`);
-  // an import is refused rather than kept nowhere
+  const c = await page.evaluate(() => ({ n: window.__chess.library().games.length, mode: window.__chess.library().mode }));
+  assert(c.n === 5 && c.mode === "memory", `P2-1:IndexedDB 打不开:五局从分片读回来,这一场放在内存里(${c.n}, ${c.mode})`);
+  // an import goes where it can be kept: the native shards
   await page.evaluate(() => window.__chess.libDb().importPgn('[Event "x"]\n[White "hxddh"]\n[Black "q"]\n[Result "1-0"]\n\n1. c4 e5 1-0\n'));
   await page.evaluate(() => { document.getElementById("lib-names").value = "hxddh, alt"; document.getElementById("lib-names").dispatchEvent(new Event("change")); });
   await page.waitForTimeout(1500);
-  const c2 = await page.evaluate(() => ({ n: window.__chess.library().games.length, header: JSON.parse(localStorage.getItem("chess.v1.library") || "null") }));
-  assert(await inStore() === 5 && c2.n === 5, `P2-1:……这一轮下来原生存储里还是五局,分片和清单都没被清空(${await inStore()};列表 ${c2.n})`);
-  assert(c2.header && c2.header.db === 2 && c2.header.n === 5 && c2.header.names.includes("alt"),
-    `P2-1:……头还写着 db 2、5 局,改的名字照样存了(${JSON.stringify(c2.header && { db: c2.header.db, n: c2.header.n, names: c2.header.names })})`);
+  const c2 = await page.evaluate(() => ({ n: window.__chess.library().games.length, header: JSON.parse(localStorage.getItem("chess.library") || "null") }));
+  assert(await inStore() === 6 && c2.n === 6, `P2-1:……导进来的那一局进了原生存储,分片和清单都没被清空(${await inStore()};列表 ${c2.n})`);
+  assert(c2.header && c2.header.n === 6 && c2.header.names.includes("alt"),
+    `P2-1:……头写着 6 局,改的名字照样存了(${JSON.stringify(c2.header && { n: c2.header.n, names: c2.header.names })})`);
   await page.evaluate(() => sessionStorage.removeItem("c1.noidb"));
 
   // (b) all of the WebView's data gone: the store restores the profile and its games
   await page.evaluate(() => new Promise((res) => {
     localStorage.clear();
-    const r = indexedDB.deleteDatabase("chessboard.library");
+    const r = indexedDB.deleteDatabase("chessboard.games");
     r.onsuccess = r.onerror = r.onblocked = () => res();
   }));
   await page.reload();
@@ -1696,27 +1610,26 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   await ready();
   await page.waitForTimeout(500);
   const b = await page.evaluate(() => ({ n: window.__chess.library().games.length, mode: window.__chess.library().mode,
-    header: JSON.parse(localStorage.getItem("chess.v1.library") || "null") }));
-  assert(b.n === 5 && b.mode === "idb" && b.header && b.header.db === 2,
-    `C1:网页数据全没了:从原生存储恢复整份档案,棋谱库五局回到 IndexedDB(${b.n}, ${b.mode})`);
+    header: JSON.parse(localStorage.getItem("chess.library") || "null") }));
+  assert(b.n === 6 && b.mode === "idb" && b.header && b.header.n === 6,
+    `C1:网页数据全没了:从原生存储恢复整份档案,棋谱库六局回到 IndexedDB(${b.n}, ${b.mode})`);
   assert(errs.length === 0, `C1 恢复:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
   await ctx.close();
 }
 
-// --- v8-0-plan A3: 7.x 的主题设置,开 8.0 之后还是那个样子 ---------------------
-// themeId used to choose the shell and the board together; it is migrated to
-// appearance × board (js/look.js, every case in test-persist.mjs). Here, in a
-// page: each 7.x profile opens in its own shell, the migrated fields are
-// written back, and the second launch — which reads them, not themeId —
-// lands on the same thing. A first run follows the system, on the flat board.
+// --- v8-0-plan A3: 外观 × 棋盘,存下来、下次启动还是那个样子 -----------------
+// The look is appearance × board (js/look.js, every case in test-persist.mjs).
+// Here, in a page: each look opens in its own shell, is written back as it
+// is, and the second launch lands on the same thing. A first run follows the
+// system, on the flat board.
 {
   const cases = [
-    [{ themeId: "wood" }, "wood/wood", "dark/wood"],
-    [{ themeId: "night" }, "night/green", "dark/green"],
-    [{ themeId: "day" }, "day/wood", "light/wood"],
-    [{ themeId: "notebook" }, "notebook/blue", "light/blue"],
-    [{ themeId: "night", followSystem: true }, "notebook/green", "system/green"],
-    [{ themeId: "wood", pieceSet: "merida" }, "wood/wood", "dark/wood"],
+    [{ appearance: "dark", boardId: "wood" }, "wood/wood", "dark/wood"],
+    [{ appearance: "dark", boardId: "green" }, "night/green", "dark/green"],
+    [{ appearance: "light", boardId: "wood" }, "day/wood", "light/wood"],
+    [{ appearance: "light", boardId: "blue" }, "notebook/blue", "light/blue"],
+    [{ appearance: "system", boardId: "green" }, "notebook/green", "system/green"],
+    [{ appearance: "dark", boardId: "wood", pieceSet: "merida" }, "wood/wood", "dark/wood"],
     [null, "day/wood", "system/wood"],
   ];
   for (const [old, attrs, saved] of cases) {
@@ -1726,16 +1639,16 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
       // seeded once: the reload below must read what the app wrote back
       if (sessionStorage.getItem("seeded")) return;
       sessionStorage.setItem("seeded", "1");
-      if (o) localStorage.setItem("chess.v1.settings", JSON.stringify(Object.assign({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false }, o)));
+      if (o) localStorage.setItem("chess.settings", JSON.stringify(Object.assign({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false }, o)));
     }, old);
     const { page, errs } = await open(ctx);
     const read = () => page.evaluate(() => {
       const root = document.documentElement;
-      const s = JSON.parse(localStorage.getItem("chess.v1.settings") || "{}");
+      const s = JSON.parse(localStorage.getItem("chess.settings") || "{}");
       return { attrs: root.dataset.theme + "/" + root.dataset.board, frame: root.dataset.frame,
         saved: s.appearance + "/" + s.boardId, frameSaved: s.boardFrame, pieceSet: s.pieceSet };
     });
-    // anything that saves settings writes the migrated look back
+    // anything that saves settings writes the look back
     await page.evaluate(() => document.getElementById("opt-coords").click());
     await page.evaluate(() => document.getElementById("opt-coords").click());
     await page.waitForTimeout(300);
@@ -1746,10 +1659,58 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
     await page.reload();
     await page.waitForTimeout(900);
     const second = await read();
-    assert(second.attrs === attrs && second.saved === saved, `A3 ${tag}:第二次启动读新字段,仍是 ${attrs}(实际 ${second.attrs})`);
+    assert(second.attrs === attrs && second.saved === saved, `A3 ${tag}:第二次启动仍是 ${attrs}(实际 ${second.attrs})`);
     assert(errs.length === 0, `A3 ${tag}:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
     await ctx.close();
   }
+}
+
+// --- 9.0 S2: 持续分析 is a setting (设置 · 高级), and a setting is kept --------
+// It was a button over the review that lived as long as the window did; now
+// it is the switch #opt-live, saved as `liveOn`. Turned on, a restart finds it
+// on; turned off, a restart finds it off.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return; // the reloads read what the app wrote
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
+  });
+  const { page, errs } = await open(ctx);
+  const read = () => page.evaluate(() => ({
+    pressed: document.getElementById("opt-live").getAttribute("aria-pressed"),
+    saved: JSON.parse(localStorage.getItem("chess.settings") || "{}").liveOn,
+  }));
+  const toAdvanced = async () => {
+    await page.click('#rail button[data-view="settings"]');
+    await page.waitForTimeout(200);
+    await page.click("#cat-advanced");
+    await page.waitForTimeout(200);
+  };
+  await toAdvanced();
+  const off0 = await read();
+  assert(await page.isVisible("#opt-live") && off0.pressed === "false",
+    `S2 持续分析是设置 · 高级里的开关，默认关(${JSON.stringify(off0)})`);
+  await page.click("#opt-live");
+  await page.waitForTimeout(300);
+  const on = await read();
+  assert(on.pressed === "true" && on.saved === true, `S2 打开持续分析：开关按下、存进设置(${JSON.stringify(on)})`);
+  await page.reload();
+  await page.waitForTimeout(1200);
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  await toAdvanced();
+  const on2 = await read();
+  assert(on2.pressed === "true" && on2.saved === true, `S2 重新载入之后持续分析还开着(${JSON.stringify(on2)})`);
+  await page.click("#opt-live");
+  await page.waitForTimeout(300);
+  await page.reload();
+  await page.waitForTimeout(1200);
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  await toAdvanced();
+  const off2 = await read();
+  assert(off2.pressed === "false" && off2.saved === false, `S2 关掉之后重新载入，它还是关的(${JSON.stringify(off2)})`);
+  assert(errs.length === 0, `S2 持续分析设置：没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
 }
 
 await browser.close();
@@ -1758,7 +1719,7 @@ if (RECORD) {
   const prev = readMeasured().persistFirstWrite || {};
   const runs = ((prev[RECORD] && prev[RECORD].runs) || []).concat([Object.assign({ engine: ENGINE, passed: !failed }, firstWrite)]).slice(-5);
   record("persistFirstWrite", Object.assign({}, prev, {
-    what: "v8-1-plan F3：2 MB 档案（棋谱库 1,543 局）第一次启动整份写进原生分键存储。sliceMs：桥上一次应答之后，页面到再调桥或这个任务结束为止连着干的最长一段；putRunMs：同一次启动把棋谱库搬进 IndexedDB，一个任务里连着 put 的最长一段；typicalSaveMs：其后一次普通保存。验收线都是 16 ms。before 是修正前的 host.js / library-db.js，量法已是修正后的",
+    what: "v8-1-plan F3：2 MB 档案（棋谱库 1,543 局）第一次启动整份写进原生分键存储。sliceMs：桥上一次应答之后，页面到再调桥或这个任务结束为止连着干的最长一段；putRunMs：导回全部数据时把棋谱库放回 IndexedDB，一个任务里连着 put 的最长一段；typicalSaveMs：其后一次普通保存。验收线都是 16 ms。before 是修正前的 host.js / library-db.js，量法已是修正后的",
     script: "node scripts/test-persist-e2e.mjs --record=before|after",
     [RECORD]: { runs },
   }));

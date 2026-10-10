@@ -19,6 +19,7 @@ import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
+import { seedLibrary } from "./lib/library-view.mjs";
 import { lichessAnswer, chesscomAnswer } from "./sync-fixtures.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -62,10 +63,10 @@ async function open({ bridge = true, lang = "zh-CN", seedSync = null, mode = "ai
   await ctx.addInitScript(({ bridge, lang, seedSync, mode, seedSave }) => {
     if (!sessionStorage.getItem("seeded")) {
       sessionStorage.setItem("seeded", "1");
-      localStorage.setItem("chess.v1.settings", JSON.stringify({ mode, langId: lang, sideTab: "play", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.settings", JSON.stringify({ mode, langId: lang, soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
-      if (seedSync) localStorage.setItem("chess.v1.sync", JSON.stringify(seedSync));
-      if (seedSave) localStorage.setItem("chess.v1.save", JSON.stringify(seedSave));
+      if (seedSync) localStorage.setItem("chess.sync", JSON.stringify(seedSync));
+      if (seedSave) localStorage.setItem("chess.save", JSON.stringify(seedSave));
     }
     window.__calls = [];
     window.__answer = { error: "offline" };
@@ -137,9 +138,11 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   const { ctx, page, errs } = await open();
   const sw0 = await page.evaluate(() => {
     const b = document.getElementById("opt-netsync");
-    return b && { pressed: b.getAttribute("aria-pressed"), label: b.getAttribute("aria-labelledby") && document.getElementById(b.getAttribute("aria-labelledby")).textContent };
+    return b && { pressed: b.getAttribute("aria-pressed"), label: b.getAttribute("aria-labelledby") && document.getElementById(b.getAttribute("aria-labelledby")).textContent,
+      // 9.0 S5: the preferences window is the settings page's 数据 category now
+      at: !!b.closest("#page-settings #set-data") };
   });
-  assert(sw0 && sw0.pressed === "false" && sw0.label === "允许联网同步", "C2: 偏好设置里有「允许联网同步」，默认关（" + JSON.stringify(sw0) + "）");
+  assert(sw0 && sw0.pressed === "false" && sw0.label === "允许联网同步" && sw0.at, "C2 × S5: 设置·数据里有「允许联网同步」，默认关（" + JSON.stringify(sw0) + "）");
   await toLibrary(page);
   await openSync(page);
   let d = await dlg(page);
@@ -155,7 +158,7 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   // turning it on here is the explicit act; it is the same stored switch
   await page.click("#sync-allow");
   d = await dlg(page);
-  const s1 = await stored(page, "chess.v1.sync");
+  const s1 = await stored(page, "chess.sync");
   assert(!d.allow && d.go && s1 && s1.on === true, "C2: 在对话框里允许之后可以同步，开关存了下来（" + JSON.stringify(s1) + "）");
   assert(d.calls === 0, "C2: 允许本身不发请求");
   assert(errs.length === 0, "off: 没有页面异常 " + errs.join(" / "));
@@ -196,8 +199,8 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   const calls = await page.evaluate(() => window.__calls);
   assert(calls.length === cases.length && JSON.stringify(calls[0]) === '{"site":"lichess","user":"sync_tester","max":20}',
     "C2: 发给原生层的只有网站、用户名和局数（" + JSON.stringify(calls[0]) + "）");
-  const lib = await stored(page, "chess.v1.library");
-  assert(!lib || !lib.games || lib.games.length === 0, "C2: 失败时棋谱库里什么也没多");
+  const lib = await stored(page, "chess.library");
+  assert(!lib || !lib.n, "C2: 失败时棋谱库里什么也没多");
   assert(errs.length === 0, "errors: 没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
@@ -216,7 +219,7 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   await page.waitForTimeout(400);
   const calls = await page.evaluate(() => window.__calls);
   assert(JSON.stringify(calls) === '[{"site":"chesscom","user":"Sync_Tester","max":20}]', "C2: Chess.com、最近 20 局（" + JSON.stringify(calls) + "）");
-  // v8-0-plan C1: the games live in IndexedDB now; chess.v1.library is a header
+  // v8-0-plan C1: the games live in IndexedDB now; chess.library is a header
   const lib = await libView(page);
   const games = (lib && lib.games) || [];
   assert(games.length === 2, "C2: 两局进了棋谱库（" + games.length + "）");
@@ -280,12 +283,15 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   await page.waitForTimeout(150);
   d = await dlg(page);
   assert(!d.shown, "C2: Esc 关掉对话框");
-  // …and the preferences switch turns it back off
-  await page.click("#prefs-open");
+  // …and the settings switch turns it back off (9.0 S5: the preferences
+  // window became the settings page; the switch is in its 数据 category)
+  await page.click('#rail button[data-view="settings"]');
   await page.waitForTimeout(200);
+  await page.click("#cat-data");
+  await page.waitForTimeout(100);
   await page.click("#opt-netsync");
-  const s = await stored(page, "chess.v1.sync");
-  assert(s.on === false && s.user === "Sync_Tester", "C2: 在偏好设置里关掉，名字留着（" + JSON.stringify(s) + "）");
+  const s = await stored(page, "chess.sync");
+  assert(s.on === false && s.user === "Sync_Tester", "C2: 在设置·数据里关掉，名字留着（" + JSON.stringify(s) + "）");
   assert(errs.length === 0, "success: 没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
@@ -342,8 +348,8 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
 // to fetch them anyway, close the dialog and leave only a toast behind.
 {
   const { ctx, page, errs } = await open({ seedSync: { v: 1, on: true } });
-  await page.evaluate(() => localStorage.setItem("chess.v1.library", JSON.stringify({ v: 1, names: ["me"], games: [
-    { id: "lib:p1", t: 1, white: "me", black: "x", date: "?", event: "", result: "1-0", plies: 2, sans: "e4 e5", fen: "", side: "w", outcome: "win", an: null }] })));
+  await page.evaluate(seedLibrary, { names: ["me"], games: [
+    { id: "lib:p1", t: 1, white: "me", black: "x", date: "?", event: "", result: "1-0", plies: 2, sans: "e4 e5", fen: "", side: "w", outcome: "win", an: null }] });
   await page.reload();
   await page.waitForTimeout(900);
   await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
@@ -375,8 +381,8 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
 // how far a sync got, so a sync closed before that simply asks again.
 {
   const { ctx, page, errs } = await open({ seedSync: { v: 1, on: true } });
-  await page.evaluate(() => localStorage.setItem("chess.v1.library", JSON.stringify({ v: 1, names: ["me"], games: [
-    { id: "lib:p1", t: 1, white: "me", black: "x", date: "?", event: "", result: "1-0", plies: 2, sans: "e4 e5", fen: "", side: "w", outcome: "win", an: null }] })));
+  await page.evaluate(seedLibrary, { names: ["me"], games: [
+    { id: "lib:p1", t: 1, white: "me", black: "x", date: "?", event: "", result: "1-0", plies: 2, sans: "e4 e5", fen: "", side: "w", outcome: "win", an: null }] });
   await page.reload();
   await page.waitForTimeout(900);
   await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
@@ -474,7 +480,7 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   assert(st.answered - t0 >= 7900, "N1: 应答确实晚了 8 秒（" + rel(st.answered) + " ms）");
   const lib = await libView(page);
   assert(lib.games.length === 2, "N1: 8 秒后应答到了，两局照常进库（" + lib.games.length + "）");
-  const s = await stored(page, "chess.v1.sync");
+  const s = await stored(page, "chess.sync");
   assert(s && !("last" in s), "T4（评审 P2-2）：不再另记「上次」——下次从哪里开始看棋谱库（" + JSON.stringify(s) + "）");
   assert(errs.length === 0, "N1: 没有页面异常 " + errs.join(" / "));
   await ctx.close();
@@ -542,7 +548,7 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   const since1 = Date.UTC(2026, 8, 20) - 14 * 86400000;
   assert(JSON.stringify(calls) === JSON.stringify([{ site: "chesscom", user: "Sync_Tester", max: 50 }, { site: "chesscom", user: "Sync_Tester", max: 101, since: since1 }]),
     "T4（评审 P2-2/P2-3）: 第二次 since = 库里最新一局那天 − 14 天，局数 = 选的 100 + 重叠里已有的 1（" + JSON.stringify(calls) + "）");
-  let s = await stored(page, "chess.v1.sync");
+  let s = await stored(page, "chess.sync");
   assert(s.max === 100 && !("last" in s), "T4: 选项存下了，没有另记的记号（" + JSON.stringify(s) + "）");
   // analyse after sync, on; the next sync's new game starts the library's pass
   await page.click("#sync-analyse");
@@ -552,7 +558,7 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   const lib = await libView(page);
   const run = await page.evaluate(() => ({ n: window.__analysed, label: (document.getElementById("lib-analyse") || {}).textContent || "" }));
   assert(lib.games.length === 3 && run.n > 0 && run.label.includes("暂停"), "T4: 同步后分析开着：新的一局进库后，棋谱库的批量分析开始了（" + JSON.stringify({ games: lib.games.length, run }) + "）");
-  s = await stored(page, "chess.v1.sync");
+  s = await stored(page, "chess.sync");
   const calls3 = await page.evaluate(() => window.__calls);
   assert(s.analyse === true && calls3[2].since === since1 && calls3[2].max === 101,
     "T4: 开关存下了；第三次仍从库里推（since 不变，100 + 1）（" + JSON.stringify({ s, call: calls3[2] }) + "）");

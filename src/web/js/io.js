@@ -418,7 +418,7 @@ export function createIO(d) {
     // startup uses, so an imported book is served exactly like a saved one
     if (merged.mines) store.session.mines = loadMines();
     if (merged.learn) store.session.learnState = loadLearnState();
-    if (merged.puzzles) store.session.puzzleState = loadPuzzleState().state;
+    if (merged.puzzles) store.session.puzzleState = loadPuzzleState();
     if (merged.progress) store.session.progress = Progress.coerce(Persist.read("progress", (v) => v).value);
     if (merged.achievements) store.session.achSeen = loadAchSeen();
     if (merged.repertoire) RepUI.reload();

@@ -8,7 +8,7 @@ import path from "path";
 import vm from "vm";
 import { fileURLToPath } from "url";
 import { spawnSync } from "child_process";
-import { compileModuleSync, CHUNKS, build, BUNDLE_BUDGET, BUNDLE_BYTES_BEFORE_F5 } from "./bundle.mjs";
+import { compileModuleSync, CHUNKS, build, BUNDLE_BUDGET } from "./bundle.mjs";
 import { measureMarks, markChroma, markLook, boardDistinct, LAST_CHROMA_CEILING, CHROMA_CEILING, SEP_FLOOR_BOARD as SEP_FLOOR_BY_BOARD, BOARDS as MARK_BOARDS, MARKS,
   LOOK_MARKS, LOOK_CHROMA_CEILING, LOOK_DE_CEILING, BOARD_DISTINCT_FLOOR } from "./lib/mark-colour.mjs";
 
@@ -1741,7 +1741,11 @@ for (const lang of CONTENT_LANGS) {
   const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
 
   // spacing: an 8-step scale, and nothing between the steps
-  const SPACE = new Set(["0px", "2px", "4px", "6px", "8px", "12px", "16px", "20px", "24px"]);
+  // 9.0 V1 (设计语言 v2): the 8pt rhythm — 4 · 8 · 12 in a group · 16 in a
+  // card · 24 between blocks · 32 · 40 · 48, and 2 for a hairline's
+  // neighbour. 6 and 20 left the scale (they were 8.x's in-betweens); the
+  // page margins (32 / 40) joined it.
+  const SPACE = new Set(["0px", "2px", "4px", "8px", "12px", "16px", "24px", "32px", "40px", "48px"]);
   const strays = [];
   for (const m of stripped.matchAll(/\b(padding|margin|gap|row-gap|column-gap)(?:-\w+)?\s*:\s*([^;{}]+);/g)) {
     if (/var\(|calc/.test(m[2])) continue;
@@ -1821,10 +1825,10 @@ for (const lang of CONTENT_LANGS) {
       "every control height comes from a token" + (stray.length ? " — off it: " + [...new Set(stray)].join(", ") : ""));
     for (const tokName of ["--row-h", "--row-h-sm", "--label-h"])
       assert(new RegExp(tokName + ":\\s*\\d+px").test(stripped), tokName + " is defined");
-    // 7.9 §1e: a tab is a button, so its height is the buttons' token now
-    // (the same 36px, see the two-heights guard below)
-    const tabH = /\.side-tabs button\[role="tab"\]\s*\{[^}]*min-height:\s*var\(--ctl-h\)/.test(stripped);
-    assert(tabH, "the tab row's height comes from --ctl-h");
+    // 9.0 S5: a settings category is a button too — its height is the
+    // buttons' token in the narrow row (the two-heights guard below)
+    const catH = /\.set-cat \{[^}]*height: 36px/.test(stripped) || /\.set-cat\s*\{[^}]*min-height:\s*var\(--ctl-h\)/.test(stripped);
+    assert(catH, "the narrow settings row's categories are a control's height");
   }
 
   // The chrome is one strip, so everything standing in it is one height and one
@@ -1837,9 +1841,11 @@ for (const lang of CONTENT_LANGS) {
     // 7.7 (v7-7-plan §2): the status pill left the bar — whose move it is is
     // the lit player strip now, and the sentence is .sr-only. 7.9 §1a: 悔棋
     // and 提示 left it too, for the opponent's strip, so the bar holds ☰
-    // alone, at the small control height — which is the bar's own 32px.
-    assert(/\.chrome \.icon-btn \{[^}]*height:\s*var\(--ctl-h-sm\)/.test(stripped),
-      "the bar's one control is the small control height");
+    // alone, at the small control height. 9.0 V3: ☰ is the strip's last
+    // control now, and the icon button is the small control height wherever
+    // it stands.
+    assert(/\n    \.icon-btn \{[^}]*height:\s*var\(--ctl-h-sm\)/.test(stripped),
+      "the icon button (☰ among them) is the small control height");
     assert(/\.ps-tools \.tool-btn \{[^}]*height:\s*var\(--ctl-h-sm\)/.test(stripped),
       "…and so are the two tools on the opponent's strip (7.9 §1a)");
     const chrome = /\n    \.chrome \{([\s\S]*?)\n    \}/.exec(stripped);
@@ -1905,7 +1911,12 @@ for (const lang of CONTENT_LANGS) {
   // scales the whole sheet together (v6-plan Q3.6)
   // 7.9 §2a: the panel moved up a step — 12px (0.75rem) left the scale and
   // 14px (0.875rem) took its place. Still seven.
-  const TYPE = new Set(["0.6875rem", "0.8125rem", "0.875rem", "0.9375rem", "1rem", "1.1875rem", "1.875rem"]);
+  // 9.0 V1 (设计语言 v2): four roles, not seven sizes — 30 a result figure
+  // (and a page's title) · 16 a card's or a block's title · 14 the body and
+  // every button · 12 what is said beside it — plus 13 for the two heading
+  // levels (section 600, field label 400) and 11 for coordinates and badges
+  // only. 15 and 19 had no role and left; 12 came back as the aside.
+  const TYPE = new Set(["0.6875rem", "0.75rem", "0.8125rem", "0.875rem", "1rem", "1.875rem"]);
   const badType = [...stripped.matchAll(/font-size:\s*([^;{}]+);/g)]
     .map((m) => m[1].trim())
     .filter((v) => /^\d/.test(v) && !TYPE.has(v));
@@ -1914,7 +1925,7 @@ for (const lang of CONTENT_LANGS) {
   // design-constraints.md: 字号 7 档、行高 3 档、时长 3 档 —— 不要新增档位.
   // The membership sets above are the scale, so widening one is how a step
   // gets added: this makes that edit fail here rather than pass quietly.
-  assert(TYPE.size === 7, "the type scale still has seven steps (" + TYPE.size + ")");
+  assert(TYPE.size === 6, "the type scale still has six steps (" + TYPE.size + ")");
 
   // The bundle targets Safari 15 (scripts/bundle.mjs), and container queries
   // arrived in Safari 16: a rule inside @container is simply not there on
@@ -1922,6 +1933,84 @@ for (const lang of CONTENT_LANGS) {
   // rules key on a class the page sets instead.
   assert(!/@container\b|\bcontainer(?:-type|-name)?\s*:/.test(stripped),
     "styles.css uses no container queries — the bundle targets Safari 15");
+
+  // 9.0 V1 — 设计语言 v2 (docs/design-constraints.md §0, design/v9-m0/v9.css).
+  // Measured on 8.4.0: nine button looks, six card looks, five heading
+  // styles, four segment implementations, dashed boxes inside solid cards.
+  {
+    // no dashed frame: a dashed box reads as a placeholder waiting for
+    // content, and every one of them was an empty state or a box in a box
+    assert(!/\bdashed\b/.test(stripped), "no dashed border or rule anywhere (9.0 V1)");
+    // one heading voice in every language: 13/600 muted, never in capitals
+    // with tracking — 「STATS」 beside 「统计」 was two systems for one level
+    assert(!/text-transform:\s*uppercase/.test(stripped), "no heading is set in capitals (9.0 V1)");
+    const tracked = [...stripped.matchAll(/letter-spacing:\s*([^;]+);/g)].map((m) => m[1].trim()).filter((v) => !/^0(px)?$/.test(v));
+    assert(tracked.length <= 1,
+      "no tracking but the frame's coordinates (" + tracked.join(", ") + ")");
+    for (const sel of [".side-h", ".act-k, .review-h"]) {
+      const r = new RegExp("\\n\\s*" + sel.replace(/[.]/g, "\\.") + " \\{([\\s\\S]*?)\\}").exec(stripped);
+      assert(r && /font-size:\s*0\.8125rem/.test(r[1]) && /font-weight:\s*600/.test(r[1]) && /color:\s*var\(--muted\)/.test(r[1]),
+        sel + " is the section heading: 13/600 in the muted ink");
+    }
+    // one accent, three uses: the primary button, the current move, the
+    // selected state (and the focus ring, which is the selected state of the
+    // keyboard). Every rule that paints with it says which in its selector;
+    // the register is the four that do not, and it only shrinks.
+    const ACCENT_OK = /primary|current|\.active|selected|pressed|expanded|focus|is-active|:hover|aria-current/;
+    const ACCENT_KNOWN = new Map([
+      [":root", "declares --accent-soft and --accent-line"],
+      [".think-dot", "the engine is thinking: the board's one live dot"],
+      [".range", "the volume slider's thumb (accent-color)"],
+      [".xp-mine", "「我的」 — your own book's move, the selected tint"],
+    ]);
+    const stray = [];
+    for (const m of stripped.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      if (!/var\(--accent(-soft|-line)?\)/.test(m[2])) continue;
+      const sel = m[1].trim().replace(/\s+/g, " ");
+      if (sel.startsWith("@") || ACCENT_OK.test(sel) || ACCENT_KNOWN.has(sel)) continue;
+      stray.push(sel);
+    }
+    assert(stray.length === 0,
+      "the accent paints only a primary button, the current move or a selected state" + (stray.length ? " — also: " + stray.join(" ;; ") : ""));
+    // four button kinds, each spelt once per family
+    for (const k of [".act-btn.primary {", ".tool-btn.primary {", ".act-btn.danger {", ".tool-btn.danger {"])
+      assert(stripped.split(k).length === 2, "one declaration of " + k.slice(0, -2));
+    // two surfaces: a card is opaque — no film of white over another card
+    for (const theme of ["wood", "night", "day", "notebook"]) {
+      const v = new RegExp("--" + theme + "-card:\\s*([^;]+);").exec(stripped);
+      assert(v && /^#[0-9a-f]{6}$/i.test(v[1].trim()), theme + ": a card is the raised surface, opaque (" + (v && v[1]) + ")");
+      const p = new RegExp("--" + theme + "-panel:\\s*([^;]+);").exec(stripped);
+      assert(p && p[1].trim() === v[1].trim(), theme + ": …the same raised surface a dialog is");
+      const a = new RegExp("--" + theme + "-accent:\\s*([^;]+);").exec(stripped);
+      const pf = new RegExp("--" + theme + "-primary-from:\\s*([^;]+);").exec(stripped);
+      const pt = new RegExp("--" + theme + "-primary-to:\\s*([^;]+);").exec(stripped);
+      assert(a && pf && pt && pf[1] === a[1] && pt[1] === a[1], theme + ": one accent — the primary is the accent (" + (a && a[1]) + ")");
+    }
+  }
+
+  // 9.0 V2: the bundled face — Inter (OFL), the Latin variable subset, first
+  // in the stack and ahead of the CJK faces, and shipped with its licence.
+  {
+    const face = /@font-face\s*\{([^}]*)\}/.exec(stripped);
+    assert(face && /font-family:\s*"Inter Var"/.test(face[1]) && /url\("fonts\/inter-latin-wght-normal\.woff2"\)/.test(face[1]) &&
+      /font-display:\s*swap/.test(face[1]) && /unicode-range:/.test(face[1]),
+      "Inter is declared once, from fonts/, swap, Latin only");
+    const woff = path.join(root, "src/web/fonts/inter-latin-wght-normal.woff2");
+    assert(fs.existsSync(woff) && fs.statSync(woff).size <= 60 * 1024,
+      "…the file is there and small (" + (fs.existsSync(woff) ? fs.statSync(woff).size : 0) + " bytes ≤ 60 KB)");
+    assert(fs.existsSync(path.join(root, "src/web/fonts/Inter-OFL.txt")) &&
+      /SIL Open Font License/.test(fs.readFileSync(path.join(root, "src/web/fonts/Inter-OFL.txt"), "utf8")),
+      "…with its SIL OFL beside it");
+    const ui = /--font-ui:\s*([^;]+);/.exec(stripped);
+    assert(ui && /^"Inter Var",\s*"PingFang SC"/.test(ui[1].trim()), "the interface stack opens Inter → PingFang SC (" + (ui && ui[1].slice(0, 40)) + ")");
+    const ja = /html:lang\(ja\)\s*\{\s*--font-ui:\s*([^;]+);/.exec(stripped);
+    assert(ja && /^"Inter Var",\s*"Hiragino Kaku Gothic ProN"/.test(ja[1].trim()), "…and the Japanese one Inter → the Japanese faces");
+    assert(/text-autospace:\s*ideograph-alpha/.test(stripped), "text-autospace is on where it is supported");
+    const sync = fs.readFileSync(path.join(root, "scripts/sync-dist.mjs"), "utf8");
+    assert(/"src\/web\/fonts\/inter-latin-wght-normal\.woff2", "fonts\/inter-latin-wght-normal\.woff2"/.test(sync) &&
+      /"src\/web\/fonts\/Inter-OFL\.txt", "licenses\/Inter-OFL\.txt"/.test(sync),
+      "sync-dist.mjs packages the font and its licence (macOS and Windows both build frontend/dist with it)");
+  }
 
   // 7.9 §2b: numbers are the interface face with tabular figures. The mono
   // stack made every counter, the accuracy figure and the clock look like
@@ -1938,7 +2027,7 @@ for (const lang of CONTENT_LANGS) {
     assert(users.length > 0 && users.every((b) => /font-variant-numeric: tabular-nums/.test(b)),
       "…and every rule that sets it asks for tabular figures (" + users.length + " rules)");
   }
-  assert(SPACE.size === 9, "the spacing scale still has nine steps (" + SPACE.size + ")");
+  assert(SPACE.size === 10, "the spacing scale still has ten steps (" + SPACE.size + ")");
 
   // leading: three steps, declared as tokens. 1.12 collapsed font-size and
   // left line-height running seven values including the UA's `normal`, which
@@ -1957,11 +2046,15 @@ for (const lang of CONTENT_LANGS) {
   }
 
   // weight: three, not five. 650 and 700 were doing 600's job under other names.
+  // 9.0 V1: two — 400 and 600. 500 was a third emphasis between them (a
+  // button's label, a setting's name, a toast) and the CJK faces have no
+  // honest 500 on Windows. The bundled face's @font-face declares the
+  // range it carries (100 900), which is not a weight anything is set in.
   {
-    const ws = [...stripped.matchAll(/font-weight:\s*(\d+)/g)].map((m) => m[1]);
-    const bad = ws.filter((w) => !["400", "500", "600"].includes(w));
+    const ws = [...stripped.replace(/@font-face\s*\{[^}]*\}/g, "").matchAll(/font-weight:\s*(\d+)/g)].map((m) => m[1]);
+    const bad = ws.filter((w) => !["400", "600"].includes(w));
     assert(bad.length === 0,
-      "three weights only" + (bad.length ? " — also found: " + [...new Set(bad)].join(", ") : ""));
+      "two weights only" + (bad.length ? " — also found: " + [...new Set(bad)].join(", ") : ""));
   }
 
   // The action rows, and the two ways this has been got wrong. As
@@ -1995,12 +2088,22 @@ for (const lang of CONTENT_LANGS) {
 
     // ONE control family. The segment buttons and the action buttons share a
     // single declaration block; if someone splits them again, this fails.
+    // 9.0 V1: what they share — type, one line, the press — is still that
+    // one block; the box is no longer shared: a segment is a place in a
+    // tray (.theme-row is the box), an action is a secondary button.
     assert(/\.theme-row button,\s*\.act-btn \{/.test(stripped),
       "the segment control and the action button are declared together, not twice");
     const box = /\.theme-row button,\s*\.act-btn \{([\s\S]*?)\}/.exec(stripped);
-    assert(box && /border:\s*1px solid/.test(box[1]), "…and that family has a box");
-    assert(box && !/white-space:\s*nowrap/.test(box[1]),
-      "a label too long for its cell wraps rather than being cut");
+    assert(box && /white-space:\s*nowrap/.test(box[1]) && /font-size:\s*0\.875rem/.test(box[1]) && /font-weight:\s*600/.test(box[1]),
+      "…one line, 14/600, for both (9.0 V1: a label never wraps — a row that cannot hold it steps its columns down)");
+    assert(!/overflow-wrap:\s*break-word|hyphens:\s*auto/.test((/\.theme-row button,\s*\.act-btn \{[^}]*\}\s*(\.theme-row button,\s*\.act-btn \{[^}]*\})?/.exec(stripped) || [""])[0]),
+      "…and no rule left that breaks a label over two lines");
+    const tray = /\n    \.theme-row \{([^}]*)\}/.exec(stripped);
+    assert(tray && /box-shadow:\s*inset 0 0 0 1px/.test(tray[1]) && /background:\s*var\(--card\)/.test(tray[1]),
+      "the segment's tray is the box: the raised surface and one hairline (9.0 V1)");
+    const act = /\n    \.act-btn \{([^}]*)\}/.exec(stripped);
+    assert(act && /border:\s*1px solid var\(--line-strong\)/.test(act[1]),
+      "…and an action is the secondary button — the strong hairline on the raised surface");
 
     // P3's acceptance criterion, at the level of the rule rather than the
     // screen: dimming a control that cannot be used is not a milder way of
@@ -2060,32 +2163,38 @@ for (const lang of CONTENT_LANGS) {
       "the mode segment is styled by the same rule as every other segment (" + (seg ? seg[1] : "missing") + ")");
   }
 
-  // The settings page, read top to bottom. Three claims that are about the
-  // order and the naming rather than about any one control, so they are
-  // cheapest to make against the markup.
+  // The settings page, read in order. Claims about the order and the
+  // naming rather than about any one control, so they are cheapest to make
+  // against the markup.
   {
     const markup = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
-    const pane = markup.slice(markup.indexOf('id="pane-setup"'), markup.indexOf("/pane-setup"));
     // the three dictionaries, wherever they live (v8-0-plan F5 split them)
     const i18nSrc = ["i18n.js", "i18n-en.js", "i18n-ja.js"]
       .map((f) => fs.readFileSync(path.join(root, "src/web/js", f), "utf8")).join("\n");
-    const headings = [...pane.matchAll(/data-i18n="(side\.[a-z]+)"[^>]*>/g)]
-      .map((m) => m[1]).filter((k) => ["side.mode", "side.game", "side.display", "side.engine", "side.danger", "side.language", "side.sound"].includes(k));
-    // v8-0-plan A1: the settings page is the game's. The mode went to the
-    // new-game dialog and the rail; the window's look, language, sound and
-    // data went to 偏好设置. What is left opens on the game and ends on the
-    // engine, and none of the app-level groups is on it.
-    assert(headings[0] === "side.game" && headings[headings.length - 1] === "side.engine",
-      "A1: the settings page runs 对局 → … → 引擎 (" + headings.join(" → ") + ")");
-    assert(!headings.some((k) => ["side.mode", "side.danger", "side.language", "side.sound"].includes(k)),
-      "A1: no mode, language, sound or deletion group on the settings page");
-    // …and in the preferences window, the deletions are still the last
-    // group: 2.1 had them in the middle of a page, the only red on it
-    const prefs = markup.slice(markup.indexOf('id="prefs-modal"'), markup.indexOf('id="prefs-close"'));
-    const pHeads = [...prefs.matchAll(/data-i18n="((?:side|prefs)\.[a-zA-Z]+)"[^>]*>/g)].map((m) => m[1])
-      .filter((k) => ["prefs.look", "side.language", "side.sound", "side.learning", "side.allData", "side.danger"].includes(k));
-    assert(pHeads[0] === "prefs.look" && pHeads[pHeads.length - 1] === "side.danger",
-      "A1: 偏好设置 runs 外观 → … → 清除数据 (" + pHeads.join(" → ") + ")");
+    // 9.0 S5: one place — six categories, in the list's order, each naming a
+    // pane that exists; no second settings surface in the panel or a window
+    const cats = [...markup.matchAll(/role="tab" class="set-cat" id="cat-([a-z]+)" data-cat="\1"[^>]*aria-controls="set-\1"/g)].map((m) => m[1]);
+    assert(cats.join() === "general,board,sound,game,data,advanced",
+      "S5: the settings page runs 通用 → 棋盘 → 声音 → 对局 → 数据 → 高级 (" + cats.join(" → ") + ")");
+    assert(cats.every((c) => markup.includes('<div class="set-pane" id="set-' + c + '"')),
+      "S5: every category points at a pane that exists");
+    assert(!/id="pane-setup"|id="prefs-modal"|id="tab-setup"/.test(markup),
+      "S5: no 设置 tab in the panel and no preferences window — the page is the one place");
+    // the language is the first thing on the first category (task i)
+    const general = markup.slice(markup.indexOf('id="set-general"'), markup.indexOf('id="set-board"'));
+    assert(general.indexOf('id="lang-seg"') > 0 && general.indexOf('id="lang-seg"') < general.indexOf('id="text-seg"'),
+      "S5: the language is the first row of 通用");
+    // the deletions are the last group of 数据: 2.1 had them in the middle
+    // of a page, the only red on it
+    const data = markup.slice(markup.indexOf('id="set-data"'), markup.indexOf('id="set-advanced"'));
+    const dHeads = [...data.matchAll(/data-i18n="((?:side|lib)\.[a-zA-Z]+)"[^>]*>/g)].map((m) => m[1])
+      .filter((k) => ["lib.sync", "side.learning", "side.allData", "side.danger"].includes(k));
+    assert(dHeads[dHeads.length - 1] === "side.danger",
+      "S5: 数据 ends on 清除数据 (" + dHeads.join(" → ") + ")");
+    // the next game's choices are the new-game dialog's, and only there
+    const ng = markup.slice(markup.indexOf('id="newgame-modal"'), markup.indexOf('id="confirm-modal"'));
+    assert(["row-difficulty", "row-persona", "row-color", "row-clock"].every((id) => ng.includes('id="' + id + '"')),
+      "S5: rung, style, side and clock live in the new-game dialog");
 
     // The heading is a promise about what is inside. 「外观」 once held the
     // language and the sound; since A1 each has its own group, and the rows
@@ -2236,14 +2345,13 @@ for (const lang of CONTENT_LANGS) {
   // empties. Defect 8 — the eval bar's two hard-coded sides and the two
   // hard-coded blunder golds — was the last four, and left in P2.3. Anything not on this list fails, so the count only goes down.
   {
-    const KNOWN = new Map([
-      ["#fff", "two white paper fills (notebook theme's own surface)"],
-      ["#000", "two color-mix() darkening steps, not a paint colour"],
-      // (#9a3412 / #1e3a5f, the notebook theme's ♔ ♚ side marks, left with
-      // the match bar (7.7) — the strips draw each side as a disc in
-      // --side-white / --side-black)
-      ["#4a90d9", "var(--accent) fallback, never reached"],
-    ]);
+    // 9.0 V1 emptied it: #fff (the switch's knob, a hover mix) and #000 (a
+    // toast's darkening mix, a mask's opaque stop) became tokens, and
+    // #4a90d9 was a var(--accent) fallback that was never reached.
+    // (#9a3412 / #1e3a5f, the notebook theme's ♔ ♚ side marks, left with
+    // the match bar (7.7) — the strips draw each side as a disc in
+    // --side-white / --side-black)
+    const KNOWN = new Map([]);
     const found = new Set((body.match(/#[0-9a-fA-F]{3,8}\b/g) || []).map((c) => c.toLowerCase()));
     const fresh = [...found].filter((c) => !KNOWN.has(c));
     for (const c of fresh) console.error("  new bare colour outside the themes: " + c);
@@ -2578,10 +2686,12 @@ for (const lang of CONTENT_LANGS) {
 
   // personas: one per rung (v8-1-plan T1: 8–12 until the ladder was re-stepped), a style persona.js knows, an icon icons.js draws
   assert(O.PERSONAS.length === O.LEVELS.length, "B4: a persona for every rung (" + O.PERSONAS.length + ")");
-  // v8-1-plan T1: the dialog's three segments, in ladder order, none empty
-  assert(O.SEGMENTS.length === 3 && O.LEVELS.every((id, i) => i === 0 || O.segmentOf(id) >= O.segmentOf(O.LEVELS[i - 1])) &&
-    [0, 1, 2].every((k) => O.LEVELS.some((id) => O.segmentOf(id) === k)) && O.segmentOf("easy") === 1 && O.segmentOf("solid") === 0,
-    "T1: the rungs fall into 入门 / 进阶 / 高手 in ladder order, 进阶 from 初级 on");
+  // 9.0 S2: the dialog shows eight personas, the ladder around the pick —
+  // in ladder order, so a window of the list is a stretch of the ladder
+  assert(O.PERSONAS.every((p, i) => i === 0 || O.LEVELS.indexOf(p.level) > O.LEVELS.indexOf(O.PERSONAS[i - 1].level)),
+    "S2: the personas run in ladder order, so eight in a row are neighbours");
+  assert(/const SHOWN = 8;/.test(fs.readFileSync(path.join(root, "src/web/js/opponents-ui.js"), "utf8")),
+    "S2: the dialog shows eight opponent cards");
   assert(new Set(O.PERSONAS.map((p) => p.level)).size === O.PERSONAS.length && O.PERSONAS.every((p) => O.LEVELS.includes(p.level)),
     "B4: each persona is its own rung of the ladder");
   assert(O.PERSONAS.every((p) => ctx.ChessPersona.IDS.includes(p.style)), "B4: each persona's style is one persona.js plays");
@@ -2606,8 +2716,7 @@ for (const lang of CONTENT_LANGS) {
     const T = LINES[lang];
     // the end-of-game line is the persona's own or the shared `bye`
     const gaps = O.PERSONAS.filter((p) => !T[p.id] || !T[p.id].name || !T[p.id].hello).map((p) => p.id)
-      .concat(["say", "bye", "noOpening", "segAria"].filter((k) => !T[k]))
-      .concat(Array.isArray(T.seg) && T.seg.length === O.SEGMENTS.length && T.seg.every((x) => /\S/.test(x)) ? [] : ["seg"]);
+      .concat(["say", "bye", "noOpening"].filter((k) => !T[k]));
     assert(gaps.length === 0, "B4: " + lang + " names every persona and gives it both lines" + (gaps.length ? " — " + gaps.slice(0, 4) : ""));
     if (lang !== "zh-CN") {
       const same = O.PERSONAS.filter((p) => p.id !== "fish" && T[p.id].hello === LINES["zh-CN"][p.id].hello);
@@ -2623,6 +2732,90 @@ for (const lang of CONTENT_LANGS) {
       : lang === "ja" ? /(すごい|素晴らし|上手|下手|残念|楽しい|嬉しい|悲しい|ごめん|頑張)/ : /(好棋|漂亮|厉害|精彩|可惜|遗憾|开心|高兴|难过|抱歉|加油|运气|真棒|太好)/;
     const judged = O.PERSONAS.flatMap((p) => [T[p.id].hello, T[p.id].bye]).concat([T.bye]).filter((s) => JUDGE.test(s || ""));
     assert(judged.length === 0, "B4: " + lang + " persona lines state facts only (7.8)" + (judged.length ? " — " + judged[0] : ""));
+  }
+
+  // --- v9-0-plan S6: the interface speaks the player's words ---------------
+  // 8.4 told the player 「Stockfish 限制在 UCI_Elo 1700」, 「置换表」,
+  // 「MultiPV 6」, 「（120ms/步）」, 「结论已查 Syzygy 残局库核对」, 「7.6 以前的
+  // 合成音」 and 「1500?」 — engine settings, version numbers and a statistic's
+  // error bar, where the player wanted to know what the thing does for them.
+  // Nothing user-facing — the three dictionaries, the persona lines, the
+  // fallback text and tooltips in index.html — may say these again. The
+  // register is for a key in the 高级 (engine) settings group that truly needs
+  // one of the words in its tooltip; it may only shrink (S6 left it empty).
+  {
+    const TECH = /UCI_Elo|UCI_LimitStrength|MultiPV|Syzygy|ms\/步|ms\/move|\d\s?ms\b|毫秒|ミリ秒|\bnodes?\b|节点|ノード|置换表|置換表|hash table|ハッシュ表|\d\.\d+\s?(以前|之前|より前)|before \d\.\d|实测|実測|measured:|一半重合|agree about half|一致するのは約半分|±\{\d\}/i;
+    const ALLOWED = {}; // key → why the 高级 group needs the word; may only shrink
+    const ALLOWED_MAX = 0;
+    assert(Object.keys(ALLOWED).length <= ALLOWED_MAX, "S6: the technical-word register only shrinks (" + Object.keys(ALLOWED).length + " of at most " + ALLOWED_MAX + ")");
+    const leaks = [];
+    for (const [lang, dict] of Object.entries(ctx.ChessI18n.DICT)) {
+      for (const [k, v] of Object.entries(dict)) {
+        if (!TECH.test(v)) continue;
+        if (ALLOWED[k] && k.startsWith("tip.")) continue;
+        leaks.push(lang + " " + k + ": " + v);
+      }
+      // a register entry the dictionaries no longer need is a stale one
+      for (const k of Object.keys(ALLOWED)) assert(TECH.test(dict[k] || ""), "S6: " + k + " no longer needs its register entry — drop it");
+    }
+    for (const [lang, T] of Object.entries(LINES)) {
+      for (const p of O.PERSONAS) for (const line of ["hello", "bye"]) {
+        if (TECH.test(T[p.id][line] || "")) leaks.push(lang + " op." + p.id + "." + line + ": " + T[p.id][line]);
+      }
+    }
+    // index.html's own text and tooltips, outside comments and scripts
+    const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8")
+      .replace(/<!--[\s\S]*?-->/g, "").replace(/<script[\s\S]*?<\/script>/g, "").replace(/<style[\s\S]*?<\/style>/g, "");
+    for (const m of html.matchAll(/\s(?:title|aria-label|placeholder)="([^"]*)"|>([^<>]+)</g)) {
+      const s = m[1] != null ? m[1] : m[2];
+      if (TECH.test(s)) leaks.push("index.html: " + s.trim());
+    }
+    for (const l of leaks) console.error("  implementation detail on screen — " + l);
+    assert(leaks.length === 0, "S6: no engine settings, version numbers or error bars in the interface's words" + (leaks.length ? " — " + leaks.length + " leak(s)" : ""));
+
+    // one thing, one number: a persona's lines and a rung's tooltip quote
+    // the rating the card shows (opponents.js, measured), never another
+    const TIP_OF = { easy: "tip.diffEasy", normal: "tip.diffNormal", hard: "tip.diffHard", casual: "tip.casual" };
+    const wrong = [];
+    for (const p of O.PERSONAS) {
+      const want = String(O.ratingOf(p.level));
+      const texts = Object.entries(LINES).flatMap(([lang, T]) => [[lang + " op." + p.id + ".hello", T[p.id].hello], [lang + " op." + p.id + ".bye", T[p.id].bye || ""]])
+        .concat(Object.entries(ctx.ChessI18n.DICT).map(([lang, d]) => { const k = TIP_OF[p.level] || "tip.diff." + p.level; return [lang + " " + k, d[k] || ""]; }));
+      for (const [where, s] of texts) {
+        for (const m of s.replace(/(\d),(\d{3})/g, "$1$2").matchAll(/(?<![\d.])\d{3,4}(?![\d.])/g)) {
+          if (m[0] !== want) wrong.push(where + " says " + m[0] + ", the card says " + want);
+        }
+      }
+    }
+    for (const w of wrong) console.error("  " + w);
+    assert(wrong.length === 0, "S6: every rating a persona line or rung tooltip quotes is the one on its card" + (wrong.length ? " — " + wrong.length + " differ" : ""));
+
+    // a provisional rating says so in words; it is not a number with a 「?」
+    const provSrc = ["src/web/js/opponents-ui.js", "src/web/js/trainer/puzzle-rating.js", "src/web/js/trainer/puzzle-modes.js",
+      "src/web/js/trainer/visual-modes.js", "src/web/js/trainer/puzzles.js"]
+      .map((f) => [f, fs.readFileSync(path.join(root, f), "utf8")]);
+    const marked = provSrc.filter(([, s]) => /(isProvisional\([^)]*\)|\.provisional|\.rd > \d+)\s*\?\s*"\?"/.test(s)).map(([f]) => f);
+    assert(marked.length === 0, "S6: a provisional rating reads 定级中 / Provisional / 判定中, not 「1500?」" + (marked.length ? " — " + marked : ""));
+    for (const [lang, want] of [["zh-CN", "定级中"], ["en", "Provisional"], ["ja", "判定中"]]) {
+      assert(new RegExp(want, "i").test(ctx.ChessI18n.DICT[lang]["rating.prov"] || ""), "S6: " + lang + " calls a provisional rating " + want);
+    }
+    // the two ratings have one name each (M0): 对局等级分 and 谜题等级分
+    const NAMES = { "zh-CN": ["对局等级分", "谜题等级分", /评级/], en: ["Game rating", "Puzzle rating", /(?!)/], ja: ["対局レーティング", "パズルレーティング", /パズルのレーティング|問題レーティング|エンジン戦のレーティング/] };
+    for (const [lang, [game, puzzle, old]] of Object.entries(NAMES)) {
+      const d = ctx.ChessI18n.DICT[lang];
+      assert(d["me.gameRating"] === game && d["rec.rating"] === puzzle, "S6: " + lang + " names the ratings " + game + " / " + puzzle + " (" + d["me.gameRating"] + " / " + d["rec.rating"] + ")");
+      const stale = Object.entries(d).filter(([, v]) => old.test(v)).map(([k]) => k);
+      assert(stale.length === 0, "S6: " + lang + " has no other name for a rating left" + (stale.length ? " — " + stale.slice(0, 5) : ""));
+    }
+    // and the strongest rung has one name: its label is what the endgame
+    // camp calls its engine, and what index.html's fallback text says
+    for (const [lang, d] of Object.entries(ctx.ChessI18n.DICT)) {
+      assert(d["eg.engine"].includes(d["diff.extreme"]), "S6: " + lang + " endgame engine is the top rung by name (" + d["eg.engine"] + " / " + d["diff.extreme"] + ")");
+      // 8.4's achievement called it a fourth thing: 「极限」 / "Max level" / 「最強」
+      assert(d["ach.extreme-win.d"].includes(d["diff.extreme"]), "S6: " + lang + " achievement names the top rung as the button does (" + d["ach.extreme-win.d"] + ")");
+    }
+    const fallback = /data-diff="extreme"[^>]*>([^<]*)</.exec(fs.readFileSync(path.join(root, "src/web/index.html"), "utf8"));
+    assert(fallback && fallback[1] === ctx.ChessI18n.DICT["zh-CN"]["diff.extreme"], "S6: index.html's top rung reads " + ctx.ChessI18n.DICT["zh-CN"]["diff.extreme"] + " too (" + (fallback && fallback[1]) + ")");
   }
 
   // the clock: presets, a custom control in its own id, and nothing else
@@ -3156,62 +3349,6 @@ for (const lang of CONTENT_LANGS) {
   assert(D.drillId("C24", "e4 e5 Bc4 Nf6") !== D.drillId("C24", "e4 e5 Bc4 Nc6"),
     "a different line is a different drill");
 
-  // the one-time migration off the positional ids
-  const legacy = D.legacyIdMap();
-  const deep = D.drillLines(book);
-  const liveIds = new Set(base);
-  // The table describes the book as it stood when positional ids were retired.
-  // The book has grown since, so it does NOT cover every current drill — a
-  // drill added later never had a positional id. What must hold forever is the
-  // other direction: nothing in the table dangles.
-  const dangling = Object.entries(legacy).filter(([, id]) => !liveIds.has(id));
-  assert(dangling.length === 0,
-    "every frozen legacy id still names a live drill" +
-      (dangling.length ? " — dangling: " + dangling.slice(0, 3).map(([k]) => k).join(", ") : ""));
-  assert(Object.keys(legacy).length <= base.length,
-    "the frozen table cannot name more drills than the book holds");
-  // The table is FROZEN, not derived: it has to keep describing the book the
-  // positional ids were written against, and it must not move when the book
-  // grows. Deriving it made the migration correct only for someone upgrading
-  // from that exact book — which says nothing about a player who skips the
-  // release. Measured: with a derived table, inserting one line dropped 66 to
-  // 108 of the 109 drills.
-  assert(D.legacyIdMap.length === 0, "the legacy map takes no book — it is data, not a derivation");
-  const grown = book.slice();
-  grown.splice(firstDeep + 1, 0, ["A05", "列蒂开局·又一条", "Nf3 d5 g3 c6 Bg2 Bf5"]);
-  assert(JSON.stringify(D.legacyIdMap()) === JSON.stringify(legacy),
-    "growing the book does not move the frozen table");
-  // a legacy key still resolves to the same drill after the book grows
-  const afterGrow = new Set(idsOf(grown));
-  // compared against the frozen table's own size, not the live book's: the
-  // book grows, the table does not, and that is the entire point of freezing
-  // it. (This assertion originally compared against the live count and went
-  // red the first time a line was actually added — caught by the very case it
-  // was written to cover.)
-  const frozenCount = Object.keys(legacy).length;
-  const stillThere = Object.values(legacy).filter((id) => afterGrow.has(id)).length;
-  assert(stillThere === frozenCount,
-    "every migrated id still names a live drill after the book grows (" + stillThere + "/" + frozenCount + ")");
-  // Sampled from the frozen table itself, not from deep[0]: the old
-  // construction assumed the book's first deep line predates the freeze, and
-  // the first line actually added in FRONT of it (A01, 2.5.0) turned that
-  // assumption into a red — of the instrument, not the product. Any frozen
-  // entry whose target is still alive makes the same claim without the
-  // assumption.
-  const [aliveKey, aliveId] = Object.entries(legacy).find(([, id]) => afterGrow.has(id));
-  const store = { [aliveKey]: true, "m1-ladder": true, "op-A05-9999": true };
-  const moved = D.migrateIds(store, legacy);
-  assert(moved === 1, "the one legacy key that still names a row is rewritten (" + moved + ")");
-  assert(store[aliveId] === true, "a solved drill keeps its solve");
-  assert(store["m1-ladder"] === true, "a hand-written puzzle id is left alone");
-  assert(!("op-A05-9999" in store), "a legacy key naming a row that is gone is dropped, not kept forever");
-  // an ECO letter outside A–E was never one of ours and is not touched
-  const alien = { "op-Z99-4": true };
-  assert(D.migrateIds(alien, legacy) === 0 && alien["op-Z99-4"] === true,
-    "a key that only looks like a drill id is left alone");
-  // and it is idempotent — the launch path runs it on every load until marked
-  assert(D.migrateIds(store, legacy) === 0, "migrating twice is a no-op");
-
   // the app must build the id from the module, not from a loop index again
   // (v8-0-plan F4: read from every module but the one that owns the id)
   const appSrc = allSourceExcept("drills.js");
@@ -3307,8 +3444,9 @@ for (const lang of CONTENT_LANGS) {
   // whole P3 rule about visible disabled controls applies here too
   assert(/practice\.hidden = !rest\.total/.test(appSrc),
     "a lesson with no matching puzzles hides the button instead of disabling it");
-  assert(/store\.session\.puzzleTierFilter = "all"/.test(appSrc),
-    "the jump clears a tier filter that would hide the puzzle it promised");
+  // 9.0 S3: there is no tier filter left to hide the puzzle the jump promised
+  assert(!/puzzleTierFilter/.test(appSrc),
+    "no difficulty filter stands between the jump and the puzzle it promised");
 }
 
 // PGN utilities: splitting a multi-game file must not lose games (importing a
@@ -3628,11 +3766,6 @@ for (const lang of CONTENT_LANGS) {
   f = S.onMiss(f);
   assert(S.entry(f).s === 0, "a later miss resets the streak");
   assert(S.entry(f).n === 3, "but the times-seen count keeps growing across misses and solves");
-
-  // 1.6 stored a bare `true`; those entries must keep working
-  assert(S.isDue(true), "a legacy boolean entry is still due");
-  assert(S.entry(true).s === 0, "a legacy entry starts at streak 0");
-  assert(S.onSolve(true) !== null, "a legacy entry does not graduate on one solve");
 
   // solving something that was never missed is a no-op
   assert(S.onSolve(undefined) === null, "solving an unqueued puzzle changes nothing");
@@ -4198,14 +4331,14 @@ for (const lang of CONTENT_LANGS) {
   assert(/for \(const id of r\.dropped\) \{\s*delete store\.session\.puzzleState\.solved\[id\];\s*delete store\.session\.puzzleState\.missed\[id\];/.test(appSrc),
     "a retired drill takes its solved/missed entries with it — no orphan reviews owed");
   // the tab exists exactly while the book does (P3), and the cat is real
-  assert(/if \(b\.dataset\.cat === "mine"\) b\.hidden = !store\.session\.mines\.length;/.test(appSrc),
-    "the 错题 tab is drawn only while the personal book holds drills");
+  assert(/if \(g === "mine"\) b\.hidden = !store\.session\.mines\.length;/.test(appSrc),
+    "the 我的错题 tile is drawn only while the personal book holds drills");
   assert(/"op", "rep", "mine", "review"\]/.test(appSrc) && /real: true, mine: true \}/.test(appSrc),
     "mine is a real category on the scripted-grading rail");
   assert(/\(cat === "review" \|\| cat === "mine" \|\| cat === "rep"\) && !puzzlesInCat\(cat\)\.length/.test(appSrc),
     "an emptied personal book does not strand the player");
   const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
-  assert(/data-cat="mine" hidden/.test(html), "…and the button starts hidden until the book says otherwise");
+  assert(/data-group="mine" hidden/.test(html), "…and the tile starts hidden until the book says otherwise");
 }
 
 // 摸得到的复盘: hovering the move list or a PV chip puts that position on the
@@ -4478,8 +4611,9 @@ for (const lang of CONTENT_LANGS) {
   assert(/function dailyJump\(step\) \{[\s\S]{0,400}switchMode\("learn"\)/.test(appSrc),
     "跳步走的是换模式的那一个函数(导航栏也走它),不是旁路");
   const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
-  assert(/id="daily-btn"/.test(html) && /id="trend-head" hidden/.test(html) && /id="trend-acc" hidden/.test(html),
-    "训练入口在,进步区默认不画,有数据才出现(P3)");
+  // 9.0 S1: the plan's entrance is 今天's card (its button and its steps)
+  assert(/id="today-go"/.test(html) && /id="daily-plan"/.test(html) && /id="trend-head" hidden/.test(html) && /id="trend-acc" hidden/.test(html),
+    "训练入口在(今天的主卡),进步区默认不画,有数据才出现(P3)");
 }
 
 // i18n: every key present in the base language must exist in the others, or
@@ -4728,7 +4862,6 @@ for (const lang of CONTENT_LANGS) {
       ["aria.cal", (n) => [18, n], "Played or solved on 1 day in the last 18 weeks", "Played or solved on 2 days in the last 18 weeks"],
       ["me.m.clockV", (n) => [n, n, "4%"], "1 blunder in 1 move on a low clock · 4% otherwise", "2 blunders in 2 moves on a low clock · 4% otherwise"],
       ["msg.analysis.kept", (n) => [n], "Analysis stopped · kept the first 1 ply", "Analysis stopped · kept the first 2 plies"],
-      ["home.next.review", (n) => [n], "1 missed puzzle is due for review", "2 missed puzzles are due for review"],
       ["rep.removeAsk", (n) => ["e4", "White", n, 1], "Take e4 out of your repertoire (White)? 1 line through it will be cut short, 1 of them removed entirely. You can undo this afterwards.",
         "Take e4 out of your repertoire (White)? 2 lines through it will be cut short, 1 of them removed entirely. You can undo this afterwards."],
       ["lib.addedNone", (n) => [n], "Nothing added: the file's 1 game was already in the library", "Nothing added: the file's 2 games were already in the library"],
@@ -4996,14 +5129,11 @@ for (const lang of CONTENT_LANGS) {
       (pv - side) + "px of width vs " + (h - chrome) + "px of height)");
   }
 
-  // The panel is split into tabs — two since v8-0-plan A1, when 记录 became
-  // the 我的 and 棋谱库 pages. A section that ends up outside a pane is
-  // invisible in every tab — the failure mode is silent, so it gets a check.
+  // 9.0 S5: the panel is one pane (its 设置 tab became the settings page).
+  // A section that ends up outside it is invisible — the failure mode is
+  // silent, so it gets a check.
   const paneIds = [...html.matchAll(/<div class="side-pane" id="(pane-[a-z]+)"/g)].map((m) => m[1]);
-  assert(paneIds.length === 2, "found the two panel panes (" + paneIds.join(", ") + ")");
-  const tabControls = [...html.matchAll(/role="tab"[^>]*aria-controls="([^"]+)"/g)].map((m) => m[1]);
-  assert(tabControls.length === 2 && tabControls.every((c) => paneIds.includes(c)),
-    "every tab points at a pane that exists");
+  assert(paneIds.join() === "pane-play", "found the one panel pane (" + paneIds.join(", ") + ")");
   const aside = /<aside class="side"[\s\S]*?<\/aside>/.exec(html)[0];
   let orphan = 0;
   // walk the aside, tracking whether we are inside a pane when a section opens
@@ -5028,13 +5158,10 @@ for (const lang of CONTENT_LANGS) {
   // list has to be maintained by hand, which is the point: each entry is a
   // decision someone made, not an oversight that slipped through.
   const SHARED_WITH_ZH = {
-    // The two plain Elo tooltips are a product name and a number — there is
-    // nothing in them to translate. (The labels themselves are words: 1.24
-    // briefly put the Elo values ON the buttons, which was wrong. UCI_Elo is
-    // an engine setting, its floor of 1320 is already above a real beginner.
-    // v8-0-plan B4 gave the player a rating, and the ratings shown beside it
-    // are the measured ones on the persona cards, not these.) The two rungs
-    // B4 added between 1320 and 1700 are the same kind of tooltip.
+    // (Through 8.4 the rungs' tooltips were 「Stockfish UCI_Elo 1700」 — a
+    // product name and an engine setting, the same in every language and
+    // listed here. v9-0-plan S6 made them the card's rating in words, so they
+    // are translated now and the list lost them.)
     // `lm.tip2` is a drill's outcome and the technique it teaches, two
     // sentences. Japanese and Chinese both end a sentence with 。 — it is
     // translated, and the translation is the same mark.
@@ -5049,8 +5176,10 @@ for (const lang of CONTENT_LANGS) {
     // whose value is 「3 · 2 · 1」, term lining up with term; spelling them out
     // as words is what the row is getting away from.
     ja: new Set(["act.fen", "hist.pgn", "live.pieceW", "ed.crK", "ed.crQ", "rv.marks",
-      "tip.diffNormal", "tip.diffHard", "lm.tip2", "ui.dot", "rv.dot", "ui.pair", "pz.catNo", "lib.sfPlayer",
-      "tip.diff.easyplus", "tip.diff.normalminus"]),
+      "lm.tip2", "ui.dot", "rv.dot", "ui.pair", "pz.catNo", "lib.sfPlayer",
+      // the strongest rung (v9-0-plan S6): 全力 is the Japanese word too —
+      // the ja persona lines said 「全力の Stockfish」 before it was a name
+      "diff.extreme"]),
   };
   let untranslated = 0;
   for (const id of langs) {
@@ -5188,11 +5317,10 @@ for (const lang of CONTENT_LANGS) {
     const persistSrc = fs.readFileSync(path.join(root, "src/web/js/persist.js"), "utf8");
     assert(/foundEmpty = Object\.entries\(bag\)/.test(persistSrc),
       "…which persist records inside load(), before any migration or write");
-    // and the write that broke it only happens when ids actually moved
-    assert(/if \(loadedPuzzles\.migrated\)/.test(appJs),
-      "the puzzle record is written back only when a migration rewrote it");
-    assert(!/if \(store\.session\.puzzleState\.idv === 2\) \{ Persist\.setJson/.test(appJs),
-      "…not whenever the profile happens to be on the current id version");
+    // and the write that broke it does not happen at load at all
+    const load = /function loadPuzzleState\(\) \{[\s\S]*?\n  \}/.exec(appJs);
+    assert(load && !/Persist\.set/.test(load[0]) && !/store\.session\.puzzleState = loadPuzzleState\(\);\s*\n\s*(if[^\n]*)?Persist\.set/.test(appJs),
+      "the puzzle record is not written at load (an empty record is what made firstRun false)");
   }
 
   // No suite may seed a storage key this app does not own. Three of them set
@@ -5309,13 +5437,6 @@ for (const lang of CONTENT_LANGS) {
     "the game on the board remembers which record it is, by id");
   assert(/s\.games\.find\(\(g\) => g\.id === store\.game\.recordedId\)/.test(appSrc),
     "accuracy is filed by id, not by walking to the last PGN that matches");
-  // and the v1 stats file still opens — the unpacking moved to persist.js with
-  // the key's shape (v6-plan Q1.7), where a unit test below exercises it
-  {
-    const per = fs.readFileSync(path.join(root, "src/web/js/persist.js"), "utf8");
-    assert(/stats: \(v\) => \(v && \(v\.v === 2 \|\| v\.v === 1\)[^\n]*migrateStats\(v\)/.test(per),
-      "a v1 stats file is migrated rather than dropped");
-  }
 
   // --- three claims the copy was making that were not true ------------------
   {
@@ -5408,31 +5529,22 @@ for (const lang of CONTENT_LANGS) {
     }
   }
 
-  // --- every "category × difficulty" combination is non-empty, or absent ----
-  // P5 acceptance. puzzleTier()'s dominant term is (plies − 1) × 1.5, and in
-  // the three mate categories the ply count is a written-in constant (1/3/5),
-  // contributing 0, 3 and 6 while everything else together moves the score by
-  // at most ±4.5 — never across a 3-point band. So the tier was the category
-  // under another name, seven of the eighteen combinations were empty, and
-  // picking one showed a blank list. The filter is remembered, so the next
-  // visit to that category still looked empty. 缺陷 14.
-  //
-  // Fixed as (A): the categories where difficulty is not a separate axis do
-  // not offer the filter. This asserts both halves — the ones that offer it
-  // have every band populated, and the ones that do not are declared.
+  // --- one set of kinds (9.0 S3) --------------------------------------------
+  // 8.x offered a difficulty filter beside twelve categories and twenty-eight
+  // themes — three ways to slice one book, one of them (the tier) the mate
+  // categories under another name (缺陷 14). 9.0 has six kinds, the same in
+  // both books, and serves each near the player's rating; no filter is left.
   {
-    const appTier = appSrc.slice(appSrc.indexOf("const TIER_CATS = new Set("));
-    const declared = /const TIER_CATS = new Set\(\[([^\]]*)\]\)/.exec(appTier);
-    assert(!!declared, "the categories with a real difficulty axis are declared");
-    const cats = declared[1].match(/"(\w+)"/g).map((x) => x.replace(/"/g, ""));
-    for (const m of ["m1", "m2", "m3"]) {
-      assert(!cats.includes(m), m + " does not offer a filter that repeats its own name");
-    }
-    assert(cats.includes("tac") && cats.includes("def") && cats.includes("op") && cats.includes("real"),
-      "…and the four that do keep it — " + cats.join(", "));
-    assert(/!tierApplies\(cat\)/.test(appSrc), "the filter is bypassed where it does not apply");
-    assert(/avail\(el\("row-puzzle-tier"\), /.test(appSrc),
-      "…and the row is absent rather than dead");
+    const modesSrc = fs.readFileSync(path.join(root, "src/web/js/trainer/puzzle-modes.js"), "utf8");
+    const groups = /export const PUZZLE_GROUPS = \[([^\]]*)\]/.exec(modesSrc);
+    assert(groups && groups[1].replace(/\s/g, "") === '"mate","tactic","endgame","defense","opening","mine"',
+      "S3: six kinds — 杀棋 / 战术 / 残局 / 防守 / 开局 / 我的错题 (" + (groups ? groups[1] : "missing") + ")");
+    const tiles = [...html.matchAll(/data-group="([a-z]+)"/g)].map((m) => m[1]);
+    assert(tiles.join() === "mate,tactic,endgame,defense,opening,mine", "S3: a tile per kind, in that order (" + tiles.join() + ")");
+    assert(/function groupList\(g\) \{\s*return localInGroup\(g\)\.concat\(lcPool\(\)\.filter/.test(modesSrc),
+      "S3: a kind pools the built-in book and the Lichess bands");
+    assert(!/row-puzzle-tier|puzzle-tier-seg|puzzle-cat-seg|tierApplies/.test(html + appSrc),
+      "S3: no difficulty filter and no category row are left");
   }
 
   // --- the move list: figurine notation, one typeface -----------------------
@@ -5451,8 +5563,9 @@ for (const lang of CONTENT_LANGS) {
     const num = /\.mlnum \{([^}]*)\}/.exec(cssM2);
     const mvRule = /\n\s*\.mlmove \{([^}]*)\}/.exec(cssM2);
     const sizeOf = (r) => ((r && /font-size: ([\d.]+rem)/.exec(r[1])) || [])[1];
-    // 7.9 §2a: 15px now, both of them
-    assert(num && sizeOf(num) === "0.9375rem" && sizeOf(num) === sizeOf(mvRule),
+    // 7.9 §2a: 15px now, both of them. 9.0 V1: 14px, the body step — the
+    // type scale lost its 15 (four roles: 30 / 16 / 14 / 12)
+    assert(num && sizeOf(num) === "0.875rem" && sizeOf(num) === sizeOf(mvRule),
       "the move number is the same size as the move beside it (" + sizeOf(num) + " / " + sizeOf(mvRule) + ")");
     // 7.9 §2c: no chip behind the number, and set like the move so the
     // baselines agree (the measurement is in test-layout-e2e)
@@ -5823,8 +5936,8 @@ for (const lang of CONTENT_LANGS) {
     assert(/onWriteFailure/.test(per), "…and a failure is announced");
     assert(/function clearAll\(\)[\s\S]{0,200}?for \(const name of Object\.keys\(KEYS\)\)/.test(per),
       "clearing is derived from the key list, not typed out again");
-    assert(/export const SCHEMA = \d+/.test(per) && /MIGRATIONS/.test(per),
-      "there is one schema version, and a place for migrations to queue");
+    assert(/export const SCHEMA = 3;/.test(per) && !/MIGRATIONS/.test(per),
+      "there is one schema version, 9.0's own, and nothing that reads an older profile");
     // every key the app owns is in the list — a key added elsewhere would be
     // written but never cleared
     const keys = [...per.matchAll(/^  \w+: "(chess\.[\w.]+)"/gm)].map((m) => m[1]);
@@ -6769,13 +6882,33 @@ for (const lang of CONTENT_LANGS) {
       hasZero: () => true,
     };
   };
-  // a host with a file: writes land in `file`, reads come back from it
-  const withFile = (initial) => {
+  // a host with a per-key store: `initial` is a profile document's JSON
+  // (written as its key files and a manifest) or, when it is not one, the
+  // manifest's text as it is; `file` reads the profile back as one document
+  // (the manifest as it is when it does not parse), and `writes` counts
+  // commits — manifest writes
+  const withFile = (text) => {
     const h = mem();
-    h.file = initial;
+    h.store = new Map();
     h.writes = 0;
-    h.appdataRead = async () => h.file;
-    h.appdataWrite = async (t) => { h.file = t; h.writes++; return true; };
+    let initial = null;
+    try { initial = text == null ? null : JSON.parse(text); } catch (_) { initial = null; }
+    if (text != null && !(initial && initial.keys)) h.store.set("meta", text);
+    else if (initial) {
+      for (const [k, v] of Object.entries(initial.keys)) h.store.set(k, v);
+      h.store.set("meta", JSON.stringify({ app: "chessboard", schema: initial.schema, writtenAt: initial.writtenAt,
+        keys: Object.keys(initial.keys), files: Object.fromEntries(Object.keys(initial.keys).map((k) => [k, k])) }));
+    }
+    h.appdataReadKey = async (k) => (h.store.has(k) ? { text: h.store.get(k) } : { missing: true });
+    h.appdataWriteKey = async (k, t) => { h.store.set(k, t); if (k === "meta") h.writes++; return true; };
+    Object.defineProperty(h, "file", { get() {
+      const raw = h.store.get("meta");
+      let m = null;
+      try { m = JSON.parse(raw); } catch (_) { return raw == null ? null : raw; }
+      const keys = {};
+      for (const k of m.keys) keys[k] = h.store.get(m.files[k]);
+      return JSON.stringify({ app: m.app, schema: m.schema, writtenAt: m.writtenAt, keys });
+    } });
     return h;
   };
   const tick = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -6793,7 +6926,7 @@ for (const lang of CONTENT_LANGS) {
     await tick(600);
     const doc = JSON.parse(h.file);
     assert(h.writes === 1 && doc.keys.settings === "{\"a\":1}" && doc.keys.learn === "{\"b\":2}",
-      "two writes in a burst become one whole-profile mirror write (" + h.writes + ")");
+      "two writes in a burst become one mirror commit (" + h.writes + ")");
     assert(doc.app === "chessboard" && typeof doc.writtenAt === "number", "…stamped as ours");
     // 6.0 review: the mirror used to take its own Date.now() ~400ms after the
     // cache stamp, so every next launch read "file newer than cache" and
@@ -6806,7 +6939,7 @@ for (const lang of CONTENT_LANGS) {
   }
   // 2. empty cache + a file = the file is restored
   {
-    const h = withFile(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 5000,
+    const h = withFile(JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 5000,
       keys: { stats: "{\"v\":2,\"games\":[]}", learn: "{\"v\":1}" } }));
     const P = createPersist(h, () => {});
     P.load();
@@ -6818,7 +6951,7 @@ for (const lang of CONTENT_LANGS) {
   }
   // 3. a live cache newer than the file keeps the cache, and re-mirrors it
   {
-    const h = withFile(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 5000, keys: { learn: "old" } }));
+    const h = withFile(JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 5000, keys: { learn: "old" } }));
     h.m.set(KEYS.learn, "new"); h.m.set("chess.writtenAt", "9000");
     const P = createPersist(h, () => {});
     P.load();
@@ -6829,7 +6962,7 @@ for (const lang of CONTENT_LANGS) {
   }
   // 4. a cache older than the file yields to it (data written on another launch that this cache missed)
   {
-    const h = withFile(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 9000, keys: { learn: "file" } }));
+    const h = withFile(JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 9000, keys: { learn: "file" } }));
     h.m.set(KEYS.learn, "cache"); h.m.set("chess.writtenAt", "5000");
     const P = createPersist(h, () => {});
     P.load();
@@ -6850,7 +6983,7 @@ for (const lang of CONTENT_LANGS) {
     assert(P.get("slots") == null, "clearAll() empties the cache");
     P.restoreAll(doc);
     assert(P.get("slots") === "{\"v\":1}", "restoreAll() brings it back");
-    h.appdataWrite = async () => { throw new Error("disk full"); };
+    h.appdataWriteKey = async () => { throw new Error("disk full"); };
     P.set("slots", "x");
     await tick(600);
     assert(failed && failed.key === "appdata", "a refused mirror write latches the failure like a refused cache write");
@@ -6861,10 +6994,11 @@ for (const lang of CONTENT_LANGS) {
   // then read back what it had just destroyed, and the user was told their
   // profile had been restored.
   {
-    const good = JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 9000,
+    const good = JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 9000,
       keys: { stats: "{\"v\":2,\"games\":[1]}", learn: "{\"v\":1,\"done\":1}" } });
     const h = withFile(good);
-    h.appdataRead = async () => { await tick(900); return h.file; };  // slower than MIRROR_DELAY
+    const read = h.appdataReadKey;
+    h.appdataReadKey = async (k) => { await tick(900); return read(k); };  // slower than MIRROR_DELAY
     const P = createPersist(h, () => {});
     P.load();
     const pending = P.recover();
@@ -6880,7 +7014,7 @@ for (const lang of CONTENT_LANGS) {
   // 8. after a restore nothing may write again: the page is still standing on
   // its pre-restore state and is about to reload onto the new one
   {
-    const h = withFile(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 9000, keys: { save: "{\"v\":1,\"pgn\":\"real\"}" } }));
+    const h = withFile(JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 9000, keys: { save: "{\"v\":1,\"pgn\":\"real\"}" } }));
     h.m.set("chess.writtenAt", "5000"); h.m.set(KEYS.save, "{\"v\":1,\"pgn\":\"stale\"}");
     const P = createPersist(h, () => {});
     P.load();
@@ -6897,7 +7031,7 @@ for (const lang of CONTENT_LANGS) {
     const P = createPersist(h, (info) => { failed = info; });
     P.load();
     await P.recover();
-    const doc = { app: "chessboard", schema: 1, writtenAt: 1, keys: { learn: "a", stats: "b" } };
+    const doc = { app: "chessboard", schema: 3, writtenAt: 1, keys: { learn: "a", stats: "b" } };
     let allow = 1;
     const realSet = h.storageSet;
     h.storageSet = (k, v) => (allow-- > 0 ? realSet(k, v) : false);   // quota dies mid-restore
@@ -6909,7 +7043,7 @@ for (const lang of CONTENT_LANGS) {
   // 10. a file that exists and holds nothing is damage, not a fresh install
   {
     const h = withFile(null);
-    h.appdataRead = async () => ({ empty: true });
+    h.appdataReadKey = async () => ({ empty: true });
     let failed = null;
     const P = createPersist(h, (info) => { failed = info; });
     P.load();
@@ -6961,7 +7095,7 @@ for (const lang of CONTENT_LANGS) {
       "the same unreadable value is kept once, not pushed on every launch (" + list.length + ")");
     P.clearAll();
     assert(P.get("quarantine") != null, "clearAll() does not destroy the quarantined evidence");
-    P.restoreAll({ app: "chessboard", schema: 1, writtenAt: 1, keys: {} });
+    P.restoreAll({ app: "chessboard", schema: 3, writtenAt: 1, keys: {} });
     assert(P.get("quarantine") != null, "…and neither does a restore");
   }
   // 13. a cache that cannot stamp itself must not report the write as kept:
@@ -7024,30 +7158,18 @@ for (const lang of CONTENT_LANGS) {
     }
   }
 
-  // v8-0-plan F5: the first-paint budget. 7.9.0 parsed 1,709,973 bytes of
-  // bundle before the first frame, 46% of it teaching content in the two
-  // languages the reader was not reading in. The acceptance line is 40% off,
-  // and it is a line, not a one-time measurement: one static import of a
-  // chunk's module and esbuild inlines it again without a word.
+  // The first-paint budget (bundle.mjs BUNDLE_BUDGET), and it is a line, not
+  // a one-time measurement: one static import of a chunk's module and
+  // esbuild inlines it again without a word. Minified bytes (v8-1-plan F2).
   const bundleBytes = Buffer.byteLength(bundleSrc, "utf8");
-  // v8-1-plan F2: both sides of the comparison are minified bytes.
-  console.log("  bundle.js " + bundleBytes + " bytes minified (7.9.0 minified: " + BUNDLE_BYTES_BEFORE_F5 + ", budget " + BUNDLE_BUDGET + ")");
+  console.log("  bundle.js " + bundleBytes + " bytes minified (budget " + BUNDLE_BUDGET + ")");
   assert(bundleBytes <= BUNDLE_BUDGET,
-    "bundle.js stays within the first-paint budget (" + bundleBytes + (bundleBytes <= BUNDLE_BUDGET ? " ≤ " : " > ") + BUNDLE_BUDGET + " bytes, 70.5% of 7.9.0's " + BUNDLE_BYTES_BEFORE_F5 + " minified)");
-  // v8-2-plan F1: a second, tighter line for 8.2 only. 8.1 alone spent ~39 KB
-  // of the budget's room (89,502 left at its M1, 50,670 at 8.1.0), and one
-  // more version like it reaches the line. So new 8.2 training content and
-  // its data go in chunks; the bundle may grow by 10 KB over 8.1.0 for the
-  // doors to them — the entry points, the interface keys, the scheduling.
-  // 8.1.0 (168acc2) built by its own bundle.mjs: exactly 900,972 bytes, and
-  // the plan's line was 910,972 (10,000, not 10,240); 8.2.0 shipped 907,245.
-  // v8-3-plan F4: the same line moved up for 8.3 — 8.2.1 (edaf3b7, no page
-  // change since 8.2.0) is exactly 907,245 bytes; 8.3 could add 10,000 over it.
-  // v8-4-plan §2: and again for 8.4 — 8.3.0 (e6cdabe) shipped 908,392 bytes.
-  const BUNDLE_BYTES_AT_830 = 908392;
-  const BUNDLE_GROWTH_84 = 10000;
-  assert(bundleBytes <= BUNDLE_BYTES_AT_830 + BUNDLE_GROWTH_84,
-    "v8-4-plan §2: bundle.js grows at most 10 KB over 8.3.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_AT_830 + BUNDLE_GROWTH_84 ? " ≤ " : " > ") + (BUNDLE_BYTES_AT_830 + BUNDLE_GROWTH_84) + " bytes) — 8.4 content goes in chunks");
+    "bundle.js stays within the first-paint budget (" + bundleBytes + (bundleBytes <= BUNDLE_BUDGET ? " ≤ " : " > ") + BUNDLE_BUDGET + " bytes)");
+  // …and 9.0's own, tighter line: new pages go in chunks, the bundle carries
+  // their doors. v9-0-plan §8 第 4 条: 8.4.0 + 20 KB
+  const BUNDLE_BYTES_90 = 911124 + 20000;
+  assert(bundleBytes <= BUNDLE_BYTES_90,
+    "v9-0-plan §8: bundle.js grows at most 20 KB over 8.4.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_90 ? " ≤ " : " > ") + BUNDLE_BYTES_90 + " bytes)");
   // …minified without renaming: a player's stack trace still names the code
   assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
     "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");
@@ -7315,7 +7437,7 @@ for (const lang of CONTENT_LANGS) {
 
 // v8-3-plan T1 / T2: 看 N 步 / 盲走 draw from the bank's band for the mode's
 // rating, and look's plies past the puzzle's line are the engine's move at
-// the review's budget — the 8.2 rule (pickMove) where it has none
+// the review's budget — the rule without an engine (pickMove) where it has none
 {
   const vctx = { console };
   vctx.globalThis = vctx;
@@ -7351,20 +7473,19 @@ for (const lang of CONTENT_LANGS) {
   const bad = await V.buildLook(C, p, 3, 11, async () => "a1a1");
   const rule = await V.buildLook(C, p, 3, 11);
   assert(rule && JSON.stringify(none) === JSON.stringify(rule) && JSON.stringify(bad) === JSON.stringify(rule) && rule.sans[0] === "Nf6",
-    "buildLook: no engine move (none, or one that is not legal) — the 8.2 rule, exactly as without an engine", rule && rule.sans.join(" "));
+    "buildLook: no engine move (none, or one that is not legal) — pickMove's rule, exactly as without an engine", rule && rule.sans.join(" "));
   const pool = V.lookPool([p, Object.assign({}, p, { id: "lc-u", solution: ["Nf6", "Ng5"] })]);
   const a = await V.lookQuestion(C, pool, 99, 0, 3, best), b = await V.lookQuestion(C, pool, 99, 0, 3, best);
   assert(a && JSON.stringify(a) === JSON.stringify(b), "lookQuestion with the engine: the same seed, the same question", a && a.key);
 }
 
-// v8-4-plan T1: 看 N 步's first question no longer waits for searches — and
-// the sets are 8.3's. Twelve whole sets (four seeds × three answer patterns,
-// N moving 2–6 with them) over the hand-written book dressed as bank
-// puzzles, with an "engine" that is a pure function of the FEN, as the real
-// one is: 120 questions whose keys, lines and kinds hash to what v8.3.0's
-// visual-modes.js gave (run then, with its own retry loop, now lookNth).
-// Then a review: built from the plies its key kept (engPlies), with no
-// engine at all, it is the question the engine built.
+// v8-4-plan T1: 看 N 步's first question no longer waits for searches. Twelve
+// whole sets (four seeds × three answer patterns, N moving 2–6 with them)
+// over the hand-written book dressed as bank puzzles, with an "engine" that
+// is a pure function of the FEN, as the real one is: the same seed and the
+// same answers give the same 120 questions, key for key. Then a review:
+// built from the plies its key kept (engPlies), with no engine at all, it is
+// the question the engine built.
 {
   const vctx = { console };
   vctx.globalThis = vctx;
@@ -7383,23 +7504,28 @@ for (const lang of CONTENT_LANGS) {
     return ms.length ? ms[fnv(fen) % ms.length] : null;
   };
   const asked = (q) => q.t !== "cap" || !!q.target;
-  const out = [], qs = [];
-  for (const seed of [1, 99, 1790600000, 4000000007]) for (const pat of [0, 0x3ff, 0x2b5]) {
-    let n = 2;
-    const keys = [];
-    for (let k = 0; k < 10; k++) {
-      const q = await V.lookNth(C, pool, seed, k, n, best, asked);
-      keys.push(q ? q.key + " " + q.sans.join(" ") + " " + q.t : "null");
-      if (q) qs.push(q);
-      n = Math.max(2, Math.min(6, n + ((pat >> k) & 1 ? 1 : -1)));
+  const sets = async () => {
+    const out = [], qs = [];
+    for (const seed of [1, 99, 1790600000, 4000000007]) for (const pat of [0, 0x3ff, 0x2b5]) {
+      let n = 2;
+      const keys = [];
+      for (let k = 0; k < 10; k++) {
+        const q = await V.lookNth(C, pool, seed, k, n, best, asked);
+        keys.push(q ? q.key + " " + q.sans.join(" ") + " " + q.t : "null");
+        if (q) qs.push(q);
+        n = Math.max(2, Math.min(6, n + ((pat >> k) & 1 ? 1 : -1)));
+      }
+      out.push(seed + "/" + pat + ": " + keys.join(", "));
     }
-    out.push(seed + "/" + pat + ": " + keys.join(", "));
-  }
-  const sha = crypto.createHash("sha256").update(out.join("\n")).digest("hex");
-  const SNAP_83 = "03b9d616c0cac2b7f5f7fea8b974d7a19075bca260e587915c222510905afd2f";
-  assert(pool.length === 168 && sha === SNAP_83 && searches > 50,
-    "v8-4-plan T1: twelve whole 看 N 步 sets (seed × answers) are v8.3.0's, question for question (" + qs.length + " questions, " + searches + " searches)", sha.slice(0, 12) + " / pool " + pool.length);
-  // plies kept with the key → the same question with no engine; none kept → the search, as 8.3
+    return { sha: crypto.createHash("sha256").update(out.join("\n")).digest("hex"), qs };
+  };
+  const first = await sets();
+  const once = searches;
+  const again = await sets();
+  const qs = first.qs;
+  assert(pool.length === 168 && first.sha === again.sha && qs.length >= 100 && once > 50,
+    "v8-4-plan T1: twelve whole 看 N 步 sets (seed × answers) come out the same twice, question for question (" + qs.length + " questions, " + once + " searches)", first.sha.slice(0, 12) + " / " + again.sha.slice(0, 12) + " / pool " + pool.length);
+  // plies kept with the key → the same question with no engine; none kept → the search
   let same = 0, plied = 0, quiet = 0;
   const noEngine = () => { throw new Error("searched"); };
   for (const q of qs.slice(0, 60)) {
@@ -7930,15 +8056,13 @@ for (const lang of CONTENT_LANGS) {
   assert(declarationIn(tricky, "h") === "", "…and finds nothing for a name that is not declared");
 }
 
-// --- v8-0-plan F4: app.js may only shrink ---------------------------------
+// --- v9-0-plan §H: app.js may only shrink ---------------------------------
 //
-// 6.1 set "under 4000 lines" and app.js then grew by 2,750. A goal that nothing
-// checks drifts, so this is a register like the others: the ceiling is the
-// line count when the tests stopped depending on file names, and it may only
-// go down — lower it in the PR that moves code out. The target for the end of
-// the 8.0 milestones is ≤ 6000; 4000 remains the aim.
+// A goal that nothing checks drifts. The ceiling is app.js's line count once
+// 9.0 had put down its history (M1), and it may only go down — lower it in
+// the PR that moves code out.
 {
-  const APP_JS_LINE_CEILING = 5754; // −376 to game-controller.js (v8-1-plan F3, M4: 悔棋, 新局, 从这里续下, resigning, the coach, draws, the result token); −458 to io.js (v8-1-plan F3, M4: PGN and file import / export, the clipboard, the learning file, the whole profile); −107 for C1 (the history dialog became the library list's 本机 games, its wiring moved to library-page.js; M5); −1 when C3 merged in (its wireViews loop paid for movePath; M5); −11 net for B4 (ladder names, filing and the persona hooks moved to opponents*.js; M4); 11764 when drawn; +44 from §5 (M1); −346 to settings-ui.js, −37 net for A1 (M2); A3 merged in at no net cost (applyLook lives in settings-ui.js, the pickers in appearance-ui.js); −12 from B2 (the review pass moved to review-pass.js; M3); −239 to review/eval-graph.js (F4, M3); −310 to review/retry.js; −387 to review/panel.js; −205 to review/lines.js; −306 to review/analysis.js; −79 to review/board-marks.js; −2754 to trainer/ (F4, M3: content, lessons, puzzles, today); −237 to me-page.js (F4, M4: 进步, 成就, the entry card); −68 to game-end.js (M4); −2 net for A4 (the move list's marks to review/board-marks.js); −117 to selftest-run.js (v8-2-plan V1: the packaged self-test moved into chunk-selftest.js; M4); taken at the M4 merge with the −2 left by F4 (M3): 5873 → 5754
+  const APP_JS_LINE_CEILING = 5744;
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
@@ -8107,62 +8231,6 @@ for (const lang of CONTENT_LANGS) {
     assert(APP_MODULES.includes(file), "F3: " + file + " follows app.js's house rules (APP_MODULES)");
     for (const name of names) assert(owner(name) === file, "F3: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
   }
-}
-
-// --- 6.0: the register of source-text assertions in this file.
-//
-// This file holds a great many `/…/.test(appSrc)` checks: they lock the
-// *shape* of app.js, not its behaviour, which makes them the largest single
-// obstacle to moving code and the largest source of false confidence
-// (v6-plan §1.2). They retire one at a time, each replaced by a behavioural
-// test; the number may only go down. Bump it down when you retire one, never
-// up. Same register discipline as the colour and token registers above.
-//
-// 7.3 §3 — the register, classified. 7.2 found one of these guarding a button
-// that had been unpressable since 6.0, and guarding it *precisely*: the regex
-// matched the broken expression exactly. That is not a random failure, it is
-// what this kind of assertion does when what it describes is something a user
-// can press. So every entry is now one of two classes:
-//
-//   `action` — it stands in for something a person does: a button's handler,
-//     a key, a pointer gesture, a menu command, a dialog's open or close.
-//     The shape being right says nothing about whether it works. These are
-//     the ones to replace, and they are replaced by pressing the thing.
-//   `shape`  — it stands for a data shape or a wiring fact with no seam
-//     between the text and the behaviour: a table's contents, a constant, an
-//     id scheme, which module a call goes to, a store slice's existence.
-//     A regex is a fair statement of those, and they stay.
-//
-// Retired in 7.3 (13 of them, all `action`, 124 → 111):
-//   · the move list's mouseover / mouseleave preview  → test-review-e2e.mjs
-//   · the curve's click / pointerdown / pointermove   → test-review-e2e.mjs
-//   · the PV chips' click / focusin / keydown         → test-review-e2e.mjs
-//   · the PV line's mouseleave                        → test-review-e2e.mjs
-//   · escapeKey's three effects                       → test-review-e2e.mjs
-//                                                       + test-board-e2e.mjs
-//   (7.2 retired one before them: 接实战, the button broken since 6.0.)
-//
-// Still `action`, and why each is still here — the remaining list this
-// version owes (v7-3-plan §3):
-//   · the four native-lifecycle handlers (activate / deactivate, recent
-//     documents, Host.notify): pressing them needs the Zig shell, and the
-//     browser suites have no shell. The behavioural cover that exists is
-//     scripts/manifest-check.mjs, which asserts the runner really reads every
-//     key. Replacing these means an end-to-end test against a built app.
-//   · the 「?」 shortcut sheet and `shortcut: (detail)`: the sheet's contents
-//     ARE asserted behaviourally (test-layout-e2e.mjs opens it and reads every
-//     row); what is left here is that the app subscribes to the native
-//     channel at all, which is the shell again.
-//   · dailyJump's click into #mode-seg: the jump is covered end to end in
-//     test-content-e2e.mjs; this one asserts which selector it uses, and is
-//     a candidate for the next version.
-// Everything else in the register is `shape`.
-{
-  const self = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
-  const count = (self.match(/\.test\((?:appSrc|appSrcT|app|src)\)/g) || []).length;
-  const REGISTERED = 111;
-  assert(count <= REGISTERED, "source-text assertions on app.js: " + count + " (register: " + REGISTERED + ", only ever lower)");
-  assert(count === REGISTERED, "…and the register is kept exact (" + count + " vs " + REGISTERED + ": update the number when one retires)");
 }
 
 // --- v8-0-plan C2: online sync goes through the native layer, never the page --

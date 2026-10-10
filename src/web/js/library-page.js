@@ -11,9 +11,9 @@
  * second table, and focus that goes nowhere.
  *
  * What it adds:
- *   * boot: open IndexedDB (library-db.js), migrate a v1 library into it,
- *     pull games back from the native store when IndexedDB lost them, load,
- *     index what is not indexed — then hand the lists to library-ui;
+ *   * boot: open IndexedDB (library-db.js), load, pull games back from the
+ *     native store when IndexedDB lost them, index what is not indexed —
+ *     then hand the lists to library-ui;
  *   * save: the games that changed (a cheap signature per entry), their
  *     shards touched for the native mirror, the header kept current;
  *   * 本机: the play history (stats.games) as library entries, `src:
@@ -48,7 +48,7 @@ const PAGE = 100;
 /** How long the boot waits for the start-up's summary read (ms, v8-1-plan F3). */
 const PREFETCH_WAIT = 3000;
 
-/** The header as read from localStorage (`chess.v1.library`), or null. */
+/** The header as read from localStorage (`chess.library`), or null. */
 function readHeader(raw) {
   if (raw == null || raw === "") return null;
   try { const v = JSON.parse(raw); return v && typeof v === "object" ? v : null; } catch (_) { return null; }
@@ -85,16 +85,14 @@ async function bootLibrary(d) {
     if (!pre) d.summary.then((late) => { if (late) try { late.db.close(); } catch (_) { /* already */ } });
   }
   const backend = await LibraryDb.idbBackend(d.idb, undefined, pre && pre.db);
-  const st = LibraryDb.createLibraryStore({ backend: backend || LibraryDb.memoryBackend(), Chess: d.Chess, withLock: d.withLock });
-  // "idb": games in IndexedDB. "legacy": no IndexedDB here, or the migration
-  // was refused — the pre-C1 shape (one localStorage value) for this session
-  let mode = backend ? "idb" : "legacy";
+  const makeStore = (b) => LibraryDb.createLibraryStore({ backend: b, Chess: d.Chess, withLock: d.withLock });
+  let st = makeStore(backend || LibraryDb.memoryBackend());
+  // "idb": games in IndexedDB. "memory": no IndexedDB here (or it would not
+  // load) — the games of this session live in memory and in the native shards
+  let mode = backend ? "idb" : "memory";
   const sigs = new Map();
   let warned = false;
   const warnOnce = (key, arg) => { if (warned) return; warned = true; toast(tf(key, [arg || ""]), "fault"); };
-  // the games had moved to IndexedDB (the header says db 2): without it they
-  // are not "saved the old way" — they are out of reach (M5 review P2-1)
-  const refused = header.db === 2 ? "lib.unreadable" : "lib.migrateFailed";
   // set once restoreShards has replaced the games: the page reloads onto
   // them, and nothing it still holds may be written back first (M5 review P3-4)
   let frozen = false;
@@ -406,10 +404,9 @@ async function bootLibrary(d) {
    * per game beside the games (library-db.js summaryOf), and the header
    * carries its id; when the two agree and the summary covers every record,
    * the page can be opened on it now — one read of ~1.5 MB at ten thousand
-   * games — while the entries and their index are read after it. Not with a
-   * v1 library still to migrate: its games are not in the store yet.
+   * games — while the entries and their index are read after it.
    */
-  if (backend && header.db === 2 && typeof header.sum === "string" && !(Array.isArray(header.games) && header.games.length)) {
+  if (backend && typeof header.sum === "string") {
     const rows = await st.readSummary(header.sum, pre && pre.stored);
     const imp = [], loc = [];
     for (const r of rows || []) (r.src === "local" ? loc : imp).push(LibraryDb.stubOf(r));
@@ -426,19 +423,10 @@ async function bootLibrary(d) {
   d.summary = null;
   pre = null;
 
-  // --- migrate, recover, load ---------------------------------------------
-  const v1Games = Array.isArray(header.games) ? header.games : [];
-  let migrated = false;
-  if (mode === "idb" && v1Games.length) {
-    const r = await st.migrate(Persist.get("library"));
-    if (r.ok) migrated = true;
-    else { mode = "legacy"; warnOnce(refused, r.error); }
-  }
-  if (mode === "idb") {
-    try { await st.load(); } catch (_) { mode = "legacy"; warnOnce(refused, "load"); }
-  }
-  if (mode === "idb" && header.db === 2 && Number(header.n) > st.games.length) {
-    // IndexedDB holds fewer games than the header counted: the WebView's
+  // --- load, recover --------------------------------------------------------
+  try { await st.load(); } catch (_) { mode = "memory"; st = makeStore(LibraryDb.memoryBackend()); await st.load(); }
+  if (Number(header.n) > st.games.length) {
+    // the store holds fewer games than the header counted: the WebView's
     // data went and localStorage's did not (or a restore could not write).
     // The native store has the shards.
     const texts = await Persist.readBulk("lib");   // its own shards, not the repertoire's (M3 评审)
@@ -449,59 +437,31 @@ async function bootLibrary(d) {
     }
     if (back.length) {
       const had = st.games.length;
-      // no backup copy: this is the native store's copy already (P3-3)
-      const r = await st.migrate(JSON.stringify({ v: 1, games: back }), { backup: false });
+      const r = await st.importRecords(back);
       if (r.ok) {
         await st.load();
-        if (st.games.length > had) toast(tf("lib.recovered", [st.games.length - had]));
+        if (st.games.length > had && mode === "idb") toast(tf("lib.recovered", [st.games.length - had]));
       }
     }
   }
   /**
-   * M5 review P2-1: no IndexedDB this session, and the header says the games
-   * went there. They are not in localStorage, so "the pre-C1 shape" would be
-   * an empty library, and its save a header without db / n and 64 emptied
-   * shards. Instead the games are read from the native shards and shown
-   * read-only: the shards are served back to the store exactly as read, the
-   * header keeps what it said, and imports and passes are refused.
+   * M5 review P2-1: no IndexedDB this session, and the games the header
+   * counts could not all be read back from the native shards. Whatever this
+   * session wrote over those shards would lose the rest, so the library is
+   * shown as it is and held: the shards stay as they are on disk, the header
+   * keeps its count, and imports and passes are refused.
    */
-  const readOnly = mode === "legacy" && header.db === 2;
-  let roTexts = null;
-  if (readOnly) {
+  let held = mode === "memory" && Number(header.n) > st.games.length;
+  if (held) {
     warnOnce("lib.unreadable");
-    roTexts = await Persist.readBulk("lib");   // served back as its own: the lib port must not list rep shards (M3 评审)
-    const byId = new Map();
-    for (const text of Object.values(roTexts || {})) {
-      const v = readHeader(text);
-      if (v && Array.isArray(v.games)) for (const g of v.games) if (g && g.id) byId.set(g.id, g);
-    }
-    for (const g of v1Games) if (g && g.id && !byId.has(g.id)) byId.set(g.id, g);
-    store.session.library = [...byId.values()].filter((g) => typeof g.sans === "string" && g.plies > 0)
-      .sort(LibraryDb.newestFirst);
-    for (const g of store.session.library) d.rescoreLosses(g);
     store.session.libUnreadable = true;
   }
-  if (mode === "idb") {
-    // the session's list becomes the stored one. A v1 library the page has
-    // been showing since boot is the same games (just migrated), and nothing
-    // could change them meanwhile: imports and passes wait for this boot.
-    store.session.library = st.games.filter((g) => g && g.id && typeof g.sans === "string" && g.plies > 0);
-    // 7.0's unclamped losses, recomputed from the scalars on every load as
-    // library-ui.js loadLibrary() does — the stored record keeps what it had
-    for (const g of store.session.library) d.rescoreLosses(g);
-    for (const g of store.session.library) sigs.set(g.id, sigOf(g));
-    if (migrated) {
-      // the header changes last, after every game is readable back — until
-      // then a crash anywhere leaves the v1 value, and the next launch
-      // migrates again
-      Persist.touchBulk(Object.keys(shardMap()));
-      writeHeader();
-    }
-  }
+  store.session.library = st.games.filter((g) => g && g.id && typeof g.sans === "string" && g.plies > 0);
+  for (const g of store.session.library) sigs.set(g.id, sigOf(g));
   // a name typed while the games were still loading claimed the list the
   // page had then; claim the stored one too
   const namesThen = JSON.stringify(Array.isArray(header.names) ? header.names : []);
-  const renamed = mode === "idb" && JSON.stringify(store.session.libNames) !== namesThen;
+  const renamed = !held && JSON.stringify(store.session.libNames) !== namesThen;
 
   /** shard name → its games, for the current list (see shardText) */
   let groups = null;
@@ -521,24 +481,19 @@ async function bootLibrary(d) {
     return m;
   }
 
-  /** The header: names and counts only, once the games are in IndexedDB. */
+  /** The header: names and counts only — the games are in the store. */
   function writeHeader() {
     const names = store.session.libNames;
-    // a profile that never had a library (6.x, a fresh install) is not given one
+    // a profile that never had a library is not given one
     if (Persist.get("library") == null && !store.session.library.length && !names.length && !claimAsked) return true;
-    // read-only (P2-1): the header as found — its db, n and any v1 games — with the names
-    if (readOnly) return Persist.setJson("library", Object.assign({}, header, { names, claimAsked: claimAsked || undefined }));
-    if (mode !== "idb") {
-      return Persist.setJson("library", { v: 1, games: store.session.library, names, claimAsked: claimAsked || undefined });
-    }
-    // `sum` (v8-1-plan F3): the store's summary is this library's. A build
-    // without the summary writes the header without it, and the next launch
-    // then waits for the entries instead of trusting rows it did not keep.
-    // Until syncSummary has answered, the id the header came with stays
-    // (M4 评审 P2-2: a save in between dropped it, and the next launch
-    // waited for the entries for nothing)
-    return Persist.setJson("library", { v: 1, games: [], names, db: 2, n: store.session.library.length,
-      claimAsked: claimAsked || undefined, sum: st.sumId() || (typeof header.sum === "string" ? header.sum : undefined) });
+    // held (P2-1): the count as found, with the names
+    if (held) return Persist.setJson("library", Object.assign({}, header, { names, claimAsked: claimAsked || undefined }));
+    // `sum` (v8-1-plan F3): the store's summary is this library's. Until
+    // syncSummary has answered, the id the header came with stays (M4 评审
+    // P2-2: a save in between dropped it, and the next launch waited for the
+    // entries for nothing). Without IndexedDB there is no summary to name.
+    return Persist.setJson("library", { v: 1, names, n: store.session.library.length, claimAsked: claimAsked || undefined,
+      sum: mode !== "idb" ? undefined : st.sumId() || (typeof header.sum === "string" ? header.sum : undefined) });
   }
 
   /**
@@ -552,7 +507,7 @@ async function bootLibrary(d) {
     // a name typed into the field is an answer to the claim too
     if (store.session.libNames.length && !claimAsked) { claimAsked = true; renderClaim(); }
     if (frozen) return chain;
-    if (mode !== "idb") { writeHeader(); return Promise.resolve(true); }
+    if (held) { writeHeader(); return Promise.resolve(true); }
     const list = store.session.library;
     const changed = [];
     const live = new Set();
@@ -603,7 +558,7 @@ async function bootLibrary(d) {
       try { got = ids.length ? await st.read(ids) : []; } catch (_) { got = []; }
       const byId = new Map(got.filter((g) => g && g.src !== "local").map((g) => [g.id, g]));
       const list = store.session.library.filter((g) => !goneIds.has(g.id) && !byId.has(g.id));
-      for (const g of byId.values()) { d.rescoreLosses(g); list.push(g); sigs.set(g.id, sigOf(g)); }
+      for (const g of byId.values()) { list.push(g); sigs.set(g.id, sigOf(g)); }
       for (const id of goneIds) sigs.delete(id);
       st.forget([...goneIds]);
       list.sort(LibraryDb.newestFirst);
@@ -678,7 +633,7 @@ async function bootLibrary(d) {
         st.local = next;
         localRec.clear();
         for (const [id, rec] of recOf) localRec.set(id, rec);
-        if (mode === "idb" && !frozen) {
+        if (!frozen) {
           try { if (gone.length) await st.drop(gone); await st.save(put); } catch (_) { /* derived: rebuilt next launch */ }
         }
       } while (run.again);
@@ -910,7 +865,7 @@ async function bootLibrary(d) {
       const k = kept.find((x) => x && x.fen === fen && x.sans === e.sans && x.an);
       e.an = LibraryLocal.localAnalysis(e, localRec.get(e.id), k ? k.an : null);
       if (!e.an) continue;
-      if (e.an.scalars) d.rescoreLosses(e);
+      if (e.an.scalars) d.fillLosses(e);
       out.push(e);
     }
     return out;
@@ -940,29 +895,6 @@ async function bootLibrary(d) {
     store.ui.diagSrc = b.dataset.dsrc;
     d.renderDiagnosis();
   };
-  /**
-   * Old 本机 records (6.x–8.0 kept no clock) get the one they were played
-   * on where a setting of that time is still on disk: the save's clock, for
-   * the game on the board (LibraryLocal.saveClock / backfillTc). Written back
-   * only when one was found.
-   */
-  function backfillLocalTc() {
-    const lineOf = (pgn) => {
-      const g = d.PgnParser.parsePgn(pgn).games[0];
-      if (!g) return null;
-      const sans = [];
-      for (let n = g.root; n && n.children.length; n = n.children[0]) sans.push(n.children[0].san);
-      const tc = g.headers.find(([k]) => k === "TimeControl");
-      return { fen: g.root.fen, sans, tc: tc ? tc[1] : "" };
-    };
-    let save = null;
-    try { save = JSON.parse(Persist.get("save") || "null"); } catch (_) { save = null; }
-    let cand = null;
-    try { cand = LibraryLocal.saveClock(save, lineOf); } catch (_) { cand = null; }
-    const stats = d.loadStats();
-    if (LibraryLocal.backfillTc(stats.games, cand ? [cand] : [], lineOf)) d.saveStats(stats);
-  }
-
   // --- the rest of the seam ------------------------------------------------
   // v8-1-plan F3: the entries are in — the list draws them in place of the
   // summary's rows, and what waited on them (a click, 导出) goes ahead
@@ -988,22 +920,14 @@ async function bootLibrary(d) {
   }
   renderClaim();
   if (renamed) { d.reclaimLibrary(); save(); }
-  // what is not indexed yet (a migrated or restored library), in the
-  // background; the position filter finds more as it goes
-  if (mode !== "idb") st.games = store.session.library;
+  // what is not indexed yet (a restored library), in the background; the
+  // position filter finds more as it goes
   const indexing = st.indexMissing(SLICE, d.pause).then(() => { if (listOpen()) renderList(); });
-  try { backfillLocalTc(); } catch (_) { /* a clock not found is a clock not tagged */ }
   // a press queued on the summary runs once the 本机 records are in too (M4 评审)
   Promise.resolve(syncLocal()).then(runQueued, runQueued);
-  // M5 review P3-1: a build from before the shards (8.0 dev) rewrites the
-  // store's manifest without them, and a later launch in step with that
-  // manifest owes it nothing — so the shards holding games and not listed
-  // there are owed now
-  if (mode === "idb" && Persist.touchUnlisted) Persist.touchUnlisted(Object.keys(shardMap()));
   // v8-1-plan F3: the stored summary made to agree with the entries just
-  // read, in the background; the header learns its id once (and again after
-  // a build without the summary dropped it)
-  const summarised = mode === "idb" && !readOnly
+  // read, in the background; the header learns its id once
+  const summarised = mode === "idb"
     ? st.syncSummary(SLICE, d.pause).then((id) => {
       // the header as it is now, not as it was at boot (M4 评审 P2-2)
       const now = readHeader(Persist.get("library")) || {};
@@ -1034,11 +958,11 @@ async function bootLibrary(d) {
     all: allGames,
     pkOf: st.pkOf,
     // persist.js's port (BULK)
-    // not in IndexedDB: the shards read at boot (read-only), or null —
-    // unknown, so they stay owed and the manifest keeps them (M5 review P2-1)
-    shardNames: () => (mode === "idb" ? Object.keys(shardMap()) : roTexts ? Object.keys(roTexts) : null),
+    // held: null — unknown, so they stay owed and the manifest keeps them
+    // (M5 review P2-1)
+    shardNames: () => (held ? null : Object.keys(shardMap())),
     shardText: (name) => {
-      if (mode !== "idb") return roTexts && typeof roTexts[name] === "string" ? roTexts[name] : null;
+      if (held) return null;
       // grouped once per library state, not once per shard asked for
       if (!groups || groups.list !== store.session.library) {
         // v8-1-plan F3: timed for a test's probe (persist.js timed); part of its "shardText"
@@ -1057,16 +981,15 @@ async function bootLibrary(d) {
       if (store.session.libRun) store.session.libRun.abort = true;
       // a save already queued lands before the replace, not after it
       await chain.catch(() => {});
-      if (mode === "idb") await st.restoreShards(texts);
+      await st.restoreShards(texts);
     },
     clear: () => {
       store.session.library = [];
       sigs.clear();
-      // the read-only shards go too: known empty, so the store empties them
-      if (roTexts) roTexts = {};
+      held = false;
       // the index stops now, not when the chain reaches the clear (P2-2)
       st.halt();
-      if (mode === "idb") chain = chain.then(() => st.clear()).catch(() => {});
+      chain = chain.then(() => st.clear()).catch(() => {});
     },
   };
 }

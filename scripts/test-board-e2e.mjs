@@ -53,14 +53,31 @@ const assert = (cond, msg) => {
 const browser = await launchBrowser();
 console.log("引擎:", ENGINE);
 
+/**
+ * 9.0 S5: settings live on one page (#page-settings), opened from the rail's
+ * gear, one category (#set-<cat>) showing at a time; the board comes back
+ * with the rail's 下棋. Driven the way a person drives it, by clicks.
+ */
+const toSettings = async (page, cat) => {
+  await page.click('#rail button[data-view="settings"]'); await page.waitForTimeout(200);
+  if (cat) { await page.click("#cat-" + cat); await page.waitForTimeout(150); }
+};
+const toPlay = async (page) => {
+  await page.click('#rail button[data-view="play"]'); await page.waitForTimeout(250);
+};
+
+/** A shell's name (data-theme) as the look that gives it (look.js shellFor). */
+const lookOf = (th) => ({ wood: { appearance: "dark", boardId: "wood" }, night: { appearance: "dark", boardId: "green" },
+  day: { appearance: "light", boardId: "wood" }, notebook: { appearance: "light", boardId: "blue" } })[th] || {};
+
 /** Play `line` in a fresh page and report what the board and the panel show. */
 async function play(theme, line) {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
-  // a 7.x theme id, or (v8-0-plan A3) the look's own fields
-  const look = typeof theme === "string" ? { themeId: theme } : theme;
+  // a shell's name, or (v8-0-plan A3) the look's own fields
+  const look = typeof theme === "string" ? lookOf(theme) : theme;
   await ctx.addInitScript((lk) => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify(Object.assign({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false }, lk)));
+    localStorage.setItem("chess.settings", JSON.stringify(Object.assign({
+      mode: "pvp", langId: "zh-CN", soundOn: false }, lk)));
     localStorage.setItem("chess.panelOpen", "1");
   }, look);
   const page = await ctx.newPage();
@@ -161,9 +178,9 @@ for (const [boardId, boardFrame, appearance] of [["wood", "flat", "system"], ["g
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false,
-      themeId: "wood", humanColor: "w" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "ai", langId: "zh-CN", soundOn: false,
+      appearance: "dark", boardId: "wood", humanColor: "w" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -295,8 +312,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -406,8 +423,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -448,8 +465,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -507,8 +524,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -570,16 +587,19 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(1000);
   await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
-  const daily = () => page.evaluate(() => !!document.getElementById("daily-row").offsetParent);
-  assert(await daily(), "§1b 零着时,「今天的训练」在");
+  // 9.0 S1: the panel's 今天的训练 row (#daily-row) is gone — the plan is 今天's
+  // hero card. What this guarded is kept: nothing in the panel shows or hides
+  // while the moves are stepped through (the panel's visible parts, as a list).
+  const daily = () => page.evaluate(() => [...document.querySelectorAll("#pane-play > *")]
+    .filter((e) => !e.hidden && e.getClientRects().length > 0).map((e) => e.id || e.className).join(","));
   const at = (s) => page.evaluate((n) => {
     const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
     const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
@@ -596,7 +616,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const top = () => page.evaluate(() => document.getElementById("move-list").getBoundingClientRect().top);
   const t0 = await top();
   const seen = new Set();
-  const cards = new Set();
+  const cards = new Set([await daily()]);
   for (const k of [...Array(22).fill("ArrowLeft"), ...Array(22).fill("ArrowRight")]) {
     await page.keyboard.press(k);
     await page.waitForTimeout(40);
@@ -605,7 +625,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   }
   assert(seen.size === 1 && seen.has(t0),
     `§1b 从最新退到开局再回到最新,每一步棋谱区上缘都在 ${t0}px(见过:${[...seen].join(", ")})`);
-  assert(!cards.has(true), "§1b …其间「今天的训练」一次也没有冒出来");
+  assert(cards.size === 1, "§1b …其间侧栏里没有卡片冒出来或收起(" + [...cards].join(" | ") + ")");
   await ctx.close();
 }
 
@@ -619,8 +639,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const setup = async (turn, set, flip) => {
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
     await ctx.addInitScript(([s, f]) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", pieceSet: s, flipped: f, autoFlipPvp: false }));
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", pieceSet: s, flipped: f, autoFlipPvp: false }));
       localStorage.setItem("chess.panelOpen", "1");
     }, [set, flip]);
     const page = await ctx.newPage();
@@ -730,8 +750,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "ai", humanColor: "w", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "ai", humanColor: "w", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -770,8 +790,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -790,8 +810,13 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const why = () => page.evaluate(() => (document.getElementById("editor-error") || {}).textContent);
   const open = () => page.evaluate(() => !(document.getElementById("sec-editor") || {}).hidden);
   const read = () => page.evaluate(READ_BOARD);
+  // 9.0 S2: 编辑局面 is in the tool row's ⋯ (#more-row), not on the row itself
+  const openEditor = async () => {
+    if (!(await page.isVisible("#editor-open"))) { await page.click("#more-tools"); await page.waitForTimeout(150); }
+    await page.click("#editor-open");
+  };
 
-  await page.click("#editor-open");
+  await openEditor();
   await page.waitForTimeout(400);
   assert(await open(), "编辑器打开了");
   await page.click("#editor-clear");
@@ -822,10 +847,10 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.keyboard.press("Escape"); await page.waitForTimeout(300);  // 先关掉进入时的提示条
   await page.keyboard.press("Escape"); await page.waitForTimeout(400);
   assert(!(await open()), "Esc 退出编辑器,面板跟着收起(2.1.6 之前它会留在屏幕上)");
-  await page.click("#editor-open"); await page.waitForTimeout(400);
+  await openEditor(); await page.waitForTimeout(400);
   await page.click("#editor-cancel"); await page.waitForTimeout(400);
   assert(!(await open()), "「取消」退出,面板收起");
-  await page.click("#editor-open"); await page.waitForTimeout(400);
+  await openEditor(); await page.waitForTimeout(400);
   await page.click("#editor-clear"); await page.waitForTimeout(200);
   await brush("w", "k"); await tap("e1");
   await brush("b", "k"); await tap("e8");
@@ -852,8 +877,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -939,9 +964,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false,
-      themeId: "wood", humanColor: "w", difficulty: "easy" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "ai", langId: "zh-CN", soundOn: false,
+      appearance: "dark", boardId: "wood", humanColor: "w", difficulty: "easy" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -1021,8 +1046,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -1072,10 +1097,11 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const before = await men();
   assert(before >= 28, `开着的棋盘上看得见棋子(数到 ${before} 个)`);
 
-  await page.click("#tab-setup"); await page.waitForTimeout(200);
+  // 9.0 S5: 盲棋 is in the settings page's 棋盘 category (was the 设置 tab)
+  await toSettings(page, "board");
   await page.click("#opt-blind"); await page.waitForTimeout(300);
   assert((await page.getAttribute("#opt-blind", "aria-pressed")) === "true", "盲棋开关按下了");
-  await page.click("#tab-play"); await page.waitForTimeout(500);
+  await toPlay(page); await page.waitForTimeout(250);
 
   assert((await men()) === 0, `盲棋:一个棋子都不画(数到 ${await men()} 个)`);
   const co = await frame();
@@ -1092,9 +1118,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await sq("b8"); await sq("c6");
   const n = await page.evaluate(() => document.querySelectorAll(".move-list .mlmove").length);
   assert(n === 4, `……看不见也照样走得动(着法表 ${n} 手)`);
-  await page.click("#tab-setup"); await page.waitForTimeout(200);
+  await toSettings(page, "board");
   await page.click("#opt-blind"); await page.waitForTimeout(300);
-  await page.click("#tab-play"); await page.waitForTimeout(500);
+  await toPlay(page); await page.waitForTimeout(250);
   assert((await men()) >= 28, `关掉盲棋,人又都回来了(数到 ${await men()} 个)`);
 
   // --- 升主线:把变着提上去,老主线自己退到变着里 (v6-plan §5 Q2) ----------
@@ -1144,8 +1170,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     window.__paints = 0;
     const real = HTMLCanvasElement.prototype.getContext;
@@ -1198,8 +1224,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     window.__t = { painted: null, wired: null };
     const realCtx = HTMLCanvasElement.prototype.getContext;
@@ -1271,8 +1297,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     window.__full = 0;
     const real = CanvasRenderingContext2D.prototype.fillRect;
     CanvasRenderingContext2D.prototype.fillRect = function (x, y, ...rest) {
@@ -1315,7 +1341,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const f = await page.evaluate(() => ({
     image: window.__chess.board().imageRedraws,
     fetched: performance.getEntriesByType("resource").some((e) => /chunk-pieces-fantasy\.js$/.test(e.name)),
-    saved: JSON.parse(localStorage.getItem("chess.v1.settings") || "{}").pieceSet,
+    saved: JSON.parse(localStorage.getItem("chess.settings") || "{}").pieceSet,
   }));
   assert(f.fetched && f.image === 3 && f.saved === "fantasy",
     `换 Fantasy:取了 chunk-pieces-fantasy.js,只多画一次(共 ${f.image} 次),设置里记下 ${f.saved}`);
@@ -1331,8 +1357,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     // a slow decode, so the switch can land while it runs
     const real = HTMLImageElement.prototype.decode;
     HTMLImageElement.prototype.decode = function () {
@@ -1361,10 +1387,10 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "puzzle", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
-    localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "op" }));
+    localStorage.setItem("chess.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "op" }));
   });
   const page = await ctx.newPage();
   const errs = [];
@@ -1388,14 +1414,17 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 // --- v7-8-plan §5: 坐标 盘外 / 盘内, and the tab fade ------------------------
 // Both red before 7.8's change: there was no 「坐标位置」 control (the click
 // below times out), and the tab pane slid in with reveal-in, not pane-in.
+// 9.0 S5: the panel has no tabs any more; what was "the board does not move
+// between the two tabs" is now "the board does not move for a visit to the
+// settings page", and the fade is the settings page's own (a .page, pane-in).
 {
   const rectsFor = async (w, h, coordsIn, theme) => {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, locale: "zh-CN" });
     // v8-0-plan A3: 盘外 / 盘内 is a choice on the wooden frame only (a flat
     // board has nothing to print on), so these two runs are framed
     await ctx.addInitScript((th) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: th,
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", soundOn: false,
         appearance: th === "day" ? "light" : "dark", boardId: "wood", boardFrame: "frame" }));
       localStorage.setItem("chess.panelOpen", "1");
     }, theme);
@@ -1405,18 +1434,24 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     await page.goto(`http://127.0.0.1:${PORT}/`);
     await page.waitForTimeout(900);
     if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
-    // chosen the way a person chooses it: in the preferences window (v8-0-plan A1)
-    await page.click("#prefs-open"); await page.waitForTimeout(150);
+    // chosen the way a person chooses it: on the settings page's 棋盘 (9.0 S5;
+    // the preferences window of v8-0-plan A1 before it)
+    await toSettings(page, "board");
     await page.click(`#coords-seg button[data-coords="${coordsIn ? "in" : "out"}"]`, { timeout: 2000 });
-    await page.keyboard.press("Escape");
+    await toPlay(page);
     await page.waitForTimeout(300);
     const rects = [];
-    for (const tab of ["play", "setup", "play"]) {
-      await page.click("#tab-" + tab); await page.waitForTimeout(250);
-      rects.push(await page.evaluate(() => {
-        const r = document.getElementById("board").getBoundingClientRect();
-        return [r.x, r.y, r.width, r.height].join(",");
-      }));
+    const rectNow = () => page.evaluate(() => {
+      const r = document.getElementById("board").getBoundingClientRect();
+      return [r.x, r.y, r.width, r.height].join(",");
+    });
+    // the board, then again after a round trip through 设置 (twice: the
+    // second visit opens on the remembered category)
+    rects.push(await rectNow());
+    for (const cat of ["general", null]) {
+      await toSettings(page, cat);
+      await toPlay(page);
+      rects.push(await rectNow());
     }
     const geo = await page.evaluate(() => {
       const board = document.getElementById("board").getBoundingClientRect();
@@ -1449,7 +1484,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   for (const [w, h] of [[1200, 900], [600, 900]]) {
     const out = await rectsFor(w, h, false, "wood");
     const inn = await rectsFor(w, h, true, "wood");
-    assert(new Set(out.rects).size === 1, `${w}×${h} 坐标盘外:棋盘矩形在两个页签之间逐像素不变(${[...new Set(out.rects)].join(" / ")})`);
+    assert(new Set(out.rects).size === 1, `${w}×${h} 坐标盘外:去一趟设置页再回来,棋盘矩形逐像素不变(${[...new Set(out.rects)].join(" / ")})`);
     assert(new Set(inn.rects).size === 1, `${w}×${h} 坐标盘内:同样逐像素不变(${[...new Set(inn.rects)].join(" / ")})`);
     assert(inn.geo.frame < out.geo.frame && inn.geo.step > out.geo.step,
       `${w}×${h} 盘内时外框收窄(${out.geo.frame} → ${inn.geo.frame}px),格子随之变大(${out.geo.step.toFixed(1)} → ${inn.geo.step.toFixed(1)})`);
@@ -1477,11 +1512,13 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const day = await rectsFor(1200, 900, true, "day");
   assert(day.geo.aInk === day.geo.light && day.geo.bInk === day.geo.dark, `日间主题盘内:字色取这套主题自己的格子色(${day.geo.aInk} / ${day.geo.bInk})`);
 
-  // the tab fade: one pane drawn, fading in over --dur-base; none under reduced motion
+  // the fade: one pane drawn, fading in over --dur-base; none under reduced
+  // motion. 9.0 S5: the side tabs are gone, so it is the settings page that
+  // comes in (pane-in, like every .page), showing one category at a time.
   for (const reduced of [false, true]) {
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN", reducedMotion: reduced ? "reduce" : "no-preference" });
     await ctx.addInitScript(() => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false }));
+      localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", soundOn: false }));
       localStorage.setItem("chess.panelOpen", "1");
     });
     const page = await ctx.newPage();
@@ -1489,19 +1526,20 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     await page.waitForTimeout(900);
     if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
     const r = await page.evaluate(() => {
-      document.getElementById("tab-setup").click();
-      const shown = ["play", "setup"].filter((t) => !document.getElementById("pane-" + t).hidden);
-      const cs = getComputedStyle(document.getElementById("pane-setup"));
+      document.querySelector('#rail button[data-view="settings"]').click();
+      document.getElementById("cat-sound").click();
+      const shown = [...document.querySelectorAll("#page-settings .set-pane")].filter((p) => !p.hidden).map((p) => p.id);
+      const cs = getComputedStyle(document.getElementById("page-settings"));
       const base = getComputedStyle(document.documentElement).getPropertyValue("--dur-base").trim();
       const ms = (v) => (/ms$/.test(v) ? parseFloat(v) : parseFloat(v) * 1000);
       return { shown, name: cs.animationName, dur: cs.animationDuration, base, same: ms(cs.animationDuration) === ms(base), durMs: ms(cs.animationDuration) };
     });
     if (!reduced) {
-      assert(r.shown.length === 1 && r.name === "pane-in" && r.same,
-        `页签切换:只画新窗格(${r.shown.join(",")}),它用 pane-in 淡入,时长就是 --dur-base(${r.dur} / ${r.base})`);
+      assert(r.shown.length === 1 && r.shown[0] === "set-sound" && r.name === "pane-in" && r.same,
+        `打开设置页:只画选中的那一类(${r.shown.join(",")}),页面用 pane-in 淡入,时长就是 --dur-base(${r.dur} / ${r.base})`);
     } else {
       assert(r.shown.length === 1 && r.durMs <= 1,
-        `减少动态效果:页签切换不淡入(${r.dur})`);
+        `减少动态效果:设置页出现不淡入(${r.dur})`);
     }
     await ctx.close();
   }
@@ -1510,13 +1548,16 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 // --- v7-8-plan §4: one dialog for a new game ------------------------------
 // Red before 7.8: #btn-new raised the 「清空当前对局？」 confirm (no
 // #newgame-modal), 换个对手 switched to the settings tab, and there was no 随机.
+// 9.0 S5: the rows are the dialog's own now — no 「对局」 fold on a settings
+// tab to borrow them from and give them back to — so "they went home" became
+// "they are still the dialog's, and the settings page has none of them".
 {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
     if (sessionStorage.getItem("seeded")) return;
     sessionStorage.setItem("seeded", "1");
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "ai", difficulty: "normal", humanColor: "w", langId: "zh-CN", sideTab: "play", soundOn: false }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "ai", difficulty: "normal", humanColor: "w", langId: "zh-CN", soundOn: false }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -1534,24 +1575,29 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   };
   const state = () => page.evaluate(() => {
     const m = document.getElementById("newgame-modal");
-    const s = JSON.parse(localStorage.getItem("chess.v1.settings") || "{}");
+    const s = JSON.parse(localStorage.getItem("chess.settings") || "{}");
     return {
       open: !!m && m.classList.contains("show"),
       confirm: document.getElementById("confirm-modal").classList.contains("show"),
       warn: !!m && !document.getElementById("ng-warn").hidden,
-      // row-mode is the dialog's own (人机 / 双人, v8-0-plan A1); the rest are borrowed
+      // the rows showing besides 人机 / 双人 (row-mode), in order
       rows: m ? [...document.getElementById("ng-host").children].filter((r) => !r.hidden && r.id !== "row-mode").map((r) => r.id) : [],
       plies: document.querySelectorAll(".mlmove").length,
-      tab: document.getElementById("app").getAttribute("data-tab"),
+      view: document.getElementById("app").getAttribute("data-view"),
+      settingsShown: !document.getElementById("page-settings").hidden,
       diffActive: (document.querySelector("#diff-seg-engine button.active, #diff-seg button.active") || {}).dataset?.diff,
       level: document.getElementById("black-level").textContent.trim(),
       settings: s,
       focus: document.activeElement && (document.activeElement.id || document.activeElement.dataset.op || document.activeElement.dataset.diff || document.activeElement.textContent.trim()),
-      rowsHome: ["row-difficulty", "row-persona", "row-color", "row-clock"].every((id) => document.getElementById(id).closest("#fold-game")),
+      // 9.0 S5: the four rows live in the dialog (rung and style in its 自定义
+      // fold), whether it is open or not, and nowhere on the settings page
+      rowsHome: ["row-color", "row-clock"].every((id) => document.getElementById(id).parentElement.id === "ng-host")
+        && ["row-difficulty", "row-persona"].every((id) => document.getElementById(id).parentElement.id === "ng-custom-body")
+        && !document.querySelector("#page-settings #diff-seg, #page-settings #persona-seg, #page-settings #color-seg, #page-settings #clock-seg"),
     };
   });
   const stateBefore = await state();
-  assert(stateBefore.rowsHome, "开局前:四组分段控件都在设置页「对局」折叠里");
+  assert(stateBefore.rowsHome, "开局前:四组分段控件都在新对局对话框里(档位与风格在「自定义」里),设置页上没有它们");
 
   // a game in progress: one step, the warning in the dialog, no second box
   await tap("e2"); await tap("e4"); await page.waitForTimeout(400);
@@ -1559,18 +1605,19 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   let s = await state();
   assert(s.open && !s.confirm, `「新局」打开新对局对话框,不再先弹确认框(对话框 ${s.open} / 确认框 ${s.confirm})`);
   assert(s.warn, "……对局进行中,对话框顶上写着「会结束当前这盘」");
-  // v8-0-plan B4: the opponent is a persona card first; the settings page's
-  // rung and style rows are the same nodes, folded under 自定义
+  // v8-0-plan B4: the opponent is a persona card first; rung and style are
+  // folded under 自定义 (9.0 S5: after the side and the clock, and the
+  // dialog's own rows rather than nodes borrowed from the settings page)
   const inFold = await page.evaluate(() => ["row-difficulty", "row-persona"].every((id) => document.getElementById(id).closest("#ng-custom")));
-  assert(JSON.stringify(s.rows) === JSON.stringify(["row-opponent", "ng-custom", "row-color", "row-clock"]) && inFold,
-    `……里面是角色卡，再是设置页那几组控件,同一批节点(档位与风格收在「自定义」里)(${s.rows.join(",")})`);
+  assert(JSON.stringify(s.rows) === JSON.stringify(["row-opponent", "row-color", "row-clock", "ng-custom"]) && inFold && s.rowsHome,
+    `……里面是角色卡、执子、棋钟,档位与风格收在「更多选项」里(${s.rows.join(",")})`);
   assert(s.focus === "ng-start", `……焦点在「开始」上,直接回车就是再来一盘同样的(${s.focus})`);
   // the draft is not the game: choosing 执黑 here changes nothing until 开始
   await page.click('#ng-host #color-seg button[data-color="b"]'); await page.waitForTimeout(200);
   await page.keyboard.press("Escape"); await page.waitForTimeout(300);
   s = await state();
   assert(!s.open && s.plies === 1 && s.settings.humanColor === "w" && s.rowsHome,
-    `Esc 关掉:这盘还在(${s.plies} 着),执子没变(${s.settings.humanColor}),控件回到设置页`);
+    `Esc 关掉:这盘还在(${s.plies} 着),执子没变(${s.settings.humanColor}),控件仍在对话框里`);
 
   // Tab stays in the dialog and walks it top to bottom
   await page.click("#btn-new"); await page.waitForTimeout(300);
@@ -1582,18 +1629,40 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const wrapped = (await state()).focus;
   await page.keyboard.press("Shift+Tab"); await page.waitForTimeout(80);
   const back = (await state()).focus;
-  // v8-1-plan T1: the persona cards come a segment at a time, the three tabs first
-  assert(order[0] === "ai" && order.slice(2, 5).join() === "seg0,seg1,seg2" && order[5] === "ben" && order[order.length - 2] === "ng-cancel" && order[order.length - 1] === "ng-start" && wrapped === "人机" && back === "ng-start",
-    `Tab 顺序:对手(人机 / 双人) → 三个分段 → 这一段的角色卡 → … → 棋钟 → 取消 → 开始,从「开始」再 Tab 回到第一个(${order.slice(0, 6).join(",")}…${order.slice(-2).join(",")};${wrapped} / ${back})`);
-  // change the opponent and start: one step, the strip and the settings page agree
-  await page.click('#ng-host #op-seg button[data-seg="1"]'); await page.waitForTimeout(150);
+  // v8-1-plan T1 → 9.0 S2: no segment tabs (入门 / 进阶 / 高手) any more — the
+  // eight cards around the pick (中级 is 索尔, so 本 … 艾瑞丝) come straight after 人机 / 双人
+  const cardsNow = () => page.evaluate(() => [...document.querySelectorAll("#op-grid .op-card")].filter((b) => !b.hidden)
+    .map((b) => b.dataset.op + (b.classList.contains("active") && b.getAttribute("aria-pressed") === "true" ? "*" : "")).join(","));
+  assert(order[0] === "ai" && order[1] === "pvp" && order.slice(2, 10).join() === "ben,nico,vera,sol,leo,ivy,max,iris" && order[order.length - 2] === "ng-cancel" && order[order.length - 1] === "ng-start" && wrapped === "人机" && back === "ng-start",
+    `Tab 顺序:对手(人机 / 双人) → 八张角色卡 → … → 棋钟 → 取消 → 开始,从「开始」再 Tab 回到第一个(${order.slice(0, 10).join(",")}…${order.slice(-2).join(",")};${wrapped} / ${back})`);
+  assert(!(await page.$("#op-seg")), "S2: 角色卡上面没有「入门 / 进阶 / 高手」分段了");
+  // change the opponent and start: one step, the strip and the dialog's cards agree
   await page.click('#ng-host #op-grid .op-card[data-op="max"]'); await page.waitForTimeout(150);
   await page.keyboard.press("Enter"); await page.waitForTimeout(500);
   s = await state();
   assert(!s.open && !s.confirm && s.plies === 0, `回车 = 开始:一步就开了新局(${s.plies} 着,没有第二个确认框)`);
   assert(s.settings.difficulty === "hard" && s.diffActive === "hard" && /高级/.test(s.level),
-    `新档位写进设置、设置页分段同步、对阵条上是「${s.level}」`);
-  assert(s.rowsHome, "……控件回到设置页");
+    `新档位写进设置、对话框里的分段同步、对阵条上是「${s.level}」`);
+  assert(s.rowsHome, "……控件仍是对话框自己的,设置页上没有");
+
+  // 9.0 S2: the eight cards are a window on the ladder that holds the pick and
+  // moves with it — from a card, and from the rung chosen under 更多选项
+  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);
+  const w0 = await cardsNow();
+  assert(w0 === "sol,leo,ivy,max*,iris,otto,hugo,zoe", `S2:选了马克斯(高级)再开对话框,八张卡是他和他两边的人,他亮着(${w0})`);
+  await page.click("#ng-custom > summary"); await page.waitForTimeout(200);
+  await page.click('#ng-custom #diff-seg button[data-diff="beginner"]'); await page.waitForTimeout(200);
+  const w1 = await cardsNow();
+  assert(w1 === "pip*,tomo,lina,kai,ada,remy,ben,nico", `S2:在「更多选项」里选新手,八张卡挪到梯子底,皮普亮着(${w1})`);
+  await page.click('#ng-custom #diff-seg-engine button[data-diff="extreme"]'); await page.waitForTimeout(200);
+  const w2 = await cardsNow();
+  assert(w2 === "iris,otto,hugo,zoe,lars,nora,kit,fish*", `S2:再选全力,八张卡挪到梯子顶,菲什亮着(${w2})`);
+  await page.click('#ng-custom #diff-seg-engine button[data-diff="normal"]'); await page.waitForTimeout(200);
+  const w3 = await cardsNow();
+  assert(w3 === "ben,nico,vera,sol*,leo,ivy,max,iris", `S2:选回中级,窗口回到索尔两边(${w3})`);
+  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+  s = await state();
+  assert(!s.open && s.settings.difficulty === "hard", `……Esc 不开始:设置里还是高级(${s.settings.difficulty})`);
 
   // no moves: no warning. 随机 is offered, and remembered
   await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);   // hidden with no moves on the board; N and the menu reach the same handler
@@ -1604,29 +1673,32 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   s = await state();
   assert(s.settings.colorRandom === true && ["w", "b"].includes(s.settings.humanColor),
     `执子「随机」:抽到了一方(${s.settings.humanColor}),并记住这次选的是随机`);
-  const randomHidden = await page.evaluate(() => document.querySelector('#color-seg button[data-color="random"]').hidden);
-  assert(randomHidden, "……设置页上没有「随机」这一格 —— 那是开局的选项,不是换边");
+  // 9.0 S5: the side is only chosen in the dialog; outside it 随机 stays hidden
+  const randomHidden = await page.evaluate(() => document.querySelector('#color-seg button[data-color="random"]').hidden
+    && !document.querySelector("#page-settings #color-seg"));
+  assert(randomHidden, "……对话框关着时「随机」这一格藏着,设置页上也没有执子 —— 那是开局的选项,不是换边");
   await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);   // hidden with no moves on the board; N and the menu reach the same handler
   const pre = await page.evaluate(() => (document.querySelector("#ng-host #color-seg button.active") || {}).dataset?.color);
   assert(pre === "random", `再开对话框,预选的仍是上次的「随机」(${pre})`);
   await page.click("#ng-cancel"); await page.waitForTimeout(300);
-  // …until a side is picked in 设置 itself: that is a side, not 随机 (Codex, #83)
-  await page.click("#tab-setup"); await page.waitForTimeout(200);
-  await page.evaluate(() => document.querySelector('#color-seg button[data-color="w"]').click()); await page.waitForTimeout(200);
-  await page.click("#tab-play").catch(() => {}); await page.waitForTimeout(200);
+  // …until a side is picked: that is a side, not 随机 (Codex, #83). 9.0 S5:
+  // the dialog is the one place a side is picked, so it is picked there
+  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);
+  await page.click('#ng-host #color-seg button[data-color="w"]'); await page.waitForTimeout(150);
+  await page.click("#ng-start"); await page.waitForTimeout(500);
+  const picked = (await state()).settings;
   await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);
   const fixed = await page.evaluate(() => (document.querySelector("#ng-host #color-seg button.active") || {}).dataset?.color);
-  assert(fixed === "w", `在设置里选了白方,新对局对话框预选白方,不再是「随机」(${fixed})`);
+  assert(fixed === "w" && picked.humanColor === "w" && picked.colorRandom !== true,
+    `在新对局里选了白方开局,下次对话框预选白方,不再是「随机」(${fixed};设置 ${picked.humanColor} / 随机 ${picked.colorRandom})`);
   await page.click("#ng-cancel"); await page.waitForTimeout(300);
 
-  // the result card's two buttons open the same dialog; 换个对手 lands on the opponent
+  // the result bar's 再来一盘 opens the same dialog (9.0 M1: 换个对手 was
+  // the same dialog again, and is gone)
   await page.evaluate(() => document.getElementById("go-again").click()); await page.waitForTimeout(300);
   s = await state();
-  assert(s.open && s.tab === "play", "「再来一盘」打开同一个对话框");
-  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
-  await page.evaluate(() => document.getElementById("go-switch").click()); await page.waitForTimeout(300);
-  s = await state();
-  assert(s.open && s.tab === "play" && s.focus === "max", `「换个对手」也是它,不再跳去设置页,焦点落在当前的角色上(${s.tab} / ${s.focus})`);
+  assert(s.open && s.view === "play" && !s.settingsShown, `「再来一盘」打开同一个对话框,留在棋盘上(${s.view})`);
+  assert(await page.evaluate(() => !document.getElementById("go-switch")), "结果条上不再有「换个对手」，再来一盘就是那个对话框");
   await page.keyboard.press("Escape"); await page.waitForTimeout(300);
 
   // two players: only who plays White (the bottom side) and the clock.
@@ -1634,23 +1706,28 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);   // hidden with no moves on the board; N and the menu reach the same handler
   await page.click('#ng-host #mode-seg button[data-mode="pvp"]'); await page.waitForTimeout(200);
   s = await state();
-  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-color", "row-clock"]),
-    `双人模式只显示「谁执白」和棋钟(${s.rows.join(",")})`);
+  // 9.0 S2: 更多选项 stays (the rarer clocks are in it); its rung and style rows hide
+  const pvpFold = await page.evaluate(() => ["row-difficulty", "row-persona"].map((id) => document.getElementById(id).hidden).join());
+  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-color", "row-clock", "ng-custom"]) && pvpFold === "true,true",
+    `双人模式只显示「谁执白」、棋钟和「更多选项」(里面没有档位与风格)(${s.rows.join(",")} / ${pvpFold})`);
   await page.click('#ng-host #color-seg button[data-color="b"]'); await page.waitForTimeout(150);
-  await page.click('#ng-host #clock-seg button[data-tc="5+3"]'); await page.waitForTimeout(150);
+  // 9.0 S2: 5+3 is under 更多选项, which stays in 双人 (its rung rows hide)
+  await page.click("#ng-custom > summary"); await page.waitForTimeout(150);
+  await page.click('#ng-custom #clock-seg-more button[data-tc="5+3"]'); await page.waitForTimeout(150);
   await page.click("#ng-start"); await page.waitForTimeout(400);
   s = await state();
   const flipped = await page.evaluate(() => !!document.querySelector('#orient-seg button[data-orient="b"].active'));
   assert(s.settings.timeControl === "5+3" && flipped, `双人:棋钟 5+3、下方执黑(棋盘翻转 ${flipped})`);
   // with 自动转向 on, the board faces whoever is to move — a bottom side
-  // chosen here would be undone the moment the game starts (Codex, #83)
-  await page.click("#tab-setup"); await page.waitForTimeout(200);
-  await page.evaluate(() => document.getElementById("opt-autoflip").click()); await page.waitForTimeout(150);
-  await page.click("#tab-play").catch(() => {}); await page.waitForTimeout(200);
+  // chosen here would be undone the moment the game starts (Codex, #83).
+  // 9.0 S5: 自动翻转 is in the settings page's 对局 category
+  await toSettings(page, "game");
+  await page.click("#opt-autoflip"); await page.waitForTimeout(150);
+  await toPlay(page);
   await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);
   s = await state();
-  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-clock"]),
-    `双人、自动转向开着:不问哪一方在下方,只有棋钟(${s.rows.join(",")})`);
+  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-clock", "ng-custom"]),
+    `双人、自动转向开着:不问哪一方在下方,只有棋钟(和收着更多棋钟的「更多选项」)(${s.rows.join(",")})`);
   await page.click("#ng-start"); await page.waitForTimeout(400);
   const white = await page.evaluate(() => !!document.querySelector('#orient-seg button[data-orient="w"].active'));
   assert(white, "双人、自动转向开着:开局白方在下方");
@@ -1667,8 +1744,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const seeded = async (mode) => {
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
     await ctx.addInitScript((m) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: m, difficulty: "normal", humanColor: "w", langId: "zh-CN", sideTab: "play", soundOn: false }));
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: m, difficulty: "normal", humanColor: "w", langId: "zh-CN", soundOn: false }));
       localStorage.setItem("chess.panelOpen", "1");
     }, mode);
     const page = await ctx.newPage();
@@ -1739,7 +1816,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     assert(pick.diff === "easy" && s.focus === "ben", `§5 …预选初级,焦点在它的角色卡上(${pick.diff} / ${s.focus})`);
     await page.keyboard.press("Enter"); await page.waitForTimeout(500);
     s = await ngState(page);
-    const set = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings") || "{}"));
+    const set = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}"));
     assert(!s.open && set.mode === "ai" && set.difficulty === "easy", `§5 …回车开局:人机、初级(${set.mode} / ${set.difficulty})`);
     assert(errs.length === 0, `§5 首次启动:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
     await ctx.close();
@@ -1812,7 +1889,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const open = async (settings, vp, scheme) => {
     const ctx = await browser.newContext({ viewport: vp || { width: 1200, height: 900 }, locale: "zh-CN", colorScheme: scheme || "light" });
     await ctx.addInitScript((s) => {
-      if (s) localStorage.setItem("chess.v1.settings", JSON.stringify(s));
+      if (s) localStorage.setItem("chess.settings", JSON.stringify(s));
       localStorage.setItem("chess.panelOpen", "1");
     }, settings);
     const page = await ctx.newPage();
@@ -1834,15 +1911,19 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       attrs: [root.dataset.theme, root.dataset.board, root.dataset.frame].join("/"),
       coords: document.getElementById("app").getAttribute("data-coords") };
   });
-  const rectOn = (page, tab) => page.evaluate(async (tb) => {
-    document.getElementById("tab-" + tb).click();
-    await new Promise((r) => setTimeout(r, 250));
-    const r = document.getElementById("board").getBoundingClientRect();
-    return [r.x, r.y, r.width, r.height].join(",");
-  }, tab);
+  // 9.0 S5: no side tabs; the board's rect is read on the play view, first
+  // straight away, then after a round trip through the settings page
+  const rectOn = async (page, via) => {
+    if (via) await toSettings(page, via);
+    await toPlay(page);
+    return page.evaluate(() => {
+      const r = document.getElementById("board").getBoundingClientRect();
+      return [r.x, r.y, r.width, r.height].join(",");
+    });
+  };
   // 1 · a first run: flat, rounded 2–4px, coordinates in the squares, the
   //     wood board in the light shell of a light system — and the rect holds
-  //     across the tabs (the 7.7 invariant, re-proved on the new default)
+  //     across a visit to 设置 (the 7.7 invariant, re-proved on the new default)
   for (const vp of [{ width: 1200, height: 900 }, { width: 600, height: 900 }]) {
     const at = vp.width + "×" + vp.height;
     const flat = await open(null, vp);
@@ -1852,8 +1933,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     assert(g.radius >= 2 && g.radius <= 4, `A3 ${at} 平盘圆角 2–4px(${g.radius}px)`);
     assert(g.coords === "in", `A3 ${at} 平盘坐标写在格子里(data-coords=${g.coords})`);
     const rects = [];
-    for (const tab of ["play", "setup", "play"]) rects.push(await rectOn(flat.page, tab));
-    assert(new Set(rects).size === 1, `A3 ${at} 平盘:棋盘矩形在两个页签之间逐像素不变(${[...new Set(rects)].join(" / ")})`);
+    for (const via of [null, "board", "general"]) rects.push(await rectOn(flat.page, via));
+    assert(new Set(rects).size === 1, `A3 ${at} 平盘:去一趟设置页再回来,棋盘矩形逐像素不变(${[...new Set(rects)].join(" / ")})`);
     assert(flat.errs.length === 0, `A3 ${at} 新用户:没有页面异常${flat.errs.length ? " — " + flat.errs[0] : ""}`);
     await flat.ctx.close();
     // the wooden frame is still there, one choice away, as it was
@@ -1904,10 +1985,10 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   // 3 · the pickers: each choice lands on the page and in the settings, and
   //     the appearance answers the system while it follows it
   {
-    const { ctx, page, errs } = await open({ mode: "pvp", langId: "zh-CN", sideTab: "setup" }, null, "dark");
+    const { ctx, page, errs } = await open({ mode: "pvp", langId: "zh-CN" }, null, "dark");
     const state = () => page.evaluate(() => {
       const root = document.documentElement;
-      const s = JSON.parse(localStorage.getItem("chess.v1.settings") || "{}");
+      const s = JSON.parse(localStorage.getItem("chess.settings") || "{}");
       const on = (sel) => [...document.querySelectorAll(sel)].filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.textContent.trim());
       return { attrs: [root.dataset.theme, root.dataset.board, root.dataset.frame].join("/"),
         saved: [s.appearance, s.boardId, s.boardFrame, s.pieceSet].join("/"),
@@ -1916,21 +1997,29 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     let st = await state();
     assert(st.attrs === "wood/wood/flat" && st.pressed === "跟随系统/木/平盘",
       `A3 选择器:深色系统下跟随系统 = 深色外壳(${st.attrs};按下的是 ${st.pressed})`);
-    // the pickers live in the preferences window (v8-0-plan A1), opened the
-    // way a person opens it
-    await page.click("#prefs-open"); await page.waitForTimeout(200);
+    // the pickers live on the settings page (9.0 S5; the preferences window of
+    // v8-0-plan A1 before it), opened the way a person opens it: board, frame
+    // and pieces under 棋盘, light / dark under 通用
+    await toSettings(page, "board");
     const pick = async (sel) => { await page.click(sel); await page.waitForTimeout(250); };
     await pick('#board-pick-seg button[data-board-id="green"]');
     st = await state();
     assert(st.attrs === "night/green/flat" && st.saved.startsWith("system/green/flat"),
       `A3 选绿盘:冷色棋盘配冷色外壳(${st.attrs}),设置里记下(${st.saved})`);
+    const appIn = await page.evaluate(() => !!document.querySelector("#set-general #appearance-seg"));
+    assert(appIn, "9.0 S5 浅色 / 深色在设置页的「通用」里,不在「棋盘」里");
+    await pick("#cat-general");
     await pick('#appearance-seg button[data-appearance="light"]');
+    await pick("#cat-board");
     await pick('#frame-seg button[data-frame="frame"]');
     st = await state();
     assert(st.attrs === "notebook/green/frame" && st.saved.startsWith("light/green/frame") && st.pressed === "浅色/绿/木框",
       `A3 选浅色、木框:${st.attrs},${st.saved},按下 ${st.pressed}`);
-    // the texture: marble's veins are on the canvas, not only in a variable
+    // the texture: marble's veins are on the canvas, not only in a variable.
+    // 9.0 S5: the settings page covers the board, so it is read back on the
+    // play view — the board a person sees after choosing
     await pick('#board-pick-seg button[data-board-id="marble"]');
+    await toPlay(page);
     const spread = await page.evaluate(() => {
       const c = document.getElementById("board"), g = c.getContext("2d"), step = c.width / 8;
       // an empty square (d5 — light on this side) across its middle
@@ -1940,6 +2029,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       return seen.size;
     });
     assert(spread > 20, `A3 大理石:空格子上有纹理(${spread} 种颜色,平涂只有 1 种)`);
+    await toSettings(page, "board");
     // the kings in the piece picker: fetched once the row is on screen
     await page.evaluate(() => document.getElementById("piece-pick-seg").scrollIntoView());
     await page.waitForFunction(() => [...document.querySelectorAll("#piece-pick-seg img")].every((i) => i.src.startsWith("data:image/svg")),
@@ -1965,10 +2055,10 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const openA5 = async (settings, opts = {}) => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, locale: "zh-CN" });
     await ctx.addInitScript(([st, pz]) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify(Object.assign({ langId: "zh-CN", sideTab: "play", soundOn: false,
+      localStorage.setItem("chess.settings", JSON.stringify(Object.assign({ langId: "zh-CN", soundOn: false,
         appearance: "dark", boardId: "wood", boardFrame: "flat" }, st)));
       localStorage.setItem("chess.panelOpen", "1");
-      if (pz) localStorage.setItem("chess.v1.puzzles", JSON.stringify(pz));
+      if (pz) localStorage.setItem("chess.puzzles", JSON.stringify(pz));
     }, [settings, opts.puzzles || null]);
     const page = await ctx.newPage();
     const errs = [];
@@ -1992,10 +2082,10 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     const step = cv.width / 8;
     let f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
     if (fl) { f = 7 - f; rk = 7 - rk; }
-    // the reveal badges' corner (board.js): centre 0.24 of a square in,
-    // radius 0.21 — read near its top, clear of the glyph or the tick
-    const x = w === "badge" ? (f + 1) * step - step * 0.24 : f * step + step * (w === "edge" ? 0.12 : 0.5);
-    const y = w === "badge" ? rk * step + step * 0.24 - step * 0.21 * 0.7 : rk * step + step * (w === "edge" ? 0.88 : 0.5);
+    // the reveal badges' corner (board.js): centre 0.19 of a square in,
+    // radius 0.15 — read near its top, clear of the glyph or the tick
+    const x = w === "badge" ? (f + 1) * step - step * 0.19 : f * step + step * (w === "edge" ? 0.12 : 0.5);
+    const y = w === "badge" ? rk * step + step * 0.19 - step * 0.15 * 0.7 : rk * step + step * (w === "edge" ? 0.88 : 0.5);
     const d = cv.getContext("2d").getImageData(Math.round(x), Math.round(y), 1, 1).data;
     return [d[0], d[1], d[2]];
   }, [sq, flip, where]);
@@ -2009,7 +2099,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   }, name);
   const near = (a, b, tol = 14) => a.length === 3 && b.length === 3 && a.every((v, i) => Math.abs(v - b[i]) <= tol);
 
-  // (1) the end of a game: the kings carry the result, the card floats over the board
+  // (1) the end of a game: the kings carry the result, the bar takes the bottom strip's place
   {
     const { ctx, page, errs } = await openA5({ mode: "pvp" });
     for (const [a, b] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"], ["d8", "h4"]]) { await tap(page, a); await tap(page, b); await page.waitForTimeout(200); }
@@ -2022,11 +2112,13 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       const c = document.getElementById("go-card"), w = document.getElementById("board-wrap");
       await Promise.all((c.getAnimations ? c.getAnimations() : []).map((a) => a.finished.catch(() => {})));
       const r = c.getBoundingClientRect(), b = w.getBoundingClientRect();
-      return { shown: !!c.offsetParent, inBoard: w.contains(c) && r.left >= b.left && r.right <= b.right && r.top >= b.top && r.bottom <= b.bottom,
-        centred: Math.abs((r.left + r.right) / 2 - (b.left + b.right) / 2) <= 2 && Math.abs((r.top + r.bottom) / 2 - (b.top + b.bottom) / 2) <= 2,
-        result: document.getElementById("go-result").textContent };
+      const cv = document.getElementById("board").getBoundingClientRect();
+      const s = document.querySelector(".pstrip.at-bottom");
+      return { shown: !!c.offsetParent, clear: r.top >= cv.bottom - 0.5, under: Math.abs(r.left - b.left) <= 1 && Math.abs(r.right - b.right) <= 1,
+        strip: getComputedStyle(s).visibility, result: document.getElementById("go-result").textContent };
     });
-    assert(card.shown && card.inBoard && card.centred, `A5 终局：结果卡浮在棋盘正中（${JSON.stringify(card)}）`);
+    assert(card.shown && card.clear && card.under && card.strip === "hidden",
+      `9.0 M1 终局：结果条在棋盘下沿、占底部玩家栏的位置，不压 64 格（${JSON.stringify(card)}）`);
     if (SHOTS) await page.screenshot({ path: SHOTS + "/end-of-game.png" });
     // stepping back into the game: the card and the badges step aside
     await page.click("#rep-prev");
@@ -2115,7 +2207,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
         let worst = 0;
         for (const [fx, fy] of [[0.1, 0.5], [0.9, 0.5], [0.5, 0.92]]) {
           const d = ctx2.getImageData(Math.round(c * step + step * fx), Math.round(r * step + step * fy), 1, 1).data;
-          worst = Math.max(worst, (d[0] - d[1]) - (base[0] - base[1]), (d[0] - d[2]) - (base[0] - base[2]) - 20);
+          // red pulls red away from green AND from blue; 9.0 V1's brass last
+          // move pulls it from blue alone (it is yellow), and is not red
+          worst = Math.max(worst, Math.min((d[0] - d[1]) - (base[0] - base[1]), (d[0] - d[2]) - (base[0] - base[2])));
         }
         out.push(worst);
       }
@@ -2192,8 +2286,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.addInitScript(() => {
     if (!sessionStorage.getItem("f3.seeded")) {
       sessionStorage.setItem("f3.seeded", "1");
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, themeId: "wood" }));
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
     }
     window.__paints = 0;

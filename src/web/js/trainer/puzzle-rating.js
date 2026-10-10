@@ -104,17 +104,17 @@ export function createPuzzleRating(d) {
     while (st.rhist.length > 60) st.rhist.shift();
   }
   /**
-   * "1523", or "1104?" while the rating is provisional (v8-0-plan §5). The
-   * ± it used to print beside the number is the tooltip now: 「1104 ±180」
-   * read as a measurement with an error bar, where 「?」 says what it is.
+   * "1523", or 「1104（定级中）」 while the rating is provisional (v8-0-plan
+   * §5; v9-0-plan S6 put it in words — 「1104?」 read as a typo, and the
+   * 「±180」 before that as a measurement with an error bar). The deviation
+   * itself is never shown; the tooltip says what provisional means.
    */
   function ratingLabel() {
     const r = playerRating();
-    return Math.round(r.r) + (ChessRating.isProvisional(r) ? "?" : "");
+    return ChessRating.isProvisional(r) ? tf("rating.prov", [Math.round(r.r)]) : String(Math.round(r.r));
   }
   function ratingTip() {
-    const r = playerRating();
-    return ChessRating.isProvisional(r) ? tf("rec.ratingRd", [Math.round(r.rd)]) : "";
+    return ChessRating.isProvisional(playerRating()) ? tf("tip.ratingProv", []) : "";
   }
   function markMissed(id) {
     // Only a puzzle the book can still serve (7.4 D5). The one on screen can

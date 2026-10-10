@@ -132,6 +132,46 @@ function watchShape(app, view) {
 /** The White column: the first cell after each row's number. */
 const WHITE = ".mlrow > .mlnum + .mlmove";
 
+/**
+ * 9.0: the list centres the current move when it renders (app.js), but what
+ * is inside it can grow afterwards without the list's own box changing — the
+ * White column is re-measured (--ml-w), a font arrives, a row refits — and
+ * the move it centred slides below the edge (WebKit, a 120-move game at
+ * 1024×768: scrollTop 1234 of 1278, the current move 44px under the edge).
+ * So the rows are watched as well as the list: when the list or any row
+ * changes size, bring the current move back if it is no longer inside.
+ * @param {HTMLElement} list
+ */
+function keepCurrentInView(list) {
+  if (typeof ResizeObserver !== "function") return;
+  let frame = 0, tries = 0;
+  const check = () => {
+    frame = 0;
+    const cur = list.querySelector(".current");
+    if (!cur) return;
+    const c = cur.getBoundingClientRect(), l = list.getBoundingClientRect();
+    if (c.top >= l.top - 0.5 && c.bottom <= l.bottom + 0.5) { tries = 0; return; }
+    // past the end is asked for as the end (app.js renderMoveList: WebKit)
+    const want = list.scrollTop + c.top - l.top - list.clientHeight / 2;
+    list.scrollTop = want >= list.scrollHeight - list.clientHeight - 1 ? list.scrollHeight : Math.max(0, want);
+    // WebKit's scroll range can lag its own layout by a few frames with
+    // nothing to say it grew (1234 of 1278 for the first frames, then 1278,
+    // no resize, no mutation): look again on the next frames, a bounded number
+    if (++tries < 30) frame = requestAnimationFrame(check);
+  };
+  const soon = () => { tries = 0; if (!frame) frame = requestAnimationFrame(check); };
+  const sizes = new ResizeObserver(soon);
+  sizes.observe(list);
+  for (const row of list.children) sizes.observe(row);
+  new MutationObserver((recs) => {
+    for (const r of recs) {
+      for (const n of r.removedNodes) if (n.nodeType === 1) sizes.unobserve(n);
+      for (const n of r.addedNodes) if (n.nodeType === 1 && n.parentNode === list) sizes.observe(n);
+    }
+    soon();
+  }).observe(list, { childList: true, subtree: true });
+}
+
 /** Keep --ml-w on `list` equal to its widest White cell. */
 function watchColumns(list) {
   if (typeof ResizeObserver !== "function") return;
@@ -243,10 +283,41 @@ function watchOpening(src, dst) {
  * all of `app`. The panel's action rows (fit-row.js, 7.9 §1b) are the
  * panel's half of the same job and are wired here with the rest.
  */
+/**
+ * 9.0 M3: the portrait drawer's three stops. Shut, half (the reserve under
+ * the board) and nine tenths (`sheet-full`); the grip drags between them —
+ * up to nine tenths, down to half and from half down to shut — and a tap on
+ * it trades half and nine tenths. Shut, it comes back at half.
+ */
+function wireSheet(app, grip, close) {
+  let y0 = null;
+  grip.addEventListener("pointerdown", (e) => {
+    y0 = e.clientY;
+    if (grip.setPointerCapture) grip.setPointerCapture(e.pointerId);
+  });
+  grip.addEventListener("pointercancel", () => { y0 = null; });
+  grip.addEventListener("pointerup", (e) => {
+    if (y0 == null) return;
+    const dy = e.clientY - y0, full = app.classList.contains("sheet-full");
+    y0 = null;
+    if (Math.abs(dy) < 8) app.classList.toggle("sheet-full", !full);
+    else if (dy < 0) app.classList.add("sheet-full");
+    else if (full) app.classList.remove("sheet-full");
+    else close();
+  });
+  new MutationObserver(() => {
+    if (!app.classList.contains("panel-open") && app.classList.contains("sheet-full")) app.classList.remove("sheet-full");
+  }).observe(app, { attributes: true, attributeFilter: ["class"] });
+}
+
 export function watchPlayLayout(d) {
+  if (d.app && d.grip && d.close) wireSheet(d.app, d.grip, d.close);
   if (d.app) watchShape(d.app, d.view || d.app);
   if (d.side) watchFitRows(d.side);
-  if (d.list) watchColumns(d.list);
+  // 9.0 V1: a label is one line everywhere (white-space: nowrap), so the
+  // action rows on the pages and in 偏好设置 step their columns down too
+  for (const el of document.querySelectorAll(".page")) watchFitRows(el, { wide: false });
+  if (d.list) { watchColumns(d.list); keepCurrentInView(d.list); }
   if (d.list && d.strip) watchStrip(d.list, d.strip);
   if (d.opening && d.infoOpening) watchOpening(d.opening, d.infoOpening);
 }

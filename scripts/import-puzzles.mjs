@@ -17,12 +17,6 @@
  *   lichess/band-NNNN.js  LC_BAND_NNNN — one 200-point rating band each, built
  *                         by scripts/bundle.mjs into chunk-lc-NNNN.js and
  *                         loaded on demand (chunk.js), never in the bundle.
- *   lichess/old-NNNN.js   LC_OLD_NNNN — v8-4-plan T3: the rows of that band
- *                         the previous import in --out-dir shipped and this
- *                         one does not (droppedRows), so that the reviews
- *                         naming them still open; chunk-lc-old-NNNN.js, read
- *                         by id only (puzzle-db.js full). --no-keep-old
- *                         starts afresh.
  *
  * What happens to each row, in order, and why:
  *
@@ -559,70 +553,13 @@ export function emitBand(band, puzzles) {
   return head.concat(body, ["];", ""]).join("\n");
 }
 
-/**
- * v8-4-plan T3: the module text for the rows of band `band` that an earlier
- * import shipped and this one does not — kept so that a review queued
- * against them (bank-review.js, the look / blind keys `id|…|band`) still
- * opens. Rows are stored exactly as they shipped (encodeRow), so a key built
- * from one is built the same again. Looked up by id, never sampled from.
- */
-export function emitOld(band, rows, note) {
-  const name = "LC_OLD_" + bandName(band);
-  const head = HEADER("Lichess puzzles rated " + band + "–" + (band + 199) + " that earlier imports shipped and this one does not").concat([
-    " * " + rows.length + " puzzles, kept for the reviews that name them (v8-4-plan T3): puzzle-db.js",
-    " * full() — looked up by id, never sampled. " + (note || ""),
-    " * @module lichess/old-" + bandName(band),
-    " */",
-    "export const " + name + " = [",
-  ]);
-  return head.concat(rows.map((r) => JSON.stringify(r) + ","), ["];", ""]).join("\n");
-}
-
-/** The rows of a generated band / old file, as encodeRow wrote them (one per line). */
-export function readRows(file) {
-  return fs.readFileSync(file, "utf8").split("\n").filter((l) => l.startsWith("[")).map((l) => JSON.parse(l.replace(/,$/, "")));
-}
-
-/**
- * v8-4-plan T3: what an earlier import in `dir` shipped and `puzzles` drop,
- * band by band: every row of its band-NNNN.js and old-NNNN.js whose id this
- * import does not ship in the same band with the same position, line and
- * category. A puzzle that moved band stays in its old band's list: a stored
- * key names the band it was missed in.
- * @returns {Map<number, Array[]>} band → rows
- */
-export function droppedRows(dir, puzzles) {
-  const now = new Map(puzzles.map((p) => [bandOf(p.rating) + ":" + p.id.replace(/^lc-/, ""), encodeRow(p)]));
-  const same = (a, b) => !!b && a[1] === b[1] && a[2] === b[2] && a[4] === b[4];
-  const out = new Map();
-  let files = [];
-  try { files = fs.readdirSync(dir).filter((f) => /^(band|old)-\d{4}\.js$/.test(f)).sort(); } catch { files = []; }
-  for (const f of files) {
-    const band = Number(f.slice(-7, -3));
-    const list = out.get(band) || [];
-    for (const r of readRows(path.join(dir, f))) {
-      if (same(r, now.get(band + ":" + r[0])) || list.some((x) => x[0] === r[0])) continue;
-      list.push(r);
-    }
-    out.set(band, list);
-  }
-  for (const [b, list] of out) {
-    if (!list.length) out.delete(b);
-    else list.sort((x, y) => (x[3] - y[3]) || (x[0] < y[0] ? -1 : 1));
-  }
-  return out;
-}
-
 /** The index the main bundle carries: counts and ranges, no puzzles. */
-export function buildIndex(puzzles, old) {
+export function buildIndex(puzzles) {
   const bands = [...new Set(puzzles.map((p) => bandOf(p.rating)))].sort((a, b) => a - b);
   const index = { total: puzzles.length, sides: { w: 0, b: 0 }, bands: [], themes: {} };
   for (const b of bands) {
     const inBand = puzzles.filter((p) => bandOf(p.rating) === b);
-    const x = { band: b, n: inBand.length, lo: Math.min(...inBand.map((p) => p.rating)), hi: Math.max(...inBand.map((p) => p.rating)) };
-    // v8-4-plan T3: how many rows lichess/old-NNNN.js keeps for this band (none: no file)
-    if (old && old.get(b)) x.old = old.get(b).length;
-    index.bands.push(x);
+    index.bands.push({ band: b, n: inBand.length, lo: Math.min(...inBand.map((p) => p.rating)), hi: Math.max(...inBand.map((p) => p.rating)) });
   }
   for (const t of THEMES) {
     const withT = puzzles.filter((p) => (p.themes || []).includes(t.id));
@@ -645,33 +582,23 @@ export function emitIndex(index, meta) {
 }
 
 /**
- * Write the index and the band files; stale band files are removed. What the
- * import that wrote `outDir` before shipped and this one drops is kept in
- * lichess/old-NNNN.js (droppedRows; v8-4-plan T3) unless `keep` is false.
- * @returns {{index:object, files:string[], old:Map<number, Array[]>}}
+ * Write the index and the band files; stale band files are removed.
+ * @returns {{index:object, files:string[]}}
  */
-export function writeOutput(outDir, puzzles, meta, keep = true, oldNote = "") {
+export function writeOutput(outDir, puzzles, meta) {
   const dir = path.join(outDir, "lichess");
   fs.mkdirSync(dir, { recursive: true });
-  const old = keep ? droppedRows(dir, puzzles) : new Map();
-  for (const f of fs.readdirSync(dir)) if (/^(band|old)-\d{4}\.js$/.test(f)) fs.rmSync(path.join(dir, f));
-  const index = buildIndex(puzzles, old);
+  for (const f of fs.readdirSync(dir)) if (/^band-\d{4}\.js$/.test(f)) fs.rmSync(path.join(dir, f));
+  const index = buildIndex(puzzles);
   const files = [];
   for (const b of index.bands) {
     const f = path.join(dir, "band-" + bandName(b.band) + ".js");
     fs.writeFileSync(f, emitBand(b.band, puzzles.filter((p) => bandOf(p.rating) === b.band)));
     files.push(f);
   }
-  for (const [b, rows] of old) {
-    // a band this import has no puzzles in has no index entry, so nothing would ask for its old rows
-    if (!index.bands.some((x) => x.band === b)) { console.warn("old rows of band " + b + " dropped: the new import has no such band (" + rows.length + ")"); continue; }
-    const f = path.join(dir, "old-" + bandName(b) + ".js");
-    fs.writeFileSync(f, emitOld(b, rows, oldNote));
-    files.push(f);
-  }
   const idx = path.join(outDir, "puzzles-lc-index.js");
   fs.writeFileSync(idx, emitIndex(index, meta));
-  return { index, files: files.concat([idx]), old };
+  return { index, files: files.concat([idx]) };
 }
 
 /**
@@ -687,14 +614,12 @@ export function readExclude(v) {
 }
 
 function parseArgs(argv) {
-  const opt = Object.assign({}, DEFAULTS, { outDir: path.join(ROOT, "src/web/js"), input: null, keepOld: true, oldNote: "" });
+  const opt = Object.assign({}, DEFAULTS, { outDir: path.join(ROOT, "src/web/js"), input: null });
   const num = { "--max": "max", "--per-cell": "perCell", "--pool": "pool", "--seed": "seed", "--min-rating": "minRating",
     "--max-rating": "maxRating", "--min-popularity": "minPopularity", "--min-plays": "minPlays", "--max-rd": "maxRd" };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--out-dir") opt.outDir = argv[++i];
-    else if (a === "--no-keep-old") opt.keepOld = false;
-    else if (a === "--old-note") opt.oldNote = argv[++i];
     else if (a === "--exclude") opt.exclude = readExclude(argv[++i]);
     else if (num[a]) opt[num[a]] = Number(argv[++i]);
     else if (!a.startsWith("--")) opt.input = a;
@@ -709,7 +634,7 @@ export async function main(argv) {
   if (!opt.input) {
     console.error("usage: node scripts/import-puzzles.mjs <lichess_db_puzzle.csv[.zst]> [--out-dir d] [--max n] [--per-cell n]\n" +
       "       [--pool n] [--seed n] [--min-rating n] [--max-rating n] [--min-popularity n] [--min-plays n] [--max-rd n]\n" +
-      "       [--exclude report.json|id,id,…] [--no-keep-old] [--old-note text]");
+      "       [--exclude report.json|id,id,…]");
     process.exit(2);
   }
   const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/motif.js"]);
@@ -724,12 +649,12 @@ export async function main(argv) {
     " --pool " + opt.pool + " --seed " + opt.seed + " --min-rating " + opt.minRating + " --max-rating " + opt.maxRating +
     " --min-popularity " + opt.minPopularity + " --min-plays " + opt.minPlays + " --max-rd " + opt.maxRd +
     (opt.exclude && opt.exclude.size ? " --exclude " + opt.exclude.size + " ids" : "") + ".";
-  const out = writeOutput(opt.outDir, puzzles, meta, opt.keepOld, opt.oldNote);
+  const out = writeOutput(opt.outDir, puzzles, meta);
   const bytes = out.files.reduce((n, f) => n + fs.statSync(f).size, 0);
   console.log("lines " + lines + ", admissible " + pools.admitted + ", pooled " + stats.candidates + ", gated " + stats.tried +
     ", accepted " + puzzles.length + " (w " + stats.sides.w + " / b " + stats.sides.b + ") → " + opt.outDir +
     " [" + (bytes / 1024).toFixed(0) + " KB, stream " + ((t1 - t0) / 1000).toFixed(1) + " s, gate " + ((t2 - t1) / 1000).toFixed(1) + " s]");
-  for (const b of out.index.bands) console.log("  band " + String(b.band).padEnd(6) + String(b.n).padStart(6) + (b.old ? "  old " + b.old : ""));
+  for (const b of out.index.bands) console.log("  band " + String(b.band).padEnd(6) + String(b.n).padStart(6));
   for (const [k, n] of Object.entries(stats.byTheme).sort((a, b) => b[1] - a[1])) console.log("  theme " + k.padEnd(16) + String(n).padStart(6));
   for (const [k, n] of Object.entries(stats.byStage)) console.log("  rejected at " + k + ": " + n);
   for (const [k, n] of Object.entries(stats.dropped).sort((a, b) => b[1] - a[1])) console.log("  tag dropped (check failed): " + k + " × " + n);

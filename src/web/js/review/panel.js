@@ -178,6 +178,9 @@ export function createReviewPanel(d) {
     // a box of its own, rebuilt with the report
     const list = document.getElementById("rv-mistakes");
     if (list) list.hidden = !sum;
+    // 9.0 M2: all three sit in the folded 完整报告, which is there with them
+    const full = document.getElementById("rv-full");
+    if (full) full.hidden = !sum;
     if (!sum) { el.replaceChildren(); if (hero) hero.replaceChildren(); if (list) list.replaceChildren(); el.dataset.key = ""; return; }
 
     // the stored figure where there is one — it is what the statistics filed

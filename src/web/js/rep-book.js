@@ -2,11 +2,10 @@
  * 你的开局书，按局面 (v8-1-plan T3).
  *
  * repertoire.js keeps the book as *lines* — every root-to-leaf path of the
- * PGN it was imported from — because a line is what 7.2's drills rehearse
- * and what every build since 7.2 reads from `chess.v1.repertoire`. That stays
- * the book's structure: an edit here is still an edit of the lines, so the
- * old builds, the 按线练 drills and their progress (ids minted from the
- * moves) keep working, untouched.
+ * PGN it was imported from — because a line is what the 按线练 drills
+ * rehearse. That stays the book's structure: an edit here is still an edit of
+ * the lines, so the drills and their progress (ids minted from the moves)
+ * keep working, untouched.
  *
  * What this module adds is the same book seen **by position**, which is the
  * shape three new questions need:
@@ -66,8 +65,8 @@ function shardOf(id) {
  *
  * Lines are walked in book order, so a position's moves come out in the
  * order the book first plays them and its `path` is the first move order
- * that reaches it. A line whose move does not replay (7.2 read set-up games
- * as lines — repertoire.js START_FEN) stops there: its playable prefix is
+ * that reaches it. A line whose move does not replay (a set-up game read as
+ * a line — repertoire.js START_FEN) stops there: its playable prefix is
  * indexed, the line itself stays in the book as it was.
  *
  * @param {"w"|"b"} side
@@ -175,8 +174,8 @@ const DAILY = 20;
 /**
  * Today's dose: the cards due at `now`, at most `cap` of them, and the rest
  * moved to the following days, `cap` a day, in the same order — srs.js
- * dueQueue's rule, so a 400-line book imported or migrated in one go does
- * not arrive as one afternoon of new cards.
+ * dueQueue's rule, so a 400-line book imported in one go does not arrive as
+ * one afternoon of new cards.
  * @returns {{today: object[], moved: object[]}} `moved`: records whose card changed (to write)
  */
 function dose(records, now, cap) {
@@ -189,38 +188,6 @@ function dose(records, now, cap) {
     moved.push(due[i]);
   }
   return { today: due.slice(0, n), moved };
-}
-
-/**
- * The progress an old book already has, carried onto its new cards (the
- * migration from 7.2–8.0's lines). A line drilled to the end (`solved`) has
- * answered every move on it once: those cards start on the first rung, due
- * a day later — DAILY of them a day, the rest on the days after (M3 评审). A line in the review queue (`missed`) leaves its cards due
- * now, which is what a new card is anyway. Only cards never answered are
- * touched, so running this twice changes nothing the second time.
- * @param {Map<string, object>} records
- * @param {{w: object[], b: object[]}} book the lines
- * @param {{solved: object, missed: object}} state puzzleState
- * @param {number} now
- * @returns {number} cards seeded
- */
-function seedCards(records, book, state, now) {
-  let n = 0;
-  const solved = (state && state.solved) || {};
-  for (const side of ["w", "b"]) {
-    for (const l of (book || {})[side] || []) {
-      if (!l || !solved[l.id + (side === "b" ? ":b" : "")]) continue;
-      const sans = String(l.sans).split(" ");
-      const pos = createReplay();
-      for (const san of sans) {
-        const r = records.get(side + "|" + pos.key());
-        // spread DAILY a day from tomorrow (M3 评审): not every drilled line back at once
-        if (r && r.card && !r.card.n && !r.card.s) { r.card = { s: 1, n: 1, due: now + (1 + Math.floor(n / DAILY)) * DAY, ivl: 1 }; n++; }
-        if (!pos.move(san)) break;
-      }
-    }
-  }
-  return n;
 }
 
 /**
@@ -365,8 +332,8 @@ function pathText(path) {
 
 /**
  * A signature of the lines both books hold: the header carries it, and a
- * launch that finds it different from the records' (an older build edited
- * the book in between, or the records never got written) indexes again.
+ * launch that finds it different from the records' (the records never got
+ * written, or a learning file brought other lines) indexes again.
  */
 function sigOf(book) {
   let h = 0;
@@ -382,35 +349,28 @@ function sigOf(book) {
 /**
  * What a launch should hold, from what it found (rep-page.js boot).
  *
- * The lines in `chess.v1.repertoire` are the book; the records are its
- * index and its cards. So the records are trusted as they are only when the
- * header vouches for them — `db: 2`, this build's signature of the same
- * lines, and as many records as it counted. Anything else and the lines are
- * indexed again, with every card that is still in the book carried over:
+ * The lines are the book; the records are its index and its cards. So the
+ * records are trusted as they are only when the header vouches for them —
+ * this build's signature of the same lines, and as many records as it
+ * counted. Anything else and the lines are indexed again, with every card
+ * that is still in the book carried over:
  *
- *   - no `db` (6.x has no book at all; 7.2–8.0 wrote `{v: 1, w, b}`; an
- *     older build opened the profile again and edited the book): the
- *     migration. The lines are not rewritten — the old builds keep reading
- *     them, and the 按线练 progress hangs off their ids — and the old
- *     progress is carried onto the new cards (`seedCards`).
  *   - fewer records than counted: the WebView's storage lost them; `shards`
  *     are the native store's copy (persist.js readBulk "rep"), and their
  *     cards come back.
- *
  *   - `newer` (the header's `gen` is past the one IndexedDB holds): a
  *     session without IndexedDB graded cards into the shards only; the
  *     shards' records win.
  *
- * @param {{book: {w, b}, header: object|null, stored: object[], shards?: object[]|null, newer?: boolean, state?: object, now: number}} o
- * @returns {{records: Map, put: object[], gone: string[], seeded: number, migrating: boolean, recovered: number, fresh: boolean}}
+ * @param {{book: {w, b}, header: object|null, stored: object[], shards?: object[]|null, newer?: boolean}} o
+ * @returns {{records: Map, put: object[], gone: string[], recovered: number, fresh: boolean}}
  */
 function reconcile(o) {
   const header = o.header || {};
   const stored = new Map();
   for (const r of o.stored || []) if (r && typeof r.id === "string" && Array.isArray(r.moves)) stored.set(r.id, r);
-  const migrating = header.db !== 2;
-  if (!migrating && !o.newer && header.sig === sigOf(o.book) && stored.size === Number(header.n)) {
-    return { records: stored, put: [], gone: [], seeded: 0, migrating, recovered: 0, fresh: true };
+  if (!o.newer && typeof header.sig === "string" && header.sig === sigOf(o.book) && stored.size === Number(header.n)) {
+    return { records: stored, put: [], gone: [], recovered: 0, fresh: true };
   }
   const prev = new Map(stored);
   let recovered = 0;
@@ -421,14 +381,13 @@ function reconcile(o) {
     if (!prev.has(r.id) || (o.newer && !sameRecord(prev.get(r.id), r))) { prev.set(r.id, r); recovered++; }
   }
   const records = indexBook(o.book, prev);
-  const seeded = migrating ? seedCards(records, o.book, o.state, o.now) : 0;
   const { put, gone } = diff(stored, records);
-  return { records, put, gone, seeded, migrating, recovered, fresh: false };
+  return { records, put, gone, recovered, fresh: false };
 }
 
 export const ChessRepBook = {
   reconcile,
   LADDER, DAY, START_KEY, SHARDS, CROSS_MIN, shardOf, myTurn, newCard, indexLines, indexBook, movesAt,
-  sameRecord, diff, grade, isDue, dueCards, dose, DAILY, seedCards, treeOf, toPgn, taggedSide, removeMove, crossCheck,
+  sameRecord, diff, grade, isDue, dueCards, dose, DAILY, treeOf, toPgn, taggedSide, removeMove, crossCheck,
   pathText, sigOf,
 };

@@ -37,9 +37,8 @@
  * today and spreads the rest forward a day per batch, so the load on the
  * first day back is bounded rather than the whole backlog at once.
  *
- * Callers that do not pass `now` get the pre-6.0 behaviour exactly: count
- * axis only, `null` on graduation. Stored 1.7 entries have no `due`, which
- * reads as 0: overdue, asked first, then rescheduled — no migration.
+ * Callers that do not pass `now` get the count axis only, `null` on
+ * graduation.
  * @module srs
  */
   /** consecutive clean solves needed before a puzzle leaves the review queue */
@@ -49,26 +48,22 @@
   const DAY = 86400000;
 
   /**
-   * Normalise a stored entry. 1.6 and earlier stored `true`, so anything
-   * truthy that is not an object means "missed once, never re-solved".
-   * Entries older than 6.0 have no `due`/`ivl`; both read as 0, which means
-   * "overdue since forever" — the honest reading of a debt with no date.
+   * Normalise a stored entry. A field that is missing or not a number reads
+   * as 0 — for `due`, "overdue since forever", the honest reading of a debt
+   * with no date.
    */
   function entry(v) {
-    if (!v) return null;
-    if (typeof v === "object") {
-      const s = Number(v.s);
-      const seen = Number(v.n);
-      const due = Number(v.due);
-      const ivl = Number(v.ivl);
-      return {
-        s: Number.isFinite(s) && s > 0 ? Math.floor(s) : 0,
-        n: Number.isFinite(seen) && seen > 0 ? Math.floor(seen) : 0,
-        due: Number.isFinite(due) && due > 0 ? due : 0,
-        ivl: Number.isFinite(ivl) && ivl > 0 ? ivl : 0,
-      };
-    }
-    return { s: 0, n: 0, due: 0, ivl: 0 };
+    if (!v || typeof v !== "object") return null;
+    const s = Number(v.s);
+    const seen = Number(v.n);
+    const due = Number(v.due);
+    const ivl = Number(v.ivl);
+    return {
+      s: Number.isFinite(s) && s > 0 ? Math.floor(s) : 0,
+      n: Number.isFinite(seen) && seen > 0 ? Math.floor(seen) : 0,
+      due: Number.isFinite(due) && due > 0 ? due : 0,
+      ivl: Number.isFinite(ivl) && ivl > 0 ? ivl : 0,
+    };
   }
 
   /**
@@ -85,7 +80,7 @@
   /**
    * A clean solve advances the streak.
    *
-   * Without `now`: pre-6.0 behaviour, `null` once the streak reaches
+   * Without `now`: the count axis alone, `null` once the streak reaches
    * GRADUATE. With `now`: the same streak, plus the next date on the ladder;
    * `null` only after a clean solve on the ladder's last rung.
    * @returns {object|null} the new entry, or null once it has graduated

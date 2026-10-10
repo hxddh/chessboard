@@ -1,8 +1,9 @@
 /**
  * 残局训练营, end to end on the REAL Stockfish (v8-1-plan T2).
  *
- *   1 分块      the first frame fetches no chunk-endgames.js; 学习's 目录 does,
- *               and then lists 90 positions under five themes
+ *   1 分块      the first frame fetches no chunk-endgames.js; 训练 · 残局 does
+ *               (9.0 S3: the segment, not a mixed 学习 目录), and its 目录
+ *               lists the 90 positions under five themes and nothing else
  *   2 走错      a position played wrong (马拦兵, not Ne3+): the engine at full
  *               strength queens, the run fails, and the position is in the
  *               review queue (learn key → eg.srs), due now
@@ -10,7 +11,8 @@
  *               insufficient material, the goal; it is marked done and walks
  *               up the review ladder
  *   4 我的      the section counts it (1/90), shows no review due, and
- *               进训练营 opens the next untried position in 学习
+ *               训练 · 残局 opens where it was left, else the next untried position;
+ *               残局 picks up where it was left (9.0 S3) after 课程
  *   5 旧存档    an 8.0 learn key (no eg) loads: the course progress is kept
  *               and the camp reads 0/90
  *   6 三语      zh-CN / en / ja at 1400 and 520 wide: nothing in the camp's
@@ -63,7 +65,7 @@ async function openPage(settings, seed, viewport) {
   const ctx = await browser.newContext({ viewport: viewport || { width: 1400, height: 1000 }, locale: (settings && settings.langId) || "zh-CN" });
   await ctx.addInitScript(([s, sd]) => {
     if (!sessionStorage.getItem("eg.seeded")) {
-      localStorage.setItem("chess.v1.settings", JSON.stringify(Object.assign({ langId: "zh-CN", sideTab: "play", soundOn: false }, s)));
+      localStorage.setItem("chess.settings", JSON.stringify(Object.assign({ langId: "zh-CN", sideTab: "play", soundOn: false }, s)));
       localStorage.setItem("chess.panelOpen", "1");
       for (const [k, v] of Object.entries(sd || {})) localStorage.setItem(k, v);
       sessionStorage.setItem("eg.seeded", "1");
@@ -103,10 +105,23 @@ async function clickMove(page, from, to) {
   const a = await xy(from); await page.mouse.click(a.x, a.y); await page.waitForTimeout(150);
   const b = await xy(to); await page.mouse.click(b.x, b.y);
 }
-const learnKey = (page) => page.evaluate(() => { try { return JSON.parse(localStorage.getItem("chess.v1.learn") || "null"); } catch { return null; } });
+const learnKey = (page) => page.evaluate(() => { try { return JSON.parse(localStorage.getItem("chess.learn") || "null"); } catch { return null; } });
 const campItems = (page) => page.evaluate(() => document.querySelectorAll("#lesson-list button[data-eg]").length);
+/** 9.0 S3: the segment lit in 训练's switch (null when it is hidden) */
+const trainSeg = (page) => page.evaluate(() => {
+  const row = document.getElementById("train-seg");
+  const b = row && !row.hidden && row.querySelector("button[data-seg].active");
+  return b ? b.dataset.seg : null;
+});
+/** 9.0 S3: into 训练's 残局 segment — the camp's own catalog */
+async function toEndgames(page) {
+  // a page (我的, 今天) may cover the board while the switch under it is lit
+  if ((await page.evaluate(() => document.getElementById("app").dataset.view)) !== "train") await page.click('#rail button[data-view="train"]');
+  if ((await trainSeg(page)) !== "endgame") await page.click('#train-seg button[data-seg="endgame"]');
+  return until(() => campItems(page), 8000);
+}
 async function openEndgame(page, id) {
-  await until(async () => (await campItems(page)) > 0, 8000);
+  await toEndgames(page);
   return page.evaluate((x) => {
     const b = document.querySelector('#lesson-list button[data-eg="' + x + '"]');
     if (b) b.click();
@@ -129,11 +144,19 @@ const occ = (page, sq) => page.evaluate((q) => {
   const { ctx, page, errs } = await openPage({ mode: "ai" });
   await page.waitForTimeout(600);
   assert(!served.some((p) => p.includes("chunk-endgames")), "人机模式打开：不取 chunk-endgames.js");
-  await page.click('#rail button[data-view="learn"]').catch(() => {});
-  const n = await until(() => campItems(page), 8000);
-  assert(served.some((p) => p.includes("chunk-endgames")), "进学习以后才取分块");
-  const parts = await page.evaluate(() => [...document.querySelectorAll("#lesson-list .lesson-part")].map((h) => h.textContent).filter((s) => /残局训练营/.test(s)));
-  assert(n === 90 && parts.length === 5, "目录里有训练营：5 个主题、90 个残局（" + n + "，" + parts.length + "）", parts.join(" | "));
+  const n = await toEndgames(page);
+  assert(served.some((p) => p.includes("chunk-endgames")), "进训练 · 残局以后才取分块");
+  const cat = await page.evaluate(() => ({
+    parts: [...document.querySelectorAll("#lesson-list .lesson-part")].map((h) => h.textContent),
+    lessons: document.querySelectorAll("#lesson-list button[data-i], #lesson-list button[data-c], #lesson-list button[data-gs]").length,
+    head: document.getElementById("lesson-list-h").textContent,
+    seg: document.querySelector("#train-seg button.active") && document.querySelector("#train-seg button.active").dataset.seg,
+    view: document.getElementById("app").getAttribute("data-view"),
+  }));
+  const parts = cat.parts.filter((s) => /残局训练营/.test(s));
+  assert(n === 90 && parts.length === 5 && cat.parts.length === 5, "残局的目录就是训练营：5 个主题、90 个残局（" + n + "，" + parts.length + "）", cat.parts.join(" | "));
+  assert(cat.lessons === 0 && /全部 90 个残局/.test(cat.head) && cat.seg === "endgame" && cat.view === "train",
+    "9.0 S3：残局这一段的目录只有残局（没有课、没有名局），标题「全部 90 个残局」", JSON.stringify(Object.assign({}, cat, { parts: undefined })));
   assert(!errs.length, "分块：页面没有报错", errs.join(" / "));
   await ctx.close();
 }
@@ -149,8 +172,8 @@ const occ = (page, sq) => page.evaluate((q) => {
     opp: document.getElementById("black-role") ? document.getElementById("black-role").textContent : "",
   }));
   assert(/马拦兵/.test(card.title) && /守和/.test(card.task), "卡片写着名字和目标（守和）", JSON.stringify(card).slice(0, 200));
-  assert(/Syzygy/.test(card.text), "出处一行写明用 Syzygy 核对过", card.text.slice(-80));
-  assert(/满强度/.test(card.opp), "对手是满强度的引擎", card.opp);
+  assert(/残局库/.test(card.text) && !/Syzygy/.test(card.text), "出处一行写明查过残局库（v9-0-plan S6：不写 Syzygy 这个名字）", card.text.slice(-80));
+  assert(/全力/.test(card.opp), "对手是全力档的引擎", card.opp);
   assert((await occ(page, "d1")) && (await occ(page, "c2")), "局面摆上了（d1 马、c2 兵）");
   // wrong: Kf2 lets the pawn run; the engine queens at full strength
   await clickMove(page, "g2", "f2");
@@ -180,14 +203,24 @@ const occ = (page, sq) => page.evaluate((q) => {
   await until(() => page.evaluate(() => !document.getElementById("sec-endgame").hidden), 6000);
   const me = await page.evaluate(() => ({
     shown: !document.getElementById("sec-endgame").hidden, meta: document.getElementById("eg-meta").textContent,
-    rows: document.querySelectorAll("#eg-body .stat-row").length, review: !document.getElementById("eg-review").hidden,
-    go: !document.getElementById("eg-go").hidden,
+    rows: document.querySelectorAll("#eg-body .stat-row").length,
+    doors: document.querySelectorAll("#sec-endgame button").length,
   }));
-  assert(me.shown && me.meta === "1/90" && me.rows === 5 && !me.review && me.go, "我的：训练营 1/90，五行，没有到期的复习", JSON.stringify(me));
-  await page.click("#eg-go");
-  await page.waitForTimeout(600);
+  // 9.0 S3: a record, not a second way in — the camp is 训练 · 残局
+  assert(me.shown && me.meta === "1/90" && me.rows === 5 && me.doors === 0, "我的：训练营 1/90，五行，没有到期的复习，也没有第二个入口", JSON.stringify(me));
+  await toEndgames(page);
   const opened = await page.evaluate(() => ({ view: document.getElementById("page-me").hidden, title: document.getElementById("lesson-title").textContent }));
-  assert(opened.view && /关键格/.test(opened.title), "进训练营：回到学习，打开第一个没做过的（关键格）", JSON.stringify(opened));
+  assert(opened.view && /马拦兵/.test(opened.title) && (await trainSeg(page)) === "endgame", "回到训练 · 残局：接着上次打开的那个（马拦兵）", JSON.stringify(opened));
+  // 9.0 S3: each segment opens where it was left — 课程 and back to 残局 is 马拦兵 again
+  await page.click('#train-seg button[data-seg="course"]');
+  await page.waitForTimeout(500);
+  const course = await page.evaluate(() => ({ title: document.getElementById("lesson-title").textContent, eg: document.querySelectorAll("#lesson-list button[data-eg]").length, les: document.querySelectorAll("#lesson-list button[data-i]").length }));
+  assert(!/马拦兵/.test(course.title) && course.eg === 0 && course.les > 0 && (await trainSeg(page)) === "course", "9.0 S3：切到课程，目录换成课程的", JSON.stringify(course));
+  await page.click('#train-seg button[data-seg="endgame"]');
+  await page.waitForTimeout(500);
+  const back = await page.evaluate(() => document.getElementById("lesson-title").textContent);
+  const lkBack = await learnKey(page);
+  assert(/马拦兵/.test(back) && lkBack && lkBack.eg && lkBack.eg.last === "mi-n-stop", "9.0 S3：再切回残局，接着刚才那个（马拦兵），learn 键记着 eg.last", back + " " + JSON.stringify(lkBack && lkBack.eg && lkBack.eg.last));
   assert(!errs.length, "走错走对：页面没有报错", errs.join(" / "));
   await ctx.close();
 }
@@ -195,8 +228,9 @@ const occ = (page, sq) => page.evaluate((q) => {
 // --- 5. 旧存档 ----------------------------------------------------------------
 {
   const old = JSON.stringify({ v: 1, done: { board: true, squares: true }, last: 1 });
-  const { ctx, page, errs } = await openPage({ mode: "learn" }, { "chess.v1.learn": old });
-  await until(async () => (await campItems(page)) > 0, 8000);
+  const { ctx, page, errs } = await openPage({ mode: "learn" }, { "chess.learn": old });
+  // 9.0 S3: 学习 opens on 课程 — the camp's list is 残局's, so wait for the lesson card
+  await until(() => page.evaluate(() => /第 2 课/.test(document.getElementById("lesson-title").textContent)), 8000);
   const r = await page.evaluate(() => ({ prog: document.getElementById("learn-progress").textContent, title: document.getElementById("lesson-title").textContent }));
   assert(/2\/\d+/.test(r.prog) && /第 2 课/.test(r.title), "8.0 的教学进度照读：做过 2 课，停在第 2 课", JSON.stringify(r));
   await page.click('#rail button[data-view="me"]');
@@ -214,8 +248,8 @@ const occ = (page, sq) => page.evaluate((q) => {
   for (const lang of ["zh-CN", "en", "ja"]) {
     for (const viewport of [{ width: 1400, height: 900 }, { width: 520, height: 800 }]) {
       const tag = lang + " " + viewport.width;
-      const { ctx, page, errs } = await openPage({ mode: "learn", langId: lang }, { "chess.v1.learn": seed }, viewport);
-      await page.evaluate(() => { const d = document.querySelector("#sec-learn details.reading-index"); if (d) d.open = true; });
+      const { ctx, page, errs } = await openPage({ mode: "learn", langId: lang }, { "chess.learn": seed }, viewport);
+      await page.evaluate(() => { const d = document.getElementById("lesson-fold"); if (d) d.open = true; });
       await openEndgame(page, "rp-lucena2");
       await page.waitForTimeout(400);
       const cut = (sel) => page.evaluate((s) => {
@@ -224,6 +258,9 @@ const occ = (page, sq) => page.evaluate((q) => {
         const box = scope.getBoundingClientRect();
         for (const e of scope.querySelectorAll("button, .side-h, .stat-k, .stat-v, .lesson-title, .lesson-task, .lesson-part, #lesson-text p")) {
           if (!e.offsetParent) continue;
+          // 9.0 S3: the 教学 heading is for a screen reader only (sr-only:
+          // a 1px box by design) — the switch over the panel names the segment
+          if (e.classList.contains("sr-only")) continue;
           const r = e.getBoundingClientRect();
           if (e.scrollWidth > e.clientWidth + 1 || r.right > box.right + 1) out.push((e.id || e.textContent.trim().slice(0, 16)) + " " + e.scrollWidth + ">" + e.clientWidth);
         }
@@ -233,20 +270,20 @@ const occ = (page, sq) => page.evaluate((q) => {
       assert(learnCut.length === 0, tag + "：学习卡片和训练营目录没有被裁掉的字", learnCut.join(", "));
       // v8-3-plan T5: a card of the second part — its longest name, and the
       // longer source line of a position still waiting for the online table
-      await page.evaluate(() => { const d = document.querySelector("#sec-learn details.reading-index"); if (d) d.open = true; });
+      await page.evaluate(() => { const d = document.getElementById("lesson-fold"); if (d) d.open = true; });
       await openEndgame(page, "mi-same-b");
       await page.waitForTimeout(400);
       const pendCut = await cut("#sec-learn");
       const pendSrc = await page.evaluate(() => [...document.querySelectorAll("#lesson-text p")].map((p) => p.textContent).join(" "));
-      assert(pendCut.length === 0 && /Stockfish|Syzygy/.test(pendSrc), tag + "：第二部的卡片（出处一行最长的那张）没有被裁掉的字",
+      assert(pendCut.length === 0 && /残局库|tablebase|テーブルベース/.test(pendSrc), tag + "：第二部的卡片（出处一行最长的那张）没有被裁掉的字",
         pendCut.join(", ") + " | " + pendSrc.slice(-60));
       const strip = await page.evaluate(() => { const e = document.getElementById("task-strip-text"); return e && e.offsetParent ? { t: e.textContent, over: e.scrollWidth > e.clientWidth + 1 } : null; });
       assert(!strip || !strip.over || strip.t.length > 0, tag + "：任务条有字", JSON.stringify(strip));
       await page.click('#rail button[data-view="me"]').catch(() => {});
       await until(() => page.evaluate(() => !document.getElementById("sec-endgame").hidden), 6000);
       const meCut = await cut("#sec-endgame");
-      const rev = await page.evaluate(() => !document.getElementById("eg-review").hidden && document.getElementById("eg-review").textContent);
-      assert(meCut.length === 0 && !!rev, tag + "：「我的」训练营一节没有被裁掉的字，复习按钮在（" + rev + "）", meCut.join(", "));
+      const rev = await page.evaluate(() => { const r = [...document.querySelectorAll("#eg-body .stat-row")].pop(); return r ? r.textContent : ""; });
+      assert(meCut.length === 0 && /\d/.test(rev), tag + "：「我的」训练营一节没有被裁掉的字，到期复习写成一行（" + rev + "）", meCut.join(", "));
       const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       assert(sideways <= 0, tag + "：页面不横向滚动（" + sideways + "px）");
       assert(!errs.length, tag + "：页面没有报错", errs.join(" / "));

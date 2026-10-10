@@ -17,14 +17,14 @@
  *   - v8-3-plan T1 / T2 (j): both modes draw from the bank's band for their
  *     rating, the local book when the band does not load; look's plies past
  *     the puzzle's line are the engine's (the real one, served for (j) and
- *     (k) only, against the same Stockfish run here), the 8.2 rule without it
+ *     (k) only, against the same Stockfish run here), pickMove's rule without it
  *   - (k) their M2 review: a set still being made never starts over what the
- *     player did since, an 8.2 review key is rebuilt by 8.2's own rule (its
- *     module from the v8.2.1 tag), a cancelled search is asked again, the
- *     Hash setting does not reach these searches, and leaving stops them
+ *     player did since, a local puzzle's review key is rebuilt by pickMove's
+ *     rule alone, a cancelled search is asked again, the Hash setting does
+ *     not reach these searches, and leaving stops them
  *   - (l) v8-4-plan T1: the first question of a set is up within 1 s (CI:
  *     2.5 s); a review whose key kept its engine plies searches nothing,
- *     and a wrong answer to an 8.3 key files them
+ *     and a wrong answer to a key without them files them
  *
  * The real Lichess index changes with every import, so this builds its own
  * page, where the answers are known: scripts/import-puzzles.mjs runs over the fixture
@@ -50,6 +50,7 @@ const ROOT = path.join(HERE, "..", "src", "web");
 
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { compileModuleSync, ENTRY, MINIFY } from "./bundle.mjs";
+import { seedLibrary } from "./lib/library-view.mjs";
 
 // --- the fixture index -----------------------------------------------------
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "trainer-e2e-"));
@@ -134,20 +135,26 @@ const browser = await launchBrowser();
 console.log("引擎:", ENGINE);
 const errs = [];
 
-/** A page in puzzle mode with `puzzles` as the stored puzzle state. */
+/**
+ * A page in puzzle mode with `puzzles` as the stored puzzle state; `extra`,
+ * more keys — the library (`chess.library`, as `{names, games}` JSON)
+ * through seedLibrary.
+ */
 async function open(puzzles, opts) {
   // (h) opens in each of the three languages
   const lang = (opts && opts.lang) || "zh-CN";
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: lang });
+  const { "chess.library": lib, ...extra } = (opts && opts.extra) || {};
+  if (lib) await ctx.addInitScript(seedLibrary, Object.assign({ once: true }, JSON.parse(lib)));
   await ctx.addInitScript(([pz, mode, extra, langId]) => {
     if (sessionStorage.getItem("seeded")) return; // a reload keeps what the app wrote
     sessionStorage.setItem("seeded", "1");
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode, langId, sideTab: "play", soundOn: false, view: mode === "puzzle" ? "puzzle" : "play" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode, langId, sideTab: "play", soundOn: false, view: mode === "puzzle" ? "train" : "play" }));
     localStorage.setItem("chess.panelOpen", "1");
-    if (pz) localStorage.setItem("chess.v1.puzzles", JSON.stringify(pz));
+    if (pz) localStorage.setItem("chess.puzzles", JSON.stringify(pz));
     for (const k in extra) localStorage.setItem(k, extra[k]);
-  }, [puzzles || null, (opts && opts.mode) || "puzzle", (opts && opts.extra) || {}, lang]);
+  }, [puzzles || null, (opts && opts.mode) || "puzzle", extra, lang]);
   const page = await ctx.newPage();
   if (opts && opts.clock) await page.clock.install();
   page.on("pageerror", (e) => errs.push(e.message));
@@ -201,6 +208,20 @@ const helpers = (page) => {
   };
   return { view, tap, move, occupied, faces, text, shown, feedback };
 };
+/**
+ * 9.0 S3: into 训练 · 谜题 — the rail's 训练 (the view, where the player left
+ * it), then 谜题 on the switch over the panel. The rail's 谜题 is gone.
+ */
+async function toPuzzles(page) {
+  const lit = () => page.evaluate(() => {
+    if (document.getElementById("app").getAttribute("data-view") !== "train") return null;
+    const row = document.getElementById("train-seg");
+    const b = row && !row.hidden && row.querySelector("button[data-seg].active");
+    return b ? b.dataset.seg : null;
+  });
+  if (!(await lit())) { await page.click('#rail button[data-view="train"]'); await page.waitForTimeout(200); }
+  if ((await lit()) !== "puzzle") await page.click('#train-seg button[data-seg="puzzle"]');
+}
 const squaresOf = (fen) => {
   const rows = fen.split(" ")[0].split("/"); const out = [];
   rows.forEach((row, r) => {
@@ -235,7 +256,7 @@ const hasMateIn = (g, n) => {
     rhist: [{ t: now - 3000, r: 1500 }, { t: now - 2000, r: 1540 }, { t: now - 1000, r: 1520 }] });
   const h = helpers(page);
   assert(await h.shown("#pz-rating"), "c: 谜题页常驻评级一行");
-  assert(/^1520(?!\?)/.test(await h.text("#pz-rating-v") || ""), "c: 评级数值就是存下的评级", await h.text("#pz-rating-v"));
+  assert(/^1520(?!\?|（)/.test(await h.text("#pz-rating-v") || ""), "c: 评级数值就是存下的评级", await h.text("#pz-rating-v"));
   const inked = await page.evaluate(() => {
     const c = document.getElementById("pz-rating-curve");
     if (!c || !c.width) return 0;
@@ -248,13 +269,13 @@ const hasMateIn = (g, n) => {
   await ctx.close();
   const fresh = await open(null);
   const hf = helpers(fresh.page);
-  assert(/^\d+\?/.test(await hf.text("#pz-rating-v") || ""), "c: 新档案也有评级，标「?」", await hf.text("#pz-rating-v"));
+  assert(/^\d+（定级中）/.test(await hf.text("#pz-rating-v") || ""), "c: 新档案也有评级，标「定级中」（v9-0-plan S6：不是「?」）", await hf.text("#pz-rating-v"));
   // …shown, not filed: a rating is written by an answer, never by the view
   // (test-library-e2e: a rote drill must leave `rating` unset)
-  await fresh.page.click('#pz-mode-seg button[data-run="practice"]').catch(() => {});
+  assert(!(await hf.shown("#pz-run")) && await hf.shown("#pz-groups-sec"), "c: 新档案在练习里（没有挑战在跑，按类做题在）");
   await fresh.page.evaluate(() => document.getElementById("puzzle-next").click());
   await fresh.page.waitForTimeout(300);
-  const filed = await fresh.page.evaluate(() => (JSON.parse(localStorage.getItem("chess.v1.puzzles") || "{}")).rating);
+  const filed = await fresh.page.evaluate(() => (JSON.parse(localStorage.getItem("chess.puzzles") || "{}")).rating);
   assert(filed == null, "c: 看一眼评级不会把评级存进档案", JSON.stringify(filed));
   await fresh.ctx.close();
 }
@@ -263,7 +284,7 @@ const hasMateIn = (g, n) => {
 {
   const { ctx, page } = await open(null, { mode: "ai" });
   const h = helpers(page);
-  await page.click('#rail button[data-view="puzzle"]');
+  await toPuzzles(page);
   await page.waitForTimeout(500);
   await page.click("#pz-themes-open");
   await page.waitForTimeout(300);
@@ -297,9 +318,10 @@ const hasMateIn = (g, n) => {
   await page.click('#theme-list button[data-theme="m1"]');
   await page.waitForTimeout(800);
   assert(!(await page.evaluate(() => document.getElementById("theme-modal").classList.contains("show"))), "b: 开始后主题页收起");
-  assert(await page.evaluate(() => document.getElementById("app").getAttribute("data-view")) === "puzzle", "b: 落在谜题棋盘上");
+  assert(await page.evaluate(() => document.getElementById("app").getAttribute("data-view")) === "train" &&
+    await page.evaluate(() => document.querySelector('#train-seg button[data-seg="puzzle"]').classList.contains("active")), "b: 落在训练 · 谜题的棋盘上");
   assert(await h.shown("#row-pz-theme") && (await h.text("#pz-theme-name")) === "一步杀", "b: 面板上写着在练哪个主题", await h.text("#pz-theme-name"));
-  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles") || "{}").cat);
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles") || "{}").cat);
   assert(stored === "theme:m1", "b: 主题存下了", stored);
 
   // --- (d) Black to move, from the Lichess index ------------------------------
@@ -324,7 +346,7 @@ const hasMateIn = (g, n) => {
   await h.move(notMate.from, notMate.to);
   let fb = await h.feedback();
   assert(/还不是将死 —— 白方可走/.test(fb), "d: pz.notMateYetMove 说白方可走", fb);
-  let st = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+  let st = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles")));
   assert(st.themes && st.themes.m1 && st.themes.m1.rating && st.themes.m1.miss === 1, "b: 主题有自己的评级，和总评级存在一起", JSON.stringify(st.themes));
   assert(st.rhist && st.rhist.length === 1, "b: 题库的题也算进总评级", st.rhist && st.rhist.length);
   // Codex on #88: a missed puzzle restarted (R / 再试一次) is the same puzzle —
@@ -334,7 +356,7 @@ const hasMateIn = (g, n) => {
   await page.waitForTimeout(500);
   await h.move(notMate.from, notMate.to);
   await h.feedback();
-  st = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+  st = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles")));
   assert(st.themes.m1.miss === 1 && !(st.themes.m1.solve > 0) && st.rhist.length === 1,
     "b: 重开再答错，主题和总评级都不再算第二次", JSON.stringify({ theme: st.themes.m1, rhist: st.rhist.length }));
   await page.keyboard.press("r");
@@ -381,7 +403,7 @@ const hasMateIn = (g, n) => {
   await page.click('#theme-prog-seg button[data-tprog="started"]');
   await page.waitForTimeout(150);
   r = await rows();
-  assert(["m1", "m2", "def"].every((id) => r.some((x) => x.id === id)) && /评级/.test(r[0].text), "b: 「练过」列出做过的主题，带评级", r.map((x) => x.id).join(","));
+  assert(["m1", "m2", "def"].every((id) => r.some((x) => x.id === id)) && /谜题等级分/.test(r[0].text), "b: 「练过」列出做过的主题，带谜题等级分", r.map((x) => x.id).join(","));
   await page.keyboard.press("Escape");
   await page.waitForTimeout(200);
 
@@ -424,14 +446,14 @@ async function solveCurrent(page, h) {
   // depends on the seed and the local book only, and the promotion path is
   // taken on every run, not by luck.
   await page.clock.setFixedTime(1790596830270);
-  await page.click('#pz-mode-seg button[data-run="streak"]');
+  await page.click('#pz-modes button[data-run="streak"]');
   await page.waitForTimeout(600);
   const occ0 = await h.occupied();
   const first = POOL.find((q) => squaresOf(q.fen) === occ0 || mirror(squaresOf(q.fen)) === occ0);
   assert(first && first.id === "mn-203-137-66", "a: 固定种子，第一题是要升变的那道", first && first.id);
   assert(await h.shown("#pz-run"), "a: 连胜的卡片出现");
   assert(/答错一题即结束/.test(await h.text("#pz-run-head")), "a: 卡片写着连胜的规则", await h.text("#pz-run-head"));
-  assert(!(await h.shown("#puzzle-cat-seg")), "a: 练习的题型行让位");
+  assert(!(await h.shown("#pz-groups-sec")) && !(await h.shown("#pz-hero")), "a: 练习的选题（为你出一题、按类做题）让位");
   let solved = 0;
   for (let i = 0; i < 2; i++) {
     if (!(await solveCurrent(page, h))) break;
@@ -444,19 +466,26 @@ async function solveCurrent(page, h) {
   assert(/连胜中断/.test(await h.text("#pz-run-head")), "a: 一题不对，连胜结束", await h.text("#pz-run-head"));
   assert(/新纪录：2/.test(await h.text("#pz-run-best")), "a: 新纪录写出来", await h.text("#pz-run-best"));
   assert(await h.shown("#pz-run-again"), "a: 可以再来一局");
-  const best = await page.evaluate(() => (JSON.parse(localStorage.getItem("chess.v1.puzzles")).runs || {}).streak);
+  const best = await page.evaluate(() => (JSON.parse(localStorage.getItem("chess.puzzles")).runs || {}).streak);
   assert(best && best.best === 2, "a: 最佳成绩存下了", JSON.stringify(best));
   await page.reload();
   await page.waitForTimeout(1200);
-  await page.click('#pz-mode-seg button[data-run="streak"]');
+  await page.click('#pz-modes button[data-run="streak"]');
   await page.waitForTimeout(600);
   assert(/最佳 2/.test(await h.text("#pz-run-best")), "a: 重开之后最佳成绩还在", await h.text("#pz-run-best"));
-  await page.click('#pz-mode-seg button[data-run="practice"]');
+  // 9.0 S3: no 练习 button — 结束 ends the run, its card keeps the score and
+  // the picker is back under it; a tile from the picker is practice again
+  await page.click("#pz-run-stop");
   await page.waitForTimeout(500);
-  assert(!(await h.shown("#pz-run")) && await h.shown("#puzzle-cat-seg"), "a: 回到练习，题型行回来");
+  assert(await h.shown("#pz-run-again") && !(await h.shown("#pz-run-stop")) && await h.shown("#pz-groups-sec") && await h.shown("#pz-hero"),
+    "a: 结束：卡片停在结束，选题回来", await h.text("#pz-run-head"));
+  await page.click('#pz-groups button[data-group="mate"]');
+  await page.waitForTimeout(500);
+  assert(!(await h.shown("#pz-run")) && await h.shown("#pz-groups-sec") && !!(await h.text("#puzzle-task")) &&
+    !(await page.evaluate(() => document.querySelector("#pz-modes button.active"))), "a: 点一块按类做题，回到练习，挑战的卡片收起");
 
   // 冲刺: the clock and three strikes
-  await page.click('#pz-mode-seg button[data-run="rush"]');
+  await page.click('#pz-modes button[data-run="rush"]');
   await page.waitForTimeout(600);
   assert(/^[23]:\d\d$/.test(await h.text("#pz-run-clock") || ""), "a: 冲刺有 3 分钟的钟", await h.text("#pz-run-clock"));
   assert(/失误 0\/3/.test(await h.text("#pz-run-strikes")), "a: 失误 0/3", await h.text("#pz-run-strikes"));
@@ -476,12 +505,12 @@ async function solveCurrent(page, h) {
   // its clock still running from where it stood
   const lib = JSON.stringify({ v: 1, names: ["me"], games: [{ id: "g1", t: 1758000000000, white: "me", black: "rival",
     date: "2026.09.01", event: "Casual", result: "1-0", plies: 4, sans: "e4 e5 Nf3 Nc6", fen: "", side: "w", outcome: "win" }] });
-  const { ctx, page } = await open(null, { extra: { "chess.v1.library": lib,
-    "chess.v1.save": JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }) } });
+  const { ctx, page } = await open(null, { extra: { "chess.library": lib,
+    "chess.save": JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }) } });
   const h = helpers(page);
-  const runsOf = () => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles") || "{}").runs || {});
+  const runsOf = () => page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles") || "{}").runs || {});
   const secs = async () => { const m = /^(\d):(\d\d)$/.exec(await h.text("#pz-run-clock") || ""); return m ? +m[1] * 60 + +m[2] : null; };
-  await page.click('#pz-mode-seg button[data-run="rush"]');
+  await page.click('#pz-modes button[data-run="rush"]');
   await page.waitForTimeout(600);
   const answered = await solveCurrent(page, h);
   await page.waitForTimeout(900);
@@ -496,7 +525,7 @@ async function solveCurrent(page, h) {
   const asked = await page.isVisible("#confirm-cancel");
   if (asked) await page.click("#confirm-cancel");
   await page.waitForTimeout(600);
-  await page.click('#rail button[data-view="puzzle"]');
+  await toPuzzles(page);
   await page.waitForTimeout(300);
   const t1 = await secs();
   await page.waitForTimeout(2100);
@@ -507,7 +536,7 @@ async function solveCurrent(page, h) {
   assert(after.score === before.score, "a/#88: 得分不变", after.score);
   assert(!after.runs.rush && JSON.stringify(after.runs) === JSON.stringify(before.runs), "a/#88: 成绩没有被记下，最佳不变", JSON.stringify(after.runs));
   assert(t1 != null && t2 != null && t1 <= before.left && t1 > 150 && t2 < t1, "a/#88: 钟接着原来的时间在走", [before.left, t1, t2].join(" → "));
-  assert(!!(await h.text("#puzzle-task")) && !(await h.shown("#puzzle-cat-seg")), "a/#88: 棋盘上还是这一局冲刺的题");
+  assert(!!(await h.text("#puzzle-task")) && !(await h.shown("#pz-groups-sec")), "a/#88: 棋盘上还是这一局冲刺的题");
   // …and answered 替换, the run ends there and its score is filed
   await page.click('#rail button[data-view="library"]');
   await page.waitForTimeout(300);
@@ -525,7 +554,7 @@ async function solveCurrent(page, h) {
   // the clock runs out
   const { ctx, page } = await open(null, { clock: true });
   const h = helpers(page);
-  await page.click('#pz-mode-seg button[data-run="rush"]');
+  await page.click('#pz-modes button[data-run="rush"]');
   await page.clock.runFor(1000);
   assert(/^2:5\d$/.test(await h.text("#pz-run-clock") || ""), "a: 钟在走", await h.text("#pz-run-clock"));
   await page.clock.runFor(181000);
@@ -543,7 +572,7 @@ async function solveCurrent(page, h) {
   const lcAsked = [];
   page.on("request", (q) => { if (/chunk-lc-\d{4}\.js/.test(q.url())) lcAsked.push(q.url().split("/").pop()); });
   const early = await page.evaluate(() => !window.LC_INDEX);
-  await page.click('#rail button[data-view="puzzle"]');
+  await toPuzzles(page);
   await page.waitForTimeout(200);
   await page.click("#pz-themes-open");
   await page.waitForTimeout(200);
@@ -558,7 +587,7 @@ async function solveCurrent(page, h) {
   await ctx.close();
   // a theme page left open while the index arrives redraws its counts
   const sheet = await open(null, { mode: "ai", early: true });
-  await sheet.page.click('#rail button[data-view="puzzle"]');
+  await toPuzzles(sheet.page);
   await sheet.page.waitForTimeout(200);
   await sheet.page.click("#pz-themes-open");
   await sheet.page.waitForTimeout(200);
@@ -575,9 +604,9 @@ async function solveCurrent(page, h) {
   const run = await open(null, { mode: "ai", early: true });
   const runAsked = [];
   run.page.on("request", (q) => { if (/chunk-lc-\d{4}\.js/.test(q.url())) runAsked.push(q.url().split("/").pop()); });
-  await run.page.click('#rail button[data-view="puzzle"]');
+  await toPuzzles(run.page);
   await run.page.waitForTimeout(200);
-  await run.page.click('#pz-mode-seg button[data-run="rush"]');
+  await run.page.click('#pz-modes button[data-run="rush"]');
   const runEarly = await run.page.evaluate(() => !window.LC_INDEX) && runAsked.length === 0;
   await run.page.waitForFunction(() => !!window.LC_INDEX, null, { timeout: 10000 }).catch(() => {});
   await run.page.waitForTimeout(800);
@@ -592,7 +621,7 @@ async function solveCurrent(page, h) {
 {
   const { ctx, page } = await open(null, { mode: "ai" });
   const h = helpers(page);
-  await page.click('#rail button[data-view="puzzle"]');
+  await toPuzzles(page);
   await page.waitForTimeout(500);
   await page.click("#pz-themes-open");
   await page.waitForTimeout(300);
@@ -619,7 +648,7 @@ async function solveCurrent(page, h) {
   if (near != null) chunkDelay["chunk-lc-" + String(near).padStart(4, "0") + ".js"] = "fail";
   const two = await open(null, { mode: "ai" });
   const h2 = helpers(two.page);
-  await two.page.click('#rail button[data-view="puzzle"]');
+  await toPuzzles(two.page);
   await two.page.waitForTimeout(500);
   await two.page.click("#pz-themes-open");
   await two.page.waitForTimeout(300);
@@ -643,7 +672,7 @@ async function solveCurrent(page, h) {
   const band = "chunk-lc-" + String(Math.floor(p1.rating / 200) * 200).padStart(4, "0") + ".js";
   const { ctx, page } = await open(null, { mode: "ai" });
   const h = helpers(page);
-  await page.click('#rail button[data-view="puzzle"]');
+  await toPuzzles(page);
   await page.waitForTimeout(500);
   await page.click("#pz-themes-open");
   await page.waitForTimeout(300);
@@ -659,7 +688,7 @@ async function solveCurrent(page, h) {
   const wrong = new Chess(p1.fen).moves({ verbose: true }).find((m) => m.from === "g8" && m.san.includes("+") && !m.san.includes("#"));
   await h.move(wrong.from, wrong.to);
   await h.feedback();
-  const st = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+  const st = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles")));
   assert(st.missed && st.missed["lc-F0001"] && st.bank && st.bank["lc-F0001"] === Math.floor(p1.rating / 200) * 200,
     "g: 答错的题库题进了复习队列（只存 id），旁边记下它所在的分块", JSON.stringify({ missed: st.missed, bank: st.bank }));
   assert(st.rhist && st.rhist.length === 1, "g: …照样计入评级", st.rhist && st.rhist.length);
@@ -671,17 +700,20 @@ async function solveCurrent(page, h) {
   const ha = helpers(again.page);
   ha.view.flipped = true;
   await again.page.waitForTimeout(3000);
-  const tab = await again.page.evaluate(() => (document.querySelector('#puzzle-cat-seg button[data-cat="review"]') || {}).textContent || "");
-  const stored = await again.page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")).cat);
+  const tab = await again.page.evaluate(() => {
+    const b = document.getElementById("pz-review");
+    return b && b.classList.contains("active") ? document.getElementById("pz-review-n").textContent : "";
+  });
+  const stored = await again.page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles")).cat);
   assert(await ha.faces(p1.fen) === true && stored === "review",
     "g: 重开之后，复习先等分块到了再摆出这道题（没有退回一步杀）", JSON.stringify({ occ: await ha.occupied(), stored }));
   assert(await again.page.evaluate((g) => !!window[g], "LC_BAND_" + band.slice(9, 13)), "g: …它等的正是这道题所在的分块", band);
-  assert(/·1/.test(tab) && /黑先/.test(await ha.text("#puzzle-task") || ""), "g: 复习标签数到它，题面照旧是黑先", tab);
+  assert(/到期 1 道/.test(tab) && /黑先/.test(await ha.text("#puzzle-task") || ""), "g: 复习卡片亮着、数到它，题面照旧是黑先", tab);
   // solved cleanly: it advances along the ladder, due tomorrow, its band note kept
   const [a1, b1] = fromTo(p1.fen, p1.solution[0]);
   await ha.move(a1, b1);
   await ha.feedback();
-  const st2 = await again.page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")));
+  const st2 = await again.page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles")));
   const e = st2.missed["lc-F0001"];
   assert(e && e.s === 1 && e.due > Date.now() + 3600000 && st2.bank["lc-F0001"] === st.bank["lc-F0001"],
     "g: 复习里做对，排到明天，分块记录还在", JSON.stringify({ e, bank: st2.bank }));
@@ -691,11 +723,11 @@ async function solveCurrent(page, h) {
   // gone elsewhere while the band loads: 复习 does not pull the player back
   chunkDelay[band] = 1500;
   const away = await open(Object.assign({}, st, { cat: "m1" }));
-  await away.page.click('#puzzle-cat-seg button[data-cat="review"]');
+  await away.page.click("#pz-review");
   await away.page.click('#rail button[data-view="play"]');
   await away.page.waitForTimeout(2500);
   const awayView = await away.page.evaluate(() => document.getElementById("app").getAttribute("data-view"));
-  const awayCat = await away.page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")).cat);
+  const awayCat = await away.page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles")).cat);
   assert(awayView === "play" && awayCat === "m1", "g: 等分块时去了对局页，分块到了也不把人拉回复习", JSON.stringify({ awayView, awayCat }));
   await away.ctx.close();
   for (const k in chunkDelay) delete chunkDelay[k];
@@ -704,18 +736,105 @@ async function solveCurrent(page, h) {
   const later = await open(Object.assign({}, st2, { cat: "m1" }));
   const asked2 = [];
   later.page.on("request", (q) => { if (q.url().includes(band)) asked2.push(q.url()); });
-  await later.page.click('#puzzle-cat-seg button[data-cat="review"]').catch(() => {});
+  assert(/没有到期的/.test(await later.page.evaluate(() => document.getElementById("pz-review-n").textContent)), "g: 复习卡片写着没有到期的");
+  await later.page.click("#pz-review");
   await later.page.waitForTimeout(800);
-  const cat2 = await later.page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles")).cat);
+  const cat2 = await later.page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles")).cat);
   assert(cat2 === "m1" && asked2.length === 0, "g: 还没到期的题库题不进今天的复习，也不去要分块", JSON.stringify({ cat2, asked2 }));
   await later.ctx.close();
 
-  // a queue from 8.0 (no bank ids, no band table) opens on 复习 as before
-  const old = await open({ v: 1, idv: 2, solved: {}, missed: { "m1-backrank-r": { s: 0, n: 1, due: 0, ivl: 0 } }, cat: "review" });
+  // a queue of local puzzles only (no bank ids, no band table) opens on 复习 as always
+  const old = await open({ v: 1, solved: {}, missed: { "m1-backrank-r": { s: 0, n: 1, due: 0, ivl: 0 } }, cat: "review" });
   const ho = helpers(old.page);
   const m101 = data.CHESS_PUZZLES.find((p) => p.id === "m1-backrank-r");
-  assert(!!m101 && await ho.faces(m101.fen) === false, "g: 8.0 的复习队列照常打开", await ho.occupied());
+  assert(!!m101 && await ho.faces(m101.fen) === false, "g: 只有本地题的复习队列照常打开", await ho.occupied());
   await old.ctx.close();
+}
+
+// --- (m) 9.0 S3: 按类做题 — a pool of both books, near the player's rating ---
+// The six tiles replace the category row. 杀棋 is m1/m2/m3 from the built-in
+// book and from the Lichess bands together: its count is both, its list is
+// both once the bands nearest the rating are in, and it seats the unsolved
+// puzzle nearest the rating — a 2300 player gets a Lichess 2300, not the
+// book's 1900 ceiling.
+{
+  const now = Date.now(), R = 2300;
+  const MATE = ["m1", "m2", "m3"];
+  const localMate = data.CHESS_PUZZLES.concat(data.MINED_PUZZLES).filter((p) => p.fen && MATE.includes(p.cat));
+  const lcMate = LC.filter((p) => MATE.includes(p.cat));
+  const lcAsked = [];
+  const { ctx, page } = await open({ v: 1, idv: 2, solved: {}, missed: {}, cat: "m1", rating: { r: R, rd: 60, vol: 0.06 }, ratedAt: now, rhist: [{ t: now - 1000, r: R }] });
+  page.on("request", (q) => { const m = /chunk-lc-(\d{4})\.js/.exec(q.url()); if (m) lcAsked.push(+m[1]); });
+  const h = helpers(page);
+  const tiles = await page.evaluate(() => [...document.querySelectorAll("#pz-groups button[data-group]")].map((b) => ({ g: b.dataset.group, hidden: b.hidden, n: b.querySelector(".pz-tile-n").textContent, on: b.classList.contains("active") })));
+  const mateN = localMate.length + MATE.reduce((n, id) => n + (LC_INDEX.themes[id] ? LC_INDEX.themes[id].n : 0), 0);
+  const mate = tiles.find((x) => x.g === "mate");
+  assert(tiles.map((x) => x.g).join() === "mate,tactic,endgame,defense,opening,mine" && tiles.find((x) => x.g === "mine").hidden,
+    "m: 六块按类做题，没有错题时「我的错题」不出现", JSON.stringify(tiles.map((x) => x.g + (x.hidden ? "(隐)" : ""))));
+  assert(mate && mate.n === mateN + " 题" && mate.on, "m: 杀棋这一块数的是内置 + 题库两本书（" + localMate.length + " + 题库），存着的一步杀落在这一块上", JSON.stringify(mate));
+  await page.click('#pz-groups button[data-group="mate"]');
+  await page.waitForTimeout(2500);
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles")).cat);
+  const near = [...new Set(lcAsked)];
+  const listed = async () => {
+    await page.evaluate(() => { document.getElementById("pz-list-fold").open = true; });
+    return page.evaluate(() => [...document.querySelectorAll("#puzzle-list button[data-i]")].map((b) => b.textContent));
+  };
+  let rows = await listed();
+  const lcRows = rows.filter((x) => /#F\d{4}/.test(x)), localRows = rows.filter((x) => !/#F\d{4}/.test(x));
+  const loadedLc = lcMate.filter((p) => near.includes(Math.floor(p.rating / 200) * 200));
+  assert(stored === "grp:mate" && near.length > 0 && Math.min(...near.map((b) => Math.abs(b + 100 - R))) <= 100,
+    "m: 点杀棋：存下 grp:mate，先去要离评级最近的分段", JSON.stringify({ stored, near }));
+  assert(localRows.length === localMate.length && lcRows.length === loadedLc.length && lcRows.length > 0,
+    "m: 列表里两本书都在：内置 " + localRows.length + " 道 + 题库（已到的分段）" + lcRows.length + " 道", JSON.stringify({ local: localMate.length, lc: loadedLc.map((p) => p.id) }));
+  // the bands are in: into the tile again, and it seats the nearest of the pool
+  await page.click('#pz-groups button[data-group="mate"]');
+  await page.waitForTimeout(800);
+  const pool = localMate.concat(loadedLc);
+  const prOf = (p) => (Number.isFinite(p.rating) ? p.rating : null);
+  const occ = await h.occupied();
+  const seated = pool.find((p) => squaresOf(p.fen) === occ || mirror(squaresOf(p.fen)) === occ);
+  const best = Math.min(...loadedLc.map((p) => Math.abs(p.rating - R)));
+  assert(!!seated && seated.src === "lichess" && Math.abs(prOf(seated) - R) === best && Math.abs(prOf(seated) - R) < 100,
+    "m: 分段到了再进杀棋，摆的是离 " + R + " 最近的题库题（内置题最高 1900）", JSON.stringify({ seated: seated && [seated.id, seated.rating], best, occ }));
+  assert(new RegExp("难度 " + (seated ? seated.rating : "?")).test(await h.text("#puzzle-task") || "") &&
+    await page.evaluate(() => document.querySelector('#pz-groups button[data-group="mate"]').classList.contains("active")),
+    "m: 题面带着这道题的评级，杀棋这一块亮着", await h.text("#puzzle-task"));
+  // solved: 下一题 stays in the pool
+  if (seated) {
+    h.view.flipped = seated.side === "b" || seated.fen.split(" ")[1] === "b";
+    const g = new Chess(seated.fen);
+    for (let k = 0; k < seated.solution.length; k += 2) {
+      const m = g.move(seated.solution[k]);
+      await h.move(m.from, m.to);
+      await page.waitForTimeout(300);
+      if (k + 1 < seated.solution.length) g.move(seated.solution[k + 1]);
+    }
+    await page.waitForTimeout(300);
+    const solved = await page.evaluate((id) => !!JSON.parse(localStorage.getItem("chess.puzzles")).solved[id], seated.id);
+    await page.click("#puzzle-next");
+    await page.waitForTimeout(600);
+    const occ2 = await h.occupied();
+    const next = pool.find((p) => squaresOf(p.fen) === occ2 || mirror(squaresOf(p.fen)) === occ2);
+    assert(solved && !!next && next.id !== seated.id && MATE.includes(next.cat) &&
+      (await page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles")).cat)) === "grp:mate",
+      "m: 解出之后「下一题」还在杀棋这一池里", JSON.stringify({ solved, next: next && next.id }));
+    // …and near the rating as the first was: not the next in list order (the
+    // built-in book first, 1900 at most), the unsolved one nearest R
+    // (read off the card's 难度: the squares alone can match a built-in puzzle first)
+    const near2 = loadedLc.filter((p) => p.id !== seated.id).map((p) => p.rating);
+    const best2 = Math.min(...near2.map((x) => Math.abs(x - R)));
+    const shown2 = Number((/难度 (\d+)/.exec(await h.text("#puzzle-task") || "") || [])[1]);
+    assert(near2.includes(shown2) && Math.abs(shown2 - R) === best2,
+      "m: 「下一题」是离 " + R + " 最近的下一道，不是列表里的下一道", JSON.stringify({ shown2, best2 }));
+  }
+  // 开局 is the book's opening drills, with the side row
+  await page.click('#pz-groups button[data-group="opening"]');
+  await page.waitForTimeout(600);
+  const op = await page.evaluate(() => ({ cat: JSON.parse(localStorage.getItem("chess.puzzles")).cat, side: !document.getElementById("row-op-side").hidden,
+    lit: (document.querySelector("#pz-groups button.active") || { dataset: {} }).dataset.group }));
+  assert(op.cat === "op" && op.side && op.lit === "opening", "m: 开局这一块就是背谱（op），执方一行出现", JSON.stringify(op));
+  await ctx.close();
 }
 
 // --- (h) 看 N 步后 / 盲走收官 (v8-2-plan T2) ------------------------------------
@@ -746,7 +865,7 @@ const LOOK_POOL = VIS.lookPool(bandList(lookBand()));
 const blindAt = (seed, k, lvl, used, band = blindBand()) => VIS.blindNext(VIS.blindPool(bandList(band)), LOCAL_BLIND, seed, k, lvl, used);
 /** a blind review key: the id, and a bank puzzle's band */
 const blindKey = (p) => (p.src === "lichess" ? p.id + "|" + Math.floor(p.rating / 200) * 200 : p.id);
-const visState = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles") || "{}"));
+const visState = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles") || "{}"));
 const visSaid = async (page) => { await page.waitForTimeout(150); return page.evaluate(() => document.getElementById("pz-vis-say").textContent); };
 /** the right answer to look question `q`, given on the board */
 async function answerLook(page, h, q) {
@@ -790,12 +909,12 @@ const wrongSquare = (q) => ["a1", "h8", "a8", "h1", "d4", "e5"].find((s) => !(q.
   const { ctx, page } = await open(null);
   const h = helpers(page);
   await page.clock.setFixedTime(T);
-  await page.click('#pz-mode-seg button[data-run="look"]');
+  await page.click('#pz-modes button[data-run="look"]');
   await page.waitForTimeout(900);
   const q0 = await VIS.lookQuestion(Chess, LOOK_POOL, seed, 0, 2);
   assert(q0 && q0.pid.startsWith("lc-") && LOOK_POOL.some((p) => p.id === q0.pid), "h: 看 N 步的题来自题库按评级取的分段（新玩家 1500 → " + lookBand() + "）", q0 && q0.key);
   h.view.flipped = q0.start.split(" ")[1] === "b";
-  assert(await h.shown("#pz-vis") && await h.shown("#pz-run") && !(await h.shown("#puzzle-cat-seg")), "h: 看 N 步的卡片出现，练习的题型行让位");
+  assert(await h.shown("#pz-vis") && await h.shown("#pz-run") && !(await h.shown("#pz-groups-sec")), "h: 看 N 步的卡片出现，练习的选题让位");
   assert((await h.text("#pz-vis-moves")).includes(VIS.lineText(q0.start, q0.sans)), "h: 固定种子，列出的着法就是生成的那两步",
     await h.text("#pz-vis-moves") + " | " + VIS.lineText(q0.start, q0.sans));
   assert(await h.faces(q0.start) === h.view.flipped, "h: 棋盘停在出题的局面，不走", await h.occupied());
@@ -822,20 +941,20 @@ const wrongSquare = (q) => ["a1", "h8", "a8", "h1", "d4", "e5"].find((s) => !(q.
   assert(look.q && look.q[q1.key] && look.solve === 1 && look.miss === 1 && look.rating && look.rating.r,
     "h: 答错的题进「看 N 步」自己的复习队列，评级另记", JSON.stringify(look).slice(0, 200));
   assert(!Object.keys(st.missed || {}).length && !st.rating, "h: 不碰做题的复习队列和做题评级", JSON.stringify({ missed: st.missed, rating: st.rating }));
-  const prog = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.progress") || "{}"));
+  const prog = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.progress") || "{}"));
   const wk = Object.values(prog.weeks || {})[0] || { cats: {} };
   assert(wk.cats.look && wk.cats.look.s === 1 && wk.cats.look.m === 1, "h: 这一周的进步记录里有「看 N 步」一对一错", JSON.stringify(wk.cats));
   // determinism across pages: a second page at the same clock opens on the same moves
   const two = await open(null);
   await two.page.clock.setFixedTime(T);
-  await two.page.click('#pz-mode-seg button[data-run="look"]');
+  await two.page.click('#pz-modes button[data-run="look"]');
   await two.page.waitForTimeout(900);
   assert((await helpers(two.page).text("#pz-vis-moves")).includes(VIS.lineText(q0.start, q0.sans)), "h: 另开一页，同一时刻开始，第一题相同");
   await two.ctx.close();
   // the queue: the next set opens on the question that was missed
   const again = await open(st);
   await again.page.clock.setFixedTime(T + 86400000);
-  await again.page.click('#pz-mode-seg button[data-run="look"]');
+  await again.page.click('#pz-modes button[data-run="look"]');
   await again.page.waitForTimeout(900);
   const ha = helpers(again.page);
   assert((await ha.text("#pz-vis-moves")).includes(VIS.lineText(q1.start, q1.sans)) && /复习/.test(await ha.text("#pz-run-head")),
@@ -852,16 +971,16 @@ for (const [lang, label, head, ask, go] of [["en", "Look ahead", /Look ahead/, /
   // the other two languages: the door, the card, the question and the field
   const { ctx, page } = await open(null, { lang });
   const h = helpers(page);
-  assert(await h.text('#pz-mode-seg button[data-run="look"]') === label, `h/${lang}: 入口按钮是「${label}」`);
+  assert(await h.text('#pz-modes button[data-run="look"]') === label, `h/${lang}: 入口按钮是「${label}」`);
   await page.clock.setFixedTime(1790600000000);
-  await page.click('#pz-mode-seg button[data-run="look"]');
+  await page.click('#pz-modes button[data-run="look"]');
   await page.waitForTimeout(900);
   assert(head.test(await h.text("#pz-run-head")) && ask.test(await h.text("#pz-vis-q")) && await h.text("#pz-vis-go") === go,
     `h/${lang}: 卡片、问题与按钮都是这种语言`, (await h.text("#pz-run-head")) + " | " + (await h.text("#pz-vis-q")));
   assert(!/[一-鿿]{2}/.test((await h.text("#pz-vis")) || "") || lang === "ja", `h/${lang}: 卡片里没有中文`, await h.text("#pz-vis"));
-  await page.click('#pz-mode-seg button[data-run="blind"]');
+  await page.click('#pz-modes button[data-run="blind"]');
   await page.waitForTimeout(900);
-  assert(await h.text('#pz-mode-seg button[data-run="blind"]') === (lang === "en" ? "Blind mate" : "目隠し詰め") &&
+  assert(await h.text('#pz-modes button[data-run="blind"]') === (lang === "en" ? "Blind mate" : "目隠し詰め") &&
     (lang === "en" ? /Blind mate/ : /目隠し詰め/).test(await h.text("#pz-run-head")), `h/${lang}: 盲走的卡片也是这种语言`, await h.text("#pz-run-head"));
   await ctx.close();
 }
@@ -871,7 +990,7 @@ for (const [lang, label, head, ask, go] of [["en", "Look ahead", /Look ahead/, /
   const { ctx, page } = await open(null);
   const h = helpers(page);
   await page.clock.setFixedTime(T);
-  await page.focus('#pz-mode-seg button[data-run="blind"]');
+  await page.focus('#pz-modes button[data-run="blind"]');
   await page.keyboard.press("Enter");
   await page.waitForTimeout(900);
   const p0 = blindAt(seed, 0, 0, []);
@@ -983,7 +1102,7 @@ for (const [lang, label, head, ask, go] of [["en", "Look ahead", /Look ahead/, /
   const before = errs.length;
   const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { q: { "mn-301-38-72|3|1955526313": { s: 0, n: 1, due: 0, ivl: 0 } } } } });
   const h = helpers(page);
-  await page.click('#pz-mode-seg button[data-run="look"]');
+  await page.click('#pz-modes button[data-run="look"]');
   await page.waitForTimeout(1500);
   assert(errs.length === before && !!(await h.text("#pz-vis-q")) && !!(await h.text("#pz-vis-moves")),
     "i/P2-2: 出过路兵吃子题的那道复习题：没有异常，卡片有问题可答", (await h.text("#pz-vis-q")) + " | " + errs.slice(before).join(" | "));
@@ -995,10 +1114,10 @@ for (const [lang, label, head, ask, go] of [["en", "Look ahead", /Look ahead/, /
   const T = 1790700000000, seed = (T >>> 0) || 1;
   const lib = JSON.stringify({ v: 1, names: ["me"], games: [{ id: "g1", t: 1758000000000, white: "me", black: "rival",
     date: "2026.09.01", event: "Casual", result: "1-0", plies: 4, sans: "e4 e5 Nf3 Nc6", fen: "", side: "w", outcome: "win" }] });
-  const { ctx, page } = await open(null, { extra: { "chess.v1.library": lib, "chess.v1.save": JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }) } });
+  const { ctx, page } = await open(null, { extra: { "chess.library": lib, "chess.save": JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }) } });
   const h = helpers(page);
   await page.clock.setFixedTime(T);
-  await page.click('#pz-mode-seg button[data-run="blind"]');
+  await page.click('#pz-modes button[data-run="blind"]');
   await page.waitForTimeout(600);
   const p0 = blindAt(seed, 0, 0, []);
   await page.fill("#pz-vis-in", p0.solution[0]);
@@ -1053,7 +1172,7 @@ for (const [lang, label, head, ask, go] of [["en", "Look ahead", /Look ahead/, /
   const askedLoad = await page.isVisible("#confirm-cancel");
   if (askedLoad) await page.click("#confirm-cancel");
   await page.waitForTimeout(600);
-  await page.click('#rail button[data-view="puzzle"]');
+  await toPuzzles(page);
   await page.waitForTimeout(500);
   const head2 = await h.text("#pz-run-head");
   assert(askedLoad && head2 === head && await h.shown("#pz-vis-next") && /答对了/.test(await h.feedback()),
@@ -1072,12 +1191,12 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: rated(2100), blind: rated(2150) } });
   const h = helpers(page);
   await page.clock.setFixedTime(T);
-  await page.click('#pz-mode-seg button[data-run="look"]');
+  await page.click('#pz-modes button[data-run="look"]');
   const q = await VIS.lookQuestion(Chess, VIS.lookPool(bandList(lookBand(2100))), seed, 0, 2);
   const shown = await visMoves(page);
   assert(lookBand(2100) === 2000 && q.pid.startsWith("lc-") && shown.includes(VIS.lineText(q.start, q.sans)),
     "j/T1: 看 N 步评级 2100，题从 2000 分段出", q.key + " | " + shown);
-  await page.click('#pz-mode-seg button[data-run="blind"]');
+  await page.click('#pz-modes button[data-run="blind"]');
   await page.waitForTimeout(900);
   const p = blindAt(seed, 0, 0, [], blindBand(2150));
   assert(blindBand(2150) === 2000 && p.id.startsWith("lc-") && p.rating >= 2000 && p.rating < 2200 && await h.faces(p.fen) === (p.fen.split(" ")[1] === "b"),
@@ -1085,7 +1204,7 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   await ctx.close();
 }
 {
-  // T1: a band that does not load — both modes go on with the local book, exactly 8.2's set
+  // T1: a band that does not load — both modes go on with the local book
   const T = 1790600000000, seed = (T >>> 0) || 1;
   const files = [lookBand(), blindBand()].map((b) => "chunk-lc-" + String(b).padStart(4, "0") + ".js");
   for (const f of files) chunkDelay[f] = "fail";
@@ -1093,14 +1212,14 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   const { ctx, page } = await open(null);
   const h = helpers(page);
   await page.clock.setFixedTime(T);
-  await page.click('#pz-mode-seg button[data-run="look"]');
+  await page.click('#pz-modes button[data-run="look"]');
   const q = await VIS.lookQuestion(Chess, LOCAL_LOOK, seed, 0, 2);
   const shown = await visMoves(page);
   assert(!q.pid.startsWith("lc-") && shown.includes(VIS.lineText(q.start, q.sans)) && !!(await h.text("#pz-vis-q")),
-    "j/T1: 分段载不进来，看 N 步照 8.2 从本地题库出题", shown);
+    "j/T1: 分段载不进来，看 N 步从本地题库出题", shown);
   await answerLook(page, h, q);
   assert(/答对了/.test(await h.feedback()), "j/T1: 本地题照常作答", await h.feedback());
-  await page.click('#pz-mode-seg button[data-run="blind"]');
+  await page.click('#pz-modes button[data-run="blind"]');
   await page.waitForTimeout(900);
   const p = VIS.blindPick(LOCAL_BLIND, seed, 0, 0, []);
   assert(!p.id.startsWith("lc-") && await h.faces(p.fen) === (p.fen.split(" ")[1] === "b"), "j/T1: 分段载不进来，盲走从本地的一步杀出题", p.id);
@@ -1112,7 +1231,7 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   // T2: past the puzzle's line, the engine's move — a review asked at N = 6
   // runs well past a bank puzzle's line; the page's real engine and the same
   // Stockfish here, at the review's node count, must agree, and differ from
-  // the 8.2 rule (else this would prove nothing)
+  // pickMove's rule (else this would prove nothing)
   const engSrc = path.join(ROOT, "js", "engine-src.js");
   if (!fs.existsSync(engSrc) || fs.statSync(engSrc).size < 1000) spawnSync(process.execPath, [path.join(HERE, "gen-engine-src.mjs")], { stdio: "inherit" });
   const { startEngine } = await import("./lib/sf-node.mjs");
@@ -1134,7 +1253,7 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   for (let i = 0; i < 2; i++) {
     const { ctx, page } = await open(st);
     const t0 = Date.now();
-    await page.click('#pz-mode-seg button[data-run="look"]');
+    await page.click('#pz-modes button[data-run="look"]');
     seen.push(await visMoves(page, 60000));
     if (i === 0) console.log("  j/T2: 引擎启动 + 出第一题", Date.now() - t0, "ms");
     await ctx.close();
@@ -1142,52 +1261,36 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   realEngine = false;
   const want = VIS.lineText(q.start, q.sans);
   assert(seen[0].includes(want) && seen[1].includes(want), "j/T2: 线走完以后是引擎的着法（页面与本地 Stockfish 同一定节点），两页相同",
-    seen.join(" / ") + " | 期望 " + want + " | 8.2 规则 " + (plain ? VIS.lineText(plain.start, plain.sans) : "—"));
-  // engine unavailable (the stub): the same review falls back to the 8.2 rule and the set goes on
+    seen.join(" / ") + " | 期望 " + want + " | pickMove 规则 " + (plain ? VIS.lineText(plain.start, plain.sans) : "—"));
+  // engine unavailable (the stub): the same review falls back to pickMove's rule and the set goes on
   if (plain) {
     const { ctx, page } = await open(st);
-    await page.click('#pz-mode-seg button[data-run="look"]');
+    await page.click('#pz-modes button[data-run="look"]');
     const fb = await visMoves(page);
     assert(fb.includes(VIS.lineText(plain.start, plain.sans)) && !!(await helpers(page).text("#pz-vis-q")),
-      "j/T2: 没有引擎时照 8.2 的规则接着走，题照常出", fb);
+      "j/T2: 没有引擎时照 pickMove 的规则接着走，题照常出", fb);
     await ctx.close();
-  } else assert(false, "j/T2: 选出的复习题在 8.2 规则下也要出得来");
+  } else assert(false, "j/T2: 选出的复习题在 pickMove 规则下也要出得来");
 }
 
-// --- (k) v8-3-plan T1 / T2 的 M2 评审：出题的先后、8.2 的复习键、引擎的重试与 Hash、离开就停
+// --- (k) v8-3-plan T1 / T2 的 M2 评审：出题的先后、本地题的复习键、引擎的重试与 Hash、离开就停
 {
-  // P2-2: an 8.2 review key (no band: a local puzzle) is built by 8.2's own
-  // rule, engine or not — compared with 8.2.1's module itself, over keys
-  // that run past the puzzle's line. The "engine" here is any legal move
-  // pickMove would not choose, so a key built with it could not pass.
-  const ROOT_REPO = path.join(HERE, "..");
-  const FILE = "src/web/js/trainer/visual-modes.js";
-  const show = () => spawnSync("git", ["show", "v8.2.1:" + FILE], { cwd: ROOT_REPO, encoding: "utf8", maxBuffer: 1 << 26 });
-  let got = show();
-  if (got.status !== 0) {
-    spawnSync("git", ["fetch", "--no-tags", "--depth=1", "origin", "refs/tags/v8.2.1:refs/tags/v8.2.1"], { cwd: ROOT_REPO, stdio: "inherit" });
-    got = show();
-  }
-  assert(got.status === 0, "k/P2-2: 取到 8.2.1 的 visual-modes.js 作对照", got.stderr);
-  const f821 = path.join(TMP, "visual-modes-821.js");
-  fs.writeFileSync(f821, got.stdout || "export const CHESS_VISUAL = {};");
-  const c = { console };
-  c.globalThis = c; c.window = c;
-  vm.createContext(c);
-  vm.runInContext(compileModuleSync(f821), c, { filename: "module" });
-  const V821 = c.CHESS_VISUAL;
+  // P2-2: a local puzzle's review key (no band) is built by pickMove's rule
+  // alone, engine or not — over keys that run past the puzzle's line. The
+  // "engine" here is any legal move pickMove would not choose, so a key
+  // built with it could not pass.
   const other = (fen) => { const ms = new Chess(fen).moves({ verbose: true }); const m = ms[ms.length - 1]; return Promise.resolve(m ? m.from + m.to + (m.promotion || "") : null); };
   let same = 0, past = 0, built = 0;
   const diff = [];
   for (let i = 0; i < 40; i++) {
     const p = LOCAL_LOOK[(i * 37) % LOCAL_LOOK.length], n = 2 + (i % 5), qs = 1000 + i;
-    const old = V821.buildLook ? V821.buildLook(Chess, p, n, qs) : null;
+    const old = await VIS.buildLook(Chess, p, n, qs);
     const now = await VIS.buildLook(Chess, p, n, qs, other);
     if (JSON.stringify(old) === JSON.stringify(now)) same++; else diff.push(p.id + "|" + n + "|" + qs);
     if (old) built++;
     if (old && n > (p.line || p.solution || []).length) past++;
   }
-  assert(same === 40 && past >= 5 && built >= 20, "k/P2-2: 8.2 的复习键（本地题、没有分段）照 8.2 的规则逐字节重建，有引擎也不用（" + past + " 道走过题目自带的线）", diff.slice(0, 3).join(" "));
+  assert(same === 40 && past >= 5 && built >= 20, "k/P2-2: 本地题的复习键（没有分段）照 pickMove 的规则逐字节重建，有引擎也不用（" + past + " 道走过题目自带的线）", diff.slice(0, 3).join(" "));
   // …and a bank question whose engine move would mate takes pickMove's ply instead of being thrown away
   // Black plays the line's a6; White's Rd8# would end the game with nothing to ask
   const bank = { id: "lc-T0001", src: "lichess", rating: 1500, cat: "m1", fen: "6k1/p4ppp/8/8/8/8/1q3PPP/3R2K1 b - - 0 1", solution: ["a6"] };
@@ -1215,15 +1318,15 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   // P2-1: a set still being made when the player does something else is dropped
   const lookFile = "chunk-lc-" + String(lookBand()).padStart(4, "0") + ".js";
   chunkDelay[lookFile] = 2500;
-  const busy = (page, run) => page.evaluate((r) => document.querySelector('#pz-mode-seg button[data-run="' + r + '"]').getAttribute("aria-busy"), run);
-  const active = (page) => page.evaluate(() => { const b = document.querySelector("#pz-mode-seg button.active"); return b && b.dataset.run; });
+  const busy = (page, run) => page.evaluate((r) => document.querySelector('#pz-modes button[data-run="' + r + '"]').getAttribute("aria-busy"), run);
+  const active = (page) => page.evaluate(() => { const b = document.querySelector("#pz-modes button.active"); return b && b.dataset.run; });
   {
     const { ctx, page } = await open(null);
     const h = helpers(page);
-    await page.click('#pz-mode-seg button[data-run="look"]');
+    await page.click('#pz-modes button[data-run="look"]');
     const busy0 = await busy(page, "look");
     await page.waitForTimeout(150);
-    await page.click('#pz-mode-seg button[data-run="blind"]');
+    await page.click('#pz-modes button[data-run="blind"]');
     await page.waitForTimeout(4000);
     assert(busy0 === "true" && await busy(page, "look") === null && await busy(page, "blind") === null,
       "k/P2-1: 看 N 步出题期间按钮标着 aria-busy，换了模式就撤掉", busy0 + " / " + await busy(page, "look"));
@@ -1235,22 +1338,22 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   }
   {
     const { ctx, page } = await open(null);
-    await page.click('#pz-mode-seg button[data-run="look"]');
+    await page.click('#pz-modes button[data-run="look"]');
     await page.waitForTimeout(150);
     await page.click('#rail button[data-view="play"]');
     await page.waitForTimeout(4000);
-    const v = await page.evaluate(() => [document.getElementById("app").getAttribute("data-view"), JSON.parse(localStorage.getItem("chess.v1.settings")).mode]);
+    const v = await page.evaluate(() => [document.getElementById("app").getAttribute("data-view"), JSON.parse(localStorage.getItem("chess.settings")).mode]);
     assert(v[0] === "play" && v[1] !== "puzzle", "k/P2-1: 先点看 N 步、再去对局页：出好的题不把人拉回谜题", JSON.stringify(v));
     await ctx.close();
   }
   delete chunkDelay[lookFile];
 }
 {
-  // with the real engine: P2-2 an 8.2 key on the page, P3-1 the Hash, P3-3 leaving stops the searches
+  // with the real engine: P2-2 a local key on the page, P3-1 the Hash, P3-3 leaving stops the searches
   const { startEngine } = await import("./lib/sf-node.mjs");
   const sf = await startEngine(Chess, 1);
   const best = (fen) => sf.bestAt(fen, VIS.LOOK_BUDGET * 450);
-  // P2-2: a local puzzle's key whose engine line differs from 8.2's
+  // P2-2: a local puzzle's key whose engine line differs from pickMove's
   let k82 = null, q82 = null;
   for (const p of LOCAL_LOOK) {
     if (k82 || (p.line || p.solution || []).length >= 5) continue;
@@ -1260,7 +1363,7 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
       if (o && e && JSON.stringify(o.sans) !== JSON.stringify(e.sans)) { k82 = o.key; q82 = o; }
     }
   }
-  assert(!!k82 && !/\|\d{4}$/.test(k82), "k/P2-2: 找到一道 8.2 的复习键，引擎会走得和 8.2 不同", k82);
+  assert(!!k82 && !/\|\d{4}$/.test(k82), "k/P2-2: 找到一道本地题的复习键，引擎会走得和 pickMove 不同", k82);
   // two bank keys whose lines run out early: N = 6 needs at least three searches each
   const short = [];
   for (const p of LOOK_POOL) {
@@ -1270,7 +1373,7 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   const [qa, qb] = short;
   assert(!!qa && !!qb && /\|\d{4}$/.test(qa.key), "k: 两道线很短的题库题（看 6 步要搜至少 3 步）", qa && qa.key);
   realEngine = true;
-  const settings = (hash) => JSON.stringify({ mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false, view: "puzzle", hash });
+  const settings = (hash) => JSON.stringify({ mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false, view: "train", hash });
   const watch = (page) => page.evaluate(() => {
     window.__sent = [];
     const post = Worker.prototype.postMessage;
@@ -1279,34 +1382,36 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
     window.__engineProbe = (j) => { if (j.kind === "eval") window.__evals.push(Date.now()); };
   });
   {
-    const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { solve: 0, miss: 1, q: { [k82]: due0 } } } }, { extra: { "chess.v1.settings": settings(128) } });
+    const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { solve: 0, miss: 1, q: { [k82]: due0 } } } }, { extra: { "chess.settings": settings(128) } });
     await watch(page);
-    await page.click('#pz-mode-seg button[data-run="look"]');
+    await page.click('#pz-modes button[data-run="look"]');
     const shown = await visMoves(page, 60000);
-    assert(shown.includes(VIS.lineText(q82.start, q82.sans)), "k/P2-2: 页面上 8.2 的复习题与 8.2 出的相同（引擎在也不用）", shown + " | 期望 " + VIS.lineText(q82.start, q82.sans));
+    assert(shown.includes(VIS.lineText(q82.start, q82.sans)), "k/P2-2: 页面上本地题的复习题与 pickMove 出的相同（引擎在也不用）", shown + " | 期望 " + VIS.lineText(q82.start, q82.sans));
     await ctx.close();
   }
   if (qa && qb) {
-    // P3-3, the set being made: 练习 before the first question is in — no search after it but the one running
+    // P3-3, the set being made: back to practice (9.0 S3: a tile of 按类做题)
+    // before the first question is in — no search after it but the one running
     const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { solve: 0, miss: 1, q: { [qa.key]: due0 } } } });
     await watch(page);
-    await page.click('#pz-mode-seg button[data-run="look"]');
+    await page.click('#pz-modes button[data-run="look"]');
     await page.waitForFunction(() => window.__evals.length > 0, null, { timeout: 30000 }).catch(() => {});
-    await page.click('#pz-mode-seg button[data-run="practice"]');
+    await page.click('#pz-groups button[data-group="mate"]');
     const left = await page.evaluate(() => Date.now());
     await page.waitForTimeout(5000);
     const after = await page.evaluate((t) => window.__evals.filter((x) => x > t).length, left);
-    const act = await page.evaluate(() => { const b = document.querySelector("#pz-mode-seg button.active"); return b && b.dataset.run; });
-    assert(after <= 1 && act === "practice", "k/P3-3: 出第一题时回到练习：之后不再排引擎搜索，这一组也不开始", after + " 次 / " + act);
+    const act = await page.evaluate(() => ({ run: (document.querySelector("#pz-modes button.active") || { dataset: {} }).dataset.run || null,
+      card: !document.getElementById("pz-run").hidden, tile: (document.querySelector("#pz-groups button.active") || { dataset: {} }).dataset.group || null }));
+    assert(after <= 1 && !act.run && !act.card && act.tile === "mate", "k/P3-3: 出第一题时回到练习（点杀棋）：之后不再排引擎搜索，这一组也不开始", after + " 次 / " + JSON.stringify(act));
     await ctx.close();
   }
   if (qa && qb) {
     // P3-3, the set going on: the next question is being built when 练习 ends the set; P3-1: Hash 32 whatever the setting
     const q = { [qb.key]: due0, [qa.key]: Object.assign({}, due0, { due: 1 }) };
-    const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { solve: 0, miss: 1, q } } }, { extra: { "chess.v1.settings": settings(128) } });
+    const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { solve: 0, miss: 1, q } } }, { extra: { "chess.settings": settings(128) } });
     const h = helpers(page);
     await watch(page);
-    await page.click('#pz-mode-seg button[data-run="look"]');
+    await page.click('#pz-modes button[data-run="look"]');
     const shown = await visMoves(page, 60000);
     assert(shown.includes(VIS.lineText(qb.start, qb.sans)), "k: 第一道复习题出来了", shown);
     // answered, and 练习 in the same task: the answer has already asked for
@@ -1316,13 +1421,14 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
     const before = await page.evaluate((x) => {
       const n = window.__evals.length;
       if (x) { document.getElementById("pz-vis-in").value = x; document.getElementById("pz-vis-go").click(); } else document.getElementById("pz-vis-none").click();
-      document.querySelector('#pz-mode-seg button[data-run="practice"]').click();
+      document.getElementById("pz-run-stop").click(); // 9.0 S3: 结束 ends the set
       return n;
     }, said);
     await page.waitForTimeout(5000);
     const after = await page.evaluate((n) => window.__evals.length - n, before);
-    assert(/答对了|练习/.test((await h.feedback()) + (await h.text("#pz-mode-seg button.active"))) && after <= 1,
-      "k/P3-3: 答完一题、下一题刚要出时结束这一组：除了已经发出的一次，不再排引擎搜索", after + " 次");
+    const ended = await h.shown("#pz-run-again") && !(await h.shown("#pz-run-stop"));
+    assert(/答对了/.test(await h.feedback()) && ended && after <= 1,
+      "k/P3-3: 答完一题、下一题刚要出时结束这一组：除了已经发出的一次，不再排引擎搜索", after + " 次, 结束 " + ended);
     const sent = await page.evaluate(() => window.__sent);
     const hashes = [];
     sent.forEach((m, i) => { if (/^go nodes /.test(m)) { const hs = sent.slice(0, i).filter((x) => /Hash value/.test(x)); hashes.push(hs.length ? hs[hs.length - 1].split(" ").pop() : "?"); } });
@@ -1330,12 +1436,12 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
     await ctx.close();
   }
   // (l) v8-4-plan T1: 开始一组到第一题出现 ≤ 1 s（CI 放宽）——新的一组；复习题带着
-  // 自己的引擎着法（vis.look.eng）时不搜；8.3 的键答错一次之后就带上
+  // 自己的引擎着法（vis.look.eng）时不搜；没带的键答错一次之后就带上
   {
     const cap = process.env.CI ? 2500 : 1000;
     const firstAt = async (page) => {
       const t0 = Date.now();
-      await page.click('#pz-mode-seg button[data-run="look"]');
+      await page.click('#pz-modes button[data-run="look"]');
       const shown = await visMoves(page, 60000);
       return { ms: Date.now() - t0, shown };
     };
@@ -1364,7 +1470,7 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
         await ctx.close();
       }
       {
-        // 8.3's key (no plies): searched as before; a wrong answer files the plies with the key
+        // a key without plies: searched; a wrong answer files the plies with the key
         const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { solve: 0, miss: 1, q: { [qa.key]: due0 } } } });
         await watch(page);
         const { shown } = await firstAt(page);
@@ -1375,88 +1481,12 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
         await page.waitForTimeout(400);
         const look = ((await visState(page)).vis || {}).look || {};
         assert(shown.includes(VIS.lineText(qa.start, qa.sans)) && searched >= 3 && look.q[qa.key] && look.eng && look.eng[qa.key] === eng,
-          "l/T1: 8.3 的复习键照旧搜出同一道题；答错后键旁记下这几步引擎着法", searched + " 次搜索, " + JSON.stringify(look.eng));
+          "l/T1: 没带引擎着法的复习键搜出同一道题；答错后键旁记下这几步引擎着法", searched + " 次搜索, " + JSON.stringify(look.eng));
         await ctx.close();
       }
     }
   }
   realEngine = false;
-}
-
-// --- (l) v8-4-plan T3: a later import drops a puzzle the queues name ---------------
-// The bank is imported again over the fixture with F0001 left out (as a
-// refresh drops ids): it goes to lichess/old-NNNN.js. A 复习 entry, a blind
-// key `id|band` and a look key `id|N|seed|band` stored by the earlier import
-// must still open — the same puzzle, the same question — and stay queued.
-{
-  const TMP2 = fs.mkdtempSync(path.join(os.tmpdir(), "trainer-e2e-re-"));
-  // F0001 for 复习 and 盲走 (a mate in one ends the game: no look question
-  // after it), and the first bank puzzle a look question can be built on
-  let lq = null, lp = null;
-  for (const p of VIS.lookPool(LC)) {
-    for (let qs = 1; qs <= 50 && !lq; qs++) lq = await VIS.buildLook(Chess, p, VIS.N_MIN, qs);
-    if (lq) { lp = p; break; }
-  }
-  fs.cpSync(path.join(TMP, "lichess"), path.join(TMP2, "lichess"), { recursive: true });
-  const re = spawnSync(process.execPath, [path.join(HERE, "import-puzzles.mjs"), path.join(HERE, "fixtures", "lichess-sample.csv"),
-    "--out-dir", TMP2, "--seed", "1", "--exclude", "F0001" + (lp ? "," + lp.id : "")], { encoding: "utf8" });
-  const p1 = lcById("F0001");
-  const b1 = Math.floor(p1.rating / 200) * 200, bn = String(b1).padStart(4, "0");
-  const olds = fs.readdirSync(path.join(TMP2, "lichess")).filter((f) => f.startsWith("old-"));
-  assert(re.status === 0 && olds.includes("old-" + bn + ".js"), "l/T3: 重新导入去掉 F0001，它进了 old-" + bn + ".js", olds.join() + " " + (re.stderr || ""));
-  // serve the re-import: its index (in chunk-mined.js), its bands and the old rows
-  const saved = new Map(CHUNKS);
-  const idx2 = { name: "lc-reimport-index", setup(b) { b.onResolve({ filter: /puzzles-lc-index\.js$/ }, () => ({ path: path.join(TMP2, "puzzles-lc-index.js") })); } };
-  const tail = "\n;for (var k in __chunk) if (Object.prototype.hasOwnProperty.call(__chunk, k)) window[k] = __chunk[k];\n";
-  CHUNKS.set("chunk-mined.js", (await esbuild.build(Object.assign({ entryPoints: [path.join(ROOT, "js", "mined-chunk.js")], globalName: "__chunk", plugins: [idx2] }, OPTS))).outputFiles[0].text + tail);
-  for (const f of fs.readdirSync(path.join(TMP2, "lichess"))) {
-    const out = (f.startsWith("old-") ? "chunk-lc-old-" : "chunk-lc-") + f.slice(-7, -3) + ".js";
-    CHUNKS.set(out, (await esbuild.build(Object.assign({ entryPoints: [path.join(TMP2, "lichess", f)], globalName: "__chunk" }, OPTS))).outputFiles[0].text + tail);
-  }
-  const reBand = fs.readFileSync(path.join(TMP2, "lichess", "band-" + bn + ".js"), "utf8");
-  assert(!reBand.includes('["F0001",') && CHUNKS.has("chunk-lc-old-" + bn + ".js"), "l/T3: 新分块里没有它，旧题分块单独一个");
-
-  // 复习: the entry and its band note, as 8.3 stored them
-  {
-    const st = { v: 1, solved: {}, missed: { "lc-F0001": due0 }, bank: { "lc-F0001": b1 }, cat: "review" };
-    const { ctx, page } = await open(st);
-    const h = helpers(page);
-    await page.waitForTimeout(1500);
-    const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.puzzles") || "{}"));
-    assert(await h.faces(p1.fen) === true && await page.evaluate((g) => Array.isArray(window[g]), "LC_OLD_" + bn) && kept.missed && !!kept.missed["lc-F0001"],
-      "l/T3: 复习里那道新题库已没有的题照常摆出来（从旧题分块），队列里还在", JSON.stringify({ occ: await h.occupied(), missed: kept.missed }));
-    await ctx.close();
-  }
-  // 盲走: the key `id|band`
-  if (["m1", "m2"].includes(p1.cat)) {
-    const { ctx, page } = await open({ v: 1, solved: {}, vis: { blind: { solve: 0, miss: 1, q: { ["lc-F0001|" + b1]: due0 } } } });
-    const h = helpers(page);
-    await page.click('#pz-mode-seg button[data-run="blind"]');
-    await page.waitForTimeout(1200);
-    const st = await visState(page);
-    assert(await h.faces(p1.fen) !== null && !!(st.vis.blind.q || {})["lc-F0001|" + b1], "l/T3: 盲走的旧复习键照常出这道题，键还在",
-      JSON.stringify({ occ: await h.occupied(), q: st.vis.blind.q }));
-    await ctx.close();
-  } else assert(false, "l/T3: F0001 应是一步杀（盲走可出）", p1.cat);
-  // 看 N 步: the key `id|N|seed|band` builds the same question it was stored with
-  {
-    const q = lq;
-    const lb = lp && Math.floor(lp.rating / 200) * 200;
-    assert(!!q && q.key.endsWith("|" + lb) && !fs.readFileSync(path.join(TMP2, "lichess", "band-" + String(lb).padStart(4, "0") + ".js"), "utf8").includes(JSON.stringify(lp.id.slice(3)) + ","),
-      "l/T3: 一道看 N 步的复习题，它的题新库里也没有了", q && q.key);
-    if (q) {
-      const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { solve: 0, miss: 1, q: { [q.key]: due0 } } } });
-      await page.click('#pz-mode-seg button[data-run="look"]');
-      const shown = await visMoves(page);
-      const st = await visState(page);
-      assert(shown.includes(VIS.lineText(q.start, q.sans)) && !!(st.vis.look.q || {})[q.key], "l/T3: 看 N 步的旧复习键出的是同一道题，键还在",
-        shown + " | 期望 " + VIS.lineText(q.start, q.sans));
-      await ctx.close();
-    }
-  }
-  CHUNKS.clear();
-  for (const [k, v] of saved) CHUNKS.set(k, v);
-  fs.rmSync(TMP2, { recursive: true, force: true });
 }
 
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));

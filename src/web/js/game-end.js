@@ -54,16 +54,14 @@ export function createGameEnd(d) {
   }
 
   /**
-   * The result card (7.7, v7-7-plan §4): the result in large type, how it
-   * came about, and what to do next — 分析这盘 filled while the game is not
-   * analysed, 再来一盘 and 换个对手 beside it. It replaces the toast that
-   * used to be the whole of the ending; ✕ puts it away for this ending.
+   * The result (7.7, v7-7-plan §4): the result, how it came about, and what
+   * to do next — 复盘这局 filled while the game is not analysed, 再来一盘
+   * beside it. ✕ puts it away for this ending.
    *
-   * v8-0-plan A5: it floats over the board, on the final position — the
-   * ending was a card at the top of the panel and a pill, and the board
-   * itself said nothing. Not a dialog: nothing is blocked, and it steps
-   * aside while the replay stands anywhere but the end (it covers the
-   * middle of the board, which is where the game being read is).
+   * 9.0 M1: a bar in the bottom strip's place (in the wide layout, a card in
+   * the column beside the board) — v8-0-plan A5 floated it over the middle
+   * of the board, on the very position the player wants to look at. Not a
+   * dialog, and it steps aside while the replay stands anywhere but the end.
    */
   function renderGameOverCard() {
     const card = el("go-card");
@@ -74,7 +72,7 @@ export function createGameEnd(d) {
     // from the one already put away (Codex on #82), so whenever the game is
     // not over — every new game, undo, or load of an unfinished one passes
     // through that — both are forgotten.
-    if (!end) { store.session.goDismissed = null; store.session.goAnnounced = null; }
+    if (!end) { store.session.goDismissed = null; store.session.goAnnounced = null; store.session.goAch = null; }
     const show = !!end && store.session.goDismissed !== end.sig && isLive();
     card.hidden = !show;
     // v8-0-plan B4: the engine's draw offer lapses at an ending; the persona's
@@ -91,6 +89,9 @@ export function createGameEnd(d) {
     // card is on screen whenever the board is.)
     setText(el("go-result"), result);
     setText(el("go-reason"), end.reason);
+    // the persona's line has no room in the bar: it is the bar's tooltip
+    const say = el("go-say");
+    card.title = say && !say.hidden ? say.textContent : "";
     setText(el("go-mark"), end.token === "1/2-1/2" ? "½–½" : end.token.replace("-", "–"));
     card.classList.toggle("won", !!end.winner && (!mine || end.winner === mine));
     const engineDown = !ChessEngine || !!store.session.engineDown;
@@ -99,13 +100,32 @@ export function createGameEnd(d) {
     // review row's 分析 already asks for one (Codex on #82)
     const canAnalyse = !engineDown && sanHistory().length > 0 && !analysisFor() && !store.session.analyzing;
     avail(el("go-analyse"), canAnalyse);
-    avail(el("go-switch"), mode === "ai");
     // v8-0-plan §5: a finished game from the library or a file is a record,
     // and 再来一盘 of a game you did not play is not a rematch
     avail(el("go-again"), !store.game.imported);
     // …which can leave the row empty (an analysed library game)
     const acts = card.querySelector(".go-acts");
     if (acts) acts.hidden = ![...acts.children].some((b) => !b.hidden);
+    const ach = el("go-ach"), got = store.session.goAch;
+    const has = !!got && got.sig === end.sig;
+    if (ach && has && ach.dataset.id !== got.id) {
+      ach.dataset.id = got.id;
+      ach.replaceChildren(d.Icons.icon(got.icon), got.name);
+      ach.title = t("ach.unlocked");
+    }
+    if (ach && ach.hidden === has) ach.hidden = !has;
+  }
+
+  /**
+   * 9.0 M1: an achievement the ending unlocked is a badge on the result bar,
+   * not a toast over the board. True when the bar took it.
+   */
+  function takeAch(ach) {
+    const end = gameEnding();
+    if (!end || !isLive() || !ach) return false;
+    store.session.goAch = { sig: end.sig, id: ach.id, icon: ach.icon, name: ach.nameKey ? t(ach.nameKey) : ach.name };
+    store.commit("session", "sync");
+    return true;
   }
 
   /**
@@ -124,5 +144,5 @@ export function createGameEnd(d) {
     })).filter((b) => !!b.sq);
   }
 
-  return { gameEnding, renderGameOverCard, resultBadges };
+  return { gameEnding, renderGameOverCard, resultBadges, takeAch };
 }

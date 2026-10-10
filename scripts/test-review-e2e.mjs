@@ -25,6 +25,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { heldClick } from "./lib/held-click.mjs";
+import { seedLibrary } from "./lib/library-view.mjs";
 import { OPERA, playOpera, analyseOpera } from "./lib/opera-fixture.mjs";
 import { Chess } from "../src/web/js/chess.js";
 import { ChessReview } from "../src/web/js/review.js";
@@ -50,6 +51,47 @@ await new Promise((r) => server.listen(0, r));
 const PORT = server.address().port;
 
 let failed = 0;
+
+/**
+ * 9.0 S2: 持续分析 is a switch in 设置 · 高级 (#opt-live), not a button over
+ * the review. Turn it on or off there, through the rail, and come back to the
+ * board — the way a person would.
+ */
+async function setLive(pg, on) {
+  await pg.click('#rail button[data-view="settings"]');
+  await pg.waitForTimeout(150);
+  await pg.click("#cat-advanced");
+  await pg.waitForTimeout(100);
+  const now = await pg.getAttribute("#opt-live", "aria-pressed");
+  if ((now === "true") !== on) await pg.click("#opt-live");
+  await pg.waitForTimeout(100);
+  await pg.click('#rail button[data-view="play"]');
+  await pg.waitForTimeout(200);
+}
+/**
+ * 9.0 S3: the classics are guessed from 训练 · 名局 with its switch on 猜着
+ * (the forty are one list, read or guessed); the list is the catalog's fold.
+ */
+async function toGuessList(pg) {
+  // clicked in the page, as this suite clicks the catalog: a pointer click
+  // would turn the board's keyboard cursor off (7.7 §1c, :focus-visible), and
+  // the keyboard checks below focus the board the way a key would leave it
+  for (const sel of ['#train-seg button[data-seg="classic"]', '#classic-mode button[data-cmode="guess"]']) {
+    const on = await pg.evaluate((q) => {
+      const b = document.querySelector(q);
+      if (b.getAttribute("aria-pressed") === "true") return true;
+      b.click();
+      return false;
+    }, sel);
+    if (!on) await pg.waitForTimeout(300);
+  }
+  await pg.evaluate(() => { document.getElementById("lesson-fold").open = true; });
+}
+/** 9.0 S2: 精析 is in 分析's ⋯ menu (details#an-more). */
+async function clickDeep(pg) {
+  if (!(await pg.$eval("#an-more", (d) => d.open))) await pg.click("#an-more > summary");
+  await pg.click("#an-deep");
+}
 const assert = (cond, msg) => {
   if (cond) console.log("ok:", msg);
   else { failed++; console.error("FAIL:", msg); }
@@ -59,8 +101,8 @@ const browser = await launchBrowser();
 console.log("引擎:", ENGINE);
 const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
 await ctx.addInitScript(() => {
-  localStorage.setItem("chess.v1.settings", JSON.stringify({
-    mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+  localStorage.setItem("chess.settings", JSON.stringify({
+    mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
   localStorage.setItem("chess.panelOpen", "1");
 });
 const page = await ctx.newPage();
@@ -201,6 +243,13 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
 {
   // browser path: no bridge, so it goes down the <a download> branch. Intercept
   // the click so nothing actually downloads, and check what it was handed.
+  // 9.0 S2: 导出复盘图 is in the tool row's 更多 (#more-row)
+  assert(await page.evaluate(() => !!document.querySelector("#more-row #report-export")),
+    "导出复盘图 sits in the tool row's 更多 row");
+  if (await page.evaluate(() => !!document.getElementById("more-row").hidden)) {
+    await page.click("#more-tools"); await page.waitForTimeout(250);
+  }
+  assert(await page.isVisible("#report-export"), "…and 更多 shows it");
   const shot = await page.evaluate(async () => {
     const out = { name: null, type: null, bytes: 0 };
     const realClick = HTMLAnchorElement.prototype.click;
@@ -403,11 +452,13 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
   });
   assert(before && !before.disabled && /收进错题/.test(before.text),
     "转折点还没收进错题时,按钮可按 (" + JSON.stringify(before) + ")");
+  // 9.0 M2: the report card is in 完整报告, folded until opened
+  if (!(await page.evaluate(() => document.getElementById("rv-full").open))) await page.click("#rv-full > summary");
   await page.click("#review-body .review-bank");
   await page.waitForTimeout(400);
   const after = await page.evaluate(() => {
     const b = document.querySelector("#review-body .review-bank");
-    const mines = JSON.parse(localStorage.getItem("chess.v1.mines") || "null");
+    const mines = JSON.parse(localStorage.getItem("chess.mines") || "null");
     return { text: b && b.textContent, disabled: b && b.disabled, n: mines ? mines.list.length : 0 };
   });
   assert(after.n === 1, "按一下,错题里多了这一道 (" + after.n + ")");
@@ -428,8 +479,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 {
   const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctx2.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     window.__clip = "";
     window.zero = {
@@ -569,8 +620,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 {
   const ctx3 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctx3.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const pg = await ctx3.newPage();
@@ -596,12 +647,12 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   {
     const g = await pg.evaluate(() => ({
       group: document.getElementById("review-actions").hidden,
-      live: document.getElementById("an-live").hidden,
+      more: document.getElementById("an-more").hidden,
       run: document.getElementById("an-run").hidden,
       lineBox: document.getElementById("live-line").hidden,
     }));
     assert(g.group, "一着未走时「复盘」整组收起,没有一个光头的组名");
-    assert(g.live && g.run, "……组里那几个按钮本来就不该在(持续分析 / 分析)");
+    assert(g.more && g.run, "……组里那几个按钮本来就不该在(分析 / 它的 ⋯ 菜单)");
     assert(g.lineBox, "……引擎行也不在");
   }
 
@@ -612,11 +663,13 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 
   // 设置里把线数调到 3。走界面而不是塞 localStorage:验收说的是「MultiPV 3
   // 时」,那就得先证明那颗按钮真的把 3 送到了引擎。
-  await pg.click("#tab-setup");
+  // 9.0 S5:线数在设置页的「高级」里(原先是侧栏的「设置」页签),从栏上去、从栏上回。
+  await pg.click('#rail button[data-view="settings"]');
   await pg.waitForTimeout(200);
+  await pg.click("#cat-advanced");
   await pg.click('#multipv-seg button[data-multipv="3"]');
   await pg.waitForTimeout(200);
-  await pg.click("#tab-play");
+  await pg.click('#rail button[data-view="play"]');
   await pg.waitForTimeout(200);
 
   // 一份三条线的评估。三条线各走一个**不同**的合法首着,所以「三条」是不是
@@ -685,15 +738,15 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     head: (document.querySelector("#live-line > .pv-head > .pv-label") || {}).textContent || "",
     // 7.8 §2: the win chance is the score box's tooltip now, beside its score
     rows: [...document.querySelectorAll("#live-line .pv-row .pv-eval")].map((x) => x.textContent + " " + x.title),
-    pressed: document.getElementById("an-live").getAttribute("aria-pressed"),
+    pressed: document.getElementById("opt-live").getAttribute("aria-pressed"),
     fens: window.__live.fens.length,
     stops: window.__live.stops,
   }));
 
   await pg.click("#rep-end");
   await pg.waitForTimeout(300);
-  await pg.click("#an-live");
-  await pg.waitForTimeout(700);
+  await setLive(pg, true);
+  await pg.waitForTimeout(500);
   const on = await liveState();
   assert(on.pressed === "true" && !on.hidden, "「持续分析」按下之后引擎行出现了");
   assert(/深度/.test(on.head), "……行首写着深度 (「" + on.head + "」)");
@@ -717,8 +770,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     "……再退一手再变一次 (「" + back1.rows[0] + "」→「" + back2.rows[0] + "」)");
 
   // 关掉:最后一条搜索被停,面板收走,再动游标也不会再问引擎
-  await pg.click("#an-live");
-  await pg.waitForTimeout(500);
+  await setLive(pg, false);
+  await pg.waitForTimeout(300);
   const off = await liveState();
   assert(off.pressed === "false" && off.hidden && off.rows.length === 0,
     "关掉之后引擎行连同它的三条线一起收走");
@@ -826,8 +879,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 
   const ctxC = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctxC.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     window.__clip = "";
     window.zero = {
@@ -909,12 +962,20 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       await pgC.mouse.down();
       // 按下之后停一拍再动:不停的话第一段移动会和按下并成一次派发
       await pgC.waitForTimeout(180);
-      await pgC.mouse.move(box.x + box.w * 0.85, box.y, { steps: 6 });
-      await pgC.waitForTimeout(350);
+      // 9.0 M2:一步一量 —— 每挪一段,棋盘都已经站在指针下的那一手,不是攒到最后
+      const seen = [];
+      for (let k = 1; k <= 6; k++) {
+        await pgC.mouse.move(box.x + box.w * (0.15 + 0.7 * k / 6), box.y);
+        await pgC.waitForTimeout(80);
+        seen.push(await at());
+      }
+      await pgC.waitForTimeout(270);
       // 还没松手就量 —— 拖的定义就是「松手之前已经跟上了」
       const mid = await at();
       await pgC.mouse.up();
       assert(mid > 20, "按着从左往右拖,松手之前棋盘就已经跟到了那边(第 " + mid + " 手)");
+      assert(seen.every((v, i) => i === 0 || v > seen[i - 1]),
+        "M2:拖动途中每一段棋盘都跟到指针下的那一手(" + seen.join(" → ") + ")");
     }
     await pgC.close();
   }
@@ -944,22 +1005,24 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       const css = getComputedStyle(document.documentElement);
       const rgb = (v) => { const s = document.createElement("span"); s.style.color = v; document.body.appendChild(s);
         const c = getComputedStyle(s).color.match(/\d+/g).map(Number); s.remove(); return c; };
-      const sw = rgb(css.getPropertyValue("--side-white")), sb = rgb(css.getPropertyValue("--side-black"));
+      const sw = rgb(css.getPropertyValue("--side-white")), bad = rgb(css.getPropertyValue("--judge-bad"));
       const is = (k, c) => Math.abs(d[k] - c[0]) + Math.abs(d[k + 1] - c[1]) + Math.abs(d[k + 2] - c[2]) < 12;
-      let white = 0, black = 0;
-      // the opaque fills only: White's colour under the line, Black's over it
+      let white = 0, red = 0, faint = 0;
+      // 9.0 M2: the opaque pixels are the line and the marks; the area under
+      // the line is a faint wash, not White's colour
       for (let k = 0; k < d.length; k += 4) {
+        if (d[k + 3] > 0 && d[k + 3] < 64) faint++;
         if (d[k + 3] < 250) continue;
         if (is(k, sw)) white++;
-        else if (is(k, sb)) black++;
+        else if (is(k, bad)) red++;
       }
       const marks = [...document.querySelectorAll(".move-list .mvtag")].map((a) => a.textContent.trim());
-      return { h: el.getBoundingClientRect().height, white, black, marks };
+      return { h: el.getBoundingClientRect().height, white, red, faint, area: W * H, marks };
     });
     assert(g.marks.includes("??"), "这一盘棋里有一步 ?? (" + g.marks.join(" ") + ")");
     assert(g.h >= 120, "局势曲线至少 120px 高 (" + g.h + ")");
-    assert(g.white > 0 && g.black > 0,
-      "……白方的颜色、黑方的颜色都有一块,都不是空的 (白 " + g.white + " px / 黑 " + g.black + " px)");
+    assert(g.red > 20 && g.faint > g.area * 0.1 && g.white < g.area * 0.01,
+      "……?? 是一个 --judge-bad 色的小菱形,曲线下是淡填充,没有白色大块 (?? " + g.red + " px / 淡 " + g.faint + " / 白 " + g.white + ")");
     const box = await pgC.evaluate(() => {
       document.getElementById("eval-curve").scrollIntoView({ block: "center" });
       const r = document.getElementById("eval-curve").getBoundingClientRect();
@@ -990,8 +1053,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 {
   const ctxH = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctxH.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", multipv: 3 }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", multipv: 3 }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const pgH = await ctxH.newPage();
@@ -1050,8 +1113,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   // --- (a) 持续分析开着，连点「新局」10 次，每次都生效 -------------------
   await tap("e2"); await tap("e4");
   await pgH.waitForTimeout(250);
-  await pgH.click("#an-live");
-  await pgH.waitForTimeout(500);
+  await setLive(pgH, true);
+  await pgH.waitForTimeout(300);
   const liveRows = await pgH.evaluate(() => document.querySelectorAll("#live-line .pv-row").length);
   assert(liveRows === 3, "持续分析开着，multipv=3 的三条线都在 (" + liveRows + ")");
   let worst = 0, took = 0, lost = [];
@@ -1080,8 +1143,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   // 先有一份分析，开局那一手带一条五着的主变；再开一遍精析，让它慢慢跑。
   for (const s of ["e2", "e4", "e7", "e5", "f1", "c4", "b8", "c6", "d1", "h5", "g8", "f6", "h5", "f7"]) await tap(s);
   await pgH.waitForTimeout(300);
-  await pgH.click("#an-live");
-  await pgH.waitForTimeout(200);
+  await setLive(pgH, false);
   await pgH.evaluate(() => {
     window.__chess.engine.analyze = async (fen, movetime) => {
       const turn = fen.split(" ")[1];
@@ -1098,7 +1160,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pgH.waitForTimeout(300);
   const chips = await pgH.evaluate(() => document.querySelectorAll("#pv-line button.pv-chip").length);
   assert(chips === 5, "开局那一手的引擎线是五个可以按的着法 (" + chips + ")");
-  await pgH.click("#an-deep");
+  await clickDeep(pgH);
   await pgH.waitForTimeout(400);
   const busy = await pgH.evaluate(() => /停止/.test(document.getElementById("an-run").textContent));
   assert(busy, "精析在跑");
@@ -1136,11 +1198,10 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   });
   await pgH.evaluate(() => { const b = document.getElementById("rep-start"); if (!b.disabled) b.click(); });
   await pgH.waitForTimeout(200);
-  if (await pgH.evaluate(() => document.getElementById("an-live").getAttribute("aria-pressed") === "true")) {
-    await pgH.click("#an-live"); await pgH.waitForTimeout(200);
-  }
-  await pgH.click("#an-live");
-  await pgH.waitForTimeout(1000);
+  // (switched off and on again, so the new scripted engine is the one asked)
+  await setLive(pgH, false);
+  await setLive(pgH, true);
+  await pgH.waitForTimeout(800);
   const lc = await heldClick(pgH, '#live-line .pv-row[data-line="0"] button.pv-chip[data-k="1"]', { hold: 600 });
   console.log("  持续分析中按住引擎线上的着法：位移 " + lc.drift + "px，节点" + (lc.replaced ? "被换掉了" : "还是原来那个"));
   assert(!lc.replaced && !lc.mutated && lc.drift === 0,
@@ -1159,8 +1220,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 {
   const ctxS = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctxS.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const pgS = await ctxS.newPage();
@@ -1194,7 +1255,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     };
     document.getElementById("an-run").click();
     await new Promise((r) => setTimeout(r, 2500));
-    const kept = JSON.parse(localStorage.getItem("chess.v1.analyses") || "null");
+    const kept = JSON.parse(localStorage.getItem("chess.analyses") || "null");
     const e = kept && kept.list && kept.list[kept.list.length - 1];
     return { deepAsked, toast: document.getElementById("toast").textContent,
       an: e ? { tags: e.an.tags, acc: e.an.acc, grades: e.an.grades, scalars: e.an.scalars, deep: e.an.deep } : null,
@@ -1218,7 +1279,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 // --- v8-0-plan A4：复盘做成一张「对局体检报告」 -----------------------------
 // Morphy's Opera game with a fixed engine story (scripts/lib/opera-fixture.mjs):
 // marks on both sides, and 16.Qb8+ graded 妙着. Top: both accuracies and the
-// grade counts; then the win-rate graph, large, White and Black split, with
+// grade counts; then the win-rate graph, large (9.0 M2: a thin line on a faint fill), with
 // axes, its mistake points snapping a click; the mark on the board; the move
 // list coloured by grade; three key moments a side to step through, each with
 // 为什么 / 再试一次 / 看引擎线; 从错误中学 chaining every ? / ?? through
@@ -1228,7 +1289,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 {
   const ctxA = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
   await ctxA.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false,
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", soundOn: false,
       appearance: "dark", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett", view: "play" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
@@ -1249,7 +1310,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   };
   const vi = () => pg.evaluate(() => Number(document.getElementById("eval-curve").getAttribute("aria-valuenow")));
   const rec = await pg.evaluate(() => {
-    const kept = JSON.parse(localStorage.getItem("chess.v1.analyses") || "null");
+    const kept = JSON.parse(localStorage.getItem("chess.analyses") || "null");
     const e = kept && kept.list && kept.list[kept.list.length - 1];
     return e ? { tags: e.an.tags, grades: e.an.grades } : null;
   });
@@ -1258,18 +1319,41 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const G = rec ? rec.grades : [];
   const T = rec ? rec.tags : [];
 
-  // (1) the report heads the review: accuracies, then every grade counted
-  const top = await pg.evaluate(() => {
+  // (1) 9.0 M2: the review in two layers. On top the game in one sentence,
+  // the curve and the key moments — one screen, 再试一次 on the card; the
+  // accuracies, the grade table, 从错误中学 and the mistakes list are folded
+  // into 完整报告, shut by default.
+  const layer = await pg.evaluate(() => {
+    document.getElementById("rv-summary").scrollIntoView({ block: "start" });
     const wrap = document.getElementById("eval-wrap");
     const first = [...wrap.children].find((c) => !c.hidden && c.offsetParent);
+    const r = (id) => document.getElementById(id).getBoundingClientRect();
+    const full = document.getElementById("rv-full");
+    const retry = document.querySelector('#rv-km button[data-act="retry"]');
+    return { first: first && first.id, summary: document.getElementById("rv-summary").textContent,
+      sum: r("rv-summary").top, curve: r("eval-curve").top, km: r("rv-km").top, full: r("rv-full").top,
+      retryShown: !!retry && !retry.hidden && !!retry.offsetParent, retryBottom: retry ? retry.getBoundingClientRect().bottom : 1e9,
+      fold: window.innerHeight, open: full.open, fullShown: !full.hidden,
+      inFull: ["report-card", "rv-learn-row", "rv-mistakes"].every((id) => !!document.getElementById(id).closest("#rv-full")),
+      cardSeen: document.getElementById("report-card").checkVisibility() };
+  });
+  assert(layer.first === "rv-summary" && /^全盘的转折是 \d+(\.|…) ?\S+：(白方|黑方)胜率从 \d+% 掉到 \d+%。$/.test(layer.summary),
+    "M2：复盘区第一行是一句话总结，双人对局用中性口吻（「" + layer.summary + "」，首块 " + layer.first + "）");
+  assert(layer.sum < layer.curve && layer.curve < layer.km && layer.km < layer.full,
+    "M2：第一层自上而下是总结、胜率曲线、关键时刻，完整报告在它们之下");
+  assert(layer.retryShown && layer.retryBottom <= layer.fold,
+    "M2：总结、曲线和关键时刻卡上的「再试一次」在同一屏里（按钮底 " + Math.round(layer.retryBottom) + " ≤ " + layer.fold + "）");
+  assert(layer.fullShown && !layer.open && layer.inFull && !layer.cardSeen,
+    "M2：精准度/分级表、从错误中学和失误列表收在「完整报告」里，默认收起" + (layer.open || layer.cardSeen ? " — " + JSON.stringify(layer) : ""));
+  await pg.click("#rv-full > summary");
+  await pg.waitForTimeout(200);
+  const top = await pg.evaluate(() => {
     const rows = [...document.querySelectorAll("#review-body .rv-table tbody tr")].map((tr) => ({
       cls: tr.className, k: tr.querySelector("th").textContent, v: [...tr.querySelectorAll("td")].map((td) => td.textContent) }));
-    return { first: first && first.id, card: document.getElementById("report-card").getBoundingClientRect().top,
-      curve: document.getElementById("eval-curve").getBoundingClientRect().top,
+    return { label: document.querySelector("#rv-full > summary").textContent.trim(), card: document.getElementById("report-card").checkVisibility(),
       nums: [...document.querySelectorAll("#acc-line .acc-num")].map((e) => e.textContent), rows };
   });
-  assert(top.first === "report-card" && top.card < top.curve,
-    "A4：报告在复盘区最上面 —— 精准度与分级计数在胜率图之上（首块 " + top.first + "）");
+  assert(top.label === "完整报告" && top.card, "M2：点「完整报告」展开，精准度与分级计数就在里面（" + top.label + "）");
   assert(top.nums.length === 2 && top.nums.every((n) => /^\d+%$/.test(n)), "A4：顶部是双方精准度（" + top.nums.join(" / ") + "）");
   {
     const count = (side, g) => G.filter((x, i) => x === g && (i % 2 === 0) === (side === "w")).length;
@@ -1295,19 +1379,33 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     const ys = [...document.querySelectorAll("#curve-y span")].map((e) => e.textContent.trim());
     const xs = [...document.querySelectorAll("#curve-x span")].map((e) => e.textContent.trim());
     const ctx = cv.getContext("2d");
-    const px = (fx, fy) => [...ctx.getImageData(Math.round(cv.width * fx), Math.round(cv.height * fy), 1, 1).data].slice(0, 3);
+    const px = (fx, fy) => [...ctx.getImageData(Math.round(cv.width * fx), Math.round(cv.height * fy), 1, 1).data];
     const rgb = (v) => { const d = document.createElement("span"); d.style.color = v; document.body.appendChild(d);
       const c = getComputedStyle(d).color.match(/\d+/g).map(Number); d.remove(); return c; };
     const css = getComputedStyle(document.documentElement);
-    return { h: cv.clientHeight, ys, xs, low: px(fx(26), 0.9), high: px(fx(2), 0.25),
-      white: rgb(css.getPropertyValue("--side-white")), black: rgb(css.getPropertyValue("--side-black")) };
+    const all = ctx.getImageData(0, 0, cv.width, cv.height).data;
+    const data = rgb(css.getPropertyValue("--data")), white = rgb(css.getPropertyValue("--side-white"));
+    const near = (k, c, tol) => Math.abs(all[k] - c[0]) + Math.abs(all[k + 1] - c[1]) + Math.abs(all[k + 2] - c[2]) <= tol;
+    let line = 0, whiteBlock = 0, opaque = 0;
+    for (let k = 0; k < all.length; k += 4) {
+      if (all[k + 3] < 250) continue;
+      opaque++;
+      if (near(k, data, 24)) line++;
+      else if (near(k, white, 24)) whiteBlock++;
+    }
+    return { h: cv.clientHeight, ys, xs, low: px(fx(26), 0.9), high: px(fx(2), 0.25), line, whiteBlock, opaque,
+      area: cv.width * cv.height, bg: getComputedStyle(cv).backgroundColor };
   });
   const close = (a, b, tol) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
   assert(graph.h >= 160, "A4：胜率图够大（" + graph.h + "px ≥ 160）");
   assert(graph.ys.join("|") === "100%|50%|0%" && graph.xs.length >= 3 && graph.xs.every((x) => /^\d+$/.test(x)),
     "A4：有纵轴（" + graph.ys.join(" ") + "）和回合数横轴（" + graph.xs.join(" ") + "）");
-  assert(close(graph.low, graph.white, 40) && close(graph.high, graph.black, 40),
-    "A4：白黑分色 —— 曲线下是白方的颜色，上面是黑方的（" + graph.low + " / " + graph.high + "）");
+  // 9.0 M2: a thin line over a faint fill — no block of White's colour
+  // under it, nothing over it, the canvas itself transparent on the panel
+  assert(graph.low[3] > 0 && graph.low[3] < 64 && graph.high[3] === 0 && /rgba\(0, 0, 0, 0\)|transparent/.test(graph.bg),
+    "M2：曲线下是淡填充、曲线上不涂色（下 α" + graph.low[3] + " / 上 α" + graph.high[3] + "，底 " + graph.bg + "）");
+  assert(graph.line > 0 && graph.opaque < graph.area * 0.06 && graph.whiteBlock < graph.area * 0.01,
+    "M2：实色只有细线和标记（数据色线 " + graph.line + " px，实色 " + graph.opaque + " / " + graph.area + "，白块 " + graph.whiteBlock + "）");
 
   // (3) a click near a mistake point lands on that move, not on a neighbour
   {
@@ -1321,6 +1419,15 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       // the dot is at position i + 1; 0.6 of a step to the right rounds to i + 2
       return { x: r.left + 4 + (i + 1 + 0.6) * step, y: r.top + r.height * 0.1, step };
     }, worst);
+    // 9.0 M2: hovering the ?? point says what should have been played
+    await pg.mouse.move(p.x - 0.6 * p.step, p.y);
+    await pg.waitForTimeout(150);
+    const tip = await pg.evaluate(() => {
+      const el = document.getElementById("curve-tip");
+      return el && !el.hidden ? [...el.children].map((c) => c.textContent) : null;
+    });
+    assert(!!tip && /^应走 \S+$/.test(tip[1] || ""),
+      "M2：悬停在 ?? 点上，提示写「应走 …」（" + (tip && tip.join(" | ")) + "）");
     await pg.mouse.click(p.x, p.y);
     await pg.waitForTimeout(250);
     const at = await vi();
@@ -1355,14 +1462,26 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       const css = getComputedStyle(document.documentElement);
       const rgb = (v) => { const d = document.createElement("span"); d.style.color = v; document.body.appendChild(d);
         const c = getComputedStyle(d).color; d.remove(); return c; };
+      // 9.0 V1: the move the board stands on is the accent fill with
+      // --on-accent ink, graded or not (colour on colour otherwise), so
+      // the grade colours are read off the other moves
+      const cur = document.querySelector("#move-list .mlmove.current");
+      const curInk = cur ? getComputedStyle(cur).color : null;
+      // the opera game's one !! is its last move, where the board stands:
+      // read the grade colours with the highlight lifted for a moment
+      if (cur) cur.classList.remove("current");
       const one = (g) => { const e = document.querySelector("#move-list .mlmove.g-" + g); return e ? getComputedStyle(e).color : null; };
-      return { bad: one("blunder"), good: one("brilliant"), best: one("best"),
+      const graded = { bad: one("blunder"), good: one("brilliant"), best: one("best") };
+      if (cur) cur.classList.add("current");
+      return { ...graded,
         wantBad: rgb(css.getPropertyValue("--judge-bad")), wantGood: rgb(css.getPropertyValue("--judge-good")),
+        cur: curInk, wantCur: rgb(css.getPropertyValue("--on-accent")),
         n: document.querySelectorAll("#move-list .mlmove[class*=' g-']").length };
     });
     assert(ml.n === OPERA.length, "A4：棋谱里每一着都带分级（" + ml.n + " / " + OPERA.length + "）");
     assert(!!ml.bad && ml.bad === ml.wantBad && ml.good === ml.wantGood && ml.best !== ml.wantBad,
       "A4：棋谱按分级着色 —— ?? 是 --judge-bad，!! 是 --judge-good（" + [ml.bad, ml.good, ml.best].join(" / ") + "）");
+    assert(!!ml.cur && ml.cur === ml.wantCur, "9.0 V1：当前着是强调色底、--on-accent 字（" + ml.cur + " / " + ml.wantCur + "）");
   }
 
   // (6) key moments: three a side, stepped through, each with its three actions
@@ -1421,7 +1540,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       // Codex #89: a graded moment that is no mistake (the brilliancy) has a
       // retry too, and once it is judged the board draws the best move's arrow
       const bril = G.indexOf("brilliant");
-      const bests = await pg.evaluate(() => { const k = JSON.parse(localStorage.getItem("chess.v1.analyses") || "null");
+      const bests = await pg.evaluate(() => { const k = JSON.parse(localStorage.getItem("chess.analyses") || "null");
         const e = k && k.list && k.list[k.list.length - 1]; return e ? e.an.bests : null; });
       const can = (sel) => pg.evaluate((q) => { const b = document.querySelector(q); return !!b && !b.disabled; }, sel);
       while (await can("#rv-km .km-prev")) { await pg.click("#rv-km .km-prev"); await pg.waitForTimeout(150); }
@@ -1604,6 +1723,53 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await ctxA.close();
 }
 
+// --- 9.0 M2：人机对局的一句话总结用对手的口吻 ----------------------------------
+// The Opera game, pasted while the mode is 人机 against 莉娜 (练习 · 重原则)
+// with you on Black: the summary is hers, about your largest fall in win
+// chance (9… b5 in the fixture), in facts — the move and the win chance.
+{
+  const ctxM = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
+  await ctxM.addInitScript(() => {
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "ai", difficulty: "learner", personaId: "principled",
+      humanColor: "b", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", view: "play" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    window.__clip = "";
+    window.zero = {
+      invoke: () => Promise.resolve(true), on: () => () => {}, off: () => {},
+      platform: { supports: () => Promise.resolve(false) },
+      clipboard: { readText: () => Promise.resolve(window.__clip), writeText: () => Promise.resolve(true) },
+    };
+  });
+  const pg = await ctxM.newPage();
+  const errsM = [];
+  pg.on("pageerror", (e) => errsM.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(900);
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  const pgn = '[Event "Opera"]\n[White "A"]\n[Black "B"]\n[Result "1-0"]\n\n' +
+    OPERA.map((s, i) => (i % 2 ? "" : (i / 2 + 1) + ". ") + s).join(" ") + " 1-0\n";
+  await pg.evaluate((x) => { window.__clip = x; }, pgn);
+  if (await pg.evaluate(() => !!document.getElementById("more-row").hidden)) { await pg.click("#more-tools"); await pg.waitForTimeout(250); }
+  await pg.click("#pgn-paste");
+  await pg.waitForTimeout(900);
+  if (await pg.isVisible("#confirm-modal.show").catch(() => false)) { await pg.click("#confirm-ok"); await pg.waitForTimeout(700); }
+  // the engine this server sends is a stub: in 人机 the boot fails and says
+  // so; a scripted one that is ready, and the notice's 重试, bring 分析 back
+  await pg.evaluate(() => {
+    const E = window.__chess.engine;
+    E.init = () => Promise.resolve(); E.retry = () => {}; E.isReady = () => true;
+    const b = document.querySelector("#engine-fault .toast-action");
+    if (b) b.click();
+  });
+  await pg.waitForTimeout(300);
+  await analyseOpera(pg);
+  const s = await pg.evaluate(() => { const e = document.getElementById("rv-summary"); return e && !e.hidden ? e.textContent : null; });
+  assert(!!s && /^莉娜：这盘最要紧的是第 9 步——你的胜率从 \d+% 掉到 \d+%。$/.test(s),
+    "M2：人机对局的总结是对手说的，讲你掉得最多的那一步（「" + s + "」）");
+  assert(errsM.length === 0, "M2：人机总结全程没有页面异常 — " + errsM.join(" / "));
+  await ctxM.close();
+}
+
 // --- v8-2-plan T3: 名局猜着 — a whole classic guessed, scored, and again ---
 // Morphy's Opera game as White, 17 guesses, against a scripted engine keyed
 // by position: every position after one of the master's moves is level (50%),
@@ -1615,8 +1781,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 {
   const ctxG = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   await ctxG.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "learn", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "learn", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const pg = await ctxG.newPage();
@@ -1627,13 +1793,17 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.waitForTimeout(900);
   await pg.click("#pick-cancel", { timeout: 500 }).catch(() => {});
   assert(!served.slice(from).includes("/js/chunk-guess.js"), "T3：首屏不取 chunk-guess.js");
+  await toGuessList(pg);
   // v8-4-plan T2: ten from the bundle, thirty more once chunk-classics-more.js is in
   await pg.waitForFunction(() => document.querySelectorAll("#lesson-list button[data-gs]").length === 40, null, { timeout: 8000 }).catch(() => {});
   const entries = await pg.evaluate(() => [...document.querySelectorAll("#lesson-list button[data-gs]")].map((b) => b.textContent));
   assert(entries.length === 40, "T2（8.4）：学习目录里 40 局名局都能猜（" + entries.length + "）");
   assert(served.slice(from).includes("/js/chunk-classics-more.js"), "T2（8.4）：目录画出来以后才取 chunk-classics-more.js");
-  const eras = await pg.evaluate(() => [...document.querySelectorAll("#lesson-list .lesson-part")].map((h) => h.textContent).filter((x) => /名局猜着/.test(x)));
-  assert(eras.length === 5 && eras.slice(1).every((x) => / · /.test(x)), "T2（8.4）：名局猜着按时代分组（" + eras.join(" | ") + "）");
+  // 9.0 S3: one list of the forty (read or guessed is the switch): the ten
+  // under 名局, the thirty under their four eras
+  const eras = await pg.evaluate(() => [...document.querySelectorAll("#lesson-list .lesson-part")].map((h) => h.textContent));
+  assert(eras.length === 5 && eras[0] === "名局" && new Set(eras).size === 5 && eras.slice(1).every((x) => x && x !== "名局"),
+    "T2（8.4）：名局按时代分组（" + eras.join(" | ") + "）");
 
   // the scripted engine: White-view cp by position (the first four FEN fields)
   const master = [];
@@ -1739,7 +1909,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(p.sum === "与大师相同 17/17 · 平均扣分 0.0 · 得分 100.0", "T3：终局卡 17/17、扣 0、100 分（" + p.sum + "）");
   assert(!p.worst && !p.jump, "T3：没有偏差，就没有「最大偏差」和跳转按钮");
   assert((await pg.evaluate(() => window.__gsCalls.length)) === 0, "T3：和原着一样的着法不必问引擎");
-  const saved = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.learn") || "{}"));
+  const saved = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.learn") || "{}"));
   assert(saved.gs && saved.gs["morphy-opera-1858"] && saved.gs["morphy-opera-1858"].w.same === 17, "T3：结果记进学习进度（learn 键的 gs）");
   assert(/^✓ /.test(await pg.evaluate(() => document.querySelector('#lesson-list button[data-gs="0"]').textContent)), "T3：猜完的名局在目录里打 ✓");
 
@@ -1787,17 +1957,20 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     }
   }
 
-  // (5) quitting mid-game reads the game instead; a reload mid-game is harmless,
+  // (5) quitting mid-game reads the game instead (9.0 S3: 名局's switch to 读谱,
+  // where the runner's own 读棋 button was); a reload mid-game is harmless,
   // and so is a learn key whose gs is not an object
-  await pg.click("#gs-quit");
+  await pg.evaluate(() => document.querySelector('#classic-mode button[data-cmode="read"]').click());
   await pg.waitForTimeout(400);
   const quit = await pg.evaluate(() => ({ panel: !!document.getElementById("gs-panel") && !!document.getElementById("gs-panel").offsetParent, title: document.getElementById("lesson-title").textContent }));
-  assert(!quit.panel && /1858/.test(quit.title), "T3：「读棋」离开猜着，读这一局（" + quit.title + "）");
+  assert(!quit.panel && /1858/.test(quit.title), "T3：「读谱」离开猜着，读这一局（" + quit.title + "）");
+  await toGuessList(pg);
   await pg.evaluate(() => document.querySelector('#lesson-list button[data-gs="8"]').click());
   assert(await waitAt(1), "T3：黑胜的一局默认猜黑方");
-  await pg.evaluate(() => { const l = JSON.parse(localStorage.getItem("chess.v1.learn")); l.gs = 7; localStorage.setItem("chess.v1.learn", JSON.stringify(l)); });
+  await pg.evaluate(() => { const l = JSON.parse(localStorage.getItem("chess.learn")); l.gs = 7; localStorage.setItem("chess.learn", JSON.stringify(l)); });
   await pg.reload();
   await pg.waitForTimeout(1200);
+  await toGuessList(pg);
   await pg.evaluate(() => {
     document.querySelector("#sec-learn details.reading-index").open = true;
     document.querySelector('#lesson-list button[data-gs="0"]').click();
@@ -1820,7 +1993,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(/La Bourdonnais/.test(aboutEn) && !/[一-鿿]/.test(aboutEn + (await panel()).title), "T2（8.4）：英文下开场白与标题是英文（" + aboutEn.slice(0, 40) + "…）");
   await pg.evaluate(() => document.querySelector('#lang-seg button[data-lang="zh-CN"]').click());
   await pg.waitForTimeout(600);
-  await pg.click("#gs-quit");
+  await pg.click('#classic-mode button[data-cmode="read"]');   // 9.0 S3: 读谱, the switch
   await pg.waitForTimeout(400);
   const read = await pg.evaluate(() => document.getElementById("lesson-text").textContent);
   assert(/1834/.test(read) && /麦克唐奈/.test(read), "T2（8.4）：读棋第 0 步也有开场白（" + read.slice(0, 40) + "…）");
@@ -1833,28 +2006,29 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const lib = JSON.stringify({ v: 1, names: ["me"], games: [{ id: "g1", t: 1758000000000, white: "me", black: "rival",
     date: "2026.09.01", event: "Casual", result: "1-0", plies: 4, sans: "e4 e5 Nf3 Nc6", fen: "", side: "w", outcome: "win" }] });
   const ctxM = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
-  await ctxM.addInitScript((lb) => {
+  await ctxM.addInitScript(() => {
     if (sessionStorage.getItem("seeded")) return; // a reload keeps what the app wrote
     sessionStorage.setItem("seeded", "1");
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "learn", view: "learn", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood", flipped: false }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "learn", view: "train", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", flipped: false }));
     localStorage.setItem("chess.panelOpen", "1");
-    localStorage.setItem("chess.v1.library", lb);
-    localStorage.setItem("chess.v1.save", JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }));
-  }, lib);
+    localStorage.setItem("chess.save", JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }));
+  });
+  await ctxM.addInitScript(seedLibrary, Object.assign({ once: true }, JSON.parse(lib)));
   const pg = await ctxM.newPage();
   const errsM = [];
   pg.on("pageerror", (e) => errsM.push(e.message));
   await pg.goto(`http://127.0.0.1:${PORT}/`);
   await pg.waitForTimeout(900);
   await pg.click("#pick-cancel", { timeout: 500 }).catch(() => {});
-  const settings = () => pg.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings") || "{}"));
+  const settings = () => pg.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}"));
   const gsAt = (ply, phase = "guess") => pg.waitForFunction(([p, ph]) => {
     const e = document.getElementById("gs-panel");
     return !!e && !!e.offsetParent && e.dataset.at === String(p) && e.dataset.phase === ph;
   }, [ply, phase], { timeout: 10000 }).then(() => true, () => false);
   const liveText = () => pg.evaluate(() => (document.getElementById("board-live") || {}).textContent || "");
   // P2-1: the default-black guess, then 下棋 and a reload: the saved setting is untouched
+  await toGuessList(pg);
   await pg.evaluate(() => {
     document.querySelector("#sec-learn details.reading-index").open = true;
     document.querySelector('#lesson-list button[data-gs="8"]').click();
@@ -1884,10 +2058,15 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.reload();
   await pg.waitForTimeout(1200);
   assert((await settings()).flipped === false, "M2：重新载入之后也还是原来的方向");
+  // 9.0 S3: 训练's segment and 名局's switch are settings: a reload keeps both
+  const kept = await settings();
+  assert(kept.classicMode === "guess" && kept.trainSeg === "classic",
+    "S3：名局的「猜着」开关与训练的分段存进设置，重新载入之后还在（" + JSON.stringify({ c: kept.classicMode, s: kept.trainSeg }) + "）");
 
   // P3-5: a library game opened mid-guess and 取消 — the run goes on
-  await pg.click('.rail-btn[data-view="learn"]');
+  await pg.click('.rail-btn[data-view="train"]');   // 9.0 S3: 训练, left on 名局
   await pg.waitForTimeout(500);
+  await toGuessList(pg);
   await pg.evaluate(() => {
     // a slow scripted engine: every position level, each answer 1.5 s away
     window.__chess.engine.isReady = () => true;
@@ -1920,7 +2099,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const a = await refuseLoad();
   await pg.waitForTimeout(3600); // both of the check's searches (1.5 s each) come back while the run is set aside
   if (a.asked) await pg.click("#confirm-cancel");
-  await pg.click('.rail-btn[data-view="learn"]');
+  await pg.click('.rail-btn[data-view="train"]');
   const resumedCheck = await gsAt(2);
   assert(a.asked && resumedCheck, "M2：猜着判分时读库被取消，回来之后判完、对方走、轮到第 2 手（问了替换：" + a.asked + "）");
   const say = await pg.evaluate(() => document.getElementById("gs-say").textContent);
@@ -1930,7 +2109,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const b = await refuseLoad();
   await pg.waitForTimeout(1000); // the other side's 0.7 s pass while the run is set aside
   if (b.asked) await pg.click("#confirm-cancel");
-  await pg.click('.rail-btn[data-view="learn"]');
+  await pg.click('.rail-btn[data-view="train"]');
   assert(b.asked && await gsAt(4), "M2：对方要走时读库被取消，回来之后对方照走、轮到第 3 手（" + Math.round(b.t) + " ms 内问了替换）");
   assert(errsM.length === 0, "M2：全程没有页面异常 — " + errsM.join(" / "));
   await ctxM.close();

@@ -113,8 +113,8 @@ console.log("引擎:", ENGINE);
 
 const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN", reducedMotion: "reduce" });
 await ctx.addInitScript(() => {
-  localStorage.setItem("chess.v1.settings", JSON.stringify({
-    mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+  localStorage.setItem("chess.settings", JSON.stringify({
+    mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
   localStorage.setItem("chess.panelOpen", "1");
   // count what the autosave costs, not only how long a move takes: the save
   // key itself, and every localStorage write (the save carries a stamp)
@@ -122,7 +122,7 @@ await ctx.addInitScript(() => {
   const set = Storage.prototype.setItem;
   Storage.prototype.setItem = function (k, v) {
     window.__saves.all++; window.__saves.allBytes += String(v).length;
-    if (k === "chess.v1.save") { window.__saves.n++; window.__saves.bytes += String(v).length; }
+    if (k === "chess.save") { window.__saves.n++; window.__saves.bytes += String(v).length; }
     return set.call(this, k, v);
   };
 });

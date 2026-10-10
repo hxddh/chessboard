@@ -1,30 +1,25 @@
 /**
  * 我的开局书的数据库一半 (v8-1-plan T3) — chunk-rep.js, loaded after the
- * library's chunk (it keeps its records in the library's database).
+ * library's chunk.
  *
- * repertoire-ui.js keeps what it always had: the lines, their import, the
- * 按线练 drills, the section. This module keeps the book **by position**
- * (rep-book.js) and everything that needs it:
+ * repertoire-ui.js keeps what it always had: the lines' import, the 按线练
+ * drills, the section. This module keeps the book — its lines (rep-lines.js)
+ * and the same book **by position** (rep-book.js) — and everything that
+ * needs them:
  *
- *   * storage: one IndexedDB record per (side, position) in the "repertoire"
- *     store of its own database, chessboard.repertoire (rep-db.js — not the
- *     library's, whose version bump would lock 8.0 out of it: M3 评审),
- *     mirrored into the native per-key store as four shards "rep0" … "rep3"
- *     (persist.js BULK, port kind "rep");
- *   * boot: migrate a 7.2–8.0 book, take back what IndexedDB lost from the
- *     native shards, index again whatever the header does not vouch for
- *     (rep-book.js reconcile);
+ *   * storage: one IndexedDB row per line and one record per (side,
+ *     position), in chessboard.book (rep-db.js), mirrored into the native
+ *     per-key store as four shards "rep0" … "rep3" (persist.js BULK, port
+ *     kind "rep");
+ *   * boot: take back what IndexedDB lost from the native shards, index
+ *     again whatever the header does not vouch for (rep-book.js reconcile);
  *   * the cards: due list, grading;
  *   * the edits that need positions: taking a move out wherever it is played;
  *   * the cross-check against the library, and the section's rows for both;
  *   * export as PGN with variations.
  *
- * 8.1 left the lines in `chess.v1.repertoire` — the header — exactly as
- * 7.2–8.0 wrote them, plus `db: 2, n, sig`. v8-2-plan T4 moved them into a
- * database of their own (chessboard.replines, rep-db.js; rep-lines.js) and
- * into the same shards, without the 400-line cap; the header keeps the first 400 a side, which is what an
- * older build reads and drills, and what it changes there is laid over the
- * stored book on the next launch here (rep-lines.js mergeHead).
+ * The header (`chess.repertoire`) says what the store holds — `n` records
+ * of the lines whose signature is `sig`, `ln` lines, written at `gen`.
  * @module rep-page
  */
 import { ChessRepBook as B } from "./rep-book.js";
@@ -62,8 +57,6 @@ function memoryRep() {
     async remove(ids) { for (const id of ids) m.delete(id); return true; },
     async lines() { return [...lines.values()]; },
     async putLines(rows, gone) { for (const k of gone) lines.delete(k); for (const r of rows) lines.set(r.k, r); return true; },
-    async cards() { return []; },
-    async putCards() { return true; },
     async clear() { m.clear(); lines.clear(); return true; },
     async getMeta() { return undefined; },
     async setMeta() { return true; },
@@ -83,38 +76,37 @@ async function bootRepertoire(d) {
   const { store, Persist, t, tf, tdot, toast, R } = d;
   const c = d.libDb || null;
   const LQ = d.LibraryQuery || null;
-  // its own database (rep-db.js): the library's stays at version 1, which 8.0 opens (M3 评审)
   let backend = d.repBackend || (await openRepDb(typeof indexedDB !== "undefined" ? indexedDB : null)) || memoryRep();
   const raw = Persist.get("repertoire");
   const header = readHeader(raw);
   // M3 评审 P2: the main bundle could not read the header (persist.js
-  // quarantined it), so its lines are not the book's — they take nothing
-  // out of the stored lines (rep-lines.js pick), and the header is written
-  // afresh from the store once this boot is done
+  // quarantined it): it is written afresh from the store once this boot is done
   const lost = (!header && !!raw) || !!(Persist.corruptKeys && Persist.corruptKeys().includes("repertoire"));
+  // lines a learning file merged into the header (rep-lines.js): the book
+  const inbound = header && (Array.isArray(header.w) || Array.isArray(header.b)) ? { w: header.w || [], b: header.b || [] } : null;
   const book = () => ({ w: store.session.repertoire.w || [], b: store.session.repertoire.b || [] });
   let warned = false;
   const warnOnce = (e) => { if (warned) return; warned = true; toast(tf("rep.saveFailed", [(e && e.name) || ""]), "fault"); };
 
-  let stored = [], storedLines = [], storedCards = [];
-  try { stored = await backend.all(); storedLines = await backend.lines(); storedCards = await backend.cards(); } catch (e) {
-    backend = memoryRep(); stored = []; storedLines = []; storedCards = [];
+  let stored = [], storedLines = [];
+  try { stored = await backend.all(); storedLines = await backend.lines(); } catch (e) {
+    backend = memoryRep(); stored = []; storedLines = [];
   }
   const memory = backend.kind === "memory";
   // M3 评审: which write the records in IndexedDB are from. The header's
   // `gen` is the last write any session made (a session with no IndexedDB
   // wrote only the native shards); older here means the shards are newer.
-  const headGen = header && header.db === 2 ? Number(header.gen) || 0 : 0;
+  const headGen = header ? Number(header.gen) || 0 : 0;
   let idbGen = 0;
   if (!memory && headGen) { try { idbGen = Number(await backend.getMeta("rep-gen")) || 0; } catch (_) { idbGen = 0; } }
   const newer = headGen > idbGen && !memory;
-  // the WebView's storage lost records the header counted, or there is none
-  // this session, or it is behind the shards: the native shards are the copy.
-  // v8-2-plan T4: the same for lines the header says the store held (`ln`)
+  // the WebView's storage lost records or lines the header counted, or there
+  // is none this session, or it is behind the shards: the native shards are
+  // the copy
   let shards = null, shardLines = [];
   let hold = false;
-  if ((header && header.db === 2 && (memory || newer || stored.length < Number(header.n))) ||
-      (header && !header.lf && Number(header.ln) > storedLines.length) || (lost && !storedLines.length)) {
+  if ((header && (memory || newer || stored.length < Number(header.n) || storedLines.length < Number(header.ln))) ||
+      (lost && !storedLines.length)) {
     const texts = await Persist.readBulk("rep");
     // M3 评审: a native store that is there but could not be read this time
     // (not "there is none"): the cards may be exactly what it holds. Nothing
@@ -124,46 +116,21 @@ async function bootRepertoire(d) {
     shards = recordsOf(texts);
     shardLines = L.rowsOfShards(texts);
   }
-  // the migration: the value as found, before anything is written (the
-  // library's rule — 7.0 lost PGNs moving data between shapes)
-  if (raw && (!header || header.db !== 2) && !stored.length) {
-    try { await backend.setMeta("rep-v1:" + Date.now(), { raw }); } catch (_) { /* the header keeps it anyway */ }
-  }
-  // v8-2-plan T4: the lines move from the header into the store — the header
-  // as found is kept here too, and the header itself keeps the first 400 a
-  // side for 7.2–8.1 (rep-lines.js)
-  if (raw && header && !header.ln && !header.lf && !storedLines.length && !memory && !hold) {
-    try { await backend.setMeta("rep-v2:" + Date.now(), { raw }); } catch (_) { /* the header keeps it anyway */ }
-  }
-  // Which lines this launch holds. From here to the assignment nothing
-  // awaits: an edit made while the reads above were out went into the
-  // header's lines (book(), the main bundle's) and is laid over the stored
-  // book with them (rep-lines.js mergeHead).
-  const picked = L.pick(R, { header, head: book(), stored: storedLines, shards: shardLines, newer, lost });
-  if (picked.from !== "head") {
-    store.session.repertoire.w = picked.book.w;
-    store.session.repertoire.b = picked.book.b;
-  }
+  // Which lines this launch holds.
+  const picked = L.pick({ inbound, stored: storedLines, shards: shardLines, newer });
+  store.session.repertoire.w = picked.book.w;
+  store.session.repertoire.b = picked.book.b;
   if (picked.gone.length && d.forget) d.forget(picked.gone);
-  // the lines past the header's copy are out of reach this launch (no
-  // IndexedDB, no shards that have them): nothing is written, as above, and
-  // an edit goes into the header, to be laid over the store when it is back
-  if (picked.short && memory) hold = true;
+  // no IndexedDB, and the shards had fewer lines than the header counted:
+  // the rest are out of reach this launch, and nothing is written, as above
+  if (memory && !inbound && Number(header && header.ln) > picked.book.w.length + picked.book.b.length) hold = true;
   // what the store holds now: the rows a write compares against. With no
   // IndexedDB, the shards are the store
   let lineMap = L.mapOf(memory && picked.from === "shards" ? shardLines : storedLines);
   const booted = book();
-  // v8-2-plan T4: the cards' copy in chessboard.replines fills in what
-  // chessboard.repertoire no longer has — the records an 8.1 session dropped
-  // when it indexed only the header's 400 lines a side. Where both have a
-  // record, chessboard.repertoire's (the last one graded) stands.
-  const have = new Set(stored.map((x) => x && x.id).concat((shards || []).map((x) => x && x.id)));
-  const kept = storedCards.filter((x) => x && typeof x.id === "string" && x.card && !have.has(x.id)).map((x) => ({ id: x.id, moves: [], card: x.card }));
-  const r = B.reconcile({ book: booted, header, stored, shards: kept.length ? (shards || []).concat(kept) : shards, newer, state: store.session.puzzleState, now: Date.now() });
+  const r = B.reconcile({ book: booted, header, stored, shards, newer });
   // M3 评审 P2-3: the signature of the lines the records were indexed from —
-  // what the header may vouch for. An edit made while this boot was still
-  // awaiting changes book() but not the records, and the header must not
-  // then claim they match (repertoire-ui.js syncs on ready when they differ).
+  // what the header may vouch for
   let indexedSig = B.sigOf(booted);
   let indexedFrom = booted;
   let records = r.records;
@@ -173,7 +140,7 @@ async function bootRepertoire(d) {
   let gen = headGen;
   // two windows, one database (the library's rule, library-page.js): a write
   // is announced, and the other windows read the book back (v8-2-plan T4)
-  const peers = typeof BroadcastChannel === "function" && !memory ? new BroadcastChannel("chessboard.repertoire") : null;
+  const peers = typeof BroadcastChannel === "function" && !memory ? new BroadcastChannel("chessboard.book") : null;
 
   /** The shards a set of record ids (and line keys) lives in. */
   const shardsOf = (ids) => [...new Set(ids.map(B.shardOf))];
@@ -192,8 +159,6 @@ async function bootRepertoire(d) {
       try {
         if (gone.length) await backend.remove(gone);
         if (put.length) await backend.put(put);
-        // the cards' copy (v8-2-plan T4, rep-db.js)
-        if (put.length || gone.length) await backend.putCards(put.filter((x) => x.card).map((x) => ({ id: x.id, card: x.card })), gone);
         if (lp.length || lg.length) await backend.putLines(lp, lg);
         await backend.setMeta("rep-gen", g);
         if (peers) peers.postMessage({ gen: g });
@@ -210,25 +175,15 @@ async function bootRepertoire(d) {
     for (const x of put) lineMap.set(x.k, x);
     save([], [], put, gone);
   }
-  // the boot's own writes, read back before the header may say db 2
+  // the boot's own writes, read back before the header may vouch for them
   let vouched = r.fresh;
-  // the lines first: a migration moves them in here (v8-2-plan T4) — and
-  // the cards' copy starts out whole
+  // the lines first: a learning file's, or the shards' taken back
   saveLines();
-  if (!memory && !hold && !storedCards.length && r.records.size) {
-    const all = [...r.records.values()].filter((x) => x.card).map((x) => ({ id: x.id, card: x.card }));
-    chain = chain.then(() => backend.putCards(all, [])).catch(warnOnce);
-  }
   if (!r.fresh && !hold) {
     save(r.put, r.gone);
     await chain;
     try { vouched = (await backend.all()).length === records.size; } catch (_) { vouched = false; }
   }
-  // a build from before the shards (or 8.0, which lists only lib shards)
-  // committed a manifest without them: owed now (M5 review P3-1's rule).
-  // 8.1 wrote the rep shards without the lines: the lines' shards are owed
-  // whenever the shards read this launch did not carry these lines
-  if (Persist.touchUnlisted && records.size && !hold) Persist.touchUnlisted(shardsOf([...records.keys()]));
   if (shards && !hold) {
     const sd = L.diff(L.mapOf(shardLines), book());
     if (sd.put.length || sd.gone.length) Persist.touchBulk(shardsOf(sd.put.map((x) => x.k).concat(sd.gone)));
@@ -313,7 +268,7 @@ async function bootRepertoire(d) {
 
   // --- the cross-check -------------------------------------------------------
   let crossMemo = null;
-  // a migrated or restored library indexes its games in the background
+  // a restored library indexes its games in the background
   // (library-db.js indexMissing): the answer grows under the same list
   if (c && c.indexing && typeof c.indexing.then === "function") {
     c.indexing.then(() => { crossMemo = null; if (d.onChange) d.onChange(); }, () => {});
@@ -439,26 +394,21 @@ async function bootRepertoire(d) {
 
   /**
    * The header to write (repertoire-ui.js saveBook), after writing the lines
-   * themselves into the store (v8-2-plan T4, rep-lines.js):
-   *   - IndexedDB: the first HEAD lines a side — what 7.2–8.1 read — and `ln`;
-   *   - no IndexedDB: the whole book, `lf` (the pre-T4 shape: the header is
-   *     the one copy a browser without either store keeps);
-   *   - held: the header as it was, with the lines as they are now — an edit
-   *     made now is laid over the store on a launch that can read it.
+   * themselves into the store: what the store holds, never the lines. Held:
+   * the header as it was, without lines a learning file brought (they are
+   * this session's book, and the store is not written).
    */
   function head() {
-    const b = book();
-    if (hold) return Object.assign({}, header, { v: 1, w: b.w, b: b.b });
+    if (hold) { const h = Object.assign({}, header, { v: 1 }); delete h.w; delete h.b; delete h.cards; return h; }
     saveLines();
-    const x = extra();
-    return memory ? Object.assign({ v: 1, w: b.w, b: b.b }, x, { lf: 1 })
-      : Object.assign({ v: 1 }, L.headOf(b), x, { ln: b.w.length + b.b.length });
+    const b = book();
+    return Object.assign({ v: 1 }, extra(), { ln: b.w.length + b.b.length });
   }
   /** what the header says about the records */
   // held (M3 评审): what the header said, until a launch can read the shards
   function extra() {
-    return hold ? { db: 2, n: header.n, sig: header.sig, gen: headGen }
-      : vouched ? { db: 2, n: records.size, sig: indexedSig, gen } : {};
+    return hold ? (header ? { n: header.n, sig: header.sig, gen: headGen } : {})
+      : vouched ? { n: records.size, sig: indexedSig, gen } : {};
   }
 
   /**
@@ -476,11 +426,8 @@ async function bootRepertoire(d) {
   }
 
   return {
-    // v8-2-plan T4: and the header is the one this build would write — an
-    // 8.1 header (no `ln`), or one an older build rewrote, is owed a rewrite
+    // and the header is the one this build would write
     fresh: r.fresh && raw === JSON.stringify(head()),
-    migrated: r.migrating && !!raw,
-    seeded: r.seeded,
     recovered: r.recovered,
     mode: () => backend.kind || "idb",
     extra,
@@ -509,7 +456,6 @@ async function bootRepertoire(d) {
     // persist.js's port for the "rep" shards
     // held: not known — the store keeps the shards it has (persist.js valueOf)
     // v8-2-plan T4: a shard carries the lines whose key hashes to it as well
-    // (`lines`, beside 8.1's `rep`, which 8.1 reads and the lines do not disturb)
     shardNames: () => (hold ? null : shardsOf([...records.keys(), ...lineMap.keys()])),
     shardText: (name) => {
       const list = [...records.values()].filter((x) => B.shardOf(x.id) === name);

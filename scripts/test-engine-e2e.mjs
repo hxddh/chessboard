@@ -105,7 +105,7 @@ console.log("CSP:", csp ? csp.replace(/.*content="([^"]*)".*/, "$1") : "(无)");
 async function firstReply(prefix, failing) {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
+    localStorage.setItem("chess.settings", JSON.stringify({
       mode: "ai", langId: "zh-CN", sideTab: "play", soundOn: false }));
     // every boot builds one worker: counting them counts the boot attempts
     const W = window.Worker;
@@ -212,7 +212,7 @@ for (const e of broken.errs.slice(0, 3)) console.log("  ", e.slice(0, 300));
 const pvp = await (async () => {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
+    localStorage.setItem("chess.settings", JSON.stringify({
       mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false }));
     const W = window.Worker;
     window.__workers = 0;
@@ -244,7 +244,7 @@ assert(pvp.workers === 1, "双人模式：连按三次提示只启动一次，�
 const drill = await (async () => {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
+    localStorage.setItem("chess.settings", JSON.stringify({
       mode: "learn", langId: "zh-CN", sideTab: "play", soundOn: false }));
     const W = window.Worker;
     window.__workers = 0;
@@ -314,11 +314,11 @@ async function selftestPage(prefix, { appdataWrite = "ok", reloads = 0, fileComm
   // then arrives only after bundle.js, the failure chunkSync is there to see
   if (lateLang) {
     await ctx.route("**/js/chunk-boot.js", (r) => r.fulfill({ status: 200, contentType: "text/javascript", body: "" }));
-    await ctx.addInitScript(() => localStorage.setItem("chess.v1.settings", JSON.stringify({ langId: "en", mode: "pvp" })));
+    await ctx.addInitScript(() => localStorage.setItem("chess.settings", JSON.stringify({ langId: "en", mode: "pvp" })));
   }
   await ctx.addInitScript(([writeMode, fileCmds]) => {
     window.__report = null;
-    // base64 of each native file, by store key ("" is chessboard.json) —
+    // base64 of each native file, by store key —
     // v8-0-plan F3: the profile and the self-test's own key are separate files
     const files = new Map();
     window.zero = {
@@ -374,7 +374,7 @@ assert(["engine", "appdata", "chunk", "restart", "sound", "idb", "chunkSync", "n
   "自检：原样页面八项（engine、appdata、chunk、restart、sound、idb、chunkSync、nativeIo）分别报告通过");
 // v8-1-plan N3 — the page half of the three new checks
 assert(!!selfOk && !!selfOk2 && selfOk.checks.idb.found == null && selfOk2.checks.idb.found === selfOk.checks.idb.wrote,
-  "自检：idb 第二次启动读回了第一次写进 chessboard.library 的标记(" + (selfOk2 && selfOk2.checks.idb.found) + ")");
+  "自检：idb 第二次启动读回了第一次写进 chessboard.games 的标记(" + (selfOk2 && selfOk2.checks.idb.found) + ")");
 assert(!!selfOk && !!selfOk2 && selfOk.checks.chunkSync.planned.length === 0 && selfOk.checks.chunkSync.next === "en" &&
   selfOk2.checks.chunkSync.planned.join() === "chunk-lang-en.js" && passed(selfOk2, "chunkSync"),
   "自检：chunkSync 中文的第一次启动把下一次换成英文，第二次启动时英文块在首帧前已经执行(" +

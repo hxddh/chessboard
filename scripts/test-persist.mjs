@@ -5,8 +5,7 @@
  * SDK's 1 MiB bridge frame; here it talks to a stand-in that behaves like
  * main.zig (refuses an oversized frame, stages pieces, answers reads with
  * {b64, more}). persist.js mirrors into a per-key store and writes only what
- * changed; here it runs on a fake host whose files are a Map, which is where
- * the SCHEMA 1 → 2 migration is proved against 6.x–7.x shaped profiles.
+ * changed; here it runs on a fake host whose files are a Map.
  *
  * 跑:node scripts/test-persist.mjs
  */
@@ -15,7 +14,7 @@ import vm from "vm";
 import { fileURLToPath } from "url";
 import { compileModuleSync } from "./bundle.mjs";
 import { createPersist, KEYS, SCHEMA, STORE_META, BULK, isStoreMeta, storeFiles } from "../src/web/js/persist.js";
-import { migrateLook, lookAttrs, LEGACY_THEMES, LOOK_DEFAULT, PIECE_SET_IDS, BOARD_IDS } from "../src/web/js/look.js";
+import { readLook, lookAttrs, LOOK_DEFAULT, PIECE_SET_IDS, BOARD_IDS } from "../src/web/js/look.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -343,14 +342,11 @@ const mem = () => {
     hasZero: () => true,
   };
 };
-/** A host with the per-key store (`store`), and optionally the old file. */
-const withStore = (legacy) => {
+/** A host with the per-key store (`store`). */
+const withStore = () => {
   const h = mem();
   h.store = new Map();
-  h.legacy = legacy == null ? null : legacy;
   h.writes = [];
-  h.appdataRead = async () => (h.legacy == null ? { missing: true } : { text: h.legacy });
-  h.appdataWrite = async (t) => { h.legacy = t; h.writes.push(""); return true; };
   h.appdataReadKey = async (k) => (h.store.has(k) ? { text: h.store.get(k) } : { missing: true });
   h.appdataWriteKey = async (k, t) => { h.store.set(k, t); h.writes.push(k); return true; };
   return h;
@@ -360,38 +356,32 @@ const metaOf = (h) => JSON.parse(h.store.get(STORE_META));
 /** A key's value as the store's manifest has it (each key has two files, STORE_ALT). */
 const valOf = (h, name) => h.store.get(storeFiles(metaOf(h))[name]);
 
-assert(SCHEMA === 2, "SCHEMA is 2");
+assert(SCHEMA === 3, "SCHEMA is 3");
 
-// 2a. the migration, the ordinary way: a 7.x profile in the cache and the
-// same revision in chessboard.json. Every key becomes its own file.
+// 2a. a profile in the cache and a store that has never been written: every
+// key becomes its own file, the manifest last
 {
-  // shapes as 6.x–7.x wrote them: stats v1 with the overloaded `sig`, a
-  // library, the quarantine, the window preference
   const keys = {
-    settings: JSON.stringify({ mode: "ai", langId: "en", themeId: "wood" }),
+    settings: JSON.stringify({ mode: "ai", langId: "en", appearance: "dark", boardId: "wood" }),
     save: JSON.stringify({ v: 1, pgn: "[Event \"?\"]\n\n1. e4 e5 *" }),
-    stats: JSON.stringify({ v: 1, games: [{ t: 1, sig: "e4 e5#mate", result: "1-0" }] }),
-    library: JSON.stringify({ v: 1, games: [{ id: "lib:1", sans: "e4 e5", plies: 2 }], names: ["me"] }),
+    library: JSON.stringify({ v: 1, names: ["me"], n: 0 }),
     quarantine: JSON.stringify([{ name: "learn", raw: "{oops", at: 1 }]),
     panelOpen: "1",
   };
-  const legacy = JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 7000, keys });
-  const h = withStore(legacy);
+  const h = withStore();
   for (const [n, v] of Object.entries(keys)) h.m.set(LS(n), v);
-  h.m.set("chess.schema", "1");
   h.m.set("chess.writtenAt", "7000");
   const P = createPersist(h, () => {});
   P.load();
-  assert(h.m.get("chess.schema") === "2", "load() records schema 2 for a schema-1 cache");
+  assert(h.m.get("chess.schema") === "3", "load() records schema 3");
   const r = await P.recover();
-  assert(r === "kept", "a 7.x profile whose file matches the cache is kept (" + r + ")");
+  assert(r === "none", "a store with no manifest has nothing to restore (" + r + ")");
   await tick(600);
   const meta = metaOf(h);
-  assert(isStoreMeta(meta) && meta.schema === 2 && meta.writtenAt === 7000,
-    "…the store gets a manifest: schema 2, the cache's revision");
+  assert(isStoreMeta(meta) && meta.schema === 3 && meta.writtenAt === 7000,
+    "…the store gets a manifest: schema 3, the cache's revision");
   assert(Object.keys(keys).every((n) => h.store.get(n) === keys[n]) && Object.keys(keys).every((n) => meta.keys.includes(n)),
-    "…and every key of the old file as its own file, byte for byte (" + meta.keys.join(",") + ")");
-  assert(h.legacy === legacy, "…chessboard.json is left exactly as it was, for a downgrade");
+    "…and every key as its own file, byte for byte (" + meta.keys.join(",") + ")");
   assert(h.writes.indexOf(STORE_META) === h.writes.length - 1, "…the manifest is written last");
 
   // the next launch: the store is at the cache's revision, nothing is rewritten
@@ -411,41 +401,33 @@ assert(SCHEMA === 2, "SCHEMA is 2");
   assert(metaOf(h).writtenAt === Number(h.m.get("chess.writtenAt")), "…the manifest carries the cache's new revision");
 }
 
-// 2b. the migration when the cache was cleared: chessboard.json is restored
-// from, exactly as 7.x did, and the store is written on the launch after
+// 2b. a profile document from an earlier version is not one of ours: 9.0
+// reads nothing written before it (v9-0-plan §H)
 {
-  const keys = { save: JSON.stringify({ v: 1, pgn: "1. c4 *" }), learn: JSON.stringify({ v: 1, done: { a: 1 } }) };
-  const h = withStore(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 9000, keys }));
+  const h = withStore();
   const P = createPersist(h, () => {});
   P.load();
-  assert((await P.recover()) === "restored", "an empty cache is restored from chessboard.json");
-  assert(P.get("save") === keys.save && P.get("learn") === keys.learn, "…every key back in the cache");
-  await tick(600);
-  assert(h.writes.length === 0, "…and nothing is written before the reload (frozen)");
-  const P2 = createPersist(h, () => {});   // the reload
-  P2.load();
-  assert((await P2.recover()) === "kept", "after the reload the cache is kept");
-  await tick(600);
-  assert(h.store.get("save") === keys.save && h.store.get("learn") === keys.learn && metaOf(h).keys.length === 2,
-    "…and the store now holds both keys");
+  assert(!P.isProfileDoc({ app: "chessboard", schema: 2, writtenAt: 1, keys: { save: "s" } }) &&
+    P.isProfileDoc({ app: "chessboard", schema: 3, writtenAt: 1, keys: { save: "s" } }),
+    "an exported profile of another schema is refused, this schema's is taken");
 }
 
 // 2c. the store is where a restore comes from once it exists
 {
-  const h = withStore(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 1, keys: { save: "old" } }));
+  const h = withStore();
   h.store.set("save", JSON.stringify({ v: 1, pgn: "1. Nf3 *" }));
   h.store.set("stats", JSON.stringify({ v: 2, games: [] }));
-  h.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 2, writtenAt: 5000, keys: ["save", "stats"] }));
+  h.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 5000, keys: ["save", "stats"], files: { save: "save", stats: "stats" } }));
   const P = createPersist(h, () => {});
   P.load();
   assert((await P.recover()) === "restored", "an empty cache is restored from the store's manifest");
   assert(P.get("save") === h.store.get("save") && P.get("stats") === h.store.get("stats"),
-    "…with the store's keys, not chessboard.json's");
+    "…every key back in the cache");
 }
 
 // 2d. damage in the store is reported, and left alone
 {
-  const h = withStore(null);
+  const h = withStore();
   h.store.set(STORE_META, "{not json");
   h.m.set(LS("save"), "x");
   let failedKey = null;
@@ -456,8 +438,8 @@ assert(SCHEMA === 2, "SCHEMA is 2");
   await tick(600);
   assert(h.writes.length === 0 && h.store.get(STORE_META) === "{not json", "…and nothing overwrites the store");
 
-  const h2 = withStore(null);
-  h2.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 2, writtenAt: 5000, keys: ["save", "library"] }));
+  const h2 = withStore();
+  h2.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 5000, keys: ["save", "library"], files: { save: "save", library: "library" } }));
   h2.store.set("save", "s");
   const P2 = createPersist(h2, () => {});
   P2.load();
@@ -468,8 +450,8 @@ assert(SCHEMA === 2, "SCHEMA is 2");
 // 2e. a cache newer than the store (a crash between writes, a failed flush)
 // makes the next launch rewrite all of it
 {
-  const h = withStore(null);
-  h.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 2, writtenAt: 5000, keys: ["save"] }));
+  const h = withStore();
+  h.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 5000, keys: ["save"], files: { save: "save" } }));
   h.store.set("save", "old");
   h.m.set(LS("save"), "new");
   h.m.set(LS("learn"), "L");
@@ -482,9 +464,9 @@ assert(SCHEMA === 2, "SCHEMA is 2");
     "…and the whole store is brought up to its revision");
 }
 
-// 2f. clearing: files of removed keys are overwritten, chessboard.json too
+// 2f. clearing: files of removed keys are overwritten
 {
-  const h = withStore(JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 1, keys: { save: "s" } }));
+  const h = withStore();
   const P = createPersist(h, () => {});
   P.load();
   await P.recover();
@@ -497,13 +479,12 @@ assert(SCHEMA === 2, "SCHEMA is 2");
   await tick(10);
   assert(["save", "save-b", "library", "library-b"].every((f) => !h.store.has(f) || h.store.get(f) === "null"),
     "clearing overwrites both files of every removed key (" + h.writes.join(",") + ")");
-  assert(!metaOf(h).keys.includes("save") && JSON.parse(h.legacy).keys.save == null,
-    "…the manifest lists none of them, and chessboard.json no longer holds the old profile");
+  assert(!metaOf(h).keys.includes("save"), "…and the manifest lists none of them");
 }
 
 // 2g. a failed write keeps its keys owed; flushes never overlap
 {
-  const h = withStore(null);
+  const h = withStore();
   let fail = true, inFlight = 0, most = 0;
   h.appdataWriteKey = async (k, t) => {
     inFlight++; most = Math.max(most, inFlight);
@@ -530,7 +511,7 @@ assert(SCHEMA === 2, "SCHEMA is 2");
 // 2h. the manifest never claims a revision its files do not hold: a write
 // landing mid-flush is left for the next flush, and the stamp says so
 {
-  const h = withStore(null);
+  const h = withStore();
   const P = createPersist(h, () => {});
   P.load();
   await P.recover();
@@ -556,7 +537,7 @@ assert(SCHEMA === 2, "SCHEMA is 2");
 // (beforeunload, pagehide), and each used to re-stamp the cache, so the next
 // launch always found the store a revision behind and rewrote all of it.
 {
-  const h = withStore(null);
+  const h = withStore();
   const P = createPersist(h, () => {});
   P.load();
   await P.recover();
@@ -584,7 +565,7 @@ assert(SCHEMA === 2, "SCHEMA is 2");
 // 2j. (Codex on #85) removing one key on its own is a change like any other:
 // it re-stamps the cache and reaches the store without another write's help
 {
-  const h = withStore(null);
+  const h = withStore();
   const P = createPersist(h, () => {});
   P.load();
   await P.recover();
@@ -604,7 +585,7 @@ assert(SCHEMA === 2, "SCHEMA is 2");
 // between its key files and its manifest leaves the store exactly as the old
 // manifest describes it, never a mix of the two profiles
 for (const how of ["restore", "clear"]) {
-  const h = withStore(null);
+  const h = withStore();
   const P = createPersist(h, () => {});
   P.load();
   await P.recover();
@@ -615,7 +596,7 @@ for (const how of ["restore", "clear"]) {
   const orig = h.appdataWriteKey;
   let n = 0;
   h.appdataWriteKey = async (k, t) => { if (n++ >= 1) throw new Error("exit"); return orig(k, t); };
-  if (how === "restore") P.restoreAll({ app: "chessboard", schema: 2, writtenAt: Date.now(), keys: { save: "s2", library: "L2" } });
+  if (how === "restore") P.restoreAll({ app: "chessboard", schema: 3, writtenAt: Date.now(), keys: { save: "s2", library: "L2" } });
   else P.clearAll();
   await P.flushMirror();
   h.appdataWriteKey = orig;
@@ -636,9 +617,9 @@ for (const how of ["restore", "clear"]) {
 // not "no store": the boot's defaults must not be flushed over the profile
 // the next launch could still recover
 {
-  const h = withStore(null);
+  const h = withStore();
   h.store.set("save", "good");
-  const meta0 = JSON.stringify({ app: "chessboard", schema: 2, writtenAt: 5000, keys: ["save"] });
+  const meta0 = JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 5000, keys: ["save"], files: { save: "save" } });
   h.store.set(STORE_META, meta0);
   const orig = h.appdataReadKey;
   h.appdataReadKey = async () => null;
@@ -657,25 +638,10 @@ for (const how of ["restore", "clear"]) {
   P2.load();
   assert((await P2.recover()) === "restored" && P2.get("save") === "good", "…which the next launch restores from");
 }
-// …and the same for chessboard.json while migrating: a failed read of it is
-// not "no profile", or the store would be born holding only the defaults
-{
-  const legacy = JSON.stringify({ app: "chessboard", schema: 1, writtenAt: 7000, keys: { save: "old" } });
-  const h = withStore(legacy);
-  h.appdataRead = async () => null;
-  const P = createPersist(h, () => {});
-  P.load();
-  P.set("settings", "defaults");
-  await P.recover();
-  await tick(600);
-  await P.flushMirror();
-  assert(!h.store.has(STORE_META) && h.legacy === legacy, "a failed read of chessboard.json while migrating writes no store (" + h.writes.join(",") + ")");
-}
-
 // 2m. (Codex on #85) removed and written again before the flush: the new
 // value is what the store keeps, not "null"
 {
-  const h = withStore(null);
+  const h = withStore();
   const P = createPersist(h, () => {});
   P.load();
   await P.recover();
@@ -691,7 +657,7 @@ for (const how of ["restore", "clear"]) {
 // other writes it again and commits between the first one's manifest and its
 // cleanup. The cleanup must not null the files the store's manifest now names.
 {
-  const h = withStore(null);
+  const h = withStore();
   const A = createPersist(h, () => {});
   A.load();
   await A.recover();
@@ -719,7 +685,7 @@ for (const how of ["restore", "clear"]) {
 // starting manifest: the second commit must not point the first one's key
 // back at its old file
 {
-  const h = withStore(null);
+  const h = withStore();
   const A = createPersist(h, () => {});
   A.load();
   await A.recover();
@@ -740,9 +706,9 @@ for (const how of ["restore", "clear"]) {
 // 2p. (Codex on #85) a restore reads the files one manifest names; if a
 // commit lands while it reads, it reads again rather than stitch generations
 {
-  const h = withStore(null);
+  const h = withStore();
   h.store.set("save", "s-old");
-  h.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 2, writtenAt: 5000, keys: ["save"], files: { save: "save" } }));
+  h.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 5000, keys: ["save"], files: { save: "save" } }));
   const orig = h.appdataReadKey;
   let once = true;
   h.appdataReadKey = async (k) => {
@@ -752,7 +718,7 @@ for (const how of ["restore", "clear"]) {
       // another window commits a new generation, and the file just read is
       // then overwritten by a third flush (as a stale view would)
       h.store.set("save-b", "s-new");
-      h.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 2, writtenAt: 6000, keys: ["save"], files: { save: "save-b" } }));
+      h.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 6000, keys: ["save"], files: { save: "save-b" } }));
       h.store.set("save", "{half");
       return { text: "{half" };
     }
@@ -769,7 +735,7 @@ for (const how of ["restore", "clear"]) {
 // commit, clean up — runs before the other starts, so neither drops the
 // other's key however their bridge calls interleave
 {
-  const h = withStore(null);
+  const h = withStore();
   let chain = Promise.resolve();
   h.withStoreLock = (fn) => { const run = chain.then(fn, fn); chain = run.catch(() => {}); return run; };
   const orig = h.appdataWriteKey, origR = h.appdataReadKey;
@@ -812,7 +778,7 @@ for (const how of ["restore", "clear"]) {
   const libText = (ids) => JSON.stringify({ v: 1, games: ids.map((id) => ({ id, sans: "e4 e5", plies: 2 })) });
 
   // a flush writes the touched shards, into their other slot, and lists them
-  const h = withStore(null);
+  const h = withStore();
   h.m.set(LS("library"), JSON.stringify({ v: 1, games: [], names: [], db: 2, n: 2 }));
   const P = createPersist(h, () => {});
   P.load();
@@ -862,7 +828,7 @@ for (const how of ["restore", "clear"]) {
   // and to the store — not the library the page is still holding
   h.writes.length = 0;
   const incoming = { lib01: libText(["lib:x"]) };
-  P.restoreAll({ app: "chessboard", schema: 2, writtenAt: 99, keys: Object.assign({ save: JSON.stringify({ v: 1, pgn: "1. c4 *" }) }, incoming) });
+  P.restoreAll({ app: "chessboard", schema: 3, writtenAt: 99, keys: Object.assign({ save: JSON.stringify({ v: 1, pgn: "1. c4 *" }) }, incoming) });
   P.freeze();
   await P.flushMirror();
   assert(lib.restored && lib.restored.lib01 === incoming.lib01, "C1: a restored profile's shards reach the library's store before the flush");
@@ -878,7 +844,7 @@ for (const how of ["restore", "clear"]) {
 // 2x′. v8-1-plan T3: the repertoire's records ride as "rep0" … "rep3" behind a
 // port of their own — each owner serves, restores and clears only its shards
 {
-  const h = withStore(null);
+  const h = withStore();
   h.m.set(LS("repertoire"), JSON.stringify({ v: 1, w: [], b: [], db: 2, n: 1 }));
   const P = createPersist(h, () => {});
   P.load();
@@ -908,19 +874,19 @@ for (const how of ["restore", "clear"]) {
   assert(onlyRep && Object.keys(onlyRep).join() === "rep2" && onlyRep.rep2 === "R2'", "T3: readBulk(\"rep\") returns the repertoire's shards only");
   const onlyLib = await P.readBulk("lib");
   assert(onlyLib && !Object.keys(onlyLib).some((n) => n.startsWith("rep")), "M3 评审: readBulk(\"lib\") leaves the repertoire's shards out", Object.keys(onlyLib || {}).join());
-  // …and the library reads only its own: in read-only mode what it read is
-  // what its port lists as its shards, and a rep shard there is not its to serve
+  // …and the library reads only its own: what it reads back goes into its
+  // store, and a rep shard there is not its to serve
   {
     const src = (await import("fs")).readFileSync(path.join(root, "src/web/js/library-page.js"), "utf8");
-    assert(!/Persist\.readBulk\(\)/.test(src) && (src.match(/Persist\.readBulk\("lib"\)/g) || []).length === 2,
-      "M3 评审: library-page.js reads its shards with readBulk(\"lib\") (recovery and read-only mode)");
+    assert(!/Persist\.readBulk\(\)/.test(src) && (src.match(/Persist\.readBulk\("lib"\)/g) || []).length === 1,
+      "M3 评审: library-page.js reads its shards with readBulk(\"lib\")");
   }
-  P.restoreAll({ app: "chessboard", schema: 2, writtenAt: 99, keys: { lib01: "L1", rep1: "R1" } });
+  P.restoreAll({ app: "chessboard", schema: 3, writtenAt: 99, keys: { lib01: "L1", rep1: "R1" } });
   P.freeze();
   await P.flushMirror();
   assert(JSON.stringify(lib.restored) === JSON.stringify({ lib01: "L1" }) && JSON.stringify(rep.restored) === JSON.stringify({ rep1: "R1" }),
     "T3: a restore hands each owner its own shards", JSON.stringify([lib.restored, rep.restored]));
-  const h2 = withStore(null);
+  const h2 = withStore();
   const P2 = createPersist(h2, () => {});
   P2.load();
   const lib2 = mk({ lib00: "L0" }), rep2 = mk({ rep0: "R0" });
@@ -933,11 +899,11 @@ for (const how of ["restore", "clear"]) {
 // 2y. recover(): a cleared cache is restored with its games, and the reload
 // waits for them to be in IndexedDB
 {
-  const h = withStore(null);
+  const h = withStore();
   const t1 = JSON.stringify({ v: 1, games: [{ id: "lib:q", sans: "d4", plies: 1 }] });
   h.store.set("save", JSON.stringify({ v: 1, pgn: "1. Nf3 *" }));
   h.store.set("lib07", t1);
-  h.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 2, writtenAt: 5000, keys: ["save", "lib07"] }));
+  h.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 5000, keys: ["save", "lib07"], files: { save: "save", lib07: "lib07" } }));
   const P = createPersist(h, () => {});
   P.load();
   let got = null, at = 0;
@@ -946,7 +912,7 @@ for (const how of ["restore", "clear"]) {
   assert(r === "restored" && got && got.lib07 === t1 && at > 0, "C1: recover() hands the store's shards to the library before it answers \"restored\"");
 
   // clearAll: the library is told, and the shard files go
-  const h2 = withStore(null);
+  const h2 = withStore();
   h2.m.set(LS("library"), JSON.stringify({ v: 1, games: [], names: [], db: 2, n: 1 }));
   const P2 = createPersist(h2, () => {});
   P2.load();
@@ -962,39 +928,11 @@ for (const how of ["restore", "clear"]) {
     "C1: 清除全部存档 clears the library's store and its shard files");
 }
 
-// M5 review P3-1: a manifest from before the shards (an 8.0 dev build commits
-// KEYS alone), at the cache's revision, owes nothing — so the games the
-// library holds must be marked owed against what that manifest lists
-{
-  const h = withStore(null);
-  const save = JSON.stringify({ v: 1, pgn: "1. e4 *" });
-  const t1 = JSON.stringify({ v: 1, games: [{ id: "lib:q", sans: "d4", plies: 1 }] });
-  const t2 = JSON.stringify({ v: 1, games: [{ id: "lib:r", sans: "c4", plies: 1 }] });
-  h.store.set("save", save);
-  h.store.set("lib01", t2);
-  h.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 2, writtenAt: 7000, keys: ["save", "lib01"] }));
-  h.m.set(LS("save"), save);
-  h.m.set("chess.schema", "2");
-  h.m.set("chess.writtenAt", "7000");
-  const P = createPersist(h, () => {});
-  P.load();
-  const shards = new Map([["lib00", t1], ["lib01", t2]]);
-  P.attachBulk({ names: () => [...shards.keys()], read: (n) => shards.get(n) || null, restore: async () => {}, clear: () => {} });
-  const r = await P.recover();
-  await tick(600);
-  assert(r === "kept" && !metaOf(h).keys.includes("lib00"), "(in step with a manifest that lacks lib00: nothing owed — " + r + ")");
-  h.writes.length = 0;
-  const n = typeof P.touchUnlisted === "function" ? await P.touchUnlisted([...shards.keys()]) : -1;
-  await tick(600);
-  assert(n === 1 && valOf(h, "lib00") === t1 && valOf(h, "lib01") === t2 && !h.writes.includes("lib01") && !h.writes.includes("lib01-b"),
-    "P3-1: the shard the manifest does not list is written, the one it lists is left (" + n + "; " + h.writes.join(",") + ")");
-}
-
 // M5 review P2-1: a library that cannot say which shards exist (no IndexedDB
 // this session) leaves the store's shards and the manifest's list alone —
 // after a launch that owes the store everything, not only after a quiet one
 {
-  const h = withStore(null);
+  const h = withStore();
   const t1 = JSON.stringify({ v: 1, games: [{ id: "lib:q", sans: "d4", plies: 1 }] });
   h.m.set(LS("library"), JSON.stringify({ v: 1, games: [], names: [], db: 2, n: 1 }));
   let P = createPersist(h, () => {});
@@ -1037,7 +975,7 @@ for (const how of ["restore", "clear"]) {
     shards.get(name).push(entry(i));
   }
   const texts = new Map([...shards].map(([k, v]) => [k, JSON.stringify({ v: 1, games: v })]));
-  const h = withStore(null);
+  const h = withStore();
   h.m.set(LS("library"), JSON.stringify({ v: 1, games: [], names: ["someplayer"], db: 2, n: 10000 }));
   const P = createPersist(h, () => {});
   P.load();
@@ -1052,7 +990,7 @@ for (const how of ["restore", "clear"]) {
   try { back = (await H.openPgn({ max: H.ALL_DATA_MAX })).text; read = true; } catch (e) { read = e; }
   assert(per >= 2500 && out.length > 16 * 1024 * 1024 && wrote === true && read === true && back === out,
     `P2-3: 10,000 analysed games (${per} B each) export as ${(out.length / 1048576).toFixed(1)} MB and read back whole (write ${wrote === true ? "ok" : wrote && wrote.name}, read ${read === true ? "ok" : read && read.name})`);
-  const h2 = withStore(null);
+  const h2 = withStore();
   const P2 = createPersist(h2, () => {});
   P2.load();
   let restored = null;
@@ -1075,67 +1013,51 @@ for (const how of ["restore", "clear"]) {
     "C1: 64 shard names, all plain tokens; `library` (the header) is an ordinary key");
 }
 
-// --- 3. v8-0-plan A3: the look, migrated from 7.x settings ------------------
-// The settings record kept one `themeId` (and a `followSystem` switch over
-// it) through 7.x; 8.0 keeps four fields. Every old id, the switch, a first
-// run and a value nobody wrote must land somewhere deliberate — and every old
-// theme must come back as the shell it was, since a profile that opens in a
-// different colour looks like a profile that was lost.
+// --- 3. v8-0-plan A3: the look, four fields read one by one ------------------
+// A first run and a value nobody wrote must land somewhere deliberate, and
+// every look opens in the shell it names.
 {
   const cases = [
     // [stored, want look, want data-theme when the system is light / dark]
     [null, { appearance: "system", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "day", "wood"],
     [{ mode: "ai" }, { appearance: "system", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "day", "wood"],
-    [{ themeId: "wood" }, { appearance: "dark", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "wood", "wood"],
-    [{ themeId: "night" }, { appearance: "dark", boardId: "green", boardFrame: "flat", pieceSet: "cburnett" }, "night", "night"],
-    [{ themeId: "day" }, { appearance: "light", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "day", "day"],
-    [{ themeId: "notebook" }, { appearance: "light", boardId: "blue", boardFrame: "flat", pieceSet: "cburnett" }, "notebook", "notebook"],
-    // 7.x's follow switch overrode the theme on every launch; it still does
-    [{ themeId: "night", followSystem: true }, { appearance: "system", boardId: "green", boardFrame: "flat", pieceSet: "cburnett" }, "notebook", "night"],
-    [{ themeId: "day", followSystem: false, pieceSet: "merida" }, { appearance: "light", boardId: "wood", boardFrame: "flat", pieceSet: "merida" }, "day", "day"],
-    // 7.7+ wrote "cburnett" for everybody: it is the new default drawing now
-    [{ themeId: "wood", pieceSet: "cburnett" }, { appearance: "dark", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "wood", "wood"],
+    [{ appearance: "dark", boardId: "wood" }, { appearance: "dark", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "wood", "wood"],
+    [{ appearance: "dark", boardId: "green" }, { appearance: "dark", boardId: "green", boardFrame: "flat", pieceSet: "cburnett" }, "night", "night"],
+    [{ appearance: "light", boardId: "wood" }, { appearance: "light", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "day", "day"],
+    [{ appearance: "light", boardId: "blue" }, { appearance: "light", boardId: "blue", boardFrame: "flat", pieceSet: "cburnett" }, "notebook", "notebook"],
+    [{ appearance: "system", boardId: "green" }, { appearance: "system", boardId: "green", boardFrame: "flat", pieceSet: "cburnett" }, "notebook", "night"],
+    [{ appearance: "light", pieceSet: "merida" }, { appearance: "light", boardId: "wood", boardFrame: "flat", pieceSet: "merida" }, "day", "day"],
     // garbage falls back field by field
-    [{ themeId: "toString", pieceSet: "nope" }, { appearance: "system", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "day", "wood"],
-    // 8.0 settings are read as written, and win over the themeId beside them
-    [{ themeId: "wood", followSystem: false, appearance: "light", boardId: "marble", boardFrame: "frame", pieceSet: "fantasy" },
+    [{ appearance: "toString", pieceSet: "nope" }, { appearance: "system", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "day", "wood"],
+    [{ appearance: "light", boardId: "marble", boardFrame: "frame", pieceSet: "fantasy" },
       { appearance: "light", boardId: "marble", boardFrame: "frame", pieceSet: "fantasy" }, "day", "day"],
     [{ appearance: "dark", boardId: "paper", boardFrame: "sideways", pieceSet: "classic" },
       { appearance: "dark", boardId: "paper", boardFrame: "flat", pieceSet: "classic" }, "wood", "wood"],
     [{ appearance: "sepia", boardId: "blue" }, { appearance: "system", boardId: "blue", boardFrame: "flat", pieceSet: "cburnett" }, "notebook", "night"],
   ];
   for (const [stored, want, lightShell, darkShell] of cases) {
-    const got = migrateLook(stored);
+    const got = readLook(stored);
     assert(JSON.stringify(got) === JSON.stringify(want),
-      "migrateLook(" + JSON.stringify(stored) + ") = " + JSON.stringify(got));
+      "readLook(" + JSON.stringify(stored) + ") = " + JSON.stringify(got));
     assert(lookAttrs(got, false).theme === lightShell && lookAttrs(got, true).theme === darkShell,
       "…in the " + lightShell + " / " + darkShell + " shell on a light / dark system");
   }
-  // every 7.x theme is covered, and comes back as exactly the shell it was
-  for (const id of ["wood", "night", "day", "notebook"]) {
-    assert(Object.prototype.hasOwnProperty.call(LEGACY_THEMES, id), "7.x theme " + id + " has a migration");
-    for (const dark of [false, true]) {
-      assert(lookAttrs(migrateLook({ themeId: id }), dark).theme === id,
-        "7.x theme " + id + " opens in its own shell (system " + (dark ? "dark" : "light") + ")");
-    }
-  }
-  assert(JSON.stringify(migrateLook(null)) === JSON.stringify(LOOK_DEFAULT), "a first run gets the default look");
+  assert(JSON.stringify(readLook(null)) === JSON.stringify(LOOK_DEFAULT), "a first run gets the default look");
   assert(LOOK_DEFAULT.appearance === "system" && LOOK_DEFAULT.boardFrame === "flat",
-    "…which follows the system, on the flat board (§8 decision 3)");
+    "…which follows the system, on the flat board");
   // what the stored record can say is what the pickers offer
   for (const id of PIECE_SET_IDS) {
-    assert(migrateLook({ appearance: "system", pieceSet: id }).pieceSet === id, "piece set " + id + " survives a save");
+    assert(readLook({ appearance: "system", pieceSet: id }).pieceSet === id, "piece set " + id + " survives a save");
   }
   for (const id of BOARD_IDS) {
-    assert(migrateLook({ appearance: "system", boardId: id }).boardId === id, "board " + id + " survives a save");
+    assert(readLook({ appearance: "system", boardId: id }).boardId === id, "board " + id + " survives a save");
   }
 }
 
-// v8-0-plan B4: stats v2 may carry the engine-game rating. Optional — no
-// version bump, a 7.x build reads v2 and writes back what it read — and
-// vetted: a malformed rating is dropped, never the games with it.
+// v8-0-plan B4: stats may carry the engine-game rating — vetted: a malformed
+// rating is dropped, never the games with it.
 {
-  const h = withStore(null);
+  const h = withStore();
   const P = createPersist(h, () => {});
   P.load();
   const games = [{ id: "g1", t: 1, diff: "normal", color: "w", result: "win", moves: 30, pgn: "", ending: "",
@@ -1153,12 +1075,11 @@ for (const how of ["restore", "clear"]) {
   }
   P.setJson("stats", { v: 2, games });
   r = P.read("stats");
-  assert(r.state === "ok" && !("rating" in r.value), "B4: a 7.x record without a rating reads as it is");
-  // a v1 record still migrates, and a rating on it survives the unpacking
-  P.setJson("stats", { v: 1, games: [{ t: 1, sig: "e4 e5#resigned", result: "win" }], rating: good.rating });
+  assert(r.state === "ok" && !("rating" in r.value), "B4: a record without a rating reads as it is");
+  // a record of another version is not this one's: quarantined, not read
+  P.setJson("stats", { v: 1, games: [{ t: 1, sig: "e4 e5#resigned", result: "win" }] });
   r = P.read("stats");
-  assert(r.state === "ok" && r.value.v === 2 && r.value.games[0].ending === "resigned",
-    "B4: …and a v1 record still comes forward");
+  assert(r.state === "corrupt", "…and a v1 record is not one (" + r.state + ")");
 }
 
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }

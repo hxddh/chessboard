@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="wood">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>下棋 · 终局 · 9.0 设计稿</title>
+<link rel="stylesheet" href="v9.css">
+</head>
+<body>
+<!-- M1 终局一刻：棋盘完整可见；胜方玩家栏展开成结果条；成就是条内的小徽章，没有 toast；
+     被将死的王一圈细环 + 格角 24px「#」。S2：面板只有棋谱、复盘、本局操作；底部固定 5 格。 -->
+<div class="shell">
+  <nav class="rail" aria-label="去处">
+    <div class="rail__logo"><i data-piece="wn"></i></div>
+    <a href="today.html"><span data-icon="sun"></span><span class="lbl">今天</span></a>
+    <a href="play-gameover.html" aria-current="page"><span data-icon="swords"></span><span class="lbl">下棋</span></a>
+    <a href="train-puzzles.html"><span data-icon="target"></span><span class="lbl">训练</span></a>
+    <a href="#"><span data-icon="library"></span><span class="lbl">棋谱</span></a>
+    <a href="#"><span data-icon="user"></span><span class="lbl">我的</span></a>
+    <div class="rail__spacer"></div>
+    <a href="settings.html" class="rail__gear"><span data-icon="settings"></span><span class="lbl">设置</span></a>
+  </nav>
+
+  <div class="board-view board-view--result">
+    <section class="stage">
+      <div class="table">
+        <div class="pbar">
+          <span class="avatar avatar--piece"><i data-piece="bn"></i></span>
+          <div class="pbar__who"><span class="pbar__name">索尔</span><span class="pbar__meta num">1500</span></div>
+          <div class="pbar__caps"><i class="fig" data-piece="wq"></i><span class="num">+7</span></div>
+          <div class="pbar__end"><span class="clock num">09:05</span></div>
+        </div>
+
+        <div class="board" data-fen="rn1q1bnr/ppp1kB1p/3p2p1/3NN3/4P3/8/PPPP1PPP/R1BbK2R b KQ - 2 7" data-last="c3d5" data-check="e7" data-corner="e7:#"></div>
+
+        <div class="pbar pbar--result">
+          <div class="pbar__row">
+            <span class="avatar"><span data-icon="user"></span></span>
+            <div class="pbar__who"><span class="pbar__name">你</span><span class="pbar__meta num">1486</span></div>
+            <div class="pbar__caps"><i class="fig" data-piece="bp"></i><i class="fig" data-piece="bp"></i></div>
+            <span class="badge badge--narrow"><span data-icon="trophy"></span>首次将杀</span>
+            <div class="pbar__end"><span class="clock num">08:42</span></div>
+          </div>
+          <div class="result">
+            <p class="result__score num">1–0<span class="sep">·</span>将杀<span class="sep">·</span>等级分 <span class="gain">+18</span></p>
+            <span class="badge"><span data-icon="trophy"></span>首次将杀</span>
+            <div class="result__actions">
+              <a class="btn btn--secondary" href="review.html">复盘这局</a>
+              <a class="btn btn--primary" href="#">再来一盘</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel" data-snap="half">
+      <div class="panel__handle" aria-hidden="true"></div>
+      <div class="panel__head">
+        <p class="t-title">莱加尔陷阱</p>
+        <p class="t-meta">菲利道尔防御 · 10 分钟 · 你执白</p>
+      </div>
+      <div class="panel__body">
+        <section>
+          <h2 class="section-title">棋谱 <span class="t-meta num">7 / 7</span></h2>
+          <div class="moves">
+            <span class="n">1.</span><span class="m">e4</span><span class="m">e5</span>
+            <span class="n">2.</span><span class="m"><span class="san">Nf3</span></span><span class="m">d6</span>
+            <span class="n">3.</span><span class="m"><span class="san">Bc4</span></span><span class="m"><span class="san">Bg4</span></span>
+            <span class="n">4.</span><span class="m"><span class="san">Nc3</span></span><span class="m">g6</span>
+            <span class="n">5.</span><span class="m"><span class="san">Nxe5</span><span class="j good">!</span></span><span class="m"><span class="san">Bxd1</span><span class="j blunder">??</span></span>
+            <span class="n">6.</span><span class="m"><span class="san">Bxf7+</span></span><span class="m"><span class="san">Ke7</span></span>
+            <span class="n">7.</span><span class="m is-current"><span class="san">Nd5#</span></span><span class="m"></span>
+          </div>
+          <div class="replay" role="group" aria-label="回放">
+            <button class="icon-btn icon-btn--sm" aria-label="到开头"><span data-icon="chevrons-left"></span></button>
+            <button class="icon-btn icon-btn--sm" aria-label="上一步"><span data-icon="chevron-left"></span></button>
+            <button class="icon-btn icon-btn--sm" aria-label="下一步" disabled><span data-icon="chevron-right"></span></button>
+            <button class="icon-btn icon-btn--sm" aria-label="到最后" disabled><span data-icon="chevrons-right"></span></button>
+          </div>
+        </section>
+
+        <section class="play__review">
+          <h2 class="section-title">复盘 <span class="t-meta">已分析</span></h2>
+          <div class="card">
+            <div class="curve-host"><svg class="curve" data-w="340" data-h="56" data-series="52,50,51,50,52,50,53,52,55,96,97,100,100,100" data-marks="9:blunder" style="height:56px"></svg></div>
+            <p class="play__review-note">黑方第 5 步 <span class="san">Bxd1</span> 吃了你的后，却让出了 f7 和 d5——两步之后就是将杀。</p>
+            <div class="acc">
+              <div><p class="field-label">你的精准度</p><p class="t-title num">96</p></div>
+              <div><p class="field-label">索尔</p><p class="t-title num">58</p></div>
+              <div><p class="field-label">关键时刻</p><p class="t-title num">1</p></div>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div class="panel__foot">
+        <div class="toolbar">
+          <button><span data-icon="plus"></span>新局</button>
+          <button disabled><span data-icon="undo-2"></span>悔棋</button>
+          <button><span data-icon="arrow-down-up"></span>翻转</button>
+          <button><span data-icon="download"></span>导出</button>
+          <button><span data-icon="ellipsis"></span>更多</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+<script src="mock.js"></script>
+</body>
+</html>

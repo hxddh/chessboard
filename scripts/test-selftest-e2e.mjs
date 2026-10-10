@@ -162,7 +162,7 @@ assert(seed.checks.syncOff && seed.checks.syncOff.pass, "rep-seed: 允许联网�
 const indexed = await launch("rep-index");
 const ix = indexed.checks.indexed || {};
 assert(ix.lines && ix.lines.length === 2 && ix.records.length > 0 && ix.due > 0,
-  "rep-index: the boot moved the two lines into chessboard.replines, records into chessboard.repertoire, cards due (" + JSON.stringify(ix) + ")");
+  "rep-index: the boot moved the two lines into chessboard.book, with records and cards due (" + JSON.stringify(ix) + ")");
 const reread = await launch("rep-read");
 const rb = reread.checks.readBack || {};
 assert(JSON.stringify(rb.records) === JSON.stringify(ix.records) && JSON.stringify(rb.lines) === JSON.stringify(ix.lines), "rep-read: the same records and lines after a restart (R17)");

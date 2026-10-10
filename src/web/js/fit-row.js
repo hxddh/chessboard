@@ -62,16 +62,19 @@ export function fitRow(row) {
 
 /**
  * Keep every `.fit-row` under `root` fitted from now on.
- * @param {ParentNode} root
+ * @param {HTMLElement} root
+ * @param {{wide?: boolean}} [opts] wide: false for a root that is not the
+ *   panel (a page, 偏好设置) — it has no tool row to widen
  */
-export function watchFitRows(root) {
+export function watchFitRows(root, { wide = true } = {}) {
   const rows = [...root.querySelectorAll(".fit-row")];
   const all = () => {
     // 7.9 §1d: the tool row's labels, once the panel has 360px for them.
     // A class, not a container query: the bundle targets Safari 15 and those
     // are 16 (Codex, #84). A panel that is not laid out keeps what it had.
+    // (9.0 V1: the pages and 偏好设置 have action rows too, and no tool row.)
     const w = root.clientWidth;
-    if (w) root.classList.toggle("side-wide", w >= WIDE);
+    if (w && wide) root.classList.toggle("side-wide", w >= WIDE);
     for (const r of rows) fitRow(r);
   };
   let frame = 0;

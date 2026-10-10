@@ -7,30 +7,28 @@
  * down as a deviation there:
  *
  *   * the diagnosis read the imported games only — counting 本机 games in a
- *     statement about "your games elsewhere" would change what 7.x's numbers
- *     meant. So the diagnosis gets a source row instead, 导入的 by default:
- *     the 7.x numbers keep their meaning, and the other two are asked for;
+ *     statement about "your games elsewhere" would change what its numbers
+ *     mean. So the diagnosis gets a source row instead, 导入的 by default:
+ *     those numbers keep their meaning, and the other two are asked for;
  *   * 导出 PGN left them out, because a re-import would have made each an
  *     imported copy of itself. The export now writes `[LibId "loc:<record
  *     id>"]` and the record's own fields (`[LibRec]`), and the import puts
  *     such a game back into the play history — under its own id, never twice;
  *   * a history record kept no clock, so the speed filter could not find one.
- *     New records carry `tc` (app.js recordOutcome, PGN form: "300+3", "300",
- *     "-" for no clock); an old record gets one only where a setting from the
- *     time it was played is still on disk (backfillTc).
+ *     Records carry `tc` (app.js recordOutcome, PGN form: "300+3", "300",
+ *     "-" for no clock).
  *
  * Pure, like library-query.js: records and entries in, plain values out, no
  * DOM and no store — scripts/test-library-local.mjs runs every rule in node.
  * Rides in chunk-libdb.js with the rest of the library page.
  * @module library-local
  */
-import { TimeControl } from "./time-control.js";
 
 /** The standard start, for a record whose PGN has no [FEN]. */
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 /**
- * The diagnosis's source row: 导入的 (the default, 7.x's meaning), 本机, 全部.
+ * The diagnosis's source row: 导入的 (the default), 本机, 全部.
  * @param {string} src "import" | "local" | "all"
  * @param {object[]} imported the library's entries
  * @param {object[]} local the 本机 entries, with `an` from localAnalysis
@@ -52,7 +50,7 @@ function diagGames(src, imported, local) {
  * and their chart read the ones whose pass is still kept — the note under
  * the source row says how many (diag.localNote). `losses` come back empty
  * here and are filled from the scalars by the caller's lossOf (library-ui.js
- * rescoreLosses), the one routine every other path uses.
+ * fillLosses), the one routine every other path uses.
  *
  * @param {object} e the 本机 entry (library-page.js localEntry)
  * @param {object} rec its stats record
@@ -73,78 +71,9 @@ function localAnalysis(e, rec, kept) {
   return an;
 }
 
-/**
- * A time-control.js id ("5+3", "c20+5") in PGN's TimeControl form, the one
- * app.js pgnForExport writes: base seconds, "+increment" when there is one.
- * @returns {string} "" when the id is not a clock
- */
-function tcTagOf(id) {
-  const tc = TimeControl.parse(id);
-  return tc ? tc.base + (tc.inc ? "+" + tc.inc : "") : "";
-}
-
-/**
- * The clock a game was played on, from the save (`chess.v1.save`) — the one
- * place 6.x–8.0 wrote a clock setting down while a game was being played.
- * Only when the clock plainly ran in that game: started, and off its
- * starting reading. A finished game loaded back from the history sits on a
- * fresh clock set from *today's* setting, and must not lend it that.
- * @param {object|null} save the stored save
- * @param {(pgn: string) => ({fen: string, sans: string[]}|null)} lineOf the mainline of a PGN
- * @returns {{fen: string, sans: string, tc: string}|null}
- */
-function saveClock(save, lineOf) {
-  const c = save && save.clock;
-  if (!c || !c.started || typeof save.pgn !== "string") return null;
-  const tc = TimeControl.parse(c.tc);
-  if (!tc || !(Number.isFinite(c.w) && Number.isFinite(c.b))) return null;
-  if (c.w === tc.base * 1000 && c.b === tc.base * 1000) return null;
-  const line = lineOf(save.pgn);
-  return line && line.sans.length ? { fen: line.fen, sans: line.sans.join(" "), tc: tcTagOf(c.tc) } : null;
-}
-
-/**
- * v8-1-plan T5: give old 本机 records the time control they were played on,
- * where that can be read and only there. A record from before T5 has no
- * `tc`; it gets one from its own PGN's [TimeControl] if it has one, else
- * from `cands` (saveClock) when the moves and the start are the same game.
- * Nothing else about the record changes, and a record nothing speaks for is
- * left without one — a guess would put games under a speed they were not
- * played at, which is worse for the filter than not being found.
- * @param {object[]} games the stats record's games (changed in place)
- * @param {Array<{fen: string, sans: string, tc: string}>} cands
- * @param {(pgn: string) => ({fen: string, sans: string[], tc: string}|null)} lineOf
- * @returns {number} how many records gained a `tc`
- */
-function backfillTc(games, cands, lineOf) {
-  const left = (cands || []).map((c) => { const sans = c.sans.split(" "); return Object.assign({ n: sans.length, last: sans[sans.length - 1] }, c); });
-  let n = 0;
-  // newest first: the save speaks for the game on the board — the latest
-  // one played that way, tagged already or not — and for no older one, so a
-  // candidate is spent on the first record it matches, launch after launch
-  for (const rec of (games || []).slice().reverse()) {
-    if (!rec || typeof rec.pgn !== "string") continue;
-    const tagged = typeof rec.tc === "string";
-    const own = !tagged && rec.pgn.includes("[TimeControl");
-    // parse only what could match: a cheap test on the length and the text
-    const may = left.some((c) => (Number.isFinite(rec.moves) ? rec.moves === c.n : true) && rec.pgn.includes(c.last));
-    if (!own && !may) continue;
-    let line = null;
-    try { line = lineOf(rec.pgn); } catch (_) { line = null; }
-    if (!line) continue;
-    let tc = own && line.tc && (line.tc === "-" || /^\d+(\+\d+)?$/.test(line.tc)) ? line.tc : "";
-    const text = line.sans.join(" ");
-    const i = left.findIndex((c) => c.sans === text && c.fen === line.fen);
-    const hit = i >= 0 ? left.splice(i, 1)[0] : null;
-    if (!tc && hit) tc = hit.tc;
-    if (!tagged && tc) { rec.tc = tc; n++; }
-  }
-  return n;
-}
-
 /** A record key the export carries: short, a word (no "__proto__"). */
 const KEY_RE = /^[a-zA-Z][a-zA-Z0-9]{0,15}$/;
-/** The ids a record can have: newRecordId's, and persist.js migrateStats's "v1-…". */
+/** The ids a record can have: newRecordId's. */
 const ID_RE = /^[\w.-]{1,64}$/;
 /**
  * PGN readers take a tag of ~4 KB (pgn-parser.js reads 4096 characters), and
@@ -242,4 +171,4 @@ function mergeRecs(games, recs, cap) {
   return { games: out, added: add.filter((rec) => left.has(rec.id)).length, dup, changed: true };
 }
 
-export const LibraryLocal = { START_FEN, diagGames, localAnalysis, tcTagOf, saveClock, backfillTc, localPgn, recFromGame, mergeRecs };
+export const LibraryLocal = { START_FEN, diagGames, localAnalysis, localPgn, recFromGame, mergeRecs };

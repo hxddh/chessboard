@@ -24,7 +24,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { heldClick } from "./lib/held-click.mjs";
-import { libOf, storedLib } from "./lib/library-view.mjs";
+import { libOf, storedLib, seedLibrary } from "./lib/library-view.mjs";
 import { Chess } from "../src/web/js/chess.js";
 import { record, RECORDING, read as readMeasured } from "./measurements.mjs";
 
@@ -65,14 +65,15 @@ const PGN = [
   '[Event "Study"]\n[Site "-"]\n[Date "2026.09.04"]\n[White "hxddh"]\n[Black "coach"]\n[Result "1-0"]\n[SetUp "1"]\n[FEN "8/8/4k3/8/8/8/4P3/4K3 w - - 0 1"]\n\n1. Kd2 Kd5 2. Ke3 1-0\n',
 ].join("\n");
 
+/** A context on the library page; `seed`, a library as `{names, games}` (JSON), is in place before the page starts. */
 async function freshContext(seed) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" });
-  await ctx.addInitScript((lib) => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, themeId: "wood" }));
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
-    if (lib) localStorage.setItem("chess.v1.library", lib);
-  }, seed || "");
+  });
+  if (seed) await ctx.addInitScript(seedLibrary, JSON.parse(seed));
   return ctx;
 }
 
@@ -105,6 +106,13 @@ async function importFile(page, text, button) {
     status lines under them (7.6 moved those below, see renderLibrary). */
 const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   .map((id) => (document.getElementById(id) || {}).textContent || "").join("\n"));
+
+/** 9.0 S4: the list's filters other than the search are a fold, closed until
+    asked for. Open it the way a person does — its summary — where a filter is used. */
+async function openFilters(page) {
+  if (!(await page.$eval("#lib-filters", (d) => d.open))) await page.click("#lib-filters > summary");
+  await page.waitForTimeout(100);
+}
 
 
 // --- 1. every game in the file, not one of them -----------------------------
@@ -196,8 +204,8 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
       libPrimary: document.getElementById("lib-import").classList.contains("primary"),
     };
   });
-  // v8-0-plan A1: 记录 is two pages — 我的 (the entry, stats, history) and
-  // 棋谱库 (the library, the opening book); each is read while it shows
+  // v8-0-plan A1: 记录 is two pages — 我的 (the entry, stats) and 棋谱 (the
+  // library, the opening book, and the history (9.0 S4)); each is read while it shows
   await page.click('#rail button[data-view="me"]');
   const onMe = await read();
   await page.click('#rail button[data-view="library"]');
@@ -205,10 +213,14 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   const r = Object.assign({}, onLib, { cards: onMe.cards.concat(onLib.cards), outside: onMe.outside.concat(onLib.outside) });
   assert(r.cards.length >= 5, "§4a 全新档案的记录页:入口、统计、棋谱库、开局书、对局历史,五张空状态卡片",
     JSON.stringify(r.cards));
-  assert(r.cards.every((c) => c.dashed === "dashed"), "§4a …全是同一种:虚线卡片", JSON.stringify(r.cards));
+  // 9.0 V1: no dashed boxes anywhere; an empty state is an icon, a line and
+  // one action on the surface it sits on (no box), the 我的 entry card aside
+  assert(r.cards.every((c) => c.dashed !== "dashed") &&
+    r.cards.filter((c) => c.id !== "record-empty").every((c) => c.dashed === "none"),
+    "§4a …全是同一种:没有虚线，空状态不画框", JSON.stringify(r.cards));
   assert(r.cards.every((c) => c.primaries <= 1), "§4a …每张至多一个主按钮", JSON.stringify(r.cards));
   assert(r.outside.length === 0, "§4a …卡片外面没有按钮", r.outside.join(", "));
-  assert(r.libPrimary, "§4a 空棋谱库里「导入棋谱文件」是主按钮");
+  assert(r.libPrimary, "§4a 空棋谱库里「导入到库」是主按钮");
   assert(Math.abs(r.repBtns[0].w - r.repBtns[1].w) <= 1 && Math.abs(r.repBtns[0].top - r.repBtns[1].top) <= 1,
     "§4a 开局书的两个导入在卡片里并排、等宽", JSON.stringify(r.repBtns));
   // …and once there is a library the card gives way and the fill with it
@@ -217,7 +229,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
     empty: document.getElementById("lib-block").classList.contains("empty"),
     primary: document.getElementById("lib-import").classList.contains("primary"),
   }));
-  assert(!after.empty && !after.primary, "§4a 导入之后棋谱库不再是空状态,「导入棋谱文件」回到次要按钮",
+  assert(!after.empty && !after.primary, "§4a 导入之后棋谱库不再是空状态,「导入到库」回到次要按钮",
     JSON.stringify(after));
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
@@ -275,48 +287,6 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   }
 }
 
-// --- 3. 7.0 存下来的那一批「五位数厘兵」,开库时要就地改正 -------------------
-{
-  // 7.0 的分析那一趟写 losses 时没有钳制到 ±EVAL_WINDOW —— 6.1 在棋盘上修掉的
-  // 正是这件事。于是一局棋里引擎一旦报杀,那一手就被记成九千多厘兵,诊断按阶段
-  // 一平均,不管这个人残局下得怎么样,结论都是「该练残局」。
-  //
-  // 这里喂进去的就是 7.0 写出来的形状:losses 是没钳制的原始差值,scalars 在
-  // 旁边。开库时应当拿 scalars 重算一遍,而不是把存下来的数字将就着用。
-  const games = [];
-  for (let i = 0; i < 25; i++) {
-    const scalars = [0];
-    for (let ply = 0; ply < 80; ply++) scalars.push(ply % 2 === 0 ? scalars[ply] - 30 : scalars[ply] + 30);
-    scalars[71] = -9950; // 第 36 回合白方走完,引擎报黑方杀棋
-    const tags = [], losses = [];
-    for (let ply = 0; ply < 80; ply++) {
-      const w = ply % 2 === 0;
-      tags.push(null);
-      // 7.0 的算式,原样:Math.max(0, (a - b) * mover)
-      losses.push(Math.max(0, (scalars[ply] - scalars[ply + 1]) * (w ? 1 : -1)));
-    }
-    games.push({
-      id: "mate" + i, t: 1758000000000 + i, white: "hxddh", black: "rival",
-      result: "0-1", plies: 80, sans: "e4", side: "w", outcome: "loss",
-      motifs: {}, an: { acc: { w: 62, b: 55 }, acpl: { w: 60, b: 70 }, tags, losses, scalars },
-    });
-  }
-  const worst = Math.max(...games[0].an.losses);
-  assert(worst > 9000, "种子确实是 7.0 那种没钳制的数字", String(worst));
-
-  const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
-  const { page, errs } = await open(ctx);
-  await page.click("#lib-diagnose");
-  await page.waitForTimeout(300);
-  const text = await page.textContent("#lib-diag");
-  // 白方残局的八手:七手各亏 30,报杀那一手钳到 1000 →(210+1000)/8 = 151
-  assert(/151 厘兵\/手/.test(text), "报杀那一手按窗口上限算,不是九千多", text);
-  assert(!/1[0-9]{3} 厘兵/.test(text), "诊断里不该出现四位数的每手厘兵", text);
-  assert(/30 厘兵\/手/.test(text), "开局中局照旧是 30 厘兵/手", text);
-  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
-  await ctx.close();
-}
-
 // --- 4. 7.1:列表、点开那一局、诊断每一行都是一扇门 -------------------------
 {
   // 25 局真棋,西班牙开局的头六个半着,白方第 2 个半着(Nf3)是 ??。前十局在那一手
@@ -350,7 +320,21 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   assert(/精准度/.test(firstRow) && /1 处失误/.test(firstRow),
     "每一行写着我这局下得怎么样,不只是个日期", firstRow);
 
+  // 9.0 S4: the list opens on the search and the games; the six filters are a
+  // closed fold until asked for
+  const fold = await page.evaluate(() => ({
+    open: document.getElementById("lib-filters").open,
+    // checkVisibility: a closed <details> keeps its content laid out under
+    // content-visibility: hidden in Chromium, so offsetParent alone says nothing
+    search: document.getElementById("lib-q").checkVisibility(),
+    result: document.querySelector('#lib-result-seg button[data-lres="loss"]').checkVisibility(),
+  }));
+  assert(!fold.open && fold.search && !fold.result,
+    "S4 列表打开时只露搜索：其余筛选收在「筛选」里，默认收起", JSON.stringify(fold));
+
   // 筛选
+  await openFilters(page);
+  assert(await page.isVisible('#lib-result-seg button[data-lres="loss"]'), "S4 点开「筛选」，按结果筛选就在那儿");
   await page.click('#lib-result-seg button[data-lres="loss"]');
   await page.waitForTimeout(200);
   assert((await rowCount()) === 16, "「只看输的」筛出 16 局", String(await rowCount()));
@@ -430,11 +414,10 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   }
   const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
   const { page, errs } = await open(ctx);
-  await page.click('#rail button[data-view="play"]');
-  await page.click("#tab-play");
-  await page.waitForTimeout(300);
-  await page.click("#daily-btn");
+  // 9.0 S1: the plan is on 今天, laid out before it is started
+  await page.click('#rail button[data-view="home"]');
   await page.waitForTimeout(500);
+  assert(await page.isVisible("#daily-plan"), "S1 今天：计划的步骤摆在主卡里");
   const plan = await page.textContent("#daily-plan");
   assert(/捉双/.test(plan),
     "题库战绩一片空白时，弱项从他自己的棋里读出来 —— 「捉双」", plan);
@@ -502,30 +485,6 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
     "而且真的画了东西上去 —— 不是三张空画布", JSON.stringify(charts.map((c) => c.painted)));
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
-
-  // M5 合并：三张图（diag-charts.js）随 chunk-libdb.js 来。分块到之前就打开诊断，
-  // 先是文字；分块一到，图补上
-  const ctx2 = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
-  let release;
-  const gate = new Promise((r) => { release = r; });
-  await ctx2.route("**/chunk-libdb.js", async (route) => { await gate; await route.continue(); });
-  // the held chunk would hold the load event too: wait for the DOM only
-  const o2 = { page: await ctx2.newPage(), errs: [] };
-  o2.page.on("pageerror", (e) => o2.errs.push(e.message));
-  await o2.page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded" });
-  await o2.page.waitForTimeout(900);
-  await o2.page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
-  await o2.page.click('#rail button[data-view="library"]').catch(() => {});
-  await o2.page.waitForTimeout(200);
-  await o2.page.click("#lib-diagnose");
-  await o2.page.waitForTimeout(300);
-  const rows = await o2.page.evaluate(() => document.querySelectorAll("#lib-diag .stat-row").length);
-  release();
-  await o2.page.waitForFunction(() => document.querySelectorAll("#lib-diag canvas.diag-chart").length === 3, null, { timeout: 8000 }).catch(() => {});
-  const late = await o2.page.evaluate(() => document.querySelectorAll("#lib-diag canvas.diag-chart").length);
-  assert(rows > 0 && late === 3, "分块到之前打开诊断：先有文字（" + rows + " 行），分块一到三张图补上（" + late + " 张）");
-  assert(o2.errs.length === 0, "没有 JS 异常", o2.errs.join(" / "));
-  await ctx2.close();
 }
 
 // --- 7. 黑方先走、从第 30 手开始的那种局，也要开得出来 ----------------------
@@ -586,14 +545,14 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   });
   const seed = async (mines, lib) => {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" });
-    await ctx.addInitScript(([ms, lb]) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    await ctx.addInitScript((ms) => {
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "puzzle", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
-      localStorage.setItem("chess.v1.library", lb);
-      localStorage.setItem("chess.v1.mines", JSON.stringify({ v: 1, list: ms }));
-      localStorage.setItem("chess.v1.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: {}, cat: "mine" }));
-    }, [mines, lib]);
+      localStorage.setItem("chess.mines", JSON.stringify({ v: 1, list: ms }));
+      localStorage.setItem("chess.puzzles", JSON.stringify({ v: 1, solved: {}, missed: {}, cat: "mine" }));
+    }, mines);
+    await ctx.addInitScript(seedLibrary, JSON.parse(lib));
     const page = await ctx.newPage();
     const errs = [];
     page.on("pageerror", (e) => errs.push(e.message));
@@ -678,13 +637,13 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
       from: { kind: "lib", id: "deep1" } },
   ];
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" });
-  await ctx.addInitScript(([lb, ms]) => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, themeId: "wood" }));
+  await ctx.addInitScript((ms) => {
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
-    localStorage.setItem("chess.v1.library", lb);
-    localStorage.setItem("chess.v1.mines", JSON.stringify({ v: 1, list: ms }));
-  }, [JSON.stringify({ v: 1, names: ["hxddh"], games }), mines]);
+    localStorage.setItem("chess.mines", JSON.stringify({ v: 1, list: ms }));
+  }, mines);
+  await ctx.addInitScript(seedLibrary, { names: ["hxddh"], games });
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));
@@ -720,7 +679,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   const after = await page.evaluate(() => ({
     budget: window.__chess.library().games[0].an.budget,
     tags: window.__chess.library().games[0].an.tags,
-    mines: JSON.parse(localStorage.getItem("chess.v1.mines")).list
+    mines: JSON.parse(localStorage.getItem("chess.mines")).list
       .map((m) => ({ id: m.id, sol: m.solution[0], budget: m.rev && m.rev.budget, from: m.from && m.from.id })),
     deepBtn: !!document.querySelector("#lib-list button[data-lib-deep]"),
   }));
@@ -785,7 +744,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
     `1. d4 d5 2. c4 e6 (2... c6) 3. Nf3 Nf6 *\n`;
   await importFile(page, REP, "#rep-import-w");
   await page.waitForTimeout(600);
-  const book = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.repertoire") || "null"));
+  const book = await page.evaluate(() => (window.__chess.rep() ? JSON.parse(window.__chess.rep().bag("{}")) : null));
   assert(book && book.w.length === 2, "主线和变着各成一条线", book ? book.w.length : "null");
   assert(book.b.length === 0, "执黑那本还是空的 —— 两本书，两套体系");
   body = await page.textContent("#rep-body");
@@ -798,15 +757,17 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   // 同一份再导一遍，书不会变成两倍
   await importFile(page, REP, "#rep-import-w");
   await page.waitForTimeout(500);
-  const again = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.repertoire")));
+  const again = await page.evaluate(() => (window.__chess.rep() ? JSON.parse(window.__chess.rep().bag("{}")) : null));
   assert(again.w.length === 2, "同一份导第二遍，还是两条", again.w.length);
 
   // 背它：开始背 → 做题页开在「开局书」这一档
   await page.click("#rep-drill");
   await page.waitForTimeout(900);
   const started = await page.evaluate(() => ({
-    cat: JSON.parse(localStorage.getItem("chess.v1.puzzles")).cat,
-    tabShown: !document.querySelector('#puzzle-cat-seg button[data-cat="rep"]').hidden,
+    cat: JSON.parse(localStorage.getItem("chess.puzzles")).cat,
+    // 9.0 S3: no category row; the 开局 tile is the lit one while a book line is on the board
+    tabShown: (document.querySelector('#pz-groups button[data-group="opening"]') || { getAttribute: () => null }).getAttribute("aria-pressed") === "true"
+      && document.getElementById("app").dataset.view === "train",
     task: (document.getElementById("puzzle-task") || {}).textContent || "",
   }));
   assert(started.cat === "rep" && started.tabShown, "「开始背」把你放在开局书那一档",
@@ -834,7 +795,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   assert(/d4/.test(wrong), "走书上没有的一手，当场告诉你书上走的是 d4", wrong);
   // 走错的那道题进复习队列 —— 和内置开局题、错题走的是同一条 SRS
   const missed = await page.evaluate(() => {
-    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
+    const st = JSON.parse(localStorage.getItem("chess.puzzles"));
     return Object.keys(st.missed || {});
   });
   assert(missed.length === 1 && missed[0].startsWith("rep-"),
@@ -849,15 +810,15 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   if (!done) { await mv("g1", "f3"); done = await page.isVisible("#puzzle-playon"); }
   assert(done, "照书走完一条线就算背下来了 —— 对手的回答也是从这本书里挑的");
   const solved = await page.evaluate(() => {
-    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
+    const st = JSON.parse(localStorage.getItem("chess.puzzles"));
     return Object.keys(st.solved).filter((k) => k.startsWith("rep-")).length;
   });
   assert(solved >= 1, "背下来的那条记进了进度，和内置开局书同一条轨", solved);
   // 7.6: the credit, the toast's name and the record pane's count all follow
   // the line the board actually finished — whichever one the drill opened as
   const fin = await page.evaluate(() => {
-    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
-    const book = JSON.parse(localStorage.getItem("chess.v1.repertoire"));
+    const st = JSON.parse(localStorage.getItem("chess.puzzles"));
+    const book = (window.__chess.rep() ? JSON.parse(window.__chess.rep().bag("{}")) : null);
     return { solved: Object.keys(st.solved).filter((k) => k.startsWith("rep-")), book: book.w,
       toast: document.getElementById("puzzle-feedback").textContent.trim(),   // 7.7: the card, not a toast
       body: document.getElementById("rep-body").textContent };
@@ -875,7 +836,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   // 7.2 里它会动：ratePuzzleOnce 不看类别，而这条线的「难度」是按它有多长
   // 推出来的，于是导一本长变着的书就能刷高战术评级。
   const rated = await page.evaluate(() => {
-    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
+    const st = JSON.parse(localStorage.getItem("chess.puzzles"));
     return { hist: (st.rhist || []).length, rating: st.rating ? Math.round(st.rating.r) : null,
       task: (document.getElementById("puzzle-task") || {}).textContent || "" };
   });
@@ -891,7 +852,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   await page.click("#puzzle-playon");
   await page.waitForTimeout(900);
   const playedOn = await page.evaluate(() => ({
-    mode: JSON.parse(localStorage.getItem("chess.v1.settings")).mode,
+    mode: JSON.parse(localStorage.getItem("chess.settings")).mode,
     moves: [...document.querySelectorAll("#move-list .mlmove")]
       .map((b) => b.textContent.trim()).filter((x) => /[a-h][1-8]/.test(x)),
   }));
@@ -907,8 +868,8 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   await page.click("#confirm-ok");   // 清空要问一句，问的是这个应用自己的对话框
   await page.waitForTimeout(700);
   const afterClear = await page.evaluate(() => {
-    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
-    const book = JSON.parse(localStorage.getItem("chess.v1.repertoire"));
+    const st = JSON.parse(localStorage.getItem("chess.puzzles"));
+    const book = (window.__chess.rep() ? JSON.parse(window.__chess.rep().bag("{}")) : null);
     return { lines: book.w.length + book.b.length,
       orphan: Object.keys(st.missed || {}).filter((k) => k.startsWith("rep-")) };
   });
@@ -930,15 +891,16 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   await importFile(page, SETUP, "#rep-import-w");
   await page.waitForTimeout(600);
   const after = await page.evaluate(() => ({
-    book: JSON.parse(localStorage.getItem("chess.v1.repertoire") || "null"),
+    book: (window.__chess.rep() ? JSON.parse(window.__chess.rep().bag("{}")) : null),
     toast: document.getElementById("toast").textContent.trim(),
-    tab: (document.querySelector('#puzzle-cat-seg button[data-cat="rep"]') || {}).hidden,
+    // 9.0 S3: the category row is gone; the one way into the book's drills is 开始背
+    tab: document.getElementById("rep-drill").hidden,
   }));
   assert(!after.book || (after.book.w.length === 0 && after.book.b.length === 0),
     "从别的局面出发的局，一条都不进书", JSON.stringify(after.book));
   assert(/起始局面|跳过/.test(after.toast),
     "……并且说清了为什么，而不是默默地什么都不做", after.toast);
-  assert(after.tab !== false, "书还是空的，「开局书」那一档也就不出现");
+  assert(after.tab === true, "书还是空的，「开始背」也就不出现 —— 没有一条路进得去一本空书");
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
 }
@@ -954,13 +916,13 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   const { page, errs } = await open(ctx);
   await importFile(page, REP_B, "#rep-import-b");
   await page.waitForTimeout(500);
-  const book = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.repertoire")));
+  const book = await page.evaluate(() => (window.__chess.rep() ? JSON.parse(window.__chess.rep().bag("{}")) : null));
   assert(book.b.length === 1 && book.w.length === 0, "只有执黑那本有东西",
     JSON.stringify([book.w.length, book.b.length]));
   await page.click("#rep-drill");
   await page.waitForTimeout(900);
   const seated = await page.evaluate(() => {
-    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles"));
+    const st = JSON.parse(localStorage.getItem("chess.puzzles"));
     return { cat: st.cat, side: st.opSide,
       task: (document.getElementById("puzzle-task") || {}).textContent || "" };
   });
@@ -1168,7 +1130,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   };
   const mv = async (a, b) => { await tapAt(a); await tapAt(b); await page.waitForTimeout(420); };
   const missedRep = () => page.evaluate(() => {
-    const st = JSON.parse(localStorage.getItem("chess.v1.puzzles") || "{}");
+    const st = JSON.parse(localStorage.getItem("chess.puzzles") || "{}");
     return Object.keys(st.missed || {}).filter((k) => k.startsWith("rep-"));
   });
 
@@ -1190,7 +1152,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   await page.waitForTimeout(300);
   await page.click("#confirm-ok");
   await page.waitForTimeout(500);
-  await page.click('#rail button[data-view="puzzle"]');   // back to the puzzle on the board
+  await page.click('#rail button[data-view="train"]');   // back to the puzzle on the board (9.0 S3: 训练)
   await mv("e2", "e4");   // 书上是 d4：这是一步错棋
   assert((await missedRep()).length === 0,
     "书已经清空，屏幕上那道题走错了也不写进复习队列 —— 不留一道谁也端不出来的题",
@@ -1213,13 +1175,13 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
     "棋盘上有一盘没下完的棋，「接实战」先问一声 —— 和「新局」一样");
   await page.click("#confirm-cancel");
   await page.waitForTimeout(400);
-  const mode1 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings")).mode);
+  const mode1 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings")).mode);
   assert(mode1 === "puzzle", "取消就什么都不变 —— 还在做题", mode1);
   await page.click("#puzzle-playon");
   await page.waitForTimeout(400);
   await page.click("#confirm-ok");
   await page.waitForTimeout(900);
-  const mode2 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings")).mode);
+  const mode2 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings")).mode);
   assert(mode2 === "ai", "确定之后才接着和引擎下", mode2);
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
@@ -1252,13 +1214,13 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
     result: "1-0", plies: line.length - k, sans: line.slice(0, line.length - k).join(" "), fen: "",
     side: "w", outcome: "win", motifs: {}, eco: "C60", ecoName: "x", an: null }));
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" });
-  await ctx.addInitScript((lib) => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, themeId: "wood" }));
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
-    // seeded once: a reload must find what the pass saved, not the seed again
-    if (!localStorage.getItem("chess.v1.library")) localStorage.setItem("chess.v1.library", lib);
-  }, JSON.stringify({ v: 1, names: ["hxddh"], games }));
+  });
+  // seeded once: a reload must find what the pass saved, not the seed again
+  await ctx.addInitScript(seedLibrary, { names: ["hxddh"], games, once: true });
   const stub = (page) => page.evaluate(() => {
     window.__asked = [];
     window.__chess.engine.isReady = () => true;
@@ -1319,8 +1281,8 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
 {
   const ctx = await browser.newContext({ viewport: { width: 1100, height: 1000 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const { page, errs } = await open(ctx);
@@ -1415,12 +1377,12 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   const seed = JSON.stringify({ v: 1, names: ["hxddh"], games });
   const openAt = async (viewport, mode, tab, panelOpen = "1") => {
     const ctx = await browser.newContext({ viewport, locale: "zh-CN" });
-    await ctx.addInitScript(([lib, m, tb, po]) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: m, langId: "zh-CN", sideTab: tb === "record" ? "play" : tb, view: tb === "record" ? "library" : "play", soundOn: false, themeId: "wood" }));
+    await ctx.addInitScript(([m, tb, po]) => {
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: m, langId: "zh-CN", view: tb === "record" ? "library" : "play", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", po);
-      localStorage.setItem("chess.v1.library", lib);
-    }, [seed, mode, tab, panelOpen]);
+    }, [mode, tab, panelOpen]);
+    await ctx.addInitScript(seedLibrary, JSON.parse(seed));
     const page = await ctx.newPage();
     const errs = [];
     page.on("pageerror", (e) => errs.push(e.message));
@@ -1429,7 +1391,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
     if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
     return { ctx, page, errs };
   };
-  const settingsOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.settings") || "{}"));
+  const settingsOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}"));
 
   // §3c —— 两个窗口都要能点到弹窗的最后一行，而且是用滚轮滚过去的，不是脚本
   // 替人 scrollIntoView（#app 是 overflow: hidden，脚本滚得动它，人滚不动）
@@ -1520,14 +1482,14 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   // 教学原样回来，停在刚才那一步，而不是从这一课的第一步重来
   {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
-    await ctx.addInitScript((lib) => {
-      localStorage.setItem("chess.v1.settings", JSON.stringify({
-        mode: "learn", langId: "zh-CN", sideTab: "play", soundOn: false, themeId: "wood" }));
+    await ctx.addInitScript(() => {
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "learn", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
       localStorage.setItem("chess.panelOpen", "1");
-      localStorage.setItem("chess.v1.library", lib);
       // a game in progress on the main board, so the load has to ask first
-      localStorage.setItem("chess.v1.save", JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }));
-    }, seed);
+      localStorage.setItem("chess.save", JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }));
+    });
+    await ctx.addInitScript(seedLibrary, JSON.parse(seed));
     const page = await ctx.newPage();
     const errs = [];
     page.on("pageerror", (e) => errs.push(e.message));
@@ -1551,7 +1513,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
     await page.waitForTimeout(900);
     const asked = await page.isVisible("#confirm-cancel");
     if (asked) { await page.click("#confirm-cancel"); await page.waitForTimeout(600); }
-    await page.click('#rail button[data-view="learn"]');
+    await page.click('#rail button[data-view="train"]');   // 9.0 S3: 教学 is 训练's 课程
     await page.waitForTimeout(300);
     const after = await task();
     const st = await settingsOf(page);
@@ -1563,6 +1525,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   }
 
   // §3e —— 从诊断的「第 N 回合」「母题」行筛出来的局，打开停在那一手，侧栏在对局页
+  // （9.0 S5：侧栏只剩一页 —— 「在对局页」就是回到下棋、那一页看得见）
   for (const kind of ["peak", "motif"]) {
     const { ctx, page, errs } = await openAt({ width: 1400, height: 900 }, "pvp", "record");
     await page.click("#lib-diagnose");
@@ -1583,13 +1546,14 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
       return {
         at: moves.findIndex((b) => b.classList.contains("current")) + 1,
         total: moves.length,
-        tab: document.getElementById("tab-play").getAttribute("aria-selected"),
+        tab: document.getElementById("app").getAttribute("data-view") === "play" &&
+          !document.getElementById("pane-play").hidden && document.getElementById("pane-play").getClientRects().length > 0,
       };
     });
     // 第 28 回合白方那一手是第 55 半着；第 20、36 回合是 39、71
     const want = kind === "motif" ? 55 : (pick.value - 1) * 2 + 1;
     assert(r.at === want, kind + "：打开停在出问题的那一手（第 " + r.at + " 半着，应为 " + want + "，共 " + r.total + "）");
-    assert(r.tab === "true", kind + "：侧栏切到了对局页");
+    assert(r.tab === true, kind + "：回到了下棋，侧栏的对局页看得见");
     assert(errs.length === 0, kind + "：没有 JS 异常", errs.join(" / "));
     await ctx.close();
   }
@@ -1599,7 +1563,8 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
 {
   // 一局分析过的库棋。7.5 实测：曲线在它所在的标签页隐藏时被重画，画布成了
   // 1×1，再被样式表拉成 60px 高的一整块红色 —— 从棋谱库打开一局，或者在设置页
-  // 换语言，都会这样。
+  // 换语言，都会这样。9.0 S5：设置不再是侧栏的页签，是盖在棋盘上的整页；
+  // 下面「去设置、再回来」走的是栏上的「设置」与「下棋」。
   // long enough that the curve is drawn at all (Review.longEnough)
   const sans = "e4 e5 Nf3 Nc6 Bb5 a6 b4 Bc5 Be2 Bd4 Bb5 b6 Nc3 Rb8 a3 Nf6 Kf1 Bc5 Ne1 d6 g4 h5 Qe2 Kd7 f3 Qf8 a4 Ke7 Qf2 Nh7 Ba3 Nd8 Qg2 Ng5 Bd7 Nge6 Rc1 f6 b5 Bb4";
   const n = sans.split(" ").length;
@@ -1613,12 +1578,12 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
       bests: new Array(n + 1).fill(null), budget: 200 },
   };
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
-  await ctx.addInitScript((lib) => {
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, themeId: "wood" }));
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
-    localStorage.setItem("chess.v1.library", lib);
-  }, JSON.stringify({ v: 1, names: ["hxddh"], games: [game] }));
+  });
+  await ctx.addInitScript(seedLibrary, { names: ["hxddh"], games: [game] });
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));
@@ -1645,29 +1610,30 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   await page.waitForTimeout(400);
   await page.click("#lib-list button[data-lib]");
   await page.waitForTimeout(900);
-  if (!(await page.evaluate(() => document.getElementById("tab-play").getAttribute("aria-selected") === "true"))) {
-    await page.click("#tab-play");
+  if ((await page.getAttribute("#app", "data-view")) !== "play") {
+    await page.click('#rail button[data-view="play"]');
     await page.waitForTimeout(400);
   }
   let r = await curve();
   assert(sized(r), "从记录页打开一局，曲线按自己的尺寸画出来（" + JSON.stringify(r) + "）");
 
-  // 2) 在设置页换语言，再回对局页
-  await page.click("#tab-setup");
+  // 2) 在设置页（通用）换语言，再回对局页
+  await page.click('#rail button[data-view="settings"]');
   await page.waitForTimeout(200);
+  await page.click("#cat-general");
   await page.evaluate(() => document.querySelector('#lang-seg button[data-lang="en"]').click());
   await page.waitForTimeout(400);
-  await page.click("#tab-play");
+  await page.click('#rail button[data-view="play"]');
   await page.waitForTimeout(400);
   r = await curve();
   assert(sized(r), "在设置页换了语言再回来，曲线不是一块拉伸的单色（" + JSON.stringify(r) + "）");
 
-  // 3) 标签页藏着的时候窗口变了尺寸，回来时按新尺寸画
-  await page.click("#tab-setup");
+  // 3) 设置页盖着的时候窗口变了尺寸，回来时按新尺寸画
+  await page.click('#rail button[data-view="settings"]');
   await page.waitForTimeout(200);
   await page.setViewportSize({ width: 800, height: 900 }); // the panel becomes a full-width sheet
   await page.waitForTimeout(400);
-  await page.click("#tab-play");
+  await page.click('#rail button[data-view="play"]');
   await page.waitForTimeout(400);
   r = await curve();
   assert(sized(r), "藏着的时候窗口变了，回来时按新宽度重画（" + JSON.stringify(r) + "）");
@@ -1704,7 +1670,8 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
     await page.waitForTimeout(400);
     await page.click("#lib-list button[data-lib]");
     await page.waitForTimeout(900);
-    await page.click("#tab-play").catch(() => {});
+    // 9.0 S5: was a click on the 对局 tab; make sure of the play view instead
+    if ((await page.getAttribute("#app", "data-view")) !== "play") await page.click('#rail button[data-view="play"]');
     await page.waitForTimeout(300);
     const r = await page.evaluate(() => {
       const u = document.getElementById("undo");
@@ -1742,11 +1709,11 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
   for (const lang of ["zh-CN", "en", "ja"]) {
     for (const vp of [{ width: 1400, height: 1000 }, { width: 390, height: 800 }]) {
       const ctx = await browser.newContext({ viewport: vp, locale: lang });
-      await ctx.addInitScript(([lib, l]) => {
-        localStorage.setItem("chess.v1.settings", JSON.stringify({ mode: "pvp", langId: l, sideTab: "play", view: "library", soundOn: false }));
+      await ctx.addInitScript((l) => {
+        localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: l, view: "library", soundOn: false }));
         localStorage.setItem("chess.panelOpen", "1");
-        localStorage.setItem("chess.v1.library", lib);
-      }, [JSON.stringify({ v: 1, names: ["hxddh"], games }), lang]);
+      }, lang);
+      await ctx.addInitScript(seedLibrary, { names: ["hxddh"], games });
       const { page, errs } = await open(ctx);
       await page.click('#rail button[data-view="library"]').catch(() => {});
       await page.click("#lib-diagnose");
@@ -1804,7 +1771,7 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
 }
 
 // ============================================================================
-// v8-0-plan C1: 棋谱库数据库化 — storage, migration, search, 本机, claim.
+// v8-0-plan C1: 棋谱库数据库化 — storage, search, 本机, claim.
 // The games moved from one localStorage value (500 at most) to one IndexedDB
 // record each (library-db.js); everything below is a claim the plan's
 // acceptance makes, measured in a real page. Numbers go to docs/measured.json
@@ -1813,17 +1780,23 @@ const libText = (page) => page.evaluate(() => ["lib-body", "lib-status"]
 const C1 = {};
 const DAY = 86400000;
 
-/** A context with settings, and `keys` written into localStorage once. */
+/**
+ * A context with settings, and `keys` written into localStorage once — the
+ * library (`chess.library`, as `{names, games}`) through seedLibrary.
+ */
 async function c1Context(keys, init) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN", acceptDownloads: true });
+  const { "chess.library": lib, ...rest } = keys || {};
+  keys = rest;
   await ctx.addInitScript((k) => {
     if (sessionStorage.getItem("c1.seeded")) return;
     sessionStorage.setItem("c1.seeded", "1");
-    localStorage.setItem("chess.v1.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", sideTab: "play", view: "library", soundOn: false, themeId: "wood" }));
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", view: "library", soundOn: false, appearance: "dark", boardId: "wood" }));
     localStorage.setItem("chess.panelOpen", "1");
     for (const [key, v] of Object.entries(k || {})) localStorage.setItem(key, v);
   }, Object.fromEntries(Object.entries(keys || {}).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)])));
+  if (lib) await ctx.addInitScript(seedLibrary, Object.assign({ once: true }, typeof lib === "string" ? JSON.parse(lib) : lib));
   if (init) await ctx.addInitScript(init);
   return ctx;
 }
@@ -1872,16 +1845,16 @@ function coldProbe() {
 const c1Ready = (page) => page.waitForFunction(() => window.__chess && window.__chess.library && window.__chess.library().ready,
   null, { timeout: 60000 }).catch(() => {});
 
-/** The shapes each release wrote (library.js entryFrom, then the pass). 6.x had no library. */
+/** Libraries as the importer and the pass leave them (library.js entryFrom, then the pass). */
 const T = 1758000000000;
 const V1 = {
-  "7.0": { v: 1, names: ["hxddh"], games: [
+  plain: { v: 1, names: ["hxddh"], games: [
     { id: "lib:70a", t: T, white: "hxddh", black: "r1", date: "2026.01.01", event: "e", result: "1-0", plies: 4,
       sans: "e4 e5 Nf3 Nc6", fen: "", side: "w", outcome: "win",
       an: { acc: { w: 81.2, b: 60 }, acpl: { w: 30, b: 90 }, tags: [null, "?", null, "??"], losses: [0, 120, 5, 400], scalars: [20, 25, -100, -90, -500] } },
     { id: "lib:70b", t: T + 1, white: "x", black: "y", date: "?", event: "", result: "*", plies: 2, sans: "d4 d5", fen: "", side: null, outcome: null, an: null },
   ] },
-  "7.2": { v: 1, names: ["hxddh", "alt"], games: [
+  marked: { v: 1, names: ["hxddh", "alt"], games: [
     { id: "lib:72a", t: T + 2, white: "alt", black: "r2", date: "2026.02.02", event: "e", result: "0-1", plies: 2, sans: "f3 e5",
       fen: "", side: "w", outcome: "loss", eco: "A00", ecoName: "Barnes Opening",
       an: { acc: { w: 20, b: 90 }, acpl: { w: 200, b: 10 }, tags: ["?", null], losses: [150, 0], scalars: [20, -130, -120], bests: ["e2e4", null], budget: 200 },
@@ -1889,7 +1862,7 @@ const V1 = {
     { id: "lib:72b", t: T + 3, white: "hxddh", black: "r3", date: "2026.02.03", event: "e", result: "1-0", plies: 3, sans: "e4 Ke7 Qh5",
       fen: "", side: "w", outcome: "win", an: null, unplayable: true },
   ] },
-  "8.0-dev": { v: 1, names: ["hxddh"], games: [
+  clocked: { v: 1, names: ["hxddh"], games: [
     { id: "lib:80a", t: T + 4, white: "hxddh", black: "coach", date: "2026.09.04", event: "Study", result: "1-0", plies: 3,
       sans: "Kd5 Kd2 Ke4", fen: "8/8/4k3/8/8/8/4P3/4K3 b - - 3 40", side: "w", outcome: "win", clk: [30, 29, 28],
       an: { acc: { w: 99, b: 99 }, acpl: { w: 0, b: 0 }, tags: [null, null, null], losses: [0, 0, 0], scalars: [0, 0, 0, 0], budget: 400 } },
@@ -1897,180 +1870,17 @@ const V1 = {
       sans: "d4 Nf6 c4 e6 Nc3 Bb4", fen: "", side: "b", outcome: "win", clk: [180, 180, 178, 179, 170, 175], an: null },
   ] },
 };
-/** The play history as 6.x (v1, `sig`) and 7.x (v2, `pgn`) wrote it. */
-const STATS_6X = { v: 1, games: [
-  { t: T - 3 * DAY, sig: "e4 e5 Qh5 Nc6 Bc4 Nf6 Qxf7##mate", result: "win", diff: "casual", color: "w" },
-  { t: T - 2 * DAY, sig: "d4 d5 c4 dxc4#resigned", result: "loss", diff: "normal", color: "b" },
-] };
-const STATS_7X = { v: 2, games: [
+/** A play history. */
+const STATS = { v: 2, games: [
   { id: "g1", t: T - DAY, diff: "normal", color: "w", result: "win", moves: 7, acc: 88,
     pgn: '[Event "?"]\n[Result "1-0"]\n\n1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0', ending: "" },
   { id: "g2", t: T, diff: "hard", color: "b", result: "draw", moves: 4,
     pgn: '[Event "?"]\n[Result "1/2-1/2"]\n\n1. d4 d5 2. c4 e6 1/2-1/2', ending: "drawAgreed" },
 ] };
 
-// --- C1.1 every earlier library, migrated without losing a byte ----------------
-for (const [ver, v1] of Object.entries(V1)) {
-  const raw = JSON.stringify(v1);
-  const ctx = await c1Context({ "chess.v1.library": raw, "chess.v1.stats": STATS_7X });
-  const { page, errs } = await open(ctx);
-  await c1Ready(page);
-  await page.waitForTimeout(300);
-  const lib = await libOf(page);
-  const st = await storedLib(page);
-  const byId = new Map((st.games || []).map((g) => [g.id, g]));
-  // every field the old entry had, unchanged — apart from what the app has
-  // always rewritten on load (7.0's unclamped losses, recomputed from the
-  // scalars beside them) and the opening it fills in once (7.1 fillOpenings).
-  // The byte-for-byte copy is the backup, checked below.
-  const lost = v1.games.filter((g) => {
-    const s = byId.get(g.id);
-    if (!s) return true;
-    return Object.keys(g).some((k) => {
-      if (k === "an" && g.an && s.an) {
-        const a = Object.assign({}, g.an), b = Object.assign({}, s.an);
-        delete a.losses; delete b.losses;
-        return JSON.stringify(a) !== JSON.stringify(b) || (s.an.losses || []).length !== (g.an.losses || []).length;
-      }
-      return JSON.stringify(g[k]) !== JSON.stringify(s[k]);
-    }) || Object.keys(s).some((k) => !(k in g) && !["eco", "ecoName", "__pk"].includes(k));
-  }).map((g) => g.id);
-  assert(lost.length === 0, `C1 ${ver}：旧棋谱库的每一局都进了 IndexedDB，每个字段都在(不等：${lost.join(",") || "无"})`);
-  assert(st.header && st.header.db === 2 && st.header.games.length === 0 && JSON.stringify(st.header.names) === JSON.stringify(v1.names) &&
-    st.header.n === v1.games.length,
-    `C1 ${ver}：localStorage 里只剩一个头(db 2、名字、局数 ${st.header && st.header.n})`);
-  assert(lib.mode === "idb" && lib.games.length === v1.games.length, `C1 ${ver}：应用里还是这 ${v1.games.length} 局(${lib.games.length}, ${lib.mode})`);
-  const local = (st.games || []).filter((g) => g.src === "local").map((g) => g.id).sort().join(",");
-  assert(local === "loc:g1,loc:g2", `C1 ${ver}：对局历史的两局作为「本机」进了库(${local})`);
-  await page.reload();
-  await c1Ready(page);
-  const again = await libOf(page);
-  const st2 = await storedLib(page);
-  assert(again.games.length === v1.games.length && st2.games.filter((g) => g.src !== "local").length === v1.games.length,
-    `C1 ${ver}：再启动一次：还是 ${v1.games.length} 局，没有重复`);
-  // the v1 value as found, kept in IndexedDB's meta store
-  const backup = await page.evaluate(() => new Promise((res) => {
-    const r = indexedDB.open("chessboard.library");
-    r.onsuccess = () => {
-      const all = r.result.transaction(["meta"], "readonly").objectStore("meta").getAll();
-      all.onsuccess = () => { res(all.result.map((x) => x.raw)); r.result.close(); };
-    };
-  }));
-  assert(backup.includes(raw), `C1 ${ver}：迁移前的整份 v1 原样留了一份在 IndexedDB 里`);
-  assert(errs.length === 0, `C1 ${ver}：没有 JS 异常`, errs.join(" / "));
-  await ctx.close();
-}
-
-// 6.x: no library at all, and the history in both of its shapes
-{
-  const ctx = await c1Context({ "chess.v1.stats": STATS_6X });
-  const { page, errs } = await open(ctx);
-  await c1Ready(page);
-  await page.waitForTimeout(600);
-  const st = await storedLib(page);
-  const local = (st.games || []).filter((g) => g.src === "local");
-  assert(local.length === 2 && local.every((g) => g.__pk && g.plies > 0),
-    `C1 6.x：没有棋谱库的老档案，对局历史照样成了「本机」棋局，带局面索引(${local.map((g) => g.plies).join(",")})`);
-  assert(st.header == null, "C1 6.x：没有棋谱库就不凭空写一个头");
-  assert(errs.length === 0, "C1 6.x：没有 JS 异常", errs.join(" / "));
-  await ctx.close();
-}
-
-// --- C1.2 the quota refuses the migration: nothing moves, nothing is lost ---------
-{
-  const v1 = V1["7.2"];
-  const raw = JSON.stringify(v1);
-  const ctx = await c1Context({ "chess.v1.library": raw }, () => {
-    if (sessionStorage.getItem("c1.quota") === "off") return;
-    const put = IDBObjectStore.prototype.put;
-    IDBObjectStore.prototype.put = function (v, k) {
-      if (this.name === "games") throw new DOMException("the disk is full", "QuotaExceededError");
-      return put.call(this, v, k);
-    };
-  });
-  const { page, errs } = await open(ctx);
-  await c1Ready(page);
-  const toastText = await page.textContent("#toast").catch(() => "");
-  const lib = await libOf(page);
-  const kept = await page.evaluate(() => localStorage.getItem("chess.v1.library"));
-  assert(/没能搬进新的存储/.test(toastText) && /QuotaExceededError/.test(toastText), `C1 配额满：迁移失败说出来(${toastText})`);
-  const keptV1 = JSON.parse(kept);
-  assert(keptV1.v === 1 && !keptV1.db && v1.games.every((g) => keptV1.games.some((x) => x.id === g.id && x.sans === g.sans)),
-    "C1 配额满：localStorage 里的旧棋谱库原样留着(v1，每一局都在)");
-  assert(lib.mode === "legacy" && lib.games.length === v1.games.length, `C1 配额满：这一次照旧方式用，${v1.games.length} 局都在(${lib.mode})`);
-  // a game imported meanwhile is kept the old way…
-  await importFile(page, '[Event "x"]\n[White "hxddh"]\n[Black "q"]\n[Result "1-0"]\n\n1. c4 e5 1-0\n');
-  const legacy = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library")));
-  assert(legacy.games.length === 3 && !legacy.db, "C1 配额满：这期间导入的棋按旧方式存进了 localStorage");
-  // …and the next launch, with room again, moves all of it
-  await page.evaluate(() => sessionStorage.setItem("c1.quota", "off"));
-  await page.reload();
-  await c1Ready(page);
-  const st = await storedLib(page);
-  assert(st.header.db === 2 && st.games.filter((g) => g.src !== "local").length === 3,
-    `C1 配额满之后：下一次启动把三局都搬了进去(${st.games.length})`);
-  assert(errs.length === 0, "C1 配额满：没有 JS 异常", errs.join(" / "));
-  await ctx.close();
-}
-
-// --- C1.3 interrupted: the store holds part of it, the header still says v1 -------
-{
-  const v1 = V1["8.0-dev"];
-  const half = { v: 1, names: v1.names, games: v1.games.slice(0, 1) };
-  const ctx = await c1Context({ "chess.v1.library": half });
-  const { page, errs } = await open(ctx);
-  await c1Ready(page);
-  // deepen the stored copy meanwhile (a later analysis), then put the full v1
-  // header back — a migration cut short before the header changed
-  await page.evaluate((full) => new Promise((res) => {
-    const r = indexedDB.open("chessboard.library");
-    r.onsuccess = () => {
-      const tx = r.result.transaction(["games"], "readwrite");
-      const s = tx.objectStore("games");
-      const g = s.get("lib:80a");
-      g.onsuccess = () => { const x = g.result; x.an = Object.assign({}, x.an, { budget: 800 }); s.put(x); };
-      tx.oncomplete = () => { r.result.close(); localStorage.setItem("chess.v1.library", full); res(); };
-    };
-  }), JSON.stringify(v1));
-  await page.reload();
-  await c1Ready(page);
-  const st = await storedLib(page);
-  const imported = st.games.filter((g) => g.src !== "local");
-  assert(imported.length === 2 && imported.find((g) => g.id === "lib:80a").an.budget === 800,
-    `C1 中断的迁移再跑一遍：两局，不重复；已存的更深的分析(800)没被旧副本盖掉(${imported.map((g) => g.id + ":" + (g.an && g.an.budget)).join(",")})`);
-  assert(st.header.db === 2, "C1 中断的迁移：这次头换成了 db 2");
-  assert(errs.length === 0, "C1 中断：没有 JS 异常", errs.join(" / "));
-  await ctx.close();
-}
-
-// --- C1.4 a second window open during the migration ----------------------------
-{
-  const v1 = V1["7.0"];
-  const ctx = await c1Context({ "chess.v1.library": v1 });
-  const [a, b] = await Promise.all([open(ctx), open(ctx)]);
-  await Promise.all([c1Ready(a.page), c1Ready(b.page)]);
-  const [la, lb] = [await libOf(a.page), await libOf(b.page)];
-  const st = await storedLib(a.page);
-  const imported = st.games.filter((g) => g.src !== "local");
-  assert(la.games.length === 2 && lb.games.length === 2 && imported.length === 2 && st.header.db === 2,
-    `C1 两个窗口同时迁移：两边都是 2 局，库里也是 2 局(${la.games.length}/${lb.games.length}/${imported.length})`);
-  // one window imports; the other's next save does not take it away
-  await importFile(a.page, '[Event "w"]\n[White "hxddh"]\n[Black "z"]\n[Result "0-1"]\n\n1. g4 e5 2. f3 Qh4# 0-1\n');
-  await b.page.waitForTimeout(500);
-  const heard = (await libOf(b.page)).games.map((g) => g.event);
-  assert(heard.length === 3 && heard.includes("w"),
-    `C1 一个窗口导入，另一个窗口的列表也有了这一局(BroadcastChannel；${heard.length} 局)`);
-  await b.page.evaluate(() => { document.getElementById("lib-names").value = "hxddh, other"; document.getElementById("lib-names").dispatchEvent(new Event("change")); });
-  await b.page.waitForTimeout(600);
-  const after = (await storedLib(a.page)).games.filter((g) => g.src !== "local");
-  assert(after.length === 3, `C1 一个窗口导入、另一个窗口改名字保存：库里还是 3 局，没被旧窗口的列表盖掉(${after.length})`);
-  assert(a.errs.length === 0 && b.errs.length === 0, "C1 两个窗口：没有 JS 异常", a.errs.concat(b.errs).join(" / "));
-  await ctx.close();
-}
-
 // --- M5 review P3-2 / P3-4: two imports at once; nothing written after a restore --
 {
-  const ctx = await c1Context({ "chess.v1.library": V1["7.0"] });
+  const ctx = await c1Context({ "chess.library": V1.plain });
   const { page, errs } = await open(ctx);
   await c1Ready(page);
   // a sync landing while a file is still being read: the second import used
@@ -2151,7 +1961,7 @@ function tenThousand() {
   const t0 = Date.now();
   const big = tenThousand();
   console.log(`  C1：生成 1 万局 PGN ${(big.length / 1048576).toFixed(1)} MB（${Date.now() - t0} ms）`);
-  const ctx = await c1Context({ "chess.v1.library": { v: 1, names: ["hxddh"], games: [] } }, coldProbe);
+  const ctx = await c1Context({ "chess.library": { v: 1, names: ["hxddh"], games: [] } }, coldProbe);
   const { page, errs } = await open(ctx);
   await c1Ready(page);
   const ti = Date.now();
@@ -2162,7 +1972,7 @@ function tenThousand() {
   assert(n === 10000, `C1 一次导入 1 万局，全部进库(${n}，${(C1.importMs / 1000).toFixed(1)} s)`);
   // the store has written them all before the restart
   await page.waitForFunction(() => new Promise((res) => {
-    const r = indexedDB.open("chessboard.library");
+    const r = indexedDB.open("chessboard.games");
     r.onsuccess = () => { const c = r.result.transaction(["games"], "readonly").objectStore("games").count(); c.onsuccess = () => { res(c.result >= 10000); r.result.close(); }; };
   }), null, { timeout: 120000, polling: 500 }).catch(() => {});
 
@@ -2198,6 +2008,7 @@ function tenThousand() {
   // the page: typing into the search box, the position switch, a segment
   await page.click("#lib-open");
   await page.waitForTimeout(400);
+  await openFilters(page);   // 9.0 S4: the position switch and the segments are in the fold
   const ui = await page.evaluate(() => {
     const q = document.getElementById("lib-q");
     const t0 = performance.now();
@@ -2254,16 +2065,16 @@ function tenThousand() {
     await page.click("#lib-list-close").catch(() => {});
   }
   // M4 评审 (CI): the same launch without the summary — the header's `sum`
-  // taken out, which is exactly how the page behaved before F3 (and how it
-  // behaves after an 8.0 launch): the list waits for the entries. Its ready
+  // taken out, which is how the page behaved before F3: the list waits for
+  // the entries. Its ready
   // time is this machine's "now", which the index's arrival must not fall
   // behind by more than a quarter (see the assertion below).
   const base = [];
   for (let i = 0; i < 2; i++) {
     await page.evaluate(() => {
-      const h = JSON.parse(localStorage.getItem("chess.v1.library"));
+      const h = JSON.parse(localStorage.getItem("chess.library"));
       delete h.sum;
-      localStorage.setItem("chess.v1.library", JSON.stringify(h));
+      localStorage.setItem("chess.library", JSON.stringify(h));
     });
     await page.reload();
     await c1Ready(page);
@@ -2272,11 +2083,11 @@ function tenThousand() {
     await page.evaluate(() => { const q = document.getElementById("lib-q"); q.value = ""; q.dispatchEvent(new Event("input")); });
     await page.click("#lib-list-close").catch(() => {});
     // the next launch trusts the summary again: the check puts `sum` back
-    await page.waitForFunction(() => !!JSON.parse(localStorage.getItem("chess.v1.library")).sum, null, { timeout: 30000 }).catch(() => {});
+    await page.waitForFunction(() => !!JSON.parse(localStorage.getItem("chess.library")).sum, null, { timeout: 30000 }).catch(() => {});
   }
   C1.coldBase = { readyMs: Math.round(Math.max(...base.map((r) => r.ready))), listMs: Math.round(Math.min(...base.map((r) => r.rows))) };
   console.log(`  F3 同一台机器上不用摘要(即 F3 之前的路径)：列表 ${C1.coldBase.listMs} ms · 局面索引 ${C1.coldBase.readyMs} ms`);
-  assert(base.every((r) => r.fromSummary === false), "F3 头里没有摘要 id：列表等整局（8.0 之后的第一次启动也是这样）");
+  assert(base.every((r) => r.fromSummary === false), "F3 头里没有摘要 id：列表等整局");
   // M4 评审 P2-1: the ten thousand came in one import, so they share one
   // `t` — the page the summary drew is the page the entries draw, row for row
   assert(cold.every((r) => r.first && r.first.length === 100 && JSON.stringify(r.first) === JSON.stringify(r.firstAfter)),
@@ -2299,7 +2110,7 @@ function tenThousand() {
   });
   // M4 评审 P2-2: a save right when the library is in, before the summary's
   // check has answered, keeps the header's summary id
-  const sumBefore = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.library")).sum);
+  const sumBefore = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.library")).sum);
   // the check is a few slices of work: on Chromium the CPU is slowed eight
   // times for this launch, so the save lands before it has answered
   const cdp = ENGINE === "chromium" ? await ctx.newCDPSession(page) : null;
@@ -2312,7 +2123,7 @@ function tenThousand() {
     c.summarised.then(() => { answered = true; });
     await Promise.resolve();
     c.save();
-    return { sum: JSON.parse(localStorage.getItem("chess.v1.library")).sum, answered };
+    return { sum: JSON.parse(localStorage.getItem("chess.library")).sum, answered };
   });
   if (cdp) { await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 }); await cdp.detach(); }
   assert(typeof sumBefore === "string" && early.sum === sumBefore,
@@ -2356,7 +2167,7 @@ function tenThousand() {
   const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), page.click("#lib-export")]);
   const file = await dl.path();
   const text = fs.readFileSync(file, "utf8");
-  const ctx2 = await c1Context({ "chess.v1.library": { v: 1, names: ["hxddh"], games: [] } });
+  const ctx2 = await c1Context({ "chess.library": { v: 1, names: ["hxddh"], games: [] } });
   const second = await open(ctx2);
   await c1Ready(second.page);
   await importFile(second.page, text);
@@ -2379,14 +2190,22 @@ function tenThousand() {
 
 // --- C1.6 对局历史 is the library's 本机 games; its doors still open -------------
 {
-  const ctx = await c1Context({ "chess.v1.stats": STATS_7X, "chess.v1.library": V1["8.0-dev"] });
+  const ctx = await c1Context({ "chess.stats": STATS, "chess.library": V1.clocked });
   const { page, errs } = await open(ctx);
   await c1Ready(page);
-  await page.click('#rail button[data-view="me"]');
+  // 9.0 S4: 对局历史 is on 棋谱 now, under the library — not on 我的
+  await page.click('#rail button[data-view="library"]');
   await page.waitForTimeout(300);
+  const home = await page.evaluate(() => ({
+    lib: !!document.querySelector("#page-library #sec-history"),
+    me: !!document.querySelector("#page-me #sec-history"),
+    shown: !!document.getElementById("sec-history").offsetParent,
+  }));
+  assert(home.lib && !home.me && home.shown, "S4 对局历史在「棋谱」页上，不在「我的」", JSON.stringify(home));
   const label = (await page.textContent("#hist-open")).trim();
   await page.click("#hist-open");
   await page.waitForTimeout(500);
+  await openFilters(page);
   const r = await page.evaluate(() => ({
     open: document.getElementById("lib-list-modal").classList.contains("show"),
     src: document.querySelector("#lib-src-seg .active") && document.querySelector("#lib-src-seg .active").dataset.lsrc,
@@ -2395,7 +2214,7 @@ function tenThousand() {
       pgn: !!row.querySelector("[data-loc-pgn]"), text: row.textContent })),
   }));
   assert(label === "全部 2 局" && r.open && r.src === "local" && r.rows.length === 2 && r.rows.every((x) => x.loc && x.tag === "本机" && x.pgn),
-    `C1 「我的」→ 对局历史「全部 N 局」打开的是棋谱库，只看本机，每行标「本机」、能复制 PGN(${label}; ${JSON.stringify(r.rows.map((x) => x.tag))})`);
+    `C1 「棋谱」→ 对局历史「全部 N 局」打开的是棋谱库，只看本机，每行标「本机」、能复制 PGN(${label}; ${JSON.stringify(r.rows.map((x) => x.tag))})`);
   // all sources: the two imported games and the two local ones, one list
   await page.click('#lib-src-seg [data-lsrc="all"]');
   const all = await page.$$eval("#lib-list .hist-row", (rows) => rows.length);
@@ -2406,20 +2225,21 @@ function tenThousand() {
   await page.waitForTimeout(900);
   const board = await page.evaluate(() => ({
     list: document.getElementById("lib-list-modal").classList.contains("show"),
-    page: !document.getElementById("page-me").hidden && document.getElementById("page-me").offsetParent !== null,
-    view: JSON.parse(localStorage.getItem("chess.v1.settings")).view,
-    mode: JSON.parse(localStorage.getItem("chess.v1.settings")).mode,
-    pgn: JSON.parse(localStorage.getItem("chess.v1.save")).pgn,
+    page: !document.getElementById("page-library").hidden && document.getElementById("page-library").offsetParent !== null,
+    view: JSON.parse(localStorage.getItem("chess.settings")).view,
+    mode: JSON.parse(localStorage.getItem("chess.settings")).mode,
+    pgn: JSON.parse(localStorage.getItem("chess.save")).pgn,
   }));
-  assert(!board.list && !board.page && board.mode === "ai" && /Qxf7#/.test(board.pgn) && board.view !== "me",
-    `C1 点本机那一局：列表关掉、离开「我的」回到棋盘、人机模式、就是那一局，而且记下了(${JSON.stringify({ view: board.view, mode: board.mode })})`);
-  // the preview rows on 我的 still load a game
-  await page.click('#rail button[data-view="me"]');
+  assert(!board.list && !board.page && board.mode === "ai" && /Qxf7#/.test(board.pgn) && board.view !== "library",
+    `C1 点本机那一局：列表关掉、离开「棋谱」回到棋盘、人机模式、就是那一局，而且记下了(${JSON.stringify({ view: board.view, mode: board.mode })})`);
+  // the preview rows on 棋谱 still load a game
+  await page.click('#rail button[data-view="library"]');
   await page.waitForTimeout(300);
-  assert(await page.$$eval("#hist-body [data-hist]", (b) => b.length) === 2, "C1 「我的」上的对局历史预览还在(2 行)");
+  assert(await page.$$eval("#hist-body [data-hist]", (b) => b.length) === 2, "C1 「棋谱」上的对局历史预览还在(2 行)");
   // search the merged list: by the engine level, and by the position on the board
   await page.click("#hist-open");
   await page.waitForTimeout(300);
+  await openFilters(page);
   await page.click('#lib-src-seg [data-lsrc="all"]');
   await page.fill("#lib-q", "高级");
   const hard = await page.$$eval("#lib-list [data-loc]", (b) => b.map((x) => x.dataset.loc));
@@ -2457,7 +2277,7 @@ function tenThousand() {
   await page.click("#lib-claim-yes");
   await page.waitForTimeout(300);
   const after = await page.evaluate(() => ({ names: document.getElementById("lib-names").value, hidden: document.getElementById("lib-claim").hidden,
-    header: JSON.parse(localStorage.getItem("chess.v1.library")) }));
+    header: JSON.parse(localStorage.getItem("chess.library")) }));
   const lib = await libOf(page);
   assert(after.names === "hxddh" && after.hidden && lib.games.filter((g) => g.side).length === 3 && after.header.claimAsked === true,
     `C1 点「是我」：名字填上，三局认成你的，提示收起(${after.names}; ${lib.games.filter((g) => g.side).length})`);
@@ -2493,7 +2313,7 @@ const T5_STATS = { v: 2, games: Array.from({ length: 20 }, (_, i) => Object.assi
   pgn: T5_LINES[i % 4], ending: "resigned", style: "off" },
 i % 5 === 0 ? { rb: 1400 + i, ra: 1410 + i, perf: 1500 } : {}, i % 4 === 1 ? { tc: "180+2" } : {}))
   .concat([{ id: "t5-x", t: T - DAY, diff: "normal", color: "w", result: "draw", moves: 2, pgn: "1. g4 e5", ending: "drawAgreed" }]) };
-const statsOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("chess.v1.stats") || "{}"));
+const statsOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("chess.stats") || "{}"));
 /** Click one square, then another — a move on the board. */
 async function t5Move(page, from, to) {
   const xy = (sq) => page.evaluate((q) => {
@@ -2504,13 +2324,13 @@ async function t5Move(page, from, to) {
   const a = await xy(from); await page.mouse.click(a.x, a.y); await page.waitForTimeout(150);
   const b = await xy(to); await page.mouse.click(b.x, b.y);
 }
-const AI_5_3 = { mode: "ai", difficulty: "beginner", humanColor: "w", timeControl: "5+3", langId: "zh-CN", sideTab: "play",
-  view: "play", soundOn: false, themeId: "wood" };
+const AI_5_3 = { mode: "ai", difficulty: "beginner", humanColor: "w", timeControl: "5+3", langId: "zh-CN",
+  view: "play", soundOn: false, appearance: "dark", boardId: "wood" };
 
 // --- T5.1 a game played now records its clock; the speed filter finds it ------
 {
-  const ctx = await c1Context({ "chess.v1.settings": AI_5_3,
-    "chess.v1.save": { v: 1, savedAt: T, pgn: '[Event "t5"]\n[Result "*"]\n\n1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 *',
+  const ctx = await c1Context({ "chess.settings": AI_5_3,
+    "chess.save": { v: 1, savedAt: T, pgn: '[Event "t5"]\n[Result "*"]\n\n1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 *',
       clock: { tc: "5+3", w: 240000, b: 250000, flag: null, started: true } } });
   const { page, errs } = await open(ctx);
   await c1Ready(page);
@@ -2522,6 +2342,7 @@ const AI_5_3 = { mode: "ai", difficulty: "beginner", humanColor: "w", timeContro
   assert(last && last.result === "win" && last.tc === "300+3", `T5 新下完的一局记下棋钟：5+3 → TimeControl 300+3(${JSON.stringify(last && { r: last.result, tc: last.tc })})`);
   await page.evaluate(() => window.__chess.libDb().openList(null, { src: "local" }));
   await page.waitForTimeout(600);
+  await openFilters(page);
   await page.click('#lib-tc-seg [data-ltc="blitz"]');
   const blitz = await page.$$eval("#lib-list [data-loc]", (b) => b.map((x) => x.dataset.loc));
   await page.click('#lib-tc-seg [data-ltc="rapid"]');
@@ -2531,35 +2352,10 @@ const AI_5_3 = { mode: "ai", difficulty: "beginner", humanColor: "w", timeContro
   await ctx.close();
 }
 
-// --- T5.2 an old game gets the clock the save says it was played on -----------
-{
-  const MATE = "1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7#";
-  const ctx = await c1Context({ "chess.v1.settings": AI_5_3, "chess.v1.stats": STATS_7X,
-    "chess.v1.save": { v: 1, savedAt: T, pgn: '[Result "1-0"]\n\n' + MATE + " 1-0", clock: { tc: "5+3", w: 281000, b: 290500, flag: null, started: true } } });
-  const { page, errs } = await open(ctx);
-  await c1Ready(page);
-  await page.waitForTimeout(400);
-  const st = await statsOf(page);
-  const byId = new Map((st.games || []).map((g) => [g.id, g]));
-  const lost = STATS_7X.games.filter((g) => {
-    const s = byId.get(g.id);
-    return !s || Object.keys(g).some((k) => JSON.stringify(g[k]) !== JSON.stringify(s[k])) || Object.keys(s).some((k) => !(k in g) && k !== "tc");
-  }).map((g) => g.id);
-  assert(byId.get("g1") && byId.get("g1").tc === "300+3" && byId.get("g2") && !("tc" in byId.get("g2")) && lost.length === 0,
-    `T5 旧记录补标：棋盘上那局按存档里走过的钟标 300+3，推不出来的不标，其余字段一个不变(${JSON.stringify([...byId.values()].map((g) => g.tc || "-"))}；不等 ${lost.join(",") || "无"})`);
-  await page.evaluate(() => window.__chess.libDb().openList(null, { src: "local" }));
-  await page.waitForTimeout(600);
-  await page.click('#lib-tc-seg [data-ltc="blitz"]');
-  const blitz = await page.$$eval("#lib-list [data-loc]", (b) => b.map((x) => x.dataset.loc));
-  assert(blitz.join() === "g1", `T5 补标之后，用时筛选找得到它(${blitz.join()})`);
-  assert(errs.length === 0, "T5 补标：没有 JS 异常", errs.join(" / "));
-  await ctx.close();
-}
-
 // --- T5.3 the diagnosis's source row: 导入的 by default, 本机, 全部 --------------
 let t5Export = "";
 {
-  const ctx = await c1Context({ "chess.v1.stats": T5_STATS, "chess.v1.library": V1["7.0"] });
+  const ctx = await c1Context({ "chess.stats": T5_STATS, "chess.library": V1.plain });
   const { page, errs } = await open(ctx);
   await c1Ready(page);
   await page.waitForTimeout(600);
@@ -2573,7 +2369,7 @@ let t5Export = "";
     text: document.getElementById("lib-diag").innerText.replace(/\s+/g, " ") }));
   const imp = await read();
   assert(imp.on.join() === "import:true" && /还差 19 局才够给诊断（已分析 1\/20）/.test(imp.text) && !/逐手分析/.test(imp.text),
-    `T5 诊断默认读「导入的」：7.x 的数字，还差 19 局(${imp.on}；${imp.text.slice(0, 60)})`);
+    `T5 诊断默认读「导入的」：还差 19 局(${imp.on}；${imp.text.slice(0, 60)})`);
   // by keyboard: Tab to 本机, Enter
   await page.focus('#diag-src-seg [data-dsrc="local"]');
   await page.keyboard.press("Enter");
@@ -2632,7 +2428,8 @@ let t5Export = "";
   const [dl1] = await Promise.all([page.waitForEvent("download"), page.click("#lib-export")]);
   const onlyImp = fs.readFileSync(await dl1.path(), "utf8");
   assert(!/\[LibId "loc:/.test(onlyImp) && (onlyImp.match(/\[LibId "lib:/g) || []).length === 2,
-    "T5 来源选「导入」时导出的和 8.0 一样：只有导入的 2 局");
+    "T5 来源选「导入」时导出的只有导入的 2 局");
+  await openFilters(page);
   await page.click('#lib-src-seg [data-lsrc="all"]');
   const [dl2] = await Promise.all([page.waitForEvent("download"), page.click("#lib-export")]);
   t5Export = fs.readFileSync(await dl2.path(), "utf8");

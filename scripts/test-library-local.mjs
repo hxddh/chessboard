@@ -25,7 +25,7 @@ const assert = (cond, msg, extra) => {
 };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-/** library-ui.js rescoreLosses, as the chunk calls it on a 本机 entry's pass. */
+/** library-ui.js fillLosses, as the chunk calls it on a 本机 entry's pass. */
 function rescore(g) {
   const an = g.an, sc = an.scalars;
   let side = typeof g.fen === "string" && g.fen.trim().split(/\s+/)[1] === "b" ? "b" : "w";
@@ -160,49 +160,7 @@ const mainline = (g) => { const s = []; for (let n = g.root; n.children.length; 
   assert([imp].map(Q.entryPgn)[0] === Q.entryPgn(imp) && !/LibRec/.test(Q.entryPgn(imp)), "导入的棋照旧导出（entryPgn 经 map 调用时不多写标签）");
 }
 
-// --- 3. the time control: new records carry it, old ones where the save says --
-const lineOf = (pgn) => {
-  const g = parse(pgn);
-  if (!g) return null;
-  const tc = g.headers.find(([k]) => k === "TimeControl");
-  return { fen: g.root.fen, sans: mainline(g), tc: tc ? tc[1] : "" };
-};
-{
-  assert(LL.tcTagOf("5+3") === "300+3" && LL.tcTagOf("10") === "600" && LL.tcTagOf("c20+5") === "1200+5" && LL.tcTagOf("off") === "",
-    "棋钟设置写成 PGN 的 TimeControl：5+3 → 300+3，10 → 600，自定 c20+5 → 1200+5");
-  const MATE = "1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7#";
-  // the shapes each version wrote (6.x after persist.js migrateStats)
-  const v6 = { id: "v1-mf0-0", t: T0 - 5e8, result: "win", diff: "casual", color: "w", pgn: "e4 e5 Qh5 Nc6 Bc4 Nf6 Qxf7#", ending: "mate" };
-  const v7 = { id: "g1", t: T0 - 4e8, diff: "normal", color: "w", result: "win", moves: 7, acc: 88,
-    pgn: '[Event "?"]\n[Result "1-0"]\n\n' + MATE + " 1-0", ending: "" };
-  const v8 = { id: "mf9-3", t: T0 - 1e8, color: "w", result: "win", moves: 7, pgn: MATE, ending: "", diff: "normal", style: "tal",
-    rb: 1400, ra: 1412, perf: 1500, acc: 91, acpl: 12, hi: 900, lo: -40 };
-  const v8u = { id: "mf9-4", t: T0 - 5e7, color: "b", result: "draw", moves: 4, pgn: "1. d4 d5 2. c4 e6", ending: "drawAgreed",
-    diff: "hard", style: "off", unrated: "changed" };
-  const own = { id: "mf9-5", t: T0 - 4e7, color: "w", result: "loss", moves: 2, pgn: '[TimeControl "600"]\n\n1. f3 e5', ending: "resigned", diff: "hard", style: "off" };
-  const fresh = { id: "mfa-1", t: T0, color: "w", result: "win", moves: 3, pgn: "1. e4 e5 2. Qh5", ending: "resigned", diff: "hard", style: "off", tc: "-" };
-  const games = [v6, v7, v8, v8u, own, fresh];
-  const before = JSON.parse(JSON.stringify(games));
-  // the board still has the scholar's mate on it, played on 5+3 and clocked
-  const save = { v: 1, pgn: '[Result "1-0"]\n\n' + MATE + " 1-0", clock: { tc: "5+3", w: 281000, b: 290500, flag: null, started: true } };
-  const cand = LL.saveClock(save, lineOf);
-  assert(cand && cand.tc === "300+3" && cand.sans === "e4 e5 Qh5 Nc6 Bc4 Nf6 Qxf7#", "存档里走过的棋钟是对局时的设置（5+3 → 300+3）");
-  assert(LL.saveClock(Object.assign({}, save, { clock: { tc: "5+3", w: 300000, b: 300000, started: true } }), lineOf) === null,
-    "…钟没走过（从历史里载入的旧局配的是今天的钟）不算");
-  assert(LL.saveClock(Object.assign({}, save, { clock: Object.assign({}, save.clock, { started: false }) }), lineOf) === null &&
-    LL.saveClock({ v: 1, pgn: MATE }, lineOf) === null, "…没开始走、没有钟，也不算");
-  const n = LL.backfillTc(games, [cand], lineOf);
-  assert(n === 2 && v8.tc === "300+3" && own.tc === "600", "补标两局：棋盘上那局（最近下的那一盘）按存档的钟，自己 PGN 里写着的按标签（" + n + "）");
-  assert(v6.tc === undefined && v7.tc === undefined && v8u.tc === undefined,
-    "同样着法的更早两局（6.x、7.x 形状）和推不出来的，不标");
-  const lost = games.map((g, i) => Object.keys(before[i]).filter((k) => !same(before[i][k], g[k])).map((k) => g.id + "." + k)).flat();
-  const extra = games.map((g, i) => Object.keys(g).filter((k) => !(k in before[i]) && k !== "tc")).flat();
-  assert(lost.length === 0 && extra.length === 0 && fresh.tc === "-",
-    "6.x–8.0 的每条记录：原有字段一个不变，只多了 tc；已经有 tc 的（新记录，含不计时的 \"-\"）不动（" + lost.concat(extra).join(",") + "）");
-  assert(LL.backfillTc(games, [cand], lineOf) === 0, "再跑一次什么都不改（候选已用过，已标的不再标）");
-}
-
-// --- 4. the speed filter finds 本机 games by their clock ---------------------
+// --- 3. the speed filter finds 本机 games by their clock ---------------------
 {
   const mk = (id, tc) => Object.assign({ id, src: "local", side: "w", outcome: "win", sans: "e4", plies: 1, fen: "" }, tc ? { tc } : {});
   const games = [mk("loc:1", "300+3"), mk("loc:2", "60"), mk("loc:3", "-"), mk("loc:4"), { id: "lib:1", tc: "900+10", sans: "e4", plies: 1 }];

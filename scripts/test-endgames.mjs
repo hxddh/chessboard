@@ -241,7 +241,10 @@ function camp(learnState) {
     "一个残局 = 一课一题：和引擎对下，引擎满强度（extreme）");
   assert(L.tasks[0].winOn === "draw" && L.tasks[0].goal === "draw", "守和的残局按守和判");
   const tbL = E.lesson("kp-keysq"), onL = E.lesson("rp-lucena"), sfL = E.lesson("kp-breakthrough");
-  assert(tbL.text[1].includes("Syzygy") && onL.text[1].includes("Syzygy") && sfL.text[1].includes("Stockfish"),
+  // v9-0-plan S6: the method in the player's words — 残局库 / 引擎长时间计算,
+  // not the names Syzygy and Stockfish
+  assert(tbL.text[1].includes("查过残局库") && onL.text[1].includes("查过残局库") && sfL.text[1].includes("引擎长时间计算") &&
+    ![tbL, onL, sfL].some((l) => /Syzygy|Stockfish/.test(l.text[1])),
     "每个残局的出处一行写明核对方法：" + tbL.text[1] + " / " + onL.text[1] + " / " + sfL.text[1]);
   // v8-3-plan T5: a 5–7-man position only searched so far says so — not
   // 「超过七子」 (it is not) and not 「查 Syzygy」 (not yet)
@@ -252,7 +255,7 @@ function camp(learnState) {
   const was = pend.v; pend.v = "pend";
   const pL = E.lesson(pend.id);
   pend.v = was;
-  assert(pL && pL.text[1].includes("Stockfish") && pL.text[1].includes("还没做") && !pL.text[1].includes("超过七子") && !pL.text[1].includes("Syzygy"),
+  assert(pL && pL.text[1].includes("引擎长时间计算") && pL.text[1].includes("还没做") && !pL.text[1].includes("超过七子") && !pL.text[1].includes("Syzygy"),
     "等在线表的残局，出处一行写着「查残局库的核对还没做」：" + (pL && pL.text[1]));
   assert(tbL.text[1].includes("标准残局理论") && onL.text[1].includes("Salvio"), "……以及局面的来源");
 

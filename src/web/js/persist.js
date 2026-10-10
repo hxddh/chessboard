@@ -1,11 +1,8 @@
 /**
  * The one door to stored state.
  *
- * Eight keys — save / settings / stats / learn / puzzles / achv / slots /
- * panelOpen — each with its own version convention (`v:1` here, `idv` there,
- * srs tolerating 1.6's `true`, drills carrying a frozen id map), no single
- * "which version is this profile, and how does it come forward", and a
- * "clear the save" path that had to remember all eight by hand. 缺陷 33.
+ * Every key the app stores, its expected shape, the profile's one schema
+ * number, and a "clear the save" that cannot forget a key. 缺陷 33.
  *
  * And underneath it, the failure nobody was listening for. `host.js`
  * deliberately returns true/false from storageSet() and catches its own
@@ -24,35 +21,35 @@
 
 /** Every key this app owns. "Clear my data" means exactly this list. */
 export const KEYS = {
-  save: "chess.v1.save",
-  settings: "chess.v1.settings",
-  stats: "chess.v1.stats",
-  learn: "chess.v1.learn",
-  puzzles: "chess.v1.puzzles",
-  mines: "chess.v1.mines",
-  progress: "chess.v1.progress",
-  achievements: "chess.v1.achv",
-  slots: "chess.v1.slots",
+  save: "chess.save",
+  settings: "chess.settings",
+  stats: "chess.stats",
+  learn: "chess.learn",
+  puzzles: "chess.puzzles",
+  mines: "chess.mines",
+  progress: "chess.progress",
+  achievements: "chess.achv",
+  slots: "chess.slots",
   // 7.0: the imported games library and their offline analyses. Its own key
   // and not part of `stats`, because it is much the largest thing this app
   // stores (a few hundred games with a per-ply loss array each) and a quota
   // failure writing it must not take the play history down with it.
-  library: "chess.v1.library",
+  library: "chess.library",
   // 7.2: the player's own opening book. Its own key for the same reason the
   // library has one — it is imported data with its own lifetime, and it is
   // the one thing here a player may want to clear on its own.
-  repertoire: "chess.v1.repertoire",
+  repertoire: "chess.repertoire",
   // 7.6: finished board analyses, by game (analysis-store.js). Its own key
   // for the library's reason: the largest-but-one thing stored, and a quota
   // failure writing it must not take the save down with it.
-  analyses: "chess.v1.analyses",
+  analyses: "chess.analyses",
   // v8-0-plan C2: 允许联网同步 and the last site / user name asked for
   // (sync-ui.js). A key of its own so 清除全部存档 takes the name with it.
-  sync: "chess.v1.sync",
+  sync: "chess.sync",
   panelOpen: "chess.panelOpen",
   // 6.0: where a value that failed to parse is kept, instead of being thrown
   // away and overwritten by the next autosave (v6-plan D2)
-  quarantine: "chess.v1.quarantine",
+  quarantine: "chess.quarantine",
 };
 
 /** Where the profile's schema version lives — the one number, not eight. */
@@ -68,42 +65,10 @@ export const STAMP_KEY = "chess.writtenAt";
 export const SELFTEST_KEY = "chess.selftest";
 
 /**
- * The current schema version, and how to get here from each earlier one.
- *
- * A migration takes the whole bag of raw strings and returns it changed. Whole
- * bag rather than one key at a time, because the interesting migrations are
- * the cross-key ones: a stats record that needs an id the save file also
- * refers to cannot be fixed by looking at either key alone.
- *
- * Migrations must be **frozen data or pure rewrites of what is stored** — never
- * a derivation from the current code's idea of the content. design-constraints
- * §6: a derived map is only correct for someone who did not skip a version.
+ * The profile's schema version. 9.0 started the profile over (v9-0-plan §H):
+ * nothing written by an earlier version is read.
  */
-export const SCHEMA = 2;
-
-/** @type {Array<{to: number, note: string, up: (bag: object) => object}>} */
-export const MIGRATIONS = [
-  // v0 → v1 is the arrival of this file: everything written before it had no
-  // schema number at all, and each key carried its own convention. Nothing is
-  // rewritten — the per-key readers still understand their own history — this
-  // only records that the profile has been seen by a versioned reader.
-  { to: 1, note: "adopt a single schema version", up: (bag) => bag },
-  // v1 → v2 (v8-0-plan F3): the native mirror stops being one document. 6.x
-  // and 7.x wrote the whole profile to chessboard.json on every autosave —
-  // library and analyses included, base64'd on the main thread, and past
-  // ~768 KB not at all, because one bridge frame holds 1 MiB. SCHEMA 2 keeps one
-  // file per key (store/<key>.json) plus a manifest (STORE_META), and writes
-  // only the keys that changed.
-  //
-  // The keys themselves keep their shapes, so the bag passes through
-  // untouched. What moves is the native copy, and that is file work load()
-  // cannot do synchronously: recover() does it. A store with no manifest is
-  // one this profile has never been written to, so recover() reads the old
-  // chessboard.json in its place (restoring from it exactly as 7.x would)
-  // and then writes every key out (see readStore). chessboard.json itself is
-  // left where it is — a downgrade to 7.x finds the last copy it wrote.
-  { to: 2, note: "native mirror: one file per key, only changed keys written", up: (bag) => bag },
-];
+export const SCHEMA = 3;
 
 /**
  * v8-0-plan F3: the per-key store's manifest — {app, schema, writtenAt, keys,
@@ -159,14 +124,14 @@ function timed(name, fn) {
 export function isStoreMeta(m) {
   return !!m && m.app === "chessboard" && Array.isArray(m.keys) &&
     m.keys.every((k) => typeof k === "string") && Number.isFinite(Number(m.writtenAt)) &&
-    (m.files == null || (typeof m.files === "object" &&
-      Object.entries(m.files).every(([k, f]) => f === k || f === k + STORE_ALT)));
+    !!m.files && typeof m.files === "object" &&
+    m.keys.every((k) => m.files[k] === k || m.files[k] === k + STORE_ALT);
 }
 
-/** The file each listed key of manifest `m` is in (a manifest without `files` predates the two slots). */
+/** The file each listed key of manifest `m` is in. */
 export function storeFiles(m) {
   const files = {};
-  for (const name of m.keys) files[name] = (m.files && m.files[name]) || name;
+  for (const name of m.keys) files[name] = m.files[name];
   return files;
 }
 
@@ -208,16 +173,15 @@ export function createPersist(host, onWriteFailure) {
   /**
    * Read every key, once.
    *
-   * One pass at startup instead of eight scattered reads, so migrations see a
-   * whole profile and the rest of the app never has to wonder whether some
-   * other key has been touched since.
+   * One pass at startup instead of scattered reads, so the rest of the app
+   * never has to wonder whether some other key has been touched since.
    */
   function load() {
     bag = {};
     for (const [name, key] of Object.entries(KEYS)) bag[name] = host.storageGet(key);
-    // before any migration, and long before anything writes: the profile as
-    // it was found. panelOpen is excluded — it is a window preference, not
-    // evidence that somebody has played.
+    // long before anything writes: the profile as it was found. panelOpen is
+    // excluded — it is a window preference, not evidence that somebody has
+    // played.
     foundEmpty = Object.entries(bag)
       .every(([name, v]) => name === "panelOpen" || v == null);
     // v8-0-plan F3: the revision the cache was at when first found. The boot
@@ -226,13 +190,7 @@ export function createPersist(host, onWriteFailure) {
     // moved; what says "the store already holds this profile" is the stamp
     // as found. The boot writes themselves are dirty and flush as usual.
     if (foundAt == null) foundAt = Number(host.storageGet(STAMP_KEY) || 0) || 0;
-    const at = Number(host.storageGet(SCHEMA_KEY) || 0) || 0;
-    if (at < SCHEMA) {
-      for (const m of MIGRATIONS) if (m.to > at) bag = m.up(bag) || bag;
-      // recorded even if nothing moved: the next migration needs to know how
-      // far this profile has come, and "no version" cannot say that
-      host.storageSet(SCHEMA_KEY, String(SCHEMA));
-    }
+    if (host.storageGet(SCHEMA_KEY) !== String(SCHEMA)) host.storageSet(SCHEMA_KEY, String(SCHEMA));
     return bag;
   }
 
@@ -310,25 +268,24 @@ export function createPersist(host, onWriteFailure) {
   // localStorage is the WebView's, not ours: its path is decided by the
   // engine, it is cleared by "remove website data", it has a quota, and a
   // change of app id or scheme leaves it behind. The profile is therefore
-  // also written — whole, as one JSON document — to a file the shell owns in
-  // the user's application-data directory (host.appdataWrite, atomic with a
-  // .bak). localStorage stays the synchronous cache the app boots from; the
-  // file is what survives. The two are reconciled once, at startup, by
-  // recover(): when the cache is empty or older than the file, the file wins
-  // and the page reloads onto it — the one moment the async read is allowed
-  // to change what the app is standing on.
-  //
-  // v8-0-plan F3: "whole, as one JSON document" is 6.x–7.x. Since SCHEMA 2
-  // the file is a directory of them, one per key plus a manifest, and a flush
-  // writes only the keys that changed (see MIGRATIONS and flushKeys).
+  // also written to files the shell owns in the user's application-data
+  // directory (host.appdataWriteKey, atomic with a .bak): one per key plus a
+  // manifest, and a flush writes only the keys that changed (v8-0-plan F3,
+  // see flushKeys). localStorage stays the synchronous cache the app boots
+  // from; the files are what survives. The two are reconciled once, at
+  // startup, by recover(): when the cache is empty or older than the store,
+  // the store wins and the page reloads onto it — the one moment the async
+  // read is allowed to change what the app is standing on.
   // ------------------------------------------------------------------------
   const MIRROR_DELAY = 400; // ms; every autosave in a burst becomes one write
   let mirrorTimer = null;
-  let mirrorEnabled = typeof host.appdataWrite === "function";
+  // the per-key store, when the host offers one
+  const keyed = typeof host.appdataReadKey === "function" && typeof host.appdataWriteKey === "function";
+  let mirrorEnabled = keyed;
   // 6.1: no write reaches the file before recover() has reconciled the two
-  // copies; with no reader there is nothing to reconcile, so the gate is open
+  // copies; with no store there is nothing to reconcile, so the gate is open
   // from the start.
-  let reconciled = typeof host.appdataRead !== "function";
+  let reconciled = !keyed;
   let mirrorPending = false;
   // 6.1: set when the file turned out to be unreadable. The banner tells the
   // user their file was left alone so they can try to recover it — that has to
@@ -339,10 +296,6 @@ export function createPersist(host, onWriteFailure) {
   let mirrorBlocked = false;
   // 6.1: set once a restore has rewritten storage — see set()
   let frozen = false;
-  // v8-0-plan F3: the per-key store, when the host offers one. A host with
-  // only appdataRead/appdataWrite (an older test double) keeps the 6.x–7.x
-  // one-document mirror below, unchanged.
-  const perKey = typeof host.appdataReadKey === "function" && typeof host.appdataWriteKey === "function";
   // keys whose cache value the store has not been given yet (set, remove,
   // restoreAll add to it; a flush takes it)
   const dirty = new Set();
@@ -351,10 +304,6 @@ export function createPersist(host, onWriteFailure) {
   // key → file, as the manifest on disk has it; null until this session has
   // read the manifest (recover) or written one. See STORE_ALT.
   let committed = null;
-  // chessboard.json is cleared too when the profile is cleared: after the
-  // migration it still holds the last 7.x copy, and "clear my data" that
-  // leaves a whole profile on disk is not a clear
-  let clearLegacy = false;
   // one flush at a time: flushMirror() queues behind the one in flight
   let flushChain = Promise.resolve(true);
   // v8-0-plan C1: the library's port — {names() → shard names holding games
@@ -447,15 +396,13 @@ export function createPersist(host, onWriteFailure) {
     if (mirrorPending) { mirrorPending = false; scheduleMirror(); }
   }
   /**
-   * Bring the native copy up to date now. @returns {Promise<boolean>}
-   *
-   * v8-0-plan F3: with the per-key store this writes only the keys that
-   * changed, then the manifest — a move writes the save, not the library.
+   * Bring the native copy up to date now: only the keys that changed, then
+   * the manifest — a move writes the save, not the library (v8-0-plan F3).
+   * @returns {Promise<boolean>}
    */
   function flushMirror() {
     if (mirrorTimer) { clearTimeout(mirrorTimer); mirrorTimer = null; }
     if (!mirrorEnabled || mirrorBlocked) return Promise.resolve(false);
-    if (!perKey) return flushWhole();
     // one flush at a time on this page, and — with the store's lock — across
     // every window sharing the store (host.js withStoreLock, Codex on #85)
     const locked = () => (typeof host.withStoreLock === "function" ? host.withStoreLock(flushKeys) : flushKeys());
@@ -480,7 +427,7 @@ export function createPersist(host, onWriteFailure) {
   async function flushKeys() {
     if (!mirrorEnabled || mirrorBlocked) return false;
     expandBulk();
-    if (!dirty.size && !clearLegacy) return true;
+    if (!dirty.size) return true;
     const gone = new Set(removed);
     const values = [];
     // per kind: a port that can name its shards (v8-1-plan T3)
@@ -505,12 +452,10 @@ export function createPersist(host, onWriteFailure) {
       values.push([name, valueOf(name)]);
     }
     const names = values.map(([name]) => name);
-    if (!names.length && !gone.size && !clearLegacy) return true;
+    if (!names.length && !gone.size) return true;
     for (const name of names) dirty.delete(name);
     removed.clear();
     const meta = { app: "chessboard", schema: SCHEMA, writtenAt: stamp(), keys: [] };
-    const legacy = clearLegacy;
-    clearLegacy = false;
     try {
       // (Codex on #85) the manifest on disk, read fresh: a second window
       // (two instances share one store) may have committed since this one
@@ -563,15 +508,11 @@ export function createPersist(host, onWriteFailure) {
           if ((await host.appdataWriteKey(file, "null")) == null) { mirrorEnabled = false; return false; }
         }
       }
-      if (legacy && typeof host.appdataWrite === "function") {
-        await host.appdataWrite(JSON.stringify({ app: "chessboard", schema: SCHEMA, writtenAt: meta.writtenAt, keys: {} }));
-      }
       return true;
     } catch (_) {
       // not written: they stay owed to the next flush
       for (const name of names) dirty.add(name);
       for (const name of gone) removed.add(name);
-      if (legacy) clearLegacy = true;
       if (host.hasZero && host.hasZero()) fail("appdata");
       else mirrorEnabled = false;
       return false;
@@ -594,26 +535,9 @@ export function createPersist(host, onWriteFailure) {
     throw new Error("store manifest unreadable");
   }
 
-  /** 6.x–7.x: write the whole profile as one document. @returns {Promise<boolean>} */
-  async function flushWhole() {
-    try {
-      const ok = await host.appdataWrite(JSON.stringify(mirrorDoc()));
-      // null: the shell has no such file (no data dir, an older build) —
-      // the mirror simply does not exist here, which is not a failed write
-      if (ok == null) { mirrorEnabled = false; return false; }
-      if (ok === false) fail("appdata");
-      return ok !== false;
-    } catch (_) {
-      // an absent bridge (a browser, a test) is not a failure of the profile;
-      // a bridge that is there and refuses is
-      if (host.hasZero && host.hasZero()) fail("appdata");
-      else mirrorEnabled = false;
-      return false;
-    }
-  }
   /** Is a document one of ours, in a shape we can restore from? */
   function isProfileDoc(doc) {
-    return !!doc && doc.app === "chessboard" && doc.keys && typeof doc.keys === "object";
+    return !!doc && doc.app === "chessboard" && Number(doc.schema) === SCHEMA && !!doc.keys && typeof doc.keys === "object";
   }
   /**
    * Adopt the native file when it knows more than the cache does.
@@ -622,10 +546,9 @@ export function createPersist(host, onWriteFailure) {
    */
   async function recover() {
     // v8-0-plan F3: unless the store is provably at the cache's revision,
-    // every key is owed to it — a store written by nothing yet (the
-    // migration), one a crash or a failed write left behind, or one this
-    // launch could not read. Rewriting it whole is the one answer that is
-    // right in all of those.
+    // every key is owed to it — a store written by nothing yet, one a crash
+    // or a failed write left behind, or one this launch could not read.
+    // Rewriting it whole is the one answer that is right in all of those.
     let inSync = false;
     // 6.1: whatever happens below, the mirror gate opens exactly once on the
     // way out — a recover() that returns early must not leave the file
@@ -635,37 +558,9 @@ export function createPersist(host, onWriteFailure) {
       inSync = r === "in-sync";
       return inSync ? "kept" : r;
     } finally {
-      if (perKey && !inSync) markAllDirty();
+      if (keyed && !inSync) markAllDirty();
       if (!frozen) releaseMirror(); else reconciled = true;
     }
-  }
-
-  /**
-   * The 6.x–7.x one-document file.
-   * @returns {Promise<{failed: true}|{none: true}|{damaged: true}|{at: number, load: () => Promise<object>}>}
-   */
-  async function readLegacy(strict) {
-    if (typeof host.appdataRead !== "function") return { none: true };
-    let text = null, empty = false;
-    // host.js answers {text,bak} | {missing:true} | {empty:true} | null; a
-    // plain string is also accepted so a test host can be a one-liner
-    try {
-      const r = await host.appdataRead();
-      if (typeof r === "string") text = r;
-      else if (r && typeof r.text === "string") text = r.text;
-      else if (r && r.empty) empty = true;
-      // migrating, null is a read that did not happen, not a missing file:
-      // the per-key host answers {missing} for that (see readStore)
-      else if (strict && (!r || !r.missing)) return { failed: true };
-    } catch (_) { return { failed: true }; }
-    // 6.1: a file that exists and holds nothing is damage, not a fresh
-    // install — an interrupted write leaves exactly that.
-    if (empty) return { damaged: true };
-    if (!text) return { none: true };
-    let doc = null;
-    try { doc = JSON.parse(text); } catch (_) { doc = null; }
-    if (!doc || !isProfileDoc(doc)) return { damaged: true };
-    return { at: Number(doc.writtenAt) || 0, load: async () => doc };
   }
 
   /**
@@ -676,9 +571,8 @@ export function createPersist(host, onWriteFailure) {
   async function readStore() {
     let r;
     try { r = await host.appdataReadKey(STORE_META); } catch (_) { return { failed: true }; }
-    // no manifest: this store has never been written. The profile lives in
-    // chessboard.json, if anywhere (the SCHEMA 1 → 2 migration).
-    if (r && r.missing) { committed = {}; return Object.assign({ migrating: true }, await readLegacy(true)); }
+    // no manifest: this store has never been written
+    if (r && r.missing) { committed = {}; return { none: true }; }
     if (r && r.empty) return { damaged: true };
     // (Codex on #85) anything but an explicit "missing" without text is a
     // read that did not happen — host.js answers null for a bridge error as
@@ -723,8 +617,8 @@ export function createPersist(host, onWriteFailure) {
   }
 
   async function recoverInner() {
-    if (!perKey && typeof host.appdataRead !== "function") return "none";
-    const src = perKey ? await readStore() : await readLegacy();
+    if (!keyed) return "none";
+    const src = await readStore();
     // the file could not be read, so which side is newer is unknown: leave it
     // alone for this session. The cache keeps everything; the next launch
     // asks again.
@@ -740,7 +634,7 @@ export function createPersist(host, onWriteFailure) {
     // file must not undo what the player did in a session the file missed
     if (!foundEmpty && (!cacheAt || src.at <= cacheAt)) {
       scheduleMirror();
-      return perKey && !src.migrating && foundAt && src.at === foundAt ? "in-sync" : "kept";
+      return foundAt && src.at === foundAt ? "in-sync" : "kept";
     }
     const doc = await src.load();
     if (!doc || !isProfileDoc(doc)) { blockMirror(); return "corrupt"; }
@@ -778,30 +672,13 @@ export function createPersist(host, onWriteFailure) {
   }
 
   /**
-   * M5 review P3-1: of these shards (the ones the library fills), those the
-   * manifest on disk does not list are owed. A build from before the shards
-   * (8.0 dev) commits a manifest of KEYS alone; the next launch here can be
-   * at that manifest's revision, and then nothing was owed and the games
-   * stayed out of the native backup until each shard next changed.
-   * @returns {Promise<number>} how many were owed
-   */
-  async function touchUnlisted(names) {
-    if (!perKey || !Array.isArray(names) || !names.length) return 0;
-    let files;
-    try { files = (await readDisk()).files; } catch (_) { return 0; }   // unreadable: recover() handles that
-    const owed = names.filter((n) => BULK.test(n) && !files[n]);
-    if (owed.length) touchBulk(owed);
-    return owed.length;
-  }
-
-  /**
    * v8-0-plan C1: the library's shards as the native store holds them now
    * ({name: text}), for a library that finds IndexedDB emptier than its
    * header says — the WebView's data went, the store's did not.
    * @returns {Promise<object|null>} null when there is no store to ask
    */
   function readBulk(kind) {
-    if (!perKey) return Promise.resolve(null);
+    if (!keyed) return Promise.resolve(null);
     // under the store's lock, so no other window's commit lands between the
     // manifest and the files it names
     const inner = () => readBulkInner(kind);
@@ -905,7 +782,6 @@ export function createPersist(host, onWriteFailure) {
     for (const name of Object.keys(KEYS)) if (name !== "quarantine") remove(name);
     host.storageRemove(SCHEMA_KEY);
     host.storageRemove(STAMP_KEY);
-    if (perKey) clearLegacy = true;
     // v8-0-plan C1: the library's games are in IndexedDB and in the shards
     // the store lists; "clear my data" takes both
     const names = Object.keys(committed || {});
@@ -962,41 +838,19 @@ export function createPersist(host, onWriteFailure) {
     mines: (v) => (v && v.v === 1 && Array.isArray(v.list) ? v : null),
     progress: (v) => (v && typeof v === "object" ? v : null),
     puzzles: (v) => (v && v.v === 1 && v.solved ? v : null),
-    stats: (v) => (v && (v.v === 2 || v.v === 1) && Array.isArray(v.games) ? vetStatsRating(migrateStats(v)) : null),
+    stats: (v) => (v && v.v === 2 && Array.isArray(v.games) ? vetStatsRating(v) : null),
     achievements: (v) => (v && Array.isArray(v.seen) ? v : null),
     slots: (v) => (v && Array.isArray(v.slots) ? v : null),
-    library: (v) => (v && v.v === 1 && Array.isArray(v.games) ? v : null),
+    library: (v) => (v && v.v === 1 && Array.isArray(v.names) ? v : null),
     repertoire: (v) => (v && v.v === 1 && (Array.isArray(v.w) || Array.isArray(v.b)) ? v : null),
     analyses: (v) => (v && v.v === 1 && Array.isArray(v.list) ? v : null),
     sync: (v) => (v && v.v === 1 ? v : null),
   };
   /**
-   * stats v1 → v2: split the overloaded `sig` into the three things it was.
-   * Reading it apart is safe — unlike an id remap, this derives nothing about
-   * *which* game a record is, it only unpacks what was already stored in it.
-   */
-  function migrateStats(s) {
-    if (s.v === 2) return s;
-    return {
-      v: 2,
-      games: s.games.map((g, i) => {
-        const sig = String(g.sig || "");
-        const m = /#([a-zA-Z]+)$/.exec(sig);
-        return Object.assign({}, g, {
-          id: g.id || ("v1-" + (g.t || 0).toString(36) + "-" + i.toString(36)),
-          pgn: g.pgn != null ? g.pgn : sig.replace(/#[a-zA-Z]+$/, ""),
-          ending: g.ending != null ? g.ending : (m ? m[1] : ""),
-          sig: undefined,
-        });
-      }),
-    };
-  }
-  /**
-   * v8-0-plan B4: stats v2 may carry the engine-game rating, `{r, rd, vol,
-   * at, n}` (opponents.js fileRating). Optional, so no version bump: a 7.x
-   * build reads v2 and writes back the object it read, `rating` included. A
-   * rating that is not one is dropped rather than failing the whole record —
-   * the games are the valuable part, and the rating is rebuilt from them.
+   * v8-0-plan B4: stats may carry the engine-game rating, `{r, rd, vol, at,
+   * n}` (opponents.js fileRating). A rating that is not one is dropped rather
+   * than failing the whole record — the games are the valuable part, and the
+   * rating is rebuilt from them.
    */
   function vetStatsRating(s) {
     const r = s.rating;
@@ -1058,12 +912,12 @@ export function createPersist(host, onWriteFailure) {
   function corruptKeys() { return corrupt.slice(); }
 
   return { load, get, read, set, setJson, remove, clearAll, isBroken, swapSelftestMarker, wasEmpty, corruptKeys,
-    recover, flushMirror, exportAll, restoreAll, isProfileDoc, migrateStats, freeze, releaseMirror,
-    attachBulk, touchBulk, touchUnlisted, readBulk, bulkSettled, ACCEPT, KEYS, SCHEMA,
+    recover, flushMirror, exportAll, restoreAll, isProfileDoc, freeze, releaseMirror,
+    attachBulk, touchBulk, readBulk, bulkSettled, ACCEPT, KEYS, SCHEMA,
     /**
      * is there a native per-key store (readBulk's null then means a failed read, not "none").
      * v8-2-plan T4: host.js always has the two functions; without the native
      * shell they answer null — no store at all, which a reader must not wait on
      */
-    hasStore: () => perKey && !!(host.hasZero && host.hasZero()) };
+    hasStore: () => keyed && !!(host.hasZero && host.hasZero()) };
 }

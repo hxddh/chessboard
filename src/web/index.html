@@ -27,13 +27,12 @@
          moves nothing. shell.js owns all of it; 偏好 opens the preferences
          window (prefs-ui.js). -->
     <nav class="rail" id="rail" aria-label="主导航" data-i18n-aria="nav.aria">
-      <button type="button" class="rail-btn" data-view="home" title="首页" data-i18n-title="nav.home"><span class="rail-ic" data-icon="crown" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.home">首页</span></button>
+      <button type="button" class="rail-btn" data-view="home" title="今天" data-i18n-title="nav.home"><span class="rail-ic" data-icon="sun" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.home">今天</span></button>
       <button type="button" class="rail-btn" data-view="play" title="下棋" data-i18n-title="nav.play"><span class="rail-ic" data-icon="swords" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.play">下棋</span></button>
-      <button type="button" class="rail-btn" data-view="puzzle" title="谜题" data-i18n-title="nav.puzzle"><span class="rail-ic" data-icon="puzzle" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.puzzle">谜题</span></button>
-      <button type="button" class="rail-btn" data-view="learn" title="学习" data-i18n-title="nav.learn"><span class="rail-ic" data-icon="graduation-cap" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.learn">学习</span></button>
-      <button type="button" class="rail-btn" data-view="library" title="棋谱库" data-i18n-title="nav.library"><span class="rail-ic" data-icon="library" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.library">棋谱库</span></button>
+      <button type="button" class="rail-btn" data-view="train" title="训练" data-i18n-title="nav.train"><span class="rail-ic" data-icon="target" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.train">训练</span></button>
+      <button type="button" class="rail-btn" data-view="library" title="棋谱" data-i18n-title="nav.library"><span class="rail-ic" data-icon="library" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.library">棋谱</span></button>
       <button type="button" class="rail-btn" data-view="me" title="我的" data-i18n-title="nav.me"><span class="rail-ic" data-icon="user" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.me">我的</span></button>
-      <button type="button" class="rail-btn rail-end" id="prefs-open" title="偏好设置（Ctrl 或 ⌘ 加逗号）" data-i18n-title="tip.prefs"><span class="rail-ic" data-icon="eye" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.prefs">偏好</span></button>
+      <button type="button" class="rail-btn rail-end" data-view="settings" title="设置（Ctrl 或 ⌘ 加逗号）" data-i18n-title="tip.prefs"><span class="rail-ic" data-icon="settings" aria-hidden="true"></span><span class="rail-lbl" data-i18n="nav.settings">设置</span></button>
     </nav>
 
     <!-- The bar is 44px of permanently reserved height directly above a board
@@ -64,13 +63,6 @@
            「白方走子」 in the order it always did, and the eye reads the lit
            strip instead of a pill in the corner. -->
       <span class="sr-only" id="status">白方走子</span>
-      <!-- 7.9 §1a: 悔棋 and 提示 moved to the opponent's strip (.ps-tools
-           below); what stays is ☰, which opens and shuts the panel, so it
-           stands at the panel's edge — the window's top-right corner while
-           the panel is shut. -->
-      <div class="chrome-actions">
-        <button type="button" class="icon-btn" id="toggle-panel" title="侧栏 (P)" data-i18n-title="tip.panel.toggle" aria-label="侧栏" data-i18n-aria="aria.panel"><span data-icon="menu" aria-hidden="true"></span></button>
-      </div>
     </header>
 
     <div class="scrim" id="scrim"></div>
@@ -120,6 +112,11 @@
                  with. At the head of the group it has nothing to push. -->
             <button type="button" class="tool-btn" id="undo" title="悔棋 (Z)" data-i18n-title="tip.undo"><span data-icon="undo-2" aria-hidden="true"></span><span class="btn-label" data-i18n="chrome.undo">悔棋</span></button>
             <button type="button" class="tool-btn" id="btn-hint" title="引擎提示 (H)" data-i18n-title="tip.hint"><span data-icon="lightbulb" aria-hidden="true"></span><span class="btn-label" id="btn-hint-label" data-i18n="chrome.hint">提示</span></button>
+            <!-- 9.0 V3: ☰, which opens and shuts the panel, is the strip's
+                 last control — it hung outside the board's top-right corner
+                 in a bar of its own, the one thing on the play view that
+                 belonged to no edge of the board -->
+            <button type="button" class="icon-btn" id="toggle-panel" title="侧栏 (P)" data-i18n-title="tip.panel.toggle" aria-label="侧栏" data-i18n-aria="aria.panel"><span data-icon="menu" aria-hidden="true"></span></button>
           </span>
           <span class="ps-result num" id="result-b" hidden></span>
           <span class="ps-clock num" id="clock-b" hidden>5:00</span>
@@ -156,31 +153,30 @@
              child: the badge is a live region, and a button inside one is
              read out as a status change. -->
         <button type="button" class="preview-try" id="preview-try" data-i18n="act.tryHere" hidden>从这里试走</button>
-        <!-- 7.7 (v7-7-plan §4): how the game ended — the result in large
-             type, the reason under it, and what to do next. Not a dialog:
-             nothing is blocked and ✕ puts it away. v8-0-plan A5: it floats
-             over the board (it was a card at the top of the panel, and the
-             board said nothing about the ending), on the final position
-             only; the kings carry the result in their corners. One filled
-             button: 分析这盘 while the game is unanalysed, 再来一盘 once it
+        <!-- 9.0 M1: how the game ended, as a bar under the board — the
+             result, the reason and your rating under it, and what to do
+             next. It takes the bottom strip's place (the wide layout puts it
+             in the column beside the board), so nothing of the 64 squares
+             is covered at the moment the final position is worth reading.
+             Not a dialog: nothing is blocked and ✕ puts it away. One filled
+             button: 复盘这局 while the game is unanalysed, 再来一盘 once it
              has been. -->
         <section class="go-card" id="go-card" aria-labelledby="go-result" hidden>
-          <div class="go-head">
-            <span class="go-mark num" id="go-mark"></span>
-            <div class="go-txt">
-              <p class="go-result" id="go-result"></p>
-              <p class="go-reason" id="go-reason"></p>
-              <!-- v8-0-plan B4: the persona's line, and your engine-game rating -->
-              <p class="go-say" id="go-say" hidden></p>
-              <p class="go-rating num" id="go-rating" hidden></p>
-            </div>
-            <button type="button" class="go-close" id="go-close" aria-label="关闭" data-i18n-aria="act.close" title="关闭" data-i18n-title="act.close"><span data-icon="x" aria-hidden="true"></span></button>
+          <span class="go-mark num" id="go-mark"></span>
+          <div class="go-txt">
+            <p class="go-result" id="go-result"></p>
+            <p class="go-sub"><span class="go-reason" id="go-reason"></span><span class="go-rating num" id="go-rating" hidden></span></p>
+            <!-- v8-0-plan B4: the persona's line (the wide column shows it;
+                 the bar carries it as its tooltip) -->
+            <p class="go-say" id="go-say" hidden></p>
           </div>
+          <!-- an achievement the ending unlocked (game-end.js takeAch) -->
+          <span class="go-ach" id="go-ach" hidden></span>
           <div class="go-acts">
-            <button type="button" class="act-btn" id="go-analyse" data-i18n="go.analyse">分析这盘</button>
+            <button type="button" class="act-btn" id="go-analyse" data-i18n="go.analyse">复盘这局</button>
             <button type="button" class="act-btn" id="go-again" data-i18n="go.again">再来一盘</button>
-            <button type="button" class="act-btn" id="go-switch" data-i18n="go.switch">换个对手</button>
           </div>
+          <button type="button" class="go-close" id="go-close" aria-label="关闭" data-i18n-aria="act.close" title="关闭" data-i18n-title="act.close"><span data-icon="x" aria-hidden="true"></span></button>
         </section>
       </div>
     </div>
@@ -192,220 +188,27 @@
     <div id="board-live" class="sr-only" aria-live="polite" role="status"></div>
 
     <aside class="side" id="side" aria-label="对局面板" data-i18n-aria="aria.side">
-      <!-- Three tabs instead of one 1788px scroll: what you touch while playing
-           (moves, replay, analysis, this game's actions), what you set once
-           (level, clock, theme, language), and what you look back at
-           (statistics, history, achievements). -->
+      <!-- 9.0 M3: the drawer's grip — drag it between half and nine tenths,
+           or down to shut it (play-layout.js wireSheet). A pointer's handle:
+           ☰ and P are the keyboard's. -->
+      <div class="sheet-grip" id="sheet-grip" aria-hidden="true"></div>
       <!-- v8-0-plan A2: in a portrait window, the mainline in one line that
            scrolls sideways, above the drawer's tabs — the notation on the
            drawer's first screen. A mirror of #move-list for the pointer
            (play-layout.js); the list stays the keyboard's route. -->
       <div class="move-strip" id="move-strip" aria-hidden="true" hidden></div>
-      <div class="side-tabs" role="tablist" aria-label="面板分区" data-i18n-aria="aria.tabs">
-        <button type="button" role="tab" id="tab-play" data-tab="play" aria-selected="true" aria-controls="pane-play" data-i18n="tab.play">对局</button>
-        <button type="button" role="tab" id="tab-setup" data-tab="setup" aria-selected="false" aria-controls="pane-setup" data-i18n="tab.setup">设置</button>
-        <!-- The ✕ used to sit here, as a fourth item in a row of three tabs:
-             same height, same row, same alignment, but it closed the panel
-             instead of selecting a view. Closing already has two affordances
-             that are not disguised as tabs — the topbar ☰ and the P key. -->
+
+      <div class="side-pane" id="pane-play">
+      <!-- 9.0 S3: 训练 — the four ways in, at the top of the panel while
+           training: 课程 (the 120 lessons), 谜题, 残局 (the camp's 90) and
+           名局 (the 40 classics, read or guessed). Each opens where the
+           player left it (train-nav.js). -->
+      <div class="theme-row train-seg" id="train-seg" role="group" aria-label="训练" data-i18n-aria="nav.train" hidden>
+        <button type="button" data-seg="course" aria-pressed="false" data-i18n="train.course">课程</button>
+        <button type="button" data-seg="puzzle" aria-pressed="false" data-i18n="train.puzzle">谜题</button>
+        <button type="button" data-seg="endgame" aria-pressed="false" data-i18n="train.endgame">残局</button>
+        <button type="button" data-seg="classic" aria-pressed="false" data-i18n="train.classic">名局</button>
       </div>
-
-      <div class="side-pane" id="pane-setup" role="tabpanel" aria-labelledby="tab-setup" hidden>
-      <!-- Summary first, controls on request.
-           Eighteen equal-weight buttons stood open here permanently — six
-           difficulties, four sparring styles, two colours, six clocks — which
-           is a wall of choices in front of someone who mostly wants to know
-           what the current ones are. 满强度 and 爱进攻 wrapped onto a second
-           line in a 64px grid column and pushed the row height out on top of
-           that. The summary answers the common question in one line; the
-           buttons are one click away for the rarer one. P3.2. -->
-      <section class="side-section">
-        <details class="setting-fold" id="fold-game">
-          <summary class="setting-summary">
-            <h2 class="side-h" data-i18n="side.game">对局</h2>
-            <span class="setting-sum" id="game-summary"></span>
-          </summary>
-        <div class="setting-list">
-          <div class="setting-row stack" id="row-difficulty">
-            <!-- No "难度" row label here: it would be the third heading in a
-                 column of three — 对局 → 难度 → 陪练档/棋力档 — and the two
-                 group labels already name what the buttons are. The row keeps
-                 its name for screen readers on the groups' aria-label. -->
-            <!-- Two scales, not one ladder of six. The first pair are
-                 hand-weakened sparring tiers (shallow MultiPV sampling); the
-                 rest are Stockfish limited by UCI_Elo. Shown as one row, the
-                 order could not be read off the labels — which was a symptom
-                 of the two scales being merged, not of the words. The Elo
-                 values stay in the tooltips: they are an engine setting, and
-                 nothing in this app gives the player a rating to compare with. -->
-            <span class="diff-group" data-i18n="diff.groupSpar">陪练档</span>
-            <div class="theme-row wrap" id="diff-seg" role="group" aria-label="难度" data-i18n-aria="side.difficulty">
-              <button type="button" data-diff="beginner" title="会主动犯错的陪练,适合教学毕业第一局" data-i18n-title="tip.diff.beginner" data-i18n="diff.beginner">新手</button>
-              <button type="button" data-diff="casual" title="比新手准一些,但还会犯错 —— 打赢新手之后的下一格" data-i18n-title="tip.casual" data-i18n="diff.casual">休闲</button>
-              <!-- v8-0-plan B4: four rungs between 休闲 and 初级 (engine.js) -->
-              <button type="button" data-diff="learner" title="按胜率损失抽样、只算两步的陪练" data-i18n-title="tip.diff.learner" data-i18n="diff.learner">练习</button>
-              <button type="button" data-diff="improver" title="比练习档少犯一些错" data-i18n-title="tip.diff.improver" data-i18n="diff.improver">进步</button>
-              <button type="button" data-diff="steady" title="算三步，大失误少见" data-i18n-title="tip.diff.steady" data-i18n="diff.steady">稳健</button>
-              <button type="button" data-diff="solid" title="算四步，初级之前的最后一档" data-i18n-title="tip.diff.solid" data-i18n="diff.solid">扎实</button>
-            </div>
-            <span class="diff-group" data-i18n="diff.groupEngine">棋力档</span>
-            <div class="theme-row wrap" id="diff-seg-engine" role="group" aria-label="难度" data-i18n-aria="side.difficulty">
-              <button type="button" data-diff="easy" title="Stockfish UCI_Elo 1320(该选项的下限)" data-i18n-title="tip.diffEasy" data-i18n="diff.easy">初级</button>
-              <button type="button" data-diff="easyplus" title="Stockfish UCI_Elo 1500 · MultiPV 6" data-i18n-title="tip.diff.easyplus" data-i18n="diff.easyplus">初级+</button>
-              <button type="button" data-diff="normalminus" title="Stockfish UCI_Elo 1500" data-i18n-title="tip.diff.normalminus" data-i18n="diff.normalminus">中级−</button>
-              <button type="button" data-diff="normal" class="active" title="Stockfish UCI_Elo 1700" data-i18n-title="tip.diffNormal" data-i18n="diff.normal">中级</button>
-              <!-- v8-1-plan T1: the rungs re-stepped by what the games measured
-                   (engine.js TIERS). An Elo value is not a word: its tooltip
-                   is the same in every language and needs no key. -->
-              <button type="button" data-diff="normalplus" title="Stockfish UCI_Elo 1840" data-i18n="diff.normalplus">中级+</button>
-              <button type="button" data-diff="hardminus" title="Stockfish UCI_Elo 2080" data-i18n="diff.hardminus">高级−</button>
-              <button type="button" data-diff="hard" title="Stockfish UCI_Elo 2290" data-i18n-title="tip.diffHard" data-i18n="diff.hard">高级</button>
-              <button type="button" data-diff="hardplus" title="Stockfish UCI_Elo 2450" data-i18n="diff.hardplus">高级+</button>
-              <button type="button" data-diff="expert" title="Stockfish UCI_Elo 2570" data-i18n="diff.expert">专家</button>
-              <button type="button" data-diff="expertplus" title="Stockfish UCI_Elo 2670" data-i18n="diff.expertplus">专家+</button>
-              <button type="button" data-diff="master" title="Stockfish UCI_Elo 2750" data-i18n="diff.master">大师</button>
-              <!-- full strength by node count past the last Elo rung (engine.js) -->
-              <button type="button" data-diff="masterplus" title="Stockfish · nodes 150" data-i18n="diff.masterplus">大师+</button>
-              <button type="button" data-diff="strong" title="Stockfish · nodes 600" data-i18n="diff.strong">强力</button>
-              <button type="button" data-diff="strongplus" title="Stockfish · nodes 2500" data-i18n="diff.strongplus">强力+</button>
-              <button type="button" data-diff="extreme" title="Stockfish 满强度" data-i18n-title="tip.diff.extreme" data-i18n="diff.extreme">满强度</button>
-            </div>
-          </div>
-          <div class="setting-row stack" id="row-persona">
-            <span class="setting-k" data-i18n="side.persona">陪练风格</span>
-            <div class="theme-row wrap" id="persona-seg" role="group" aria-label="陪练风格" data-i18n-aria="side.persona">
-              <button type="button" data-persona="off" class="active" title="不加风格,引擎按难度正常发挥" data-i18n-title="tip.persona.off" data-i18n="persona.off">标准</button>
-              <button type="button" data-persona="greedy" title="见子就吃,会主动踩进你的捉双和牵制" data-i18n-title="tip.persona.greedy" data-i18n="persona.greedy">贪吃子</button>
-              <button type="button" data-persona="principled" title="按开局三原则出子:抢中心、快出轻子、尽早易位" data-i18n-title="tip.persona.principled" data-i18n="persona.principled">重原则</button>
-              <button type="button" data-persona="attacker" title="子力一直往你的王那边压,练防守用" data-i18n-title="tip.persona.attacker" data-i18n="persona.attacker">爱进攻</button>
-            </div>
-            <span class="setting-note" data-i18n="side.personaNote">风格叠加在难度之上 —— 换风格不改变棋力,只改变它偏爱哪种着法</span>
-          </div>
-          <div class="setting-row stack" id="row-color">
-            <span class="setting-k" data-i18n="side.color">执子</span>
-            <div class="theme-row" id="color-seg" role="group" aria-label="执子" data-i18n-aria="side.color">
-              <button type="button" data-color="w" class="active" title="执白先行" data-i18n-title="tip.color.white" data-i18n="color.white">执白</button>
-              <button type="button" data-color="b" title="执黑后行" data-i18n-title="tip.color.black" data-i18n="color.black">执黑</button>
-              <!-- new-game dialog only (v7-8-plan §4): drawn when 开始 is pressed -->
-              <button type="button" data-color="random" data-i18n="color.random" hidden>随机</button>
-            </div>
-          </div>
-          <div class="setting-row stack" id="row-clock" hidden>
-            <span class="setting-k" data-i18n="side.clock">棋钟</span>
-            <div class="theme-row wrap" id="clock-seg" role="group" aria-label="棋钟" data-i18n-aria="side.clock">
-              <button type="button" data-tc="off" class="active" title="不限时" data-i18n-title="tip.clock.off" data-i18n="clock.off">关</button>
-              <button type="button" data-tc="3" title="每方 3 分钟" data-i18n-title="tip.clock.3">3</button>
-              <button type="button" data-tc="3+2" title="每方 3 分钟,每步加 2 秒" data-i18n-title="tip.clock.3plus2">3+2</button>
-              <button type="button" data-tc="5" title="每方 5 分钟" data-i18n-title="tip.clock.5">5</button>
-              <button type="button" data-tc="5+3" title="每方 5 分钟,每步加 3 秒" data-i18n-title="tip.clock.5plus3">5+3</button>
-              <button type="button" data-tc="10" title="每方 10 分钟" data-i18n-title="tip.clock.10">10</button>
-              <!-- v8-0-plan B4: two rapid controls and one of your own -->
-              <button type="button" data-tc="15+10" title="每方 15 分钟，每步加 10 秒" data-i18n-title="tip.clock.15plus10">15+10</button>
-              <button type="button" data-tc="30" title="每方 30 分钟" data-i18n-title="tip.clock.30">30</button>
-              <button type="button" data-tc="custom" title="自己定每方几分钟、每步加几秒" data-i18n-title="tip.clock.custom" data-i18n="clock.custom">自定义</button>
-            </div>
-            <!-- the custom control's two numbers; shown while 自定义 is the
-                 choice. Inputs, not a dialog: the new-game dialog is already
-                 the one dialog on screen. -->
-            <div class="clock-custom" id="clock-custom" hidden>
-              <label class="clock-field"><input type="number" class="text-input" id="tc-min" min="1" max="180" step="1" value="15" inputmode="numeric" /><span data-i18n="clock.minutes">分钟</span></label>
-              <label class="clock-field"><span>+</span><input type="number" class="text-input" id="tc-inc" min="0" max="60" step="1" value="10" inputmode="numeric" /><span data-i18n="clock.incSec">秒/步</span></label>
-            </div>
-          </div>
-          <div class="setting-row" id="row-coach">
-            <span class="setting-k" title="走出严重失误时提示悔棋重想" data-i18n-title="tip.coach" data-i18n="side.coach">失着提醒</span>
-            <button type="button" class="switch" id="opt-coach" aria-pressed="true" aria-label="失着提醒" data-i18n-aria="side.coach">
-              <span class="switch-knob"></span>
-            </button>
-          </div>
-          <div class="setting-row" id="row-autoflip" hidden>
-            <span class="setting-k" title="每步走完后棋盘转向走子方" data-i18n-title="tip.autoflip" data-i18n="side.autoflip">自动翻转</span>
-            <button type="button" class="switch" id="opt-autoflip" aria-pressed="false" aria-label="自动翻转" data-i18n-aria="side.autoflip">
-              <span class="switch-knob"></span>
-            </button>
-          </div>
-        </div>
-        </details>
-      </section>
-
-
-      <!-- v8-0-plan A1: what is left of 「界面」 once the window's look,
-           its language and its sound went to 偏好设置 (⌘, / Ctrl+,): the
-           rows about the board in front of you — which way it faces, what the
-           review marks, the engine's arrows, playing blind. -->
-      <section class="side-section" id="sec-view">
-        <h2 class="side-h" data-i18n="side.display">显示</h2>
-        <div class="setting-list">
-          <!-- Which way round the board is drawn is a property of the view,
-               like the theme, so it sits next to the theme rather than in the
-               chrome — where it was one of four buttons over the board and one
-               of the three that are not about the move being made. F still
-               does it without opening anything. -->
-          <div class="setting-row stack" id="row-flip">
-            <span class="setting-k" data-i18n="side.orientation">棋盘方向</span>
-            <!-- A state, not a verb. Every other row on this page shows what it
-                 is currently set to — the theme, the language, the sound — and
-                 this one showed a button labelled 「翻转」, which says what will
-                 happen if you press it and nothing about which way the board is
-                 facing now. Two segments, the same shape as 执子 two groups up,
-                 and the answer is readable without pressing anything. F still
-                 toggles. -->
-            <div class="theme-row" id="orient-seg" role="group" aria-label="棋盘方向" data-i18n-aria="side.orientation">
-              <button type="button" data-orient="w" class="active" title="翻转棋盘 (F)" data-i18n-title="tip.flip" data-i18n="msg.view.white">白方视角</button>
-              <button type="button" data-orient="b" title="翻转棋盘 (F)" data-i18n-title="tip.flip" data-i18n="msg.view.black">黑方视角</button>
-            </div>
-          </div>
-          <div class="setting-row">
-            <span class="setting-k" data-i18n="side.softMark">存疑标注</span>
-            <button type="button" class="switch" id="opt-softmark" aria-pressed="false" title="复盘里显示 ?! —— 实测两遍只有约一半重合，默认不显示" data-i18n-title="tip.softMark">
-              <span class="switch-knob"></span>
-            </button>
-          </div>
-          <div class="setting-row">
-            <span class="setting-k" data-i18n="side.engineArrows">显示引擎箭头</span>
-            <button type="button" class="switch" id="opt-engine-arrows" aria-pressed="true" title="持续分析与复盘时，把引擎前三条线的第一步画成棋盘上的箭头" data-i18n-title="tip.engineArrows">
-              <span class="switch-knob"></span>
-            </button>
-          </div>
-          <div class="setting-row">
-            <span class="setting-k" data-i18n="side.blindfold">盲棋</span>
-            <button type="button" class="switch" id="opt-blind" aria-pressed="false" title="不画棋子，只画标记 —— 靠记忆下" data-i18n-title="tip.blindfold">
-              <span class="switch-knob"></span>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <!-- 6.0 (v6-plan Q2.6): the two engine knobs a player may reasonably
-           turn on a single-threaded lite build. -->
-      <section class="side-section" id="sec-engine">
-        <h2 class="side-h" data-i18n="side.engine">引擎</h2>
-        <div class="setting-list">
-          <div class="setting-row stack">
-            <span class="setting-k" data-i18n="side.hash">置换表</span>
-            <div class="theme-row" id="hash-seg" role="group" aria-label="置换表" data-i18n-aria="side.hash" title="引擎的置换表大小（MB）" data-i18n-title="tip.hash">
-              <button type="button" data-hash="16">16</button>
-              <button type="button" data-hash="32" class="active">32</button>
-              <button type="button" data-hash="64">64</button>
-              <button type="button" data-hash="128">128</button>
-            </div>
-          </div>
-          <div class="setting-row stack">
-            <span class="setting-k" data-i18n="side.multipv">分析线数</span>
-            <div class="theme-row" id="multipv-seg" role="group" aria-label="分析线数" data-i18n-aria="side.multipv" title="复盘与持续分析同时给出几条变化" data-i18n-title="tip.multipv">
-              <button type="button" data-multipv="1" class="active">1</button>
-              <button type="button" data-multipv="2">2</button>
-              <button type="button" data-multipv="3">3</button>
-              <button type="button" data-multipv="5">5</button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-
-      </div><!-- /pane-setup -->
-
-      <div class="side-pane" id="pane-play" role="tabpanel" aria-labelledby="tab-play">
       <!-- The opening name is the only thing left of the old .side-head, and
            it is not a header: it is a fact about the game in progress, so it
            sits at the top of the 对局 page with the rest of them. The vs bar
@@ -423,34 +226,11 @@
 
       <div class="opening-line" id="opening-line" hidden></div>
 
-      <!-- 今天的训练 — the coach's plan for one sitting (planner.js). One
-           button, every mode: it reads the review debt, the personal book,
-           the tally, the course and today's games together, and walks the
-           steps as they are earned. An invitation, never an autopilot: it
-           jumps only when clicked, exactly like 为你出一题. -->
-      <!-- 5.1: the plan is shown, not only offered. Each step names the signal
-           it came from (a debt, your own blunder, the weakest category, the
-           next lesson), so the coach's order is readable before it is followed
-           — planner.js always had the order; nothing displayed it. The button
-           spans the column: it is the one entrance shared by every mode.
-           7.7 §1b: the list is prose, so it is not `.num` — that class set the
-           whole of 「Learn a new lesson / the next lesson」 in the clock's
-           monospace. The counts inside a step are words in a sentence, not a
-           column of figures, and take the sentence's face. -->
-
-      <div class="daily" id="daily-row">
-        <!-- 7.7 (v7-7-plan §1i): a card, not a wide ghost button. The head
-             is the button — title (or 「第 1/3 步 · …」 once running) and an
-             arrow — and every step under it has a state dot; the one you
-             would go to next is itself a control, with the arrow and a hover. -->
-        <button type="button" class="daily-head" id="daily-btn" title="按复习欠账、错题、弱项和课程进度排出这一节练习" data-i18n-title="tip.daily"><span class="daily-label" id="daily-label" data-i18n="daily.btn">今天的训练</span><span class="daily-go" data-icon="arrow-right" aria-hidden="true"></span></button>
-        <span class="side-h-meta" id="daily-note" hidden></span>
-        <ol class="daily-plan" id="daily-plan" aria-label="这一节的步骤" data-i18n-aria="daily.planAria" hidden></ol>
-      </div>
-
       <section class="side-section" id="sec-learn" hidden>
         <div class="side-h-row">
-          <h2 class="side-h" data-i18n="side.learn">教学</h2>
+          <!-- 9.0 S3: the switch over the panel names the segment; the
+               heading is kept for a screen reader -->
+          <h2 class="side-h sr-only" data-i18n="side.learn">教学</h2>
           <span class="side-h-meta num" id="learn-progress" title="已完成的课数" data-i18n-title="learn.doneOf">0/0</span>
         </div>
         <div class="lesson-title" id="lesson-title"></div>
@@ -466,38 +246,28 @@
           <button type="button" class="tool-btn" id="lesson-practice" data-i18n="act.practice" title="用同一母题的题目接着练" data-i18n-title="tip.lesson.practice">接着练</button>
           <button type="button" class="tool-btn" id="lesson-next" data-i18n="act.next" title="进入下一课" data-i18n-title="tip.lesson.next">下一课</button>
         </div>
-        <details class="reading-index">
-          <summary class="setting-summary"><h2 class="side-h" data-i18n="side.contents">目录</h2></summary>
+        <!-- 9.0 S3: 名局 is one list of the forty, read or guessed — a switch,
+             on the page rather than in the folded list -->
+        <div class="theme-row classic-mode" id="classic-mode" role="group" aria-label="名局" data-i18n-aria="train.classic" hidden>
+          <button type="button" data-cmode="read" aria-pressed="true" title="一步一步读，带注释" data-i18n-title="tip.classic.read" data-i18n="train.read">读谱</button>
+          <button type="button" data-cmode="guess" aria-pressed="false" title="每一步先猜大师走什么，再看他走的" data-i18n-title="tip.classic.guess" data-i18n="train.guess">猜着</button>
+        </div>
+        <details class="reading-index" id="lesson-fold">
+          <summary class="setting-summary"><h2 class="side-h" id="lesson-list-h">目录</h2></summary>
           <div class="lesson-list" id="lesson-list" aria-label="课程列表" data-i18n-aria="aria.lessonList"></div>
         </details>
       </section>
 
       <section class="side-section" id="sec-puzzle" hidden>
         <div class="side-h-row">
-          <h2 class="side-h" data-i18n="side.puzzle">做题</h2>
+          <h2 class="side-h sr-only" data-i18n="side.puzzle">做题</h2>
           <span class="side-h-meta num" id="puzzle-progress">0/0</span>
         </div>
-        <!-- v8-0-plan B1: the rating is on this view at all times, with its
-             curve — the number the whole page is working on. -->
-        <div class="setting-row" id="pz-rating">
-          <span class="setting-k" data-i18n="rec.rating">做题评级</span>
-          <span class="num" id="pz-rating-v"></span>
-        </div>
-        <canvas id="pz-rating-curve" aria-label="做题评级走势" data-i18n-aria="aria.trendRating" title="最近 60 次首答后的评级" data-i18n-title="tip.trendRating"></canvas>
-        <!-- v8-0-plan B1: practice, or one of the two runs (trainer/runs.js);
-             v8-2-plan T2 adds 看 N 步 and 盲走 (trainer/visual.js) -->
-        <div class="setting-row stack" id="row-pz-mode">
-          <span class="setting-k" data-i18n="run.mode">玩法</span>
-          <div class="theme-row wrap" id="pz-mode-seg" role="group" aria-label="玩法" data-i18n-aria="run.mode">
-            <button type="button" data-run="practice" class="active" title="按题型、主题或复习做题，不计时" data-i18n-title="tip.run.practice" data-i18n="run.practice">练习</button>
-            <button type="button" data-run="rush" title="3 分钟内尽量多做，错 3 题出局，题目越来越难" data-i18n-title="tip.run.rush" data-i18n="run.rush">冲刺</button>
-            <button type="button" data-run="streak" title="一直做到第一次答错，题目越来越难" data-i18n-title="tip.run.streak" data-i18n="run.streak">连胜</button>
-            <button type="button" data-run="look" title="局面不动，读完接下来几步再答题" data-i18n-title="tip.cat.look" data-i18n="pz.cat.look">看 N 步</button>
-            <button type="button" data-run="blind" title="杀棋局面只亮 3 秒，凭记忆走出杀着" data-i18n-title="tip.cat.blind" data-i18n="pz.cat.blind">盲走</button>
-          </div>
-        </div>
-        <!-- The run's card: its rule (or how it ended), the score, the misses
-             and the clock, the best score kept with the puzzle state. -->
+        <!-- 9.0 S3: the puzzle on the board first — its card, the answer to
+             the last move, the controls — and under it the picker: the
+             rating with 为你出一题, the review queue, the six kinds, and the
+             runs. One set of kinds; the twenty-eight themes are a level down
+             (按主题细分), the way Lichess and Chess.com file them. -->
         <div class="lesson-task" id="pz-run" hidden>
           <p id="pz-run-head"></p>
           <p class="pz-run-stats num">
@@ -511,10 +281,6 @@
             <button type="button" class="tool-btn primary" id="pz-run-again" hidden data-i18n="run.again">再来一局</button>
           </div>
         </div>
-        <!-- v8-2-plan T2: a set of 看 N 步 / 盲走 — the moves to read (or the
-             men to remember), the question, a field to answer in by keyboard,
-             and one sentence for the screen reader. Its words come with
-             the modes' chunk (trainer/visual-modes.js render). -->
         <div class="lesson-task" id="pz-vis" hidden>
           <p class="num" id="pz-vis-moves"></p>
           <p id="pz-vis-q"></p>
@@ -528,54 +294,11 @@
           </div>
           <p class="sr-only" id="pz-vis-say" role="status" aria-live="polite"></p>
         </div>
-        <!-- The book's one opinion. Everything else on this pane is the player
-             choosing; this is the app answering "what should I do next" from
-             what it actually knows — the review queue, then the category with
-             the worst lifetime miss rate, then the least-touched one — and the
-             toast says which of those it was. picker.js holds the rungs. -->
-        <div class="link-row">
-          <button type="button" class="act-btn" id="puzzle-smart" title="按你的复习欠账和错误率挑下一题" data-i18n-title="tip.puzzle.smart" data-i18n="pz.smart">为你出一题</button>
-        </div>
-        <!-- v8-0-plan B1: the theme browser, a sheet over this view. A row of
-             its own: two actions share a .link-row's grid, and at 1440 wide
-             「Practise by theme」 wrapped to two lines beside 为你出一题. -->
-        <div class="link-row">
-          <button type="button" class="act-btn" id="pz-themes-open" title="全部主题，各有多少题、你做过几道、你在这个主题上的评级" data-i18n-title="tip.theme.browse" data-i18n="theme.browse">按主题练</button>
-        </div>
-        <!-- The theme being practised (a theme is a category of its own). -->
         <div class="setting-row" id="row-pz-theme" hidden>
           <span class="setting-k" data-i18n="theme.cur">主题</span>
           <span id="pz-theme-name"></span>
           <button type="button" class="act-btn" id="pz-theme-change" data-i18n="theme.change">换主题</button>
         </div>
-        <!-- 7.9 §4d: .pz-group marks where a new group starts — the filters,
-             the puzzle on the board, the list. 8px inside a group, 20px
-             between groups (#sec-puzzle in styles.css). -->
-        <div class="setting-row stack pz-group">
-          <span class="setting-k" data-i18n="pz.cat">题型</span>
-          <div class="theme-row wrap fit-row" id="puzzle-cat-seg" role="group" aria-label="题型" data-i18n-aria="pz.cat">
-            <button type="button" data-cat="m1" class="active" title="一步将死" data-i18n-title="tip.cat.m1" data-i18n="pz.cat.m1">一步杀</button>
-            <button type="button" data-cat="m2" title="两步将死(含引子与静着)" data-i18n-title="tip.cat.m2" data-i18n="pz.cat.m2">两步杀</button>
-            <button type="button" data-cat="m3" title="三步将死(双车赶王)" data-i18n-title="tip.cat.m3" data-i18n="pz.cat.m3">三步杀</button>
-            <button type="button" data-cat="win" title="吃子战术:选出净得子力最多的一吃" data-i18n-title="tip.cat.win" data-i18n="pz.cat.win">吃子</button>
-            <button type="button" data-cat="tac" title="战术母题:串击/闪将/牵制/捉双 —— 强制得子" data-i18n-title="tip.cat.tac" data-i18n="pz.cat.tac">战术</button>
-            <button type="button" data-cat="real" title="实战战术:20 子以上的中局,只有一步能得子" data-i18n-title="tip.real" data-i18n="pz.cat.real">实战</button>
-            <button type="button" data-cat="def" title="防守:黑方下一步就要将死,找出接得住的一手" data-i18n-title="tip.cat.def" data-i18n="pz.cat.def">防守</button>
-            <button type="button" data-cat="draw" title="求和:已经必败,逼成僵局或长将保住半分" data-i18n-title="tip.cat.draw" data-i18n="pz.cat.draw">求和</button>
-            <button type="button" data-cat="op" title="开局练习:照谱走主流开局,执白执黑都能练" data-i18n-title="tip.cat.op" data-i18n="pz.cat.op">开局</button>
-            <!-- The personal book. Drawn only while it holds drills (P3) —
-                 mined from the player's own analysed games, see mistakes.js. -->
-            <button type="button" data-cat="mine" hidden title="错题:复盘标为 ?? 的你自己的失着,重摆一遍找对的那手" data-i18n-title="tip.cat.mine" data-i18n="pz.cat.mine">错题</button>
-            <!-- 我的开局书 (7.2). Same rule as 错题: drawn only while there
-                 is a book to drill, and the book is imported, not authored —
-                 see repertoire.js. -->
-            <button type="button" data-cat="rep" hidden title="我的开局书:背你自己导进来的那套开局,走偏了当场告诉你书上走什么" data-i18n-title="tip.cat.rep" data-i18n="pz.cat.rep">开局书</button>
-            <button type="button" data-cat="review" title="复习:重做答错或看过答案的题,做对即移出" data-i18n-title="tip.cat.review" data-i18n="pz.cat.review">复习</button>
-          </div>
-        </div>
-        <!-- Which chair you drill from. Only the opening category has two
-             chairs (every other puzzle is a position, not a repertoire), so
-             the row exists only there — an absent control, not a greyed one. -->
         <div class="setting-row stack" id="row-op-side">
           <span class="setting-k" data-i18n="pz.side">执方</span>
           <div class="theme-row wrap" id="op-side-seg" role="group" aria-label="执方" data-i18n-aria="pz.side">
@@ -583,20 +306,7 @@
             <button type="button" data-side="b" title="执黑照谱应,白方谱着自动走出" data-i18n-title="tip.opSide.b" data-i18n="color.black">执黑</button>
           </div>
         </div>
-        <div class="setting-row stack" id="row-puzzle-tier">
-          <span class="setting-k" data-i18n="pz.tier">难度</span>
-          <div class="theme-row wrap" id="puzzle-tier-seg" role="group" aria-label="题目难度" data-i18n-aria="aria.puzzleTier">
-            <button type="button" data-tier="all" class="active" data-i18n="pz.all">全部</button>
-            <button type="button" data-tier="easy" data-i18n="pz.easy">简单</button>
-            <button type="button" data-tier="mid" data-i18n="pz.mid">中等</button>
-            <button type="button" data-tier="hard" data-i18n="pz.hard">较难</button>
-          </div>
-        </div>
         <div class="lesson-task pz-group" id="puzzle-task"></div>
-        <!-- 7.7 (v7-7-plan §4): the answer to the move you just made, in the
-             panel beside the board, not in a toast over it. Right: a tick,
-             「最佳着」, the run of clean solves and the rating change. Wrong:
-             a cross, 「再想想」, why, and the way to the answer. -->
         <div class="pz-fb" id="puzzle-feedback" role="status" aria-live="polite" hidden>
           <span class="pz-fb-ic" id="puzzle-fb-ic" aria-hidden="true"></span>
           <div class="pz-fb-txt">
@@ -606,35 +316,60 @@
           <span class="pz-fb-meta num" id="puzzle-fb-meta" hidden></span>
           <button type="button" class="act-btn" id="puzzle-fb-hint" hidden data-i18n="pz.fb.showHint">看提示</button>
         </div>
-        <!-- 5.2: once a personal drill is solved (or its answer shown), the
-             engine's continuation stands here as chips — 题面, the answer, the
-             next few moves. Click one and the board walks the line that far.
-             A real position change, not a preview: the trainer owns the board. -->
         <div class="pv-line num" id="puzzle-line" hidden></div>
         <p class="hint" id="puzzle-idea" hidden></p>
         <div class="lesson-controls fit-row fit-fill">
           <button type="button" class="tool-btn" id="puzzle-retry" title="重新开始本题 (R)" data-i18n-title="tip.puzzle.retry" data-i18n="act.puzzleRetry">重做</button>
-          <!-- 7.4 §5: no 「答案」 here. The chrome's hint slot already becomes
-               答案 on this page (same handler, same H key), and two buttons
-               for one action on one screen made the panel's row read as four
-               things to do when there are three. The chrome one is the keeper:
-               it is in the fixed slot the learn page uses for its own hint, it
-               is still there with the panel shut (the narrow-window state),
-               and its slot is held while unavailable instead of shifting its
-               neighbours (P3). -->
           <button type="button" class="tool-btn" id="puzzle-next" title="下一道未解的题 (N)" data-i18n-title="tip.puzzle.next" data-i18n="act.puzzleNext">下一题</button>
           <button type="button" class="tool-btn" id="puzzle-playon" hidden title="从这个开局局面接着与引擎对弈" data-i18n-title="tip.playOn" data-i18n="act.playOn">接实战</button>
           <button type="button" class="tool-btn" id="puzzle-source" hidden title="打开这道题挖出来的那一局，停在那一手" data-i18n-title="tip.drillSource" data-i18n="act.drillSource">看那局棋</button>
         </div>
-        <!-- Drawn only after a solve, and only while the review queue is not
-             empty: the one moment the player is choosing what to do next, and
-             the one fact worth interrupting with. Clicking it IS 为你出一题 —
-             same handler, same words — never an automatic jump: a
-             recommendation is invited, it does not grab the wheel. -->
         <div class="link-row">
           <button type="button" class="act-btn" id="puzzle-review-nudge" hidden></button>
         </div>
-        <details class="reading-index pz-group">
+        <div class="pz-hero" id="pz-hero">
+          <div class="pz-hero-top" id="pz-rating">
+            <div class="pz-hero-r">
+              <span class="setting-k" data-i18n="rec.rating">谜题等级分</span>
+              <span class="num pz-hero-v" id="pz-rating-v"></span>
+            </div>
+            <canvas id="pz-rating-curve" aria-label="谜题等级分走势" data-i18n-aria="aria.trendRating" title="最近 60 次首答后的谜题等级分" data-i18n-title="tip.trendRating"></canvas>
+          </div>
+          <button type="button" class="act-btn primary" id="puzzle-smart" title="按你的复习欠账和错误率挑下一题" data-i18n-title="tip.puzzle.smart"><span data-icon="zap" aria-hidden="true"></span><span data-i18n="pz.smart">为你出一题</span></button>
+        </div>
+        <button type="button" class="pz-review" id="pz-review">
+          <span class="pz-review-ic" data-icon="rotate-ccw" aria-hidden="true"></span>
+          <span class="pz-review-txt"><b data-i18n="pz.review">复习</b><small data-i18n="pz.reviewSub">做错过的题，隔几天再来一次</small></span>
+          <span class="pz-review-n num" id="pz-review-n"></span>
+        </button>
+        <div class="pz-groups-sec" id="pz-groups-sec">
+          <h3 class="side-h" data-i18n="pz.groups">按类做题</h3>
+          <div class="pz-tiles" id="pz-groups" role="group" aria-label="按类做题" data-i18n-aria="pz.groups">
+            <button type="button" class="pz-tile" data-group="mate" aria-pressed="false" title="一步、两步、三步将死，内置题与 Lichess 题一起" data-i18n-title="tip.grp.mate"><span class="pz-tile-ic" data-icon="crown" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.mate">杀棋</span><span class="pz-tile-n num"></span></button>
+            <button type="button" class="pz-tile" data-group="tactic" aria-pressed="false" title="捉双、牵制、串击、闪击 —— 净得子力的一手" data-i18n-title="tip.grp.tactic"><span class="pz-tile-ic" data-icon="swords" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.tactic">战术</span><span class="pz-tile-n num"></span></button>
+            <button type="button" class="pz-tile" data-group="endgame" aria-pressed="false" title="车兵、后、轻子与兵残局里的那一手" data-i18n-title="tip.grp.endgame"><span class="pz-tile-ic" data-icon="hourglass" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.endgame">残局</span><span class="pz-tile-n num"></span></button>
+            <button type="button" class="pz-tile" data-group="defense" aria-pressed="false" title="对方下一步就要将死或得子，找出守得住的一手" data-i18n-title="tip.grp.defense"><span class="pz-tile-ic" data-icon="shield" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.defense">防守</span><span class="pz-tile-n num"></span></button>
+            <button type="button" class="pz-tile" data-group="opening" aria-pressed="false" title="照谱走主流开局，执白执黑都能练" data-i18n-title="tip.grp.opening"><span class="pz-tile-ic" data-icon="book-open" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.opening">开局</span><span class="pz-tile-n num"></span></button>
+            <button type="button" class="pz-tile" data-group="mine" hidden aria-pressed="false" title="你自己对局里的失着，重摆一遍找对的那手" data-i18n-title="tip.grp.mine"><span class="pz-tile-ic" data-icon="circle-x" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.mine">我的错题</span><span class="pz-tile-n num"></span></button>
+          </div>
+        </div>
+        <div class="pz-modes" id="pz-modes">
+          <h3 class="side-h" data-i18n="pz.ways">换个练法</h3>
+          <div class="pz-modes-row">
+            <span class="setting-k" data-i18n="pz.challenge">挑战</span>
+            <button type="button" class="act-btn" data-run="rush" aria-pressed="false" title="3 分钟内尽量多做，错 3 题出局，题目越来越难" data-i18n-title="tip.run.rush" data-i18n="run.rush">冲刺</button>
+            <button type="button" class="act-btn" data-run="streak" aria-pressed="false" title="一直做到第一次答错，题目越来越难" data-i18n-title="tip.run.streak" data-i18n="run.streak">连胜</button>
+          </div>
+          <div class="pz-modes-row">
+            <span class="setting-k" data-i18n="pz.special">专项</span>
+            <button type="button" class="act-btn" data-run="look" aria-pressed="false" title="局面不动，读完接下来几步再答题" data-i18n-title="tip.cat.look" data-i18n="pz.cat.look">看 N 步</button>
+            <button type="button" class="act-btn" data-run="blind" aria-pressed="false" title="杀棋局面只亮 3 秒，凭记忆走出杀着" data-i18n-title="tip.cat.blind" data-i18n="pz.cat.blind">盲走</button>
+          </div>
+        </div>
+        <div class="link-row" id="pz-themes-row">
+          <button type="button" class="tool-txt" id="pz-themes-open" title="全部主题，各有多少题、你做过几道、你在这个主题上的谜题等级分" data-i18n-title="tip.theme.browse" data-i18n="theme.browse">按主题细分</button>
+        </div>
+        <details class="reading-index pz-group" id="pz-list-fold">
           <summary class="setting-summary"><h2 class="side-h" data-i18n="side.puzzleList">题目列表</h2></summary>
           <div class="lesson-list" id="puzzle-list" aria-label="题目列表" data-i18n-aria="aria.puzzleList"></div>
         </details>
@@ -767,26 +502,28 @@
         <div class="act-group" id="review-actions">
           <span class="act-k" data-i18n="act.groupReview">复盘</span>
           <div class="link-row fit-row">
-            <button type="button" class="act-btn" id="an-run" data-i18n="act.analyze" title="快速评估每一步(120ms/步),标注失着" data-i18n-title="tip.analysis.run">分析</button>
-            <button type="button" class="act-btn" id="an-deep" title="深度评估每一步(400ms/步),更准但更慢" data-i18n-title="tip.analysis.deep" data-i18n="act.deep">精析</button>
-            <button type="button" class="act-btn" id="an-live" aria-pressed="false" title="引擎持续分析棋盘上的局面，跟随复盘游标" data-i18n-title="tip.live" data-i18n="act.live">持续分析</button>
+            <button type="button" class="act-btn" id="an-run" data-i18n="act.analyze" title="快速过一遍每一步，标出失着" data-i18n-title="tip.analysis.run">分析</button>
+            <!-- 9.0 S2: one 分析; 精析 is in its menu, 持续分析 a setting (高级) -->
+            <details class="an-more" id="an-more">
+              <summary class="tool-ic" title="更多分析" data-i18n-title="act.moreAnalysis" aria-label="更多分析" data-i18n-aria="act.moreAnalysis"><span data-icon="ellipsis" aria-hidden="true"></span></summary>
+              <div class="an-more-menu">
+                <button type="button" class="act-btn" id="an-deep" title="仔细评估每一步，更准但更慢" data-i18n-title="tip.analysis.deep" data-i18n="act.deep">精析</button>
+              </div>
+            </details>
           </div>
           <p class="hint" id="engine-state" role="status" hidden></p>
           <!-- 6.0 (v6-plan Q2.6): the running analysis of the position on the
                board — depth, and one row per line with its win chance. -->
           <div class="pv-line num" id="live-line" hidden></div>
         </div>
-        <!-- v8-0-plan A4: the review as a game health report, top to bottom —
-             the two accuracies and every grade counted, the win-rate graph,
-             the key moments to step through, 从错误中学, then the engine's
-             lines and 再试一次 for the position on the board. -->
+        <!-- 9.0 M2: the review in two layers. On top, what a player reads
+             first after an analysis: one sentence for the game (the
+             opponent's, in a game against the engine), the win-rate curve
+             (drag it: the board follows), and the key moments, each with
+             再试一次 on the card. Under them, folded, the full report: the
+             accuracies and every grade counted, 从错误中学 and every ? / ??. -->
         <div id="eval-wrap" hidden>
-          <!-- 7.7 §5: one card. The two accuracies are the headline, once —
-               they used to be a line above the report and a row inside it. -->
-          <div class="report-card" id="report-card" hidden>
-            <div class="acc-hero" id="acc-line" hidden title="由平均失分换算的近似准确率,非官方评级" data-i18n-title="tip.accuracy"></div>
-            <div class="review" id="review-body" hidden></div>
-          </div>
+          <p class="rv-summary" id="rv-summary" hidden></p>
           <!-- v8-0-plan A4: the graph, large, with its axes: White's win
                chance up the side, the move numbers along the bottom -->
           <div class="curve-box">
@@ -816,11 +553,20 @@
             </div>
             <div class="km-body"></div>
           </section>
-          <div class="link-row fit-row" id="rv-learn-row" hidden>
-            <button type="button" class="act-btn" id="rv-learn" title="把本局所有 ? 与 ?? 串成一组「再试一次」，一处接一处练" data-i18n-title="tip.learn"></button>
-          </div>
-          <!-- 7.8 §3: every ? and ?? with its reason and 再试一次 (retry.js) -->
-          <div class="rv-mistakes" id="rv-mistakes" hidden></div>
+          <details class="rv-full" id="rv-full" hidden>
+            <summary data-i18n="rv.full">完整报告</summary>
+            <!-- 7.7 §5: one card. The two accuracies are the headline, once —
+                 they used to be a line above the report and a row inside it. -->
+            <div class="report-card" id="report-card" hidden>
+              <div class="acc-hero" id="acc-line" hidden title="按每一步的胜率变化换算，与在线平台的「准确率」同一口径" data-i18n-title="tip.accuracy"></div>
+              <div class="review" id="review-body" hidden></div>
+            </div>
+            <div class="link-row fit-row" id="rv-learn-row" hidden>
+              <button type="button" class="act-btn" id="rv-learn" title="把本局所有 ? 与 ?? 串成一组「再试一次」，一处接一处练" data-i18n-title="tip.learn"></button>
+            </div>
+            <!-- 7.8 §3: every ? and ?? with its reason and 再试一次 (retry.js) -->
+            <div class="rv-mistakes" id="rv-mistakes" hidden></div>
+          </details>
           <div class="pv-line num" id="pv-line" hidden></div>
           <!-- 7.8 §3: on a ? / ??, why it was one; and 再试一次 from the
                position before it (built by renderWhyLine / renderRetry). -->
@@ -853,18 +599,19 @@
              tell three of the five apart. The accessible name is the same
              word as the label, so what is read is what is shown. -->
         <div class="tool-row" id="tool-row" role="toolbar" aria-label="棋谱与局面" data-i18n-aria="act.groupFile">
-          <button type="button" class="tool-ic" id="review-open" aria-pressed="false" title="复盘：分析、精析、持续分析" data-i18n-title="tip.reviewOpen" aria-label="复盘" data-i18n-aria="act.groupReview"><span data-icon="chart-line" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.groupReview">复盘</span></button>
+          <button type="button" class="tool-ic" id="review-open" aria-pressed="false" title="复盘：分析与报告" data-i18n-title="tip.reviewOpen" aria-label="复盘" data-i18n-aria="act.groupReview"><span data-icon="chart-line" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.groupReview">复盘</span></button>
           <button type="button" class="tool-ic" id="explorer-open" aria-pressed="false" aria-controls="explorer" title="开局浏览器" data-i18n-title="xp.title" aria-label="开局" data-i18n-aria="act.explorer"><span data-icon="chart-column" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.explorer">开局</span></button>
           <button type="button" class="tool-ic" id="pgn-copy" aria-label="复制" data-i18n-aria="act.pgnCopy" title="复制 PGN(含标准对局标签)" data-i18n-title="tip.pgn.copy"><span data-icon="clipboard-copy" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.pgnCopy">复制</span></button>
           <button type="button" class="tool-ic" id="pgn-download" aria-label="导出" data-i18n-aria="act.export" title="导出 PGN 文件" data-i18n-title="tip.pgn.export"><span data-icon="download" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.export">导出</span></button>
-          <button type="button" class="tool-ic" id="slots-open" aria-label="存档槽" data-i18n-aria="act.slots" title="存档槽:保存或读取多局棋" data-i18n-title="tip.slots"><span data-icon="archive" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.slots">存档槽</span></button>
-          <button type="button" class="tool-ic" id="editor-open" aria-label="编辑" data-i18n-aria="act.editor" title="摆出任意局面再开始对局" data-i18n-title="tip.editor.open"><span data-icon="square-pen" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.editor">编辑</span></button>
-          <button type="button" class="tool-ic" id="more-tools" aria-expanded="false" aria-controls="more-row" aria-label="更多" data-i18n-aria="act.more" title="更多：粘贴、打开、FEN" data-i18n-title="tip.more"><span data-icon="ellipsis" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.more">更多</span></button>
-          <button type="button" class="tool-txt" id="report-export" title="把复盘结论存成一张图" data-i18n-title="tip.reportExport" data-i18n="act.reportExport">导出复盘图</button>
+          <button type="button" class="tool-ic" id="more-tools" aria-expanded="false" aria-controls="more-row" aria-label="更多" data-i18n-aria="act.more" title="更多：存档槽、编辑局面、复盘图、粘贴、打开、FEN" data-i18n-title="tip.more"><span data-icon="ellipsis" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.more">更多</span></button>
         </div>
         <div class="link-row fit-row" id="more-row" hidden>
+          <!-- 9.0 S2: five places on the row; the rest are here -->
+          <button type="button" class="act-btn" id="slots-open" title="存档槽:保存或读取多局棋" data-i18n-title="tip.slots" data-i18n="act.slots">存档槽</button>
+          <button type="button" class="act-btn" id="editor-open" title="摆出任意局面再开始对局" data-i18n-title="tip.editor.open" data-i18n="act.editorLong">编辑局面</button>
+          <button type="button" class="act-btn" id="report-export" title="把复盘结论存成一张图" data-i18n-title="tip.reportExport" data-i18n="act.reportExport">导出复盘图</button>
           <button type="button" class="act-btn" id="pgn-paste" title="从剪贴板粘贴 PGN" data-i18n-title="tip.pgn.paste" data-i18n="act.paste">粘贴</button>
-          <button type="button" class="act-btn" id="pgn-open" title="打开 PGN 文件(也可直接拖入窗口)" data-i18n-title="tip.pgn.open" data-i18n="act.open">打开</button>
+          <button type="button" class="act-btn" id="pgn-open" title="打开 PGN 文件到棋盘，不放进棋谱库(也可直接拖入窗口)" data-i18n-title="tip.pgn.open" data-i18n="act.openBoard">打开到棋盘</button>
           <button type="button" class="act-btn" id="fen-copy" data-i18n="act.fen" title="复制当前局面 FEN" data-i18n-title="tip.fen.copy">FEN</button>
           <button type="button" class="act-btn" id="fen-load-open" title="从 FEN 载入局面" data-i18n-title="tip.fen.load" data-i18n="act.loadFen">载入 FEN</button>
         </div>
@@ -877,30 +624,80 @@
     </aside>
 
 
-    <!-- 首页: three cards, each one sentence or three and one button —
-         where you left off, what the coach planned for today, and what to
-         do next. Built by shell.js from the save, planner.js and the
-         coach's recommendation(); nothing here is new data. -->
+    <!-- 9.0 S1: 今天 — one thing to do next on a board (the game still being
+         played, else the coach's plan, planner.js), today's three counts,
+         where each of the three courses was left, the last games and the two
+         ratings. Built by today-page.js and trainer/today.js from what the
+         app already keeps; nothing here is new data. -->
     <main class="page" id="page-home" aria-labelledby="home-h" hidden>
-      <div class="page-inner">
-        <!-- v8-0-plan A6: the home page's heading is the wordmark — the rail
-             already says 首页; the page is the app's own front door -->
-        <h1 class="page-h wordmark" id="home-h"><span class="wordmark-mark" aria-hidden="true"></span><span data-i18n="app.title">国际象棋</span></h1>
-        <div class="home-cards">
-          <section class="home-card" id="home-continue" aria-labelledby="home-continue-h">
-            <h2 class="side-h" id="home-continue-h" data-i18n="home.continue">继续上次</h2>
-            <div class="home-body"></div>
-            <button type="button" class="act-btn primary home-go"></button>
+      <div class="page-inner today">
+        <header class="today-head">
+          <div>
+            <!-- the app's name stays on its front door (v8-0-plan A6), over the greeting -->
+            <p class="wordmark today-brand" id="today-brand"><span class="wordmark-mark" aria-hidden="true"></span><span data-i18n="app.title">国际象棋</span></p>
+            <h1 class="page-h" id="home-h"></h1>
+            <p class="today-date" id="today-date"></p>
+          </div>
+          <button type="button" class="act-btn" id="today-new" data-i18n="today.newGame">下一盘</button>
+        </header>
+        <div class="today-row">
+          <section class="today-card today-hero" aria-labelledby="today-hero-h">
+            <div class="mini-board today-hero-board" id="today-hero-board" aria-hidden="true"></div>
+            <div class="today-hero-text">
+              <h2 class="side-h" id="today-hero-h" data-i18n="today.next">接下来</h2>
+              <p class="today-hero-title" id="today-hero-title"></p>
+              <p class="today-meta" id="today-hero-meta"></p>
+              <ol class="daily-plan" id="daily-plan" aria-label="这一节的步骤" data-i18n-aria="daily.planAria" hidden></ol>
+              <div class="today-acts">
+                <button type="button" class="act-btn primary" id="today-go"></button>
+                <button type="button" class="tool-txt" id="today-skip" data-i18n="today.skip">换一件事</button>
+              </div>
+            </div>
           </section>
-          <section class="home-card" id="home-daily" aria-labelledby="home-daily-h">
-            <h2 class="side-h" id="home-daily-h" data-i18n="daily.btn">今天的训练</h2>
-            <div class="home-body"></div>
-            <button type="button" class="act-btn home-go"></button>
+          <section class="today-card today-progress" aria-labelledby="today-prog-h">
+            <div class="side-h-row">
+              <h2 class="side-h" id="today-prog-h" data-i18n="today.today">今天</h2>
+              <span class="side-h-meta" id="today-streak" hidden></span>
+            </div>
+            <div class="today-rings" id="today-rings">
+              <div class="today-ring" data-k="lesson"><b class="num"></b><span data-i18n="today.ringLesson">课</span></div>
+              <div class="today-ring" data-k="puzzle"><b class="num"></b><span data-i18n="today.ringPuzzle">题</span></div>
+              <div class="today-ring" data-k="game"><b class="num"></b><span data-i18n="today.ringGame">局</span></div>
+            </div>
+            <p class="today-meta" id="today-prog-note"></p>
           </section>
-          <section class="home-card" id="home-next" aria-labelledby="home-next-h">
-            <h2 class="side-h" id="home-next-h" data-i18n="home.next">下一步建议</h2>
-            <div class="home-body"></div>
-            <button type="button" class="act-btn home-go"></button>
+        </div>
+        <section class="today-block" aria-labelledby="today-cont-h">
+          <h2 class="side-h" id="today-cont-h" data-i18n="today.continue">继续</h2>
+          <div class="today-cont" id="today-cont">
+            <button type="button" class="today-card today-c" data-seg="course"><span class="mini-board" aria-hidden="true"></span><span class="today-c-txt"><small class="today-meta"></small><b></b><span class="today-bar"><i></i></span></span></button>
+            <button type="button" class="today-card today-c" data-seg="endgame"><span class="mini-board" aria-hidden="true"></span><span class="today-c-txt"><small class="today-meta"></small><b></b><span class="today-bar"><i></i></span></span></button>
+            <button type="button" class="today-card today-c" data-seg="classic"><span class="mini-board" aria-hidden="true"></span><span class="today-c-txt"><small class="today-meta"></small><b></b><span class="today-bar"><i></i></span></span></button>
+          </div>
+        </section>
+        <div class="today-row">
+          <section class="today-block" aria-labelledby="today-games-h">
+            <div class="side-h-row">
+              <h2 class="side-h" id="today-games-h" data-i18n="today.recent">最近对局</h2>
+              <button type="button" class="tool-txt" id="today-all-games" data-i18n="today.allGames">全部棋谱</button>
+            </div>
+            <div class="today-card today-games-card">
+              <ul class="today-games" id="today-games"></ul>
+              <p class="today-meta" id="today-games-empty" data-i18n="today.noGames" hidden>还没有下完的对局。</p>
+            </div>
+          </section>
+          <section class="today-block" aria-labelledby="today-ratings-h">
+            <h2 class="side-h" id="today-ratings-h" data-i18n="today.ratings">等级分</h2>
+            <div class="today-card today-ratings">
+              <div class="today-rating">
+                <div><span class="setting-k" data-i18n="me.gameRating">对局等级分</span><b class="num" id="today-r-game"></b></div>
+                <canvas id="today-r-game-cv" aria-hidden="true"></canvas>
+              </div>
+              <div class="today-rating">
+                <div><span class="setting-k" data-i18n="rec.rating">谜题等级分</span><b class="num" id="today-r-pz"></b></div>
+                <canvas id="today-r-pz-cv" aria-hidden="true"></canvas>
+              </div>
+            </div>
           </section>
         </div>
       </div>
@@ -912,7 +709,7 @@
          had its right column cut at 460px. -->
     <main class="page" id="page-library" aria-labelledby="library-h" hidden>
       <div class="page-inner">
-        <h1 class="page-h" id="library-h" data-i18n="nav.library">棋谱库</h1>
+        <h1 class="page-h" id="library-h" data-i18n="nav.library">棋谱</h1>
         <div class="page-cols">
           <section class="side-section page-sec" id="sec-library">
             <!-- 7.0: 棋谱库. 对局历史 below is what this app watched you play;
@@ -944,7 +741,7 @@
               <p class="hint" id="lib-names-hint" data-i18n="lib.namesHint">用逗号分隔多个账号名;大小写不论。认不出来的棋局会照样留着,只是不算进「你的」数字里。</p>
             </div>
             <div class="close-row split" id="lib-acts">
-              <button type="button" class="act-btn" id="lib-import" data-i18n="lib.import">导入棋谱文件</button>
+              <button type="button" class="act-btn" id="lib-import" data-i18n="lib.import">导入到库</button>
               <!-- v8-0-plan C2: the games from Lichess / Chess.com in one step
                    instead of five (prefs-ui.js loads the dialog, sync-ui.js, a chunk) -->
               <button type="button" class="act-btn" id="lib-sync" data-i18n="lib.sync">从网站同步</button>
@@ -971,6 +768,15 @@
               <button type="button" class="act-btn" id="lib-claim-no" data-i18n="lib.claimNo">不是</button>
             </div>
             </div>
+          </section>
+          <section class="side-section page-sec" id="sec-history">
+            <div class="side-h-row">
+              <h2 class="side-h" data-i18n="hist.title">对局历史</h2>
+              <!-- label is "全部 N 局": renderHistory() fills in both the count and
+                   the language, so the markup deliberately carries no text -->
+              <button type="button" class="act-btn" id="hist-open" hidden title="查看全部对局历史" data-i18n-title="hist.open"></button>
+            </div>
+            <div class="hist-body" id="hist-body"></div>
           </section>
           <section class="side-section page-sec" id="sec-rep">
             <!-- 我的开局书 (7.2, v7-2-plan §3). The trainer's built-in book
@@ -1006,6 +812,222 @@
               <button type="button" class="act-btn" id="lib-explorer" data-i18n="xp.title">开局浏览器</button>
             </div>
           </section>
+        </div>
+      </div>
+    </main>
+
+    <!-- 9.0 S5: 设置 — the one place. The preferences window and the panel's
+         设置 tab are this page now: six categories on the left, one shown at a
+         time on the right, every change live. The rows kept their ids, so
+         settings-ui.js wires them where they stand. The opponent, the side
+         and the clock are chosen with a game (the new-game dialog) and
+         remembered there; nothing about the next game is set here twice. -->
+    <main class="page" id="page-settings" aria-labelledby="settings-h" hidden>
+      <div class="page-inner">
+        <h1 class="page-h" id="settings-h" data-i18n="nav.settings">设置</h1>
+        <div class="set-grid">
+          <nav class="set-cats" role="tablist" aria-orientation="vertical" aria-label="设置分类" data-i18n-aria="set.catsAria">
+            <button type="button" role="tab" class="set-cat" id="cat-general" data-cat="general" aria-selected="false" aria-controls="set-general"><span class="set-cat-ic" data-icon="globe" aria-hidden="true"></span><span class="set-cat-txt"><b data-i18n="set.general">通用</b><small data-i18n="set.generalSub">语言 · 外观 · 字号</small></span></button>
+            <button type="button" role="tab" class="set-cat" id="cat-board" data-cat="board" aria-selected="false" aria-controls="set-board"><span class="set-cat-ic" data-icon="grid" aria-hidden="true"></span><span class="set-cat-txt"><b data-i18n="set.board">棋盘</b><small data-i18n="set.boardSub">棋盘 · 棋子 · 坐标 · 盲棋</small></span></button>
+            <button type="button" role="tab" class="set-cat" id="cat-sound" data-cat="sound" aria-selected="false" aria-controls="set-sound"><span class="set-cat-ic" data-icon="volume-2" aria-hidden="true"></span><span class="set-cat-txt"><b data-i18n="set.sound">声音</b><small data-i18n="set.soundSub">音效 · 音量 · 音色</small></span></button>
+            <button type="button" role="tab" class="set-cat" id="cat-game" data-cat="game" aria-selected="false" aria-controls="set-game"><span class="set-cat-ic" data-icon="swords" aria-hidden="true"></span><span class="set-cat-txt"><b data-i18n="set.game">对局</b><small data-i18n="set.gameSub">失着提醒 · 自动翻转</small></span></button>
+            <button type="button" role="tab" class="set-cat" id="cat-data" data-cat="data" aria-selected="false" aria-controls="set-data"><span class="set-cat-ic" data-icon="database" aria-hidden="true"></span><span class="set-cat-txt"><b data-i18n="set.data">数据</b><small data-i18n="set.dataSub">同步 · 导入导出 · 清除</small></span></button>
+            <button type="button" role="tab" class="set-cat" id="cat-advanced" data-cat="advanced" aria-selected="false" aria-controls="set-advanced"><span class="set-cat-ic" data-icon="sliders" aria-hidden="true"></span><span class="set-cat-txt"><b data-i18n="set.advanced">高级</b><small data-i18n="set.advancedSub">引擎 · 箭头 · 存疑标注</small></span></button>
+          </nav>
+          <div class="set-main">
+          <div class="set-pane" id="set-general" role="tabpanel" aria-labelledby="cat-general" hidden>
+            <section class="set-sec">
+              <h2 class="side-h" data-i18n="side.language">语言</h2>
+              <div class="setting-list">
+                <div class="setting-row stack">
+                  <span class="setting-k sr-only" data-i18n="side.language">语言</span>
+                  <div class="theme-row" id="lang-seg" role="group" aria-label="语言" data-i18n-aria="side.language"></div>
+                </div>
+              </div>
+            </section>
+            <section class="set-sec">
+              <h2 class="side-h" data-i18n="prefs.look">外观</h2>
+              <div class="setting-list">
+                <div class="setting-list" id="set-look-app"></div>
+                <div class="setting-row stack">
+                  <span class="setting-k" data-i18n="side.textSize">字号</span>
+                  <div class="theme-row" id="text-seg" role="group" aria-label="字号" data-i18n-aria="side.textSize" title="整个界面的文字大小" data-i18n-title="tip.textSize">
+                    <button type="button" data-text="s" data-i18n="text.s">小</button>
+                    <button type="button" data-text="m" class="active" data-i18n="text.m">标准</button>
+                    <button type="button" data-text="l" data-i18n="text.l">大</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+          <div class="set-pane" id="set-board" role="tabpanel" aria-labelledby="cat-board" hidden>
+            <section class="set-sec">
+              <h2 class="side-h" data-i18n="set.boardLook">棋盘与棋子</h2>
+              <div class="setting-list" id="prefs-look"></div>
+            </section>
+            <section class="set-sec">
+              <h2 class="side-h" data-i18n="side.display">显示</h2>
+              <div class="setting-list">
+                <div class="setting-row">
+                  <span class="setting-k" data-i18n="side.coords">坐标</span>
+                  <button type="button" class="switch" id="opt-coords" aria-pressed="true" title="在棋盘上标出 a–h 与 1–8" data-i18n-title="tip.coords">
+                    <span class="switch-knob"></span>
+                  </button>
+                </div>
+                <div class="setting-row stack" id="row-coords-at">
+                  <span class="setting-k" data-i18n="side.coordsAt">坐标位置</span>
+                  <div class="theme-row" id="coords-seg" role="group" aria-label="坐标位置" data-i18n-aria="side.coordsAt">
+                    <button type="button" data-coords="out" class="active" data-i18n="coords.out">盘外</button>
+                    <button type="button" data-coords="in" data-i18n="coords.in">盘内</button>
+                  </div>
+                </div>
+                <div class="setting-row stack" id="row-flip">
+                  <span class="setting-k" data-i18n="side.orientation">棋盘方向</span>
+                  <div class="theme-row" id="orient-seg" role="group" aria-label="棋盘方向" data-i18n-aria="side.orientation">
+                    <button type="button" data-orient="w" class="active" title="翻转棋盘 (F)" data-i18n-title="tip.flip" data-i18n="msg.view.white">白方视角</button>
+                    <button type="button" data-orient="b" title="翻转棋盘 (F)" data-i18n-title="tip.flip" data-i18n="msg.view.black">黑方视角</button>
+                  </div>
+                </div>
+                <div class="setting-row">
+                  <span class="setting-k" data-i18n="side.blindfold">盲棋</span>
+                  <button type="button" class="switch" id="opt-blind" aria-pressed="false" title="不画棋子，只画标记 —— 靠记忆下" data-i18n-title="tip.blindfold">
+                    <span class="switch-knob"></span>
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+          <div class="set-pane" id="set-sound" role="tabpanel" aria-labelledby="cat-sound" hidden>
+            <section class="set-sec">
+              <h2 class="side-h" data-i18n="set.sound">声音</h2>
+              <div class="setting-list">
+                <div class="setting-row">
+                  <span class="setting-k" data-i18n="side.sound">音效</span>
+                  <button type="button" class="switch" id="opt-sound" aria-pressed="true" title="走子音效" data-i18n-title="tip.sound">
+                    <span class="switch-knob"></span>
+                  </button>
+                </div>
+                <div class="setting-row" id="row-volume">
+                  <span class="setting-k" data-i18n="side.volume">音量</span>
+                  <input type="range" id="opt-volume" class="range" min="0" max="100" step="5" value="100" aria-label="音量" data-i18n-aria="side.volume" title="音效音量" data-i18n-title="tip.volume" />
+                </div>
+                <div class="setting-row stack" id="row-sound-set">
+                  <span class="setting-k" data-i18n="side.soundSet">音色</span>
+                  <div class="theme-row" id="sound-set-seg" role="group" aria-label="音色" data-i18n-aria="side.soundSet" title="木质：木头棋子落在木头棋盘上；经典：清脆的电子音" data-i18n-title="tip.soundSet">
+                    <button type="button" data-sound-set="wood" class="active" data-i18n="soundSet.wood">木质</button>
+                    <button type="button" data-sound-set="classic" data-i18n="soundSet.classic">经典</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+          <div class="set-pane" id="set-game" role="tabpanel" aria-labelledby="cat-game" hidden>
+            <section class="set-sec">
+              <h2 class="side-h" data-i18n="set.game">对局</h2>
+              <div class="setting-list">
+                <div class="setting-row" id="row-coach">
+                  <span class="setting-k" title="走出严重失误时提示悔棋重想" data-i18n-title="tip.coach" data-i18n="side.coach">失着提醒</span>
+                  <button type="button" class="switch" id="opt-coach" aria-pressed="true" aria-label="失着提醒" data-i18n-aria="side.coach">
+                    <span class="switch-knob"></span>
+                  </button>
+                </div>
+                <div class="setting-row" id="row-autoflip">
+                  <span class="setting-k" title="每步走完后棋盘转向走子方" data-i18n-title="tip.autoflip" data-i18n="side.autoflip">自动翻转</span>
+                  <button type="button" class="switch" id="opt-autoflip" aria-pressed="false" aria-label="自动翻转" data-i18n-aria="side.autoflip">
+                    <span class="switch-knob"></span>
+                  </button>
+                </div>
+              </div>
+              <p class="hint" data-i18n="set.gameHint">对手、执子和棋钟在「新对局」里选，下次会记住。</p>
+            </section>
+          </div>
+          <div class="set-pane" id="set-data" role="tabpanel" aria-labelledby="cat-data" hidden>
+            <section class="set-sec">
+              <h2 class="side-h" data-i18n="lib.sync">从网站同步</h2>
+              <div class="setting-list">
+                <div class="setting-row">
+                  <span class="setting-k" id="opt-netsync-k" data-i18n="sync.allow">允许联网同步</span>
+                  <button type="button" class="switch" id="opt-netsync" aria-pressed="false" aria-labelledby="opt-netsync-k" aria-describedby="opt-netsync-hint">
+                    <span class="switch-knob"></span>
+                  </button>
+                </div>
+              </div>
+              <p class="hint" id="opt-netsync-hint" data-i18n="sync.hint">默认关闭。打开后只在你点「同步」时联网，只发送用户名。</p>
+            </section>
+            <section class="set-sec">
+              <h2 class="side-h" data-i18n="side.learning">学习数据</h2>
+              <div class="link-row fit-row">
+                <button type="button" class="act-btn" id="learning-export" data-i18n="act.learningExport" title="把错题本、复习队列、课程进度和战绩存成一个文件" data-i18n-title="tip.learning.export">导出</button>
+                <button type="button" class="act-btn" id="learning-import" data-i18n="act.learningImport" title="从导出的文件合并回来，不会覆盖本机已有的进度" data-i18n-title="tip.learning.import">导入</button>
+              </div>
+            </section>
+            <section class="set-sec">
+              <h2 class="side-h" data-i18n="side.allData">全部数据</h2>
+              <div class="link-row fit-row">
+                <button type="button" class="act-btn" id="alldata-export" data-i18n="act.allExport" title="把本机全部数据（对局、存档槽、设置、战绩、学习数据）存成一个文件" data-i18n-title="tip.allData.export">导出</button>
+                <button type="button" class="act-btn" id="alldata-import" data-i18n="act.allImport" title="用导出的文件整个替换本机数据" data-i18n-title="tip.allData.import">导入</button>
+                <button type="button" class="act-btn" id="about-open" data-i18n="act.about" title="版本、许可与致谢" data-i18n-title="tip.about">关于</button>
+              </div>
+              <p class="hint" id="alldata-status" role="status" aria-live="polite"></p>
+            </section>
+            <section class="set-sec">
+              <h2 class="side-h" data-i18n="side.danger">清除数据</h2>
+              <div class="link-row fit-row">
+                <button type="button" class="act-btn danger" id="learn-reset" data-i18n="act.clearLearn" title="清空教学进度,从第一课重新开始" data-i18n-title="tip.learn.reset">清除教学进度</button>
+                <button type="button" class="act-btn danger" id="stats-clear" data-i18n="act.clearStats">清除统计与历史</button>
+                <button type="button" class="act-btn danger" id="clear-save" data-i18n="act.clearSave">清除全部存档</button>
+              </div>
+            </section>
+          </div>
+          <div class="set-pane" id="set-advanced" role="tabpanel" aria-labelledby="cat-advanced" hidden>
+            <section class="set-sec">
+              <h2 class="side-h" data-i18n="side.engine">引擎</h2>
+              <div class="setting-list">
+                <div class="setting-row stack">
+                  <span class="setting-k" data-i18n="side.hash">引擎内存</span>
+                  <div class="theme-row" id="hash-seg" role="group" aria-label="引擎内存" data-i18n-aria="side.hash" title="引擎可用的内存（MB）：大一些，长时间分析更顺" data-i18n-title="tip.hash">
+                    <button type="button" data-hash="16">16</button>
+                    <button type="button" data-hash="32" class="active">32</button>
+                    <button type="button" data-hash="64">64</button>
+                    <button type="button" data-hash="128">128</button>
+                  </div>
+                </div>
+                <div class="setting-row stack">
+                  <span class="setting-k" data-i18n="side.multipv">分析线数</span>
+                  <div class="theme-row" id="multipv-seg" role="group" aria-label="分析线数" data-i18n-aria="side.multipv" title="复盘与持续分析同时给出几条变化" data-i18n-title="tip.multipv">
+                    <button type="button" data-multipv="1" class="active">1</button>
+                    <button type="button" data-multipv="2">2</button>
+                    <button type="button" data-multipv="3">3</button>
+                    <button type="button" data-multipv="5">5</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <section class="set-sec">
+              <h2 class="side-h" data-i18n="set.review">复盘与分析</h2>
+              <div class="setting-list">
+                <div class="setting-row">
+                  <span class="setting-k" data-i18n="act.live">持续分析</span>
+                  <button type="button" class="switch" id="opt-live" aria-pressed="false" title="引擎持续分析棋盘上的局面，跟随复盘游标" data-i18n-title="tip.live">
+                    <span class="switch-knob"></span>
+                  </button>
+                </div>
+                <div class="setting-row">
+                  <span class="setting-k" data-i18n="side.engineArrows">显示引擎箭头</span>
+                  <button type="button" class="switch" id="opt-engine-arrows" aria-pressed="true" title="持续分析与复盘时，把引擎前三条线的第一步画成棋盘上的箭头" data-i18n-title="tip.engineArrows">
+                    <span class="switch-knob"></span>
+                  </button>
+                </div>
+                <div class="setting-row">
+                  <span class="setting-k" data-i18n="side.softMark">存疑标注</span>
+                  <button type="button" class="switch" id="opt-softmark" aria-pressed="false" title="复盘里也标出 ?!（值得商榷的一手）—— 这类判断不太稳定，所以默认不显示" data-i18n-title="tip.softMark">
+                    <span class="switch-knob"></span>
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+          </div>
         </div>
       </div>
     </main>
@@ -1046,7 +1068,7 @@
             </div>
             <!-- 6.0 (v6-plan Q3.1): the number that can go up. Drawn only once a
                  first attempt has moved it, like everything else on this page. -->
-            <canvas id="trend-rating" hidden aria-label="做题评级走势" data-i18n-aria="aria.trendRating" title="最近 60 次首答后的评级" data-i18n-title="tip.trendRating"></canvas>
+            <canvas id="trend-rating" hidden aria-label="谜题等级分走势" data-i18n-aria="aria.trendRating" title="最近 60 次首答后的谜题等级分" data-i18n-title="tip.trendRating"></canvas>
             <div class="stats-body" id="puzzle-tally-body" hidden></div>
             <!-- 进步 — change over time, not totals (progress.js). The accuracy
                  sparkline reads what stats.games already stores; the weekly rows
@@ -1071,10 +1093,10 @@
             </div>
             <canvas id="me-cal" role="img" hidden></canvas>
             <div class="side-h-row" id="me-rating-head" hidden>
-              <h2 class="side-h" data-i18n="me.gameRating">对局评级</h2>
+              <h2 class="side-h" data-i18n="me.gameRating">对局等级分</h2>
               <span class="side-h-meta num" id="me-rating-meta"></span>
             </div>
-            <canvas id="me-rating" hidden aria-label="对局评级走势" data-i18n-aria="aria.gameRating"></canvas>
+            <canvas id="me-rating" hidden aria-label="对局等级分走势" data-i18n-aria="aria.gameRating"></canvas>
             <div class="me-sw" id="me-sw" hidden></div>
             <div class="side-h-row" id="me-metrics-head" hidden>
               <h2 class="side-h" data-i18n="me.metrics">跨局指标</h2>
@@ -1089,10 +1111,6 @@
               <span class="side-h-meta num" id="eg-meta"></span>
             </div>
             <div class="stats-body" id="eg-body"></div>
-            <div class="close-row split">
-              <button type="button" class="act-btn" id="eg-go" data-i18n="eg.go">进训练营</button>
-              <button type="button" class="act-btn" id="eg-review" hidden></button>
-            </div>
           </section>
           <!-- v8-2-plan T2: 计算专项 — each mode's rating, answers, best set and
                review queue, and the way back in (trainer/visual-modes.js renderMe) -->
@@ -1101,19 +1119,6 @@
               <h2 class="side-h" id="vis-h"></h2>
             </div>
             <div class="stats-body" id="vis-body"></div>
-            <div class="close-row split">
-              <button type="button" class="act-btn" id="vis-look"></button>
-              <button type="button" class="act-btn" id="vis-blind"></button>
-            </div>
-          </section>
-          <section class="side-section page-sec" id="sec-history">
-            <div class="side-h-row">
-              <h2 class="side-h" data-i18n="hist.title">对局历史</h2>
-              <!-- label is "全部 N 局": renderHistory() fills in both the count and
-                   the language, so the markup deliberately carries no text -->
-              <button type="button" class="act-btn" id="hist-open" hidden title="查看全部对局历史" data-i18n-title="hist.open"></button>
-            </div>
-            <div class="hist-body" id="hist-body"></div>
           </section>
           <section class="side-section page-sec" id="sec-ach">
             <div class="side-h-row">
@@ -1211,6 +1216,12 @@
         <div class="hist-filters">
           <label class="setting-k" for="lib-q" data-i18n="lib.search">搜索</label>
           <input type="search" id="lib-q" class="text-input" spellcheck="false" placeholder="对手、开局、ECO 或赛事" data-i18n-placeholder="lib.searchPh" />
+        </div>
+        <!-- 9.0 S4: the search and the results first; the other six filters
+             are a fold — a list you search is not a form you fill in -->
+        <details class="lib-filters" id="lib-filters">
+          <summary class="setting-summary"><h4 class="side-h" data-i18n="lib.filters">筛选</h4></summary>
+        <div class="hist-filters">
           <span class="setting-k" id="lib-src-k" data-i18n="lib.bySrc">来源</span>
           <div class="theme-row" id="lib-src-seg" role="group" aria-labelledby="lib-src-k">
             <button type="button" data-lsrc="all" class="active" data-i18n="hist.any">全部</button>
@@ -1257,6 +1268,7 @@
             <button type="button" data-lsort="acc" data-i18n="lib.sortWorst">我下得最差</button>
           </div>
         </div>
+        </details>
         <p class="hint" id="lib-pos-note" hidden></p>
         <div class="pick-list" id="lib-list"></div>
         <button type="button" class="act-btn" id="lib-more" hidden></button>
@@ -1376,147 +1388,6 @@
          hostNewGameRows() in app.js. The line under the title replaces the
          old 「清空当前对局？」 confirm, and is there only when a game in
          progress would be lost. -->
-    <!-- v8-0-plan A1: 偏好设置 — the app's look, language, sound and data,
-         out of the game's settings page. ⌘, on macOS, Ctrl+, elsewhere, or
-         the rail's last entry. The look pickers are v8-0-plan A3's module,
-         mounted by one call (prefs-ui.js mountAppearance). -->
-    <div class="modal-bg" id="prefs-modal" role="dialog" aria-labelledby="prefs-title">
-      <div class="modal wide prefs-modal">
-        <h3 id="prefs-title" data-i18n="prefs.title">偏好设置</h3>
-        <section class="side-section" id="prefs-look-sec">
-          <h2 class="side-h" data-i18n="prefs.look">外观</h2>
-          <div class="setting-list">
-            <!-- v8-0-plan A3: 外观 / 棋盘 / 边框 / 棋子, built by
-                 js/appearance-ui.js mount() through prefs-ui.js
-                 mountAppearance(). They replace the 主题 row (four pairings of
-                 a shell with a board, two of them one board), the 跟随系统深浅
-                 switch (now the appearance's third choice, and the default) and
-                 the two-button 棋子样式 row. -->
-            <div class="setting-list" id="prefs-look"></div>
-            <div class="setting-row stack">
-              <span class="setting-k" data-i18n="side.textSize">字号</span>
-              <div class="theme-row" id="text-seg" role="group" aria-label="字号" data-i18n-aria="side.textSize" title="整个界面的文字大小" data-i18n-title="tip.textSize">
-                <button type="button" data-text="s" data-i18n="text.s">小</button>
-                <button type="button" data-text="m" class="active" data-i18n="text.m">标准</button>
-                <button type="button" data-text="l" data-i18n="text.l">大</button>
-              </div>
-            </div>
-            <div class="setting-row">
-              <span class="setting-k" data-i18n="side.coords">坐标</span>
-              <button type="button" class="switch" id="opt-coords" aria-pressed="true" title="在棋盘上标出 a–h 与 1–8" data-i18n-title="tip.coords">
-                <span class="switch-knob"></span>
-              </button>
-            </div>
-            <!-- v7-8-plan §5: printed on the frame (as since 1.x) or in the
-                 corner squares, the way Lichess does it — a–h in the first
-                 rank, 1–8 in the a-file, each in the other square colour. The
-                 frame narrows to match; the board rect then depends on this
-                 option and on the window, never on the tab. -->
-            <div class="setting-row stack" id="row-coords-at">
-              <span class="setting-k" data-i18n="side.coordsAt">坐标位置</span>
-              <div class="theme-row" id="coords-seg" role="group" aria-label="坐标位置" data-i18n-aria="side.coordsAt">
-                <button type="button" data-coords="out" class="active" data-i18n="coords.out">盘外</button>
-                <button type="button" data-coords="in" data-i18n="coords.in">盘内</button>
-              </div>
-            </div>
-          </div>
-        </section>
-        <section class="side-section" id="prefs-lang-sec">
-          <h2 class="side-h" data-i18n="prefs.langSound">语言与声音</h2>
-          <div class="setting-list">
-            <div class="setting-row stack">
-              <span class="setting-k" data-i18n="side.language">语言</span>
-              <div class="theme-row" id="lang-seg" role="group" aria-label="语言" data-i18n-aria="side.language"></div>
-            </div>
-            <div class="setting-row">
-              <span class="setting-k" data-i18n="side.sound">音效</span>
-              <button type="button" class="switch" id="opt-sound" aria-pressed="true" title="走子音效" data-i18n-title="tip.sound">
-                <span class="switch-knob"></span>
-              </button>
-            </div>
-            <!-- 6.0 (v6-plan Q2.8): the level under the switch, the coordinates
-                 on the frame, and the board with its men withheld. -->
-            <div class="setting-row" id="row-volume">
-              <span class="setting-k" data-i18n="side.volume">音量</span>
-              <input type="range" id="opt-volume" class="range" min="0" max="100" step="5" value="100" aria-label="音量" data-i18n-aria="side.volume" title="音效音量" data-i18n-title="tip.volume" />
-            </div>
-            <!-- 7.7 (v7-7-plan §8): the sound set. 木质 is the default; 经典 is
-                 the oscillator set every version until 7.6 played. -->
-            <div class="setting-row stack" id="row-sound-set">
-              <span class="setting-k" data-i18n="side.soundSet">音色</span>
-              <div class="theme-row" id="sound-set-seg" role="group" aria-label="音色" data-i18n-aria="side.soundSet" title="木质：木头棋子落在木头棋盘上；经典：7.6 以前的合成音" data-i18n-title="tip.soundSet">
-                <button type="button" data-sound-set="wood" class="active" data-i18n="soundSet.wood">木质</button>
-                <button type="button" data-sound-set="classic" data-i18n="soundSet.classic">经典</button>
-              </div>
-            </div>
-          </div>
-        </section>
-        <!-- v8-0-plan C2: the one setting that lets this app talk to another
-             host. Off by default; on, it still sends nothing until 同步 is
-             pressed on the library page (prefs-ui.js, sync-ui.js). -->
-        <section class="side-section" id="prefs-net-sec">
-          <h2 class="side-h" data-i18n="lib.sync">从网站同步</h2>
-          <div class="setting-list">
-            <div class="setting-row">
-              <span class="setting-k" id="opt-netsync-k" data-i18n="sync.allow">允许联网同步</span>
-              <button type="button" class="switch" id="opt-netsync" aria-pressed="false" aria-labelledby="opt-netsync-k" aria-describedby="opt-netsync-hint">
-                <span class="switch-knob"></span>
-              </button>
-            </div>
-            <p class="hint" id="opt-netsync-hint" data-i18n="sync.hint">默认关闭。打开后只在你点「同步」时联网，只发送用户名。</p>
-          </div>
-        </section>
-        <!-- Every irreversible action, in one place, with one naming pattern.
-             They used to be four: 「清除存档」 pinned in red at the foot of the
-             panel, 「重置」 in the lesson header, 「清零」 in the statistics
-             header, 「认输」 in the game group — four unrecoverable actions,
-             four locations, three different words for "destroy", all of them
-             permanent furniture sitting a stray click away while you play.
-             Resign stayed with the game (it is a move, not a deletion) and is
-             only present while a game is running; the three that delete data
-             live here, behind one heading, off the screen you play on.
-
-             And last on that screen. Until 2.1 this sat in the middle of the
-             settings page — three irreversible deletions, and the only red on
-             the page, wedged between the two groups you actually come here to
-             adjust. A destructive group belongs at the end of the thing it is
-             the end of. -->
-        <!-- 5.1: the learning data — the personal book, the review queue, the
-             lesson progress, the record — has a way out and a way back in. It
-             is the one content in the app nobody can download again, and it
-             used to live behind two buttons that could only delete it. -->
-        <section class="side-section" id="sec-learning">
-          <h2 class="side-h" data-i18n="side.learning">学习数据</h2>
-          <div class="link-row">
-            <button type="button" class="act-btn" id="learning-export" data-i18n="act.learningExport" title="把错题本、复习队列、课程进度和战绩存成一个文件" data-i18n-title="tip.learning.export">导出</button>
-            <button type="button" class="act-btn" id="learning-import" data-i18n="act.learningImport" title="从导出的文件合并回来，不会覆盖本机已有的进度" data-i18n-title="tip.learning.import">导入</button>
-          </div>
-        </section>
-        <!-- 6.0 (v6-plan Q1.1): the whole profile — every key, including the
-             current game, the slots, the settings and the record — as one file.
-             The learning export above is a merge; this one is a copy. -->
-        <section class="side-section" id="sec-alldata">
-          <h2 class="side-h" data-i18n="side.allData">全部数据</h2>
-          <div class="link-row">
-            <button type="button" class="act-btn" id="alldata-export" data-i18n="act.allExport" title="把本机全部数据（对局、存档槽、设置、战绩、学习数据）存成一个文件" data-i18n-title="tip.allData.export">导出</button>
-            <button type="button" class="act-btn" id="alldata-import" data-i18n="act.allImport" title="用导出的文件整个替换本机数据" data-i18n-title="tip.allData.import">导入</button>
-            <button type="button" class="act-btn" id="about-open" data-i18n="act.about" title="版本、许可与致谢" data-i18n-title="tip.about">关于</button>
-          </div>
-          <!-- v8-2-plan F5: 「正在准备…」 while the export is built and sent -->
-          <p class="hint" id="alldata-status" role="status" aria-live="polite"></p>
-        </section>
-        <section class="side-section">
-          <h2 class="side-h" data-i18n="side.danger">清除数据</h2>
-          <div class="link-row">
-            <button type="button" class="act-btn danger" id="learn-reset" data-i18n="act.clearLearn" title="清空教学进度,从第一课重新开始" data-i18n-title="tip.learn.reset">清除教学进度</button>
-            <button type="button" class="act-btn danger" id="stats-clear" data-i18n="act.clearStats">清除统计与历史</button>
-            <button type="button" class="act-btn danger" id="clear-save" data-i18n="act.clearSave">清除全部存档</button>
-          </div>
-        </section>
-        <div class="close-row"><button type="button" class="tool-btn" id="prefs-close" data-i18n="act.close">关闭</button></div>
-      </div>
-    </div>
-
     <div class="modal-bg" id="newgame-modal" role="dialog" aria-labelledby="newgame-title">
       <div class="modal wide newgame-modal">
         <h3 id="newgame-title" data-i18n="ng.title">新对局</h3>
@@ -1536,18 +1407,105 @@
                with a name, a face and a measured rating — chosen here, first.
                The cards are built once by opponents-ui.js and only relabelled
                afterwards (7.6). Rung × style as two segments is still there,
-               folded under 自定义, for a pairing no persona is. -->
+               folded under 更多选项 with the rarer clocks (9.0 S2). -->
           <div class="setting-row stack" id="row-opponent">
             <span class="setting-k" data-i18n="ng.opponent">对手是谁</span>
-            <!-- v8-1-plan T1: 入门 / 进阶 / 高手, one segment of the cards at a
-                 time. Tabs and their words arrive with the opponents chunk. -->
-            <div class="theme-row wrap" id="op-seg" role="group" hidden></div>
+            <!-- 9.0 S2: eight cards — the opponents around the one picked;
+                 every rung and style is under 更多选项 -->
             <div class="op-grid" id="op-grid" role="group" aria-label="对手是谁" data-i18n-aria="ng.opponent"></div>
             <span class="setting-note" id="op-you"></span>
           </div>
+          <div class="setting-row stack" id="row-color">
+            <span class="setting-k" data-i18n="side.color">执子</span>
+            <div class="theme-row" id="color-seg" role="group" aria-label="执子" data-i18n-aria="side.color">
+              <button type="button" data-color="w" class="active" title="执白先行" data-i18n-title="tip.color.white" data-i18n="color.white">执白</button>
+              <button type="button" data-color="b" title="执黑后行" data-i18n-title="tip.color.black" data-i18n="color.black">执黑</button>
+              <!-- new-game dialog only (v7-8-plan §4): drawn when 开始 is pressed -->
+              <button type="button" data-color="random" data-i18n="color.random" hidden>随机</button>
+            </div>
+          </div>
+          <div class="setting-row stack" id="row-clock" hidden>
+            <span class="setting-k" data-i18n="side.clock">棋钟</span>
+            <div class="theme-row" id="clock-seg" role="group" aria-label="棋钟" data-i18n-aria="side.clock">
+              <button type="button" data-tc="off" class="active" title="不限时" data-i18n-title="tip.clock.off" data-i18n="clock.off">关</button>
+              <button type="button" data-tc="5" title="每方 5 分钟" data-i18n-title="tip.clock.5">5</button>
+              <button type="button" data-tc="10" title="每方 10 分钟" data-i18n-title="tip.clock.10">10</button>
+              <button type="button" data-tc="15+10" title="每方 15 分钟，每步加 10 秒" data-i18n-title="tip.clock.15plus10">15+10</button>
+            </div>
+          </div>
           <details class="ng-custom" id="ng-custom">
-            <summary class="ng-custom-sum" data-i18n="ng.custom">自定义档位与风格</summary>
-            <div id="ng-custom-body"></div>
+            <summary class="ng-custom-sum" data-i18n="ng.more">更多选项</summary>
+            <div id="ng-custom-body">
+              <div class="setting-row stack" id="row-clock-more">
+                <span class="setting-k" data-i18n="ng.moreClocks">更多棋钟</span>
+                <div class="theme-row wrap" id="clock-seg-more" role="group" aria-label="更多棋钟" data-i18n-aria="ng.moreClocks">
+                  <button type="button" data-tc="3" title="每方 3 分钟" data-i18n-title="tip.clock.3">3</button>
+                  <button type="button" data-tc="3+2" title="每方 3 分钟,每步加 2 秒" data-i18n-title="tip.clock.3plus2">3+2</button>
+                  <button type="button" data-tc="5+3" title="每方 5 分钟,每步加 3 秒" data-i18n-title="tip.clock.5plus3">5+3</button>
+                  <button type="button" data-tc="30" title="每方 30 分钟" data-i18n-title="tip.clock.30">30</button>
+                  <button type="button" data-tc="custom" title="自己定每方几分钟、每步加几秒" data-i18n-title="tip.clock.custom" data-i18n="clock.custom">自定义</button>
+                </div>
+                <div class="clock-custom" id="clock-custom" hidden>
+                  <label class="clock-field"><input type="number" class="text-input" id="tc-min" min="1" max="180" step="1" value="15" inputmode="numeric" /><span data-i18n="clock.minutes">分钟</span></label>
+                  <label class="clock-field"><span>+</span><input type="number" class="text-input" id="tc-inc" min="0" max="60" step="1" value="10" inputmode="numeric" /><span data-i18n="clock.incSec">秒/步</span></label>
+                </div>
+              </div>
+              <div class="setting-row stack" id="row-difficulty">
+                <!-- No "难度" row label here: it would be the third heading in a
+                     column of three — 对局 → 难度 → 陪练档/棋力档 — and the two
+                     group labels already name what the buttons are. The row keeps
+                     its name for screen readers on the groups' aria-label. -->
+                <!-- Two scales, not one ladder of six. The first pair are
+                     hand-weakened sparring tiers (shallow MultiPV sampling); the
+                     rest are Stockfish limited by UCI_Elo. Shown as one row, the
+                     order could not be read off the labels — which was a symptom
+                     of the two scales being merged, not of the words. The Elo
+                     values stay in the tooltips: they are an engine setting, and
+                     nothing in this app gives the player a rating to compare with. -->
+                <span class="diff-group" data-i18n="diff.groupSpar">陪练档</span>
+                <div class="theme-row wrap" id="diff-seg" role="group" aria-label="难度" data-i18n-aria="side.difficulty">
+                  <button type="button" data-diff="beginner" title="会主动犯错的陪练,适合教学毕业第一局" data-i18n-title="tip.diff.beginner" data-i18n="diff.beginner">新手</button>
+                  <button type="button" data-diff="casual" title="比新手准一些,但还会犯错 —— 打赢新手之后的下一格" data-i18n-title="tip.casual" data-i18n="diff.casual">休闲</button>
+                  <!-- v8-0-plan B4: four rungs between 休闲 and 初级 (engine.js) -->
+                  <button type="button" data-diff="learner" title="只看两步，常走次一点的着 —— 休闲之上的第一档" data-i18n-title="tip.diff.learner" data-i18n="diff.learner">练习</button>
+                  <button type="button" data-diff="improver" title="比练习档少犯一些错" data-i18n-title="tip.diff.improver" data-i18n="diff.improver">进步</button>
+                  <button type="button" data-diff="steady" title="算三步，大失误少见" data-i18n-title="tip.diff.steady" data-i18n="diff.steady">稳健</button>
+                  <button type="button" data-diff="solid" title="算四步，初级之前的最后一档" data-i18n-title="tip.diff.solid" data-i18n="diff.solid">扎实</button>
+                </div>
+                <span class="diff-group" data-i18n="diff.groupEngine">棋力档</span>
+                <div class="theme-row wrap" id="diff-seg-engine" role="group" aria-label="难度" data-i18n-aria="side.difficulty">
+                  <button type="button" data-diff="easy" title="等级分 1320，棋力档的起点" data-i18n-title="tip.diffEasy" data-i18n="diff.easy">初级</button>
+                  <button type="button" data-diff="easyplus" title="等级分 1420，不总走最好的那一步" data-i18n-title="tip.diff.easyplus" data-i18n="diff.easyplus">初级+</button>
+                  <button type="button" data-diff="normalminus" title="等级分 1542" data-i18n-title="tip.diff.normalminus" data-i18n="diff.normalminus">中级−</button>
+                  <button type="button" data-diff="normal" class="active" title="等级分 1700" data-i18n-title="tip.diffNormal" data-i18n="diff.normal">中级</button>
+                  <!-- v8-1-plan T1: the rungs re-stepped by what the games measured
+                       (engine.js TIERS). An Elo value is not a word: its tooltip
+                       is the same in every language and needs no key. -->
+                  <button type="button" data-diff="normalplus" title="等级分 1797" data-i18n-title="tip.diff.normalplus" data-i18n="diff.normalplus">中级+</button>
+                  <button type="button" data-diff="hardminus" title="等级分 1876" data-i18n-title="tip.diff.hardminus" data-i18n="diff.hardminus">高级−</button>
+                  <button type="button" data-diff="hard" title="等级分 1982" data-i18n-title="tip.diffHard" data-i18n="diff.hard">高级</button>
+                  <button type="button" data-diff="hardplus" title="等级分 2104" data-i18n-title="tip.diff.hardplus" data-i18n="diff.hardplus">高级+</button>
+                  <button type="button" data-diff="expert" title="等级分 2239" data-i18n-title="tip.diff.expert" data-i18n="diff.expert">专家</button>
+                  <button type="button" data-diff="expertplus" title="等级分 2339" data-i18n-title="tip.diff.expertplus" data-i18n="diff.expertplus">专家+</button>
+                  <button type="button" data-diff="master" title="等级分 2460" data-i18n-title="tip.diff.master" data-i18n="diff.master">大师</button>
+                  <!-- full strength by node count past the last Elo rung (engine.js) -->
+                  <button type="button" data-diff="masterplus" title="等级分 2574，出手快，想得浅" data-i18n-title="tip.diff.masterplus" data-i18n="diff.masterplus">大师+</button>
+                  <button type="button" data-diff="strong" title="等级分 2683，比大师+ 想得深" data-i18n-title="tip.diff.strong" data-i18n="diff.strong">强力</button>
+                  <button type="button" data-diff="strongplus" title="等级分 2807，想得更深" data-i18n-title="tip.diff.strongplus" data-i18n="diff.strongplus">强力+</button>
+                  <button type="button" data-diff="extreme" title="最强的一档，等级分 2877 —— 仍是每步想 1.2 秒，不是无限时间；只比强力+ 强一点，两者对下多是和棋" data-i18n-title="tip.diff.extreme" data-i18n="diff.extreme">全力</button>
+                </div>
+              </div>
+              <div class="setting-row stack" id="row-persona">
+                <span class="setting-k" data-i18n="side.persona">陪练风格</span>
+                <div class="theme-row wrap" id="persona-seg" role="group" aria-label="陪练风格" data-i18n-aria="side.persona">
+                  <button type="button" data-persona="off" class="active" title="不加风格,引擎按难度正常发挥" data-i18n-title="tip.persona.off" data-i18n="persona.off">标准</button>
+                  <button type="button" data-persona="greedy" title="见子就吃,会主动踩进你的捉双和牵制" data-i18n-title="tip.persona.greedy" data-i18n="persona.greedy">贪吃子</button>
+                  <button type="button" data-persona="principled" title="按开局三原则出子:抢中心、快出轻子、尽早易位" data-i18n-title="tip.persona.principled" data-i18n="persona.principled">重原则</button>
+                  <button type="button" data-persona="attacker" title="子力一直往你的王那边压,练防守用" data-i18n-title="tip.persona.attacker" data-i18n="persona.attacker">爱进攻</button>
+                </div>
+                <span class="setting-note" data-i18n="side.personaNote">风格叠加在难度之上 —— 换风格不改变棋力,只改变它偏爱哪种着法</span>
+              </div>
+            </div>
           </details>
         </div>
         <div class="close-row end">

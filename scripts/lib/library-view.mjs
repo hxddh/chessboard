@@ -1,17 +1,16 @@
 /**
  * The e2e's view of the 棋谱库 (v8-0-plan C1).
  *
- * Until C1 the suites read the library straight out of localStorage
- * (`chess.v1.library`, `{v: 1, names, games}`). The games are one IndexedDB
- * record each now and `chess.v1.library` is a header, so:
+ * The games are one IndexedDB record each (library-db.js) and `chess.library`
+ * is a header that counts them, so:
  *
  *   libOf(page)     the library the app holds — waits for the library chunk
- *                   to have loaded it, then answers in the old `{v, names,
- *                   games}` shape, so an assertion written against 7.x reads
- *                   the same;
+ *                   to have loaded it, then answers as `{v, names, games}`;
  *   storedLib(page) what IndexedDB itself holds (games and the header), for
  *                   the checks that are about persistence rather than about
- *                   the page.
+ *                   the page;
+ *   seedLibrary     a library for a page before it starts, for
+ *                   ctx.addInitScript(seedLibrary, {names, games}).
  */
 export const libOf = (page) => page.evaluate(async () => {
   const hook = () => window.__chess && window.__chess.library;
@@ -23,8 +22,8 @@ export const libOf = (page) => page.evaluate(async () => {
 
 export const storedLib = (page) => page.evaluate(() => new Promise((resolve) => {
   let header = null;
-  try { header = JSON.parse(localStorage.getItem("chess.v1.library") || "null"); } catch (_) { header = null; }
-  const req = indexedDB.open("chessboard.library");
+  try { header = JSON.parse(localStorage.getItem("chess.library") || "null"); } catch (_) { header = null; }
+  const req = indexedDB.open("chessboard.games");
   req.onupgradeneeded = () => { req.transaction.abort(); };
   req.onerror = () => resolve({ header, games: null });
   req.onsuccess = () => {
@@ -39,3 +38,46 @@ export const storedLib = (page) => page.evaluate(() => new Promise((resolve) => 
     all.onerror = () => { db.close(); resolve({ header, games: null }); };
   };
 }));
+
+/**
+ * A library the way the app keeps one: the games in IndexedDB
+ * ("chessboard.games", library-db.js) and the header (`chess.library`)
+ * counting them. For ctx.addInitScript(seedLibrary, {names, games,
+ * claimAsked, once}): it runs before the page's own scripts, so its write
+ * is the first transaction on the store, and IndexedDB runs transactions on
+ * one store in the order they were made — the library's first read finds
+ * the games. A game already stored is left as it is (a reload keeps what
+ * the page did to it); `once` seeds the first page of the session only.
+ * Resolves once the games are written (for page.evaluate before a reload).
+ */
+export function seedLibrary(o) {
+  if (o.once) {
+    if (sessionStorage.getItem("seed.library")) return;
+    sessionStorage.setItem("seed.library", "1");
+  }
+  const games = o.games || [];
+  const header = { v: 1, names: o.names || [], n: games.filter((g) => g && g.src !== "local").length };
+  if (o.claimAsked) header.claimAsked = true;
+  localStorage.setItem("chess.library", JSON.stringify(header));
+  if (!games.length) return Promise.resolve();
+  return new Promise((resolve) => {
+    const req = indexedDB.open("chessboard.games", 1);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if (!d.objectStoreNames.contains("games")) d.createObjectStore("games", { keyPath: "id" });
+      if (!d.objectStoreNames.contains("meta")) d.createObjectStore("meta");
+    };
+    req.onsuccess = () => {
+      const db = req.result;
+      const t = db.transaction(["games"], "readwrite");
+      const s = t.objectStore("games");
+      for (const g of games) {
+        const r = s.add(g);
+        r.onerror = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+      }
+      t.oncomplete = () => { db.close(); resolve(); };
+      t.onabort = () => { db.close(); resolve(); };
+    };
+    req.onerror = () => resolve();
+  });
+}

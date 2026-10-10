@@ -33,7 +33,7 @@
  * @module selftest-native
  */
 /** library-db.js DB_NAME / DB_VERSION and its stores; scripts/test-persist.mjs holds the two together. */
-const IDB_NAME = "chessboard.library";
+const IDB_NAME = "chessboard.games";
 const IDB_VERSION = 1;
 /** The key in the library's "meta" store the marker lives under. */
 const IDB_KEY = "selftest";

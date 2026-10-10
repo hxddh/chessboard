@@ -8,8 +8,8 @@
  * strength, judged by endgame-rules.js.
  *
  * Progress lives in the learn key, beside the course (`learnState.eg`), so the
- * learning-data file, 清除教学进度 and the old saves need nothing new: a save
- * from before 8.1 has no `eg`, which reads as nothing tried yet.
+ * learning-data file and 清除教学进度 need nothing new: a save with no `eg`
+ * reads as nothing tried yet.
  *
  *   eg.done[id] = ms of the first time the goal was reached
  *   eg.srs[id]  = srs.js entry: a failed try, or a success that leaned on
@@ -34,6 +34,7 @@ export function createEndgames(d) {
   let data = null;
   let asked = null;
   let meLater = null; // 「我的」 asked before the chunk was here
+  const later = []; // 9.0 S3: whenReady's callers, until the chunk is here
 
   /**
    * Start the fetch once; `onReady` repaints whoever asked. After the frame
@@ -48,10 +49,25 @@ export function createEndgames(d) {
       .then((m) => {
         data = m;
         onReady();
-        if (meLater) { const go = meLater; meLater = null; renderMe(go); }
+        for (const fn of later.splice(0)) fn();
+        if (meLater) { meLater = null; renderMe(); }
       }, () => { asked = null; }); // a failed load is retried next time something asks
   }
   const ready = () => !!data;
+  /** 9.0 S3: run `fn` once the camp is here (at once if it is). */
+  function whenReady(fn) {
+    if (data) { fn(); return; }
+    later.push(fn);
+    ensure();
+  }
+  /** Where 残局 picks up: the one last opened, else the first not done, else the first. */
+  function resumeId() {
+    if (!data) return null;
+    const eg = state();
+    if (eg.last && item(eg.last)) return eg.last;
+    const open = data.ITEMS.find((x) => !eg.done[x.id]);
+    return (open || data.ITEMS[0]).id;
+  }
   const word = (arr) => (arr ? arr[LANG_AT[store.ui.langId] || 0] || arr[0] : "");
   const item = (id) => (data ? data.ITEMS.find((x) => x.id === id) || null : null);
   const group = (g) => data.GROUPS.find((x) => x.id === g);
@@ -127,6 +143,8 @@ export function createEndgames(d) {
     return data ? data.ITEMS.filter((x) => (!g || x.g === g) && eg.done[x.id]).length : 0;
   }
   const total = () => (data ? data.ITEMS.length : 0);
+  /** How many endgames group `g` holds (9.0 S1's 继续 card). */
+  const groupSize = (g) => (data ? data.ITEMS.filter((x) => x.g === g).length : 0);
 
   /** The camp's part of the lesson list, after the classics; fetched on first draw. */
   function renderList(list, curId) {
@@ -155,17 +173,15 @@ export function createEndgames(d) {
   }
 
   /**
-   * 「我的」: the camp's section — per theme done/total, what is due, and the
-   * two ways in. Drawn from the first visit, at 0/90: it is a door as much
-   * as a record, like the entry card's three doors (the lesson list's camp
-   * sits folded under 目录). Hidden only until its chunk is here.
-   * @param {(id:string) => void} go open an endgame in 学习
+   * 「我的」: the camp's section — per theme done/total and what is due.
+   * Drawn from the first visit, at 0/90. 9.0 S3: a record only; the way in
+   * is 训练 · 残局. Hidden only until its chunk is here.
    */
-  function renderMe(go) {
+  function renderMe() {
     const sec = document.getElementById("sec-endgame");
     if (!sec) return;
     const eg = state();
-    if (!data) { meLater = go; sec.hidden = true; ensure(); return; }
+    if (!data) { meLater = true; sec.hidden = true; ensure(); return; }
     sec.hidden = false;
     const meta = document.getElementById("eg-meta");
     if (meta) meta.textContent = doneCount() + "/" + total();
@@ -182,16 +198,19 @@ export function createEndgames(d) {
       row.append(k, v);
       return row;
     }));
+    // 9.0 S3: a record, not a second way in — the camp is 训练 · 残局; what
+    // is due is a line here (and ↻ in that catalog)
     const soon = due();
-    const rev = document.getElementById("eg-review");
-    rev.hidden = !soon.length;
-    rev.textContent = tf("eg.reviewN", [soon.length]);
-    rev.onclick = () => { const q = due(); if (q.length) go(q[0]); };
-    const cont = document.getElementById("eg-go");
-    const first = data.ITEMS.find((x) => !eg.done[x.id]);
-    cont.hidden = !first;
-    cont.onclick = () => { const f = data.ITEMS.find((x) => !state().done[x.id]); if (f) go(f.id); };
+    if (soon.length) {
+      const row = document.createElement("div");
+      row.className = "stat-row";
+      const k = document.createElement("span");
+      k.className = "stat-k";
+      k.textContent = tf("eg.reviewN", [soon.length]);
+      row.appendChild(k);
+      body.appendChild(row);
+    }
   }
 
-  return { ensure, ready, item, lesson, record, due, next, doneCount, total, renderList, renderMe, state };
+  return { ensure, ready, whenReady, resumeId, item, lesson, record, due, next, doneCount, total, groupSize, renderList, renderMe, state };
 }

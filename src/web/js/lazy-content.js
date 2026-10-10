@@ -65,7 +65,7 @@ import { LANG_IDS, FALLBACK_LANG, detectLang } from "./lang-ids.js";
   };
 
   /** Where the settings live — persist.js KEYS.settings, read raw by chunk-boot.js. */
-  export const SETTINGS_KEY = "chess.v1.settings";
+  export const SETTINGS_KEY = "chess.settings";
 
   /**
    * The chunks the first frame needs, from the saved settings as stored.

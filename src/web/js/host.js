@@ -634,26 +634,24 @@ const global = typeof window !== "undefined" ? window : globalThis;
   // the native side writes atomically (tmp → rename) and keeps the previous
   // copy as a .bak. Every wrapper answers null when there is no bridge (the
   // browser) or the platform gave no data directory, so persist.js can keep
-  // localStorage as the fallback and the one-time migration source.
+  // localStorage alone.
   //
-  // v8-0-plan F3: two kinds of file live there. `key` names one file of the
-  // per-key store (store/<key>.json) that persist.js mirrors into since v8-0-plan F3;
-  // no key is chessboard.json, the one-document mirror 6.x–7.x wrote, which
-  // the page now only reads to migrate from.
+  // v8-0-plan F3: each file is one key of the per-key store
+  // (profile/<key>.json) that persist.js mirrors into; every call names it.
 
   /**
-   * @param {string} [key] a store key; omitted for chessboard.json
+   * @param {string} key a store key
    * @returns {Promise<{text: string, bak?: boolean}|{missing: true}|{empty: true}|null>}
    *   the file (with `bak` true when the native side had to fall back to
-   *   its .bak), "no file yet" (a fresh install — migrate from
-   *   localStorage), "the file is there and holds nothing" (6.1: damage, not
-   *   a fresh install), or null when native storage is unavailable here.
-   *   Throws FileTooLargeError when the file is over the native limit.
+   *   its .bak), "no file yet", "the file is there and holds nothing" (6.1:
+   *   damage, not a fresh install), or null when native storage is
+   *   unavailable here. Throws FileTooLargeError when the file is over the
+   *   native limit.
    */
   async function appdataRead(key) {
     if (!hasZero() || typeof global.zero.invoke !== "function") return null;
     let r;
-    try { r = await readBytes((f) => global.zero.invoke("chess.appdataRead", f), key == null ? {} : { key: String(key) }); }
+    try { r = await readBytes((f) => global.zero.invoke("chess.appdataRead", f), { key: String(key) }); }
     catch (err) { if (err && err.name === FILE_TOO_LARGE) throw err; return null; }
     if (!r || typeof r !== "object") return null;
     if (r.missing) return { missing: true };
@@ -665,7 +663,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
 
   /**
    * @param {string} text
-   * @param {string} [key] a store key; omitted for chessboard.json
+   * @param {string} key a store key
    * @returns {Promise<boolean|null>} true when written, null when native
    *   storage is unavailable here. Throws when the native side refused or
    *   failed the write — the caller must NOT treat that as saved.
@@ -673,7 +671,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
   async function appdataWrite(text, key) {
     if (!hasZero() || typeof global.zero.invoke !== "function") return null;
     const r = await sendBytes((f) => global.zero.invoke("chess.appdataWrite", f),
-      key == null ? {} : { key: String(key) }, textSource(text));
+      { key: String(key) }, textSource(text));
     if (r && typeof r === "object") {
       if (r.ok) return true;
       if (r.tooLarge) throw fileTooLargeError(r.limit);
@@ -852,8 +850,6 @@ const global = typeof window !== "undefined" ? window : globalThis;
     onOpenFiles,
     onAppLifecycle,
     normalizePaths,
-    appdataRead: () => appdataRead(),
-    appdataWrite: (text) => appdataWrite(text),
     // v8-0-plan F3: one file of the per-key store (persist.js)
     appdataReadKey: (key) => appdataRead(key),
     appdataWriteKey: (key, text) => appdataWrite(text, key),

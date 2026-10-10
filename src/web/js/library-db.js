@@ -1,51 +1,30 @@
 /**
- * 棋谱库的存储 — one IndexedDB record per game (v8-0-plan C1).
+ * 棋谱库的存储 — one IndexedDB record per game (v8-0-plan C1):
  *
- * Until v8-0-plan C1 the library was one localStorage value, `chess.v1.library`,
- * `{v: 1, names, games: [...]}`: the whole of it re-serialised on every save,
- * capped at 500 games because ~5 MB of quota was the real ceiling, and
- * mirrored to the native store as one file. Now:
- *
- *   * the games live in IndexedDB, database "chessboard.library", store
+ *   * the games live in IndexedDB, database "chessboard.games", store
  *     "games", keyed by the entry's id — one record per game, so a save
  *     writes the games that changed and nothing else, and the quota is the
- *     disk's, not 5 MB;
+ *     disk's, not localStorage's 5 MB;
  *   * each record carries the game's position index (`pk`, library-query.js)
  *     beside the entry, so "contains this position" is a scan, not a replay;
  *   * the native mirror (persist.js) keeps the games too, in 64 shard files
  *     ("lib00" … "lib3f", LibraryQuery.shardOf) under the same manifest, the
  *     same two slots and the same Web Lock as every other key — IndexedDB is
  *     the WebView's, and "remove website data" must not take the library;
- *   * `chess.v1.library` stays, as the header: `{v: 1, games: [], names,
- *     db: 2, n}`. Still v1-shaped on purpose — a 7.x build, or one from before C1, that
- *     opens this profile reads an empty library rather than quarantining a
- *     value it does not know, and the games are still here when it is
- *     upgraded again. If that older build imports meanwhile, it writes v1
- *     games into the header, and the next launch migrates them in too.
+ *   * `chess.library` is the header: `{v: 1, names, n, sum}` — the names
+ *     claimed, how many imported games the store holds, and the summary's id.
  *
  * Why IndexedDB and not a native file per game: the native store is reached
  * over the bridge, one async round trip per file. Loading ten thousand files
  * at every launch is minutes; one getAll() is well under a second. The
  * native store is kept for what it is for — surviving the WebView's data —
  * at a granularity (64 shards) its bridge can carry.
- *
- * The migration (`migrate`) is written for 7.0's history: that release lost
- * PGNs moving data between shapes. So it copies every game object verbatim,
- * keeps the whole v1 value as it was in the "meta" store before anything
- * else, reads back every id before the header is allowed to change, and runs
- * under the store's Web Lock so a second window cannot interleave with it. A
- * migration cut short anywhere leaves the v1 header in localStorage, and the
- * next launch simply does it again: every step is an idempotent upsert.
  * @module library-db
  */
 import { LibraryQuery } from "./library-query.js";
 import { DB_NAME, SUM_KEY, SUM_ID, readStored } from "./library-sum.js";
 
-/**
- * Still 1 (v8-1-plan T3, M3 评审): the repertoire's records have a database of
- * their own (rep-db.js), because a version 2 here would make every 8.0
- * launch hit a VersionError and open its library read-only for good.
- */
+/** The database's version: its two stores, "games" and "meta". */
 const DB_VERSION = 1;
 
 /** A request as a promise. */
@@ -72,9 +51,9 @@ const now = () => (typeof performance !== "undefined" ? performance.now() : Date
 /**
  * `records` into store `s` of transaction `t`, PUT_SLICE ms of them per task.
  *
- * v8-1-plan F3: every put() structured-clones its record on the spot, and the
- * first launch moves the whole v1 library in with one put() call — 1,543
- * games of a 2 MB profile were one 34–45 ms task, in the middle of the
+ * v8-1-plan F3: every put() structured-clones its record on the spot, and a
+ * restore from the native shards puts the whole library in with one call —
+ * 1,543 games of a 2 MB profile were one 34–45 ms task, in the middle of the
  * mirror's first write. The next slice is queued from the last request's
  * success, when the transaction is active again, so it is still one
  * transaction: all of the records or (abort) none of them.
@@ -102,8 +81,8 @@ function putSliced(t, s, records) {
 }
 
 /**
- * v8-1-plan F3: the list's summary lives in the "meta" store beside the v1
- * backups (library-sum.js says where). In a meta write's `del`: every
+ * v8-1-plan F3: the list's summary lives in the "meta" store (library-sum.js
+ * says where). In a meta write's `del`: every
  * summary shard (the id stays).
  */
 const SUM_ALL = "sum:*";
@@ -116,7 +95,7 @@ function applyMeta(m, meta) {
 
 /**
  * The IndexedDB backend, or null when this WebView has none (or refuses it:
- * a private window, a policy). The caller then keeps the pre-C1 shape.
+ * a private window, a policy). The caller then keeps the games in memory.
  * @param {IDBFactory} idb
  * @param {string} [name]
  * @param {IDBDatabase} [open] a connection already open (library-sum.js
@@ -274,26 +253,6 @@ function memoryBackend() {
     },
     async writeMeta(m) { check("setMeta"); metaOf(m); return true; },
   };
-}
-
-/** How deep an entry's analysis went: 0 = none. */
-const depthOf = (g) => (g && g.an ? Number(g.an.budget) || 1 : 0);
-
-/**
- * Two copies of one game (the same id): which one stays.
- *
- * `addGames`' rule — what is stored stays — with one exception the two-store
- * world needs: an older build may have analysed the game in its v1 header
- * after this build migrated it. The deeper analysis wins; a clock either side
- * has is kept. Nothing else of either copy is merged: a half of each is a
- * record neither build wrote.
- */
-function mergeEntry(have, incoming) {
-  if (!have) return incoming;
-  const keep = depthOf(incoming) > depthOf(have) ? incoming : have;
-  const other = keep === have ? incoming : have;
-  if (!keep.clk && other.clk) return Object.assign({}, keep, { clk: other.clk });
-  return keep;
 }
 
 /** How many of this player's own plies in a game were `?` or `??`. */
@@ -505,8 +464,7 @@ function createLibraryStore(o) {
   /**
    * v8-1-plan F3: the stored summary, as rows, when it can stand in for the
    * library until `load` has read it: its id is the one the header carries
-   * (`id` — a build that does not know the summary rewrites the header
-   * without it), and it has a row for every record the store holds. Null
+   * (`id`), and it has a row for every record the store holds. Null
    * otherwise; the list then waits for the entries, as before.
    * `pre`: the same read, made earlier (library-sum.js prefetchSummary).
    * @returns {Promise<object[]|null>}
@@ -528,8 +486,8 @@ function createLibraryStore(o) {
 
   /**
    * After `load`: make the stored summary say what the records say — a
-   * shard written by another build, by a window that did not know a game,
-   * or never written (a library from before the summary) is rewritten; one
+   * shard written by a window that did not know a game, or never written,
+   * is rewritten; one
    * that already agrees is left. Compared a shard at a time, `budgetMs` a
    * slice; what differs is serialised again when it is written, so a save
    * that landed meanwhile is not overwritten with the older text.
@@ -562,45 +520,23 @@ function createLibraryStore(o) {
   }
 
   /**
-   * v1 → IndexedDB. `raw` is the header's value exactly as localStorage
-   * holds it. Resolves {ok, moved} once every game is readable back from
-   * the store — and only then may the caller replace the header.
-   * `opts.backup === false`: the value is not one found in localStorage but
-   * the native shards read back (library-page.js), already a copy — keeping
-   * it too stored a second full library per recovery (M5 review P3-3).
+   * Games read back from the native shards into a store that lost them (the
+   * WebView's data went, the native store's did not). What the store still
+   * holds stays; the others go in. Resolves {ok, moved} once every one of
+   * them reads back from the store.
+   * @param {object[]} list entries, as shardText wrote them
    */
-  async function migrate(raw, opts) {
-    let v1 = null;
-    try { v1 = JSON.parse(raw); } catch (_) { return { ok: false, error: "parse" }; }
-    const list = v1 && Array.isArray(v1.games) ? v1.games : [];
+  async function importRecords(list) {
+    const put = [];
     return withLock(async () => {
       try {
-        // the value as found, before anything is written — whatever the
-        // conversion below gets wrong, this can be read back by hand
-        if (!opts || opts.backup !== false) await backend.setMeta("v1:" + Date.now(), { raw });
-        // only the games both copies have are read whole
         const stored = new Set(await backend.keys());
-        const both = list.filter((g) => g && typeof g.id === "string" && stored.has(g.id)).map((g) => g.id);
-        const have = new Map((both.length ? await backend.get(both) : []).filter(Boolean).map((r) => [r.id, r]));
-        const put = [];
-        for (const g of list) {
-          if (!g || typeof g.id !== "string" || !g.id) continue;
-          const cur = have.get(g.id);
-          if (!cur) { put.push(g); continue; }
-          // a second window, or a migration cut short, got here first
-          const { pk: k, ...stored } = cur;
-          const rec = Object.assign({}, mergeEntry(stored, g));
-          if (k) rec.pk = k;
-          put.push(rec);
-        }
-        // before `load` (a v1 library at launch) there is no summary to
-        // keep; after it (games pulled back from the native store) there is
+        for (const g of list) if (g && typeof g.id === "string" && g.id && !stored.has(g.id)) { put.push(g); stored.add(g.id); }
         await withSum(put, null, (m) => backend.put(put, m));
-        // read back: every id the v1 value held is in the store
         const back = new Set(await backend.keys());
-        const missing = list.filter((g) => g && typeof g.id === "string" && g.id && !back.has(g.id));
+        const missing = put.filter((g) => !back.has(g.id));
         if (missing.length) return { ok: false, error: "readback", missing: missing.length };
-        return { ok: true, moved: list.length };
+        return { ok: true, moved: put.length };
       } catch (e) {
         return { ok: false, error: (e && e.name) || "write" };
       }
@@ -633,8 +569,8 @@ function createLibraryStore(o) {
   function indexFens(id, fens) { pk.set(id, LibraryQuery.keysOfFens(fens)); }
 
   /**
-   * Index what is not indexed yet, a slice at a time: a migrated or
-   * restored library arrives without its index, and replaying ten thousand
+   * Index what is not indexed yet, a slice at a time: a restored library
+   * arrives without its index, and replaying ten thousand
    * games is tens of seconds of chess.js. `budgetMs` per slice, then the
    * thread goes back; the games indexed are written back so it happens once.
    * @returns {Promise<number>} games indexed
@@ -724,7 +660,7 @@ function createLibraryStore(o) {
   }
 
   return {
-    backend, pk, load, migrate, save, drop, read, forget, indexFens, indexMissing, halt, clear, shards, shardText, restoreShards, shardOf,
+    backend, pk, load, importRecords, save, drop, read, forget, indexFens, indexMissing, halt, clear, shards, shardText, restoreShards, shardOf,
     readSummary, syncSummary,
     /** The summary's id once syncSummary has made the stored one right, else null (v8-1-plan F3). */
     sumId: () => sumId,
@@ -734,4 +670,4 @@ function createLibraryStore(o) {
   };
 }
 
-export const LibraryDb = { DB_NAME, idbBackend, memoryBackend, createLibraryStore, mergeEntry, badCount, summaryOf, stubOf, newestFirst };
+export const LibraryDb = { DB_NAME, idbBackend, memoryBackend, createLibraryStore, badCount, summaryOf, stubOf, newestFirst };

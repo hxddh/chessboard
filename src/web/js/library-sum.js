@@ -6,20 +6,18 @@
  *
  * The summary is one row per game (library-db.js summaryOf), grouped the way
  * the native mirror groups the games (`lib00` … `lib3f`), one key per group
- * in the "meta" store of "chessboard.library", plus the summary's id. Keys
- * in a store 8.0 already has: a new store would have needed version 2 of the
- * database, and 8.0 cannot open that.
+ * in the "meta" store of "chessboard.games", plus the summary's id.
  * @module library-sum
  */
 
-export const DB_NAME = "chessboard.library";
+export const DB_NAME = "chessboard.games";
 /** The library's header — persist.js KEYS.library, read raw by chunk-boot.js. */
-export const HEADER_KEY = "chess.v1.library";
+export const HEADER_KEY = "chess.library";
 /** The global chunk-boot.js leaves its prefetch on, for library-ui.js. */
 export const PREFETCH_GLOBAL = "CHESS_LIBSUM";
 /** A shard of rows is `sum:` + the shard's name. */
 export const SUM_KEY = "sum:";
-/** The summary's id; the header (`chess.v1.library`) carries it as `sum`. */
+/** The summary's id; the header (`chess.library`) carries it as `sum`. */
 export const SUM_ID = "sumId";
 
 /**
@@ -85,13 +83,12 @@ export function prefetchSummary(idb) {
  * page starts drawing, each IndexedDB reply waits for a gap between frames
  * (in headless Chromium without a GPU a board frame is 0.4–0.7 s), so the
  * open and the read are best under way before the first one. Only for a
- * header that says the games are in IndexedDB with a summary — a small
- * value; a v1 header carrying the games themselves is not even searched.
+ * header that names a summary.
  */
 export function bootPrefetch(storage, idb) {
   let raw = null;
   try { raw = storage ? storage.getItem(HEADER_KEY) : null; } catch (_) { raw = null; }
-  if (!raw || raw.length > 65536 || !/"db":2[,}]/.test(raw) || !/"sum":"/.test(raw)) return false;
+  if (!raw || raw.length > 65536 || !/"sum":"/.test(raw)) return false;
   const g = typeof globalThis !== "undefined" ? globalThis : null;
   if (!g) return false;
   g[PREFETCH_GLOBAL] = prefetchSummary(idb);

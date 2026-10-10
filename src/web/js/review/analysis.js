@@ -37,7 +37,7 @@ import { tdot } from "../tdot.js";
  */
 export function createAnalysis(d) {
   const {
-    store, game, Persist, t, tf, toast, sync, sanHistory, baseGame, bootEngine,
+    store, game, Persist, t, tf, toast, sync, sanHistory, baseGame, bootEngine, saveSettings,
     setAnalyzeUI, stopLiveAnalysis, LibraryUI, boardDrillSource, saveMines, savePuzzleState, saveProgress,
     naturalGameOver, ruleTerminated, loadStats, saveStats, renderStats,
   } = d;
@@ -362,10 +362,16 @@ export function createAnalysis(d) {
       }
       analyzeGame(SCAN_BUDGET);
     };
-    document.getElementById("an-deep").onclick = () => { analyzeGame(400); };
-    document.getElementById("an-live").onclick = () => {
+    document.getElementById("an-deep").onclick = () => {
+      const menu = document.getElementById("an-more");
+      if (menu) menu.open = false;
+      analyzeGame(400);
+    };
+    // 9.0 S2: 持续分析 is a setting (设置 · 高级), kept with the others
+    document.getElementById("opt-live").onclick = () => {
       store.session.liveOn = !store.session.liveOn;
       if (store.session.liveOn && ChessEngine && !ChessEngine.isReady()) bootEngine();
+      saveSettings();
       store.commit("session", "sync");
     };
   }

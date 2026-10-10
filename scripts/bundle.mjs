@@ -63,12 +63,10 @@ export const OUT = path.join(root, "src/web/js/bundle.js");
  */
 export function lichessChunks(dir) {
   let files = [];
-  try { files = fs.readdirSync(dir).filter((f) => /^(band|old)-\d{4}\.js$/.test(f)).sort(); } catch { files = []; }
+  try { files = fs.readdirSync(dir).filter((f) => /^band-\d{4}\.js$/.test(f)).sort(); } catch { files = []; }
   return files.map((f) => {
     const n = f.slice(-7, -3);
-    // v8-4-plan T3: old-NNNN.js, the rows an earlier import shipped (puzzle-db.js oldChunk)
-    const old = f.startsWith("old-");
-    return { entry: path.relative(root, path.join(dir, f)).split(path.sep).join("/"), out: "src/web/js/chunk-lc-" + (old ? "old-" : "") + n + ".js", global: (old ? "LC_OLD_" : "LC_BAND_") + n, min: old ? 100 : 1000 };
+    return { entry: path.relative(root, path.join(dir, f)).split(path.sep).join("/"), out: "src/web/js/chunk-lc-" + n + ".js", global: "LC_BAND_" + n, min: 1000 };
   });
 }
 
@@ -131,39 +129,13 @@ export const CHUNKS = [
 ];
 
 /**
- * The first-paint budget (v8-0-plan F5): bundle.js at 7.9.0 was 1,709,973
- * bytes, and F5's acceptance is "at least 40% smaller" — met when F5 landed,
- * at 1,024,644 (40.1% off). test-chess.mjs fails the build past this line.
- *
- * The line itself sits at 70%, not 60%: the rest of 8.0 adds code to the
- * bundle (a home page, a review view, a database), and a line 1.3 KB above
- * the day it was drawn would stop the first of them. What the budget exists
- * to catch — a chunk's payload inlined again by a stray static import — is
- * caught per chunk by the probe checks beside it in test-chess.mjs; this line
- * is the backstop for a whole language's content coming back (~200 KB each).
- *
- * 70% → 70.5% (+8.5 KB) with v8-0-plan B4. The opponents went into a chunk
- * (chunk-opponents.js: the ladder, the persona cards and their lines, the
- * rating maths and the styles, ~32 KB), but what the first frame and the
- * engine's first move need stayed: the twelve rungs and the win-chance draw
- * in engine.js, the custom clock, and the dialog's labels — 4.7 KB past a
- * line M4-view had left 963 bytes under. Still two orders of magnitude below
- * what the line is for.
- *
- * v8-1-plan F2 (option a): the output is minified now (MINIFY below), so the
- * line is measured in minified bytes too, against 7.9.0 minified the same
- * way — not against the readable 1,709,973, which would have handed the
- * bundle ~340 KB of room for nothing but deleted whitespace. The figure is
- * reproducible, not estimated: 7.9.0's tree (3e902a8, esbuild 0.28.1, which
- * builds byte-identically to 0.28.2) built by its own bundle.mjs gives
- * exactly 1,709,973 readable, and 1,349,847 with MINIFY and nothing else
- * changed. The 70.5% stays. At v8.0.0 the bundle was 1,200,498 readable
- * against a line of 1,205,530 (5 KB of room); minified it is 862,140 against
- * 951,642 (87 KB of room): layout no longer counts against features.
+ * The first-paint budget, in minified bytes: test-chess.mjs fails the build
+ * past this line. What it exists to catch — a chunk's payload inlined again
+ * by a stray static import — is caught per chunk by the probe checks beside
+ * it in test-chess.mjs; this line is the backstop for a whole language's
+ * content coming back (~200 KB each).
  */
-export const BUNDLE_BYTES_BEFORE_F5_READABLE = 1709973;
-export const BUNDLE_BYTES_BEFORE_F5 = 1349847;
-export const BUNDLE_BUDGET = Math.floor(BUNDLE_BYTES_BEFORE_F5 * 0.705);
+export const BUNDLE_BUDGET = 951642;
 
 /**
  * v8-1-plan F2 (option a): whitespace and syntax, never identifiers. A stack

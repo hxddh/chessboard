@@ -39,6 +39,34 @@ export const THEME_CAT = "theme:";
 export const isThemeCat = (cat) => typeof cat === "string" && cat.startsWith(THEME_CAT);
 
 /**
+ * 9.0 S3: the six kinds a player picks from — one set, where 8.x had the
+ * built-in book's twelve categories beside the importer's twenty-eight
+ * themes. Four are pools of puzzles from both books (a group category,
+ * "grp:mate"); 开局 and 我的错题 are the book's own categories, served as
+ * before ("op", "mine").
+ */
+export const GROUP_CAT = "grp:";
+export const isGroupCat = (cat) => typeof cat === "string" && cat.startsWith(GROUP_CAT);
+export const PUZZLE_GROUPS = ["mate", "tactic", "endgame", "defense", "opening", "mine"];
+/** The endings the importer verifies (trainer/themes.js): 残局 is these. */
+const ENDINGS = ["knightEnding", "bishopEnding", "queenEnding", "queenRookEnding", "pawnEnding", "rookEnding"];
+/** A pooled group's categories, in both books (a Lichess puzzle has one too). */
+const GROUP_CATS = { mate: ["m1", "m2", "m3"], tactic: ["win", "tac", "real"], defense: ["def", "draw"] };
+/** The group a category is shown under, so the tile of what is on the board is lit. */
+export function groupOfCat(cat) {
+  if (isGroupCat(cat)) return cat.slice(GROUP_CAT.length);
+  for (const g of Object.keys(GROUP_CATS)) if (GROUP_CATS[g].includes(cat)) return g;
+  if (cat === "op" || cat === "rep" || cat === "repdue") return "opening";
+  if (cat === "mine") return "mine";
+  return null;
+}
+/** Is `p` in the pooled group `g`? Endings by their verified themes. */
+export function inGroup(g, p) {
+  if (g === "endgame") return Array.isArray(p.themes) && p.themes.some((x) => ENDINGS.includes(x));
+  return !!GROUP_CATS[g] && GROUP_CATS[g].includes(p.cat);
+}
+
+/**
  * @param {object} d everything this module borrows from the trainer and app.js
  */
 export function createPuzzleModes(d) {
@@ -122,7 +150,8 @@ export function createPuzzleModes(d) {
     const rec = store.session.puzzleState.themes && store.session.puzzleState.themes[id];
     return rec && rec.rating ? rec.rating : null;
   }
-  const ratingText = (r) => Math.round(r.r) + (ChessRating.isProvisional(r) ? "?" : "");
+  // v9-0-plan S6: a provisional rating says 定级中 in words, not 「1104?」
+  const ratingText = (r) => (ChessRating.isProvisional(r) ? tf("rating.prov", [Math.round(r.r)]) : String(Math.round(r.r)));
   /**
    * The player's rating for showing: the trainer's (idle days charged) once
    * there is one, else a fresh one that is NOT filed — a view must not write
@@ -190,10 +219,115 @@ export function createPuzzleModes(d) {
     endRun();
     store.session.run = null;
     store.session.puzzleState.cat = THEME_CAT + id;
-    store.session.puzzleTierFilter = "all";
     savePuzzleState();
     if (store.session.mode !== "puzzle") switchMode("puzzle"); // startPuzzles → startTheme
     else startTheme(id);
+    setSideTab("play", { top: true });
+    saveSettings();
+    sync();
+  }
+
+  // --- 按类 (9.0 S3) -----------------------------------------------------------
+
+  /** A group's local puzzles, worked out once per book size (as the themes). */
+  const localGroups = { n: -1, byId: new Map() };
+  function localInGroup(g) {
+    if (localGroups.n !== ALL_PUZZLES.length) {
+      localGroups.byId = new Map();
+      localGroups.n = ALL_PUZZLES.length;
+    }
+    if (!localGroups.byId.has(g)) {
+      localGroups.byId.set(g, ALL_PUZZLES.filter((p) => p.fen && isRatedCat(p.cat) && inGroup(g, p)));
+    }
+    return localGroups.byId.get(g);
+  }
+  /** The puzzles of group `g` that can be served now, in a stable order. */
+  function groupList(g) {
+    return localInGroup(g).concat(lcPool().filter((p) => inGroup(g, p)));
+  }
+  /**
+   * How many puzzles group `g` has in all, loaded or not. The index counts
+   * per theme: the three mate lengths and the defence are themes there, the
+   * endings do not overlap, and a tactic is whatever is none of the others.
+   */
+  function groupCount(g) {
+    const ix = Db.index;
+    const n = (ids) => ids.reduce((sum, id) => sum + (ix.themes[id] ? ix.themes[id].n : 0), 0);
+    const lc = g === "mate" ? n(["m1", "m2", "m3"]) : g === "defense" ? n(["def"]) : g === "endgame" ? n(ENDINGS)
+      : g === "tactic" ? Math.max(0, ix.total - n(["m1", "m2", "m3", "def"])) : 0;
+    return localInGroup(g).length + lc;
+  }
+  /** The bands that hold some of group `g`: every band for the tactics. */
+  function groupBands(g) {
+    if (g === "tactic") return Db.index.bands.map((x) => x.band);
+    const ids = g === "mate" ? ["m1", "m2", "m3"] : g === "defense" ? ["def"] : ENDINGS;
+    const set = new Set();
+    for (const id of ids) for (const x of Db.bandsWith(id)) set.add(x.band);
+    return [...set];
+  }
+  /** Nearest the player's rating first, unsolved first (themeStartIdx's rule). */
+  function groupStartIdx(list) {
+    const r = seenRating().r;
+    let best = -1;
+    list.forEach((p, i) => {
+      if (store.session.puzzleState.solved[p.id]) return;
+      if (best < 0 || Math.abs(puzzleRating(p).r - r) < Math.abs(puzzleRating(list[best]).r - r)) best = i;
+    });
+    return best < 0 ? 0 : best;
+  }
+  /**
+   * 下一题 in a pooled kind or a theme: the unsolved puzzle nearest the
+   * player's rating, not the next in list order — the list is the built-in
+   * book first and the bands after it, so order alone walked a 2300 player
+   * from a 2295 puzzle back to a built-in one of 1900 at most. -1: none left.
+   */
+  function nearestIdx(list, except) {
+    const r = seenRating().r;
+    let best = -1;
+    list.forEach((p, i) => {
+      if (i === except || store.session.puzzleState.solved[p.id]) return;
+      if (best < 0 || Math.abs(puzzleRating(p).r - r) < Math.abs(puzzleRating(list[best]).r - r)) best = i;
+    });
+    return best;
+  }
+
+  /** Put group `g` on the board: startTheme's flow, over the group's bands. */
+  function startGroup(g) {
+    const cat = GROUP_CAT + g;
+    const serve = () => {
+      if (store.session.mode !== "puzzle" || store.session.puzzleState.cat !== cat || store.session.run) return;
+      if (store.session.puzzle && store.session.puzzle.cat === cat) { sync(); return; }
+      const list = groupList(g);
+      if (list.length) seatPuzzle(cat, groupStartIdx(list));
+      else sync();
+    };
+    // the built-in book is here at once, but it stops near 1900: when none
+    // of it is near the player, the near band is waited for rather than a
+    // far easier puzzle served first (the board says 正在载入 meanwhile)
+    const r = seenRating().r;
+    const nearHere = localInGroup(g).some((p) => !store.session.puzzleState.solved[p.id] && Math.abs(puzzleRating(p).r - r) <= 200);
+    // cleared first: a band already here seats the puzzle synchronously below
+    store.session.puzzle = null;
+    withIndex(() => {
+      const bands = groupBands(g).sort((a, b) => Math.abs(a + 100 - r) - Math.abs(b + 100 - r));
+      // past the last band (none, or none would load): the book after all
+      const from = (k) => (k >= bands.length ? serve()
+        : wantBand(bands[k], () => { serve(); for (const b of bands.slice(k + 1, k + 3)) wantBand(b, serve); }, () => from(k + 1)));
+      from(0);
+    });
+    if (nearHere) serve();
+    else if (!store.session.puzzle) sync();
+  }
+  /** A tile: into its group, on the board (开局 and 我的错题 are categories). */
+  function goGroup(g) {
+    endRun();
+    store.session.run = null;
+    const cat = g === "opening" ? "op" : g === "mine" ? "mine" : GROUP_CAT + g;
+    store.session.puzzleState.cat = cat;
+    savePuzzleState();
+    if (store.session.mode !== "puzzle") switchMode("puzzle"); // startPuzzles → startGroup
+    else if (isGroupCat(cat)) startGroup(g);
+    else startPuzzles();
     setSideTab("play", { top: true });
     saveSettings();
     sync();
@@ -219,7 +353,7 @@ export function createPuzzleModes(d) {
       b.textContent = r.name;
       const sub = doc.createElement("span");
       sub.className = "pick-sub";
-      sub.textContent = tdot(tf("theme.sub", [r.n, r.tried]), r.rating ? tf("pz.ratingOf", [ratingText(r.rating)]) : "");
+      sub.textContent = tdot(tf("theme.sub", [r.n, r.tried]), r.rating ? tf("me.sw.theme", [ratingText(r.rating)]) : "");
       b.appendChild(sub);
       return b;
     }));
@@ -261,7 +395,7 @@ export function createPuzzleModes(d) {
   const vis = { ask: 0, kind: null };
   function visWait(kind) {
     vis.kind = kind;
-    doc.querySelectorAll("#pz-mode-seg button[data-run], #vis-look, #vis-blind").forEach((b) => {
+    doc.querySelectorAll("#pz-modes button[data-run], #vis-look, #vis-blind").forEach((b) => {
       if (kind && (b.dataset.run || b.id.slice(4)) === kind) b.setAttribute("aria-busy", "true");
       else b.removeAttribute("aria-busy");
     });
@@ -409,15 +543,6 @@ export function createPuzzleModes(d) {
     const pz = store.session.puzzle;
     if (pz && pz.run === run && pz.done && !run.own) serveNext();
   }
-  /** Back to practice: the run's card goes, the practice puzzle comes back. */
-  function toPractice() {
-    endRun();
-    store.session.run = null;
-    startPuzzles();
-    setSideTab("play", { top: true });
-    saveSettings();
-  }
-
   function paintClock(run) {
     const left = Runs.timeLeft(run, Date.now());
     const clock = el("pz-run-clock");
@@ -440,15 +565,19 @@ export function createPuzzleModes(d) {
     const theme = !run && isThemeCat(cat) ? cat.slice(THEME_CAT.length) : null;
     const tr = theme ? themeRating(theme) : null;
     setText(v, tdot(ratingText(seenRating()), theme && tf("ui.pair", [themeName(theme), tr ? ratingText(tr) : "—"])));
-    if (v) v.title = ChessRating.isProvisional(seenRating()) ? tf("rec.ratingRd", [Math.round(seenRating().rd)]) : "";
+    if (v) v.title = ChessRating.isProvisional(seenRating()) ? t("tip.ratingProv") : "";
     const cv = el("pz-rating-curve");
     if (cv && cv.clientWidth) {
       const ys = (Array.isArray(st.rhist) ? st.rhist : []).map((h) => h.r);
       if (!ys.length) ys.push(Math.round(seenRating().r));
       drawRatingTrend(cv, ys.length > 1 ? ys : [ys[0], ys[0]]);
     }
-    const mode = run ? run.kind : "practice";
-    doc.querySelectorAll("#pz-mode-seg button").forEach((b) => b.classList.toggle("active", b.dataset.run === mode));
+    // 9.0 S3: 挑战 and 专项 are buttons, lit while their run is on
+    doc.querySelectorAll("#pz-modes button[data-run]").forEach((b) => {
+      const on = !!run && b.dataset.run === run.kind;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
     // the theme being practised, and the way to another
     avail(el("row-pz-theme"), !!theme);
     if (theme) setText(el("pz-theme-name"), themeName(theme));
@@ -467,15 +596,16 @@ export function createPuzzleModes(d) {
       avail(el("pz-run-again"), run.over);
       // practice's own controls stand down while a run owns the board (the
       // panel's paint sets the last three afresh on every sync)
-      for (const id of ["puzzle-review-nudge", "row-op-side", "row-puzzle-tier"]) avail(el(id), false);
+      for (const id of ["puzzle-review-nudge", "row-op-side"]) avail(el(id), false);
     }
     avail(el("puzzle-retry"), !run);
     avail(el("puzzle-next"), !run);
-    for (const node of [el("puzzle-smart"), el("puzzle-cat-seg"), el("puzzle-list")]) {
-      const box = node && node.closest(".link-row, .setting-row, details");
-      if (box) box.hidden = !!run;
-    }
-    if (!store.session.puzzle && theme && !run) setText(el("puzzle-task"), t("theme.loading"));
+    // the picker is practice's: a run owns the board until it is over, and
+    // then the picker is the way on (its score card stays above it)
+    const picking = !run || !!run.over;
+    for (const id of ["pz-hero", "pz-review", "pz-groups-sec", "pz-themes-row"]) avail(el(id), picking);
+    avail(el("pz-list-fold"), !run);
+    if (!store.session.puzzle && (theme || isGroupCat(cat)) && !run) setText(el("puzzle-task"), t("theme.loading"));
     // v8-2-plan T2: a set of 看 N 步 / 盲走 asks its question in a card of its own
     const own = run && run.own;
     avail(el("pz-vis"), !!own);
@@ -493,14 +623,14 @@ export function createPuzzleModes(d) {
   }
 
   function wire() {
-    const seg = el("pz-mode-seg");
+    const seg = el("pz-modes");
     if (seg) seg.onclick = (ev) => {
       const b = ev.target.closest("button[data-run]");
       if (!b) return;
       const cur = store.session.run ? store.session.run.kind : "practice";
       // staying where one is drops a set still being made for another click
       if (b.dataset.run === cur && !(store.session.run && store.session.run.over)) { dropVis(); return; }
-      if (b.dataset.run === "practice") toPractice(); else startRun(b.dataset.run);
+      startRun(b.dataset.run);
     };
     const stop = el("pz-run-stop");
     if (stop) stop.onclick = () => endRun();
@@ -533,5 +663,5 @@ export function createPuzzleModes(d) {
     };
   }
 
-  return { lcPool, themeList, startTheme, rateThemes, runSolved, runMissed, runAnswer, endRun, parkRun, unparkRun, render, wire, closeThemes, startRun, finishRun };
+  return { lcPool, themeList, startTheme, groupList, groupCount, startGroup, goGroup, nearestIdx, rateThemes, runSolved, runMissed, runAnswer, endRun, parkRun, unparkRun, render, wire, closeThemes, startRun, finishRun };
 }
