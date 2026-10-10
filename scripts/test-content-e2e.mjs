@@ -914,6 +914,57 @@ if (hasTab && REAL.length) {
   await ctx2.close();
 }
 
+// --- v10-0-plan T5 / T2: 今天 for a new profile, and a mistake that is due --
+{
+  const at = async (init) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript(init);
+    const pg = await ctx.newPage();
+    pg.on("pageerror", (e) => errs.push(e.message));
+    await pg.goto(`http://127.0.0.1:${PORT}/`);
+    await pg.waitForTimeout(900);
+    await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+    return { ctx, pg };
+  };
+  // F. nothing played, solved or learnt: one thing — the first lesson — and
+  // invitations where the numbers would be
+  {
+    const { ctx, pg } = await at(() => {
+      localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", soundOn: false }));
+    });
+    const h = await todayHero(pg);
+    const page = await pg.evaluate(() => ({
+      list: document.getElementById("daily-plan").hidden,
+      rg: document.getElementById("today-r-game").textContent, rp: document.getElementById("today-r-pz").textContent,
+      cv: [...document.querySelectorAll(".today-rating canvas")].filter((c) => !c.hidden).length,
+      bars: [...document.querySelectorAll("#today-cont .today-c:not([hidden]) .today-bar")].map((b) => b.dataset.n),
+    }));
+    assert(h.title === "学一节新课" && page.list && h.steps.length <= 1,
+      "T5:新档案的今天只有一件事(第 1 课),不再列一张只有一行的单子", JSON.stringify(h));
+    assert(page.rg === "和电脑下完一盘就有" && page.rp === "做几道谜题就有" && page.cv === 0,
+      "T5:还没有的等级分写怎么得到,不画横线和平线", JSON.stringify(page));
+    assert(page.bars.length >= 2 && page.bars.every((n) => n === "从这里开始"),
+      "T5:没开始的「继续」写「从这里开始」,不写 0/7", JSON.stringify(page.bars));
+    await ctx.close();
+  }
+  // M. a drill from yesterday's game, due: the review step says which move of which game
+  {
+    const { ctx, pg } = await at(() => {
+      const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(12, 0, 0, 0);
+      localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", soundOn: false }));
+      localStorage.setItem("chess.mines", JSON.stringify({ v: 1, list: [{ id: "mine:t5", cat: "mine",
+        fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", solution: ["Nf3"], played: "e4", loss: 350, ply: 44, t: d.getTime() }] }));
+      localStorage.setItem("chess.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: { "mine:t5": { s: 0, n: 1, due: 0, ivl: 0 } }, cat: "m1" }));
+    });
+    const h = await todayHero(pg);
+    assert(h.title === "先清复习 1 题" && /昨天那局第 23 步的失误/.test(h.meta) && h.steps.length >= 2 && h.steps.length <= 3,
+      "T2 / T5:到期的错题排在第一,写明是昨天那局第 23 步;最多三项", JSON.stringify(h));
+    const dots = await pg.evaluate(() => [...document.querySelectorAll("#daily-plan .daily-dot")].map((x) => x.textContent));
+    assert(dots.join() === dots.map((_, i) => String(i + 1)).join(), "T5:课表的圆点写序号,不像单选框", JSON.stringify(dots));
+    await ctx.close();
+  }
+}
+
 // --- 今天的训练 + 进步:教练排课在真页面上走一步,进步区按数据显隐 ----------
 {
   // A. 有欠账的存档:课表第一步是清复习,真解掉那题后课表自己前进

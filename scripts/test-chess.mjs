@@ -4539,8 +4539,25 @@ for (const lang of CONTENT_LANGS) {
   loadModule(ctx, "src/web/js/planner.js");
   const PL = ctx.ChessPlanner;
   const full = PL.plan({ owed: 5, mineUnsolved: 4, weakCat: "def", lessonNext: 3, opUnsolved: true, playedToday: false });
-  assert(full.steps.map((x) => x.kind).join(",") === "review,mine,weak,lesson,game",
-    "满信号:欠账→错题→弱项→前进→对局,课程在时开局线让位");
+  // v10-0-plan T5: at most three, in the same order — the rest wait their turn
+  assert(full.steps.map((x) => x.kind).join(",") === "review,mine,weak" && PL.MAX_STEPS === 3,
+    "满信号:欠账→错题→弱项,最多三项(前进与对局排在后面)");
+  assert(PL.plan({ owed: 0, mineUnsolved: 0, weakCat: null, lessonNext: 3, opUnsolved: true, playedToday: false })
+    .steps.map((x) => x.kind).join(",") === "lesson,game", "没欠账时:前进→对局,课程在时开局线让位");
+  // T5: the repertoire's due moves come after the weakness, before the library
+  const rp = PL.plan({ owed: 2, repDue: 9, libQueued: 4, lessonNext: 3, playedToday: false });
+  assert(rp.steps.map((x) => x.kind).join(",") === "review,repdue,lib" && rp.steps[1].n === PL.DOSE.rep,
+    "T5:开局书到期的着在欠账之后、棋谱库之前,剂量封顶", JSON.stringify(rp.steps));
+  {
+    const b = PL.snap({ owed: 0, byCat: {}, lessonsDone: 0, opSolved: 0, games: 0, repDue: 9 });
+    assert(PL.stepDone({ kind: "repdue", n: 5 }, b, PL.snap({ owed: 0, byCat: {}, lessonsDone: 0, opSolved: 0, games: 0, repDue: 4 })) &&
+      !PL.stepDone({ kind: "repdue", n: 5 }, b, PL.snap({ owed: 0, byCat: {}, lessonsDone: 0, opSolved: 0, games: 0, repDue: 6 })),
+      "T5:开局书一步,剂量的着出了队列才算完成");
+  }
+  // T5: a brand-new profile is given the first lesson, and nothing else
+  const fresh0 = PL.plan({ owed: 0, mineUnsolved: 0, lessonNext: 0, opUnsolved: true, playedToday: false, fresh: true });
+  assert(fresh0.steps.length === 1 && fresh0.steps[0].kind === "lesson" && fresh0.steps[0].i === 0,
+    "T5:新档案只有一项 —— 第 1 课", JSON.stringify(fresh0.steps));
   assert(full.steps[0].n === PL.DOSE.review && full.steps[1].n === 2 && full.steps[2].cat === "def",
     "剂量封顶,弱项带着它的类别");
   const lean = PL.plan({ owed: 0, mineUnsolved: 0, weakCat: null, lessonNext: -1, opUnsolved: true, playedToday: true });
@@ -4623,7 +4640,7 @@ for (const lang of CONTENT_LANGS) {
   assert(/renderPuzzleTally\(\);\s*renderTrends\(\)/.test(appSrc),
     "记录页画完战绩画进步");
   // 7.1 A3: the coach and the progress page can see the library
-  assert(/playedToday: loadStats\(\)\.games\.some[\s\S]{0,200}store\.session\.library\.some\(\(g\) => g\.side && Progress\.dayKey\(libPlayedAt\(g\)\) === today\)/.test(appSrc),
+  assert(/playedToday: games\.some[\s\S]{0,200}store\.session\.library\.some\(\(g\) => g\.side && Progress\.dayKey\(libPlayedAt\(g\)\) === today\)/.test(appSrc),
     "在别处下的棋也是今天下过棋 —— 7.0 只读本地战绩，导进来今早的快棋还被劝去下一盘");
   assert(/libMotif: libWeakMotif\(\)/.test(appSrc) && /libQueued: Library\.pending\(/.test(appSrc),
     "日课读得到棋谱库说的弱项和还欠着的分析");

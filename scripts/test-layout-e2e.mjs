@@ -2411,8 +2411,9 @@ if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "puzzle", "play");
     const seg = await pickerFits(page);
-    assert(seg.n === 5 && seg.groups === "mate,tactic,endgame,defense,opening",
-      lang + ": five kinds, 我的错题 not drawn with no drills (" + seg.groups + ")");
+    // v10-0-plan T2: 我的错题 is drawn with no drills too, saying how it fills
+    assert(seg.n === 6 && seg.groups === "mate,tactic,endgame,defense,opening,mine",
+      lang + ": five kinds and 我的错题, there with no drills (" + seg.groups + ")");
     assert(seg.cols === 3, lang + ": the tiles lay out three across (" + seg.cols + ")");
     assert(seg.heights.length === 1 && seg.named, lang + ": every tile is one height and named (" + seg.heights.join(", ") + ")");
     assert(seg.tight.length === 0, lang + ": no kind's name or count is cut" + (seg.tight.length ? " — " + seg.tight.join(", ") : ""));
@@ -4252,7 +4253,9 @@ if (scenario()) {
     const r = await page.evaluate(() => {
       const first = "等宽字体";
       const monoRe = /SF Mono|Menlo|Consolas|ui-monospace|monospace/i;
-      const els = [...document.querySelectorAll("#daily-plan .daily-what, #daily-plan .daily-why")];
+      // 10.0 T5: a plan of one thing (a new profile's first lesson) is the
+      // card's title and line alone — the list of one is not drawn
+      const els = [...document.querySelectorAll("#daily-plan .daily-what, #daily-plan .daily-why, #today-hero-title, #today-hero-meta")];
       return { n: els.filter((e) => e.offsetParent).length, first, mono: els.filter((e) => monoRe.test(getComputedStyle(e).fontFamily)).map((e) => e.textContent) };
     });
     assert(r.n > 0 && r.mono.length === 0, `§1b ${lang}：今天的训练 ${r.n} 段文字都不用 ${r.first}` + (r.mono.length ? " —— " + r.mono.join(" / ") : ""));

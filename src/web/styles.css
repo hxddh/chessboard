@@ -1982,18 +1982,19 @@
     .daily-what, .daily-why { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .daily-what { font-size: 0.875rem; color: var(--text); }
     .daily-why { font-size: 0.75rem; color: var(--muted); }
-    /* the state, before the words: hollow = to come, ringed = next, filled
-       with a tick = done */
+    /* the state, before the words: numbered = to come, ringed = next, filled
+       with a tick = done (v10-0-plan T5: a number, so the list reads as
+       steps in order and not as a set of radio buttons) */
     .daily-dot {
       width: 16px; height: 16px; border-radius: 50%;
       display: grid; place-items: center;
       border: 1.5px solid color-mix(in srgb, var(--muted) 70%, transparent);
-      font-size: 0.6875rem; color: var(--bg);
+      font-size: 0.6875rem; color: var(--muted); font-variant-numeric: tabular-nums;
     }
     /* 9.0 V1: the step you are on is the selected state (the accent's
        ring); a done step is a fact, in the ink — not the accent */
     .daily-step.current .daily-dot { border-color: var(--accent); box-shadow: inset 0 0 0 3px var(--accent-soft); }
-    .daily-step.done .daily-dot { background: var(--text); border-color: var(--text); }
+    .daily-step.done .daily-dot { background: var(--text); border-color: var(--text); color: var(--bg); }
     .daily-arrow { color: var(--faint); font-size: 1rem; display: grid; }
     .daily-step.done .daily-what { color: var(--muted); text-decoration: line-through; }
     .daily-step.current .daily-what { font-weight: 600; }
@@ -4312,6 +4313,10 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .today-rating > div { display: grid; gap: 4px; }
 .today-rating b { font-size: 1.875rem; font-weight: 600; line-height: var(--lh-tight); }
 .today-rating canvas { display: block; width: 100%; height: 40px; }
+.today-rating canvas[hidden] { display: none; }
+/* v10-0-plan T5: a rating not yet earned is a line of how to earn it */
+.today-rating b.today-invite { font-size: 0.875rem; font-weight: 400; line-height: var(--lh-body); color: var(--muted); }
+.today-bar.fresh > i { visibility: hidden; }
 /* the static board of a card (mini-board.js): the board's own colours */
 .mini-board {
   display: grid; grid-template-columns: repeat(8, 1fr); aspect-ratio: 1;

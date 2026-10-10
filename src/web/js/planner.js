@@ -23,6 +23,13 @@
  *   6. game   — play, if today has had none. Training that never becomes a
  *      game is the opening-trainer mistake all over again.
  *
+ * v10-0-plan T5: the sitting is at most `MAX_STEPS` of these, taken in the
+ * order above with the repertoire's due moves (`repdue`) between the
+ * weakness and the library — what is owed before what is new — and a
+ * brand-new profile (`fresh`: nothing played, solved or learnt yet) is
+ * given the first lesson alone, not a list of things it has no reason to
+ * know about yet.
+ *
  * A step only exists when its source has something to serve (P3 in time:
  * an inapplicable step is not listed). The plan never grabs the wheel —
  * the caller renders it as an invitation, exactly like 为你出一题.
@@ -33,7 +40,10 @@
  */
 
 /** How much of each thing one sitting asks for. */
-const DOSE = { review: 3, mine: 2, weak: 2 };
+const DOSE = { review: 3, mine: 2, weak: 2, rep: 5 };
+
+/** v10-0-plan T5: a sitting is a short list — three things, each one line. */
+const MAX_STEPS = 3;
 
 /**
  * Compose the sitting from the signals.
@@ -48,10 +58,13 @@ const DOSE = { review: 3, mine: 2, weak: 2 };
  *   lessonNext: number,    // index of first unfinished lesson, or -1
  *   opUnsolved: boolean,   // any unsolved opening line (either chair)
  *   playedToday: boolean,  // a game was played today, here or elsewhere
+ *   repDue: number,        // repertoire moves due today (T5)
+ *   fresh: boolean,        // nothing played, solved or learnt yet (T5)
  * }
  * @returns {{steps: Array<{kind: string, cat?: string, n?: number, i?: number}>}}
  */
 function plan(sig) {
+  if (sig.fresh && sig.lessonNext >= 0) return { steps: [{ kind: "lesson", i: sig.lessonNext }] };
   const steps = [];
   if (sig.owed > 0) steps.push({ kind: "review", n: Math.min(sig.owed, DOSE.review) });
   if (sig.mineUnsolved > 0) steps.push({ kind: "mine", n: Math.min(sig.mineUnsolved, DOSE.mine) });
@@ -70,11 +83,12 @@ function plan(sig) {
   // only because the tally measures answers this app watched.
   else if (sig.libMotif) steps.push({ kind: "motif", motif: sig.libMotif, n: DOSE.weak, from: "lib" });
   else if (sig.weakCat && sig.weakCat !== "mine") steps.push({ kind: "weak", cat: sig.weakCat, n: DOSE.weak });
+  if (sig.repDue > 0) steps.push({ kind: "repdue", n: Math.min(sig.repDue, DOSE.rep) });
   if (sig.libQueued > 0) steps.push({ kind: "lib", n: sig.libQueued });
   if (sig.lessonNext >= 0) steps.push({ kind: "lesson", i: sig.lessonNext });
   else if (sig.opUnsolved) steps.push({ kind: "op" });
   if (!sig.playedToday) steps.push({ kind: "game" });
-  return { steps };
+  return { steps: steps.slice(0, MAX_STEPS) };
 }
 
 /**
@@ -98,6 +112,7 @@ function snap(src) {
     byMotif: Object.assign({}, src.byMotif || {}),
     lessonsDone: src.lessonsDone,
     opSolved: src.opSolved,
+    repDue: src.repDue || 0,
     games: src.games,
     libAnalysed: src.libAnalysed || 0,
   };
@@ -126,6 +141,9 @@ function stepDone(step, before, after) {
     case "motif": return ((after.byMotif || {})[step.motif] || 0) - ((before.byMotif || {})[step.motif] || 0) >= step.n;
     case "lesson": return after.lessonsDone > before.lessonsDone;
     case "op": return after.opSolved > before.opSolved;
+    // the due moves are graded one by one; the step is done when the dose
+    // has gone out of the queue, or the queue is empty
+    case "repdue": return after.repDue === 0 || before.repDue - after.repDue >= step.n;
     case "game": return after.games > before.games;
     // one analysed game completes it: the pass runs for as long as the player
     // leaves it running, and a step that only ticks when the whole queue is
@@ -135,4 +153,4 @@ function stepDone(step, before, after) {
   }
 }
 
-export const ChessPlanner = { DOSE, plan, snap, stepDone };
+export const ChessPlanner = { DOSE, MAX_STEPS, plan, snap, stepDone };
