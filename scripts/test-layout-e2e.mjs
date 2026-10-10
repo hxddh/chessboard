@@ -260,25 +260,25 @@ if (scenario()) {
       engine: ["初級", "初級+", "中級−", "中級", "中級+", "上級−", "上級", "上級+", "エキスパート", "エキスパート+", "マスター", "マスター+", "強力", "強力+", "全力"] },
   };
   for (const lang of LANGS) {
-    // 9.0 S5: the rungs are the new-game dialog's (自定义), not the 设置 tab's
+    // 9.0 S5: the rungs are the new-game dialog's. 10.0 M0: chosen on the
+    // opponent cards alone — 更多选项 open shows all twenty-one; the two rows
+    // of rung names that repeated them are gone. A card names its rung (or,
+    // for the three with a style, the style) under the persona's name.
     const { ctx, page } = await open(lang, "ai", "play");
     await openNewGame(page);
-    const labels = await page.evaluate(() => ({
-      spar: [...document.querySelectorAll("#diff-seg button")].map((b) => b.textContent.trim()),
-      engine: [...document.querySelectorAll("#diff-seg-engine button")].map((b) => b.textContent.trim()),
-      groups: [...document.querySelectorAll("#row-difficulty .diff-group")].map((s) => s.textContent.trim()),
-      // there must be no third heading above the two group labels
-      keys: [...document.querySelectorAll("#row-difficulty .setting-k")].length,
-    }));
-    assert(labels.spar.length === 6 && labels.engine.length === 15, lang + ": 6 sparring tiers, 15 engine tiers");
-    assert(labels.groups.length === 2, lang + ": both groups are labelled");
-    assert(labels.keys === 0, lang + ": no redundant 难度 heading above the group labels");
-    const all = labels.spar.concat(labels.engine);
-    assert(new Set(all).size === all.length, lang + ": all twenty-one labels are distinct — " + all.join(" / "));
-    assert(JSON.stringify(labels.spar) === JSON.stringify(EXPECT[lang].spar),
-      lang + ": the sparring pair is the reviewed one — " + labels.spar.join(" / "));
-    assert(JSON.stringify(labels.engine) === JSON.stringify(EXPECT[lang].engine),
-      lang + ": the engine ladder is the reviewed one — " + labels.engine.join(" / "));
+    await page.click("#ng-custom > summary");
+    await page.waitForTimeout(200);
+    const cards = await page.evaluate(() => [...document.querySelectorAll("#op-grid .op-card")].filter((b) => !b.hidden).map((b) => ({
+      name: b.querySelector(".op-name").textContent.trim(), rating: Number(b.querySelector(".op-rating").textContent),
+      sub: b.querySelector(".op-style").textContent.trim() })));
+    const rows = await page.evaluate(() => document.querySelectorAll("#row-difficulty, #diff-seg, #diff-seg-engine").length);
+    assert(cards.length === 21 && rows === 0, lang + ": 21 opponent cards with 更多选项 open, and no second list of rungs (" + cards.length + " / " + rows + ")");
+    assert(new Set(cards.map((c) => c.name)).size === 21, lang + ": all twenty-one names are distinct");
+    assert(cards.every((c, i) => i === 0 || c.rating > cards[i - 1].rating), lang + ": the cards climb the ladder in rating order");
+    const ladder = EXPECT[lang].spar.concat(EXPECT[lang].engine);
+    const off = cards.map((c, i) => [c.sub, ladder[i]]).filter(([sub]) => ladder.includes(sub));
+    assert(off.length >= 18 && off.every(([sub, want]) => sub === want),
+      lang + ": each card's rung is the reviewed label — " + off.map(([sub]) => sub).join(" / "));
     await ctx.close();
   }
 }
@@ -2249,7 +2249,7 @@ if (scenario()) {
       open: (document.querySelector('.set-cat[aria-selected="true"]') || {}).id,
       secs: Object.fromEntries([...document.querySelectorAll(".set-pane")].map((p) =>
         [p.id.slice(4), [...p.querySelectorAll(":scope > section")].map((s) => (s.querySelector(".side-h") || {}).textContent || "?")])),
-      gameRows: ["row-difficulty", "row-persona", "row-color", "row-clock", "mode-seg"]
+      gameRows: ["row-opponent", "row-persona", "row-color", "row-clock", "mode-seg"]
         .filter((id) => document.getElementById(id) && document.getElementById(id).closest("#page-settings")),
     }));
     const all = Object.values(pg.secs).flat();

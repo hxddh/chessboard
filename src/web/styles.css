@@ -3125,16 +3125,6 @@
     .km-coach { color: var(--text); }
     #rv-learn-row { margin-top: 8px; }
     .rt-prog { font-size: 0.75rem; font-weight: 600; color: var(--muted); }
-    /* The difficulty row is two scales, so it is labelled as two. v8-0-plan
-       §5: those two labels stand in for the row's own (see index.html), so
-       they are dressed as one — 11px muted caps beside 陪练风格 / 执子 / 棋钟
-       at 14px read as a lower rank in the 新对局 dialog, where the four rows
-       are the whole dialog and nothing else says which is which. */
-    .diff-group {
-      display: block; margin: 8px 0 4px;
-      font-size: 0.8125rem; font-weight: 400; color: var(--muted);
-    }
-    .diff-group:first-of-type { margin-top: 0; }
 
     /* Achievement grouping (1.24): a wall of padlocks says "you have nothing";
        a group header plus the nearest one says "start here". */

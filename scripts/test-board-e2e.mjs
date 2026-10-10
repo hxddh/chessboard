@@ -1585,19 +1585,20 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       plies: document.querySelectorAll(".mlmove").length,
       view: document.getElementById("app").getAttribute("data-view"),
       settingsShown: !document.getElementById("page-settings").hidden,
-      diffActive: (document.querySelector("#diff-seg-engine button.active, #diff-seg button.active") || {}).dataset?.diff,
+      // 10.0 M0: the rung is the lit opponent card (the rows of rung names are gone)
+      cardActive: (document.querySelector("#op-grid .op-card.active") || {}).dataset?.op,
       level: document.getElementById("black-level").textContent.trim(),
       settings: s,
       focus: document.activeElement && (document.activeElement.id || document.activeElement.dataset.op || document.activeElement.dataset.diff || document.activeElement.textContent.trim()),
-      // 9.0 S5: the four rows live in the dialog (rung and style in its 自定义
-      // fold), whether it is open or not, and nowhere on the settings page
-      rowsHome: ["row-color", "row-clock"].every((id) => document.getElementById(id).parentElement.id === "ng-host")
-        && ["row-difficulty", "row-persona"].every((id) => document.getElementById(id).parentElement.id === "ng-custom-body")
-        && !document.querySelector("#page-settings #diff-seg, #page-settings #persona-seg, #page-settings #color-seg, #page-settings #clock-seg"),
+      // 9.0 S5: the rows live in the dialog (style in its 更多选项 fold),
+      // whether it is open or not, and nowhere on the settings page
+      rowsHome: ["row-opponent", "row-color", "row-clock"].every((id) => document.getElementById(id).parentElement.id === "ng-host")
+        && document.getElementById("row-persona").parentElement.id === "ng-custom-body" && !document.getElementById("row-difficulty")
+        && !document.querySelector("#page-settings #op-grid, #page-settings #persona-seg, #page-settings #color-seg, #page-settings #clock-seg"),
     };
   });
   const stateBefore = await state();
-  assert(stateBefore.rowsHome, "开局前:四组分段控件都在新对局对话框里(档位与风格在「自定义」里),设置页上没有它们");
+  assert(stateBefore.rowsHome, "开局前:对手、执子、棋钟、风格都在新对局对话框里(风格在「更多选项」里),设置页上没有它们");
 
   // a game in progress: one step, the warning in the dialog, no second box
   await tap("e2"); await tap("e4"); await page.waitForTimeout(400);
@@ -1608,9 +1609,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   // v8-0-plan B4: the opponent is a persona card first; rung and style are
   // folded under 自定义 (9.0 S5: after the side and the clock, and the
   // dialog's own rows rather than nodes borrowed from the settings page)
-  const inFold = await page.evaluate(() => ["row-difficulty", "row-persona"].every((id) => document.getElementById(id).closest("#ng-custom")));
+  const inFold = await page.evaluate(() => !!document.getElementById("row-persona").closest("#ng-custom"));
   assert(JSON.stringify(s.rows) === JSON.stringify(["row-opponent", "row-color", "row-clock", "ng-custom"]) && inFold && s.rowsHome,
-    `……里面是角色卡、执子、棋钟,档位与风格收在「更多选项」里(${s.rows.join(",")})`);
+    `……里面是角色卡、执子、棋钟,风格收在「更多选项」里(${s.rows.join(",")})`);
   assert(s.focus === "ng-start", `……焦点在「开始」上,直接回车就是再来一盘同样的(${s.focus})`);
   // the draft is not the game: choosing 执黑 here changes nothing until 开始
   await page.click('#ng-host #color-seg button[data-color="b"]'); await page.waitForTimeout(200);
@@ -1641,25 +1642,27 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.keyboard.press("Enter"); await page.waitForTimeout(500);
   s = await state();
   assert(!s.open && !s.confirm && s.plies === 0, `回车 = 开始:一步就开了新局(${s.plies} 着,没有第二个确认框)`);
-  assert(s.settings.difficulty === "hard" && s.diffActive === "hard" && /高级/.test(s.level),
-    `新档位写进设置、对话框里的分段同步、对阵条上是「${s.level}」`);
+  assert(s.settings.difficulty === "hard" && s.cardActive === "max" && /高级/.test(s.level),
+    `新档位写进设置、对话框里亮的是这张卡、对阵条上是「${s.level}」`);
   assert(s.rowsHome, "……控件仍是对话框自己的,设置页上没有");
 
   // 9.0 S2: the eight cards are a window on the ladder that holds the pick and
-  // moves with it — from a card, and from the rung chosen under 更多选项
+  // moves with it. 10.0 M0: 更多选项 open shows the whole ladder — the one
+  // place a rung is chosen (the two rows of rung names under it are gone)
   await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);
   const w0 = await cardsNow();
   assert(w0 === "sol,leo,ivy,max*,iris,otto,hugo,zoe", `S2:选了马克斯(高级)再开对话框,八张卡是他和他两边的人,他亮着(${w0})`);
   await page.click("#ng-custom > summary"); await page.waitForTimeout(200);
-  await page.click('#ng-custom #diff-seg button[data-diff="beginner"]'); await page.waitForTimeout(200);
   const w1 = await cardsNow();
-  assert(w1 === "pip*,tomo,lina,kai,ada,remy,ben,nico", `S2:在「更多选项」里选新手,八张卡挪到梯子底,皮普亮着(${w1})`);
-  await page.click('#ng-custom #diff-seg-engine button[data-diff="extreme"]'); await page.waitForTimeout(200);
+  assert(w1.split(",").length === 21 && w1.includes("max*") && !(await page.$("#diff-seg, #diff-seg-engine")),
+    `10.0 M0:打开「更多选项」,角色卡展开成全部 21 位,马克斯亮着,下面不再有第二排档位(${w1})`);
+  await page.click('#ng-host #op-grid .op-card[data-op="pip"]'); await page.waitForTimeout(200);
+  await page.click("#ng-custom > summary"); await page.waitForTimeout(200);
   const w2 = await cardsNow();
-  assert(w2 === "iris,otto,hugo,zoe,lars,nora,kit,fish*", `S2:再选全力,八张卡挪到梯子顶,菲什亮着(${w2})`);
-  await page.click('#ng-custom #diff-seg-engine button[data-diff="normal"]'); await page.waitForTimeout(200);
+  assert(w2 === "pip*,tomo,lina,kai,ada,remy,ben,nico", `S2:选了皮普再收起,八张卡挪到梯子底,皮普亮着(${w2})`);
+  await page.click('#ng-host #op-grid .op-card[data-op="ben"]'); await page.waitForTimeout(200);
   const w3 = await cardsNow();
-  assert(w3 === "ben,nico,vera,sol*,leo,ivy,max,iris", `S2:选回中级,窗口回到索尔两边(${w3})`);
+  assert(w3.split(",").length === 8 && w3.includes("ben*"), `S2:收起时选本,八张卡的窗口跟着他(${w3})`);
   await page.keyboard.press("Escape"); await page.waitForTimeout(300);
   s = await state();
   assert(!s.open && s.settings.difficulty === "hard", `……Esc 不开始:设置里还是高级(${s.settings.difficulty})`);
@@ -1706,12 +1709,12 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);   // hidden with no moves on the board; N and the menu reach the same handler
   await page.click('#ng-host #mode-seg button[data-mode="pvp"]'); await page.waitForTimeout(200);
   s = await state();
-  // 9.0 S2: 更多选项 stays (the rarer clocks are in it); its rung and style rows hide
-  const pvpFold = await page.evaluate(() => ["row-difficulty", "row-persona"].map((id) => document.getElementById(id).hidden).join());
-  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-color", "row-clock", "ng-custom"]) && pvpFold === "true,true",
-    `双人模式只显示「谁执白」、棋钟和「更多选项」(里面没有档位与风格)(${s.rows.join(",")} / ${pvpFold})`);
+  // 9.0 S2: 更多选项 stays (the rarer clocks are in it); its style row hides
+  const pvpFold = await page.evaluate(() => String(document.getElementById("row-persona").hidden));
+  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-color", "row-clock", "ng-custom"]) && pvpFold === "true",
+    `双人模式只显示「谁执白」、棋钟和「更多选项」(里面没有风格)(${s.rows.join(",")} / ${pvpFold})`);
   await page.click('#ng-host #color-seg button[data-color="b"]'); await page.waitForTimeout(150);
-  // 9.0 S2: 5+3 is under 更多选项, which stays in 双人 (its rung rows hide)
+  // 9.0 S2: 5+3 is under 更多选项, which stays in 双人 (its style row hides)
   await page.click("#ng-custom > summary"); await page.waitForTimeout(150);
   await page.click('#ng-custom #clock-seg-more button[data-tc="5+3"]'); await page.waitForTimeout(150);
   await page.click("#ng-start"); await page.waitForTimeout(400);
@@ -1810,10 +1813,10 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     let s = await ngState(page);
     const pick = await page.evaluate(() => ({
       guide: document.getElementById("pick-modal").classList.contains("show"),
-      diff: (document.querySelector("#ng-host #diff-seg-engine button.active, #ng-host #diff-seg button.active") || {}).dataset?.diff,
+      diff: (document.querySelector("#ng-host #op-grid .op-card.active") || {}).dataset?.op,
     }));
     assert(!pick.guide && s.open, `§5 选「我会下棋」:引导关掉,新对局对话框打开(${JSON.stringify(s)})`);
-    assert(pick.diff === "easy" && s.focus === "ben", `§5 …预选初级,焦点在它的角色卡上(${pick.diff} / ${s.focus})`);
+    assert(pick.diff === "ben" && s.focus === "ben", `§5 …预选初级(本),焦点在他的角色卡上(${pick.diff} / ${s.focus})`);
     await page.keyboard.press("Enter"); await page.waitForTimeout(500);
     s = await ngState(page);
     const set = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}"));

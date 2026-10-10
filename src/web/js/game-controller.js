@@ -106,8 +106,7 @@ export function createGameController(d) {
     syncSettingsUI();
     // 换个对手 lands on the opponent (its persona card); everything else on 开始
     const card = OppUI.onOpen();
-    const first = opts && opts.switchOpponent && !pvp
-      ? card || modal.querySelector("#row-difficulty button.active") : el("ng-start");
+    const first = (opts && opts.switchOpponent && !pvp && card) || el("ng-start");
     Dlg.open(modal, first || undefined);
   }
 

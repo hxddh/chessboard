@@ -2194,8 +2194,11 @@ for (const lang of CONTENT_LANGS) {
       "S5: 数据 ends on 清除数据 (" + dHeads.join(" → ") + ")");
     // the next game's choices are the new-game dialog's, and only there
     const ng = markup.slice(markup.indexOf('id="newgame-modal"'), markup.indexOf('id="confirm-modal"'));
-    assert(["row-difficulty", "row-persona", "row-color", "row-clock"].every((id) => ng.includes('id="' + id + '"')),
-      "S5: rung, style, side and clock live in the new-game dialog");
+    // 10.0 M0: the rung is the opponent card (row-opponent); the two rows of
+    // rung names that repeated the cards are gone
+    assert(["row-opponent", "row-persona", "row-color", "row-clock"].every((id) => ng.includes('id="' + id + '"')) &&
+      !ng.includes('data-diff="'),
+      "S5: opponent, style, side and clock live in the new-game dialog — the rung is chosen on the cards only");
 
     // The heading is a promise about what is inside. 「外观」 once held the
     // language and the sound; since A1 each has its own group, and the rows
@@ -2815,8 +2818,7 @@ for (const lang of CONTENT_LANGS) {
       // 8.4's achievement called it a fourth thing: 「极限」 / "Max level" / 「最強」
       assert(d["ach.extreme-win.d"].includes(d["diff.extreme"]), "S6: " + lang + " achievement names the top rung as the button does (" + d["ach.extreme-win.d"] + ")");
     }
-    const fallback = /data-diff="extreme"[^>]*>([^<]*)</.exec(fs.readFileSync(path.join(root, "src/web/index.html"), "utf8"));
-    assert(fallback && fallback[1] === ctx.ChessI18n.DICT["zh-CN"]["diff.extreme"], "S6: index.html's top rung reads " + ctx.ChessI18n.DICT["zh-CN"]["diff.extreme"] + " too (" + (fallback && fallback[1]) + ")");
+
   }
 
   // the clock: presets, a custom control in its own id, and nothing else
@@ -5449,8 +5451,12 @@ for (const lang of CONTENT_LANGS) {
       assert(!/满强度|Full strength|フルパワー/.test(label),
         lang + " no longer calls the top tier “full strength” — " + label);
     }
-    assert(/1\.2/.test(I.DICT["zh-CN"]["tip.diff.extreme"]),
-      "…and its tooltip says what it actually does");
+    // 10.0 M0: the rung is chosen on its opponent's card, and the card's
+    // words (the persona's hello, its tooltip) are what say it in each language
+    const lines = fs.readFileSync(path.join(root, "src/web/js/opponents-lines.js"), "utf8");
+    const fishHellos = [...lines.matchAll(/fish: \{[^}]*hello: "([^"]*)"/g)].map((m) => m[1]);
+    assert(fishHellos.length === 3 && fishHellos.every((h) => /1\.2/.test(h)),
+      "…and its card says what it actually does (" + fishHellos.join(" / ") + ")");
     // and the engine really does still time-limit it
     const eng = fs.readFileSync(path.join(root, "src/web/js/engine.js"), "utf8");
     assert(/extreme: \{ elo: null, movetime: 1200 \}/.test(eng),
@@ -6229,10 +6235,11 @@ for (const lang of CONTENT_LANGS) {
     const missing = list.filter((id) => !new RegExp("\\n\\s*" + id + ": \\{").test(engSrc));
     assert(missing.length === 0,
       "every rung has engine settings" + (missing.length ? " — missing: " + missing.join(", ") : ""));
-    const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
-    const noBtn = list.filter((id) => !html.includes('data-diff="' + id + '"'));
-    assert(noBtn.length === 0,
-      "every rung has a button" + (noBtn.length ? " — missing: " + noBtn.join(", ") : ""));
+    // 10.0 M0: a rung is chosen by its opponent's card — so every rung has one
+    const oppSrc = fs.readFileSync(path.join(root, "src/web/js/opponents.js"), "utf8");
+    const noCard = list.filter((id) => !new RegExp('level: "' + id + '"').test(oppSrc));
+    assert(noCard.length === 0,
+      "every rung has an opponent card (opponents.js PERSONAS)" + (noCard.length ? " — missing: " + noCard.join(", ") : ""));
     const dict = ctx.ChessI18n.DICT;
     for (const lang of Object.keys(dict)) {
       const gaps = list.filter((id) => !("diff." + id in dict[lang]));

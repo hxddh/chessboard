@@ -449,11 +449,11 @@ const state = (page) => page.evaluate(() => {
     return {
       mode: has("mode-seg"), theme: has("appearance-seg") || has("board-pick-seg"), lang: has("lang-seg"), sound: has("opt-sound"),
       pieces: has("piece-pick-seg"), data: has("alldata-export"), text: has("text-seg"), coords: has("opt-coords"),
-      diff: has("diff-seg"), clock: has("clock-seg"), orient: has("orient-seg"), hash: has("hash-seg"),
+      diff: has("op-grid"), clock: has("clock-seg"), orient: has("orient-seg"), hash: has("hash-seg"),
       panes: document.querySelectorAll(".side-pane").length, paneShown: !pane.hidden && pane.getClientRects().length > 0,
       tabs: document.querySelectorAll(".side-tabs, #tab-play, #tab-setup, #pane-setup, #prefs-modal, #prefs-open").length,
-      ngRows: ["row-color", "row-clock"].every((id) => !!ng.querySelector("#" + id)) && ["row-difficulty", "row-persona"].every((id) => at(id, "ng-custom-body")),
-      ngSegs: ["mode-seg", "diff-seg", "clock-seg", "color-seg"].every((id) => !!ng.querySelector("#" + id)),
+      ngRows: ["row-color", "row-clock"].every((id) => !!ng.querySelector("#" + id)) && at("row-persona", "ng-custom-body") && !document.getElementById("row-difficulty"),
+      ngSegs: ["mode-seg", "op-grid", "clock-seg", "color-seg"].every((id) => !!ng.querySelector("#" + id)),
       orientAt: at("orient-seg", "set-board"), hashAt: at("hash-seg", "set-advanced"),
     };
   });
@@ -461,7 +461,7 @@ const state = (page) => page.evaluate(() => {
   assert(!side.theme && !side.lang && !side.sound && !side.pieces && !side.data && !side.text && !side.coords,
     "A1: 外观、语言、声音、数据都不在侧栏(" + JSON.stringify(side) + ")");
   assert(!side.diff && !side.clock && !side.orient && !side.hash && side.ngRows && side.ngSegs && side.orientAt && side.hashAt,
-    "S5: 对局相关的项各有去处 —— 难度 / 风格 / 执子 / 棋钟常驻新对局对话框,棋盘方向在设置·棋盘,引擎内存在设置·高级(" + JSON.stringify(side) + ")");
+    "S5: 对局相关的项各有去处 —— 对手卡 / 风格 / 执子 / 棋钟常驻新对局对话框,棋盘方向在设置·棋盘,引擎内存在设置·高级(" + JSON.stringify(side) + ")");
   assert(side.panes === 1 && side.paneShown && side.tabs === 0,
     "S5: 侧栏只剩一页,没有页签、偏好窗口;存下的「设置」页签打开时落在这一页(" + JSON.stringify(side) + ")");
   // Ctrl+, (⌘, on macOS) opens the settings page — a view, marked on the rail
@@ -595,10 +595,10 @@ const state = (page) => page.evaluate(() => {
   await page.click('#mode-seg button[data-mode="pvp"]');
   await page.waitForTimeout(150);
   const draft = await page.evaluate(() => ({
-    diffHidden: document.getElementById("row-difficulty").hidden,
+    diffHidden: document.getElementById("row-opponent").hidden,
     mode: JSON.parse(localStorage.getItem("chess.settings")).mode,
   }));
-  assert(draft.diffHidden && draft.mode === "ai", "A1: 选了双人,难度行收起;还没开始,模式不变(" + JSON.stringify(draft) + ")");
+  assert(draft.diffHidden && draft.mode === "ai", "A1: 选了双人,对手一行收起;还没开始,模式不变(" + JSON.stringify(draft) + ")");
   await page.click("#ng-start");
   await page.waitForTimeout(400);
   const s = await state(page);
