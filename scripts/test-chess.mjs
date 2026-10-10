@@ -4304,7 +4304,9 @@ for (const lang of CONTENT_LANGS) {
   assert(achBlock && !achBlock[0].includes("bookNow") && achBlock[0].includes("ALL_PUZZLES"),
     "achievement totals stay on the frozen book — badges must not drift with a set that retires itself");
   // mining happens where the judgement is born, for the player's side only
-  assert(/if \(store\.session\.mode === "ai"\) \{[\s\S]{0,900}Mistakes\.candidatesFrom\(pass, store\.session\.humanColor, Chess, rev\)/.test(appSrc) &&
+  // (Codex on #113: an imported game has a "you" only when it is this app's own record)
+  assert(/const hasYou = store\.session\.mode === "ai" && !store\.session\.analysisBoard &&\s*\(!store\.game\.imported \|\| store\.game\.recordedId != null\);/.test(appSrc) &&
+         /if \(hasYou\) \{[\s\S]{0,900}Mistakes\.candidatesFrom\(pass, store\.session\.humanColor, Chess, rev\)/.test(appSrc) &&
          /const pass = \{ fens, sans: h, tags, bests, scalars, pvs, losses: plyLosses\(fens, scalars\) \}/.test(appSrc),
     "analyzeGame banks the human side's ?? plies, and only in games with a human side");
   // 7.1 C4: the drill's cost comes from the one clamped routine, not from a

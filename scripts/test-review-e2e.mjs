@@ -1843,9 +1843,13 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const a1 = await pg.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
     modal: document.getElementById("analyse-modal").classList.contains("show"),
     report: !document.getElementById("report-card").hidden, plies: document.querySelectorAll(".move-list .mlmove").length,
-    games: (JSON.parse(localStorage.getItem("chess.stats") || "{}").games || []).length }));
+    games: (JSON.parse(localStorage.getItem("chess.stats") || "{}").games || []).length,
+    mines: ((JSON.parse(localStorage.getItem("chess.mines") || "null") || {}).list || []).length }));
   assert(a1.view === "play" && !a1.modal && a1.report && a1.plies === OPERA.length && a1.games === 0,
     "A1：粘贴 PGN、点「分析」—— 一步就在棋盘上、报告出来了，不进战绩", JSON.stringify(a1));
+  // a pasted game has no "you": the board's humanColor (w here) is not a side
+  // of it, so none of its mistakes become drills (Codex on #113)
+  assert(a1.mines === 0, "A1：粘贴的对局不知道哪一方是你 —— 不把它的失误收进「我的错题」", JSON.stringify(a1));
   // the same link with the network on: the native side is asked for that one game
   // (the settings are read at launch: the switch is turned on, and the page opened again)
   await pg.evaluate(() => { localStorage.setItem("chess.sync", JSON.stringify({ v: 1, on: true, site: "lichess", user: "" })); });
@@ -1875,6 +1879,30 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     toast: document.getElementById("toast").textContent }));
   assert(b.view === "play" && b.plies === 0 && b.mode === "pvp" && /分析棋盘/.test(b.toast),
     "A1：空白分析棋盘 —— 回到开局局面、双方都由你走，说明它不计入战绩", JSON.stringify(b));
+  // from a trainer (⌘K while a puzzle is up): the switch to the board used to
+  // clear the analysis flag, and the engine answered in the imported game
+  // (Codex on #113). Eleven plies: Black to move, the engine's side.
+  await pg.evaluate(() => { const st = JSON.parse(localStorage.getItem("chess.settings") || "{}"); st.mode = "puzzle"; localStorage.setItem("chess.settings", JSON.stringify(st)); });
+  await pg.reload();
+  await pg.waitForTimeout(900);
+  await pg.evaluate(() => { const E = window.__chess.engine; E.init = () => Promise.resolve(); E.retry = () => {}; E.isReady = () => true; });
+  await scriptOpera(pg);
+  await pg.keyboard.press("Control+k");
+  await pg.waitForSelector("#palette-modal.show", { timeout: 4000 });
+  await pg.fill("#palette-input", "分析一局");
+  await pg.keyboard.press("Enter");
+  await pg.waitForSelector("#analyse-modal.show", { timeout: 4000 });
+  const pgn11 = '[Event "Opera"]\n[White "Morphy"]\n[Black "Allies"]\n[Result "*"]\n\n' +
+    OPERA.slice(0, 11).map((x, i) => (i % 2 ? "" : (i / 2 + 1) + ". ") + x).join(" ") + " *\n";
+  await pg.fill("#an-text", pgn11);
+  await pg.click("#an-go");
+  await pg.waitForTimeout(700);
+  if (await pg.isVisible("#confirm-modal.show").catch(() => false)) { await pg.click("#confirm-ok"); await pg.waitForTimeout(700); }
+  await pg.waitForFunction(() => !document.getElementById("report-card").hidden, null, { timeout: 20000 }).catch(() => {});
+  await pg.waitForTimeout(1200);
+  const tr = await pg.evaluate(() => ({ plies: document.querySelectorAll(".move-list .mlmove").length,
+    mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode, analysis: window.__chess.analysisBoard() }));
+  assert(tr.plies === 11 && tr.mode !== "puzzle" && tr.analysis, "A1：从谜题里 ⌘K「分析一局」—— 回到棋盘、仍是分析（引擎不接着走，至少三条线）", JSON.stringify(tr));
   assert(errsA.length === 0, "A1：没有页面异常 — " + errsA.join(" / "));
   await ctxA.close();
 }
