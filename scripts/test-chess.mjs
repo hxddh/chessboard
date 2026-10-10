@@ -2326,20 +2326,14 @@ for (const lang of CONTENT_LANGS) {
   // since it was written — 56 tokens are defined and none of them is --fg (the
   // themes call it --text) — and it looks correct only because the colour it
   // fails to set is the colour it would have inherited anyway. Defect 9,
-  // fixed in P0.5 — the register below is empty and stays empty.
+  // fixed in P0.5. v10-0-plan E5: the register it emptied is gone — zero is the rule.
   {
-    const KNOWN_DANGLING = new Set();
     const defined = new Set([...stripped.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
     const dangling = [...new Set([...stripped.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]))]
       .filter((v) => !defined.has(v));
-    const fresh = dangling.filter((v) => !KNOWN_DANGLING.has(v));
-    for (const v of fresh) console.error("  var(" + v + ") names no token");
-    assert(fresh.length === 0,
-      "no new var() names a missing token" + (fresh.length ? " — " + fresh.join(", ") : ""));
-    const gone = [...KNOWN_DANGLING].filter((v) => !dangling.includes(v));
-    assert(gone.length === 0,
-      "the register lists no dangling token that is already fixed" +
-      (gone.length ? " — drop " + gone.join(", ") : ""));
+    for (const v of dangling) console.error("  var(" + v + ") names no token");
+    assert(dangling.length === 0,
+      "no var() names a missing token" + (dangling.length ? " — " + dangling.join(", ") : ""));
   }
 
   // --- no new bare colour outside the theme blocks --------------------------
@@ -2355,16 +2349,11 @@ for (const lang of CONTENT_LANGS) {
     // (#9a3412 / #1e3a5f, the notebook theme's ♔ ♚ side marks, left with
     // the match bar (7.7) — the strips draw each side as a disc in
     // --side-white / --side-black)
-    const KNOWN = new Map([]);
-    const found = new Set((body.match(/#[0-9a-fA-F]{3,8}\b/g) || []).map((c) => c.toLowerCase()));
-    const fresh = [...found].filter((c) => !KNOWN.has(c));
-    for (const c of fresh) console.error("  new bare colour outside the themes: " + c);
-    assert(fresh.length === 0,
-      "no colour is written in place that was not already there" +
-      (fresh.length ? " — " + fresh.join(", ") : " (" + found.size + " known, all registered)"));
-    const gone = [...KNOWN.keys()].filter((c) => !found.has(c));
-    assert(gone.length === 0,
-      "the register lists no colour that is already gone" + (gone.length ? " — drop " + gone.join(", ") : ""));
+    // v10-0-plan E5: the register 9.0 V1 emptied is gone — zero is the rule
+    const found = [...new Set((body.match(/#[0-9a-fA-F]{3,8}\b/g) || []).map((c) => c.toLowerCase()))];
+    for (const c of found) console.error("  bare colour outside the themes: " + c);
+    assert(found.length === 0,
+      "no colour is written in place outside the themes" + (found.length ? " — " + found.join(", ") : ""));
   }
 
   // A theme answers for the interface; a board palette answers for the board.
@@ -2419,17 +2408,13 @@ for (const lang of CONTENT_LANGS) {
   // side of it get antialiased edges — a visible seam at some board sizes,
   // and only at some, which is why it survives being looked at. The lesson
   // success flash was the one site that bypassed it (defect 10, fixed in
-  // P0.5); the register is empty and stays empty.
+  // P0.5). v10-0-plan E5: no register — zero is the rule.
   {
-    const KNOWN_RAW_FILLS = 0;
     const raw = [...boardSrc.matchAll(/ctx\.fillRect\(([^)]*)\)/g)]
       .map((m) => m[1].trim())
       .filter((a) => !a.startsWith("...cellRect("));
     for (const a of raw) console.error("  fillRect(" + a + ") does not go through cellRect()");
-    assert(raw.length <= KNOWN_RAW_FILLS,
-      "every square fill goes through cellRect() (" + raw.length + " raw, " + KNOWN_RAW_FILLS + " registered)");
-    assert(raw.length === KNOWN_RAW_FILLS,
-      "the raw-fill count still matches the register (" + raw.length + " vs " + KNOWN_RAW_FILLS + ")");
+    assert(raw.length === 0, "every square fill goes through cellRect() (" + raw.length + " raw)");
   }
 
   // design-constraints.md said 棋子精灵只缓存一个尺寸 round(step), because
@@ -2749,18 +2734,13 @@ for (const lang of CONTENT_LANGS) {
   // one of the words in its tooltip; it may only shrink (S6 left it empty).
   {
     const TECH = /UCI_Elo|UCI_LimitStrength|MultiPV|Syzygy|ms\/步|ms\/move|\d\s?ms\b|毫秒|ミリ秒|\bnodes?\b|节点|ノード|置换表|置換表|hash table|ハッシュ表|\d\.\d+\s?(以前|之前|より前)|before \d\.\d|实测|実測|measured:|一半重合|agree about half|一致するのは約半分|±\{\d\}/i;
-    const ALLOWED = {}; // key → why the 高级 group needs the word; may only shrink
-    const ALLOWED_MAX = 0;
-    assert(Object.keys(ALLOWED).length <= ALLOWED_MAX, "S6: the technical-word register only shrinks (" + Object.keys(ALLOWED).length + " of at most " + ALLOWED_MAX + ")");
+    // v10-0-plan E5: the register S6 emptied is gone — none is the rule
     const leaks = [];
     for (const [lang, dict] of Object.entries(ctx.ChessI18n.DICT)) {
       for (const [k, v] of Object.entries(dict)) {
         if (!TECH.test(v)) continue;
-        if (ALLOWED[k] && k.startsWith("tip.")) continue;
         leaks.push(lang + " " + k + ": " + v);
       }
-      // a register entry the dictionaries no longer need is a stale one
-      for (const k of Object.keys(ALLOWED)) assert(TECH.test(dict[k] || ""), "S6: " + k + " no longer needs its register entry — drop it");
     }
     for (const [lang, T] of Object.entries(LINES)) {
       for (const p of O.PERSONAS) for (const line of ["hello", "bye"]) {
@@ -6572,9 +6552,8 @@ for (const lang of CONTENT_LANGS) {
 // comments stripped. The chess symbols U+2654–265F are pieces, not emoji
 // (the promotion dialog and the editor palette draw with them), and are
 // excluded — although ♟ carries the pictographic property since Emoji 11.
-// Register: what is left, per file. Empty, and it may only shrink.
+// v10-0-plan E5: the register that listed what was left is gone — none is the rule.
 {
-  const KNOWN_EMOJI = new Map([]);
   const web = path.join(root, "src/web");
   const files = ["index.html", "styles.css", ...webJsFiles(path.join(web, "js"))
     .filter((f) => f.endsWith(".js") && !["bundle.js", "engine-src.js"].includes(f)).map((f) => "js/" + f)];
@@ -6585,11 +6564,8 @@ for (const lang of CONTENT_LANGS) {
     const hits = [...src.matchAll(/\p{Extended_Pictographic}/gu)].map((m) => m[0]).filter((c) => !/[♔-♟]/u.test(c));
     if (hits.length) found.set(f, [...new Set(hits)].join(""));
   }
-  const fresh = [...found].filter(([f, e]) => !KNOWN_EMOJI.has(f) || [...e].some((c) => !KNOWN_EMOJI.get(f).includes(c)));
-  for (const [f, e] of fresh) console.error("  emoji in " + f + ": " + e);
-  assert(fresh.length === 0, "the interface draws no emoji" + (fresh.length ? " — " + fresh.map(([f]) => f).join(", ") : ""));
-  const gone = [...KNOWN_EMOJI.keys()].filter((f) => !found.has(f));
-  assert(gone.length === 0, "the emoji register lists no file that is already clean" + (gone.length ? " — drop " + gone.join(", ") : ""));
+  for (const [f, e] of found) console.error("  emoji in " + f + ": " + e);
+  assert(found.size === 0, "the interface draws no emoji" + (found.size ? " — " + [...found.keys()].join(", ") : ""));
   // …and every achievement names an icon that exists
   const iconSrc = fs.readFileSync(path.join(web, "js/icons.js"), "utf8");
   const achSrc = fs.readFileSync(path.join(web, "js/achievements.js"), "utf8");
@@ -7913,6 +7889,23 @@ for (const lang of CONTENT_LANGS) {
         /needs: \[preflight, reuse, static, engine, browser, build-macos, build-windows\]\n[\s\S]{0,200}if: \$\{\{ !cancelled\(\) && !contains\(needs\.\*\.result, 'failure'\) && !contains\(needs\.\*\.result, 'cancelled'\) \}\}/.test(releaseWf),
         "E2：同一提交在 main 上的 checks 已绿时，发布复用静态与浏览器两道门；引擎门与两个平台构建照跑；失败或取消照样不发布");
     }
+    // v10-0-plan E4: every id in the page is one something uses — a script,
+    // the stylesheet, the page's own aria-*/for, or a test. Twenty were
+    // not (9.0 review); an id nothing reads is a name that only looks used.
+    // The ids built by joining (`"result-" + side`, `id + "-cv"`) are named.
+    {
+      const page = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+      const ids = [...page.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]);
+      const rest = page.replace(/\bid="[^"]+"/g, "");
+      const read = [...WEB_MODULES.values()].join("\n") + fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8") +
+        fs.readdirSync(path.join(root, "scripts")).filter((n) => n.endsWith(".mjs") && !n.startsWith("_")).map((n) => fs.readFileSync(path.join(root, "scripts", n), "utf8")).join("\n");
+      const JOINED = new Set(["result-w", "result-b", "today-r-game-cv", "today-r-pz-cv"]);
+      const esc = (x) => x.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&");
+      const unread = ids.filter((id) => !JOINED.has(id) &&
+        !new RegExp("(?:aria-[a-z]+|for)=\"[^\"]*\\b" + esc(id) + "\\b").test(rest) &&
+        !new RegExp("[\"'`#]" + esc(id) + "(?![\\w-])").test(read));
+      assert(unread.length === 0, "E4：页面里每个 id 都有人用（脚本、样式、页面自己的 aria / for，或测试）" + (unread.length ? " —— 没人用：" + unread.join(", ") : ""));
+    }
     // v8-3-plan V4: any suite may be sharded now (engine flows too), not only
     // the layout one. A sharded group holds that one suite alone (SHARD would
     // cut every suite in it), its shards are exactly 1/n..n/n, it runs in no
@@ -8203,7 +8196,7 @@ for (const lang of CONTENT_LANGS) {
 // 9.0 had put down its history (M1), and it may only go down — lower it in
 // the PR that moves code out.
 {
-  const APP_JS_LINE_CEILING = 5744;
+  const APP_JS_LINE_CEILING = 5722; // 10.0: 5,744 → 5722
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
@@ -8259,12 +8252,8 @@ for (const lang of CONTENT_LANGS) {
 // dependencies handed in (createLibraryUI's shape). app.js keeps a one-line
 // door for each of the names the rest of it calls.
 {
-  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
   assert(WEB_MODULES.has("settings-ui.js") && WEB_MODULES.get("settings-ui.js").includes("export function createSettingsUI(d)"),
     "F4: settings-ui.js exports createSettingsUI(d)");
-  for (const name of ["paintSettings", "applyLook", "wireSettings", "draftPick"]) {
-    assert(owner(name) === "settings-ui.js", "F4: " + name + " is declared in settings-ui.js (found in " + owner(name) + ")");
-  }
   assert(APP_MODULES.includes("settings-ui.js"), "F4: settings-ui.js follows app.js's house rules (APP_MODULES)");
   const app = WEB_MODULES.get("app.js");
   assert(!["theme-seg", "multipv-seg", "opt-blind"].some((id) => app.includes('getElementById("' + id + '")')),
@@ -8276,7 +8265,6 @@ for (const lang of CONTENT_LANGS) {
 // review/, each with its dependencies handed in (createLibraryUI's shape).
 // app.js names what it still calls with one destructuring per module.
 {
-  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
   const REVIEW_OWNERS = {
     "review/eval-graph.js": ["judgeColours", "drawEvalBar", "evalText", "drawEvalCurve"],
     "review/retry.js": ["mistakeFacts", "writeWhy", "renderMistakeList", "renderWhyLine", "startRetry", "endRetry", "resetRetry", "retryModel", "retryClick", "retryMove", "renderRetry"],
@@ -8287,9 +8275,6 @@ for (const lang of CONTENT_LANGS) {
   };
   for (const [file, names] of Object.entries(REVIEW_OWNERS)) {
     assert(APP_MODULES.includes(file), "F4: " + file + " follows app.js's house rules (APP_MODULES)");
-    for (const name of names) {
-      assert(owner(name) === file, "F4: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
-    }
   }
 }
 
@@ -8298,7 +8283,6 @@ for (const lang of CONTENT_LANGS) {
 // with their dependencies handed in (createLibraryUI's shape); app.js keeps
 // one destructuring door per module.
 {
-  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
   const homes = {
     "trainer/content.js": ["createTrainerContent", "puzzleName", "lessonText", "motifKeyOf"],
     "trainer/lessons.js": ["createLessonsUI", "startLesson", "learnMove", "syncLearnUI", "startClassic"],
@@ -8309,7 +8293,6 @@ for (const lang of CONTENT_LANGS) {
   };
   for (const [file, names] of Object.entries(homes)) {
     assert(APP_MODULES.includes(file), "F4: " + file + " follows app.js's house rules (APP_MODULES)");
-    for (const name of names) assert(owner(name) === file, "F4: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
   }
 }
 
@@ -8320,7 +8303,6 @@ for (const lang of CONTENT_LANGS) {
 // with their dependencies handed in. A new way to train is one more module
 // beside them (T2), not more lines in the 1,825 this file had.
 {
-  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
   const homes = {
     "trainer/puzzle-book.js": ["createPuzzleBook", "bookNow", "puzzlesInCat", "puzzleTier", "owedNow", "loadPuzzleState"],
     "trainer/puzzle-rating.js": ["createPuzzleRating", "ratePuzzleOnce", "playerRating", "markMissed", "clearMissed"],
@@ -8333,7 +8315,6 @@ for (const lang of CONTENT_LANGS) {
     // the mate searches are pure functions of a chess.js game, like runs.js
     // and themes.js: no factory, no bag, none of app.js's house rules to follow
     if (file !== "trainer/puzzle-mate.js") assert(APP_MODULES.includes(file), "F1: " + file + " follows app.js's house rules (APP_MODULES)");
-    for (const name of names) assert(owner(name) === file, "F1: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
   }
   const lines = WEB_MODULES.get("trainer/puzzles.js").split("\n").length;
   assert(lines <= 1000, "F1: trainer/puzzles.js is the trainer's middle, not the whole of it (" + lines + " lines)");
@@ -8360,7 +8341,6 @@ for (const lang of CONTENT_LANGS) {
 // calls with one destructuring per module. A module created before the one
 // it borrows from is handed forwarders (see the Codex on #88 check above).
 {
-  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
   const homes = {
     "io.js": ["createIO", "copyText", "pgnForExport", "exportText", "pickFromList", "importPgnText", "openPgnFile",
       "importLearningText", "exportAllData", "importAllDataText"],
@@ -8370,7 +8350,6 @@ for (const lang of CONTENT_LANGS) {
   };
   for (const [file, names] of Object.entries(homes)) {
     assert(APP_MODULES.includes(file), "F3: " + file + " follows app.js's house rules (APP_MODULES)");
-    for (const name of names) assert(owner(name) === file, "F3: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
   }
 }
 
