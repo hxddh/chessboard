@@ -43,7 +43,6 @@
       // the lesson dots and the tool row's tooltips
       "go.analyse": "Review this game",
       "go.again": "Play again",
-      "go.switch": "New opponent",
       "go.youWin": "You won",
       "go.youLose": "You lost",
       "go.whiteWins": "White wins",

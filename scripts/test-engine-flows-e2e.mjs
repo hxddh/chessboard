@@ -1295,7 +1295,7 @@ await scenario("对手角色", async () => {
   assert(!dlg.seg && mid.join() === "ben,nico,vera,sol,leo,ivy,max,iris",
     "对手角色（S2）：没有分段，打开时显示当前对手（中级·索尔）和他两边的八张卡", mid.join(","));
   assert(dlg.cards.filter((c) => c.on).length === 1 && dlg.focus === dlg.cards.find((c) => c.on).id,
-    "对手角色：「换个对手」打开时，当前的角色亮着、焦点在它上面", JSON.stringify({ focus: dlg.focus }));
+    "对手角色：空棋盘的「新局」打开时，当前的角色亮着、焦点在它上面", JSON.stringify({ focus: dlg.focus }));
   // a card by keyboard: focus it, Space (Enter in this dialog is 开始); the
   // window moves with the pick, and focus stays on the card
   await page.focus('#op-grid .op-card[data-op="iris"]');

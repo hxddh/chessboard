@@ -73,7 +73,6 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       // the lesson dots and the tool row's tooltips
       "go.analyse": "复盘这局",
       "go.again": "再来一盘",
-      "go.switch": "换个对手",
       "go.youWin": "你赢了",
       "go.youLose": "你输了",
       "go.whiteWins": "白方胜",

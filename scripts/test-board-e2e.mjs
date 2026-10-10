@@ -1766,7 +1766,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   }));
 
   // (a) move 0: a visible way in, in both playing modes
-  for (const [mode, label, focus] of [["ai", "换个对手", "sol"], ["pvp", "新局", "ng-start"]]) {
+  for (const [mode, label, focus] of [["ai", "新局", "sol"], ["pvp", "新局", "ng-start"]]) {
     const { ctx, page, errs } = await seeded(mode);
     const b = await page.evaluate(() => {
       const e = document.getElementById("idle-new");

@@ -43,7 +43,6 @@
       // the lesson dots and the tool row's tooltips
       "go.analyse": "この対局を振り返る",
       "go.again": "もう一局",
-      "go.switch": "相手を変える",
       "go.youWin": "あなたの勝ち",
       "go.youLose": "あなたの負け",
       "go.whiteWins": "白の勝ち",

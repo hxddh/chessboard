@@ -4337,12 +4337,10 @@ import { loadChunk } from "./chunk.js";
     if (!show) return;
     OppUI.paintHello();
     // v8-0-plan §5: the way to the new-game dialog before the first move —
-    // the opponent in an engine game, the side and clock between two players
+    // 新局, as 本局 names it once the game has begun (10.0 M0: not 换个对手;
+    // in an engine game the dialog still opens on the opponent's card)
     const ng = document.getElementById("idle-new");
-    if (ng) {
-      const label = t(store.session.mode === "ai" ? "go.switch" : "chrome.new");
-      if (ng.textContent !== label) ng.textContent = label;
-    }
+    if (ng && ng.textContent !== t("chrome.new")) ng.textContent = t("chrome.new");
     const body = document.getElementById("idle-body") || el;
     body.replaceChildren();
     const line = (k, v) => {
