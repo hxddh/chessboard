@@ -4394,7 +4394,9 @@ span[data-icon] { display: inline-grid; place-items: center; }
   /* 10.1 B: a lighter ring — 13% of the radius, on a track of the ink at
      10%, where it was 20% on the hairline's brown, a heavy dark doughnut */
   --ring-track: color-mix(in srgb, var(--ink) 10%, var(--card));
-  width: 80px; aspect-ratio: 1; border-radius: 50%;
+  /* …at most 80, never wider than its third of the card: just above the
+     900px breakpoint the card is too narrow for three (Codex on #115) */
+  width: min(80px, 100%); aspect-ratio: 1; border-radius: 50%;
   display: grid; place-content: center; text-align: center;
   background:
     radial-gradient(closest-side, var(--card) 87%, transparent 88%),

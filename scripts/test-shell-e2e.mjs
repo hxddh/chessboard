@@ -284,6 +284,18 @@ const state = (page) => page.evaluate(() => {
   await ctx.close();
 }
 
+// --- 今天 · 进度圈: just above the 900px breakpoint the card is narrowest (Codex on #115)
+{
+  const { ctx, page, errs } = await open({ view: "home" }, { width: 920, height: 800 });
+  const r = await page.evaluate(() => {
+    const rs = [...document.querySelectorAll("#today-rings .today-ring")].map((e) => e.getBoundingClientRect());
+    return { n: rs.length, overlap: rs.some((x, i) => i && x.left < rs[i - 1].right - 0.5), w: rs.map((x) => Math.round(x.width)) };
+  });
+  assert(r.n === 3 && !r.overlap, "今天：920 宽时三个进度圈不重叠（" + r.w.join("/") + "）");
+  assert(errs.length === 0, "今天 · 进度圈：没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
 // --- 4. 今天: the page the app opens on, each part going somewhere --------------
 // 9.0 S1: was 首页's three cards (继续上次 / 今天的训练 / 下一步建议, each a
 // sentence and a .home-go). What each did is somewhere on 今天 now: 继续上次
