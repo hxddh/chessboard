@@ -979,6 +979,7 @@
       width: var(--ctl-h-sm); height: var(--ctl-h-sm); display: grid; place-items: center;
       font-size: 1rem; line-height: var(--lh-tight);
       background: transparent; border-color: transparent; color: var(--muted);
+      box-shadow: none; /* 10.1: the ghost has no box until hovered — not the push button's shadow (Codex on #115) */
     }
     .icon-btn:hover { color: var(--text); }
     .tool-btn { height: var(--ctl-h-sm); padding: 0 12px; font-size: 0.875rem; font-weight: 400; line-height: var(--lh-tight); }
