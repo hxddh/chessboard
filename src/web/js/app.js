@@ -2387,7 +2387,7 @@ import { loadChunk } from "./chunk.js";
     ratingTip, runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
     sync, t, tf, toast, pieceSrc: (k) => BoardView.pieceSrc(k), game, isOver: () => appGameOver(), isLive: () => isLive(),
-    Shell: { go: (id) => Shell.go(id), openTrain: (g) => Shell.openTrain(g) }, rep: { due: () => (RepUI.booted() ? RepUI.dueDrills().length : 0), start: () => startRepDrills(true) },
+    Shell: { go: (id) => Shell.go(id), openTrain: (g) => Shell.openTrain(g) }, rep: { due: () => (RepUI.booted() ? RepUI.dueDrills().length : 0), start: () => startRepDrills(true) }, ecoName: (e, n) => LibraryUI.libEcoName(e, n),
   });
   const {
     renderPuzzleTally, libPlayedAt, dailySignals, dailyStepLabel, syncDailyUI,

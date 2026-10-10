@@ -527,9 +527,10 @@ if (scenario()) {
     wIcon: (document.querySelector("#av-w svg") || {}).dataset?.icon,
     wName: document.getElementById("white-role").textContent.trim(),
   }));
-  // v8-0-plan B4: the persona of the rung (中级, no style: 索尔, a star), with its rating
-  assert(r.bName === "索尔" && /中级 1700/.test(r.bLevel), "the engine's strip names its persona, level and rating (" + r.bName + " · " + r.bLevel + ")");
-  assert(r.bIcon === "star" && r.wIcon === "user", "…with the persona's icon on it, and yours on your own (" + r.bIcon + " / " + r.wIcon + ")");
+  // v8-0-plan B4: the persona of the rung, with its rating — 10.0 T1: a new
+  // install's rung is 休闲 (托莫, an hourglass), no longer 中级 (索尔)
+  assert(r.bName === "托莫" && /休闲 670/.test(r.bLevel), "the engine's strip names its persona, level and rating (" + r.bName + " · " + r.bLevel + ")");
+  assert(r.bIcon === "hourglass" && r.wIcon === "user", "…with the persona's icon on it, and yours on your own (" + r.bIcon + " / " + r.wIcon + ")");
   await ctx.close();
 }
 

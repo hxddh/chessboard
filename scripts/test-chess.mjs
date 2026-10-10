@@ -4558,6 +4558,45 @@ for (const lang of CONTENT_LANGS) {
   const fresh0 = PL.plan({ owed: 0, mineUnsolved: 0, lessonNext: 0, opUnsolved: true, playedToday: false, fresh: true });
   assert(fresh0.steps.length === 1 && fresh0.steps[0].kind === "lesson" && fresh0.steps[0].i === 0,
     "T5:新档案只有一项 —— 第 1 课", JSON.stringify(fresh0.steps));
+  // T3: this week's focus takes the weakness step's place, a dose at a time
+  const fz = PL.plan({ owed: 0, weakMotif: "pin", lessonNext: 3, playedToday: false,
+    focus: { kind: "motif", motif: "fork", n: 10, at: 9 } });
+  assert(fz.steps.map((x) => x.kind).join(",") === "focus,lesson,game" && fz.steps[0].n === 1,
+    "T3:本周重点取代弱项那一步,剂量不超过这一项还剩的", JSON.stringify(fz.steps));
+  {
+    const k = PL.focusKey({ kind: "motif", motif: "fork" });
+    const b = PL.snap({ owed: 0, byCat: {}, lessonsDone: 0, opSolved: 0, games: 0, focus: { [k]: 3 } });
+    const a2 = PL.snap({ owed: 0, byCat: {}, lessonsDone: 0, opSolved: 0, games: 0, focus: { [k]: 5 } });
+    assert(PL.stepDone({ kind: "focus", item: { kind: "motif", motif: "fork" }, n: 2 }, b, a2) &&
+      !PL.stepDone({ kind: "focus", item: { kind: "motif", motif: "fork" }, n: 3 }, b, a2), "T3:本周重点一步按这一项的进度记");
+  }
+  {
+    loadModule(ctx, "src/web/js/focus.js");
+    const F = ctx.ChessFocus;
+    assert(F.compose({ enough: false, have: 7, need: 20 }).need === 13 && !F.compose({ enough: false, have: 7, need: 20 }).items.length,
+      "T3:局数不够时不排重点,只说还差几局");
+    const diag = { enough: true, weakestPhase: "end", motifs: [{ motif: "fork", n: 9 }, { motif: "pin", n: 4 }],
+      ecos: [{ eco: "C60", name: "西班牙", n: 8, score: 0.7 }, { eco: "B20", name: "西西里", n: 6, score: 0.4 }, { eco: "A00", name: "x", n: 2, score: 0 }] };
+    const c = F.compose(diag, { opDrills: (f) => (f === "B2" ? 7 : 0) });
+    assert(c.items.map((x) => x.kind).join() === "motif,endgame,opening" && c.items[0].motif === "fork" &&
+      c.items[2].family === "B2" && c.items[2].n === 3, "T3:母题、最弱的阶段、得分不到一半的开局(局数够、有开局线可练)", JSON.stringify(c.items));
+    const mid = F.compose(Object.assign({}, diag, { weakestPhase: "middle" }), { opDrills: () => 0 });
+    assert(mid.items.map((x) => x.motif || x.kind).join() === "fork,pin", "T3:中局最弱时排第二个母题;没有开局线可练就不排开局", JSON.stringify(mid.items));
+    const cnt = { byMotif: { fork: 4 }, egDone: 2, opSolved: (f) => (f === "B2" ? 1 : 0) };
+    const base = F.snapshot(cnt, c.items);
+    const now = { byMotif: { fork: 20 }, egDone: 4, opSolved: () => 1 };
+    assert(F.progressOf(c.items[0], base, now) === 10 && F.progressOf(c.items[1], base, now) === 2 && F.progressOf(c.items[2], base, now) === 0,
+      "T3:进度从这一周开始时的计数算起,封顶在剂量");
+    let asked = 0;
+    const dx = () => { asked++; return diag; };
+    const w1 = F.weekOf(null, "2026-W41", dx, { opDrills: () => 1 }, cnt, 25);
+    const w2 = F.weekOf(w1.focus, "2026-W41", dx, { opDrills: () => 1 }, cnt, 30);
+    const w3 = F.weekOf(w1.focus, "2026-W42", dx, { opDrills: () => 1 }, cnt, 30);
+    assert(w1.fresh && !w2.fresh && w2.focus === w1.focus && w3.fresh && asked === 2, "T3:一周排一次,同一周里不重排");
+    const e1 = F.weekOf(null, "2026-W41", () => ({ enough: false, have: 5, need: 20 }), {}, cnt, 5);
+    assert(!F.weekOf(e1.focus, "2026-W41", dx, {}, cnt, 5).fresh && F.weekOf(e1.focus, "2026-W41", dx, { opDrills: () => 0 }, cnt, 6).fresh,
+      "T3:没排出来的一周,分析的局数变了才再问");
+  }
   // T1: placed on the first run — the game against the chosen opponent first
   const placed = PL.plan({ owed: 0, mineUnsolved: 0, lessonNext: 0, opUnsolved: true, playedToday: false, placed: true });
   assert(placed.steps.map((x) => x.kind).join(",") === "game,lesson", "T1:定级之后,第一件事是和配好的对手下一盘", JSON.stringify(placed.steps));
@@ -7247,11 +7286,12 @@ for (const lang of CONTENT_LANGS) {
   console.log("  bundle.js " + bundleBytes + " bytes minified (budget " + BUNDLE_BUDGET + ")");
   assert(bundleBytes <= BUNDLE_BUDGET,
     "bundle.js stays within the first-paint budget (" + bundleBytes + (bundleBytes <= BUNDLE_BUDGET ? " ≤ " : " > ") + BUNDLE_BUDGET + " bytes)");
-  // …and 9.0's own, tighter line: new pages go in chunks, the bundle carries
-  // their doors. v9-0-plan §8 第 4 条: 8.4.0 + 20 KB
-  const BUNDLE_BYTES_90 = 911124 + 20000;
-  assert(bundleBytes <= BUNDLE_BYTES_90,
-    "v9-0-plan §8: bundle.js grows at most 20 KB over 8.4.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_90 ? " ≤ " : " > ") + BUNDLE_BYTES_90 + " bytes)");
+  // …and the release's own, tighter line: new pages go in chunks, the bundle
+  // carries their doors. v9-0-plan §8 第 4 条 set it at 8.4.0 + 20 KB;
+  // v10-0-plan E6 moves it to 9.0.0 (923,333 bytes, e3fc6df) + 20 KB
+  const BUNDLE_BYTES_100 = 923333 + 20000;
+  assert(bundleBytes <= BUNDLE_BYTES_100,
+    "v10-0-plan E6: bundle.js grows at most 20 KB over 9.0.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_100 ? " ≤ " : " > ") + BUNDLE_BYTES_100 + " bytes)");
   // …minified without renaming: a player's stack trace still names the code
   assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
     "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");

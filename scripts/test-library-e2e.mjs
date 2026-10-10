@@ -282,6 +282,34 @@ async function openFilters(page) {
     assert(/第 40 回合/.test(text), "失误最密集的回合");
     assert(/捉双/.test(text), "按母题统计 —— 用的是「你没看见的那一手」的母题");
     assert(/B20/.test(text), "按开局统计战绩");
+    // v10-0-plan T3: the same diagnosis, as this week's work on 今天 — the
+    // motif (捉双), the phase (残局), the opening that scores under half (B20)
+    await page.keyboard.press("Escape");
+    await page.click('#rail button[data-view="home"]');
+    await page.waitForTimeout(500);
+    const focus = await page.evaluate(() => ({
+      shown: !document.getElementById("today-focus-sec").hidden,
+      rows: [...document.querySelectorAll("#today-focus .daily-step")].map((li) => li.textContent),
+      kept: (JSON.parse(localStorage.getItem("chess.puzzles") || "{}").focus || {}).items,
+      hero: document.getElementById("today-hero-title").textContent,
+    }));
+    assert(focus.shown && focus.rows.length === 3 && /捉双/.test(focus.rows[0]) && /残局训练营 5 个局面/.test(focus.rows[1]) &&
+      /B20/.test(focus.rows[2]) && /得分 48%/.test(focus.rows[2]) && /0\/10/.test(focus.rows[0]),
+      "T3:今天页有本周重点 —— 捉双 10 题、残局 5 个局面、B20 的开局线,各带来由与进度", JSON.stringify(focus.rows));
+    assert(Array.isArray(focus.kept) && focus.kept.length === 3, "T3:这一周的重点存下来了,不随每次画面重排");
+    assert(/捉双/.test(focus.hero), "T3:接下来的第一件事就是本周重点的第一项", focus.hero);
+    await page.click('#today-focus button[data-focus="1"]');
+    await page.waitForTimeout(800);
+    const eg = await page.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
+      seg: (document.querySelector("#train-seg button.active") || {}).dataset?.seg }));
+    assert(eg.view === "train" && eg.seg === "endgame", "T3:点残局那一项,进的是残局训练营", JSON.stringify(eg));
+    await page.click('#rail button[data-view="home"]');
+    await page.waitForTimeout(400);
+    await page.click('#today-focus button[data-focus="2"]');
+    await page.waitForTimeout(800);
+    const op = await page.evaluate(() => ({ mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode,
+      cat: JSON.parse(localStorage.getItem("chess.puzzles") || "{}").cat, task: document.getElementById("puzzle-task").textContent }));
+    assert(op.mode === "puzzle" && op.cat === "op" && /B2\d/.test(op.task), "T3:点开局那一项,练的是 B2x 的开局线", JSON.stringify(op));
     assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
     await ctx.close();
   }

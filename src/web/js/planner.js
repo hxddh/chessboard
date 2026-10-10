@@ -40,7 +40,7 @@
  */
 
 /** How much of each thing one sitting asks for. */
-const DOSE = { review: 3, mine: 2, weak: 2, rep: 5 };
+const DOSE = { review: 3, mine: 2, weak: 2, rep: 5, focusOne: 1 };
 
 /** v10-0-plan T5: a sitting is a short list — three things, each one line. */
 const MAX_STEPS = 3;
@@ -61,6 +61,7 @@ const MAX_STEPS = 3;
  *   repDue: number,        // repertoire moves due today (T5)
  *   fresh: boolean,        // nothing played, solved or learnt yet (T5)
  *   placed: boolean,       // placed on first run and no game played yet (T1)
+ *   focus: object|null,    // this week's first unfinished focus item, with `at` (T3)
  * }
  * @returns {{steps: Array<{kind: string, cat?: string, n?: number, i?: number}>}}
  */
@@ -75,10 +76,14 @@ function plan(sig) {
   // the weak step repeats what review/mine already cover only when the weak
   // category is a real third thing — a session of three copies of one idea
   // is one idea, not a session
+  // v10-0-plan T3: this week's focus is the sharpest statement of all — what
+  // the player's own games say, made into a week's work — and takes the
+  // weakness step's place; a sitting does a dose of it, not the whole week
+  if (sig.focus) steps.push({ kind: "focus", item: sig.focus, n: Math.min(DOSE[sig.focus.kind === "motif" ? "weak" : "focusOne"], sig.focus.n - (sig.focus.at || 0)) });
   // 5.2: a motif the player keeps missing is the sharper statement of the
   // same weakness — it replaces the shelf step rather than joining it, so
   // the sitting still says one thing about weakness
-  if (sig.weakMotif) steps.push({ kind: "motif", motif: sig.weakMotif, n: DOSE.weak });
+  else if (sig.weakMotif) steps.push({ kind: "motif", motif: sig.weakMotif, n: DOSE.weak });
   // 7.1: failing that, what the player's OWN GAMES say catches them. The
   // puzzle tally only knows the puzzles they have attempted here, so someone
   // who imported an archive and has answered nothing yet — the exact person
@@ -117,6 +122,7 @@ function snap(src) {
     lessonsDone: src.lessonsDone,
     opSolved: src.opSolved,
     repDue: src.repDue || 0,
+    focus: Object.assign({}, src.focus || {}),
     games: src.games,
     libAnalysed: src.libAnalysed || 0,
   };
@@ -147,6 +153,7 @@ function stepDone(step, before, after) {
     case "op": return after.opSolved > before.opSolved;
     // the due moves are graded one by one; the step is done when the dose
     // has gone out of the queue, or the queue is empty
+    case "focus": { const k = focusKey(step.item); return ((after.focus || {})[k] || 0) - ((before.focus || {})[k] || 0) >= step.n; }
     case "repdue": return after.repDue === 0 || before.repDue - after.repDue >= step.n;
     case "game": return after.games > before.games;
     // one analysed game completes it: the pass runs for as long as the player
@@ -157,4 +164,7 @@ function stepDone(step, before, after) {
   }
 }
 
-export const ChessPlanner = { DOSE, MAX_STEPS, plan, snap, stepDone };
+/** A focus item's key in snap().focus — the counters' progress on it. */
+function focusKey(it) { return it.kind + ":" + (it.motif || it.family || ""); }
+
+export const ChessPlanner = { DOSE, MAX_STEPS, plan, snap, stepDone, focusKey };
