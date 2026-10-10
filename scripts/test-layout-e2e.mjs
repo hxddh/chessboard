@@ -2956,7 +2956,8 @@ if (scenario()) {
       stored: JSON.parse(localStorage.getItem("chess.settings") || "{}").langId,
     }));
     assert(r.shown, locale + ": a new install opens the guide");
-    assert(r.items === 2, locale + ": …with both ways in (" + r.items + ")");
+    // v10-0-plan T1: three ways in — never played, knows the moves, plays often
+    assert(r.items === 3, locale + ": …with the three ways in (" + r.items + ")");
     assert(r.stored === lang, locale + ": the app starts in the system's language (" + r.stored + ")");
     assert((r.firstTab || "").trim() === tab,
       locale + ": …and the interface is in it — 「" + (r.firstTab || "").trim() + "」");

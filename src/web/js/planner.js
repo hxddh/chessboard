@@ -60,10 +60,14 @@ const MAX_STEPS = 3;
  *   playedToday: boolean,  // a game was played today, here or elsewhere
  *   repDue: number,        // repertoire moves due today (T5)
  *   fresh: boolean,        // nothing played, solved or learnt yet (T5)
+ *   placed: boolean,       // placed on first run and no game played yet (T1)
  * }
  * @returns {{steps: Array<{kind: string, cat?: string, n?: number, i?: number}>}}
  */
 function plan(sig) {
+  // v10-0-plan T1: someone the placement just matched with an opponent is
+  // asked to play them first — what they said they came for
+  if (sig.placed) return { steps: [{ kind: "game" }].concat(plan(Object.assign({}, sig, { placed: false, fresh: false, playedToday: true })).steps).slice(0, MAX_STEPS) };
   if (sig.fresh && sig.lessonNext >= 0) return { steps: [{ kind: "lesson", i: sig.lessonNext }] };
   const steps = [];
   if (sig.owed > 0) steps.push({ kind: "review", n: Math.min(sig.owed, DOSE.review) });

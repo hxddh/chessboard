@@ -866,6 +866,21 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   assert(Ru.timeLeft(streak, 1e12) === Infinity && !Ru.checkClock(streak, 1e12), "streak: no clock");
   Ru.onSolve(streak); Ru.onSolve(streak); Ru.onMiss(streak);
   assert(streak.over && streak.why === "streak" && streak.score === 2, "streak: the first miss ends it, the solves are the score");
+  // v10-0-plan T1: 定级 — six answers, the aim following them with halving steps
+  {
+    const pl = Ru.newRun("place", 0, 1, 900);
+    assert(Ru.targetOf(pl) === 900 && !Ru.RUN_KINDS.includes("place"), "place: starts where it is told, and is not a panel button");
+    Ru.onSolve(pl); assert(Ru.targetOf(pl) === 1200, "place: a solve aims 300 higher");
+    Ru.onMiss(pl); assert(Ru.targetOf(pl) === 1000 && !pl.over, "place: a miss aims 200 lower, and does not end it");
+    Ru.onSolve(pl); Ru.onSolve(pl); Ru.onMiss(pl);
+    assert(!pl.over && Ru.targetOf(pl) === 1175, "place: 150, 100, 75 (" + Ru.targetOf(pl) + ")");
+    Ru.onSolve(pl);
+    assert(pl.over && pl.why === "placed" && Ru.targetOf(pl) === 1225, "place: the sixth answer ends it at the estimate");
+    assert(!Ru.recordBest({}, pl), "place: a placement is not a best score");
+    const low = Ru.newRun("place", 0, 1, 900);
+    for (let i = 0; i < 6; i++) Ru.onMiss(low);
+    assert(low.est === 400, "place: six misses stay on the scale (" + low.est + ")");
+  }
   const pst = {};
   assert(Ru.recordBest(pst, streak) && Ru.bestOf(pst, "streak") === 2, "a first score is a best");
   const worse = Ru.newRun("streak", 0, 1); Ru.onSolve(worse);

@@ -90,6 +90,7 @@ export function createPuzzlesUI(d) {
     ...Book, ...Rating,
     doc: document, store, t, tf, el, avail, setText, sync, toast, Audio2, drawRatingTrend, motifKeyOf,
     saveSettings, switchMode, setSideTab, seatPuzzle, startPuzzles, puzzleHumanSide, makeVis: (k, alive) => Vis.make(k, alive),
+    onPlaced: d.onPlaced, goHome: d.goHome,
   });
   // v8-2-plan T2: 看 N 步后 and 盲走收官, beside the modes above — the door
   // (trainer/visual.js); the modes themselves are chunk-visual.js
@@ -840,7 +841,8 @@ export function createPuzzlesUI(d) {
     if (task) {
       // 「第 N 题」 is the chip's job now (7.3 B4) — the card carries the goal,
       // the detail and, where there is one, the puzzle's rating
-      task.textContent = store.session.puzzle.done
+      // a run's puzzle is done when answered either way, and its card says how
+      task.textContent = store.session.puzzle.done && !store.session.puzzle.run
         ? t("pz.solvedNext")
         : tdot(puzzleGoalText(), puzzleRatingOf(store.session.puzzle.p) != null && tf("pz.ratingOf", [puzzleRatingOf(store.session.puzzle.p)]));
     }
@@ -980,12 +982,13 @@ export function createPuzzlesUI(d) {
   // Mistakes are the same modules the book imports.
   const { onMinedArrived, ALL_PUZZLES, Library, loadMines, saveMines, Planner, loadPuzzleState, practiceLeft } = Book;
   const { ratingLabel, ratingTip } = Rating;
+  const { startPlacement } = Modes; // v10-0-plan T1, for the first-run question
   return {
     wirePuzzlePanel,
     onMinedArrived, ALL_PUZZLES, Library, Mistakes, loadMines, saveMines, Progress, Planner,
     saveProgress, bookNow, loadPuzzleState, savePuzzleState, Srs, Picker,
     owedNow, ratingLabel, ratingTip, practiceLeft, puzzlesInCat, puzzleRatingOf,
     startPuzzleAt, startPuzzles, stopPuzzles, puzzleModel, puzzleHumanSide, puzzleClick,
-    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, closeThemes: () => Modes.closeThemes(), Vis,
+    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, closeThemes: () => Modes.closeThemes(), Vis, startPlacement,
   };
 }

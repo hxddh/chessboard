@@ -1798,7 +1798,11 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     await ctx.close();
   }
 
-  // (b) first launch, 「我会下棋」: the dialog, on the opponent
+  // (b) first launch, 「会走子」 (v10-0-plan T1): six placement puzzles whose
+  // aim follows the answers; the estimate becomes the puzzle rating and picks
+  // the opponent; 去今天 → 今天's first thing is a game against them — three
+  // clicks from the question to the board. Six misses (H gives each up) place
+  // at the bottom of the scale: 400, and 皮普.
   {
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
     const page = await ctx.newPage();          // nothing seeded: a new install
@@ -1806,22 +1810,41 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     page.on("pageerror", (e) => errs.push(e.message));
     await page.goto(`http://127.0.0.1:${PORT}/`);
     await page.waitForTimeout(1200);
-    const guide = await page.evaluate(() => document.querySelectorAll("#pick-list .pick-item").length);
-    assert(guide === 2, `§5 新安装:引导里两条路(${guide})`);
+    const guide = await page.evaluate(() => [...document.querySelectorAll("#pick-list .pick-item")].map((b) => b.textContent));
+    assert(guide.length === 3 && /没下过棋/.test(guide[0]) && /会走子/.test(guide[1]) && /常下棋/.test(guide[2]),
+      `T1 新安装:引导里三档自评(${guide.length})`);
     await page.evaluate(() => document.querySelectorAll("#pick-list .pick-item")[1].click());
+    await page.waitForTimeout(1200);
+    const head = () => page.evaluate(() => document.getElementById("pz-run-head").textContent);
+    assert(/定级 · 第 1 题，共 6 题/.test(await head()), "T1 选「会走子」:进入定级,第 1 题", await head());
+    for (let i = 0; i < 6; i++) { await page.keyboard.press("h"); await page.waitForTimeout(1300); }
+    const done = await head();
+    const st = await page.evaluate(() => ({ pz: JSON.parse(localStorage.getItem("chess.puzzles") || "{}"), set: JSON.parse(localStorage.getItem("chess.settings") || "{}") }));
+    assert(/定级完成：谜题等级分约 400，已为你选好对手 皮普/.test(done) && st.pz.rating && st.pz.rating.r === 400 && st.pz.placed &&
+      st.set.difficulty === "beginner", "T1 六题之后:谜题等级分 400 起步、对手配成皮普(新手)", done + " " + JSON.stringify(st.pz.rating) + " " + st.set.difficulty);
+    await page.click("#pz-run-again");
+    await page.waitForTimeout(600);
+    const today = await page.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
+      title: document.getElementById("today-hero-title").textContent }));
+    assert(today.view === "home" && today.title === "来一盘", "T1 「去今天」:今天的第一件事是和配好的对手下一盘", JSON.stringify(today));
+    await page.click("#today-go");
+    await page.waitForTimeout(600);
+    const play = await page.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
+      mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode }));
+    assert(play.view === "play" && play.mode === "ai", "T1 …第三次点击就在棋盘上,人机对局", JSON.stringify(play));
+    assert(errs.length === 0, `T1 首次启动:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+  // (b2) 「先看看棋盘」: the board, against the default rung — 休闲, not 中级
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+    const page = await ctx.newPage();
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1200);
+    await page.click("#pick-cancel");
     await page.waitForTimeout(500);
-    let s = await ngState(page);
-    const pick = await page.evaluate(() => ({
-      guide: document.getElementById("pick-modal").classList.contains("show"),
-      diff: (document.querySelector("#ng-host #op-grid .op-card.active") || {}).dataset?.op,
-    }));
-    assert(!pick.guide && s.open, `§5 选「我会下棋」:引导关掉,新对局对话框打开(${JSON.stringify(s)})`);
-    assert(pick.diff === "ben" && s.focus === "ben", `§5 …预选初级(本),焦点在他的角色卡上(${pick.diff} / ${s.focus})`);
-    await page.keyboard.press("Enter"); await page.waitForTimeout(500);
-    s = await ngState(page);
     const set = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}"));
-    assert(!s.open && set.mode === "ai" && set.difficulty === "easy", `§5 …回车开局:人机、初级(${set.mode} / ${set.difficulty})`);
-    assert(errs.length === 0, `§5 首次启动:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    assert(set.mode === "ai" && set.difficulty === "casual", "T1 跳过问卷:还是人机,但默认档是休闲(" + set.mode + " / " + set.difficulty + ")");
     await ctx.close();
   }
 

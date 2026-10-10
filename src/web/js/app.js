@@ -30,6 +30,7 @@ import { createSettingsUI } from "./settings-ui.js";
 import { createTrainerContent } from "./trainer/content.js";
 import { createLessonsUI } from "./trainer/lessons.js";
 import { createPuzzlesUI } from "./trainer/puzzles.js";
+import { createOnboarding, OPP_BELOW } from "./onboarding.js";
 import { createTodayUI } from "./trainer/today.js";
 import { createMePage } from "./me-page.js";
 import { createShell } from "./shell.js";
@@ -289,8 +290,8 @@ import { loadChunk } from "./chunk.js";
     session: {
       /** @type {'ai'|'pvp'} */
       mode: "ai",
-      /** @type {'easy'|'normal'|'hard'|'extreme'} */
-      difficulty: "normal",
+      /** a rung of opponents.js LEVELS — 休闲 for a new install (v10-0-plan T1) */
+      difficulty: "casual",
       /** @type {'w'|'b'} human side in AI mode */
       humanColor: "w",
       /** v7-8-plan §4: the last new game was started with 执子「随机」, so the
@@ -2002,14 +2003,15 @@ import { loadChunk } from "./chunk.js";
     loadLibraryEntry: (e) => loadLibraryEntry(e),
     dailyJump: (s) => dailyJump(s),
     dailyStepIsHere: (s) => dailyStepIsHere(s),
-    renderPuzzleTally: () => renderPuzzleTally(),
+    renderPuzzleTally: () => renderPuzzleTally(), goHome: () => Shell.go("home"),
+    onPlaced: (r) => { const lv = OppUI.levelNear(r - OPP_BELOW); if (!lv) return ""; store.session.difficulty = lv; store.session.personaId = "off"; saveSettings(); const o = OppUI.strip(lv, "off"); return tdot(o.name, o.level); },
   });
   const {
     onMinedArrived, ALL_PUZZLES, Library, Mistakes, loadMines, saveMines, Progress, Planner,
     saveProgress, bookNow, loadPuzzleState, savePuzzleState, Srs, Picker,
     owedNow, ratingLabel, ratingTip, practiceLeft, puzzlesInCat,
     startPuzzleAt, startPuzzles, stopPuzzles, puzzleModel, puzzleHumanSide, puzzleClick,
-    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI,
+    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, startPlacement,
   } = PuzzlesUI;
 
   /**
@@ -3907,55 +3909,11 @@ import { loadChunk } from "./chunk.js";
     gameResultToken, resultFromFile, clearEndingFlags, forgetFileResult, adoptHeaderResult,
   } = GameCtl;
 
-  /**
-   * One question, asked once, on a genuinely fresh install.
-   *
-   * Everything the app has for a beginner — the interactive course, the Beginner
-   * engine that makes real mistakes on purpose — was reachable only by someone
-   * who already knew to go looking. Until 1.7 the first screen was a 1700-rated
-   * Stockfish, which is exactly the "hard to get started" complaint the whole
-   * teaching side was built to answer.
-   *
-   * Dismissing the dialog leaves the player where they already are, so this can
-   * never trap anyone: the worst case is the old behaviour.
-   */
-  async function runOnboarding() {
-    // 5.1: the first door is marked as the one to take, and the third way out
-    // says where it leads — 「取消」 on a first-run question left nobody knowing
-    // which mode they had landed in (audit, work package E). It lands where
-    // 「我会下棋」 lands, with nothing said: the board is the answer.
-    const choice = await pickFromList(t("ob.title"), [
-      { label: t("ob.newLabel"), sub: t("ob.newSub"), tag: t("ob.recommended") },
-      { label: t("ob.knowLabel"), sub: t("ob.knowSub") },
-    ], { cancelLabel: t("ob.later") });
-    if (choice === 0) {
-      store.session.mode = "learn";
-      // …and the engine they meet after the first lessons is the one built
-      // for them. Up to 7.5 this branch left `difficulty` at the default
-      // "normal" (Elo 1700), so the self-declared beginner got a stronger
-      // opponent than 「我会下棋」 does (7.6 §3a).
-      store.session.difficulty = "beginner";
-      startLearn();
-    } else {
-      // they can play, but "normal" is Elo 1700 — start a rung lower and let
-      // the difficulty row (now visible) speak for itself. The engine reads
-      // `difficulty` at search time, so setting it here is enough.
-      store.session.mode = "ai";
-      store.session.difficulty = "easy";
-    }
-    // …but not where the panel is a full-height sheet over the board: ending
-    // the onboarding by covering the thing it just set up is not a welcome.
-    // The ☰ is in the corner and the board is what they came for (7.3 §1).
-    setPanelOpen(!panelCoversBoard());
-    saveSettings();
-    store.commit("session", "sync");
-    // v8-0-plan §5: 「我会下棋」 is someone about to choose an opponent, so
-    // they are shown the choice — the new-game dialog, on the opponent row,
-    // with 初级 already picked — instead of a game against a rung they never
-    // saw being chosen. 「以后再说」 still leaves them on the board.
-    if (choice === 1) openNewGame({ switchOpponent: true });
-    else if (choice !== 0) maybeEngineTurn();
-  }
+  // v10-0-plan T1: the first-run question and its placement (onboarding.js)
+  const Onboarding = createOnboarding({
+    t, store, startLearn, setPanelOpen, panelCoversBoard, saveSettings, maybeEngineTurn,
+    pickFromList: (...a) => pickFromList(...a), startPlacement,
+  });
 
   // --- position editor + FEN loading ---
   const PALETTE = [
@@ -5737,5 +5695,5 @@ import { loadChunk } from "./chunk.js";
       maybeEngineTurn(); // resumed save may leave the engine on move
     }, 0));
   }
-  if (firstRun) runOnboarding();
+  if (firstRun) Onboarding.run();
 

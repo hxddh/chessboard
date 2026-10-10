@@ -139,8 +139,10 @@ export function createTodayUI(d) {
       // T2: a drill in the review queue is the review step's, not a second step
       mineUnsolved: store.session.mines.filter((m) => !st.solved[m.id] && !st.missed[m.id]).length,
       repDue: rep.due(),
+      // T1: placed on the first run, and no game yet — the game first
+      placed: !!st.placed && !games.length,
       // T5: nothing played, solved or learnt yet — the first lesson, alone
-      fresh: !games.length && !store.session.library.some((g) => g.side) && !store.session.mines.length &&
+      fresh: !st.placed && !games.length && !store.session.library.some((g) => g.side) && !store.session.mines.length &&
         !Object.keys(store.session.learnState.done || {}).length && !Object.keys(st.tally || {}).length &&
         !Object.keys(st.missed || {}).length && !Object.keys(st.solved || {}).length,
       weakCat: w ? w.cat : null,

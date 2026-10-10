@@ -4558,6 +4558,9 @@ for (const lang of CONTENT_LANGS) {
   const fresh0 = PL.plan({ owed: 0, mineUnsolved: 0, lessonNext: 0, opUnsolved: true, playedToday: false, fresh: true });
   assert(fresh0.steps.length === 1 && fresh0.steps[0].kind === "lesson" && fresh0.steps[0].i === 0,
     "T5:新档案只有一项 —— 第 1 课", JSON.stringify(fresh0.steps));
+  // T1: placed on the first run — the game against the chosen opponent first
+  const placed = PL.plan({ owed: 0, mineUnsolved: 0, lessonNext: 0, opUnsolved: true, playedToday: false, placed: true });
+  assert(placed.steps.map((x) => x.kind).join(",") === "game,lesson", "T1:定级之后,第一件事是和配好的对手下一盘", JSON.stringify(placed.steps));
   assert(full.steps[0].n === PL.DOSE.review && full.steps[1].n === 2 && full.steps[2].cat === "def",
     "剂量封顶,弱项带着它的类别");
   const lean = PL.plan({ owed: 0, mineUnsolved: 0, weakCat: null, lessonNext: -1, opUnsolved: true, playedToday: true });

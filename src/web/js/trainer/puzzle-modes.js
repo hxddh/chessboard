@@ -74,6 +74,7 @@ export function createPuzzleModes(d) {
     doc, store, t, tf, el, avail, setText, sync, toast, Audio2, drawRatingTrend,
     ALL_PUZZLES, isRatedCat, puzzleRating, playerRating, motifKeyOf,
     savePuzzleState, saveSettings, switchMode, setSideTab, seatPuzzle, startPuzzles, puzzleHumanSide, makeVis,
+    onPlaced, goHome,
   } = d;
   const Db = ChessPuzzleDb;
   const Dlg = ChessDialog;
@@ -499,10 +500,31 @@ export function createPuzzleModes(d) {
     const pz = store.session.puzzle;
     if (pz && pz.run === run) pz.done = true;
     run.newBest = Runs.recordBest(store.session.puzzleState, run);
+    if (run.kind === "place" && run.why === "placed") placed(run);
     savePuzzleState();
     if (run.newBest) toast(tf("run.newBest", [run.score]));
     store.commit("session", "sync");
   }
+  /**
+   * v10-0-plan T1: the placement's estimate becomes the puzzle rating it
+   * starts from (provisional: six answers are a start), and app.js picks the
+   * opponent and says so. Only a placement run to its end does this — one
+   * stopped half way leaves the rating where it was.
+   */
+  function placed(run) {
+    const st = store.session.puzzleState, now = Date.now();
+    const r = Math.round(run.est);
+    st.rating = { r, rd: Runs.PLACE_RD, vol: ChessRating.DEFAULT.vol };
+    st.ratedAt = now;
+    st.rhist = (Array.isArray(st.rhist) ? st.rhist : []).concat([{ t: now, r }]).slice(-60);
+    st.placed = { r, at: now };
+    run.opp = onPlaced ? onPlaced(r) : "";
+  }
+  /** v10-0-plan T1: the first run of all, from the first-run question. */
+  function startPlacement(base) {
+    startRun("place", Runs.newRun("place", Date.now(), Date.now(), base));
+  }
+
   /** Stop the run in progress (leaving the mode, 结束, another run). */
   function endRun() {
     dropVis();
@@ -584,16 +606,23 @@ export function createPuzzleModes(d) {
     const card = el("pz-run");
     avail(card, !!run);
     if (run) {
-      if (!run.own) setText(el("pz-run-head"), run.over ? t("run.over." + (run.why || "stopped")) : t("run.rule." + run.kind));
+      const place = run.kind === "place";
+      if (!run.own) setText(el("pz-run-head"), place && run.why === "placed" ? tf("run.placed", [Math.round(run.est), run.opp || "—"])
+        : run.over ? t("run.over." + (run.why || "stopped"))
+        : place ? tf("run.rule.place", [run.k + 1, Runs.RUN_RULES.place.steps.length]) : t("run.rule." + run.kind));
       setText(el("pz-run-score"), tf("run.score", [run.score]));
+      avail(el("pz-run-score"), !place); // the placement's head says where it stands
       const strikes = el("pz-run-strikes");
       avail(strikes, run.kind === "rush");
       if (!run.own) setText(strikes, tf("run.strikes", [run.strikes, Runs.RUN_RULES[run.kind].strikes]));
       paintClock(run);
       if (run.over) avail(el("pz-run-clock"), false);
-      setText(el("pz-run-best"), run.over && run.newBest ? tf("run.newBest", [run.score]) : tf("run.best", [Runs.bestOf(st, run.kind)]));
+      setText(el("pz-run-best"), place ? "" : run.over && run.newBest ? tf("run.newBest", [run.score]) : tf("run.best", [Runs.bestOf(st, run.kind)]));
+      avail(el("pz-run-best"), !place);
       avail(el("pz-run-stop"), !run.over);
+      // a placement is not played again: its end goes to 今天, where the plan is
       avail(el("pz-run-again"), run.over);
+      setText(el("pz-run-again"), t(place ? "run.toToday" : "run.again"));
       // practice's own controls stand down while a run owns the board (the
       // panel's paint sets the last three afresh on every sync)
       for (const id of ["puzzle-review-nudge", "row-op-side"]) avail(el(id), false);
@@ -635,7 +664,11 @@ export function createPuzzleModes(d) {
     const stop = el("pz-run-stop");
     if (stop) stop.onclick = () => endRun();
     const again = el("pz-run-again");
-    if (again) again.onclick = () => { if (store.session.run) startRun(store.session.run.kind); };
+    if (again) again.onclick = () => {
+      const run = store.session.run;
+      if (run && run.kind === "place") goHome();
+      else if (run) startRun(run.kind);
+    };
     const open = el("pz-themes-open");
     if (open) open.onclick = () => openThemes();
     const change = el("pz-theme-change");
@@ -663,5 +696,5 @@ export function createPuzzleModes(d) {
     };
   }
 
-  return { lcPool, themeList, startTheme, groupList, groupCount, startGroup, goGroup, nearestIdx, rateThemes, runSolved, runMissed, runAnswer, endRun, parkRun, unparkRun, render, wire, closeThemes, startRun, finishRun };
+  return { lcPool, themeList, startTheme, groupList, groupCount, startGroup, goGroup, nearestIdx, rateThemes, runSolved, runMissed, runAnswer, endRun, parkRun, unparkRun, render, wire, closeThemes, startRun, finishRun, startPlacement };
 }
