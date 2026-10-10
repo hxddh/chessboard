@@ -2213,6 +2213,12 @@
       box-shadow: 0 10px 30px rgba(0,0,0,.25);
     }
 
+    /* 9.0 V3: with the top bar gone the board starts 40px down, and a
+       banner at the board's column's top-left lay over its first rank —
+       with the panel open (landscape) it is the panel's first line instead */
+    @media (min-aspect-ratio: 1/1) {
+      body:has(#app.panel-open:not(.page-on)) .storage-fault { left: auto; right: 8px; max-width: calc(var(--side-w) - 16px); }
+    }
     /* 6.0: a second banner (the set-aside record) stacks under the first */
     .storage-fault ~ .storage-fault { top: 56px; }
     .app-fault { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -4198,17 +4204,11 @@ span[data-icon] { display: inline-grid; place-items: center; }
   .rail-btn:hover .rail-ic, .rail-btn[aria-current="page"] .rail-ic { background: none; }
   .rail-btn:hover { background: var(--btn-ghost); }
   .rail-btn[aria-current="page"] { background: var(--accent-soft); }
-  /* icons only in the bar — every button keeps its box whichever view is
-     current, so nothing in the row moves when you go somewhere. Each is
-     named by its title for the pointer and, for a screen reader, by the
-     label itself, which is clipped rather than removed. */
+  /* 9.0 M3: icon and name, every button — where you are is said in words,
+     and since every button carries its name nothing in the row moves when
+     you go somewhere (a name on the current one alone pushed the rest
+     along; before, the names were clipped and the row was icons only) */
   .rail-lbl {
-    position: absolute; width: 1px; height: 1px; overflow: hidden;
-    clip: rect(0 0 0 0); white-space: nowrap;
-  }
-  /* 9.0 M3: …except where you are, which the row names in words */
-  .rail-btn[aria-current="page"] .rail-lbl {
-    position: static; width: auto; height: auto; overflow: visible; clip: auto;
     font-size: 0.875rem; line-height: var(--lh-tight);
   }
   /* 偏好 stays with the others: pushed to the far end it sat under the panel */

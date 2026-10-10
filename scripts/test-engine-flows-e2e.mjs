@@ -89,6 +89,10 @@ import { GAMES } from "./fixtures/corpus.mjs";
 import { read as readMeasured, record, RECORDING } from "./measurements.mjs";
 import { makeScenarioGate } from "./e2e-shard.mjs";
 
+// 9.0 M2: the mistakes list is in the review's second layer, 「完整报告」,
+// which starts folded
+const openFullReport = (page) => page.evaluate(() => { const d = document.getElementById("rv-full"); if (d) d.open = true; });
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
 
@@ -965,6 +969,7 @@ await scenario("为什么", async () => {
   assert(!!row && /捉双/.test(row.why) && /车/.test(row.why) && row.retry,
     "为什么：报告里 9. a3 的说明有「捉双」和「车」，旁边是「再试一次」", JSON.stringify(row));
   // on the move itself, under the engine line
+  await openFullReport(page);
   await page.click('.rv-moment[data-ply="16"] .rv-mo-jump');
   await page.waitForTimeout(200);
   const at = await page.evaluate(() => {
@@ -1039,6 +1044,7 @@ await scenario("再试一次·持续分析与升变", async () => {
     return !!el && !el.hidden && /\d/.test(el.textContent);
   }), 8000);
   assert(liveUp, "持续分析：打开后有引擎线");
+  await openFullReport(page);
   await page.click('.rv-moment[data-ply="0"] .rv-mo-retry');
   await page.waitForTimeout(300);
   const during = await page.evaluate(() => ({
@@ -1135,6 +1141,7 @@ await scenario("再试一次·重新分析", async () => {
   const { ctx, page, errs } = await openPage({ mode: "pvp" });
   await openPgn(page, pgn);
   await runAn(page, "#an-run", 60000);
+  await openFullReport(page);
   await page.click('.rv-moment[data-ply="0"] .rv-mo-retry');
   await page.waitForTimeout(200);
   await clickMove(page, "g1", "f1");

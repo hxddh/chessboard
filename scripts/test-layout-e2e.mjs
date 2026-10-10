@@ -5148,7 +5148,14 @@ if (scenario()) {
     const { ctx, page, errs } = await open("zh-CN", "pvp", "play", "wood", { width: w, height: h });
     for (const sq of A2_ITALIAN) await mv(page, sq);
     await page.waitForTimeout(400);
-    const m = await page.evaluate(layoutProbe);
+    let m = await page.evaluate(layoutProbe);
+    // 9.0 M3: a portrait drawer's list is its nine tenths' — the bar under
+    // it is measured there (the half stop has the strip instead)
+    if (w < h) {
+      await page.evaluate(() => document.getElementById("app").classList.add("sheet-full"));
+      await page.waitForTimeout(500);
+      m.nav = (await page.evaluate(layoutProbe)).nav;
+    }
     const was = before[w + "x" + h];
     const at = `A2 ${w}×${h}：`;
     // M2 (A1 × A2): beside the 64px rail the wide layout fits only 1920 of
@@ -5215,7 +5222,7 @@ if (scenario()) {
     await page.evaluate(() => window.__mlStart());
     await page.keyboard.press("End");
     await page.waitForTimeout(300);
-    const r = await page.evaluate(() => {
+    const measure = () => page.evaluate(() => {
       const box = (e) => e.getBoundingClientRect();
       const list = document.getElementById("move-list"), bar = document.getElementById("replay-seg");
       const pane = document.getElementById("pane-play");
@@ -5231,6 +5238,15 @@ if (scenario()) {
                nav: B.top - L.bottom,
                stripCur: sc ? box(sc).right <= box(strip).right + 0.5 && box(sc).left >= box(strip).left - 0.5 : null };
     });
+    let r = await measure();
+    const stripCur = r.stripCur;
+    // 9.0 M3: in a portrait drawer the strip is the half stop's notation and
+    // the list the nine tenths' — the list is measured there
+    if (w < h) {
+      await page.evaluate(() => document.getElementById("app").classList.add("sheet-full"));
+      await page.waitForTimeout(500);
+      r = await measure();
+    }
     const at = `A2 ${w}×${h} 120 手：`;
     assert(r.rows >= 60, at + "棋谱有 " + r.rows + " 行");
     if (!r.curInList) console.error("A2 timeline " + at + JSON.stringify(await page.evaluate(() => window.__mlLog.filter((e, i, a) => i === 0 || e.slice(2).join() !== a[i - 1].slice(2).join() || e[1] !== "raf"))));
@@ -5240,7 +5256,7 @@ if (scenario()) {
       assert(r.scrolls, at + "棋谱自己滚动");
       assert(r.barInPane && r.paneTop === 0, at + "翻谱栏不用滚动面板就在屏上（" + JSON.stringify(r) + "）");
     } else {
-      assert(r.stripCur === true, at + "横条滚到了当前一着");
+      assert(stripCur === true, at + "横条滚到了当前一着");
     }
     await ctx.close();
   }
