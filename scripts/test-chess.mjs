@@ -2151,7 +2151,7 @@ for (const lang of CONTENT_LANGS) {
     // reads it loses its fill and edge. Each such token is a plain value
     // first and mixed only under @supports.
     {
-      const sup = /@supports \(color: color-mix\(in srgb, red 50%, blue\)\) \{([\s\S]*?)\n    \}\n/.exec(stripped);
+      const sup = /@supports \(color: color-mix\(in srgb, red 50%, blue\)\) \{([\s\S]*?)\r?\n    \}\r?\n/.exec(stripped);
       const outside = sup ? stripped.replace(sup[0], "") : stripped;
       const bad = ["--card-border", "--card-edge", "--btn-lift", "--btn-lift-hover", "--btn-edge", "--seg-tray", "--seg-on", "--ring-track"]
         .filter((k) => new RegExp(k + ":\\s*color-mix").test(outside) || !(sup && new RegExp(k + ":\\s*color-mix").test(sup[1])));
