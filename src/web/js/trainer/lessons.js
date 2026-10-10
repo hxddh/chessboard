@@ -381,7 +381,7 @@ export function createLessonsUI(d) {
     if (store.session.learn.done && store.session.learn.eg) return tf("lm.doneThen", [t(Endgames.next(store.session.learn.eg) ? "eg.tapNext" : "eg.allDone")]);
     if (store.session.learn.done) return tf("lm.doneThen", [t(store.session.learn.li + 1 < LESSONS.length ? "lm.tapNext" : "lm.allDone")]);
     const tx = taskText(curLesson(), store.session.learn.ti);
-    if (task.type === "tap") return tx.step(store.session.learn.tapStep) + " (" + (store.session.learn.tapStep + 1) + "/" + task.steps.length + ")";
+    if (task.type === "tap") return tf("lm.tapOf", [tx.step(store.session.learn.tapStep), store.session.learn.tapStep + 1, task.steps.length]);
     if (task.type === "drill" && store.session.learn.engineBusy) return t("lm.sparThinking");
     // tx, not task: reading the prompt straight off the lesson showed every
     // move/stars/drill task in Chinese to English readers — the translations

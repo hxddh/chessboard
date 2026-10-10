@@ -296,6 +296,21 @@ for (const les of LESSONS) {
   await page.waitForTimeout(200);
 }
 
+// 10.0 M0: a tap task counts its taps in words of its own (点第 x 处，共 n 处),
+// not as a bare (1/3) beside the lesson's dots and Today's 第 x 项
+{
+  const les = LESSONS.find((l) => l.tasks[0].type === "tap");
+  await page.evaluate((want) => {
+    const rows = [...document.getElementById("lesson-list").querySelectorAll("button, .lesson-row")];
+    rows.find((r) => (r.textContent || "").includes(want))?.click();
+  }, les.title);
+  await page.waitForTimeout(500);
+  await settle();
+  const said = await page.evaluate(() => document.getElementById("lesson-task").textContent);
+  const n = les.tasks[0].steps.length;
+  assert(said.endsWith("（点第 1 处，共 " + n + " 处）") && !/\(\d\/\d\)/.test(said), "10.0 M0 点格子的题按「第几处」计数", said);
+}
+
 // a wrong move on a one-answer task is refused, with that task's own hint
 {
   // whichever lesson opens on a single-answer move task — naming one by id
@@ -905,7 +920,7 @@ if (hasTab && REAL.length) {
   const h0 = await todayHero(pg);
   assert(h0.view === "home" && h0.go === "开始" && h0.steps.length > 1 && !h0.steps.some((x) => x.cur || x.done),
     "开工前:今天的主卡片按钮是「开始」,课表里没有哪一步算开始了", JSON.stringify(h0));
-  assert(/^先清复习 1 题$/.test(h0.title) && /到期的复习/.test(h0.meta) && /第 1\/\d 步/.test(h0.meta) && h0.steps[0].what === h0.title,
+  assert(/^先清复习 1 题$/.test(h0.title) && /到期的复习/.test(h0.meta) && /今天第 1 项，共 \d 项/.test(h0.meta) && h0.steps[0].what === h0.title,
     "第一步永远是欠账(主卡片和课表第一行都是它)", JSON.stringify(h0));
   await pg.click("#today-go");
   await pg.waitForTimeout(700);
@@ -929,7 +944,7 @@ if (hasTab && REAL.length) {
   await pg.waitForTimeout(600);
   const h2 = await todayHero(pg);
   const step2 = h2.title;
-  assert(/第 2\/\d 步/.test(h2.meta) && h2.go === "接着做" && h2.steps[0].done && h2.steps[1].cur && !/复习/.test(step2),
+  assert(/今天第 2 项，共 \d 项/.test(h2.meta) && h2.go === "接着做" && h2.steps[0].done && h2.steps[1].cur && !/复习/.test(step2),
     "清完欠账,课表自己走到第二步(今天的按钮成了「接着做」)", JSON.stringify(h2));
   await pg.click('#rail button[data-view="train"]');
   await pg.waitForTimeout(400);
@@ -1461,7 +1476,7 @@ if (hasTab && REAL.length) {
   await tapP("d2"); await tapP("d6"); // w-hangq: Rxd6
   await pg.waitForTimeout(600);
   const h2 = await todayHero(pg);
-  assert(/第 2\/\d 步/.test(h2.meta) && !/复习/.test(h2.title), "#88: 解掉那 1 题，课表离开复习这一步", JSON.stringify(h2));
+  assert(/今天第 2 项，共 \d 项/.test(h2.meta) && !/复习/.test(h2.title), "#88: 解掉那 1 题，课表离开复习这一步", JSON.stringify(h2));
   // a reload does not bring the retired ids back
   await pg.reload();
   await pg.waitForTimeout(1200);
