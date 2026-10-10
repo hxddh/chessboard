@@ -807,7 +807,11 @@ let big = null;
   let release;
   const held = new Promise((r) => { release = r; });
   await page.route("**/js/chunk-rep.js", async (route) => { await held; await route.continue(); });
-  await page.reload();
+  // not until "load": whether the held chunk is asked for before the load
+  // event or after it is the browser's timing, and when it is before, "load"
+  // waits on the very request this test holds — a 30 s timeout on CI (10.1).
+  // What the test needs is the page up, which the next line waits for.
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => window.__chess && window.__chess.rep, null, { timeout: 20000 });
   await page.click("#pick-cancel", { timeout: 1000 }).catch(() => {});
   const booted = await page.evaluate(() => !!window.__chess.rep());
