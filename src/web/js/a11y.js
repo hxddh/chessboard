@@ -198,6 +198,12 @@ export function createA11y(d) {
       if (ev.key === "Enter") { ev.preventDefault(); d.finishConfirm(true); }
       return;
     }
+    // v10-0-plan A3: ⌘K / Ctrl+K opens the command panel from any page — and
+    // closes it, as its own key; over another dialog it stays out of the way
+    if (ev.key.toLowerCase() === "k" && (ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.shiftKey && d.openPalette) {
+      const mine = doc.getElementById("palette-modal");
+      if ((mine && mine.classList.contains("show")) || !d.dialogOpen()) { ev.preventDefault(); d.openPalette(); return; }
+    }
     // "?" comes before the dialog guard below, because it is the one shortcut
     // whose whole job is opening and closing a dialog — but only its own: with
     // anything else on screen it stays out of the way like everything else.

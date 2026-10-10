@@ -102,6 +102,10 @@ export const CHUNKS = [
   // v8-0-plan A4 + F5: the review's picture and its key-moments card (lazy-content.js REVIEW_CHUNKS)
   { entry: "src/web/js/report.js", out: "src/web/js/chunk-report.js", global: "ChessReport", min: 3000 },
   { entry: "src/web/js/review/moments.js", out: "src/web/js/chunk-moments.js", global: "createMoments", min: 3000 },
+  // v10-0-plan T1: the first-run question and its placement — a fresh install only
+  { entry: "src/web/js/onboarding.js", out: "src/web/js/chunk-onboarding.js", global: "createOnboarding", min: 500 },
+  // v10-0-plan A3: the ⌘K panel, on the key's first press (palette-lazy.js)
+  { entry: "src/web/js/palette.js", out: "src/web/js/chunk-palette.js", global: "createPalette", min: 2000 },
   // v8-0-plan B4: the ladder, personas, rating and styles (opponents-lazy.js)
   { entry: "src/web/js/opponents-chunk.js", out: "src/web/js/chunk-opponents.js", global: "CHESS_OPPONENTS", min: 15000 },
   // v8-0-plan C1: the library as a database — IndexedDB, search, 本机 games (library-ui.js)

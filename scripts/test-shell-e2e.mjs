@@ -1103,6 +1103,75 @@ for (const v of ["home", "library", "me", "settings"]) {
   await ctx.close();
 }
 
+// --- v10-0-plan A3: ⌘K — one box that finds a lesson, a theme, a page or an action ---
+{
+  const { ctx, page, errs } = await open({ view: "home" });
+  const asked = [];
+  page.on("request", (r) => { if (/chunk-palette\.js/.test(r.url())) asked.push(r.url()); });
+  const pal = () => page.evaluate(() => ({ open: document.getElementById("palette-modal").classList.contains("show"),
+    rows: [...document.querySelectorAll("#palette-list .pal-row")].map((b) => b.textContent),
+    on: (document.querySelector('#palette-list .pal-row[aria-selected="true"]') || {}).textContent || "" }));
+  assert(!asked.length, "A3：没按 ⌘K 之前不取 chunk-palette.js");
+  const key = process.platform === "darwin" ? "Meta+k" : "Control+k";
+  await page.keyboard.press(key);
+  await page.waitForTimeout(500);
+  let p = await pal();
+  assert(p.open && asked.length === 1 && p.rows.length > 10 && /动作/.test(p.rows[0]), "A3：⌘K 打开命令面板（取了一次分块），先列动作", JSON.stringify(p.rows.slice(0, 3)));
+  // a lesson by its title: Enter opens it
+  await page.keyboard.type("棋盘与坐标");
+  await page.waitForTimeout(150);
+  p = await pal();
+  assert(p.rows.length >= 1 && /第 1 课 · 棋盘与坐标/.test(p.on) && /课程/.test(p.on), "A3：输入课名，第一行就是那一课", JSON.stringify(p.rows));
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(600);
+  const lesson = await page.evaluate(() => ({ open: document.getElementById("palette-modal").classList.contains("show"),
+    mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode, title: (document.getElementById("lesson-title") || {}).textContent }));
+  assert(!lesson.open && lesson.mode === "learn" && /棋盘与坐标/.test(lesson.title || ""), "A3：回车 —— 面板关上，第 1 课开在棋盘上", JSON.stringify(lesson));
+  // ↓ moves the choice; a settings category by its name
+  await page.keyboard.press(key);
+  await page.waitForTimeout(300);
+  await page.keyboard.type("声音");
+  await page.waitForTimeout(150);
+  p = await pal();
+  assert(/设置 · 声音/.test(p.on), "A3：「声音」找到设置 · 声音", JSON.stringify(p.rows));
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(500);
+  const set = await page.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
+    cat: (document.querySelector(".set-cat[aria-selected='true']") || {}).dataset?.cat }));
+  assert(set.view === "settings" && set.cat === "sound", "A3：…回车就到设置的那一类", JSON.stringify(set));
+  // a puzzle theme
+  await page.keyboard.press(key);
+  await page.waitForTimeout(300);
+  await page.keyboard.type("捉双");
+  await page.waitForTimeout(150);
+  p = await pal();
+  const at = p.rows.findIndex((r) => /谜题主题/.test(r));
+  for (let i = 0; i < at; i++) await page.keyboard.press("ArrowDown");
+  p = await pal();
+  assert(at >= 0 && /捉双/.test(p.on) && /谜题主题/.test(p.on), "A3：↓ 选到「捉双」这个谜题主题", JSON.stringify(p.rows));
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(800);
+  const th = await page.evaluate(() => ({ mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode,
+    theme: (document.getElementById("pz-theme-name") || {}).textContent }));
+  assert(th.mode === "puzzle" && /捉双/.test(th.theme || ""), "A3：…回车就在做捉双的题", JSON.stringify(th));
+  // Escape closes it; ⌘K again closes it too; nothing found says so
+  await page.keyboard.press(key);
+  await page.waitForTimeout(300);
+  await page.keyboard.type("zzzzqqqq");
+  await page.waitForTimeout(150);
+  const none = await page.evaluate(() => !document.getElementById("palette-none").hidden);
+  await page.keyboard.press(key);
+  await page.waitForTimeout(200);
+  const shut = !(await pal()).open;
+  await page.keyboard.press(key);
+  await page.waitForTimeout(200);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  assert(none && shut && !(await pal()).open, "A3：找不到时说没有；⌘K 和 Esc 都能关上");
+  assert(errs.length === 0, "A3：没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " failed"); process.exit(1); }

@@ -1319,6 +1319,20 @@
       </div>
     </div>
 
+    <!-- v10-0-plan A3: ⌘K — the box that finds a lesson, an endgame, a theme,
+         a library game or an action (palette.js, a chunk) -->
+    <div class="modal-bg" id="palette-modal" role="dialog" aria-labelledby="palette-title">
+      <div class="modal palette">
+        <h3 id="palette-title" class="sr-only" data-i18n="pal.title">命令面板</h3>
+        <input type="text" id="palette-input" class="text-input" spellcheck="false" autocomplete="off"
+               role="combobox" aria-expanded="true" aria-controls="palette-list"
+               placeholder="搜索课程、残局、谜题主题、棋谱，或要做的事" data-i18n-placeholder="pal.placeholder" />
+        <div class="pal-list" id="palette-list" role="listbox" aria-label="命令面板" data-i18n-aria="pal.title"></div>
+        <p class="hint" id="palette-none" hidden data-i18n="pal.none">没有找到</p>
+        <p class="hint pal-hint" data-i18n="pal.hint">↑↓ 选择 · 回车打开 · Esc 关闭</p>
+      </div>
+    </div>
+
     <!-- v10-0-plan A1: 分析一局 — a PGN or a Lichess link, a file, or a blank analysis board -->
     <div class="modal-bg" id="analyse-modal" role="dialog" aria-labelledby="an-title">
       <div class="modal">

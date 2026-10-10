@@ -15,16 +15,13 @@
  * leaves the player on the board against the default rung (休闲, not the
  * 1700 中级 it was through 9.0), so this can never trap anyone.
  *
- * Moved out of app.js with T1, which grew it past the file's line budget.
+ * Moved out of app.js with T1, which grew it past the file's line budget,
+ * and a chunk (chunk-onboarding.js): it runs once, on a fresh install.
  * @module onboarding
  */
 
 /** Where each self-assessment starts its placement (a puzzle rating). */
 export const PLACE_BASE = { knows: 900, often: 1400 };
-
-/** How far the opponent sits below the placed puzzle rating — a puzzle
-    rating runs ahead of how the same player does over a whole game. */
-export const OPP_BELOW = 300;
 
 /**
  * @param {object} d what the question needs from app.js

@@ -696,5 +696,5 @@ export function createPuzzleModes(d) {
     };
   }
 
-  return { lcPool, themeList, startTheme, groupList, groupCount, startGroup, goGroup, nearestIdx, rateThemes, runSolved, runMissed, runAnswer, endRun, parkRun, unparkRun, render, wire, closeThemes, startRun, finishRun, startPlacement };
+  return { lcPool, themeList, startTheme, groupList, groupCount, startGroup, goGroup, nearestIdx, rateThemes, runSolved, runMissed, runAnswer, endRun, parkRun, unparkRun, render, wire, closeThemes, startRun, finishRun, startPlacement, goTheme };
 }

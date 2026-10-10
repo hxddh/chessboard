@@ -982,13 +982,13 @@ export function createPuzzlesUI(d) {
   // Mistakes are the same modules the book imports.
   const { onMinedArrived, ALL_PUZZLES, Library, loadMines, saveMines, Planner, loadPuzzleState, practiceLeft } = Book;
   const { ratingLabel, ratingTip } = Rating;
-  const { startPlacement } = Modes; // v10-0-plan T1, for the first-run question
+  const { startPlacement, goTheme } = Modes; // v10-0-plan T1 (the first-run question), A3 (⌘K)
   return {
     wirePuzzlePanel,
     onMinedArrived, ALL_PUZZLES, Library, Mistakes, loadMines, saveMines, Progress, Planner,
     saveProgress, bookNow, loadPuzzleState, savePuzzleState, Srs, Picker,
     owedNow, ratingLabel, ratingTip, practiceLeft, puzzlesInCat, puzzleRatingOf,
     startPuzzleAt, startPuzzles, stopPuzzles, puzzleModel, puzzleHumanSide, puzzleClick,
-    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, closeThemes: () => Modes.closeThemes(), Vis, startPlacement,
+    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, closeThemes: () => Modes.closeThemes(), Vis, startPlacement, goTheme,
   };
 }

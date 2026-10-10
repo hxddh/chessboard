@@ -30,12 +30,13 @@ import { createSettingsUI } from "./settings-ui.js";
 import { createTrainerContent } from "./trainer/content.js";
 import { createLessonsUI } from "./trainer/lessons.js";
 import { createPuzzlesUI } from "./trainer/puzzles.js";
-import { createOnboarding, OPP_BELOW } from "./onboarding.js";
 import { createTodayUI } from "./trainer/today.js";
 import { createMePage } from "./me-page.js";
 import { createShell } from "./shell.js";
 import { createTodayPage } from "./today-page.js";
 import { createAnalyseEntry } from "./analyse-entry.js";
+import { createPaletteLazy } from "./palette-lazy.js";
+import { THEME_IDS } from "./trainer/themes.js";
 import { createPrefsUI } from "./prefs-ui.js";
 import { ChessReview } from "./review.js";
 import { createAnalysis } from "./review/analysis.js";
@@ -2006,14 +2007,15 @@ import { loadChunk } from "./chunk.js";
     dailyJump: (s) => dailyJump(s),
     dailyStepIsHere: (s) => dailyStepIsHere(s),
     renderPuzzleTally: () => renderPuzzleTally(), goHome: () => Shell.go("home"),
-    onPlaced: (r) => { const lv = OppUI.levelNear(r - OPP_BELOW); if (!lv) return ""; store.session.difficulty = lv; store.session.personaId = "off"; saveSettings(); const o = OppUI.strip(lv, "off"); return tdot(o.name, o.level); },
+    // the opponent sits 300 below the placed puzzle rating: a puzzle rating runs ahead of a whole game's
+    onPlaced: (r) => { const lv = OppUI.levelNear(r - 300); if (!lv) return ""; store.session.difficulty = lv; store.session.personaId = "off"; saveSettings(); const o = OppUI.strip(lv, "off"); return tdot(o.name, o.level); },
   });
   const {
     onMinedArrived, ALL_PUZZLES, Library, Mistakes, loadMines, saveMines, Progress, Planner,
     saveProgress, bookNow, loadPuzzleState, savePuzzleState, Srs, Picker,
     owedNow, ratingLabel, ratingTip, practiceLeft, puzzlesInCat,
     startPuzzleAt, startPuzzles, stopPuzzles, puzzleModel, puzzleHumanSide, puzzleClick,
-    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, startPlacement,
+    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, startPlacement, goTheme,
   } = PuzzlesUI;
 
   /**
@@ -3911,11 +3913,11 @@ import { loadChunk } from "./chunk.js";
     gameResultToken, resultFromFile, clearEndingFlags, forgetFileResult, adoptHeaderResult,
   } = GameCtl;
 
-  // v10-0-plan T1: the first-run question and its placement (onboarding.js)
-  const Onboarding = createOnboarding({
+  // v10-0-plan T1: the first-run question and its placement (onboarding.js, chunk-onboarding.js)
+  const runOnboarding = () => loadChunk("chunk-onboarding.js", "createOnboarding").then((create) => create({
     t, store, startLearn, setPanelOpen, panelCoversBoard, saveSettings, maybeEngineTurn,
     pickFromList: (...a) => pickFromList(...a), startPlacement,
-  });
+  }).run(), () => {});
 
   // --- position editor + FEN loading ---
   const PALETTE = [
@@ -4613,7 +4615,7 @@ import { loadChunk } from "./chunk.js";
     sanHistory: () => sanHistory(),
     statusText: () => statusText(),
     onSquareClick: (sq) => onSquareClick(sq),
-    escapeKey: () => escapeKey(),
+    escapeKey: () => escapeKey(), openPalette: () => Palette.open(),
     dialogOpen: () => dialogOpen(), pageShown: () => Shell.pageShown(),
     promoOpen: () => !!promoModal && promoModal.classList.contains("show"),
     confirmOpen: () => confirmModal.classList.contains("show"),
@@ -5188,6 +5190,14 @@ import { loadChunk } from "./chunk.js";
       switchMode("pvp"); store.session.analysisBoard = true; loadFenAsGame(new Chess().fen(), t("an.boardNote")); Shell.toBoard();
     } });
   AnalyseEntry.wire();
+  // v10-0-plan A3: ⌘K — find a lesson, an endgame, a theme, a game or an action (palette.js, a chunk)
+  const Palette = createPaletteLazy({ doc: document, t, tf, tdot, Dlg, store, LESSONS, lessonText, THEME_IDS, Endgames: LessonsUI.Endgames,
+    SETTING_CATS: ["general", "board", "sound", "game", "data", "advanced"], run: {
+      newGame: () => { Shell.go("play"); requestNewGame(); }, analyse: () => AnalyseEntry.open(), blank: () => document.getElementById("an-board").click(),
+      paste: () => pastePgn(), editor: () => { Shell.go("play"); document.getElementById("editor-open").click(); }, fen: () => openFenModal(),
+      exportPgn: () => downloadPgn(), flip: () => { Shell.go("play"); setFlipped(!store.game.flipped); }, go: (v) => Shell.go(v),
+      train: (s) => Shell.openTrain(s), settings: (c) => { store.ui.setCat = c; Shell.go("settings"); }, lesson: (i) => dailyJump({ kind: "lesson", i }),
+      theme: (id) => goTheme(id), endgame: (id) => LessonsUI.startEndgame(id), libGame: (e) => loadLibraryEntry(e) } });
   // v8-0-plan C3: 开局浏览器 — the key, the panel's state; the panel itself is a chunk
   createExplorerLazy({ store, t, tf, tdot, viewGame, movePath, startClockIfIdle, saveSettings, library: LibraryUI, repertoire: RepUI, saved: Persist.read("settings").value,
     toBoard: () => { Shell.go("play"); setSideTab("play"); } });
@@ -5593,6 +5603,7 @@ import { loadChunk } from "./chunk.js";
     Dlg.register(pickModal, () => finishPick(null));
     Dlg.register(fenModal, closeFenModal);
     Dlg.register(document.getElementById("analyse-modal"), () => AnalyseEntry.close());
+    Dlg.register(document.getElementById("palette-modal"), () => Palette.close());
     Dlg.register(confirmModal, () => finishConfirm(false));
     Dlg.register(document.getElementById("newgame-modal"), closeNewGame);
     Dlg.register(keysModal, closeKeyHelp);
@@ -5707,5 +5718,5 @@ import { loadChunk } from "./chunk.js";
       maybeEngineTurn(); // resumed save may leave the engine on move
     }, 0));
   }
-  if (firstRun) Onboarding.run();
+  if (firstRun) runOnboarding();
 
