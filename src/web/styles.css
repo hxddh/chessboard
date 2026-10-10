@@ -1721,6 +1721,9 @@
     .op-meta { display: flex; flex-wrap: wrap; gap: 0 8px; font-size: 0.75rem; line-height: var(--lh-tight); }
     .op-rating { font-variant-numeric: tabular-nums; }
     .op-style { color: var(--muted); }
+    /* 10.1 S1: the chosen card is raised (lighter on the dark themes), and the
+       muted ink on it fell to 4.2:1 on 夜 — a chosen row's lines read in full ink */
+    .op-card.active .op-style { color: inherit; }
     .ng-custom { margin: 4px 0 8px; }
     .ng-custom-sum { cursor: pointer; font-size: 0.875rem; color: var(--muted); padding: 4px 0; }
     /* the custom clock's two numbers, beside their units */
