@@ -2376,6 +2376,8 @@
       border-color: color-mix(in srgb, var(--accent) 60%, var(--card-border));
     }
     .text-input.bad { border-color: var(--danger); }
+    /* v10-0-plan A1: 分析一局's paste box — PGN is lines of text */
+    .an-text { display: block; resize: vertical; line-height: var(--lh-body); }
 
     /* pawn promotion chooser */
     /* 7.8 §1c: on the board, not over it. The backdrop is clear and unblurred;
@@ -4245,7 +4247,8 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .today-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
 .today-head .page-h { margin: 0; }
 .today-brand { margin: 0 0 8px; font-size: 0.875rem; }
-.today-head > .act-btn, .today-acts > .act-btn { flex: none; width: auto; min-width: 128px; padding: 0 16px; }
+.today-head-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; flex: none; }
+.today-head-acts > .act-btn, .today-acts > .act-btn { flex: none; width: auto; min-width: 128px; padding: 0 16px; }
 .today-date { margin: 4px 0 0; font-size: 0.875rem; color: var(--muted); }
 .today-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px; align-items: stretch; margin-bottom: 24px; }
 .today-card {

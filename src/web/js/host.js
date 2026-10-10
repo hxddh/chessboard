@@ -752,9 +752,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
   /**
    * v8-0-plan C2: a player's recent games from Lichess or Chess.com, fetched
    * by the native side (main.zig fetchGames) — the page's CSP stays
-   * connect-src 'self'. Called only from the sync dialog's 同步 button,
-   * which races it and reads the answer (sync-ui.js ask).
-   * @param {{site: string, user: string, max: number}} p
+   * connect-src 'self'. Called from the sync dialog's 同步 button, which
+   * races it and reads the answer (sync-ui.js ask), and — v10-0-plan A1 —
+   * from 分析一局 with `{site: "lichess", game: id}` for one game by its id.
+   * @param {{site: string, user?: string, max?: number, game?: string}} p
    * @returns {Promise<any>} null when there is no bridge
    */
   function fetchGames(p) {

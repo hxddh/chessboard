@@ -35,6 +35,7 @@ import { createTodayUI } from "./trainer/today.js";
 import { createMePage } from "./me-page.js";
 import { createShell } from "./shell.js";
 import { createTodayPage } from "./today-page.js";
+import { createAnalyseEntry } from "./analyse-entry.js";
 import { createPrefsUI } from "./prefs-ui.js";
 import { ChessReview } from "./review.js";
 import { createAnalysis } from "./review/analysis.js";
@@ -1670,7 +1671,8 @@ import { loadChunk } from "./chunk.js";
 
   /** If it's the engine's turn in AI mode, think and play its reply. */
   async function maybeEngineTurn() {
-    if (store.session.mode !== "ai" || !ChessEngine) return;
+    // v10-0-plan A1: on the analysis board nobody is playing the engine
+    if (store.session.mode !== "ai" || !ChessEngine || store.session.analysisBoard) return;
     if (appGameOver() || game.turn() === store.session.humanColor) return;
     // a failed boot is not retried by moving: the pill says so instead
     if (engineOut()) { sync(); return; }
@@ -5178,6 +5180,14 @@ import { loadChunk } from "./chunk.js";
     CLASSICS: LessonsUI.CLASSICS, classicsTotal: LessonsUI.classicsTotal, classicText: LessonsUI.classicText, loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText: () => ratingLabel(),
     drawRatingTrend, Shell, requestNewGame: () => requestNewGame() });
   TodayPage.wire();
+  // v10-0-plan A1: 分析一局 — into the review in one step — and the blank analysis board
+  const AnalyseEntry = createAnalyseEntry({ doc: document, t, Persist, Dlg, openPgnFile: (s) => openPgnFile(s), importPgnText: (x, l) => importPgnText(x, l, undefined, true),
+    analyse: () => { setSideTab("play", { top: true }); analyzeGame(SCAN_BUDGET); }, openNetSettings: () => { store.ui.setCat = "data"; Shell.go("settings"); },
+    blankBoard: async () => {
+      if (sanHistory().length && !appGameOver() && !(await confirmNative(t("an.replaceAsk"), t("an.board"), { ok: t("an.board"), cancel: t("act.cancel") }))) return;
+      switchMode("pvp"); store.session.analysisBoard = true; loadFenAsGame(new Chess().fen(), t("an.boardNote")); Shell.toBoard();
+    } });
+  AnalyseEntry.wire();
   // v8-0-plan C3: 开局浏览器 — the key, the panel's state; the panel itself is a chunk
   createExplorerLazy({ store, t, tf, tdot, viewGame, movePath, startClockIfIdle, saveSettings, library: LibraryUI, repertoire: RepUI, saved: Persist.read("settings").value,
     toBoard: () => { Shell.go("play"); setSideTab("play"); } });
@@ -5194,6 +5204,7 @@ import { loadChunk } from "./chunk.js";
     const wasLearn = store.session.mode === "learn";
     const wasPuzzle = store.session.mode === "puzzle";
     store.session.mode = mode;
+    store.session.analysisBoard = false;
     // entering a clocked mode mid-game gets fresh clocks
     store.game.flagFall = null;
     if (store.session.mode === "pvp" || store.session.mode === "ai") resetClocks();
@@ -5581,6 +5592,7 @@ import { loadChunk } from "./chunk.js";
     Dlg.register(document.getElementById("theme-modal"), () => PuzzlesUI.closeThemes());
     Dlg.register(pickModal, () => finishPick(null));
     Dlg.register(fenModal, closeFenModal);
+    Dlg.register(document.getElementById("analyse-modal"), () => AnalyseEntry.close());
     Dlg.register(confirmModal, () => finishConfirm(false));
     Dlg.register(document.getElementById("newgame-modal"), closeNewGame);
     Dlg.register(keysModal, closeKeyHelp);

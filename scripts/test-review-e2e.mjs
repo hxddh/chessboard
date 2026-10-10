@@ -26,7 +26,7 @@ import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { heldClick } from "./lib/held-click.mjs";
 import { seedLibrary } from "./lib/library-view.mjs";
-import { OPERA, playOpera, analyseOpera } from "./lib/opera-fixture.mjs";
+import { OPERA, playOpera, analyseOpera, scriptOpera } from "./lib/opera-fixture.mjs";
 import { Chess } from "../src/web/js/chess.js";
 import { ChessReview } from "../src/web/js/review.js";
 
@@ -1494,7 +1494,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       if (!box || box.hidden) return null;
       return { pos: (box.querySelector(".km-pos") || {}).textContent, ply: Number((box.querySelector(".km-card") || { dataset: {} }).dataset.ply),
         acts: [...box.querySelectorAll(".km-acts button")].filter((b) => !b.hidden).map((b) => b.dataset.act),
-        why: (box.querySelector(".km-why:not([hidden])") || {}).textContent || "" };
+        why: (box.querySelector(".km-why:not([hidden])") || {}).textContent || "",
+        what: (box.querySelector(".km-what") || {}).textContent || "" };
     });
     // back to the first moment with the card's own key
     for (let i = 0; i < 6 && await pg.evaluate(() => { const b = document.querySelector("#rv-km .km-prev"); return !!b && !b.disabled; }); i++) {
@@ -1504,14 +1505,19 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     const k0 = await km();
     assert(!!k0 && /^1 \/ [2-6]$/.test(k0.pos || ""), "A4：关键时刻可以翻看（" + (k0 && k0.pos) + "）");
     const total = k0 ? Number(k0.pos.split("/")[1]) : 0;
-    const seen = [];
+    const seen = [], kinds = [];
     for (let i = 0; i < total; i++) {
       if (i > 0) { await pg.click("#rv-km .km-next"); await pg.waitForTimeout(250); }
       const k = await km();
       seen.push(k.ply);
+      kinds.push(k.what);
       const at = await vi();
       assert(at === k.ply + 1, "A4：翻到第 " + (i + 1) + " 个关键时刻，棋盘停在那一步之后（" + at + " = " + (k.ply + 1) + "）");
     }
+    // v10-0-plan A2: the three kinds of moment — a mistake, a chance missed,
+    // a brilliant move — each turn up in the Opera game's
+    assert(kinds.some((x) => /失误/.test(x)) && kinds.some((x) => /错失良机/.test(x)) && kinds.some((x) => /妙着/.test(x)),
+      "A2：关键时刻里失误、错失良机、妙着各有一个（" + kinds.join(" / ") + "）");
     // (without the card there is nothing further to step through)
     if (k0) {
       const wSide = seen.filter((p) => p % 2 === 0).length, bSide = seen.filter((p) => p % 2 === 1).length;
@@ -1522,10 +1528,14 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       const k = await km();
       assert(k.ply === worst && ["why", "retry", "lines"].every((a) => k.acts.includes(a)),
         "A4：每个关键时刻都有「为什么」「再试一次」「看引擎线」（" + k.acts.join(", ") + "）");
+      // v10-0-plan A2: 为什么 is open as the moment comes up — no click
+      const why = (await km()).why;
+      assert(/\d+%/.test(why) && why.length > 16, "A4 / A2：「为什么」默认展开，说清这一着让胜率掉了多少，再给出教练的解释（" + why + "）");
       await pg.click('#rv-km button[data-act="why"]');
       await pg.waitForTimeout(200);
-      const why = (await km()).why;
-      assert(/\d+%/.test(why) && why.length > 16, "A4：「为什么」说清这一着让胜率掉了多少，再给出教练的解释（" + why + "）");
+      assert((await km()).why === "", "A2：再点「为什么」收起");
+      await pg.click('#rv-km button[data-act="why"]');
+      await pg.waitForTimeout(200);
       await pg.click('#rv-km button[data-act="lines"]');
       await pg.waitForTimeout(300);
       const lines = await pg.evaluate(() => ({ pv: !document.getElementById("pv-line").hidden,
@@ -1594,8 +1604,6 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       if (later != null) {
         while (await can("#rv-km .km-prev")) { await pg.click("#rv-km .km-prev"); await pg.waitForTimeout(150); }
         while ((await km()).ply !== later && await can("#rv-km .km-next")) { await pg.click("#rv-km .km-next"); await pg.waitForTimeout(150); }
-        await pg.click('#rv-km button[data-act="why"]');
-        await pg.waitForTimeout(200);
         await pg.click('#rv-km button[data-act="lines"]');
         await pg.waitForTimeout(300);
         const kl = await km();
@@ -1781,6 +1789,91 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(/第 7 回合的 Qe7，你的开局书还没写到这里/.test(n1), "T4：记下之后，指出开局书还没写到的那一步（第 7 回合 Qe7）", n1);
   assert(errsM.length === 0, "M2：人机总结全程没有页面异常 — " + errsM.join(" / "));
   await ctxM.close();
+}
+
+// --- v10-0-plan A1: 分析一局 — a PGN, a Lichess link, a blank analysis board ---
+{
+  const ctxA = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
+  await ctxA.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "ai", difficulty: "casual", humanColor: "w", langId: "zh-CN", soundOn: false, view: "home" }));
+    localStorage.setItem("chess.panelOpen", "1");
+  });
+  await ctxA.addInitScript(() => {
+    window.__asked = [];
+    window.zero = {
+      invoke: (name, p) => {
+        window.__asked.push([name, p]);
+        if (name === "chess.fetchGames") return Promise.resolve({ pgn: window.__lichessPgn || "", count: 1 });
+        return Promise.resolve(true);
+      },
+      on: () => () => {}, off: () => {}, platform: { supports: () => Promise.resolve(false) },
+      clipboard: { readText: () => Promise.resolve(""), writeText: () => Promise.resolve(true) },
+    };
+  });
+  const pg = await ctxA.newPage();
+  const errsA = [];
+  pg.on("pageerror", (e) => errsA.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(900);
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  await pg.evaluate(() => { const E = window.__chess.engine; E.init = () => Promise.resolve(); E.retry = () => {}; E.isReady = () => true; });
+  await scriptOpera(pg);
+  const pgn = '[Event "Opera"]\n[White "Morphy"]\n[Black "Allies"]\n[Result "1-0"]\n\n' +
+    OPERA.map((x, i) => (i % 2 ? "" : (i / 2 + 1) + ". ") + x).join(" ") + " 1-0\n";
+  const note = () => pg.evaluate(() => { const n = document.getElementById("an-note"); return n.hidden ? "" : n.textContent; });
+  // a Chess.com link: no single-game export — the dialog says what to do instead
+  await pg.click("#today-analyse");
+  await pg.fill("#an-text", "https://www.chess.com/game/live/123456789");
+  await pg.click("#an-go");
+  assert(/分享/.test(await note()), "A1：Chess.com 链接 —— 说明去「分享」里复制 PGN", await note());
+  // a Lichess link with the network off: the switch it needs, one click away
+  await pg.fill("#an-text", "https://lichess.org/q7ZvsdUFab12");
+  await pg.click("#an-go");
+  assert(/设置 · 数据/.test(await note()) && await pg.isVisible("#an-net"), "A1：Lichess 链接、没开联网 —— 说要开哪个开关，带去设置的按钮", await note());
+  // PGN: on the board, analysed, the report up — in one click; an engine game
+  // still, but the engine does not play on in it, and it is not filed
+  await pg.fill("#an-text", pgn);
+  await pg.click("#an-go");
+  await pg.waitForFunction(() => !document.getElementById("report-card").hidden, null, { timeout: 20000 }).catch(() => {});
+  const a1 = await pg.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
+    modal: document.getElementById("analyse-modal").classList.contains("show"),
+    report: !document.getElementById("report-card").hidden, plies: document.querySelectorAll(".move-list .mlmove").length,
+    games: (JSON.parse(localStorage.getItem("chess.stats") || "{}").games || []).length }));
+  assert(a1.view === "play" && !a1.modal && a1.report && a1.plies === OPERA.length && a1.games === 0,
+    "A1：粘贴 PGN、点「分析」—— 一步就在棋盘上、报告出来了，不进战绩", JSON.stringify(a1));
+  // the same link with the network on: the native side is asked for that one game
+  // (the settings are read at launch: the switch is turned on, and the page opened again)
+  await pg.evaluate(() => { localStorage.setItem("chess.sync", JSON.stringify({ v: 1, on: true, site: "lichess", user: "" })); });
+  await pg.reload();
+  await pg.waitForTimeout(900);
+  await pg.evaluate((x) => { window.__lichessPgn = x; const E = window.__chess.engine; E.init = () => Promise.resolve(); E.retry = () => {}; E.isReady = () => true; }, pgn);
+  await scriptOpera(pg);
+  await pg.click('#rail button[data-view="library"]');
+  await pg.click("#lib-analyse-one");
+  await pg.fill("#an-text", "https://lichess.org/q7ZvsdUF/black#12");
+  await pg.click("#an-go");
+  await pg.waitForTimeout(700);
+  if (await pg.isVisible("#confirm-modal.show").catch(() => false)) { await pg.click("#confirm-ok"); await pg.waitForTimeout(700); }
+  await pg.waitForFunction(() => !document.getElementById("report-card").hidden, null, { timeout: 20000 }).catch(() => {});
+  const asked = await pg.evaluate(() => window.__asked.filter(([n]) => n === "chess.fetchGames").map(([, p]) => p));
+  assert(asked.length === 1 && asked[0].site === "lichess" && asked[0].game === "q7ZvsdUF",
+    "A1：开了联网，Lichess 链接取的是那一局（只送 8 位编号）", JSON.stringify(asked));
+  // the blank analysis board: a game on the board is asked about first
+  await pg.click('#rail button[data-view="home"]');
+  await pg.click("#today-analyse");
+  await pg.click("#an-board");
+  await pg.waitForTimeout(400);
+  const asks = await pg.isVisible("#confirm-modal.show").catch(() => false);
+  if (asks) { await pg.click("#confirm-ok"); await pg.waitForTimeout(600); }
+  const b = await pg.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
+    plies: document.querySelectorAll(".move-list .mlmove").length, mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode,
+    toast: document.getElementById("toast").textContent }));
+  assert(b.view === "play" && b.plies === 0 && b.mode === "pvp" && /分析棋盘/.test(b.toast),
+    "A1：空白分析棋盘 —— 回到开局局面、双方都由你走，说明它不计入战绩", JSON.stringify(b));
+  assert(errsA.length === 0, "A1：没有页面异常 — " + errsA.join(" / "));
+  await ctxA.close();
 }
 
 // --- v8-2-plan T3: 名局猜着 — a whole classic guessed, scored, and again ---

@@ -8380,7 +8380,8 @@ for (const lang of CONTENT_LANGS) {
   // v8-2-plan V1: and the automation build's sync scenario, which runs only
   // under CHESS_SELFTEST and against the fake server sync.zig's CHESS_SYNC_BASE names
   const callers = [...WEB_MODULES].filter(([file, text]) => /\.fetchGames\(/.test(text) && file !== "host.js").map(([file]) => file).sort();
-  assert(callers.join() === "selftest-scenarios.js,sync-ui.js", "C2: only the sync dialog (and the self-test's sync scenario) calls fetchGames (" + callers.join(", ") + ")");
+  // v10-0-plan A1: …and 分析一局, for one Lichess game by its id, behind the same switch
+  assert(callers.join() === "analyse-entry.js,selftest-scenarios.js,sync-ui.js", "C2: only the sync dialog, 分析一局 (and the self-test's sync scenario) call fetchGames (" + callers.join(", ") + ")");
 }
 
 if (failed) {

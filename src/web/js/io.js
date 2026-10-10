@@ -234,7 +234,12 @@ export function createIO(d) {
    * user "Import PGN — importing replaces the current game" when they clicked
    * a save slot describes the plumbing rather than what they did.
    */
-  async function importPgnText(text, label, prompt) {
+  /**
+   * @param {boolean} [asAnalysis] v10-0-plan A1 (分析一局): the game is on the
+   *   board to be analysed — the engine does not play on in it and it is not
+   *   filed (store.session.analysisBoard); any other import clears that
+   */
+  async function importPgnText(text, label, prompt, asAnalysis) {
     let text0 = (text || "").trim();
     if (!text0) { toast(t("msg.import.empty"), "fix"); return false; }
     // A PGN file may hold a whole database — importing only the last game (the
@@ -307,6 +312,11 @@ export function createIO(d) {
     store.game.selection = null;
     store.game.viewIndex = sanHistory().length;
     store.game.imported = true;
+    // a game from a file is not the one the statistics filed last: without
+    // this, analysing it wrote its accuracy onto that earlier record
+    // (v10-0-plan A1; loadHistoryRecord sets its own id after the import)
+    store.game.recordedId = null;
+    store.session.analysisBoard = !!asAnalysis;
     clearEndingFlags();
     // the file's [Result] survives the import as a terminal state: a decisive
     // result that the board does not explain is a resignation, a draw that

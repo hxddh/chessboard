@@ -812,6 +812,37 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   }
 }
 
+// --- v10-0-plan A2: a move that allows mate is the game's turning point
+{
+  const gctx = loadAppModules(["src/web/js/review.js", "src/web/js/review-grade.js"]);
+  const G = gctx.ChessReviewGrade;
+  // the scholar's mate: 1.e4 e5 2.Bc4 Nc6 3.Qh5 Nf6?? 4.Qxf7# — after Nf6 the
+  // engine says mate in one (a mate score, ±100000 on this scale)
+  const sans = "e4 e5 Bc4 Nc6 Qh5 Nf6 Qxf7#".split(" ");
+  const scalars = [30, 35, 30, 40, 20, 30, 100000, null];
+  const m = G.keyMoments({ sans, scalars, bests: [], seconds: [] }, null, "w", (i) => Math.floor(i / 2) + 1);
+  const nf6 = m.b.find((x) => x.san === "Nf6");
+  assert(!!nf6 && nf6.tag === "??" && nf6.after === 0 && nf6.swing > 40,
+    "A2: the move that allows mate is a key moment, its win chance falling to 0 (" + JSON.stringify(nf6) + ")");
+}
+
+// --- v10-0-plan A1: what 分析一局 was given
+{
+  const actx = loadAppModules(["src/web/js/host.js", "src/web/js/analyse-entry.js"]);
+  const read = actx.readEntry;
+  assert(typeof read === "function", "A1: readEntry is exported");
+  const id = (x) => { const e = read(x); return e.kind === "lichess" ? e.id : e.kind; };
+  assert(id("https://lichess.org/q7ZvsdUF") === "q7ZvsdUF" && id("lichess.org/q7ZvsdUFab12") === "q7ZvsdUF" &&
+    id("https://lichess.org/q7ZvsdUF/black#12") === "q7ZvsdUF" && id("https://lichess.org/embed/game/q7ZvsdUF?theme=auto") === "q7ZvsdUF",
+    "A1: a Lichess link in its several shapes gives the eight-character id");
+  assert(id("https://lichess.org/@/someone") === "pgn" && id("https://lichess.org/study/abcdefgh/ijklmnop") !== "abcdefgh",
+    "A1: a Lichess page that is not a game is not taken for one");
+  assert(id("https://www.chess.com/game/live/123456789") === "chesscom" && id("https://www.chess.com/analysis/game/live/1") === "chesscom",
+    "A1: a Chess.com game link is recognised (and answered with how to get its PGN)");
+  assert(id("") === "empty" && id("1. e4 e5 2. Nf3 *") === "pgn" && read("[Event \"x\"]\n\n1. e4 *").kind === "pgn",
+    "A1: anything else is PGN text");
+}
+
 // --- v10-0-plan T4: a book from the built-in lines, and a game against a book
 {
   const rctx = loadAppModules(["src/web/js/openings.js", "src/web/js/drills.js", "src/web/js/repertoire.js", "src/web/js/rep-seed.js"]);
