@@ -281,9 +281,15 @@ for (const les of LESSONS) {
   const landed = await page.evaluate(() => ({
     mode: document.getElementById("app").getAttribute("data-mode"),
     goal: document.getElementById("puzzle-task").textContent || "",
+    fen: window.__chess.puzzle(),
   }));
-  assert(landed.mode === "puzzle" && landed.goal.includes(withP.practice),
-    `${withP.id}:按下去落在同一母题的题目上`, JSON.stringify(landed));
+  // 10.0 M0: the goal line no longer names the motif (it gave the answer
+  // away), so the puzzle is identified by its position — one of the set the
+  // button draws from, the tactics labelled with the lesson's motif
+  const place = (f) => (f || "").split(" ")[0];
+  const pool = data.CHESS_PUZZLES.filter((p) => p.cat === "tac" && p.motif === withP.practice).map((p) => place(p.fen));
+  assert(landed.mode === "puzzle" && pool.includes(place(landed.fen)) && !landed.goal.includes(withP.practice),
+    `${withP.id}:按下去落在同一母题的题目上(题面不说母题)`, JSON.stringify(landed));
 
   // back to the course for the checks that follow
   await toTrain(page, "course");
