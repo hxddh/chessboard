@@ -4217,6 +4217,15 @@ span[data-icon] { display: inline-grid; place-items: center; }
   .rail-lbl {
     font-size: 0.875rem; line-height: var(--lh-tight);
   }
+  /* …down to 600px: six names do not fit a phone's row, which is icons
+     only, each named by its title and, for a screen reader, by the label
+     clipped rather than removed */
+  @media (max-width: 599px) {
+    .rail-lbl {
+      position: absolute; width: 1px; height: 1px; overflow: hidden;
+      clip: rect(0 0 0 0); white-space: nowrap;
+    }
+  }
   /* 偏好 stays with the others: pushed to the far end it sat under the panel */
   .rail-end { margin-top: 0; }
 }
