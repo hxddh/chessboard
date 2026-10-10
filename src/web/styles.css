@@ -3736,6 +3736,11 @@ span[data-icon] { display: inline-grid; place-items: center; }
    and those arrived in 16 (Codex, #84). */
 .tool-lbl { display: none; }
 .side-wide .tool-row { column-gap: 2px; row-gap: 4px; }
+/* 10.0 M0: five places that stay put — a tool not available now (复制 and
+   导出 before the first move) keeps its slot, unseen and out of reach, so
+   开局 and 更多 do not stand at the two ends of the row at move 0 and slide
+   inwards with the first move */
+.side-wide .tool-row > .tool-ic[hidden] { display: flex; visibility: hidden; }
 .side-wide .tool-row .tool-ic {
   flex: 1 1 0; min-width: 0; width: auto;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
