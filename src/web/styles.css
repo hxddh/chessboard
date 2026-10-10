@@ -20,6 +20,45 @@
         U+2212, U+2215, U+FEFF, U+FFFD;
     }
 
+    /* 10.1 F1: the punctuation a Chinese or Japanese sentence uses — · — …
+       and the curly quotes — sits in Inter's range above (U+00B7, U+2000–206F),
+       so 「准备开始 · 与引擎对弈」, 「——」 and 「……」 were drawn in Latin forms: the
+       ellipsis on the baseline, the dash short and heavy, the dot low. These
+       two faces carry only those code points, from the system's own CJK face
+       (local(): nothing is downloaded), and open the Chinese and Japanese
+       stacks so they win for exactly these characters. Two cuts each, for the
+       two weights the interface uses. Where no listed face is installed the
+       face fails and the stack goes on as before. The English stack does not
+       use them: there the Latin forms are the right ones. */
+    @font-face {
+      font-family: "CJK Punct SC"; font-weight: 100 500;
+      src: local("PingFangSC-Regular"), local("PingFang SC Regular"), local("HiraginoSansGB-W3"),
+        local("Microsoft YaHei UI"), local("Microsoft YaHei"), local("MicrosoftYaHei"),
+        local("Noto Sans CJK SC Regular"), local("NotoSansCJKsc-Regular");
+      unicode-range: U+00B7, U+2013-2014, U+2018-2019, U+201C-201D, U+2026;
+    }
+    @font-face {
+      font-family: "CJK Punct SC"; font-weight: 501 900;
+      src: local("PingFangSC-Semibold"), local("PingFang SC Semibold"), local("HiraginoSansGB-W6"),
+        local("Microsoft YaHei UI Bold"), local("Microsoft YaHei Bold"), local("MicrosoftYaHei-Bold"),
+        local("Noto Sans CJK SC Bold"), local("NotoSansCJKsc-Bold");
+      unicode-range: U+00B7, U+2013-2014, U+2018-2019, U+201C-201D, U+2026;
+    }
+    @font-face {
+      font-family: "CJK Punct JA"; font-weight: 100 500;
+      src: local("HiraginoSans-W3"), local("HiraKakuProN-W3"), local("Yu Gothic UI"),
+        local("YuGothic-Medium"), local("Yu Gothic Medium"), local("Meiryo"),
+        local("Noto Sans CJK JP Regular"), local("NotoSansCJKjp-Regular");
+      unicode-range: U+00B7, U+2013-2014, U+2018-2019, U+201C-201D, U+2026;
+    }
+    @font-face {
+      font-family: "CJK Punct JA"; font-weight: 501 900;
+      src: local("HiraginoSans-W6"), local("HiraKakuProN-W6"), local("Yu Gothic UI Bold"),
+        local("YuGothic-Bold"), local("Yu Gothic Bold"), local("Meiryo Bold"),
+        local("Noto Sans CJK JP Bold"), local("NotoSansCJKjp-Bold");
+      unicode-range: U+00B7, U+2013-2014, U+2018-2019, U+201C-201D, U+2026;
+    }
+
     /* ------------------------------------------------------------------
        This file is sectioned by COMPONENT, not by version.
 
@@ -731,8 +770,10 @@
          different names, which is four kinds of emphasis in one panel. */
       /* 9.0 V2: Chinese and Japanese set at 1.6 (prose 1.75), Latin at
          1.45 (prose 1.6) — see html:lang(en) below; headings 1.25 */
+      /* 10.1 F5: interface text at 1.5 — a button's label, a list row, a
+         card's line — and 1.75 kept for the paragraphs that read as prose */
       --lh-tight: 1.25;
-      --lh-body: 1.6;
+      --lh-body: 1.5;
       --lh-prose: 1.75;
       --ease: cubic-bezier(0.22, 1, 0.36, 1);
       /* Three durations, and no fourth. 1.12 collapsed font-size, 1.13
@@ -769,13 +810,23 @@
          a shade greyer than the Chinese beside it. The CJK faces follow for
          everything Inter's unicode-range does not cover. The figures are
          Inter's tabular ones (--font-num is this face; every rule that sets
-         it asks for tabular-nums). */
-      --font-ui: "Inter Var", "PingFang SC", "Hiragino Sans GB", "Hiragino Sans",
+         it asks for tabular-nums).
+         10.1 F2: -apple-system ahead of it. Only WebKit knows the keyword, so
+         on the Mac (WKWebView) every Latin letter and figure is SF — the face
+         PingFang was drawn beside, with optical sizes, tightening on its own
+         at 30px — and Windows (WebView2, Chromium) skips it and keeps Inter,
+         which is where YaHei's grey Latin was the problem. No platform code. */
+      --font-ui: "CJK Punct SC", -apple-system, "Inter Var", "PingFang SC", "Hiragino Sans GB", "Hiragino Sans",
         "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC",
         "Source Han Sans SC", system-ui, sans-serif;
       --font-num: var(--font-ui);
     }
-    html:lang(en) { --lh-body: 1.45; --lh-prose: 1.6; }
+    html:lang(en) {
+      --lh-body: 1.45; --lh-prose: 1.6;
+      --font-ui: -apple-system, "Inter Var", "PingFang SC", "Hiragino Sans GB", "Hiragino Sans",
+        "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC",
+        "Source Han Sans SC", system-ui, sans-serif;
+    }
     * { box-sizing: border-box; }
     html, body {
       margin: 0; height: 100%;
@@ -811,7 +862,7 @@
     html:lang(ja) button,
     html:lang(ja) textarea,
     html:lang(ja) select {
-      font-family: "Inter Var", "Hiragino Kaku Gothic ProN", "Hiragino Sans",
+      font-family: "CJK Punct JA", -apple-system, "Inter Var", "Hiragino Kaku Gothic ProN", "Hiragino Sans",
         "Yu Gothic Medium", "Yu Gothic", "Noto Sans JP", "Noto Sans CJK JP",
         "Meiryo", system-ui, sans-serif;
     }
@@ -820,11 +871,15 @@
        9.0 V2: Inter still first — it covers Latin only, so the kana and
        kanji fall through to the Japanese faces after it */
     html:lang(ja) {
-      --font-ui: "Inter Var", "Hiragino Kaku Gothic ProN", "Hiragino Sans",
+      --font-ui: "CJK Punct JA", -apple-system, "Inter Var", "Hiragino Kaku Gothic ProN", "Hiragino Sans",
         "Yu Gothic Medium", "Yu Gothic", "Noto Sans JP", "Noto Sans CJK JP",
         "Meiryo", system-ui, sans-serif;
     }
 
+    /* 10.1 F3: the browser's bold is 700, a weight this interface does not
+       use; seventy-five <b>, <strong> and headings were drawn at it wherever
+       no rule said otherwise. They take the one emphasis there is. */
+    b, strong, h1, h2, h3, h4 { font-weight: 600; }
     #app { position: relative; height: 100%; width: 100%; overflow: hidden; }
     .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
 
@@ -883,7 +938,7 @@
       background: transparent; border-color: transparent; color: var(--muted);
     }
     .icon-btn:hover { color: var(--text); }
-    .tool-btn { height: var(--ctl-h-sm); padding: 0 12px; font-size: 0.875rem; font-weight: 600; line-height: var(--lh-tight); }
+    .tool-btn { height: var(--ctl-h-sm); padding: 0 12px; font-size: 0.875rem; font-weight: 400; line-height: var(--lh-tight); }
     /* 悔棋 and 提示 on the opponent's strip (7.9 §1a; they stood in the bar
        over the board until then, see .ps-tools). Scoped, because .tool-btn is
        also the panel's button, which is --ctl-h.
@@ -917,7 +972,7 @@
        buttons depending on which family they were built from. */
     .tool-btn.primary {
       background: var(--accent);
-      color: var(--on-accent); font-weight: 600;
+      color: var(--on-accent); font-weight: 400;
       border-color: transparent;
     }
     .tool-btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--text)); }
@@ -957,7 +1012,7 @@
       padding: 0 16px;
       align-items: center; justify-content: center;
       text-align: center;
-      font-size: 0.875rem; font-weight: 600; line-height: var(--lh-body);
+      font-size: 0.875rem; font-weight: 400; line-height: var(--lh-body);
       color: var(--text);
       pointer-events: none;
     }
@@ -1246,7 +1301,7 @@
     .taken-p svg { width: 100%; height: 100%; display: block; }
     .taken-diff {
       font-family: var(--font-num); font-variant-numeric: tabular-nums;
-      font-size: 0.75rem; font-weight: 600; color: var(--muted);
+      font-size: 0.75rem; font-weight: 400; color: var(--muted);
       margin-left: 4px;
     }
 
@@ -1526,7 +1581,7 @@
     .theme-row button, .act-btn {
       flex: 1;
       appearance: none;
-      font: inherit; font-size: 0.875rem; font-weight: 600;
+      font: inherit; font-size: 0.875rem; font-weight: 400;
       white-space: nowrap;
       cursor: pointer;
       transition: border-color var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease), transform var(--dur-quick) var(--ease);
@@ -1663,7 +1718,7 @@
       color: var(--text);
       background: var(--accent-soft);
       box-shadow: inset 0 0 0 1px var(--accent-line);
-      font-weight: 600;
+      font-weight: 400;
     }
     /* v8-3-plan T1 (M2 评审 P2-1): a set of 看 N 步 / 盲走 is being made —
        its band, the engine, the first question's searches — so its button
@@ -1926,7 +1981,7 @@
       color: var(--on-accent);
       background: var(--accent);
       border-color: transparent;
-      font-weight: 600;
+      font-weight: 400;
     }
     .act-btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--text)); border-color: transparent; }
     /* Not dimmed — gone. `opacity: 0.3` leaves a hole in the row that still
@@ -2013,7 +2068,7 @@
 
     /* learn mode: lesson panel */
     .lesson-title {
-      font-size: 1rem; font-weight: 600; color: var(--text);
+      font-size: 1.125rem; font-weight: 600; color: var(--text);
       margin-bottom: 8px; line-height: var(--lh-tight);
     }
     .lesson-text p {
@@ -2031,7 +2086,7 @@
       border: 1px solid var(--card-border);
       background: var(--card);
       border-radius: var(--radius-md);
-      font-size: 0.875rem; font-weight: 600; color: var(--text); line-height: var(--lh-body);
+      font-size: 0.875rem; font-weight: 400; color: var(--text); line-height: var(--lh-body);
     }
     .lesson-controls {
       display: flex; gap: 8px; margin-bottom: 12px;
@@ -2085,7 +2140,7 @@
     /* a part of the course is a section heading like any other (9.0 V1) */
     .lesson-part {
       margin: 16px 0 4px;
-      font-size: 0.8125rem; font-weight: 600;
+      font-size: 0.8125rem; font-weight: 400;
       color: var(--muted);
     }
     .lesson-list { display: flex; flex-direction: column; gap: 2px; }
@@ -2147,7 +2202,7 @@
     .toast-action {
       appearance: none; background: transparent;
       border: 1px solid currentColor;
-      color: inherit; font: inherit; font-size: 0.8125rem; font-weight: 600;
+      color: inherit; font: inherit; font-size: 0.8125rem; font-weight: 400;
       line-height: var(--lh-tight);
       padding: 0 8px; border-radius: var(--radius-sm);
       flex: none; cursor: pointer; opacity: 0.85;
@@ -2280,7 +2335,7 @@
       from { opacity: 0; transform: translateY(8px) scale(0.98); }
       to { opacity: 1; transform: none; }
     }
-    .modal h3 { margin: 0 0 12px; font-size: 1rem; font-weight: 600; }
+    .modal h3 { margin: 0 0 12px; font-size: 1.125rem; font-weight: 600; line-height: var(--lh-tight); }
     .modal table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
     .modal td { padding: 8px 0; border-bottom: 1px solid var(--card-border); }
     .modal td:first-child {
@@ -2358,7 +2413,7 @@
     /* a badge (9.0 V1: 11/600, neutral — a word, not the accent) */
     .pick-tag {
       display: inline-block; margin-left: 8px; padding: 0 8px;
-      font-size: 0.6875rem; font-weight: 600; line-height: var(--lh-body);
+      font-size: 0.75rem; font-weight: 400; line-height: var(--lh-body);
       color: var(--muted); background: var(--btn-ghost);
       border-radius: 999px; vertical-align: 1px;
     }
@@ -2724,7 +2779,7 @@
   top: calc(var(--wood-pad) + 8px);
   padding: 2px 8px;
   border-radius: var(--radius-sm);
-  font-size: 0.6875rem; line-height: var(--lh-body); font-weight: 600;
+  font-size: 0.75rem; line-height: var(--lh-body); font-weight: 400;
   color: var(--bg); background: var(--text);
   opacity: 0.92;
   pointer-events: none;
@@ -2736,7 +2791,7 @@
   top: calc(var(--wood-pad) + 34px);
   appearance: none; border: 1px solid var(--line-strong); cursor: pointer;
   padding: 2px 8px; border-radius: var(--radius-sm);
-  font: inherit; font-size: 0.6875rem; line-height: var(--lh-body); font-weight: 600;
+  font: inherit; font-size: 0.75rem; line-height: var(--lh-body); font-weight: 400;
   color: var(--text); background: var(--panel);
 }
 .preview-try:hover { background: var(--btn-hover); }
@@ -2997,7 +3052,7 @@
     .pv-eval {
       display: inline-block; min-width: 42px; margin-right: 4px; padding: 2px 4px;
       border-radius: var(--radius-sm); text-align: center;
-      font-size: 0.75rem; font-weight: 600; line-height: var(--lh-tight);
+      font-size: 0.75rem; font-weight: 400; line-height: var(--lh-tight);
       color: var(--muted); box-shadow: inset 0 0 0 1px var(--line);
     }
     .pv-eval:empty::before { content: "\00a0"; }
@@ -3021,7 +3076,7 @@
        11px in a 21px box. */
     .pv-act {
       display: inline-flex; align-items: center; justify-content: center;
-      font: inherit; font-size: 0.875rem; line-height: var(--lh-tight); font-weight: 600;
+      font: inherit; font-size: 0.875rem; line-height: var(--lh-tight); font-weight: 400;
       color: var(--text); background: var(--btn);
       border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
       height: var(--ctl-h-sm); padding: 0 12px; margin-left: 4px; cursor: pointer;
@@ -3087,7 +3142,7 @@
     .curve-plot { display: contents; }
     .curve-cap {
       grid-column: 1 / -1; margin-bottom: 8px;
-      font-size: 0.8125rem; font-weight: 600; color: var(--muted); line-height: var(--lh-tight);
+      font-size: 0.8125rem; font-weight: 400; color: var(--muted); line-height: var(--lh-tight);
     }
     .curve-y {
       display: flex; flex-direction: column; justify-content: space-between;
@@ -3109,7 +3164,7 @@
     .rv-full > summary {
       display: flex; align-items: center; gap: 8px;
       min-height: var(--row-h); cursor: pointer; list-style: none;
-      font-size: 0.875rem; font-weight: 600; color: var(--muted); line-height: var(--lh-tight);
+      font-size: 0.875rem; font-weight: 400; color: var(--muted); line-height: var(--lh-tight);
     }
     .rv-full > summary::-webkit-details-marker { display: none; }
     .rv-full > summary::after {
@@ -3129,7 +3184,7 @@
       border-radius: var(--radius-md);
     }
     .km-head { display: flex; align-items: center; gap: 8px; }
-    .km-h { margin: 0; font-size: 0.8125rem; font-weight: 600; color: var(--muted); }
+    .km-h { margin: 0; font-size: 0.8125rem; font-weight: 400; color: var(--muted); }
     .km-pos { margin-left: auto; font-size: 0.75rem; color: var(--muted); }
     .km-step {
       appearance: none; display: inline-flex; align-items: center; justify-content: center;
@@ -3155,7 +3210,7 @@
     .km-why { margin: 8px 0 0; color: var(--muted); }
     .km-coach { color: var(--text); }
     #rv-learn-row { margin-top: 8px; }
-    .rt-prog { font-size: 0.75rem; font-weight: 600; color: var(--muted); }
+    .rt-prog { font-size: 0.75rem; font-weight: 400; color: var(--muted); }
 
     /* Achievement grouping (1.24): a wall of padlocks says "you have nothing";
        a group header plus the nearest one says "start here". */
@@ -3172,7 +3227,7 @@
       font-size: 0.875rem; line-height: var(--lh-body); color: var(--text);
     }
     .ach-group {
-      margin: 16px 0 4px; font-size: 0.8125rem; font-weight: 600; color: var(--muted);
+      margin: 16px 0 4px; font-size: 0.8125rem; font-weight: 400; color: var(--muted);
     }
     .ach-group:first-child { margin-top: 0; }
 
@@ -3228,7 +3283,7 @@
     /* 7.8 §2: one step up the type scale (11 → 12px) */
     .eval-bar-text {
       position: absolute; right: 0;
-      font-size: 0.75rem; font-weight: 600; line-height: var(--lh-tight);
+      font-size: 0.75rem; font-weight: 400; line-height: var(--lh-tight);
       color: var(--muted); white-space: nowrap;
       bottom: calc(100% + 2px);
     }
@@ -3263,7 +3318,7 @@
       border-radius: var(--radius-md);
     }
     .acc-cap {
-      font-size: 0.8125rem; font-weight: 600; color: var(--muted);
+      font-size: 0.8125rem; font-weight: 400; color: var(--muted);
       line-height: var(--lh-tight);
     }
     .acc-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
@@ -3326,7 +3381,7 @@
       background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius-md);
     }
     .rv-mistakes > .rv-moments { margin-top: 0; border-top: 0; padding-top: 0; }
-    .rv-moments-cap { font-size: 0.8125rem; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+    .rv-moments-cap { font-size: 0.8125rem; font-weight: 400; color: var(--muted); margin-bottom: 4px; }
     .rv-moment {
       display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px;
       font-size: 0.875rem; line-height: var(--lh-body); padding: 2px 0;
@@ -3351,9 +3406,9 @@
       font-size: 0.875rem; line-height: var(--lh-body);
     }
     .retry-box p { margin: 0 0 4px; }
-    .rt-ask { font-weight: 600; }
-    .rt-verdict.is-right { color: var(--win); font-weight: 600; }
-    .rt-verdict.is-wrong { color: var(--judge-bad); font-weight: 600; }
+    .rt-ask { font-weight: 400; }
+    .rt-verdict.is-right { color: var(--win); font-weight: 400; }
+    .rt-verdict.is-wrong { color: var(--judge-bad); font-weight: 400; }
     .rt-why { color: var(--muted); }
     .rt-acts { display: flex; gap: 8px; margin-top: 8px; }
     .rt-acts .pv-act { margin-left: 0; }
@@ -3362,7 +3417,7 @@
     /* the "what next?" suggestion under the statistics */
     .stat-rec { margin-top: 8px; color: var(--text); }
 
-    .mvtag { margin-left: 2px; font-weight: 600; font-size: 0.6875rem; }
+    .mvtag { margin-left: 2px; font-weight: 400; font-size: 0.6875rem; }
     .mvtag.t-soft { color: var(--judge-soft); }
     .mvtag.t-mid { color: var(--judge-mid); }
     .mvtag.t-bad { color: var(--judge-bad); }
@@ -3535,7 +3590,7 @@
        it is the emphasis that changes, not the affordance. */
     .row-act {
       appearance: none; cursor: pointer; font: inherit;
-      font-size: 0.875rem; font-weight: 600; line-height: var(--lh-tight);
+      font-size: 0.875rem; font-weight: 400; line-height: var(--lh-tight);
       white-space: nowrap; padding: 0 12px;
       color: var(--muted);
       background: var(--btn);
@@ -3677,7 +3732,7 @@ kbd.accel {
   display: grid; gap: 8px 16px; margin-top: 16px;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
 }
-.me-sw-h { margin: 0 0 4px; font-size: 0.8125rem; font-weight: 600; color: var(--muted); }
+.me-sw-h { margin: 0 0 4px; font-size: 0.8125rem; font-weight: 400; color: var(--muted); }
 .me-row {
   display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 8px;
   padding: 2px; font-size: 0.875rem;
@@ -3774,7 +3829,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 }
 .side-wide .tool-row:has(> .tool-txt:not([hidden]))::after { content: ""; flex-basis: 100%; order: 1; }
 .side-wide .tool-row .tool-txt { order: 2; }
-.tool-txt { padding: 0 12px; font-size: 0.875rem; font-weight: 600; margin-left: auto; }
+.tool-txt { padding: 0 12px; font-size: 0.875rem; font-weight: 400; margin-left: auto; }
 .tool-ic:hover, .tool-txt:hover { background: var(--btn-ghost); color: var(--text); }
 .tool-ic[aria-pressed="true"], .tool-ic[aria-expanded="true"] {
   color: var(--text);
@@ -3787,7 +3842,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
    9.0 V1: the fourth kind, the same everywhere — the danger colour and its
    hairline, filled only faintly under the pointer */
 .tool-btn.danger {
-  background: transparent; color: var(--danger); font-weight: 600;
+  background: transparent; color: var(--danger); font-weight: 400;
   border-color: color-mix(in srgb, var(--danger) 45%, transparent);
 }
 .tool-btn.danger:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
@@ -3825,7 +3880,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   display: grid; place-items: center;
   border-radius: var(--radius-sm);
   background: var(--card); border: 1px solid var(--card-border);
-  font-size: 0.875rem; font-weight: 600; line-height: var(--lh-tight); color: var(--text);
+  font-size: 0.875rem; font-weight: 400; line-height: var(--lh-tight); color: var(--text);
 }
 .go-card.won .go-mark { color: var(--win); }
 .go-txt { flex: 1 1 auto; min-width: 0; height: 32px; display: flex; flex-direction: column; justify-content: center; }
@@ -3840,7 +3895,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   flex: none; height: var(--ctl-h-sm); padding: 0 8px; align-self: center;
   display: inline-flex; align-items: center; gap: 4px;
   border-radius: var(--radius-sm); background: var(--card); border: 1px solid var(--card-border);
-  font-size: 0.75rem; font-weight: 600; line-height: var(--lh-tight); color: var(--text);
+  font-size: 0.75rem; font-weight: 400; line-height: var(--lh-tight); color: var(--text);
   white-space: nowrap;
 }
 .go-ach[hidden] { display: none; }
@@ -3901,7 +3956,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .pz-fb-head { margin: 0; font-size: 1rem; font-weight: 600; line-height: var(--lh-tight); color: var(--text); }
 .pz-fb-sub { margin: 4px 0 0; font-size: 0.875rem; line-height: var(--lh-body); color: var(--muted); }
 .pz-fb-sub:empty { display: none; }
-.pz-fb-meta { font-size: 0.75rem; font-weight: 600; color: var(--muted); text-align: right; white-space: nowrap; }
+.pz-fb-meta { font-size: 0.75rem; font-weight: 400; color: var(--muted); text-align: right; white-space: nowrap; }
 .pz-fb-meta.up { color: var(--win); }
 .pz-fb > .act-btn { grid-column: 1 / -1; }
 
@@ -4055,7 +4110,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .pz-review:hover, .pz-tile:hover { background: color-mix(in srgb, var(--card) 88%, var(--text)); }
 .pz-review.active, .pz-tile.active { background: var(--accent-soft); }
 .pz-review-ic, .pz-tile-ic { display: inline-flex; width: 20px; height: 20px; color: var(--muted); }
-.pz-review-txt b { display: block; font-size: 0.875rem; font-weight: 600; }
+.pz-review-txt b { display: block; font-size: 0.875rem; font-weight: 400; }
 .pz-review-txt small { display: block; font-size: 0.75rem; color: var(--muted); }
 .pz-review-n { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
 .pz-groups-sec { display: grid; gap: 8px; margin-top: 12px; }
@@ -4171,7 +4226,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 }
 .rail-btn:hover { color: var(--text); }
 .rail-btn:hover .rail-ic { background: var(--btn-ghost); }
-.rail-btn[aria-current="page"] { color: var(--text); font-weight: 600; }
+.rail-btn[aria-current="page"] { color: var(--text); font-weight: 400; }
 .rail-btn[aria-current="page"] .rail-ic {
   background: var(--accent-soft);
   color: var(--accent);
@@ -4281,7 +4336,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .today-hero { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 24px; align-items: start; }
 .today-hero-text { display: grid; gap: 8px; align-content: start; min-width: 0; }
 .today-hero-text > .side-h { margin: 0; }
-.today-hero-title { margin: 0; font-size: 1rem; font-weight: 600; line-height: var(--lh-tight); }
+.today-hero-title { margin: 0; font-size: 1.125rem; font-weight: 600; line-height: var(--lh-tight); }
 .today-hero .daily-plan { margin: 4px 0 0; }
 .today-acts { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .today-acts .tool-txt { margin-left: 0; }
@@ -4318,13 +4373,13 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .today-games li { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 8px 16px; }
 .today-games li + li { border-top: 1px solid var(--line); }
 .today-games-card > .today-meta { padding: 16px; }
-.today-res { font-size: 0.75rem; font-weight: 600; text-align: center; }
+.today-res { font-size: 0.75rem; font-weight: 400; text-align: center; }
 .today-res.win { color: var(--success); }
 .today-res.loss { color: var(--danger); }
 .today-res.draw { color: var(--muted); }
 .today-who { display: grid; min-width: 0; }
 .today-who b, .today-who small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.today-who b { font-size: 0.875rem; font-weight: 600; }
+.today-who b { font-size: 0.875rem; font-weight: 400; }
 .today-who small { font-size: 0.75rem; color: var(--muted); }
 .today-d { font-size: 0.75rem; }
 .today-d.neg { color: var(--danger); }
@@ -4395,7 +4450,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
 }
 .set-cat-ic { display: inline-flex; width: 20px; height: 20px; margin-top: 2px; }
-.set-cat-txt b { display: block; font-weight: 600; color: var(--text); font-size: 0.875rem; line-height: var(--lh-body); }
+.set-cat-txt b { display: block; font-weight: 400; color: var(--text); font-size: 0.875rem; line-height: var(--lh-body); }
 .set-cat-txt small {
   display: block; font-size: 0.75rem; line-height: var(--lh-body);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -4501,7 +4556,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 }
 .info-opening {
   margin: 0; padding: 0 4px;
-  font-size: 0.875rem; font-weight: 600; line-height: var(--lh-body); color: var(--text);
+  font-size: 0.875rem; font-weight: 400; line-height: var(--lh-body); color: var(--text);
 }
 .info-opening[hidden] { display: none; }
 .info-opening.vacant { visibility: hidden; }
@@ -4567,11 +4622,11 @@ span[data-icon] { display: inline-grid; place-items: center; }
   border-radius: var(--radius-sm); cursor: pointer;
 }
 .xp-row:hover { background: var(--btn-ghost); }
-.xp-san { display: flex; align-items: center; gap: 4px; font-weight: 600; white-space: nowrap; }
+.xp-san { display: flex; align-items: center; gap: 4px; font-weight: 400; white-space: nowrap; }
 /* 9.0 V1: badges, 11/600 — 「书」 neutral, 「我的」 (below) the selected tint */
 .xp-book {
   padding: 0 4px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
-  font-size: 0.6875rem; font-weight: 600; color: var(--muted);
+  font-size: 0.6875rem; font-weight: 400; color: var(--muted);
 }
 .xp-n { text-align: right; color: var(--muted); font-size: 0.75rem; }
 .xp-bar {
@@ -4593,13 +4648,13 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .xp-mine {
   padding: 0 4px; border: 1px solid var(--accent-line); border-radius: var(--radius-sm);
   background: var(--accent-soft); color: var(--text);
-  font-size: 0.6875rem; font-weight: 600;
+  font-size: 0.6875rem; font-weight: 400;
 }
 .xp-tog {
   appearance: none; flex: none; width: var(--ctl-h-sm); height: var(--ctl-h-sm);
   display: flex; align-items: center; justify-content: center;
   border: 1px solid var(--card-border); border-radius: var(--radius-sm);
-  background: transparent; color: var(--muted); font: inherit; font-weight: 600; cursor: pointer;
+  background: transparent; color: var(--muted); font: inherit; font-weight: 400; cursor: pointer;
 }
 .xp-tog[aria-pressed="true"] { border-color: var(--accent-line); background: var(--accent-soft); color: var(--text); }
 .xp-tog:hover { background: var(--btn-ghost); }

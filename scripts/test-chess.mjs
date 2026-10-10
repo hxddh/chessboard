@@ -1916,7 +1916,9 @@ for (const lang of CONTENT_LANGS) {
   // every button · 12 what is said beside it — plus 13 for the two heading
   // levels (section 600, field label 400) and 11 for coordinates and badges
   // only. 15 and 19 had no role and left; 12 came back as the aside.
-  const TYPE = new Set(["0.6875rem", "0.75rem", "0.8125rem", "0.875rem", "1rem", "1.875rem"]);
+  // 10.1 F4: 18 for a card's, a dialog's and a lesson's title — the step
+  // between 16 and 30 a heading had to make up for with weight
+  const TYPE = new Set(["0.6875rem", "0.75rem", "0.8125rem", "0.875rem", "1rem", "1.125rem", "1.875rem"]);
   const badType = [...stripped.matchAll(/font-size:\s*([^;{}]+);/g)]
     .map((m) => m[1].trim())
     .filter((v) => /^\d/.test(v) && !TYPE.has(v));
@@ -1925,7 +1927,7 @@ for (const lang of CONTENT_LANGS) {
   // design-constraints.md: 字号 7 档、行高 3 档、时长 3 档 —— 不要新增档位.
   // The membership sets above are the scale, so widening one is how a step
   // gets added: this makes that edit fail here rather than pass quietly.
-  assert(TYPE.size === 6, "the type scale still has six steps (" + TYPE.size + ")");
+  assert(TYPE.size === 7, "the type scale still has seven steps (" + TYPE.size + ")");
 
   // The bundle targets Safari 15 (scripts/bundle.mjs), and container queries
   // arrived in Safari 16: a rule inside @container is simply not there on
@@ -2003,9 +2005,21 @@ for (const lang of CONTENT_LANGS) {
       /SIL Open Font License/.test(fs.readFileSync(path.join(root, "src/web/fonts/Inter-OFL.txt"), "utf8")),
       "…with its SIL OFL beside it");
     const ui = /--font-ui:\s*([^;]+);/.exec(stripped);
-    assert(ui && /^"Inter Var",\s*"PingFang SC"/.test(ui[1].trim()), "the interface stack opens Inter → PingFang SC (" + (ui && ui[1].slice(0, 40)) + ")");
+    // 10.1 F1/F2: the CJK punctuation face first (Chinese, Japanese), then
+    // -apple-system (WebKit only: SF on the Mac, skipped on Windows), then Inter
+    assert(ui && /^"CJK Punct SC",\s*-apple-system,\s*"Inter Var",\s*"PingFang SC"/.test(ui[1].trim()),
+      "the interface stack opens CJK punctuation → -apple-system → Inter → PingFang SC (" + (ui && ui[1].slice(0, 60)) + ")");
     const ja = /html:lang\(ja\)\s*\{\s*--font-ui:\s*([^;]+);/.exec(stripped);
-    assert(ja && /^"Inter Var",\s*"Hiragino Kaku Gothic ProN"/.test(ja[1].trim()), "…and the Japanese one Inter → the Japanese faces");
+    assert(ja && /^"CJK Punct JA",\s*-apple-system,\s*"Inter Var",\s*"Hiragino Kaku Gothic ProN"/.test(ja[1].trim()),
+      "…and the Japanese one: its punctuation face → -apple-system → Inter → the Japanese faces");
+    const en = /html:lang\(en\)\s*\{[^}]*--font-ui:\s*([^;]+);/.exec(stripped);
+    assert(en && /^-apple-system,\s*"Inter Var"/.test(en[1].trim()) && !/CJK Punct/.test(en[1]),
+      "…and the English one has no CJK punctuation face: there the Latin forms are right");
+    // the punctuation faces carry the punctuation and nothing else
+    const punct = [...stripped.matchAll(/@font-face\s*\{([^}]*font-family:\s*"CJK Punct (?:SC|JA)"[^}]*)\}/g)].map((m) => m[1]);
+    assert(punct.length === 4 && punct.every((f) => /unicode-range:\s*U\+00B7, U\+2013-2014, U\+2018-2019, U\+201C-201D, U\+2026;/.test(f) &&
+      /src:\s*local\(/.test(f) && !/url\(/.test(f)),
+      "four punctuation faces (two languages × two weights), local() only, · – — ‘ ’ “ ” … and nothing else (" + punct.length + ")");
     assert(/text-autospace:\s*ideograph-alpha/.test(stripped), "text-autospace is on where it is supported");
     const sync = fs.readFileSync(path.join(root, "scripts/sync-dist.mjs"), "utf8");
     assert(/"src\/web\/fonts\/inter-latin-wght-normal\.woff2", "fonts\/inter-latin-wght-normal\.woff2"/.test(sync) &&
@@ -2056,6 +2070,14 @@ for (const lang of CONTENT_LANGS) {
     const bad = ws.filter((w) => !["400", "600"].includes(w));
     assert(bad.length === 0,
       "two weights only" + (bad.length ? " — also found: " + [...new Set(bad)].join(", ") : ""));
+    // 10.1 F3: and the second one is rare. 8.4–10.0 set 72 rules in 600 —
+    // every button, tab, tag and label — so nothing stood out and a Chinese
+    // panel read as bold throughout. 600 is for titles, section heads, the
+    // numbers that matter and the current item; this only shrinks.
+    const strong = ws.filter((w) => w === "600").length;
+    assert(strong <= 30, "600 is the exception, not the voice: " + strong + " rules (≤ 30)");
+    assert(/\n\s*b, strong, h1, h2, h3, h4 \{ font-weight: 600; \}/.test(stripped),
+      "…and <b>, <strong> and headings take it too, not the browser's 700");
   }
 
   // The action rows, and the two ways this has been got wrong. As
@@ -2095,8 +2117,8 @@ for (const lang of CONTENT_LANGS) {
     assert(/\.theme-row button,\s*\.act-btn \{/.test(stripped),
       "the segment control and the action button are declared together, not twice");
     const box = /\.theme-row button,\s*\.act-btn \{([\s\S]*?)\}/.exec(stripped);
-    assert(box && /white-space:\s*nowrap/.test(box[1]) && /font-size:\s*0\.875rem/.test(box[1]) && /font-weight:\s*600/.test(box[1]),
-      "…one line, 14/600, for both (9.0 V1: a label never wraps — a row that cannot hold it steps its columns down)");
+    assert(box && /white-space:\s*nowrap/.test(box[1]) && /font-size:\s*0\.875rem/.test(box[1]) && /font-weight:\s*400/.test(box[1]),
+      "…one line, 14/400, for both (9.0 V1: a label never wraps — a row that cannot hold it steps its columns down; 10.1 F3: a control's label is regular, as the system's are)");
     assert(!/overflow-wrap:\s*break-word|hyphens:\s*auto/.test((/\.theme-row button,\s*\.act-btn \{[^}]*\}\s*(\.theme-row button,\s*\.act-btn \{[^}]*\})?/.exec(stripped) || [""])[0]),
       "…and no rule left that breaks a label over two lines");
     const tray = /\n    \.theme-row \{([^}]*)\}/.exec(stripped);
