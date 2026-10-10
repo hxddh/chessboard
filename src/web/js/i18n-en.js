@@ -674,6 +674,7 @@
       "rv.sum.calm": "No move in this game let either side's chance to win slip by much.",
       "rv.full": "Full report",
       "curve.best": "best was {0}",
+      "go.ratingProv": "Game rating {0}",
       "nav.me": "Me", "tip.prefs": "Settings (⌘, / Ctrl+,)",
       "prefs.look": "Appearance", "side.display": "Display",
       "ng.mode": "Opponent", 

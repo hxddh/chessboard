@@ -706,6 +706,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "rv.sum.calm": "全盘没有哪一步让胜率明显下滑。",
       "rv.full": "完整报告",
       "curve.best": "应走 {0}",
+      "go.ratingProv": "对局等级分 {0}",
       "nav.me": "我的", "tip.prefs": "设置（Ctrl 或 ⌘ 加逗号）",
       "prefs.look": "外观", "side.display": "显示",
       "ng.mode": "对手", 

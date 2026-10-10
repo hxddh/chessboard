@@ -3824,6 +3824,10 @@ span[data-icon] { display: inline-grid; place-items: center; }
   animation: result-in var(--dur-slow) var(--ease);
 }
 #board-wrap:has(> .go-card:not([hidden])) > .pstrip.at-bottom { visibility: hidden; }
+/* 10.0 M0: the bar's 1–0 is the score; the opponent's line keeps no lone
+   「0」 beside it (the wide layout's cards keep theirs — the card is not
+   in a strip's place there) */
+#board-wrap:has(> .go-card:not([hidden])) > .pstrip.at-top .ps-result { display: none; }
 @keyframes result-in {
   from { opacity: 0; translate: 0 6px; }
   to { opacity: 1; translate: 0 0; }
@@ -3877,6 +3881,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   border: 1px solid var(--card-border); border-radius: var(--radius-sm);
 }
 #app.pv-wide #board-wrap:has(> .go-card:not([hidden])) > .pstrip.at-bottom { visibility: visible; }
+#app.pv-wide #board-wrap:has(> .go-card:not([hidden])) > .pstrip.at-top .ps-result:not([hidden]) { display: inline; }
 #app.pv-wide #board-wrap:has(> .go-card:not([hidden])) > .info-col { visibility: hidden; }
 #app.pv-wide .go-txt { flex-basis: calc(100% - 88px); height: auto; }
 #app.pv-wide .go-result, #app.pv-wide .go-sub { white-space: normal; }

@@ -193,7 +193,11 @@ export function createOpponentsUI(d) {
     const now = Math.round(filed.after.r);
     // a first game moves the newcomer's 1500 (rating.js), and says by how much
     const delta = now - Math.round(filed.before ? filed.before.r : ChessRating.DEFAULT.r);
-    const parts = [tf("go.rating", [fmtRating(filed.after), delta > 0 ? "+" + delta : delta < 0 ? "−" + -delta : "±0"])];
+    // 10.0 M0: while it is provisional a game moves it by hundreds (+305
+    // for a first win), which on the result bar read as a broken number —
+    // the rating alone, marked 定级中, until it settles
+    const parts = [ChessRating.isProvisional(filed.after) ? tf("go.ratingProv", [fmtRating(filed.after)])
+      : tf("go.rating", [fmtRating(filed.after), delta > 0 ? "+" + delta : delta < 0 ? "−" + -delta : "±0"])];
     if (filed.perf != null) parts.push(tf("go.perf", [filed.perf]));
     return tdot(...parts);
   }
