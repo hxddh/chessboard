@@ -2213,15 +2213,21 @@
       box-shadow: 0 10px 30px rgba(0,0,0,.25);
     }
 
-    /* 9.0 V3: with the top bar gone the board starts 40px down, and a
-       banner at the board's column's top-left lay over its first rank —
-       with the panel open (landscape) it is the panel's first line instead */
-    @media (min-aspect-ratio: 1/1) {
-      body:has(#app.panel-open:not(.page-on)) .storage-fault { left: auto; right: 8px; max-width: calc(var(--side-w) - 16px); }
+    /* 9.0 V3: with the top bar gone the board starts 40px down, so a
+       fault is one line in the top strip's band — the sentence cut short
+       (whole in its tooltip and to a screen reader, role=alert), its
+       actions whole — over neither the board's first rank nor the panel */
+    .storage-fault {
+      max-height: var(--ctl-h-sm);
+      padding: 4px 8px 4px 16px; line-height: var(--lh-tight);
+      white-space: nowrap; overflow: hidden;
     }
+    .app-fault { flex-wrap: nowrap; }
+    .app-fault > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .app-fault > button { flex: none; }
     /* 6.0: a second banner (the set-aside record) stacks under the first */
     .storage-fault ~ .storage-fault { top: 56px; }
-    .app-fault { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .app-fault { display: flex; align-items: center; gap: 12px; }
     .app-fault .toast-action { color: inherit; border-color: color-mix(in srgb, currentColor 45%, transparent); }
 
     .modal-bg {

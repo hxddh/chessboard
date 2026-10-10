@@ -1177,7 +1177,7 @@ import { loadChunk } from "./chunk.js";
     }
     el.replaceChildren();
     const text = document.createElement("span");
-    text.textContent = t("msg.engine.bootFailed");
+    text.textContent = text.title = t("msg.engine.bootFailed");
     const retry = document.createElement("button");
     retry.type = "button";
     retry.className = "toast-action";
