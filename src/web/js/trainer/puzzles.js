@@ -65,7 +65,7 @@ export function createPuzzlesUI(d) {
     Audio2, BoardView, RepUI, animateReply, appGameOver, avail, checkNewAchievements, choosePromotion,
     clearPreview, clearSelection, confirmNative, cursorSquare, dailyJump, dailyStepIsHere, el, gameLoadPgn,
     gameReset, invalidateEngine, kingSquare, loadHistoryRecord, loadLibraryEntry, loadStats, maybeEngineTurn,
-    motifKeyOf, moveSound, puzzleIdea, puzzleMotif, puzzleName, renderPuzzleTally, renderRepertoire,
+    motifKeyOf, moveSound, puzzleIdea, puzzleMotif, puzzleName, goalName, renderPuzzleTally, renderRepertoire,
     resetClocks, sanHistory, saveGame, saveSettings, selectSquare, setIcon, setText, setViewIndex, sideName,
     startLearn, stopLearn, store, sync, t, tf, toast, switchMode, setSideTab, drawRatingTrend,
   } = d;
@@ -234,14 +234,14 @@ export function createPuzzlesUI(d) {
     if (isOpeningCat(p.cat)) return tf(p.side === "b" ? "pz.goalOpB" : "pz.goalOp", [puzzleName(p), Math.ceil(p.line.length / 2)]);
     // v8-0-plan B1: a Lichess puzzle keeps its side, and the goal says which
     const b = p.side === "b";
-    if (p.cat === "win") return tf(b ? "pz.goalWinB" : "pz.goalWin", [puzzleName(p), p.gain]);
-    if (p.cat === "tac") return tf(b ? "pz.goalTacB" : "pz.goalTac", [puzzleName(p), puzzleMotif(p), p.gain]);
-    if (p.cat === "real") return tf("pz.goalReal", [puzzleName(p), p.men, p.gain]);
-    if (p.cat === "def") return tf(b ? "pz.goalDefB" : "pz.goalDef", [puzzleName(p)]);
-    if (p.cat === "draw") return tf("pz.goalDraw", [puzzleName(p)]);
+    if (p.cat === "win") return tf(b ? "pz.goalWinB" : "pz.goalWin", [goalName(p), p.gain]);
+    if (p.cat === "tac") return tf(b ? "pz.goalTacB" : "pz.goalTac", [goalName(p), t("pz.forcing"), p.gain]);
+    if (p.cat === "real") return tf("pz.goalReal", [goalName(p), p.men, p.gain]);
+    if (p.cat === "def") return tf(b ? "pz.goalDefB" : "pz.goalDef", [goalName(p)]);
+    if (p.cat === "draw") return tf("pz.goalDraw", [goalName(p)]);
     // the count is a word in Chinese ("一步"), a numeral in English — so it
     // goes through the dictionary rather than being interpolated raw
-    return tf(b ? "pz.goalMateB" : "pz.goalMate", [puzzleName(p), t("pz.n." + (PUZZLE_MOVES[p.cat] || 1))]);
+    return tf(b ? "pz.goalMateB" : "pz.goalMate", [goalName(p), t("pz.n." + (PUZZLE_MOVES[p.cat] || 1))]);
   }
 
   /** The chair the solver sits in: white everywhere except black op drills. */

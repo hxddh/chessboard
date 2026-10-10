@@ -16,7 +16,7 @@ import { Chess } from "../chess.js";
 import { ChessLazy } from "../lazy-content.js";
 import { motifOf, puzzleMotifKey } from "../motif.js";
 import { CHESS_OPENING_NAMES } from "../openings.js";
-import { HAND_MOTIF_KEY } from "../puzzles.js";
+import { CHESS_PUZZLES, HAND_MOTIF_KEY } from "../puzzles.js";
 import { tdot } from "../tdot.js";
 
 /**
@@ -125,6 +125,22 @@ export function createTrainerContent(d) {
     return contentField("puzzles", p.id, "name") || p.name;
   }
   /**
+   * 10.0 M0: the name a goal line uses — one that does not give the puzzle
+   * away. A built-in one is its kind and number (「一步杀 #12」, as the
+   * bank's are), not its own name (「底线杀」 is the answer). Opening drills,
+   * personal ones and repertoire cards are named by where they came from,
+   * which gives nothing away.
+   */
+  const BUILT_IN_NO = new Map();
+  function goalName(p) {
+    if (p.src || p.card || p.cat === "op" || p.cat === "mine" || p.cat === "rep") return puzzleName(p);
+    if (!BUILT_IN_NO.size) {
+      const seen = {};
+      for (const q of CHESS_PUZZLES) BUILT_IN_NO.set(q.id, (seen[q.cat] = (seen[q.cat] || 0) + 1));
+    }
+    return tf("pz.catNo", [t("pz.cat." + p.cat), BUILT_IN_NO.get(p.id) || ""]);
+  }
+  /**
    * What this puzzle is teaching.
    *
    * Hand-written first, then derived, then the generic fallback. 21 of the 168
@@ -194,7 +210,7 @@ export function createTrainerContent(d) {
   const MINED_ORDINAL = new Map();
 
   return {
-    contentField, lessonText, taskText, puzzleName, motifKeyOf, puzzleMotif, puzzleIdea,
+    contentField, lessonText, taskText, puzzleName, goalName, motifKeyOf, puzzleMotif, puzzleIdea,
     MINED_ORDINAL,
   };
 }

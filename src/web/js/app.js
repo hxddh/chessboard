@@ -1967,7 +1967,7 @@ import { loadChunk } from "./chunk.js";
     store, t, tf,
   });
   const {
-    contentField, lessonText, taskText, puzzleName, motifKeyOf, puzzleMotif, puzzleIdea,
+    contentField, lessonText, taskText, puzzleName, goalName, motifKeyOf, puzzleMotif, puzzleIdea,
     MINED_ORDINAL,
   } = TrainerContent;
   // v8-0-plan F4: 学习 — the lessons and the classic games (trainer/lessons.js)
@@ -1994,7 +1994,7 @@ import { loadChunk } from "./chunk.js";
     checkNewAchievements, choosePromotion, clearPreview, clearSelection, confirmNative,
     cursorSquare, el, evalScalar: (e) => evalScalar(e), gameLoadPgn, gameReset, invalidateEngine, kingSquare,
     loadHistoryRecord, loadStats, maybeEngineTurn, motifKeyOf, moveSound, puzzleIdea, puzzleMotif,
-    puzzleName, renderAchievements, renderRecordEntry, renderStats, resetClocks, sanHistory,
+    puzzleName, goalName, renderAchievements, renderRecordEntry, renderStats, resetClocks, sanHistory,
     saveGame, saveSettings, selectSquare, setIcon, setText, setViewIndex, sideName, startLearn,
     stopLearn, store, sync, t, tf, toast, writeSan, switchMode, setSideTab, drawRatingTrend,
     RepUI: { allDrills: () => RepUI.allDrills(), treeFor: (s) => RepUI.treeFor(s), drills: (s) => RepUI.drills(s), total: () => RepUI.total(), due: () => RepUI.dueDrills(), grade: (p, ok) => RepUI.gradeCard(p, ok), ready: () => RepUI.ready(), booted: () => RepUI.booted() },
@@ -3140,7 +3140,7 @@ import { loadChunk } from "./chunk.js";
       const asBlack = !!(store.session.puzzle && store.session.puzzle.p.side === "b");
       const you = { icon: "user", name: t(asBlack ? "role.youB" : "role.you"), level: "" };
       const pr = store.session.puzzle ? PuzzlesUI.puzzleRatingOf(store.session.puzzle.p) : null;
-      const book = { icon: "puzzle", name: t("role.puzzle"), level: pr != null ? String(pr) : "" };
+      const book = { icon: "puzzle", name: t("role.puzzle"), level: pr != null ? tf("pz.ratingOf", [pr]) : "" };
       return asBlack ? { w: book, b: you } : { w: you, b: book };
     }
     // Two players: a loaded game names its players — the file's [White] /

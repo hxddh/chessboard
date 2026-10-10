@@ -242,6 +242,13 @@ export async function build({ write = true, minify = true } = {}) {
       "\n;for (var k in __chunk) if (Object.prototype.hasOwnProperty.call(__chunk, k)) window[k] = __chunk[k];\n";
     if (write) fs.writeFileSync(path.join(root, c.out), body);
   }
+  // 10.0 M0: a chunk no longer built (9.0 dropped chunk-lc-old-*) is removed,
+  // not left beside the live ones — chunk-*.js is build output (.gitignore)
+  if (write) {
+    const live = new Set(CHUNKS.map((c) => path.basename(c.out)));
+    const dir = path.join(root, "src/web/js");
+    for (const f of fs.readdirSync(dir)) if (/^chunk-.+\.js$/.test(f) && !live.has(f)) fs.rmSync(path.join(dir, f));
+  }
   return text;
 }
 
