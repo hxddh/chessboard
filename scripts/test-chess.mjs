@@ -7894,6 +7894,25 @@ for (const lang of CONTENT_LANGS) {
       JSON.stringify(cg) === JSON.stringify(rg) && twice.length === 0 && cg.every((g) => g[3] > 0 && g[3] <= 60),
       "checks.yml 与 release.yml 的浏览器分组逐条相同、每组有自己的超时（" + cg.map((g) => g[0] + " " + g[3]).join("，") + "）" +
       (twice.length ? " —— 跑了两遍：" + twice.join(", ") : ""));
+    // v10-0-plan E2: the groups a pull request runs on Chromium only are
+    // groups of the list above, whole (an exclusion has to match exactly, or
+    // it silently excludes nothing), the PR's alone, and only WebKit's
+    {
+      const m = /exclude: \$\{\{ github\.event_name == 'pull_request' && fromJSON\('(.*)'\) \|\| fromJSON\('\[\]'\) \}\}/.exec(checksWf);
+      const ex = m ? JSON.parse(m[1].replace(/''/g, "'")) : [];
+      const asRow = (g) => JSON.stringify([g.name, g.suites, g.shard || "", g.timeout]);
+      const rows = new Set(cg.map((g) => JSON.stringify(g)));
+      const names = ex.map((e) => e.group && e.group.name).sort().join(", ");
+      assert(ex.length === 7 && ex.every((e) => e.engine === "webkit" && rows.has(asRow(e.group))) &&
+        names === "board + clock, lessons, panel layout 1/5, panel layout 2/5, panel layout 3/5, panel layout 4/5, panel layout 5/5" &&
+        !/exclude:/.test(releaseWf.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n")),
+        "E2：PR 上布局五片、课程、棋盘 + 棋钟只跑 Chromium（排除项与分组逐字段相同），发布照跑两个引擎（" + names + "）");
+      assert(/^  reuse:$/m.test(releaseWf) && /checks\.yml\/runs\?head_sha=\$\{SHA\}&event=push&status=success/.test(releaseWf) &&
+        /^  static:\n    needs: reuse\n    if: needs\.reuse\.outputs\.green != 'true'/m.test(releaseWf) &&
+        /^  browser:\n    needs: reuse\n    if: needs\.reuse\.outputs\.green != 'true'/m.test(releaseWf) &&
+        /needs: \[preflight, reuse, static, engine, browser, build-macos, build-windows\]\n[\s\S]{0,200}if: \$\{\{ !cancelled\(\) && !contains\(needs\.\*\.result, 'failure'\) && !contains\(needs\.\*\.result, 'cancelled'\) \}\}/.test(releaseWf),
+        "E2：同一提交在 main 上的 checks 已绿时，发布复用静态与浏览器两道门；引擎门与两个平台构建照跑；失败或取消照样不发布");
+    }
     // v8-3-plan V4: any suite may be sharded now (engine flows too), not only
     // the layout one. A sharded group holds that one suite alone (SHARD would
     // cut every suite in it), its shards are exactly 1/n..n/n, it runs in no

@@ -237,6 +237,14 @@ jobs:
             suites: scripts/test-layout-e2e.mjs
             shard: 5/5
             timeout: 40
+        # v10-0-plan E2 (§8 第 4 条): on a pull request the three heaviest
+        # groups — the five layout shards, lessons, board + clock: 7 of the 16
+        # WebKit jobs and most of their minutes — run on Chromium only; both
+        # engines run them on every push to main and in the release, so a
+        # WebKit-only regression is still caught before anything ships. The
+        # objects are the groups above, whole (an exclusion matches them
+        # exactly); test-chess.mjs checks they are.
+        exclude: ${{ github.event_name == 'pull_request' && fromJSON('[{"engine":"webkit","group":{"name":"board + clock","suites":"scripts/test-board-e2e.mjs scripts/test-clock-e2e.mjs","timeout":30}},{"engine":"webkit","group":{"name":"lessons","suites":"scripts/test-content-e2e.mjs","timeout":20}},{"engine":"webkit","group":{"name":"panel layout 1/5","suites":"scripts/test-layout-e2e.mjs","shard":"1/5","timeout":40}},{"engine":"webkit","group":{"name":"panel layout 2/5","suites":"scripts/test-layout-e2e.mjs","shard":"2/5","timeout":40}},{"engine":"webkit","group":{"name":"panel layout 3/5","suites":"scripts/test-layout-e2e.mjs","shard":"3/5","timeout":40}},{"engine":"webkit","group":{"name":"panel layout 4/5","suites":"scripts/test-layout-e2e.mjs","shard":"4/5","timeout":40}},{"engine":"webkit","group":{"name":"panel layout 5/5","suites":"scripts/test-layout-e2e.mjs","shard":"5/5","timeout":40}}]') || fromJSON('[]') }}
         # v8-0-plan F2: the per-move cost gate reads a CDP metric, so it is
         # one Chromium job rather than a group on both engines — `include`
         # with a group no combination has adds exactly that one job
