@@ -2039,6 +2039,18 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       null, { timeout: 8000 }).catch(() => {});
     const kings = await page.evaluate(() => [...document.querySelectorAll("#piece-pick-seg img")].filter((i) => i.src.startsWith("data:image/svg")).length);
     assert(kings === 14, `A3 棋子选择器:七套各画出黑白两王(${kings} / 14)`);
+    // 10.0 M0: each king the board swatch's size, on the current board's own squares
+    const look = await page.evaluate(() => {
+      const cs = getComputedStyle(document.documentElement), probe = document.createElement("div");
+      document.body.appendChild(probe);
+      const rgb = (v) => { probe.style.background = cs.getPropertyValue(v).trim(); return getComputedStyle(probe).backgroundColor; };
+      const want = [rgb("--sq-light"), rgb("--sq-dark")];
+      probe.remove();
+      const [w, b] = document.querySelectorAll("#piece-pick-seg .look-king");
+      return { size: w.getBoundingClientRect().width, on: [w, b].map((i) => getComputedStyle(i).backgroundColor), want };
+    });
+    assert(look.size >= 36 && look.on.join() === look.want.join(),
+      "10.0 M0 棋子选择器:两王各约 40 px,站在当前棋盘的浅格 / 深格上(" + JSON.stringify(look) + ")");
     assert(errs.length === 0, `A3 选择器:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
     await ctx.close();
   }
