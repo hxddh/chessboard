@@ -1425,6 +1425,7 @@
     }
     .side-h-row .side-h { margin: 0; height: auto; }
     .side-h-meta { font-size: 0.75rem; color: var(--muted); }
+    .side-h-end { display: inline-flex; align-items: center; gap: 12px; }
     /* A section that holds more than one heading — statistics, which stacks
        统计 / 对局历史 / 成就 — needs air above every heading but its first.
        This was three `style="margin-top:14px"` attributes in the markup, and
@@ -3851,6 +3852,10 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .side-wide .tool-row:has(> .tool-txt:not([hidden]))::after { content: ""; flex-basis: 100%; order: 1; }
 .side-wide .tool-row .tool-txt { order: 2; }
 .tool-txt { padding: 0 12px; font-size: 0.875rem; font-weight: 400; margin-left: auto; }
+/* 10.1 L4: a text button that starts a row lines its words up with the
+   text above it — the 12px of padding hangs out into the margin, as the
+   system's plain buttons do — instead of sitting one indent in */
+.link-row > .tool-txt:first-child { margin-left: -12px; }
 .tool-ic:hover, .tool-txt:hover { background: var(--btn-ghost); color: var(--text); }
 .tool-ic[aria-pressed="true"], .tool-ic[aria-expanded="true"] {
   color: var(--text);
@@ -4362,23 +4367,32 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .today-acts { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .today-acts .tool-txt { margin-left: 0; }
 .today-progress { display: grid; gap: 16px; align-content: start; }
+/* 10.1 L2: the card is as tall as the hero beside it; the rings sit in the
+   middle of what is left instead of at its top, with the empty half below */
+.today-row > .today-progress { grid-template-rows: auto 1fr auto; }
+.today-row > .today-progress .today-rings { align-self: center; }
 .today-progress .side-h { margin: 0; }
 .today-rings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; justify-items: center; }
 .today-ring {
   --p: 0;
-  width: 72px; aspect-ratio: 1; border-radius: 50%;
+  /* 10.1 B: a lighter ring — 13% of the radius, on a track of the ink at
+     10%, where it was 20% on the hairline's brown, a heavy dark doughnut */
+  --ring-track: color-mix(in srgb, var(--ink) 10%, var(--card));
+  width: 80px; aspect-ratio: 1; border-radius: 50%;
   display: grid; place-content: center; text-align: center;
   background:
-    radial-gradient(closest-side, var(--card) 80%, transparent 81%),
-    conic-gradient(var(--text) calc(var(--p) * 1%), var(--line) 0);
+    radial-gradient(closest-side, var(--card) 87%, transparent 88%),
+    conic-gradient(var(--text) calc(var(--p) * 1%), var(--ring-track) 0);
 }
-.today-ring.done { background: radial-gradient(closest-side, var(--card) 80%, transparent 81%), conic-gradient(var(--success) 100%, var(--line) 0); }
+.today-ring.done { background: radial-gradient(closest-side, var(--card) 87%, transparent 88%), conic-gradient(var(--success) 100%, var(--ring-track) 0); }
 .today-ring b { font-size: 0.875rem; font-weight: 600; }
 .today-ring span { font-size: 0.75rem; color: var(--muted); }
 .today-cont { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .today-c {
   appearance: none; cursor: pointer; font: inherit; color: var(--text); text-align: left;
-  display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; align-items: center;
+  /* 10.1 B1: 64 → 80px. At 64 a square was 8px and a man an 8px smudge;
+     at 10px the pieces read as pieces and the position as a position */
+  display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 16px; align-items: center;
 }
 .today-c:hover { background: color-mix(in srgb, var(--card) 88%, var(--text)); }
 .today-c:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
