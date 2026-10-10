@@ -18,6 +18,7 @@
 import { Chess } from "../chess.js";
 import { ChessHost } from "../host.js";
 import { ChessMistakes } from "../mistakes.js";
+import { ChessSrs } from "../srs.js";
 import { loadChunk } from "../chunk.js";
 import { REVIEW_CHUNKS } from "../lazy-content.js";
 import { ChessReview } from "../review.js";
@@ -369,7 +370,7 @@ export function createReviewPanel(d) {
       delete store.session.puzzleState.solved[id];
       delete store.session.puzzleState.missed[id];
     }
-    if (r.dropped.length) savePuzzleState();
+    if (ChessMistakes.queueFresh(store.session.puzzleState.missed, r.ids, Date.now(), ChessSrs.onMiss) || r.dropped.length) savePuzzleState();
     store.commit("session", "sync");
     toast(tf("rv.banked", [cand.solution[0]]));
   }

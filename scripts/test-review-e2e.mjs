@@ -459,9 +459,12 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
   const after = await page.evaluate(() => {
     const b = document.querySelector("#review-body .review-bank");
     const mines = JSON.parse(localStorage.getItem("chess.mines") || "null");
-    return { text: b && b.textContent, disabled: b && b.disabled, n: mines ? mines.list.length : 0 };
+    const missed = (JSON.parse(localStorage.getItem("chess.puzzles") || "null") || {}).missed || {};
+    return { text: b && b.textContent, disabled: b && b.disabled, n: mines ? mines.list.length : 0,
+      owed: !!mines && mines.list.every((m) => missed[m.id] && missed[m.id].due <= Date.now()) };
   });
   assert(after.n === 1, "按一下,错题里多了这一道 (" + after.n + ")");
+  assert(after.owed, "T2：收进的这一道也排进了复习，今天就到期");
   assert(after.disabled && /已经在错题里/.test(after.text || ""),
     "收进以后,按钮就写「已经在错题里」且按不动 (" + JSON.stringify(after) + ")");
 }

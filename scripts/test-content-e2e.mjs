@@ -348,8 +348,11 @@ await page.waitForTimeout(400);
 {
   const tiles = await page.evaluate(() => [...document.querySelectorAll("#pz-groups button[data-group]")]
     .filter((b) => !b.hidden).map((b) => ({ g: b.dataset.group, n: (b.querySelector(".pz-tile-n") || {}).textContent || "" })));
-  assert(tiles.length === 5 && !tiles.some((x) => x.g === "mine"), "9.0 S3：没有错题时五块按类做题（我的错题不出现）", JSON.stringify(tiles));
-  for (const { g, n } of tiles) {
+  // v10-0-plan T2: 我的错题 is the sixth even when empty — it says how it
+  // fills instead of a count, and is checked on its own (the mines block)
+  assert(tiles.length === 6 && tiles[5].g === "mine" && !/\d/.test(tiles[5].n),
+    "9.0 S3 / 10.0 T2：五块按类做题，加上没有题时也在的我的错题", JSON.stringify(tiles));
+  for (const { g, n } of tiles.filter((x) => x.g !== "mine")) {
     await page.click('#pz-groups button[data-group="' + g + '"]');
     let r = null;
     for (let i = 0; i < 30; i++) {
@@ -790,8 +793,19 @@ if (hasTab && REAL.length) {
     pg.on("pageerror", (e) => errs.push(e.message));
     await pg.goto(`http://127.0.0.1:${PORT}/`);
     await pg.waitForTimeout(900);
-    assert(await pg.evaluate(() => document.querySelector('#pz-groups button[data-group="mine"]').hidden),
-      "没有错题时,「我的错题」这一块不存在");
+    // v10-0-plan T2: there all the same, saying how it fills; pressed, it
+    // explains itself and leaves the puzzle on the board alone
+    const empty = await pg.evaluate(() => {
+      const b = document.querySelector('#pz-groups button[data-group="mine"]');
+      const before = document.getElementById("puzzle-task").textContent;
+      b.click();
+      return { hidden: b.hidden, n: b.querySelector(".pz-tile-n").textContent, active: b.classList.contains("active"),
+        same: document.getElementById("puzzle-task").textContent === before };
+    });
+    await pg.waitForTimeout(200);
+    const said = await pg.evaluate(() => document.getElementById("toast").textContent);
+    assert(!empty.hidden && empty.n === "分析一局就有" && !empty.active && empty.same && /自动加进来/.test(said),
+      "T2: 没有错题时「我的错题」也在，写着怎么攒；点它说明来历，不换题", JSON.stringify(empty) + " " + said);
     await ctx2.close();
   }
 

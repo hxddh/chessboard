@@ -28,6 +28,7 @@ import { ChessFide } from "./fide.js";
 import { ChessHost } from "./host.js";
 import { ChessLibrary } from "./library.js";
 import { ChessMistakes } from "./mistakes.js";
+import { ChessSrs } from "./srs.js";
 import { ChessPgn } from "./pgn.js";
 import { ChessPgnParser } from "./pgn-parser.js";
 import { ChessProgress } from "./progress.js";
@@ -398,7 +399,8 @@ export function createLibraryUI(d) {
       delete store.session.puzzleState.solved[id];
       delete store.session.puzzleState.missed[id];
     }
-    if (dropped.length) savePuzzleState();
+    // v10-0-plan T2: into the review queue, as on the board
+    if (Mistakes.queueFresh(store.session.puzzleState.missed, r.ids, Date.now(), ChessSrs.onMiss) || dropped.length) savePuzzleState();
     if (r.added) { Progress.recordMined(store.session.progress, r.added, Date.now()); saveProgress(); }
     return { added: r.added, revised: rv.updated.length, withdrawn: rv.retired.length };
   }

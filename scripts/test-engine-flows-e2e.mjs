@@ -756,6 +756,13 @@ await scenario("精析回写库", async () => {
   const fake0 = (await minesOf(page)).some((m) => m.id === FAKE_DRILL.id);
   assert(!!trap0 && trap0.an.budget === 200 && fake0, "精析回写库：库分析完，那局 budget 200，300ms 的假题还在",
     JSON.stringify({ budget: trap0 && trap0.an.budget, fake0 }));
+  // v10-0-plan T2: every drill the pass minted is owed a review at once
+  const queued = await page.evaluate((fake) => {
+    const ms = (JSON.parse(localStorage.getItem("chess.mines") || "null") || { list: [] }).list.filter((m) => m.id !== fake);
+    const missed = (JSON.parse(localStorage.getItem("chess.puzzles") || "null") || {}).missed || {};
+    return { n: ms.length, owed: ms.filter((m) => missed[m.id] && missed[m.id].due <= Date.now()).length };
+  }, FAKE_DRILL.id);
+  assert(queued.n > 0 && queued.owed === queued.n, "T2：库分析收进的错题都排进了复习、今天就到期", JSON.stringify(queued));
   await page.waitForTimeout(500);
   await page.click("#lib-open");
   await page.waitForTimeout(300);

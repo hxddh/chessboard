@@ -800,10 +800,10 @@ export function createPuzzlesUI(d) {
       const g = b.dataset.group;
       b.classList.toggle("active", g === on);
       b.setAttribute("aria-pressed", g === on ? "true" : "false");
-      if (g === "mine") b.hidden = !store.session.mines.length;
       const n = g === "opening" ? ALL_PUZZLES.filter((p) => p.cat === "op").length
         : g === "mine" ? store.session.mines.length : Modes.groupCount(g);
-      setText(b.querySelector(".pz-tile-n"), tf("pz.countN", [n]));
+      // v10-0-plan T2: 我的错题 is always there; empty, it says how it fills
+      setText(b.querySelector(".pz-tile-n"), g === "mine" && !n ? t("pz.mineNone") : tf("pz.countN", [n]));
     });
   }
 
@@ -905,7 +905,8 @@ export function createPuzzlesUI(d) {
     // 9.0 S3: the six kinds, and the review queue as its own card
     document.getElementById("pz-groups").onclick = (ev) => {
       const b = ev.target.closest("button[data-group]");
-      if (b) Modes.goGroup(b.dataset.group);
+      if (b && b.dataset.group === "mine" && !store.session.mines.length) toast(t("pz.mineEmpty"), "fix");
+      else if (b) Modes.goGroup(b.dataset.group);
     };
     document.getElementById("pz-review").onclick = () => {
       if (store.session.run) { Modes.endRun(); store.session.run = null; }

@@ -672,6 +672,8 @@
       "go.ratingProv": "Game rating {0}",
       "ps.score": "Score this game: {0} (win 1, draw ½, loss 0)",
       "lm.tapOf": "{0} (tap {1} of {2})",
+      "pz.mineNone": "Analyse a game",
+      "pz.mineEmpty": "Your own mistakes (? and ??) from your games go here. Analyse a finished game and your side's mistakes are added on their own, then come back for review at growing intervals.",
       "nav.me": "Me", "tip.prefs": "Settings (⌘, / Ctrl+,)",
       "prefs.look": "Appearance", "side.display": "Display",
       "ng.mode": "Opponent", 

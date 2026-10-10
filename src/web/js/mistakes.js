@@ -50,6 +50,14 @@ const MAX_MINES = 90;
 const KEEP_PER_MOTIF = 6;
 
 /**
+ * The judgements that become drills: `??` and (v10-0-plan T2)
+ * `?` too. A `?` costs 100–300 centipawns or 10–20 points of winning chance
+ * (review.js MISTAKE) — a real mistake, the kind Lichess's "learn from your
+ * mistakes" also asks about. `?!` stays out: half a pawn is most human moves.
+ */
+const MINED = new Set(["?", "??"]);
+
+/**
  * A stable id from the position and the move that was wrong in it.
  *
  * Not from the game or the ply: analysing the same game twice must produce
@@ -67,9 +75,9 @@ function mineId(fen, played) {
 /**
  * The drills one analysed game yields for one side.
  *
- * Only `??` plies — a `?` is a worse-than-best move, which most human moves
- * are; drilling those would flood the set with noise and bury the real
- * lessons. Each candidate must have a stored best move that is legal in the
+ * Only `?` and `??` plies (MINED) — a `?!` is a worse-than-best move, which
+ * most human moves are; drilling those would flood the set with noise and
+ * bury the real lessons. Each candidate must have a stored best move that is legal in the
  * position and different from what was played: an analysis row without a
  * best move (aborted probe, terminal position) has a judgement but no answer,
  * and a drill without an answer is not a drill.
@@ -87,7 +95,7 @@ function candidatesFrom(a, side, Chess, rev) {
   const out = [];
   if (!a || !a.fens || !a.sans || !a.tags || !a.bests) return out;
   for (let i = 0; i < a.sans.length; i++) {
-    if (a.tags[i] !== "??") continue;
+    if (!MINED.has(a.tags[i])) continue;
     const fen = a.fens[i];
     if (!fen || fen.split(" ")[1] !== side) continue;
     // Centipawn cost of the played move, as the caller measured it.
@@ -183,7 +191,8 @@ function drillFrom(fen, played, bestUci, loss, ply, Chess, rev) {
  * @param {object[]} cands candidatesFrom() output
  * @param {number} now timestamp for the new arrivals
  * @param {Set<string>} solvedIds ids already solved, for retirement order
- * @returns {{list: object[], added: number, dropped: string[]}}
+ * @returns {{list: object[], added: number, ids: string[], dropped: string[]}}
+ *          `ids` are the new arrivals that survived the cap
  */
 function addMines(list, cands, now, solvedIds) {
   const have = new Set(list.map((m) => m.id));
@@ -229,7 +238,8 @@ function addMines(list, cands, now, solvedIds) {
     retire(solved);
     retire(() => true);
   }
-  return { list: next, added: fresh.length, dropped };
+  const gone = new Set(dropped);
+  return { list: next, added: fresh.length, ids: fresh.map((m) => m.id).filter((id) => !gone.has(id)), dropped };
 }
 
 /**
@@ -293,13 +303,30 @@ function reviseMines(list, cands, a, side, rev) {
       (Array.isArray(a.scalars) && a.scalars[i] != null && a.scalars[i + 1] != null);
     for (let i = 0; i < a.sans.length; i++) {
       if (!a.fens[i] || a.fens[i].split(" ")[1] !== side) continue;
-      if (a.tags[i] === "??" || !judged(i)) continue;
+      if (MINED.has(a.tags[i]) || !judged(i)) continue;
       const m = byId.get(mineId(a.fens[i], a.sans[i]));
       if (m && deepEnough(m)) retired.push(m.id);
     }
   }
   const gone = new Set(retired);
   return { list: gone.size ? list.filter((m) => !gone.has(m.id)) : list, updated, retired, filled };
+}
+
+/**
+ * v10-0-plan T2: a new drill joins the review queue at once — the game was
+ * the miss, so it is owed like any puzzle missed on the board, and the ladder
+ * (1 → 3 → 7 → 21 days) takes it from its first clean solve. `onMiss` is
+ * srs.js's, handed in to keep this module free of imports.
+ * @returns {number} how many entries were queued
+ */
+function queueFresh(missed, ids, now, onMiss) {
+  let n = 0;
+  for (const id of ids || []) {
+    if (missed[id]) continue;
+    missed[id] = onMiss(undefined, now);
+    n++;
+  }
+  return n;
 }
 
 /** Is `san` an answer this drill accepts — the stored best, or an alternative
@@ -327,4 +354,4 @@ function judgeAlt(cpAfterBest, cpAfterAlt, side, mistake) {
   return { ok: loss < mistake, loss };
 }
 
-export const ChessMistakes = { MAX_MINES, KEEP_PER_MOTIF, mineId, candidatesFrom, drillFrom, addMines, reviseMines, isAccepted, judgeAlt };
+export const ChessMistakes = { MAX_MINES, KEEP_PER_MOTIF, MINED, mineId, candidatesFrom, drillFrom, addMines, reviseMines, queueFresh, isAccepted, judgeAlt };

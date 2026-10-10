@@ -4043,9 +4043,25 @@ for (const lang of CONTENT_LANGS) {
   assert(b.length === 1 && b[0].solution[0] === "Nf6" && b[0].side === "b" && b[0].loss === 390,
     "a Black ?? flips the sign and carries side:\"b\" — the black-drill rails do the rest");
 
-  // what is NOT mined: ? plies, plies without a stored best, best === played
-  assert(M.candidatesFrom({ ...base, tags: ["?", "??"] }, "w", C).length === 0,
-    "a ? is not a lesson — only ?? plies are banked");
+  // what is NOT mined: ?! plies, plies without a stored best, best === played.
+  // v10-0-plan T2: a ? is a lesson too (100–300 cp) — only the ?! stays out
+  assert(M.candidatesFrom({ ...base, tags: ["?!", "??"] }, "w", C).length === 0,
+    "a ?! is not a lesson — only ? and ?? plies are banked");
+  assert(M.candidatesFrom({ ...base, tags: ["?", "??"] }, "w", C).length === 1,
+    "T2: a ? becomes a drill like a ??");
+  // T2: the new arrivals are named, and queued for review once each
+  {
+    const r = M.addMines([], w, 5000, new Set());
+    assert(r.ids.length === 1 && r.ids[0] === w[0].id, "T2: addMines names what it added (" + r.ids + ")");
+    const missed = {};
+    const onMiss = (v, now) => ({ s: 0, n: 1, due: now, ivl: 0 });
+    assert(M.queueFresh(missed, r.ids, 5000, onMiss) === 1 && missed[w[0].id].due === 5000,
+      "T2: a new drill is owed a review at once");
+    missed[w[0].id] = { s: 1, n: 2, due: 9000, ivl: 1 };
+    assert(M.queueFresh(missed, r.ids, 6000, onMiss) === 0 && missed[w[0].id].due === 9000,
+      "T2: …and one already in the queue keeps its place on the ladder");
+    assert(M.addMines(r.list, w, 7000, new Set()).ids.length === 0, "T2: the same drill again adds nothing to queue");
+  }
   assert(M.candidatesFrom({ ...base, bests: [null, "g8f6"] }, "w", C).length === 0,
     "a judgement without a stored answer is not a drill");
   assert(M.candidatesFrom({ ...base, bests: ["e2e4", "g8f6"] }, "w", C).length === 0,
@@ -4140,11 +4156,14 @@ for (const lang of CONTENT_LANGS) {
     const shallow = M.drillFrom(fen, "e4", "c2c4", 90, 0, C, { budget: 60, src: "auto" });
     const rv2 = M.reviseMines(rv.list, [shallow], null, "w", { budget: 60 });
     assert(rv2.updated.length === 0 && rv2.list[0].solution[0] === "d4", "a quick pass never overrules a deep one");
-    // the same game re-analysed deeper, and e4 is no longer a ??: the drill goes
-    const rv3 = M.reviseMines(rv.list, [], { fens: [fen], sans: ["e4"], tags: ["?"] }, "w", { budget: 400 });
+    // the same game re-analysed deeper, and e4 is no longer a mistake: the drill goes
+    const rv3 = M.reviseMines(rv.list, [], { fens: [fen], sans: ["e4"], tags: ["?!"] }, "w", { budget: 400 });
     assert(rv3.retired.length === 1 && rv3.list.length === 0, "a ?? that does not survive the depth is withdrawn");
+    // …while a ?? that the deeper pass calls a ? stays (10.0 T2: both are drills)
+    const rvQ = M.reviseMines(rv.list, [], { fens: [fen], sans: ["e4"], tags: ["?"] }, "w", { budget: 400 });
+    assert(rvQ.retired.length === 0 && rvQ.list.length === 1, "T2: a ?? the deeper pass calls a ? stays a drill");
     // and the same at a shallower depth is not believed
-    const rv4 = M.reviseMines(rv.list, [], { fens: [fen], sans: ["e4"], tags: ["?"] }, "w", { budget: 120 });
+    const rv4 = M.reviseMines(rv.list, [], { fens: [fen], sans: ["e4"], tags: ["?!"] }, "w", { budget: 120 });
     assert(rv4.retired.length === 0, "…but only from a pass at least as deep");
     // 7.2: and the commonest verdict of all — "that move was fine", which is
     // a null tag — withdraws it too, as long as the pass really did measure
@@ -4334,14 +4353,15 @@ for (const lang of CONTENT_LANGS) {
   assert(/for \(const id of r\.dropped\) \{\s*delete store\.session\.puzzleState\.solved\[id\];\s*delete store\.session\.puzzleState\.missed\[id\];/.test(appSrc),
     "a retired drill takes its solved/missed entries with it — no orphan reviews owed");
   // the tab exists exactly while the book does (P3), and the cat is real
-  assert(/if \(g === "mine"\) b\.hidden = !store\.session\.mines\.length;/.test(appSrc),
-    "the 我的错题 tile is drawn only while the personal book holds drills");
+  // v10-0-plan T2: the tile is always there; empty, it says how it fills
+  assert(!/if \(g === "mine"\) b\.hidden/.test(appSrc) && /g === "mine" && !n \? t\("pz\.mineNone"\)/.test(appSrc),
+    "T2: the 我的错题 tile is always drawn, and says how it fills while empty");
   assert(/"op", "rep", "mine", "review"\]/.test(appSrc) && /real: true, mine: true \}/.test(appSrc),
     "mine is a real category on the scripted-grading rail");
   assert(/\(cat === "review" \|\| cat === "mine" \|\| cat === "rep"\) && !puzzlesInCat\(cat\)\.length/.test(appSrc),
     "an emptied personal book does not strand the player");
   const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
-  assert(/data-group="mine" hidden/.test(html), "…and the tile starts hidden until the book says otherwise");
+  assert(/data-group="mine" aria-pressed/.test(html), "T2: …and the tile is not hidden in the page either");
 }
 
 // 摸得到的复盘: hovering the move list or a PV chip puts that position on the
