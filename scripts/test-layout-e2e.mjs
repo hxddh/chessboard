@@ -6003,6 +6003,46 @@ if (scenario()) {
     }
   }
 }
+// v10-0-plan A1 / A3: the two new dialogs — 分析一局 and ⌘K — in three
+// languages, wide and at phone width: nothing out of the card, no sideways
+// scroll, every row of the panel one line inside its list, its kind in view
+if (scenario()) {
+  for (const lang of LANGS) {
+    for (const viewport of [{ width: 1400, height: 900 }, { width: 390, height: 760 }]) {
+      const { ctx, page } = await open(lang, "ai", "home", "wood", viewport);
+      const tag = "A1/A3 (" + lang + ", " + viewport.width + ")";
+      const fits = (sel) => page.evaluate((s) => {
+        const m = document.querySelector(s + " .modal"), r = m.getBoundingClientRect();
+        const out = [...m.querySelectorAll("button, textarea, input, .pal-row, .pal-kind")].filter((e) => e.offsetParent)
+          .filter((e) => { const b = e.getBoundingClientRect(); return b.right > r.right + 0.5 || b.left < r.left - 0.5; })
+          .map((e) => e.id || e.className || e.textContent.slice(0, 12));
+        return { out, sideways: m.scrollWidth - m.clientWidth, inView: r.left >= 0 && r.right <= innerWidth + 0.5 };
+      }, sel);
+      await page.click("#today-analyse");
+      await page.fill("#an-text", "https://lichess.org/q7ZvsdUF");
+      await page.click("#an-go");
+      await settle(page);
+      const a = await fits("#analyse-modal");
+      assert(a.out.length === 0 && a.sideways <= 0 && a.inView, tag + ": 分析一局 —— 按钮、输入框都在卡片里，不横向滚动 (" + a.out.join(", ") + "; " + a.sideways + "px)");
+      await page.keyboard.press("Escape");
+      await settle(page);
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
+      await page.waitForSelector("#palette-modal.show", { timeout: 4000 }).catch(() => {});
+      await settle(page);
+      const p = await fits("#palette-modal");
+      const rows = await page.evaluate(() => {
+        const list = document.getElementById("palette-list").getBoundingClientRect();
+        const rs = [...document.querySelectorAll("#palette-list .pal-row")];
+        return { n: rs.length, heights: [...new Set(rs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+          kinds: rs.filter((b) => { const k = b.querySelector(".pal-kind").getBoundingClientRect(); return k.width > 0 && k.right <= list.right + 0.5; }).length };
+      });
+      assert(p.out.length === 0 && p.sideways <= 0 && p.inView && rows.n > 10 && rows.heights.length === 1 && rows.kinds === rows.n,
+        tag + ": ⌘K —— 每行一样高、类别都在列表里，不出卡片 (" + JSON.stringify({ out: p.out, rows }) + ")");
+      await ctx.close();
+    }
+  }
+}
+
 const { shard, total } = scenario.done();
 console.log(`shard ${shard.index}/${shard.count}: ${Math.ceil((total - shard.index + 1) / shard.count)} of ${total} scenarios`);
 await browser.close();
