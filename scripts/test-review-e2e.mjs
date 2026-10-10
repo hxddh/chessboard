@@ -1879,14 +1879,17 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     toast: document.getElementById("toast").textContent }));
   assert(b.view === "play" && b.plies === 0 && b.mode === "pvp" && /分析棋盘/.test(b.toast),
     "A1：空白分析棋盘 —— 回到开局局面、双方都由你走，说明它不计入战绩", JSON.stringify(b));
-  // from a trainer (⌘K while a puzzle is up): the switch to the board used to
-  // clear the analysis flag, and the engine answered in the imported game
-  // (Codex on #113). Eleven plies: Black to move, the engine's side.
-  await pg.evaluate(() => { const st = JSON.parse(localStorage.getItem("chess.settings") || "{}"); st.mode = "puzzle"; localStorage.setItem("chess.settings", JSON.stringify(st)); });
+  // from a trainer (⌘K while a puzzle is up), back to an ai board: the switch
+  // used to clear the analysis flag, and the engine answered in the imported
+  // game (Codex on #113, #114). Eleven plies: Black to move, the engine's side.
+  await pg.evaluate(() => { const st = JSON.parse(localStorage.getItem("chess.settings") || "{}"); st.mode = "puzzle"; st.playMode = "ai"; localStorage.setItem("chess.settings", JSON.stringify(st)); });
   await pg.reload();
   await pg.waitForTimeout(900);
   await pg.evaluate(() => { const E = window.__chess.engine; E.init = () => Promise.resolve(); E.retry = () => {}; E.isReady = () => true; });
   await scriptOpera(pg);
+  // the engine's game move, counted: the switch back to an ai board schedules
+  // one before the flag is set, and the flag alone did not cancel it (Codex on #114)
+  await pg.evaluate(() => { window.__best = 0; window.__chess.engine.bestMove = () => { window.__best++; return Promise.resolve("d8d7"); }; });
   await pg.keyboard.press("Control+k");
   await pg.waitForSelector("#palette-modal.show", { timeout: 4000 });
   await pg.fill("#palette-input", "分析一局");
@@ -1901,8 +1904,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.waitForFunction(() => !document.getElementById("report-card").hidden, null, { timeout: 20000 }).catch(() => {});
   await pg.waitForTimeout(1200);
   const tr = await pg.evaluate(() => ({ plies: document.querySelectorAll(".move-list .mlmove").length,
-    mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode, analysis: window.__chess.analysisBoard() }));
-  assert(tr.plies === 11 && tr.mode !== "puzzle" && tr.analysis, "A1：从谜题里 ⌘K「分析一局」—— 回到棋盘、仍是分析（引擎不接着走，至少三条线）", JSON.stringify(tr));
+    mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode, analysis: window.__chess.analysisBoard(), best: window.__best }));
+  assert(tr.plies === 11 && tr.mode === "ai" && tr.analysis && tr.best === 0, "A1：从谜题里 ⌘K「分析一局」—— 回到棋盘、仍是分析（引擎不接着走，至少三条线）", JSON.stringify(tr));
   assert(errsA.length === 0, "A1：没有页面异常 — " + errsA.join(" / "));
   await ctxA.close();
 }

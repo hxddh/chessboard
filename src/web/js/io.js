@@ -328,8 +328,11 @@ export function createIO(d) {
     // a trainer draws its own board and a page covers it: the game opens in play, on the board (Codex on #86)
     if (store.session.mode === "learn" || store.session.mode === "puzzle") switchMode(store.ui.playMode === "pvp" ? "pvp" : "ai");
     // after the switch, which clears it: 分析一局 from a trainer (⌘K) is still
-    // an analysis, not a game the engine replies in (Codex on #113)
+    // an analysis, not a game the engine replies in (Codex on #113). The
+    // switch has already asked for the engine's move, and that ask does not
+    // look at the flag again once it is under way: retire it (Codex on #114).
     store.session.analysisBoard = !!asAnalysis;
+    if (asAnalysis) invalidateEngine();
     Shell.toBoard(); store.commit("game", "action"); saveGame();
     toast(sanHistory().length
       ? tf("msg.import.doneN", [moveCount(Math.ceil(sanHistory().length / 2))])
