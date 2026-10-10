@@ -407,23 +407,23 @@
          drawn toward the card's own fill. Every card, separator and field
          outline read this at full strength, so a panel was a lattice of
          lines; the surfaces already say where a card is. */
-      --card-border: color-mix(in srgb, var(--card-line) 55%, var(--card-fill));
+      --card-border: var(--card-line);
       /* 10.1 S1: a card's own outline — the fill says where it is now, so
          the edge is only there to keep a light card off a light page;
          separators, fields and tables keep --card-border */
-      --card-edge: color-mix(in srgb, var(--card-line) 30%, var(--card-fill));
+      --card-edge: var(--card-line);
       --chrome-bg: var(--veil);
       /* 10.1 C: controls. A secondary button is lifted a step off whatever it
          sits on (white mixed in: lighter on the dark themes, whiter on the
          light ones), edged by a hairline of the ink, and given a one-pixel
          shadow — the system's push button, not an outlined box. A segment
          row is a recessed tray with the chosen segment raised out of it. */
-      --btn-lift: color-mix(in srgb, var(--btn) 90%, white 10%);
-      --btn-lift-hover: color-mix(in srgb, var(--btn-hover) 86%, white 14%);
-      --btn-edge: color-mix(in srgb, var(--ink) 11%, transparent);
+      --btn-lift: var(--btn);
+      --btn-lift-hover: var(--btn-hover);
+      --btn-edge: var(--line-strong);
       --control-shadow: 0 1px 1px rgba(0,0,0,.08);
-      --seg-tray: color-mix(in srgb, var(--ink) 6%, transparent);
-      --seg-on: color-mix(in srgb, var(--surface-raised) 86%, white 14%);
+      --seg-tray: var(--control-ghost);
+      --seg-on: var(--control-hover);
       /* 10.1 S2: one shadow for everything that floats — a dialog, a menu,
          the toast — a contact edge, a near shadow and a far one */
       --shadow-pop: 0 0 0 1px rgba(0,0,0,.08), 0 6px 16px rgba(0,0,0,.16), 0 22px 56px rgba(0,0,0,.24);
@@ -438,6 +438,24 @@
       --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
       --accent-line: color-mix(in srgb, var(--accent) 55%, transparent);
       --data: var(--muted);
+    }
+    /* 10.1 (Codex on #115): the macOS floor is 11.0, whose WKWebView may be
+       Safari 14 or 15 — no color-mix(). A custom property holding one is
+       invalid there at computed time, and a button reading it would lose
+       its fill and its edge altogether. So the tokens above are plain
+       palette values, the 10.0 look, and the mixed ones replace them only
+       where the engine can compute them. */
+    @supports (color: color-mix(in srgb, red 50%, blue)) {
+      :root {
+        --card-border: color-mix(in srgb, var(--card-line) 55%, var(--card-fill));
+        --card-edge: color-mix(in srgb, var(--card-line) 30%, var(--card-fill));
+        --btn-lift: color-mix(in srgb, var(--btn) 90%, white 10%);
+        --btn-lift-hover: color-mix(in srgb, var(--btn-hover) 86%, white 14%);
+        --btn-edge: color-mix(in srgb, var(--ink) 11%, transparent);
+        --seg-tray: color-mix(in srgb, var(--ink) 6%, transparent);
+        --seg-on: color-mix(in srgb, var(--surface-raised) 86%, white 14%);
+      }
+      .today-ring { --ring-track: color-mix(in srgb, var(--ink) 10%, var(--card)); }
     }
 
     /* ------------------------------------------------------------------
@@ -1704,7 +1722,7 @@
       background: var(--seg-tray); color: var(--muted); font: inherit; cursor: pointer;
       transition: border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
     }
-    .op-card:hover { color: var(--text); background: color-mix(in srgb, var(--ink) 10%, transparent); }
+    .op-card:hover { color: var(--text); background: var(--btn-ghost); background: color-mix(in srgb, var(--ink) 10%, transparent); }
     .op-card.active {
       color: var(--text);
       border-color: var(--accent-line);
@@ -4393,7 +4411,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   --p: 0;
   /* 10.1 B: a lighter ring — 13% of the radius, on a track of the ink at
      10%, where it was 20% on the hairline's brown, a heavy dark doughnut */
-  --ring-track: color-mix(in srgb, var(--ink) 10%, var(--card));
+  --ring-track: var(--line);
   /* …at most 80, never wider than its third of the card: just above the
      900px breakpoint the card is too narrow for three (Codex on #115) */
   width: min(80px, 100%); aspect-ratio: 1; border-radius: 50%;

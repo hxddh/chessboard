@@ -2146,6 +2146,17 @@ for (const lang of CONTENT_LANGS) {
     assert(act && /border:\s*1px solid var\(--btn-edge\)/.test(act[1]) && /background:\s*var\(--btn-lift\)/.test(act[1]) &&
       /box-shadow:\s*var\(--control-shadow\)/.test(act[1]),
       "…and an action is the secondary button — lifted, an ink hairline, a one-pixel shadow (10.1 C)");
+    // 10.1 (Codex on #115): the macOS floor (11.0) may have no color-mix();
+    // a custom property holding one is invalid there and the control that
+    // reads it loses its fill and edge. Each such token is a plain value
+    // first and mixed only under @supports.
+    {
+      const sup = /@supports \(color: color-mix\(in srgb, red 50%, blue\)\) \{([\s\S]*?)\n    \}\n/.exec(stripped);
+      const outside = sup ? stripped.replace(sup[0], "") : stripped;
+      const bad = ["--card-border", "--card-edge", "--btn-lift", "--btn-lift-hover", "--btn-edge", "--seg-tray", "--seg-on", "--ring-track"]
+        .filter((k) => new RegExp(k + ":\\s*color-mix").test(outside) || !(sup && new RegExp(k + ":\\s*color-mix").test(sup[1])));
+      assert(sup && bad.length === 0, "the 10.1 control tokens are plain values, mixed only under @supports" + (bad.length ? " — " + bad.join(", ") : ""));
+    }
 
     // P3's acceptance criterion, at the level of the rule rather than the
     // screen: dimming a control that cannot be used is not a milder way of
