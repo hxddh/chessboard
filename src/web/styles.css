@@ -137,7 +137,9 @@
       --wood-danger: #e07a6a;
       --wood-on-accent: #2a1c10;
       --wood-on-danger: #2a1613;
-      --wood-card: #30241a;
+      /* 10.1 S1: a card one step above the panel it sits on (was the panel
+         itself, so only its hairline said where it was) */
+      --wood-card: #382b20;
       --wood-card-border: #42332a;
       --wood-btn-ghost: rgba(243,233,220,.07);
       /* v8-0-plan A6: the brand colour — the app icon's amber. One hue
@@ -206,7 +208,7 @@
       --night-danger: #e8705c;
       --night-on-accent: #07130e;
       --night-on-danger: #0b1210;
-      --night-card: #111d1a;
+      --night-card: #16241f;
       --night-card-border: #21332c;
       --night-btn-ghost: rgba(220,232,227,.06);
       --night-brand: #eaa954;
@@ -271,7 +273,7 @@
       --day-danger: #b8382a;
       --day-on-accent: #ffffff;
       --day-on-danger: #fdf6f4;
-      --day-card: #f8f1e4;
+      --day-card: #fdf9f2;
       --day-card-border: #d9cdb7;
       --day-btn-ghost: rgba(44,38,30,.06);
       --day-brand: #95560f;
@@ -326,7 +328,7 @@
       --notebook-danger: #b0301f;
       --notebook-on-accent: #ffffff;
       --notebook-on-danger: #fbf3f2;
-      --notebook-card: #f4f7fe;
+      --notebook-card: #fbfcff;
       --notebook-card-border: #bfcbdd;
       --notebook-btn-ghost: rgba(42,49,64,.06);
       --notebook-brand: #95560f;
@@ -406,6 +408,10 @@
          outline read this at full strength, so a panel was a lattice of
          lines; the surfaces already say where a card is. */
       --card-border: color-mix(in srgb, var(--card-line) 55%, var(--card-fill));
+      /* 10.1 S1: a card's own outline — the fill says where it is now, so
+         the edge is only there to keep a light card off a light page;
+         separators, fields and tables keep --card-border */
+      --card-edge: color-mix(in srgb, var(--card-line) 30%, var(--card-fill));
       --chrome-bg: var(--veil);
       /* 10.1 C: controls. A secondary button is lifted a step off whatever it
          sits on (white mixed in: lighter on the dark themes, whiter on the
@@ -1691,15 +1697,19 @@
     .op-card {
       appearance: none; display: flex; align-items: center; gap: 8px;
       min-height: var(--ctl-h); padding: 8px; text-align: left;
-      border: 1px solid var(--card-border); border-radius: var(--radius-md);
-      background: var(--card); color: var(--muted); font: inherit; cursor: pointer;
+      /* 10.1 S1: a choice in a dialog is a place in a tray, like a segment —
+         recessed, no outline of its own — not a dark card inside the card
+         the dialog already is; the chosen one is raised out of it */
+      border: 1px solid transparent; border-radius: var(--radius-md);
+      background: var(--seg-tray); color: var(--muted); font: inherit; cursor: pointer;
       transition: border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
     }
-    .op-card:hover { color: var(--text); border-color: var(--line-strong); }
+    .op-card:hover { color: var(--text); background: color-mix(in srgb, var(--ink) 10%, transparent); }
     .op-card.active {
       color: var(--text);
       border-color: var(--accent-line);
-      background: var(--accent-soft);
+      background: var(--seg-on);
+      box-shadow: 0 1px 2px rgba(0,0,0,.18);
     }
     .op-av {
       flex: none; width: 32px; height: 32px; border-radius: var(--radius-sm);
@@ -1723,7 +1733,7 @@
     .offer-bar {
       display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
       margin: 4px 0 12px; padding: 12px 16px;
-      border: 1px solid var(--card-border);
+      border: 1px solid var(--card-edge);
       border-radius: var(--radius-md); background: var(--card);
     }
     .offer-text { flex: 1 1 12em; font-size: 0.875rem; color: var(--text); }
@@ -1843,7 +1853,7 @@
     .idle-card {
       margin: 4px 0 12px;
       padding: 16px;
-      border: 1px solid var(--card-border);
+      border: 1px solid var(--card-edge);
       border-radius: var(--radius-md);
       background: var(--card);
       display: grid; gap: 8px;
@@ -2105,7 +2115,7 @@
     .lesson-task {
       margin: 8px 0 12px;
       padding: 12px 16px;
-      border: 1px solid var(--card-border);
+      border: 1px solid var(--card-edge);
       background: var(--card);
       border-radius: var(--radius-md);
       font-size: 0.875rem; font-weight: 400; color: var(--text); line-height: var(--lh-body);
@@ -3202,7 +3212,7 @@
        read as placeholders. */
     .rv-km {
       margin-top: 12px; padding: 12px 16px 16px;
-      background: var(--card); border: 1px solid var(--card-border);
+      background: var(--card); border: 1px solid var(--card-edge);
       border-radius: var(--radius-md);
     }
     .km-head { display: flex; align-items: center; gap: 8px; }
@@ -3229,7 +3239,8 @@
     .km-win { margin: 2px 0 0; color: var(--muted); }
     .km-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
     .km-acts .pv-act { margin-left: 0; white-space: nowrap; }
-    .km-why { margin: 8px 0 0; color: var(--muted); }
+    /* 10.1 F5: the coach's reasons are paragraphs — the prose leading */
+    .km-why { margin: 8px 0 0; color: var(--muted); line-height: var(--lh-prose); }
     .km-coach { color: var(--text); }
     #rv-learn-row { margin-top: 8px; }
     .rt-prog { font-size: 0.75rem; font-weight: 400; color: var(--muted); }
@@ -3336,7 +3347,7 @@
        said both accuracies. */
     .report-card {
       margin-top: 8px; padding: 16px 16px 12px;
-      background: var(--card); border: 1px solid var(--card-border);
+      background: var(--card); border: 1px solid var(--card-edge);
       border-radius: var(--radius-md);
     }
     .acc-cap {
@@ -3400,7 +3411,7 @@
     /* v8-0-plan A4: the list as a card of its own under the key moments */
     .rv-mistakes {
       margin-top: 12px; padding: 12px 16px;
-      background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius-md);
+      background: var(--card); border: 1px solid var(--card-edge); border-radius: var(--radius-md);
     }
     .rv-mistakes > .rv-moments { margin-top: 0; border-top: 0; padding-top: 0; }
     .rv-moments-cap { font-size: 0.8125rem; font-weight: 400; color: var(--muted); margin-bottom: 4px; }
@@ -3420,11 +3431,11 @@
       display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
       margin-top: 4px; font-size: 0.875rem; line-height: var(--lh-body); color: var(--text);
     }
-    .why-text { flex: 1 1 10em; }
+    .why-text { flex: 1 1 10em; line-height: var(--lh-prose); }
     .why-san { white-space: nowrap; }
     .retry-box {
       margin-top: 8px; padding: 12px 16px;
-      background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius-md);
+      background: var(--card); border: 1px solid var(--card-edge); border-radius: var(--radius-md);
       font-size: 0.875rem; line-height: var(--lh-body);
     }
     .retry-box p { margin: 0 0 4px; }
@@ -3476,7 +3487,7 @@
     .rec-entry {
       margin-bottom: 24px; padding: 16px;
       background: var(--card);
-      border: 1px solid var(--card-border); border-radius: var(--radius-md);
+      border: 1px solid var(--card-edge); border-radius: var(--radius-md);
     }
     .rec-entry[hidden] { display: none; }
     .rec-lead {
@@ -3844,9 +3855,11 @@ span[data-icon] { display: inline-grid; place-items: center; }
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   padding: 0 2px; font-size: 1rem;
 }
+/* 10.1 F4: 12, like every other Chinese word in the interface — 11 is
+   left to coordinates, the move list's ?! and the numbers on charts */
 .side-wide .tool-lbl {
   display: block; max-width: 100%;
-  font-size: 0.6875rem; font-weight: 400; line-height: var(--lh-tight);
+  font-size: 0.75rem; font-weight: 400; line-height: var(--lh-tight);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .side-wide .tool-row:has(> .tool-txt:not([hidden]))::after { content: ""; flex-basis: 100%; order: 1; }
@@ -3905,7 +3918,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   flex: none; min-width: 32px; height: 32px; padding: 0 4px;
   display: grid; place-items: center;
   border-radius: var(--radius-sm);
-  background: var(--card); border: 1px solid var(--card-border);
+  background: var(--card); border: 1px solid var(--card-edge);
   font-size: 0.875rem; font-weight: 400; line-height: var(--lh-tight); color: var(--text);
 }
 .go-card.won .go-mark { color: var(--win); }
@@ -3920,7 +3933,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .go-ach {
   flex: none; height: var(--ctl-h-sm); padding: 0 8px; align-self: center;
   display: inline-flex; align-items: center; gap: 4px;
-  border-radius: var(--radius-sm); background: var(--card); border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm); background: var(--card); border: 1px solid var(--card-edge);
   font-size: 0.75rem; font-weight: 400; line-height: var(--lh-tight); color: var(--text);
   white-space: nowrap;
 }
@@ -3945,7 +3958,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   padding: 12px;
   white-space: normal;
   background: var(--card);
-  border: 1px solid var(--card-border); border-radius: var(--radius-sm);
+  border: 1px solid var(--card-edge); border-radius: var(--radius-sm);
 }
 #app.pv-wide #board-wrap:has(> .go-card:not([hidden])) > .pstrip.at-bottom { visibility: visible; }
 #app.pv-wide #board-wrap:has(> .go-card:not([hidden])) > .pstrip.at-top .ps-result:not([hidden]) { display: inline; }
@@ -3967,7 +3980,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   align-items: center;
   margin: 0 0 12px; padding: 12px 16px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--card-border);
+  border: 1px solid var(--card-edge);
   background: var(--card);
 }
 /* 9.0 V1: right and wrong are status — the status colours, as a tint
@@ -4115,7 +4128,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 #sec-puzzle > .pz-hero { margin-top: 12px; }
 .pz-hero {
   display: grid; gap: 12px; padding: 16px;
-  border: 1px solid var(--card-border); border-radius: var(--radius-md);
+  border: 1px solid var(--card-edge); border-radius: var(--radius-md);
   background: var(--card);
 }
 .pz-hero-top { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: 16px; }
@@ -4127,7 +4140,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   appearance: none; cursor: pointer; font: inherit; color: var(--text); text-align: left;
   display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 12px;
   min-height: var(--row-h); padding: 8px 12px;
-  border: 1px solid var(--card-border); border-radius: var(--radius-md);
+  border: 1px solid var(--card-edge); border-radius: var(--radius-md);
   background: var(--card);
 }
 .pz-review, .pz-tile, .today-c, .reading-index > .setting-summary {
@@ -4158,7 +4171,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .pz-tile {
   appearance: none; cursor: pointer; font: inherit; color: var(--text); text-align: left;
   display: grid; gap: 4px; align-content: start; min-width: 0;
-  padding: 12px; border: 1px solid var(--card-border); border-radius: var(--radius-md);
+  padding: 12px; border: 1px solid var(--card-edge); border-radius: var(--radius-md);
   background: var(--card);
 }
 .pz-tile[hidden] { display: none; }
@@ -4167,7 +4180,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .pz-tile:focus-visible, .pz-review:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pz-modes-row .act-btn.active { background: var(--accent-soft); }
 .pz-modes-row .act-btn[aria-busy="true"] { opacity: 0.6; }
-#pz-themes-row .tool-txt { margin-left: 0; }
+#pz-themes-row .tool-txt { margin-left: -12px; } /* 10.1 L4: its words under the text above */
 .pz-run-stats { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 /* v8-2-plan T2: the answer field and its button, one row */
 .pz-vis-row { display: flex; gap: 8px; margin-top: 8px; }
@@ -4332,7 +4345,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .page-sec {
   min-width: 0;
   padding: 16px;
-  border: 1px solid var(--card-border); border-radius: var(--radius-md);
+  border: 1px solid var(--card-edge); border-radius: var(--radius-md);
   background: var(--card);
 }
 .page-inner > .rec-entry { margin-bottom: 24px; }
@@ -4352,7 +4365,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .today-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px; align-items: stretch; margin-bottom: 24px; }
 .today-card {
   min-width: 0; padding: 16px;
-  border: 1px solid var(--card-border); border-radius: var(--radius-md);
+  border: 1px solid var(--card-edge); border-radius: var(--radius-md);
   background: var(--card);
 }
 .today-block { min-width: 0; margin-bottom: 24px; }
@@ -4499,7 +4512,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .set-pane:not([hidden]) { animation: pane-in var(--dur-base) var(--ease); }
 .set-sec {
   min-width: 0; padding: 16px;
-  border: 1px solid var(--card-border); border-radius: var(--radius-md);
+  border: 1px solid var(--card-edge); border-radius: var(--radius-md);
   background: var(--card);
 }
 .set-sec > .side-h { margin: 0 0 8px; }
@@ -4564,7 +4577,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   flex-wrap: wrap; align-items: center; gap: 12px 8px;
   padding: 12px;
   background: var(--card);
-  border: 1px solid var(--card-border); border-radius: var(--radius-sm);
+  border: 1px solid var(--card-edge); border-radius: var(--radius-sm);
 }
 #app.pv-wide .pstrip.at-top { top: 0; padding-bottom: 12px; align-items: center; }
 #app.pv-wide .pstrip.at-bottom { bottom: 0; padding-top: 12px; align-items: center; }
@@ -4661,7 +4674,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 /* 9.0 V1: badges, 11/600 — 「书」 neutral, 「我的」 (below) the selected tint */
 .xp-book {
   padding: 0 4px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
-  font-size: 0.6875rem; font-weight: 400; color: var(--muted);
+  font-size: 0.75rem; font-weight: 400; color: var(--muted);
 }
 .xp-n { text-align: right; color: var(--muted); font-size: 0.75rem; }
 .xp-bar {
@@ -4683,7 +4696,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .xp-mine {
   padding: 0 4px; border: 1px solid var(--accent-line); border-radius: var(--radius-sm);
   background: var(--accent-soft); color: var(--text);
-  font-size: 0.6875rem; font-weight: 400;
+  font-size: 0.75rem; font-weight: 400;
 }
 .xp-tog {
   appearance: none; flex: none; width: var(--ctl-h-sm); height: var(--ctl-h-sm);

@@ -4456,7 +4456,7 @@ if (scenario()) {
           twelve: texts.filter((e) => getComputedStyle(e).fontSize === "12px" &&
             getComputedStyle(e).color !== getComputedStyle(document.getElementById("replay-pos")).color).map((e) => e.id || e.className),
           small: texts.filter((e) => parseFloat(getComputedStyle(e).fontSize) < 12 &&
-            !e.matches(".tool-lbl, .mvtag, .pick-tag, .xp-book, .xp-mine, .xp-bar *, .curve-x *, .curve-y, .curve-y *, .daily-dot")).map((e) => e.id || e.className),
+            !e.matches(".mvtag, .xp-bar *, .curve-x *, .curve-y, .curve-y *, .daily-dot")).map((e) => e.id || e.className),
           hscroll: pane.scrollWidth - pane.clientWidth,
           docScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         };
@@ -4680,13 +4680,13 @@ if (scenario()) {
           bad: lbls.filter((l) => l.checkVisibility()).filter((l) => {
             const b = l.closest("button").getBoundingClientRect(), r = l.getBoundingClientRect();
             return l.scrollWidth > l.clientWidth || r.left < b.left - 0.5 || r.right > b.right + 0.5 ||
-              r.bottom > b.bottom + 0.5 || parseFloat(getComputedStyle(l).fontSize) !== 11;
+              r.bottom > b.bottom + 0.5 || parseFloat(getComputedStyle(l).fontSize) !== 12;
           }).map((l) => l.textContent),
         };
       });
       if (d.side >= 360) {
         assert(d.total > 0 && d.shown === d.total, at + "§1d 面板 " + Math.round(d.side) + "px ≥ 360：每个图标下有字（" + d.shown + "/" + d.total + "）");
-        assert(d.bad.length === 0, at + "§1d 11px 的字不出各自的格子" + (d.bad.length ? " —— " + d.bad.join("、") : ""));
+        assert(d.bad.length === 0, at + "§1d 12px 的字不出各自的格子（10.1 F4，原 11px）" + (d.bad.length ? " —— " + d.bad.join("、") : ""));
       } else {
         assert(d.shown === 0, at + "§1d 面板 " + Math.round(d.side) + "px < 360：只显示图标（" + d.shown + "）");
       }

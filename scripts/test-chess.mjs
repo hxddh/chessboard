@@ -1928,6 +1928,14 @@ for (const lang of CONTENT_LANGS) {
   // The membership sets above are the scale, so widening one is how a step
   // gets added: this makes that edit fail here rather than pass quietly.
   assert(TYPE.size === 7, "the type scale still has seven steps (" + TYPE.size + ")");
+  // 10.1 F4: 11px is for the coordinates, the move list's ?! and the numbers
+  // on charts and in a step's dot — never for a word of Chinese or Japanese
+  {
+    const SMALL_OK = new Set(['#app[data-coords="in"] .coords', ".curve-y", ".curve-x", ".mvtag", ".daily-dot", ".xp-bar"]);
+    const small = [...stripped.matchAll(/([^{}]+)\{([^{}]*font-size:\s*0\.6875rem[^{}]*)\}/g)]
+      .map((m) => m[1].trim().replace(/\s+/g, " ")).filter((sel) => !SMALL_OK.has(sel));
+    assert(small.length === 0, "11px only for coordinates, marks and chart numbers" + (small.length ? " — also: " + small.join(" | ") : ""));
+  }
 
   // The bundle targets Safari 15 (scripts/bundle.mjs), and container queries
   // arrived in Safari 16: a rule inside @container is simply not there on
@@ -1982,7 +1990,12 @@ for (const lang of CONTENT_LANGS) {
       const v = new RegExp("--" + theme + "-card:\\s*([^;]+);").exec(stripped);
       assert(v && /^#[0-9a-f]{6}$/i.test(v[1].trim()), theme + ": a card is the raised surface, opaque (" + (v && v[1]) + ")");
       const p = new RegExp("--" + theme + "-panel:\\s*([^;]+);").exec(stripped);
-      assert(p && p[1].trim() === v[1].trim(), theme + ": …the same raised surface a dialog is");
+      // 10.1 S1: three steps, not two — the page, the panel (a dialog, the
+      // side panel) and a card one step brighter than the panel, so a card
+      // is told from what it sits on by its fill and its edge can go quiet
+      const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255); };
+      assert(p && /^#[0-9a-f]{6}$/i.test(p[1].trim()) && lum(v[1].trim()) > lum(p[1].trim()) && lum(v[1].trim()) - lum(p[1].trim()) <= 16,
+        theme + ": …a step brighter than the panel, and only a step (" + (p && p[1].trim()) + " → " + v[1].trim() + ")");
       const a = new RegExp("--" + theme + "-accent:\\s*([^;]+);").exec(stripped);
       // 10.0 M0: one accent, and no second name for it — --primary-from/-to
       // and --on-primary were declared in all four themes and read by nothing
