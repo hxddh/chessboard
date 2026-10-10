@@ -33,7 +33,7 @@ const RECENT = 4;
  */
 export function createTodayPage(d) {
   const {
-    doc, store, t, tf, tdot, Chess, pieceSrc, LESSONS, lessonText, Endgames, CLASSICS, classicText,
+    doc, store, t, tf, tdot, Chess, pieceSrc, LESSONS, lessonText, Endgames, CLASSICS, classicsTotal, classicText,
     loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText, drawRatingTrend,
     Shell, requestNewGame,
   } = d;
@@ -151,7 +151,7 @@ export function createTodayPage(d) {
       const tx = classicText(c);
       const gs = ls.gs || {};
       fillCard(card("classic"), fenOfClassic(ci), tdot(t("train.classic"), String(c.year)),
-        tx.white + " – " + tx.black, CLASSICS.filter((x) => gs[x.id]).length, CLASSICS.length);
+        tx.white + " – " + tx.black, CLASSICS.filter((x) => gs[x.id]).length, classicsTotal ? classicsTotal() : CLASSICS.length);
     }
   }
 

@@ -94,7 +94,7 @@
       "ob.newLabel": "初めてです — 一から教えてほしい",
       "ob.newSub": "120 のインタラクティブなレッスン。盤の見方から読みと局面の判断まで、各課にひとつの課題",
       "ob.knowLabel": "指せます — すぐ対局したい",
-      "ob.knowSub": "Stockfish と対局します。強さはサイドパネルでいつでも変更できます",
+      "ob.knowSub": "Stockfish と対局します。強さは毎局、新しい対局のダイアログで選べます",
       "ob.later": "まず盤を見る", "ob.recommended": "おすすめ",
       // post-game review (rv.*)
       "rv.title": "対局レビュー", "rv.dot": "  ·  ",
@@ -102,8 +102,8 @@
       "rec.lessons": "レッスンはあと {1} 課（修了 {0} 課）—— 基礎を固めてから対局に戻りましょう",
       "rec.harder": "最近はほぼ全勝です —— 「{0}」の強さに挑戦してみましょう",
       "rec.easier": "最近は負けが続いています —— 「{0}」に下げたほうが得るものがあります",
-      "rec.review": "最近は負け越しです —— 「パズル → 復習」に {0} 問残っています",
-      "rec.puzzles": "最近は負け越しです —— 「パズル」で戦術眼を鍛えると対局が安定します",
+      "rec.review": "最近は負け越しです —— 「特訓 → パズル」の復習に {0} 問残っています",
+      "rec.puzzles": "最近は負け越しです —— 「特訓 → パズル」で戦術眼を鍛えると対局が安定します",
       "rv.acc": "正確度", "rv.acpl": "平均損失", "rv.marks": "?! · ? · ??",
       "rv.kind.soft": "軽い緩手", "rv.kind.mid": "悪手", "rv.kind.bad": "大悪手",
       "rv.keyMoments": "重要な局面",
@@ -167,7 +167,7 @@
       "rv.verdict.mistakes": "悪手がやや多めです —— 指す前に相手の応手をもう 1 手読みましょう",
       "rv.verdict.excellent": "見事な指し回しです —— もっと強い相手に挑戦しましょう",
       "rv.verdict.solid": "堅実な指し回しです —— この調子で",
-      "rv.verdict.roomToGrow": "まだ伸びしろがあります —— 「パズル」で戦術眼を鍛えましょう",
+      "rv.verdict.roomToGrow": "まだ伸びしろがあります —— 「特訓 → パズル」で戦術眼を鍛えましょう",
       "rv.verdict.tooShort": "分析したのは {0} 手だけ —— 全体の実力を判断するには足りません",
       "rv.verdict.excellentPlain": "見事な指し回しです",
       // learn mode (lm.*) — task prompts, feedback and drill outcomes

@@ -94,7 +94,7 @@
       "ob.newLabel": "I'm new — teach me from scratch",
       "ob.newSub": "120 interactive lessons, from the board to calculation and positional play, one task each",
       "ob.knowLabel": "I can play — just start a game",
-      "ob.knowSub": "Play Stockfish; the difficulty row in the side panel changes it any time",
+      "ob.knowSub": "Play Stockfish; pick the difficulty in the new-game dialog before each game",
       "ob.later": "Just show me the board", "ob.recommended": "Recommended",
       // post-game review (rv.*)
       "rv.title": "Game review", "rv.dot": "  ·  ",
@@ -102,8 +102,8 @@
       "rec.lessons": "{1:lesson|lessons} still to go (you have finished {0}) \u2014 finish the course, then come back to play",
       "rec.harder": "You are winning nearly everything \u2014 time to try the \u201c{0}\u201d level",
       "rec.easier": "You lost the last few \u2014 the \u201c{0}\u201d level will teach you more",
-      "rec.review": "More losses than wins lately \u2014 Puzzles \u2192 Review still has {0} waiting",
-      "rec.puzzles": "More losses than wins lately \u2014 sharpen your tactics in Puzzles and games get steadier",
+      "rec.review": "More losses than wins lately \u2014 Train \u2192 Puzzles still has {0} to review",
+      "rec.puzzles": "More losses than wins lately \u2014 sharpen your tactics in Train \u2192 Puzzles and games get steadier",
       "rv.acc": "Accuracy", "rv.acpl": "Avg. loss", "rv.marks": "?! · ? · ??",
       "rv.kind.soft": "Inaccuracy", "rv.kind.mid": "Mistake", "rv.kind.bad": "Blunder",
       "rv.keyMoments": "Key moments",
@@ -167,7 +167,7 @@
       "rv.verdict.mistakes": "Several mistakes — calculate one more of your opponent's replies before moving",
       "rv.verdict.excellent": "Excellent play — time to try a harder level",
       "rv.verdict.solid": "Solid play — keep it up",
-      "rv.verdict.roomToGrow": "Room to grow — head to Puzzles to sharpen your tactics",
+      "rv.verdict.roomToGrow": "Room to grow — head to Train → Puzzles to sharpen your tactics",
       "rv.verdict.tooShort": "Only {0:move|moves} analysed — too few to judge overall play",
       "rv.verdict.excellentPlain": "Excellent play",
       // learn mode (lm.*) — task prompts, feedback and drill outcomes

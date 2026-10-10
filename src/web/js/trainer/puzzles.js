@@ -764,6 +764,19 @@ export function createPuzzlesUI(d) {
     startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx + 1);
   }
 
+  /**
+   * 已解 N / M for what is being practised: inside a kind (9.0 S3) that
+   * kind's count, built-in and bank together — the built-in book's 1,386
+   * beside a kind of 53k was two different "all" on one screen (10.0 M0).
+   */
+  function solvedOf() {
+    const solved = store.session.puzzleState.solved, cat = store.session.puzzleState.cat;
+    if (isGroupCat(cat)) {
+      const g = cat.slice(GROUP_CAT.length);
+      return [Modes.groupList(g).filter((p) => solved[p.id]).length, Modes.groupCount(g)];
+    }
+    return [bookNow().filter((p) => solved[p.id]).length, bookNow().length];
+  }
   function syncPuzzleUI() {
     paintPuzzlePanel();
     // v8-0-plan B1: the rating, the run card and the theme row, over the rest
@@ -805,8 +818,7 @@ export function createPuzzlesUI(d) {
     if (!store.session.puzzle) {
       syncOpSideSeg(store.session.puzzleState.cat);
       const emptyProg = document.getElementById("puzzle-progress");
-      if (emptyProg) emptyProg.textContent = tf("pz.solvedCount",
-        [bookNow().filter((p) => store.session.puzzleState.solved[p.id]).length, bookNow().length]);
+      if (emptyProg) emptyProg.textContent = tf("pz.solvedCount", solvedOf());
       const emptyTask = document.getElementById("puzzle-task");
       if (emptyTask) emptyTask.textContent = t("theme.loading");
       const emptyList = document.getElementById("puzzle-list");
@@ -815,14 +827,13 @@ export function createPuzzlesUI(d) {
       return;
     }
     const list = puzzlesInCat(store.session.puzzle.cat);
-    const solvedAll = bookNow().filter((p) => store.session.puzzleState.solved[p.id]).length;
     const missedCount = puzzlesInCat("review").length;
     const prog = document.getElementById("puzzle-progress");
     if (prog) {
       prog.textContent = store.session.puzzle.cat === "review"
         ? tf("pz.missedCount", [missedCount])
         : store.session.puzzle.cat === "repdue" ? tf("rep.dueLeft", [list.length])
-        : tf("pz.solvedCount", [solvedAll, bookNow().length]);
+        : tf("pz.solvedCount", solvedOf());
     }
     syncOpSideSeg(store.session.puzzle.cat);
     const task = document.getElementById("puzzle-task");

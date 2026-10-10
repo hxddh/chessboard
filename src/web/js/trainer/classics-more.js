@@ -21,6 +21,9 @@ import { loadChunk } from "../chunk.js";
 /** chunk file and global — scripts/bundle.mjs builds classics-more-chunk.js into it */
 export const MORE_CHUNK = { file: "chunk-classics-more.js", global: "CHESS_CLASSICS_MORE" };
 const LANG_AT = { "zh-CN": 0, en: 1, ja: 2 };
+/** how many games the chunk appends — so a count can say 40 before it arrives
+ * (10.0 M0: 今天 said 0/10 beside 训练's 全部 40 局); test-classics checks it */
+export const MORE_COUNT = 30;
 
 /**
  * @param {{store: object, list: object[], onReady: () => void}} d `list` is
@@ -47,5 +50,7 @@ export function createMoreClassics(d) {
     const gr = groups && groups.find((x) => x.id === id);
     return gr ? gr.n[LANG_AT[store.ui.langId] || 0] || gr.n[0] : "";
   }
-  return { ensure, groupName, ready: () => !!groups };
+  /** every classic, the chunk's thirty counted whether or not they are here yet */
+  const total = () => (groups ? list.length : list.length + MORE_COUNT);
+  return { ensure, groupName, ready: () => !!groups, total };
 }

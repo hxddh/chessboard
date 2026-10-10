@@ -5218,7 +5218,7 @@ import { loadChunk } from "./chunk.js";
   Shell.wire();
   // 9.0 S1: 今天 — the page around the coach's card (today-page.js)
   const TodayPage = createTodayPage({ doc: document, store, t, tf, tdot, Chess, pieceSrc: (k) => BoardView.pieceSrc(k), LESSONS, lessonText, Endgames: LessonsUI.Endgames,
-    CLASSICS: LessonsUI.CLASSICS, classicText: LessonsUI.classicText, loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText: () => ratingLabel(),
+    CLASSICS: LessonsUI.CLASSICS, classicsTotal: LessonsUI.classicsTotal, classicText: LessonsUI.classicText, loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText: () => ratingLabel(),
     drawRatingTrend, Shell, requestNewGame: () => requestNewGame() });
   TodayPage.wire();
   // v8-0-plan C3: 开局浏览器 — the key, the panel's state; the panel itself is a chunk

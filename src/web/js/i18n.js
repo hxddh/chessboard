@@ -124,7 +124,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "ob.newLabel": "我是新手，从零开始学",
       "ob.newSub": "120 课互动教程，从认棋盘到计算与局面判断，每课一个任务",
       "ob.knowLabel": "我会下棋，直接开局",
-      "ob.knowSub": "与 Stockfish 对弈，难度可随时在侧栏调整",
+      "ob.knowSub": "与 Stockfish 对弈，难度在每局开始前的新对局对话框里选",
       "ob.later": "先看看棋盘", "ob.recommended": "推荐",
       // post-game review (rv.*)
       "rv.title": "对局回顾", "rv.dot": "  ·  ",
@@ -132,8 +132,8 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "rec.lessons": "教学还剩 {1} 课未完成（已完成 {0}）—— 打好基础再回来对弈",
       "rec.harder": "近几局几乎全胜 —— 可以试试「{0}」难度了",
       "rec.easier": "近几局都输了 —— 换到「{0}」难度会更有收获",
-      "rec.review": "近几局胜少负多 —— 「做题 → 复习」还有 {0} 道错题等着你",
-      "rec.puzzles": "近几局胜少负多 —— 去「做题」练练战术眼，实战会更稳",
+      "rec.review": "近几局胜少负多 —— 「训练 · 谜题」的复习还有 {0} 道错题等着你",
+      "rec.puzzles": "近几局胜少负多 —— 去「训练 · 谜题」练练战术眼，实战会更稳",
       "rv.acc": "精准度", "rv.acpl": "平均失分", "rv.marks": "?! · ? · ??",
       "rv.kind.soft": "小失误", "rv.kind.mid": "失误", "rv.kind.bad": "严重失误",
       "rv.keyMoments": "关键时刻",
@@ -197,7 +197,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "rv.verdict.mistakes": "失误较多 —— 落子前多算一步对方的回应",
       "rv.verdict.excellent": "发挥出色 —— 可以挑战更高难度了",
       "rv.verdict.solid": "下得稳健 —— 继续保持",
-      "rv.verdict.roomToGrow": "还有提升空间 —— 到「做题」练练战术眼",
+      "rv.verdict.roomToGrow": "还有提升空间 —— 到「训练 · 谜题」练练战术眼",
       "rv.verdict.tooShort": "只分析了 {0} 着 —— 还不足以评价整体表现",
       "rv.verdict.excellentPlain": "发挥出色",
       // learn mode (lm.*) — task prompts, feedback and drill outcomes

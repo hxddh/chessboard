@@ -837,7 +837,7 @@ export function createLessonsUI(d) {
       });
     }
     const head = document.getElementById("lesson-list-h");
-    const headText = seg === "classic" ? tf("train.allClassics", [CLASSICS.length])
+    const headText = seg === "classic" ? tf("train.allClassics", [More.total()])
       : seg === "endgame" ? tf("train.allEndgames", [Endgames.total() || 90])
       : tf("train.allLessons", [LESSONS.filter((x) => x.tasks.length).length]);
     if (head && head.textContent !== headText) head.textContent = headText;
@@ -979,6 +979,6 @@ export function createLessonsUI(d) {
     wireLessonPanel,
     LESSONS, loadLearnState, saveLearnState, startLearn, stopLearn, syncStudyUI,
     curTask, startLesson, startLearnTask, learnModel, learnClick, learnEngineReply, learnUndo,
-    learnHint, syncLearnUI, Endgames, startEndgame, learnSeg, openSeg, CLASSICS, classicText,
+    learnHint, syncLearnUI, Endgames, startEndgame, learnSeg, openSeg, CLASSICS, classicText, classicsTotal: More.total,
   };
 }
