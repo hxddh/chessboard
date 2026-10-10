@@ -671,6 +671,7 @@
       "rv.full": "Full report",
       "curve.best": "best was {0}",
       "go.ratingProv": "Game rating {0}",
+      "ps.score": "Score this game: {0} (win 1, draw ½, loss 0)",
       "nav.me": "Me", "tip.prefs": "Settings (⌘, / Ctrl+,)",
       "prefs.look": "Appearance", "side.display": "Display",
       "ng.mode": "Opponent", 

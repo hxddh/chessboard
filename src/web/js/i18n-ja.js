@@ -671,6 +671,7 @@
       "rv.full": "詳細レポート",
       "curve.best": "最善は {0}",
       "go.ratingProv": "対局レーティング {0}",
+      "ps.score": "この対局の得点：{0}（勝ち 1、引き分け ½、負け 0）",
       "nav.me": "マイ", "tip.prefs": "設定（Ctrl または ⌘ とカンマ）",
       "prefs.look": "外観", "side.display": "表示",
       "ng.mode": "相手", 

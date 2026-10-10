@@ -3218,6 +3218,7 @@ import { loadChunk } from "./chunk.js";
         res.hidden = !score;
         if (score) {
           setText(res, score[side]);
+          res.title = tf("ps.score", [score[side]]);
           res.classList.toggle("win", score[side] === "1");
         }
       }

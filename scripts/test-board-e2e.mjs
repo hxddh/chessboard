@@ -2134,6 +2134,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     });
     assert(card.shown && card.clear && card.under && card.strip === "hidden",
       `9.0 M1 终局：结果条在棋盘下沿、占底部玩家栏的位置，不压 64 格（${JSON.stringify(card)}）`);
+    // 10.0 M0: the score on the strip says what it is
+    const score = await page.evaluate(() => { const r = document.getElementById("result-b"); return [r.textContent, r.title]; });
+    assert(score[0] === "1" && score[1].startsWith("本局得分：1"), "10.0 M0 终局：玩家栏上的比分有说明（" + score + "）");
     if (SHOTS) await page.screenshot({ path: SHOTS + "/end-of-game.png" });
     // stepping back into the game: the card and the badges step aside
     await page.click("#rep-prev");
