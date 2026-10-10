@@ -799,7 +799,14 @@
                  straight off the library's diagnosis. -->
             <div class="side-h-row">
               <h2 class="side-h" data-i18n="rep.title">我的开局书</h2>
-              <span class="side-h-meta num" id="rep-meta" hidden></span>
+              <!-- 10.1 L3: the explorer is a way out of this section, not one
+                   of the book's actions — it stood alone on a row of its own
+                   under the card, left-aligned under a centred group; it is the
+                   heading's link now, where 全部棋谱 is on 今天 -->
+              <span class="side-h-end">
+                <span class="side-h-meta num" id="rep-meta" hidden></span>
+                <button type="button" class="tool-txt" id="lib-explorer" data-i18n="xp.title">开局浏览器</button>
+              </span>
             </div>
             <div class="rec-block" id="rep-block">
             <div class="stats-body" id="rep-body"></div>
@@ -818,11 +825,6 @@
                 <button type="button" class="act-btn" id="rep-clear" hidden data-i18n="rep.clear">清空</button>
               </span>
             </div>
-            </div>
-            <!-- v8-0-plan C3: the opening explorer, from the page the book and
-                 the library live on: the board, with the explorer open -->
-            <div class="link-row">
-              <button type="button" class="act-btn" id="lib-explorer" data-i18n="xp.title">开局浏览器</button>
             </div>
           </section>
         </div>

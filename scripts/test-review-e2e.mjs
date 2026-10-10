@@ -424,8 +424,11 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
       const cv = document.getElementById("board");
       const step = cv.width / 8;
       // c4, White at the bottom: column 2, row 4 from the top
-      const r = step * 0.19;
-      const cx = 3 * step - r - step * 0.03, cy = 4 * step + r + step * 0.03;
+      // the badge's centre is 0.22 of a square in from the corner and its
+      // radius 0.16 (10.1 B2; 0.19 until then) — sampled inside its fill,
+      // left of the glyph
+      const r = step * 0.16;
+      const cx = 3 * step - step * 0.22, cy = 4 * step + step * 0.22;
       const d = cv.getContext("2d").getImageData(Math.round(cx - r * 0.78), Math.round(cy), 1, 1).data;
       const s = document.createElement("span");
       s.style.color = getComputedStyle(document.documentElement).getPropertyValue("--judge-bad");
@@ -1449,8 +1452,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       const cv = document.getElementById("board");
       const step = cv.width / 8;
       const f = sq.charCodeAt(0) - 97, rk = 8 - Number(sq[1]);
-      const r = step * 0.19;
-      const cx = (f + 1) * step - r - step * 0.03, cy = rk * step + r + step * 0.03;
+      const r = step * 0.16; // 10.1 B2 (0.19 until then); the centre is still 0.22 in
+      const cx = (f + 1) * step - step * 0.22, cy = rk * step + step * 0.22;
       const d = cv.getContext("2d").getImageData(Math.round(cx - r * 0.78), Math.round(cy), 1, 1).data;
       const s = document.createElement("span");
       s.style.color = getComputedStyle(document.documentElement).getPropertyValue("--judge-good");

@@ -1916,7 +1916,9 @@ for (const lang of CONTENT_LANGS) {
   // every button · 12 what is said beside it — plus 13 for the two heading
   // levels (section 600, field label 400) and 11 for coordinates and badges
   // only. 15 and 19 had no role and left; 12 came back as the aside.
-  const TYPE = new Set(["0.6875rem", "0.75rem", "0.8125rem", "0.875rem", "1rem", "1.875rem"]);
+  // 10.1 F4: 18 for a card's, a dialog's and a lesson's title — the step
+  // between 16 and 30 a heading had to make up for with weight
+  const TYPE = new Set(["0.6875rem", "0.75rem", "0.8125rem", "0.875rem", "1rem", "1.125rem", "1.875rem"]);
   const badType = [...stripped.matchAll(/font-size:\s*([^;{}]+);/g)]
     .map((m) => m[1].trim())
     .filter((v) => /^\d/.test(v) && !TYPE.has(v));
@@ -1925,7 +1927,15 @@ for (const lang of CONTENT_LANGS) {
   // design-constraints.md: 字号 7 档、行高 3 档、时长 3 档 —— 不要新增档位.
   // The membership sets above are the scale, so widening one is how a step
   // gets added: this makes that edit fail here rather than pass quietly.
-  assert(TYPE.size === 6, "the type scale still has six steps (" + TYPE.size + ")");
+  assert(TYPE.size === 7, "the type scale still has seven steps (" + TYPE.size + ")");
+  // 10.1 F4: 11px is for the coordinates, the move list's ?! and the numbers
+  // on charts and in a step's dot — never for a word of Chinese or Japanese
+  {
+    const SMALL_OK = new Set(['#app[data-coords="in"] .coords', ".curve-y", ".curve-x", ".mvtag", ".daily-dot", ".xp-bar"]);
+    const small = [...stripped.matchAll(/([^{}]+)\{([^{}]*font-size:\s*0\.6875rem[^{}]*)\}/g)]
+      .map((m) => m[1].trim().replace(/\s+/g, " ")).filter((sel) => !SMALL_OK.has(sel));
+    assert(small.length === 0, "11px only for coordinates, marks and chart numbers" + (small.length ? " — also: " + small.join(" | ") : ""));
+  }
 
   // The bundle targets Safari 15 (scripts/bundle.mjs), and container queries
   // arrived in Safari 16: a rule inside @container is simply not there on
@@ -1980,7 +1990,12 @@ for (const lang of CONTENT_LANGS) {
       const v = new RegExp("--" + theme + "-card:\\s*([^;]+);").exec(stripped);
       assert(v && /^#[0-9a-f]{6}$/i.test(v[1].trim()), theme + ": a card is the raised surface, opaque (" + (v && v[1]) + ")");
       const p = new RegExp("--" + theme + "-panel:\\s*([^;]+);").exec(stripped);
-      assert(p && p[1].trim() === v[1].trim(), theme + ": …the same raised surface a dialog is");
+      // 10.1 S1: three steps, not two — the page, the panel (a dialog, the
+      // side panel) and a card one step brighter than the panel, so a card
+      // is told from what it sits on by its fill and its edge can go quiet
+      const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255); };
+      assert(p && /^#[0-9a-f]{6}$/i.test(p[1].trim()) && lum(v[1].trim()) > lum(p[1].trim()) && lum(v[1].trim()) - lum(p[1].trim()) <= 16,
+        theme + ": …a step brighter than the panel, and only a step (" + (p && p[1].trim()) + " → " + v[1].trim() + ")");
       const a = new RegExp("--" + theme + "-accent:\\s*([^;]+);").exec(stripped);
       // 10.0 M0: one accent, and no second name for it — --primary-from/-to
       // and --on-primary were declared in all four themes and read by nothing
@@ -2003,9 +2018,21 @@ for (const lang of CONTENT_LANGS) {
       /SIL Open Font License/.test(fs.readFileSync(path.join(root, "src/web/fonts/Inter-OFL.txt"), "utf8")),
       "…with its SIL OFL beside it");
     const ui = /--font-ui:\s*([^;]+);/.exec(stripped);
-    assert(ui && /^"Inter Var",\s*"PingFang SC"/.test(ui[1].trim()), "the interface stack opens Inter → PingFang SC (" + (ui && ui[1].slice(0, 40)) + ")");
+    // 10.1 F1/F2: the CJK punctuation face first (Chinese, Japanese), then
+    // -apple-system (WebKit only: SF on the Mac, skipped on Windows), then Inter
+    assert(ui && /^"CJK Punct SC",\s*-apple-system,\s*"Inter Var",\s*"PingFang SC"/.test(ui[1].trim()),
+      "the interface stack opens CJK punctuation → -apple-system → Inter → PingFang SC (" + (ui && ui[1].slice(0, 60)) + ")");
     const ja = /html:lang\(ja\)\s*\{\s*--font-ui:\s*([^;]+);/.exec(stripped);
-    assert(ja && /^"Inter Var",\s*"Hiragino Kaku Gothic ProN"/.test(ja[1].trim()), "…and the Japanese one Inter → the Japanese faces");
+    assert(ja && /^"CJK Punct JA",\s*-apple-system,\s*"Inter Var",\s*"Hiragino Kaku Gothic ProN"/.test(ja[1].trim()),
+      "…and the Japanese one: its punctuation face → -apple-system → Inter → the Japanese faces");
+    const en = /html:lang\(en\)\s*\{[^}]*--font-ui:\s*([^;]+);/.exec(stripped);
+    assert(en && /^-apple-system,\s*"Inter Var"/.test(en[1].trim()) && !/CJK Punct/.test(en[1]),
+      "…and the English one has no CJK punctuation face: there the Latin forms are right");
+    // the punctuation faces carry the punctuation and nothing else
+    const punct = [...stripped.matchAll(/@font-face\s*\{([^}]*font-family:\s*"CJK Punct (?:SC|JA)"[^}]*)\}/g)].map((m) => m[1]);
+    assert(punct.length === 4 && punct.every((f) => /unicode-range:\s*U\+00B7, U\+2013-2014, U\+2018-2019, U\+201C-201D, U\+2026;/.test(f) &&
+      /src:\s*local\(/.test(f) && !/url\(/.test(f)),
+      "four punctuation faces (two languages × two weights), local() only, · – — ‘ ’ “ ” … and nothing else (" + punct.length + ")");
     assert(/text-autospace:\s*ideograph-alpha/.test(stripped), "text-autospace is on where it is supported");
     const sync = fs.readFileSync(path.join(root, "scripts/sync-dist.mjs"), "utf8");
     assert(/"src\/web\/fonts\/inter-latin-wght-normal\.woff2", "fonts\/inter-latin-wght-normal\.woff2"/.test(sync) &&
@@ -2056,6 +2083,14 @@ for (const lang of CONTENT_LANGS) {
     const bad = ws.filter((w) => !["400", "600"].includes(w));
     assert(bad.length === 0,
       "two weights only" + (bad.length ? " — also found: " + [...new Set(bad)].join(", ") : ""));
+    // 10.1 F3: and the second one is rare. 8.4–10.0 set 72 rules in 600 —
+    // every button, tab, tag and label — so nothing stood out and a Chinese
+    // panel read as bold throughout. 600 is for titles, section heads, the
+    // numbers that matter and the current item; this only shrinks.
+    const strong = ws.filter((w) => w === "600").length;
+    assert(strong <= 30, "600 is the exception, not the voice: " + strong + " rules (≤ 30)");
+    assert(/\n\s*b, strong, h1, h2, h3, h4 \{ font-weight: 600; \}/.test(stripped),
+      "…and <b>, <strong> and headings take it too, not the browser's 700");
   }
 
   // The action rows, and the two ways this has been got wrong. As
@@ -2095,16 +2130,33 @@ for (const lang of CONTENT_LANGS) {
     assert(/\.theme-row button,\s*\.act-btn \{/.test(stripped),
       "the segment control and the action button are declared together, not twice");
     const box = /\.theme-row button,\s*\.act-btn \{([\s\S]*?)\}/.exec(stripped);
-    assert(box && /white-space:\s*nowrap/.test(box[1]) && /font-size:\s*0\.875rem/.test(box[1]) && /font-weight:\s*600/.test(box[1]),
-      "…one line, 14/600, for both (9.0 V1: a label never wraps — a row that cannot hold it steps its columns down)");
+    assert(box && /white-space:\s*nowrap/.test(box[1]) && /font-size:\s*0\.875rem/.test(box[1]) && /font-weight:\s*400/.test(box[1]),
+      "…one line, 14/400, for both (9.0 V1: a label never wraps — a row that cannot hold it steps its columns down; 10.1 F3: a control's label is regular, as the system's are)");
     assert(!/overflow-wrap:\s*break-word|hyphens:\s*auto/.test((/\.theme-row button,\s*\.act-btn \{[^}]*\}\s*(\.theme-row button,\s*\.act-btn \{[^}]*\})?/.exec(stripped) || [""])[0]),
       "…and no rule left that breaks a label over two lines");
     const tray = /\n    \.theme-row \{([^}]*)\}/.exec(stripped);
-    assert(tray && /box-shadow:\s*inset 0 0 0 1px/.test(tray[1]) && /background:\s*var\(--card\)/.test(tray[1]),
-      "the segment's tray is the box: the raised surface and one hairline (9.0 V1)");
+    // 10.1 C1: the tray is recessed (a tint of the ink, no line) and the
+    // chosen segment is raised out of it — the system's segmented control
+    assert(tray && /background:\s*var\(--seg-tray\)/.test(tray[1]) && !/box-shadow/.test(tray[1]),
+      "the segment's tray is recessed: a tint, no hairline (10.1 C1)");
+    const on = /\n    \.theme-row button\.active \{([^}]*)\}/.exec(stripped);
+    assert(on && /background:\s*var\(--seg-on\)/.test(on[1]) && /box-shadow:\s*0 1px 2px/.test(on[1]) && !/--accent/.test(on[1]),
+      "…and the chosen segment is raised out of it, not outlined in the accent");
     const act = /\n    \.act-btn \{([^}]*)\}/.exec(stripped);
-    assert(act && /border:\s*1px solid var\(--line-strong\)/.test(act[1]),
-      "…and an action is the secondary button — the strong hairline on the raised surface");
+    assert(act && /border:\s*1px solid var\(--btn-edge\)/.test(act[1]) && /background:\s*var\(--btn-lift\)/.test(act[1]) &&
+      /box-shadow:\s*var\(--control-shadow\)/.test(act[1]),
+      "…and an action is the secondary button — lifted, an ink hairline, a one-pixel shadow (10.1 C)");
+    // 10.1 (Codex on #115): the macOS floor (11.0) may have no color-mix();
+    // a custom property holding one is invalid there and the control that
+    // reads it loses its fill and edge. Each such token is a plain value
+    // first and mixed only under @supports.
+    {
+      const sup = /@supports \(color: color-mix\(in srgb, red 50%, blue\)\) \{([\s\S]*?)\r?\n    \}\r?\n/.exec(stripped);
+      const outside = sup ? stripped.replace(sup[0], "") : stripped;
+      const bad = ["--card-border", "--card-edge", "--btn-lift", "--btn-lift-hover", "--btn-edge", "--seg-tray", "--seg-on", "--ring-track"]
+        .filter((k) => new RegExp(k + ":\\s*color-mix").test(outside) || !(sup && new RegExp(k + ":\\s*color-mix").test(sup[1])));
+      assert(sup && bad.length === 0, "the 10.1 control tokens are plain values, mixed only under @supports" + (bad.length ? " — " + bad.join(", ") : ""));
+    }
 
     // P3's acceptance criterion, at the level of the rule rather than the
     // screen: dimming a control that cannot be used is not a milder way of

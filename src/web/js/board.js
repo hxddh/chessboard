@@ -930,7 +930,10 @@ import { easeFromCss } from "./motion.js";
       // 9.0 M1: the result and a puzzle move's verdict are the corner's
       // small badge (the analysis mark's size, ~24px on a desktop board) —
       // the ring the check already draws carries the mated king
-      const r = step * (b.reveal ? 0.15 : 0.19) * k;
+      // 10.1 B2: a size smaller each (0.15 → 0.13, 0.19 → 0.16 of a square):
+      // at 0.38 of the square's width the analysis mark covered the top of
+      // a tall piece's head — the king's cross, the queen's crown
+      const r = step * (b.reveal ? 0.13 : 0.16) * k;
       const cx = (sc + 1) * step - step * (b.reveal ? 0.19 : 0.22), cy = sr * step + step * (b.reveal ? 0.19 : 0.22);
       const fill = P[b.fill];
       ctx.save();

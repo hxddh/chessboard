@@ -3023,10 +3023,11 @@ if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en",
       heights: [...new Set(btns.map((b) => Math.round(b.getBoundingClientRect().height)))].sort((a, c) => a - c),
       sizes: [...new Set(btns.map((b) => getComputedStyle(b).fontSize))],
       // 9.0 V1: a segment is a place in a tray — the tray carries the
-      // hairline (an inset box-shadow), not each segment; an action is a
-      // bordered button. Neither is a bare text link.
+      // shape, not each segment; an action is a bordered button. Neither is
+      // a bare text link. (10.1 C1: the tray is a recessed tint now, not a
+      // hairline — what is checked is that it has a fill of its own.)
       borderless: btns.filter((b) => b.matches(".theme-row button")
-        ? !/inset/.test(getComputedStyle(b.parentElement).boxShadow)
+        ? /^(transparent|rgba\(0, 0, 0, 0\))$/.test(getComputedStyle(b.parentElement).backgroundColor)
         : getComputedStyle(b).borderStyle === "none").map((b) => b.id || b.textContent.trim().slice(0, 8)),
       primaries: [...document.querySelectorAll(`${root} .act-btn.primary`)].filter(vis).map((b) => b.id),
       kinds: Object.entries(kinds).map(([k, v]) => k + " ← " + v.join(",")),
@@ -4455,7 +4456,7 @@ if (scenario()) {
           twelve: texts.filter((e) => getComputedStyle(e).fontSize === "12px" &&
             getComputedStyle(e).color !== getComputedStyle(document.getElementById("replay-pos")).color).map((e) => e.id || e.className),
           small: texts.filter((e) => parseFloat(getComputedStyle(e).fontSize) < 12 &&
-            !e.matches(".tool-lbl, .mvtag, .pick-tag, .xp-book, .xp-mine, .xp-bar *, .curve-x *, .curve-y, .curve-y *, .daily-dot")).map((e) => e.id || e.className),
+            !e.matches(".mvtag, .xp-bar *, .curve-x *, .curve-y, .curve-y *, .daily-dot")).map((e) => e.id || e.className),
           hscroll: pane.scrollWidth - pane.clientWidth,
           docScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         };
@@ -4679,13 +4680,13 @@ if (scenario()) {
           bad: lbls.filter((l) => l.checkVisibility()).filter((l) => {
             const b = l.closest("button").getBoundingClientRect(), r = l.getBoundingClientRect();
             return l.scrollWidth > l.clientWidth || r.left < b.left - 0.5 || r.right > b.right + 0.5 ||
-              r.bottom > b.bottom + 0.5 || parseFloat(getComputedStyle(l).fontSize) !== 11;
+              r.bottom > b.bottom + 0.5 || parseFloat(getComputedStyle(l).fontSize) !== 12;
           }).map((l) => l.textContent),
         };
       });
       if (d.side >= 360) {
         assert(d.total > 0 && d.shown === d.total, at + "§1d 面板 " + Math.round(d.side) + "px ≥ 360：每个图标下有字（" + d.shown + "/" + d.total + "）");
-        assert(d.bad.length === 0, at + "§1d 11px 的字不出各自的格子" + (d.bad.length ? " —— " + d.bad.join("、") : ""));
+        assert(d.bad.length === 0, at + "§1d 12px 的字不出各自的格子（10.1 F4，原 11px）" + (d.bad.length ? " —— " + d.bad.join("、") : ""));
       } else {
         assert(d.shown === 0, at + "§1d 面板 " + Math.round(d.side) + "px < 360：只显示图标（" + d.shown + "）");
       }
