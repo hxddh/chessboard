@@ -728,6 +728,24 @@ const global = typeof window !== "undefined" ? window : globalThis;
   }
 
   /**
+   * 11.0 W: tell the shell the theme is dark or light (the Mac window's
+   * appearance follows it) and learn whether the Mac's inset window shell is
+   * on — "inset" (leave the top 28 pt for the drag strip), "full" (full
+   * screen: nothing to leave) or "none" (anywhere else). Outside the native
+   * shell, or on any failure, "none": the layout is what it always was.
+   * @param {boolean} dark
+   * @returns {Promise<"inset"|"full"|"none">}
+   */
+  async function setChrome(dark) {
+    if (!hasZero() || typeof global.zero.invoke !== "function") return "none";
+    try {
+      const r = await global.zero.invoke("chess.setChrome", { dark: !!dark });
+      const c = r && typeof r === "object" ? r.chrome : null;
+      return c === "inset" || c === "full" ? c : "none";
+    } catch (_) { return "none"; }
+  }
+
+  /**
    * Ask GitHub for the latest release. The native side returns the tag and
    * the release page; comparing that tag with this build's own version — and
    * deciding whether to say anything — is the page's job. Never called at
@@ -857,6 +875,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     withStoreLock,
     appdataPath,
     setMenuLanguage,
+    setChrome,
     checkUpdate,
     fetchGames,
     fetchProgress,

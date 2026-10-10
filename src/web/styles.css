@@ -923,6 +923,16 @@
        no rule said otherwise. They take the one emphasis there is. */
     b, strong, h1, h2, h3, h4 { font-weight: 600; }
     #app { position: relative; height: 100%; width: 100%; overflow: hidden; }
+    /* 11.0 W: the Mac's inset window shell (src/native/mac_chrome.m). The
+       content runs under a transparent titlebar, and a native strip over the
+       top 28 pt moves the window — nothing of the page may sit under it, so
+       the whole app starts below it and the strip shows the page's own
+       surface, with the traffic lights on it. Set only when the shell answers
+       chess.setChrome with "inset"; in full screen it answers "full" and
+       there is nothing to leave. */
+    html { --titlebar-h: 0px; }
+    html[data-chrome="inset"] { --titlebar-h: 28px; }
+    #app { margin-top: var(--titlebar-h); height: calc(100% - var(--titlebar-h)); }
     .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
 
     .chrome {
@@ -2301,7 +2311,9 @@
          centre. The panel is 30vw now (up to 440px), and a 560px banner
          centred in the window came down on the chrome's three actions —
          the one bar that has to stay pressable while the banner is up. */
-      position: absolute; left: 8px; top: 8px; z-index: 60;
+      /* 11.0 W: below the Mac's drag strip when there is one — this banner
+         is the body's, not #app's, so it does not move down with the app */
+      position: absolute; left: 8px; top: calc(8px + var(--titlebar-h)); z-index: 60;
       max-width: max(240px, min(560px, calc(100% - var(--side-w) - 240px)));
       background: var(--danger); color: var(--on-danger);
       border-radius: var(--radius-md);
@@ -2323,7 +2335,7 @@
     .app-fault > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .app-fault > button { flex: none; }
     /* 6.0: a second banner (the set-aside record) stacks under the first */
-    .storage-fault ~ .storage-fault { top: 56px; }
+    .storage-fault ~ .storage-fault { top: calc(56px + var(--titlebar-h)); }
     .app-fault { display: flex; align-items: center; gap: 12px; }
     .app-fault .toast-action { color: inherit; border-color: color-mix(in srgb, currentColor 45%, transparent); }
 
@@ -4247,8 +4259,8 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .stage, .chrome, .task-strip { left: var(--rail-w); }
 /* the fault banners stand at the top-left of the board's column: after the
    rail, and under it where it is the top bar */
-.storage-fault { left: calc(var(--rail-w) + 8px); top: calc(var(--page-top) + 8px); }
-.storage-fault ~ .storage-fault { top: calc(var(--page-top) + 56px); }
+.storage-fault { left: calc(var(--rail-w) + 8px); top: calc(var(--page-top) + var(--titlebar-h) + 8px); }
+.storage-fault ~ .storage-fault { top: calc(var(--page-top) + var(--titlebar-h) + 56px); }
 .rail {
   position: absolute; z-index: 40;
   top: 0; bottom: 0; left: 0; width: var(--rail-w);

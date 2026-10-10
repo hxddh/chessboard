@@ -2083,7 +2083,30 @@ for (const lang of CONTENT_LANGS) {
     const bad = ws.filter((w) => !["400", "600"].includes(w));
     assert(bad.length === 0,
       "two weights only" + (bad.length ? " — also found: " + [...new Set(bad)].join(", ") : ""));
-    // 10.1 F3: and the second one is rare. 8.4–10.0 set 72 rules in 600 —
+    // 11.0 W: the Mac's inset window shell is the app's own native code,
+  // built and called on macOS only, and the page leaves its top 28 pt only
+  // when the shell says it is on
+  {
+    const m = fs.readFileSync(path.join(root, "src/native/mac_chrome.m"), "utf8");
+    assert(/NSWindowStyleMaskFullSizeContentView/.test(m) && /titlebarAppearsTransparent = YES/.test(m) &&
+      /performWindowDragWithEvent/.test(m) && /AppleActionOnDoubleClick/.test(m) &&
+      /NSWindowDidEnterFullScreenNotification/.test(m) && /NSWindowDidExitFullScreenNotification/.test(m),
+      "mac_chrome.m: transparent full-size titlebar, a strip that drags and double-clicks as the system does, out of the way in full screen");
+    const bz = fs.readFileSync(path.join(root, "build.zig"), "utf8");
+    const mac = /if \(platform == \.macos\) \{([\s\S]*?)\n    \} else/.exec(bz);
+    assert(mac && /addCSourceFile\(\.\{ \.file = b\.path\("src\/native\/mac_chrome\.m"\)/.test(mac[1]) && (bz.match(/addCSourceFile\(\.\{ \.file = b\.path\("src\/native\/mac_chrome\.m"\)/g) || []).length === 1,
+      "build.zig compiles mac_chrome.m in the macOS branch and nowhere else");
+    const mz = fs.readFileSync(path.join(root, "src/main.zig"), "utf8");
+    assert(/if \(comptime builtin\.os\.tag == \.macos\) chess_mac_chrome_init\(\);[\s\S]*runner\.runWithOptions/.test(mz),
+      "main.zig sets the shell up on macOS, before the runner opens its window");
+    assert(/\.name = "chess\.setChrome"/.test(fs.readFileSync(path.join(root, "src/bridge.zig"), "utf8")),
+      "chess.setChrome is an app command");
+    assert(/html\[data-chrome="inset"\] \{ --titlebar-h: 28px; \}/.test(stripped) &&
+      /#app \{ margin-top: var\(--titlebar-h\); height: calc\(100% - var\(--titlebar-h\)\); \}/.test(stripped),
+      "the page starts below the strip only when the shell answers inset");
+  }
+
+  // 10.1 F3: and the second one is rare. 8.4–10.0 set 72 rules in 600 —
     // every button, tab, tag and label — so nothing stood out and a Chinese
     // panel read as bold throughout. 600 is for titles, section heads, the
     // numbers that matter and the current item; this only shrinks.
@@ -7318,10 +7341,13 @@ for (const lang of CONTENT_LANGS) {
     "bundle.js stays within the first-paint budget (" + bundleBytes + (bundleBytes <= BUNDLE_BUDGET ? " ≤ " : " > ") + BUNDLE_BUDGET + " bytes)");
   // …and the release's own, tighter line: new pages go in chunks, the bundle
   // carries their doors. v9-0-plan §8 第 4 条 set it at 8.4.0 + 20 KB;
-  // v10-0-plan E6 moves it to 9.0.0 (923,333 bytes, e3fc6df) + 20 KB
-  const BUNDLE_BYTES_100 = 923333 + 20000;
-  assert(bundleBytes <= BUNDLE_BYTES_100,
-    "v10-0-plan E6: bundle.js grows at most 20 KB over 9.0.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_100 ? " ≤ " : " > ") + BUNDLE_BYTES_100 + " bytes)");
+  // v10-0-plan E6 moved it to 9.0.0 (923,333 bytes, e3fc6df) + 20 KB, and
+  // 11.0 moves it to 10.1.0 (942,990 bytes, da720ac) + 20 KB — the same rule,
+  // one release on: the portraits, the textures and the new pages go in
+  // chunks, the bundle carries their doors
+  const BUNDLE_BYTES_110 = 942990 + 20000;
+  assert(bundleBytes <= BUNDLE_BYTES_110,
+    "11.0: bundle.js grows at most 20 KB over 10.1.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_110 ? " ≤ " : " > ") + BUNDLE_BYTES_110 + " bytes)");
   // …minified without renaming: a player's stack trace still names the code
   assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
     "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");

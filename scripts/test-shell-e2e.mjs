@@ -284,6 +284,57 @@ const state = (page) => page.evaluate(() => {
   await ctx.close();
 }
 
+// --- 11.0 W: the Mac's inset window shell, as the page sees it --------------
+// The shell answers chess.setChrome with "inset": the app starts 28 px down
+// and nothing that takes a click sits under the native drag strip. Any
+// other answer (a browser, Windows) leaves the layout alone.
+{
+  for (const answer of ["inset", "none"]) {
+    const ctx = await browser.newContext({ viewport: WIDE, locale: "zh-CN" });
+    await ctx.addInitScript((a) => {
+      if (!sessionStorage.getItem("seeded")) {
+        sessionStorage.setItem("seeded", "1");
+        localStorage.setItem("chess.settings", JSON.stringify({ mode: "ai", langId: "zh-CN", soundOn: false, view: "play", appearance: "dark" }));
+      }
+      window.__chromeAsked = [];
+      window.zero = {
+        invoke: (name, p) => {
+          if (name === "chess.setChrome") { window.__chromeAsked.push(p); return Promise.resolve({ ok: true, chrome: a }); }
+          return Promise.resolve(null);
+        },
+        on: () => () => {}, off: () => {}, platform: { supports: () => Promise.resolve(false) },
+        clipboard: { readText: () => Promise.resolve(""), writeText: () => Promise.resolve(true) },
+      };
+    }, answer);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+    const r = await page.evaluate(() => {
+      const top = document.getElementById("app").getBoundingClientRect().top;
+      const hits = [];
+      for (let x = 4; x < innerWidth; x += 24) {
+        for (const y of [2, 14, 26]) {
+          const e = document.elementFromPoint(x, y);
+          if (e && e.closest("button, a, input, select, textarea, [role=button], canvas")) hits.push(x + "," + y + ":" + (e.id || e.className || e.tagName));
+        }
+      }
+      return { top, hits, asked: window.__chromeAsked.slice(-1)[0] || null, attr: document.documentElement.getAttribute("data-chrome") };
+    });
+    if (answer === "inset") {
+      assert(r.top === 28 && r.attr === "inset", "W：外壳答 inset —— 整个应用从 28px 处开始（" + r.top + "，" + r.attr + "）");
+      assert(r.hits.length === 0, "W：拖动条下面（顶上 28px）没有可点的东西" + (r.hits.length ? "（" + r.hits.slice(0, 3).join(" ") + "）" : ""));
+      assert(r.asked && r.asked.dark === true, "W：木主题（深色）告诉外壳 dark: true（" + JSON.stringify(r.asked) + "）");
+    } else {
+      assert(r.top === 0 && r.attr === null, "W：外壳答 none —— 布局照旧（" + r.top + "，" + r.attr + "）");
+    }
+    assert(errs.length === 0, "W（" + answer + "）：没有页面异常 " + errs.join(" / "));
+    await ctx.close();
+  }
+}
+
 // --- 今天 · 进度圈: just above the 900px breakpoint the card is narrowest (Codex on #115)
 {
   const { ctx, page, errs } = await open({ view: "home" }, { width: 920, height: 800 });
