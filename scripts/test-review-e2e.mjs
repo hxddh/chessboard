@@ -1851,7 +1851,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     const txt = (id) => { const e = document.getElementById(id); return e && !e.hidden ? e.textContent : ""; };
     return p ? { phase: p.dataset.phase, at: Number(p.dataset.at), view: p.dataset.view, say: txt("gs-say"), sum: txt("gs-sum"),
       worst: txt("gs-worst"), jump: !document.getElementById("gs-jump").hidden, task: document.getElementById("lesson-task").textContent,
-      title: document.getElementById("lesson-title").textContent } : null;
+      // 10.0 M0: the title says which side you guess; the game is the strip's
+      title: document.getElementById("lesson-title").textContent, game: document.getElementById("lesson-title").dataset.strip || "" } : null;
   });
   const waitGs = (pred, arg) => pg.waitForFunction(pred, arg, { timeout: 10000 }).then(() => true, () => false);
   const waitAt = (ply, phase = "guess") => waitGs(([p, ph]) => {
@@ -1882,7 +1883,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(await waitAt(0), "T3：点开第一局，轮到白方猜第 1 手");
   assert(served.slice(from).includes("/js/chunk-guess.js"), "T3：第一次开始时才取 chunk-guess.js");
   let p = await panel();
-  assert(/猜白方的着法/.test(p.title) && /1858/.test(p.title), "T3：卡片标题是这一局、猜白方（" + p.title + "）");
+  assert(/猜白方的着法/.test(p.title) && /1858/.test(p.game), "T3：卡片标题是猜白方，玩家栏上是这一局（" + p.title + " / " + p.game + "）");
   assert(/轮到你猜 1\./.test(p.task), "T3：任务行说轮到你猜第 1 手（" + p.task + "）");
   const live = await pg.evaluate(() => { const e = document.getElementById("gs-say"); return e.getAttribute("aria-live") + "/" + e.getAttribute("role"); });
   assert(live === "polite/status", "T3：「你走的 / 大师走的 / 得分」是读屏会读的 live 区域（" + live + "）");
@@ -1985,12 +1986,12 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(await waitAt(1), "T2（8.4）：新的一局（黑胜）默认猜黑方");
   const about = await pg.evaluate(() => { const e = document.getElementById("gs-about"); return e && !e.hidden ? e.textContent : ""; });
   assert(/1834/.test(about), "T2（8.4）：猜第一步之前，卡片上有这一局的开场白（" + about.slice(0, 30) + "…）");
-  const title10 = (await panel()).title;
-  assert(/德拉布尔多内/.test(title10) && /1834/.test(title10), "T2（8.4）：标题是新的一局（" + title10 + "）");
+  const title10 = (await panel()).game;
+  assert(/德拉布尔多内/.test(title10) && /1834/.test(title10), "T2（8.4）：玩家栏上是新的一局（" + title10 + "）");
   await pg.evaluate(() => document.querySelector('#lang-seg button[data-lang="en"]').click());
   await pg.waitForTimeout(600);
   const aboutEn = await pg.evaluate(() => document.getElementById("gs-about").textContent);
-  assert(/La Bourdonnais/.test(aboutEn) && !/[一-鿿]/.test(aboutEn + (await panel()).title), "T2（8.4）：英文下开场白与标题是英文（" + aboutEn.slice(0, 40) + "…）");
+  assert(/La Bourdonnais/.test(aboutEn) && !/[一-鿿]/.test(aboutEn + (await panel()).title + (await panel()).game), "T2（8.4）：英文下开场白与标题是英文（" + aboutEn.slice(0, 40) + "…）");
   await pg.evaluate(() => document.querySelector('#lang-seg button[data-lang="zh-CN"]').click());
   await pg.waitForTimeout(600);
   await pg.click('#classic-mode button[data-cmode="read"]');   // 9.0 S3: 读谱, the switch

@@ -266,8 +266,6 @@ if (scenario()) {
     // for the three with a style, the style) under the persona's name.
     const { ctx, page } = await open(lang, "ai", "play");
     await openNewGame(page);
-    await page.click("#ng-custom > summary");
-    await page.waitForTimeout(200);
     const cards = await page.evaluate(() => [...document.querySelectorAll("#op-grid .op-card")].filter((b) => !b.hidden).map((b) => ({
       name: b.querySelector(".op-name").textContent.trim(), rating: Number(b.querySelector(".op-rating").textContent),
       sub: b.querySelector(".op-style").textContent.trim() })));
@@ -1455,7 +1453,8 @@ if (scenario()) {
   });
   assert(!st.shut.open, "the rungs and styles start folded (自定义)");
   assert(st.shut.visibleButtons === 0, "…so none of the buttons is on screen (" + st.shut.visibleButtons + ")");
-  assert(st.openButtons >= 14, "…and they are all there when you open it (" + st.openButtons + ")");
+  // 10.0 M0: five clocks and four styles — the rungs are the cards above it
+  assert(st.openButtons >= 9, "…and they are all there when you open it (" + st.openButtons + ")");
   await ctx.close();
 }
 
@@ -5577,8 +5576,12 @@ if (scenario()) {
       await page.evaluate(() => { document.getElementById("ng-custom").open = true; });
       await page.waitForTimeout(250);
       const o = await measure();
-      assert(o.more >= 14 && o.moreSpill.length === 0 && o.morePast === 0 && o.sideways <= 0,
+      // 10.0 M0: its buttons are the rarer clocks and the styles (5 + 4); the
+      // rungs are the cards, all twenty-one of them now, as tidy as the eight
+      assert(o.more >= 9 && o.moreSpill.length === 0 && o.morePast === 0 && o.sideways <= 0,
         `${tag}: 打开「更多选项」，${o.more} 个按钮都在对话框里、字不出按钮、不横向滚动 (${o.moreSpill.join(", ") || "—"}; ${o.sideways}px)`);
+      assert(o.cards === 21 && o.cardSpill.length === 0 && o.past === 0,
+        `${tag}: …对手卡展开成全部 ${o.cards} 张，都在对话框里、没被截 (${o.cardSpill.join(", ") || "—"})`);
       assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
       await ctx.close();
     }
