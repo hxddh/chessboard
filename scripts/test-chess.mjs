@@ -8199,7 +8199,7 @@ for (const lang of CONTENT_LANGS) {
     "trainer/puzzles.js": ["createPuzzlesUI", "puzzleMove", "syncPuzzleUI"],
     "trainer/today.js": ["createTodayUI", "dailySignals", "dailyJump", "renderPuzzleTally"],
     // v8-0-plan B5 (M4): the 我的 page grows in its own module
-    "me-page.js": ["createMePage", "drawAccTrend", "renderAchRows", "REC_DOORS"],
+    "me-page.js": ["createMePage", "drawAccTrend", "renderAchRows"],
   };
   for (const [file, names] of Object.entries(homes)) {
     assert(APP_MODULES.includes(file), "F4: " + file + " follows app.js's house rules (APP_MODULES)");

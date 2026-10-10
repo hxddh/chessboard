@@ -1553,7 +1553,7 @@
        the exact thing WebKit drops clicks for (7.5, 16px; held-click.mjs
        measures centre drift for that reason, and a 1px nudge failed it). A
        scale keeps the centre where the pointer went down. 0.98 is the gentlest
-       step already in the file (.rec-door) — a full-width lesson row at
+       step already in the file (the record page's doors had it) — a full-width lesson row at
        0.97 would pull in 9px a side. `:where()` keeps it at the weight of one
        class, so the families with a press of their own (.act-btn, the
        segments, .icon-btn, .promo-row) keep theirs. No transition is added:
@@ -3385,23 +3385,6 @@
       margin: 0 0 12px;
       font-size: 0.875rem; line-height: var(--lh-body); color: var(--muted);
     }
-    .rec-doors { display: flex; flex-direction: column; gap: 0; }
-    .rec-door {
-      appearance: none; text-align: left; width: 100%;
-      display: flex; align-items: center; gap: 12px;
-      padding: 8px; border-radius: var(--radius-sm);
-      border: 0;
-      background: transparent;
-      color: var(--text); font: inherit; cursor: pointer;
-      transition: border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease), transform var(--dur-quick) var(--ease);
-    }
-    .rec-door + .rec-door { box-shadow: 0 -1px 0 var(--line); }
-    .rec-door:hover { background: var(--btn-ghost); }
-    .rec-door:active { transform: scale(0.98); }
-    .rec-door-ic { font-size: 1rem; line-height: var(--lh-tight); flex-shrink: 0; color: var(--muted); }
-    .rec-door-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-    .rec-door-k { font-size: 0.875rem; font-weight: 600; line-height: var(--lh-tight); }
-    .rec-door-v { font-size: 0.75rem; color: var(--muted); line-height: var(--lh-tight); }
     /* the fold at the end of the locked list — an .act-btn like every other
        action in the panel, just not stretched across the column */
     .ach-more { margin-top: 8px; flex: none; justify-self: start; padding: 0 12px; }

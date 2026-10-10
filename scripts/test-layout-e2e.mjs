@@ -1248,29 +1248,25 @@ if (scenario()) {
   }
 }
 
-// --- 3m3. the records page opens as a door, not as a wall -----------------
+// --- 3m3. the records page opens on a sentence, not as a wall -----------
 // A fresh install used to open 记录 on two grey sentences saying nothing had
 // happened yet and fifteen 🔒 rows under a 0/15 — a wall with the score
-// already on it. Now: a card naming what the page will hold and three doors,
-// each labelled with the badge behind it, and the locked list folds after the
-// three closest.
+// already on it. 8.x put three doors there (上课 / 做题 / 下棋); 10.0 M0 took
+// them away again — they were the third copy of what 今天 and 训练 offer.
+// Now: one sentence naming what the page will hold, and the locked list
+// folded after the three closest.
 if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "record");
   const fresh = await page.evaluate(() => {
     const card = document.getElementById("record-empty");
-    const doors = [...document.querySelectorAll(".rec-door")];
     const locked = [...document.querySelectorAll(".ach-item:not(.got)")].filter((e) => e.offsetParent);
     const more = document.getElementById("ach-more");
-    return { shown: !!card && !card.hidden,
-             doors: doors.map((b) => b.dataset.mode),
-             subs: doors.map((b) => b.querySelector(".rec-door-v").textContent.trim()),
+    return { shown: !!card && !card.hidden, buttons: card ? card.querySelectorAll("button").length : -1,
+             text: card ? card.textContent.trim() : "",
              locked: locked.length, more: more ? more.textContent.trim() : null };
   });
-  assert(fresh.shown, "全新安装打开记录页,先看到的是入口卡片");
-  assert(fresh.doors.join(",") === "learn,puzzle,ai",
-    "……三扇门:上课、做题、下棋(" + fresh.doors.join(", ") + ")");
-  assert(fresh.subs.every((x) => x.includes("「")),
-    "……每扇门上写着它开的那个成就(" + fresh.subs.join(" / ") + ")");
+  assert(fresh.shown && fresh.text.length > 0, "全新安装打开记录页,先看到一句话说这一页会记什么(" + fresh.text + ")");
+  assert(fresh.buttons === 0, "……那张卡片上没有训练的入口(今天、训练已经有了)(" + fresh.buttons + ")");
   assert(fresh.locked === 3, "锁着的成就只站出来三个,不是十五个(" + fresh.locked + ")");
   assert(fresh.more && /12/.test(fresh.more), "……其余的收在一个数字后面(" + fresh.more + ")");
 
@@ -1280,26 +1276,6 @@ if (scenario()) {
   const opened = await page.evaluate(() =>
     [...document.querySelectorAll(".ach-item:not(.got)")].filter((e) => e.offsetParent).length);
   assert(opened === 15, "按下去十五个都在(" + opened + ")");
-
-  // and a door goes where it says: 教学 mode, on the 对局 tab
-  await page.click('.rec-door[data-mode="learn"]');
-  await page.waitForTimeout(600);
-  // 9.0 S5: the panel has no tabs — "on the 对局 tab" is "on the 学习 board,
-  // with the lesson card showing in the panel's one pane"
-  const went = await page.evaluate(() => ({
-    mode: document.getElementById("app").dataset.mode,
-    view: document.getElementById("app").dataset.view,
-    lesson: !!document.getElementById("sec-learn") && !document.getElementById("sec-learn").hidden
-      && !!document.getElementById("sec-learn").offsetParent,
-  }));
-  assert(went.mode === "learn", "「上第 1 课」真的进了教学(" + went.mode + ")");
-  // 9.0 S3: 学习 is 训练's 课程 segment — the view is train, the switch on 课程
-  const seg = await page.evaluate(() => {
-    const b = document.querySelector('#train-seg button[aria-pressed="true"]');
-    return b ? b.dataset.seg : null;
-  });
-  assert(went.view === "train" && went.lesson, "……并且落在训练页面板里的课程卡上(" + went.view + ")");
-  assert(seg === "course", "……训练的切换停在「课程」上(" + seg + ")");
   await ctx.close();
 }
 
@@ -1314,7 +1290,7 @@ if (scenario()) {
 if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   const bare = await page.evaluate(() => {
-    const sel = 'button, [role="tab"], summary, .lesson-item, .hist-row, .ach-item, .mlrow, .rec-door';
+    const sel = 'button, [role="tab"], summary, .lesson-item, .hist-row, .ach-item, .mlrow';
     return [...new Set([...document.querySelectorAll(sel)].filter((e) => e.offsetParent)
       .filter((e) => ["none", "all"].includes(getComputedStyle(e).transitionProperty))
       .map((e) => e.id || e.className || e.tagName))];

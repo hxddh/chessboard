@@ -2672,7 +2672,7 @@ import { loadChunk } from "./chunk.js";
   }
 
   // v8-0-plan F4/B5: the 我的 page's renderers (me-page.js)
-  const MePage = createMePage({ ACH, Icons, Progress, evalAch, libPlayedAt, loadStats, setSideTab, store, switchMode, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n), Endgames: LessonsUI.Endgames, startEndgame: (id) => LessonsUI.startEndgame(id), Vis: PuzzlesUI.Vis });
+  const MePage = createMePage({ Icons, Progress, evalAch, libPlayedAt, loadStats, store, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n), Endgames: LessonsUI.Endgames, startEndgame: (id) => LessonsUI.startEndgame(id), Vis: PuzzlesUI.Vis });
   function renderTrends() { MePage.renderTrends(); }
   function renderAchievements() { MePage.renderAchievements(); }
   function renderRecordEntry() { MePage.renderRecordEntry(); }
