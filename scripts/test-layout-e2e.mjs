@@ -3023,10 +3023,11 @@ if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en",
       heights: [...new Set(btns.map((b) => Math.round(b.getBoundingClientRect().height)))].sort((a, c) => a - c),
       sizes: [...new Set(btns.map((b) => getComputedStyle(b).fontSize))],
       // 9.0 V1: a segment is a place in a tray — the tray carries the
-      // hairline (an inset box-shadow), not each segment; an action is a
-      // bordered button. Neither is a bare text link.
+      // shape, not each segment; an action is a bordered button. Neither is
+      // a bare text link. (10.1 C1: the tray is a recessed tint now, not a
+      // hairline — what is checked is that it has a fill of its own.)
       borderless: btns.filter((b) => b.matches(".theme-row button")
-        ? !/inset/.test(getComputedStyle(b.parentElement).boxShadow)
+        ? /^(transparent|rgba\(0, 0, 0, 0\))$/.test(getComputedStyle(b.parentElement).backgroundColor)
         : getComputedStyle(b).borderStyle === "none").map((b) => b.id || b.textContent.trim().slice(0, 8)),
       primaries: [...document.querySelectorAll(`${root} .act-btn.primary`)].filter(vis).map((b) => b.id),
       kinds: Object.entries(kinds).map(([k, v]) => k + " ← " + v.join(",")),

@@ -2122,11 +2122,17 @@ for (const lang of CONTENT_LANGS) {
     assert(!/overflow-wrap:\s*break-word|hyphens:\s*auto/.test((/\.theme-row button,\s*\.act-btn \{[^}]*\}\s*(\.theme-row button,\s*\.act-btn \{[^}]*\})?/.exec(stripped) || [""])[0]),
       "…and no rule left that breaks a label over two lines");
     const tray = /\n    \.theme-row \{([^}]*)\}/.exec(stripped);
-    assert(tray && /box-shadow:\s*inset 0 0 0 1px/.test(tray[1]) && /background:\s*var\(--card\)/.test(tray[1]),
-      "the segment's tray is the box: the raised surface and one hairline (9.0 V1)");
+    // 10.1 C1: the tray is recessed (a tint of the ink, no line) and the
+    // chosen segment is raised out of it — the system's segmented control
+    assert(tray && /background:\s*var\(--seg-tray\)/.test(tray[1]) && !/box-shadow/.test(tray[1]),
+      "the segment's tray is recessed: a tint, no hairline (10.1 C1)");
+    const on = /\n    \.theme-row button\.active \{([^}]*)\}/.exec(stripped);
+    assert(on && /background:\s*var\(--seg-on\)/.test(on[1]) && /box-shadow:\s*0 1px 2px/.test(on[1]) && !/--accent/.test(on[1]),
+      "…and the chosen segment is raised out of it, not outlined in the accent");
     const act = /\n    \.act-btn \{([^}]*)\}/.exec(stripped);
-    assert(act && /border:\s*1px solid var\(--line-strong\)/.test(act[1]),
-      "…and an action is the secondary button — the strong hairline on the raised surface");
+    assert(act && /border:\s*1px solid var\(--btn-edge\)/.test(act[1]) && /background:\s*var\(--btn-lift\)/.test(act[1]) &&
+      /box-shadow:\s*var\(--control-shadow\)/.test(act[1]),
+      "…and an action is the secondary button — lifted, an ink hairline, a one-pixel shadow (10.1 C)");
 
     // P3's acceptance criterion, at the level of the rule rather than the
     // screen: dimming a control that cannot be used is not a milder way of

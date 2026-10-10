@@ -401,8 +401,26 @@
       --btn-hover: var(--control-hover);
       --btn-ghost: var(--control-ghost);
       --card: var(--card-fill);
-      --card-border: var(--card-line);
+      /* 10.1 S1: the card's edge at a little over half its old contrast,
+         drawn toward the card's own fill. Every card, separator and field
+         outline read this at full strength, so a panel was a lattice of
+         lines; the surfaces already say where a card is. */
+      --card-border: color-mix(in srgb, var(--card-line) 55%, var(--card-fill));
       --chrome-bg: var(--veil);
+      /* 10.1 C: controls. A secondary button is lifted a step off whatever it
+         sits on (white mixed in: lighter on the dark themes, whiter on the
+         light ones), edged by a hairline of the ink, and given a one-pixel
+         shadow — the system's push button, not an outlined box. A segment
+         row is a recessed tray with the chosen segment raised out of it. */
+      --btn-lift: color-mix(in srgb, var(--btn) 90%, white 10%);
+      --btn-lift-hover: color-mix(in srgb, var(--btn-hover) 86%, white 14%);
+      --btn-edge: color-mix(in srgb, var(--ink) 11%, transparent);
+      --control-shadow: 0 1px 1px rgba(0,0,0,.08);
+      --seg-tray: color-mix(in srgb, var(--ink) 6%, transparent);
+      --seg-on: color-mix(in srgb, var(--surface-raised) 86%, white 14%);
+      /* 10.1 S2: one shadow for everything that floats — a dialog, a menu,
+         the toast — a contact edge, a near shadow and a far one */
+      --shadow-pop: 0 0 0 1px rgba(0,0,0,.08), 0 6px 16px rgba(0,0,0,.16), 0 22px 56px rgba(0,0,0,.24);
       /* 9.0 V1 (设计语言 v2, design/v9-m0/v9.css): the second hairline (a
          secondary button's edge, a field), the third ink (disabled, a
          placeholder, a move number), the one tint the accent is allowed to
@@ -925,8 +943,9 @@
        segment implementations (v9-0-plan §0). */
     .icon-btn, .tool-btn {
       appearance: none; border: 0; border-radius: var(--radius-sm);
-      background: var(--btn); color: var(--text);
-      border: 1px solid var(--line-strong);
+      background: var(--btn-lift); color: var(--text);
+      border: 1px solid var(--btn-edge);
+      box-shadow: var(--control-shadow);
       font: inherit; cursor: pointer;
       white-space: nowrap;
       transition: background var(--dur-quick) var(--ease), transform var(--dur-quick) var(--ease), opacity var(--dur-quick) var(--ease);
@@ -964,7 +983,7 @@
     .ps-tools .tool-btn { height: var(--ctl-h-sm); min-width: 80px; }
     .ps-tools .slot-empty,
     .replay-bar .slot-empty { visibility: hidden; }
-    .tool-btn:hover { background: var(--btn-hover); }
+    .tool-btn:hover { background: var(--btn-lift-hover); }
     .icon-btn:hover { background: var(--btn-ghost); }
     /* 7.7 (v7-7-plan §3): one primary, one look. This was a gradient in
        --primary-from/to — blue on 日 and 纸 — while .act-btn.primary was the
@@ -1504,8 +1523,7 @@
        control and a segment is a place in it. */
     .theme-row {
       display: flex; gap: 2px; padding: 2px;
-      background: var(--card);
-      box-shadow: inset 0 0 0 1px var(--card-border);
+      background: var(--seg-tray);
       border-radius: var(--radius-sm);
     }
     /* Wrapped segment rows are a grid, not a wrapping flex row.
@@ -1592,12 +1610,13 @@
       border-radius: calc(var(--radius-sm) - 2px);
     }
     .act-btn {
-      border: 1px solid var(--line-strong);
-      background: var(--btn); color: var(--text);
+      border: 1px solid var(--btn-edge);
+      background: var(--btn-lift); color: var(--text);
+      box-shadow: var(--control-shadow);
       border-radius: var(--radius-sm);
     }
     .theme-row button:hover { color: var(--text); background: var(--btn-ghost); }
-    .act-btn:hover { background: var(--btn-hover); }
+    .act-btn:hover { background: var(--btn-lift-hover); }
     .theme-row button:active, .act-btn:active { transform: scale(0.97); }
     /* 7.7 §9: every button answers a press, not only the families above.
        Tabs, move-list moves, the replay bar, the palette, the move menu, the
@@ -1714,10 +1733,12 @@
     .look-name { line-height: var(--lh-tight); }
     /* the selected segment: the accent's one tint and its hairline — the
        selected state is one of the three places the accent is allowed */
+    /* 10.1 C1: raised out of the tray, as the system's segmented control
+       draws it — the chosen one is the solid thing, not an outlined one */
     .theme-row button.active {
       color: var(--text);
-      background: var(--accent-soft);
-      box-shadow: inset 0 0 0 1px var(--accent-line);
+      background: var(--seg-on);
+      box-shadow: 0 1px 2px rgba(0,0,0,.18), 0 0 0 .5px var(--btn-edge);
       font-weight: 400;
     }
     /* v8-3-plan T1 (M2 评审 P2-1): a set of 看 N 步 / 盲走 is being made —
@@ -2180,7 +2201,7 @@
       /* 9.0 V3: one strip high (40px) at most, with an action in it — on a
          wide window it lies over the top strip, ending where the board begins */
       line-height: var(--lh-tight);
-      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      box-shadow: var(--shadow-pop);
       opacity: 0; pointer-events: none;
       transition: opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
     }
@@ -2253,7 +2274,7 @@
       border-radius: var(--radius-md);
       padding: 8px 16px; font-size: 0.875rem; font-weight: 400;
       line-height: var(--lh-body);
-      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      box-shadow: var(--shadow-pop);
     }
 
     /* 9.0 V3: with the top bar gone the board starts 40px down, so a
@@ -2293,7 +2314,7 @@
          (v9.css: .panel .card { background: var(--bg) }) */
       --card: var(--bg);
       --btn: var(--bg);
-      box-shadow: 0 24px 60px rgba(0,0,0,.4);
+      box-shadow: var(--shadow-pop);
       animation: modal-in .22s var(--ease);
       /* 7.6 §3c: no dialog is taller than the window. 「看诊断」 on 24 games
          measured a 1025px card in a 900px window, with no max-height and
@@ -2996,7 +3017,7 @@
       padding: 4px;
       background: var(--panel); border: 1px solid var(--panel-border);
       border-radius: var(--radius-md);
-      box-shadow: 0 12px 32px rgba(0,0,0,.35);
+      box-shadow: var(--shadow-pop);
     }
     .move-menu button {
       appearance: none; border: 0; background: transparent;
@@ -4077,7 +4098,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   position: absolute; z-index: 30; top: calc(100% + 4px); right: 0;
   display: grid; padding: 4px; min-width: 128px;
   border: 1px solid var(--card-border); border-radius: var(--radius-md);
-  background: var(--card); box-shadow: 0 12px 32px rgba(0,0,0,.35);
+  background: var(--card); box-shadow: var(--shadow-pop);
 }
 /* 9.0 S3 — 训练's switch over the panel, and 名局's read / guess */
 .train-seg { margin: 12px 0 4px; }
