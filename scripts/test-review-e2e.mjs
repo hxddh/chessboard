@@ -26,6 +26,7 @@ import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { heldClick } from "./lib/held-click.mjs";
 import { seedLibrary } from "./lib/library-view.mjs";
+import { settle } from "./lib/settle.mjs";
 import { OPERA, playOpera, analyseOpera, scriptOpera } from "./lib/opera-fixture.mjs";
 import { Chess } from "../src/web/js/chess.js";
 import { ChessReview } from "../src/web/js/review.js";
@@ -59,14 +60,14 @@ let failed = 0;
  */
 async function setLive(pg, on) {
   await pg.click('#rail button[data-view="settings"]');
-  await pg.waitForTimeout(150);
+  await settle(pg);
   await pg.click("#cat-advanced");
-  await pg.waitForTimeout(100);
+  await settle(pg);
   const now = await pg.getAttribute("#opt-live", "aria-pressed");
   if ((now === "true") !== on) await pg.click("#opt-live");
-  await pg.waitForTimeout(100);
+  await settle(pg);
   await pg.click('#rail button[data-view="play"]');
-  await pg.waitForTimeout(200);
+  await settle(pg);
 }
 /**
  * 9.0 S3: the classics are guessed from 训练 · 名局 with its switch on 猜着
@@ -83,7 +84,7 @@ async function toGuessList(pg) {
       b.click();
       return false;
     }, sel);
-    if (!on) await pg.waitForTimeout(300);
+    if (!on) await settle(pg);
   }
   await pg.evaluate(() => { document.getElementById("lesson-fold").open = true; });
 }
@@ -137,7 +138,7 @@ const click = async (sq) => {
 for (const sq of ["e2", "e4", "e7", "e5", "f1", "c4", "b8", "c6", "d1", "h5", "g8", "f6", "h5", "f7"]) {
   await click(sq);
 }
-await page.waitForTimeout(400);
+await settle(page);
 assert((await bar()).rowHidden, "still no bar with the game just finished and nothing analysed");
 
 // --- a scripted engine, so the bar's numbers are known ---------------------
@@ -168,7 +169,7 @@ assert(/^\+/.test(end.text), "and the number says which way (" + end.text + ")")
 
 // --- it follows the replay cursor, because that is the position on the board
 await page.click("#rep-start");
-await page.waitForTimeout(400);
+await settle(page);
 const start = await bar();
 assert(Math.abs(parseFloat(start.width) - 50) < 5,
   "back at the opening the bar is near level (" + start.width + ")");
@@ -179,7 +180,7 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
 // as the rectangle the page actually draws, not as a class name.
 {
   await page.click("#rep-end");
-  await page.waitForTimeout(300);
+  await settle(page);
   const geo = () => page.evaluate(() => {
     const r = (el) => el.getBoundingClientRect();
     const board = r(document.getElementById("board"));
@@ -196,14 +197,14 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
   assert(Math.abs(a.fb - (a.gt + a.gh)) <= 1 && a.fh > a.gh / 2,
     "White ahead: the white fill rises from the bottom, White's side (" + Math.round(a.fh) + " of " + Math.round(a.gh) + ")");
   await page.evaluate(() => document.querySelector('[data-orient="b"]').click());
-  await page.waitForTimeout(300);
+  await settle(page);
   const b = await geo();
   assert(Math.abs(b.ft - b.gt) <= 1 && Math.abs(b.fh - a.fh) <= 1,
     "flipped: the same fill now hangs from the top, where White sits (" + Math.round(b.ft - b.gt) + "px from the top)");
   await page.evaluate(() => document.querySelector('[data-orient="w"]').click());
   // back where the blocks below expect to start: the opening
   await page.evaluate(() => document.getElementById("rep-start").click());
-  await page.waitForTimeout(300);
+  await settle(page);
 }
 
 // --- v7-7-plan §5: the curve is there for every analysed game ---------------
@@ -247,7 +248,7 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
   assert(await page.evaluate(() => !!document.querySelector("#more-row #report-export")),
     "导出复盘图 sits in the tool row's 更多 row");
   if (await page.evaluate(() => !!document.getElementById("more-row").hidden)) {
-    await page.click("#more-tools"); await page.waitForTimeout(250);
+    await page.click("#more-tools"); await settle(page);
   }
   assert(await page.isVisible("#report-export"), "…and 更多 shows it");
   const shot = await page.evaluate(async () => {
@@ -361,7 +362,7 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
   // list scrolls to the top instead), so "which move is boxed" is only a
   // question once the cursor is on one
   await page.click("#rep-end");
-  await page.waitForTimeout(400);
+  await settle(page);
   const r = await page.evaluate(() => {
     const list = document.querySelector(".move-list");
     const lr = list.getBoundingClientRect();
@@ -418,7 +419,7 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
       document.getElementById("rep-start").click();
       for (let i = 0; i < k; i++) document.getElementById("rep-next").click();
     }, n);
-    await page.waitForTimeout(300);
+    await settle(page);
     return page.evaluate(() => {
       const cv = document.getElementById("board");
       const step = cv.width / 8;
@@ -455,7 +456,7 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
   // 9.0 M2: the report card is in 完整报告, folded until opened
   if (!(await page.evaluate(() => document.getElementById("rv-full").open))) await page.click("#rv-full > summary");
   await page.click("#review-body .review-bank");
-  await page.waitForTimeout(400);
+  await settle(page);
   const after = await page.evaluate(() => {
     const b = document.querySelector("#review-body .review-bank");
     const mines = JSON.parse(localStorage.getItem("chess.mines") || "null");
@@ -503,7 +504,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
 
   const moreOpen = async () => {
-    if (await pg.evaluate(() => !!document.getElementById("more-row").hidden)) { await pg.click("#more-tools"); await pg.waitForTimeout(250); }
+    if (await pg.evaluate(() => !!document.getElementById("more-row").hidden)) { await pg.click("#more-tools"); await settle(pg); }
   };
   const answerIfAsked = async () => {
     if (await pg.isVisible("#confirm-modal.show").catch(() => false)) { await pg.click("#confirm-ok"); await pg.waitForTimeout(600); }
@@ -521,7 +522,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     await pg.click("#fen-load-open");
     const v = await pg.inputValue("#fen-input");
     await pg.click("#fen-cancel");
-    await pg.waitForTimeout(150);
+    await settle(pg);
     return v;
   };
   const at = (sq) => pg.evaluate((n) => {
@@ -552,7 +553,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 
   // click into the variation: the board goes there, and the line is now a variation
   await pg.click('#move-list .mlv[aria-label="Bc4"]');
-  await pg.waitForTimeout(300);
+  await settle(pg);
   assert((await shownFen()) === fenAfter("e4", "e5", "Bc4"), "clicking a variation move puts the board on that position");
   n = await notation();
   assert(n.lineRow, "…and 「回主线」 appears, because the line is a variation");
@@ -562,10 +563,10 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 
   // promote it through the menu: the right button on the move
   await pg.click('#move-list .mlv[aria-label="Bc4"]', { button: "right" });
-  await pg.waitForTimeout(200);
+  await settle(pg);
   assert(await pg.isVisible("#move-menu"), "the right button opens the move menu");
   await pg.click("#mm-promote");
-  await pg.waitForTimeout(300);
+  await settle(pg);
   n = await notation();
   assert(n.main.join(" ") === "e4 e5 Bc4 Nf6 d3", "promoted: the variation is the mainline now (" + n.main.join(" ") + ")");
   assert(n.vars.join(" ") === "Nf3 Nc6", "…and the old mainline is the variation (" + n.vars.join(" ") + ")");
@@ -573,9 +574,9 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 
   // a move at a replay position in a two-player game opens a variation
   await pg.click('#move-list .mlmove[data-i="1"]');
-  await pg.waitForTimeout(300);
-  for (const sq of ["c7", "c5"]) { const p = await at(sq); await pg.mouse.click(p.x, p.y); await pg.waitForTimeout(220); }
-  await pg.waitForTimeout(300);
+  await settle(pg);
+  for (const sq of ["c7", "c5"]) { const p = await at(sq); await pg.mouse.click(p.x, p.y); await settle(pg); }
+  await settle(pg);
   n = await notation();
   assert(n.vars.includes("c5"), "a move played while replaying became a variation (" + n.vars.join(" ") + ")");
   assert(n.main.join(" ") === "e4 e5 Bc4 Nf6 d3", "…and the mainline was not truncated");
@@ -588,11 +589,11 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.mouse.down({ button: "right" });
   await pg.mouse.move(f3.x, f3.y, { steps: 4 });
   await pg.mouse.up({ button: "right" });
-  await pg.waitForTimeout(200);
+  await settle(pg);
 
   // export: everything above is in the file, and the result token once
   await pg.click("#pgn-copy");
-  await pg.waitForTimeout(400);
+  await settle(pg);
   const out = await pg.evaluate(() => window.__clip);
   const body = out.split("\n\n").pop() || "";
   assert(/\(/.test(body), "the export carries a variation");
@@ -641,7 +642,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
     }, name);
     await pg.mouse.click(c.x, c.y);
-    await pg.waitForTimeout(140);
+    await settle(pg);
   };
 
   // 6.0 的真缺陷:空棋盘上「复盘」这个组名还立着,底下一个按钮都没有。修法是
@@ -660,7 +661,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   }
 
   for (const s of ["e2", "e4", "e7", "e5", "g1", "f3", "b8", "c6"]) await sq(s);
-  await pg.waitForTimeout(300);
+  await settle(pg);
   assert(!(await pg.evaluate(() => document.getElementById("review-actions").hidden)),
     "有棋可复盘了,这一组才出现");
 
@@ -668,12 +669,12 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   // 时」,那就得先证明那颗按钮真的把 3 送到了引擎。
   // 9.0 S5:线数在设置页的「高级」里(原先是侧栏的「设置」页签),从栏上去、从栏上回。
   await pg.click('#rail button[data-view="settings"]');
-  await pg.waitForTimeout(200);
+  await settle(pg);
   await pg.click("#cat-advanced");
   await pg.click('#multipv-seg button[data-multipv="3"]');
-  await pg.waitForTimeout(200);
+  await settle(pg);
   await pg.click('#rail button[data-view="play"]');
-  await pg.waitForTimeout(200);
+  await settle(pg);
 
   // 一份三条线的评估。三条线各走一个**不同**的合法首着,所以「三条」是不是
   // 真的三条,看得出来。
@@ -696,7 +697,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 
   // 起始局面 —— 三条线的首着(e4 / d4 / Nf3)在这里都合法,所以三条都画得出来
   await pg.click("#rep-start");
-  await pg.waitForTimeout(400);
+  await settle(pg);
   const mpv = await pg.evaluate(() => {
     const el = document.getElementById("pv-line");
     // 7.8 §2: one row per line, numbered 1 2 3 — the principal line is row 1
@@ -747,7 +748,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   }));
 
   await pg.click("#rep-end");
-  await pg.waitForTimeout(300);
+  await settle(pg);
   await setLive(pg, true);
   await pg.waitForTimeout(500);
   const on = await liveState();
@@ -774,7 +775,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 
   // 关掉:最后一条搜索被停,面板收走,再动游标也不会再问引擎
   await setLive(pg, false);
-  await pg.waitForTimeout(300);
+  await settle(pg);
   const off = await liveState();
   assert(off.pressed === "false" && off.hidden && off.rows.length === 0,
     "关掉之后引擎行连同它的三条线一起收走");
@@ -805,13 +806,13 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 
     // 1. 指在棋谱的一行上,棋盘就走到那一手;指开,棋盘就回来
     await pg.click("#rep-start").catch(() => {});
-    await pg.waitForTimeout(300);
+    await settle(pg);
     await pg.hover("#move-list button[data-i]");
-    await pg.waitForTimeout(260);
+    await settle(pg);
     const hov = await badge();
     assert(!hov.hidden, "指在棋谱的一行上,棋盘预览那一手(" + hov.text + ")");
     await pg.hover("#board");
-    await pg.waitForTimeout(300);
+    await settle(pg);
     assert((await badge()).hidden, "指开,预览就收了 —— 棋盘回到游标那一手");
 
     // 2. 引擎那条线的小块:按一下就预览,焦点走到它身上也预览
@@ -819,23 +820,23 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       document.querySelectorAll("#pv-line button.pv-chip").length);
     if (chips > 0) {
       await pg.click("#pv-line button.pv-chip");
-      await pg.waitForTimeout(280);
+      await settle(pg);
       const pin = await badge();
       assert(!pin.hidden, "按下引擎线上的一个小块,棋盘就摆出那条线(" + pin.text + ")");
       // 按下去的预览是钉住的 —— 它得能被 Esc 请走,这也是 escapeKey 的活
       await pg.keyboard.press("Escape");
-      await pg.waitForTimeout(300);
+      await settle(pg);
       assert((await badge()).hidden, "Esc 把钉住的预览请走");
       // 键盘也走得通:焦点落到小块上就预览。先把焦点挪开 —— Esc 不会让它
       // 失焦,而 focus() 打在已经有焦点的元素上不发 focusin,那样测的就是
       // 「什么都没发生」。
       await pg.evaluate(() => document.getElementById("board").focus());
-      await pg.waitForTimeout(200);
+      await settle(pg);
       await pg.evaluate(() => document.querySelector("#pv-line button.pv-chip").focus());
-      await pg.waitForTimeout(260);
+      await settle(pg);
       assert(!(await badge()).hidden, "焦点落在小块上,不按也预览 —— 键盘走得通同一条路");
       await pg.keyboard.press("Escape");
-      await pg.waitForTimeout(250);
+      await settle(pg);
     }
 
     // 3. 曲线:点一下跳到那一手,按着拖过去一路跟着走
@@ -848,13 +849,13 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       if (!app.classList.contains("panel-open")) document.getElementById("toggle-panel").click();
       document.getElementById("board").focus();
     });
-    await pg.waitForTimeout(350);
+    await settle(pg);
     const open = () => pg.evaluate(() => document.getElementById("app").classList.contains("panel-open"));
     assert(await open(), "侧栏是开着的");
     let taps = 0;
     while (await open() && taps < 5) {
       await pg.keyboard.press("Escape");
-      await pg.waitForTimeout(350);
+      await settle(pg);
       taps++;
     }
     assert(!(await open()),
@@ -908,7 +909,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     await pgC.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
     await pgC.evaluate((x) => { window.__clip = x; }, LONG_PGN);
     if (await pgC.evaluate(() => !!document.getElementById("more-row").hidden)) {
-      await pgC.click("#more-tools"); await pgC.waitForTimeout(250);
+      await pgC.click("#more-tools"); await settle(pgC);
     }
     await pgC.click("#pgn-paste");
     await pgC.waitForTimeout(900);
@@ -930,7 +931,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     await pgC.click("#an-run");
     await pgC.waitForTimeout(4000);
     await pgC.click("#rep-start");
-    await pgC.waitForTimeout(350);
+    await settle(pgC);
     const box = await pgC.evaluate(() => {
       const el = document.getElementById("eval-curve");
       if (!el || el.hidden || !el.offsetParent) return null;
@@ -951,7 +952,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     if (box) {
       assert(await at() === 0, "先回到开局(第 " + (await at()) + " 手)");
       await pgC.mouse.click(box.x + box.w * 0.8, box.y);
-      await pgC.waitForTimeout(400);
+      await settle(pgC);
       const clicked = await at();
       assert(clicked > 20, "在曲线右边点一下,棋盘就跳到那一手(第 " + clicked + " 手)");
     }
@@ -964,15 +965,15 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       await pgC.mouse.move(box.x + box.w * 0.15, box.y);
       await pgC.mouse.down();
       // 按下之后停一拍再动:不停的话第一段移动会和按下并成一次派发
-      await pgC.waitForTimeout(180);
+      await settle(pgC);
       // 9.0 M2:一步一量 —— 每挪一段,棋盘都已经站在指针下的那一手,不是攒到最后
       const seen = [];
       for (let k = 1; k <= 6; k++) {
         await pgC.mouse.move(box.x + box.w * (0.15 + 0.7 * k / 6), box.y);
-        await pgC.waitForTimeout(80);
+        await settle(pgC);
         seen.push(await at());
       }
-      await pgC.waitForTimeout(270);
+      await settle(pgC);
       // 还没松手就量 —— 拖的定义就是「松手之前已经跟上了」
       const mid = await at();
       await pgC.mouse.up();
@@ -1032,7 +1033,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       return { x: r.left, y: r.top + r.height / 2, w: r.width };
     });
     await pgC.mouse.move(box.x + box.w * 0.25, box.y);
-    await pgC.waitForTimeout(200);
+    await settle(pgC);
     const tip = await pgC.evaluate(() => {
       const el = document.getElementById("curve-tip");
       return { hidden: !el || el.hidden, text: el && el.firstElementChild ? el.firstElementChild.textContent : "" };
@@ -1040,7 +1041,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     assert(!tip.hidden && /^第 \d+ 回合 …?\S+ [+−]?\d+\.\d$/.test(tip.text),
       "悬停在曲线上:「第 N 回合 着法 分值」(「" + tip.text + "」)");
     await pgC.mouse.move(box.x, box.y - 200);
-    await pgC.waitForTimeout(150);
+    await settle(pgC);
     assert(await pgC.evaluate(() => { const el = document.getElementById("curve-tip"); return !!el && el.hidden; }), "……指针离开就收起");
     await pgC.close();
   }
@@ -1048,6 +1049,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await ctxC.close();
 }
 
+// (v10-0-plan E3: this section keeps its fixed waits — it measures what the
+// page does while time passes with the engine reporting, not after it settles)
 // --- 7.6 §2：按住的时候，按钮不许挪 ------------------------------------------
 // 7.5 在 WebKit 上确认过：按钮在按下与松开之间挪了位置，这次点击就会丢。
 // 持续分析的 #live-line 每帧整段重建，multipv=3 时下面的「新局」上下跳；分析
@@ -1242,7 +1245,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     }, sq);
     await pgS.mouse.click(c.x, c.y);
   }
-  await pgS.waitForTimeout(400);
+  await settle(pgS);
   const stopped = await pgS.evaluate(async () => {
     const W = [20, 20, 300, -400, -380, -390, -1200, -1210];
     const seen = new Map();
@@ -1309,7 +1312,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       document.getElementById("rep-start").click();
       for (let i = 0; i < k; i++) document.getElementById("rep-next").click();
     }, n);
-    await pg.waitForTimeout(250);
+    await settle(pg);
   };
   const vi = () => pg.evaluate(() => Number(document.getElementById("eval-curve").getAttribute("aria-valuenow")));
   const rec = await pg.evaluate(() => {
@@ -1349,7 +1352,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(layer.fullShown && !layer.open && layer.inFull && !layer.cardSeen,
     "M2：精准度/分级表、从错误中学和失误列表收在「完整报告」里，默认收起" + (layer.open || layer.cardSeen ? " — " + JSON.stringify(layer) : ""));
   await pg.click("#rv-full > summary");
-  await pg.waitForTimeout(200);
+  await settle(pg);
   const top = await pg.evaluate(() => {
     const rows = [...document.querySelectorAll("#review-body .rv-table tbody tr")].map((tr) => ({
       cls: tr.className, k: tr.querySelector("th").textContent, v: [...tr.querySelectorAll("td")].map((td) => td.textContent) }));
@@ -1424,7 +1427,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     }, worst);
     // 9.0 M2: hovering the ?? point says what should have been played
     await pg.mouse.move(p.x - 0.6 * p.step, p.y);
-    await pg.waitForTimeout(150);
+    await settle(pg);
     const tip = await pg.evaluate(() => {
       const el = document.getElementById("curve-tip");
       return el && !el.hidden ? [...el.children].map((c) => c.textContent) : null;
@@ -1432,7 +1435,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     assert(!!tip && /^应走 \S+$/.test(tip[1] || ""),
       "M2：悬停在 ?? 点上，提示写「应走 …」（" + (tip && tip.join(" | ")) + "）");
     await pg.mouse.click(p.x, p.y);
-    await pg.waitForTimeout(250);
+    await settle(pg);
     const at = await vi();
     assert(p.step * 0.6 < 10 && at === worst + 1,
       "A4：点在失着点旁边 " + Math.round(p.step * 0.6) + "px，也跳到那一步之后（" + at + " = " + (worst + 1) + "）");
@@ -1500,14 +1503,14 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     // back to the first moment with the card's own key
     for (let i = 0; i < 6 && await pg.evaluate(() => { const b = document.querySelector("#rv-km .km-prev"); return !!b && !b.disabled; }); i++) {
       await pg.click("#rv-km .km-prev");
-      await pg.waitForTimeout(150);
+      await settle(pg);
     }
     const k0 = await km();
     assert(!!k0 && /^1 \/ [2-6]$/.test(k0.pos || ""), "A4：关键时刻可以翻看（" + (k0 && k0.pos) + "）");
     const total = k0 ? Number(k0.pos.split("/")[1]) : 0;
     const seen = [], kinds = [];
     for (let i = 0; i < total; i++) {
-      if (i > 0) { await pg.click("#rv-km .km-next"); await pg.waitForTimeout(250); }
+      if (i > 0) { await pg.click("#rv-km .km-next"); await settle(pg); }
       const k = await km();
       seen.push(k.ply);
       kinds.push(k.what);
@@ -1524,7 +1527,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       assert(wSide <= 3 && bSide <= 3 && wSide >= 1 && bSide >= 1 && new Set(seen).size === seen.length,
         "A4：每方最多 3 个，两方都有（白 " + wSide + " · 黑 " + bSide + "）");
       const worst = T.indexOf("??");
-      for (let i = 0; i < total && (await km()).ply !== worst; i++) { await pg.click("#rv-km .km-prev"); await pg.waitForTimeout(150); }
+      for (let i = 0; i < total && (await km()).ply !== worst; i++) { await pg.click("#rv-km .km-prev"); await settle(pg); }
       const k = await km();
       assert(k.ply === worst && ["why", "retry", "lines"].every((a) => k.acts.includes(a)),
         "A4：每个关键时刻都有「为什么」「再试一次」「看引擎线」（" + k.acts.join(", ") + "）");
@@ -1532,12 +1535,12 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       const why = (await km()).why;
       assert(/\d+%/.test(why) && why.length > 16, "A4 / A2：「为什么」默认展开，说清这一着让胜率掉了多少，再给出教练的解释（" + why + "）");
       await pg.click('#rv-km button[data-act="why"]');
-      await pg.waitForTimeout(200);
+      await settle(pg);
       assert((await km()).why === "", "A2：再点「为什么」收起");
       await pg.click('#rv-km button[data-act="why"]');
-      await pg.waitForTimeout(200);
+      await settle(pg);
       await pg.click('#rv-km button[data-act="lines"]');
-      await pg.waitForTimeout(300);
+      await settle(pg);
       const lines = await pg.evaluate(() => ({ pv: !document.getElementById("pv-line").hidden,
         rows: document.querySelectorAll("#pv-line .pv-row").length }));
       const at = await vi();
@@ -1545,23 +1548,23 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
         "A4：「看引擎线」停在失着之前的局面，引擎线就在眼前（" + at + "，" + lines.rows + " 行）");
       await goto(worst + 1);
       await pg.click('#rv-km button[data-act="retry"]');
-      await pg.waitForTimeout(300);
+      await settle(pg);
       const rt = await pg.evaluate(() => ({ shown: !document.getElementById("retry-box").hidden, ask: (document.querySelector("#retry-box .rt-ask") || {}).textContent }));
       assert(rt.shown && /再试一次/.test(rt.ask || ""), "A4：「再试一次」从这个关键时刻开始（" + rt.ask + "）");
       await pg.click("#rt-back").catch(() => {});
-      await pg.waitForTimeout(250);
+      await settle(pg);
       // Codex #89: a graded moment that is no mistake (the brilliancy) has a
       // retry too, and once it is judged the board draws the best move's arrow
       const bril = G.indexOf("brilliant");
       const bests = await pg.evaluate(() => { const k = JSON.parse(localStorage.getItem("chess.analyses") || "null");
         const e = k && k.list && k.list[k.list.length - 1]; return e ? e.an.bests : null; });
       const can = (sel) => pg.evaluate((q) => { const b = document.querySelector(q); return !!b && !b.disabled; }, sel);
-      while (await can("#rv-km .km-prev")) { await pg.click("#rv-km .km-prev"); await pg.waitForTimeout(150); }
-      while ((await km()).ply !== bril && await can("#rv-km .km-next")) { await pg.click("#rv-km .km-next"); await pg.waitForTimeout(150); }
+      while (await can("#rv-km .km-prev")) { await pg.click("#rv-km .km-prev"); await settle(pg); }
+      while ((await km()).ply !== bril && await can("#rv-km .km-next")) { await pg.click("#rv-km .km-next"); await settle(pg); }
       const kb = await km();
       if (kb && kb.ply === bril && kb.acts.includes("retry") && bests && bests[bril]) {
         await pg.click('#rv-km button[data-act="retry"]');
-        await pg.waitForTimeout(300);
+        await settle(pg);
         // a move that is not the brilliancy: judged wrong, and the answer is drawn
         const pos = new Chess();
         for (const x of OPERA.slice(0, bril)) pos.move(x);
@@ -1570,22 +1573,22 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
           const c = await pg.evaluate((q) => { const r = document.getElementById("board").getBoundingClientRect();
             return { x: r.left + (q.charCodeAt(0) - 97 + 0.5) * (r.width / 8), y: r.top + (8 - Number(q[1]) + 0.5) * (r.height / 8) }; }, sq);
           await pg.mouse.click(c.x, c.y);
-          await pg.waitForTimeout(80);
+          await settle(pg);
         }
         await pg.waitForFunction(() => { const v = document.querySelector("#retry-box .rt-verdict"); return v && /is-(right|wrong|ok)/.test(v.className); }, null, { timeout: 20000 }).catch(() => {});
-        await pg.waitForTimeout(300);
+        await settle(pg);
         const want = bests[bril].slice(0, 2) + bests[bril].slice(2, 4);
         const hint = await pg.evaluate(() => window.__chess.board().hint);
         assert(hint === want, "A4：妙着这个关键时刻「再试一次」走错判完之后，棋盘上画出最佳着的箭头（" + want + "）", String(hint));
         // #89 review: the brilliancy itself, found again — judged right, and
         // the panel does not go on to say 「更好的是」 the move just played
         await pg.click("#rt-again");
-        await pg.waitForTimeout(250);
+        await settle(pg);
         for (const sq of [want.slice(0, 2), want.slice(2, 4)]) {
           const c = await pg.evaluate((q) => { const r = document.getElementById("board").getBoundingClientRect();
             return { x: r.left + (q.charCodeAt(0) - 97 + 0.5) * (r.width / 8), y: r.top + (8 - Number(q[1]) + 0.5) * (r.height / 8) }; }, sq);
           await pg.mouse.click(c.x, c.y);
-          await pg.waitForTimeout(80);
+          await settle(pg);
         }
         await pg.waitForFunction(() => { const v = document.querySelector("#retry-box .rt-verdict"); return v && /is-right/.test(v.className); }, null, { timeout: 20000 }).catch(() => {});
         const found = await pg.evaluate(() => ({ verdict: (document.querySelector("#retry-box .rt-verdict") || {}).className || "",
@@ -1594,7 +1597,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
         assert(/is-right/.test(found.verdict) && /引擎的最佳/.test(found.best) && found.why === "",
           "A4：妙着「再试一次」走对了，面板不再说「更好的是」刚走的这步（" + JSON.stringify(found) + "）");
         await pg.click("#rt-back").catch(() => {});
-        await pg.waitForTimeout(250);
+        await settle(pg);
       } else assert(false, "A4：妙着是一个关键时刻，而且能「再试一次」", JSON.stringify({ kb, bril }));
       // #89 review: two moments on consecutive plies (the fixture has one:
       // plies 11 and 12). 看引擎线 on the later one stands the board after the
@@ -1602,10 +1605,10 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       // earlier moment: the card stays on its own moment, 为什么 still open
       const later = seen.find((p) => seen.includes(p - 1));
       if (later != null) {
-        while (await can("#rv-km .km-prev")) { await pg.click("#rv-km .km-prev"); await pg.waitForTimeout(150); }
-        while ((await km()).ply !== later && await can("#rv-km .km-next")) { await pg.click("#rv-km .km-next"); await pg.waitForTimeout(150); }
+        while (await can("#rv-km .km-prev")) { await pg.click("#rv-km .km-prev"); await settle(pg); }
+        while ((await km()).ply !== later && await can("#rv-km .km-next")) { await pg.click("#rv-km .km-next"); await settle(pg); }
         await pg.click('#rv-km button[data-act="lines"]');
-        await pg.waitForTimeout(300);
+        await settle(pg);
         const kl = await km();
         const atL = await vi();
         assert(atL === later && kl.ply === later && kl.why !== "",
@@ -1613,9 +1616,9 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
         // …and the board moving on by itself turns the card again
         await goto(later);
         await pg.evaluate(() => document.getElementById("rep-prev").click());
-        await pg.waitForTimeout(150);
+        await settle(pg);
         await pg.evaluate(() => document.getElementById("rep-next").click());
-        await pg.waitForTimeout(250);
+        await settle(pg);
         const kf = await km();
         assert(kf.ply === later - 1, "A4：之后棋盘自己走到前一个关键时刻之后，卡片照样跟过去（" + kf.ply + "）");
       } else assert(false, "A4：夹具里有相邻两步的关键时刻", JSON.stringify(seen));
@@ -1629,7 +1632,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     assert(!!learn && learn.includes(String(plies.length)), "A4：「从错误中学」写着本局有几处可练（" + learn + " · " + plies.length + "）");
     if (learn) {
       await pg.click("#rv-learn");
-      await pg.waitForTimeout(300);
+      await settle(pg);
     }
     const visited = [];
     for (let k = 0; learn && k < plies.length; k++) {
@@ -1646,16 +1649,16 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
         const c = await pg.evaluate((s) => { const r = document.getElementById("board").getBoundingClientRect();
           return { x: r.left + (s.charCodeAt(0) - 97 + 0.5) * (r.width / 8), y: r.top + (8 - Number(s[1]) + 0.5) * (r.height / 8) }; }, sq);
         await pg.mouse.click(c.x, c.y);
-        await pg.waitForTimeout(80);
+        await settle(pg);
       }
-      await pg.waitForTimeout(200);
+      await settle(pg);
       const v = await pg.evaluate(() => (document.querySelector("#retry-box .rt-verdict") || {}).className || "");
       assert(/is-wrong/.test(v), "A4：又走了一遍原来的失着，判「不对」（" + v + "）");
       const next = await pg.evaluate(() => { const b = document.getElementById("rt-next"); return b ? b.textContent : null; });
       assert(!!next, "A4：判完有「下一个」（" + next + "）");
       if (!next) break;
       await pg.click("#rt-next");
-      await pg.waitForTimeout(300);
+      await settle(pg);
     }
     assert(JSON.stringify(visited) === JSON.stringify(plies), "A4：按顺序走遍本局每一处 ? 与 ??（" + visited + " = " + plies + "）");
     const end = await pg.evaluate(() => ({ retry: !document.getElementById("retry-box").hidden, toast: document.getElementById("toast").textContent }));
@@ -1689,7 +1692,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   // (10) the eval bar sits level with the board's frame, flat and framed
   for (const frame of ["flat", "frame"]) {
     await pg.evaluate((f) => { const b = document.querySelector('#frame-seg button[data-frame="' + f + '"]'); if (b) b.click(); }, frame);
-    await pg.waitForTimeout(400);
+    await settle(pg);
     const g = await pg.evaluate(() => {
       const r = (id) => document.getElementById(id).getBoundingClientRect();
       const w = r("board-wrap"), b = r("eval-bar"), c = r("board");
@@ -1706,7 +1709,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     await pg.waitForTimeout(700);
     await goto(T.indexOf("??") + 1);
     await pg.click('#rv-km button[data-act="why"]').catch(() => {});
-    await pg.waitForTimeout(200);
+    await settle(pg);
     const cut = await pg.evaluate(() => {
       const side = document.getElementById("side").getBoundingClientRect();
       const out = [];
@@ -1760,7 +1763,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const pgn = '[Event "Opera"]\n[White "A"]\n[Black "B"]\n[Result "1-0"]\n\n' +
     OPERA.map((s, i) => (i % 2 ? "" : (i / 2 + 1) + ". ") + s).join(" ") + " 1-0\n";
   await pg.evaluate((x) => { window.__clip = x; }, pgn);
-  if (await pg.evaluate(() => !!document.getElementById("more-row").hidden)) { await pg.click("#more-tools"); await pg.waitForTimeout(250); }
+  if (await pg.evaluate(() => !!document.getElementById("more-row").hidden)) { await pg.click("#more-tools"); await settle(pg); }
   await pg.click("#pgn-paste");
   await pg.waitForTimeout(900);
   if (await pg.isVisible("#confirm-modal.show").catch(() => false)) { await pg.click("#confirm-ok"); await pg.waitForTimeout(700); }
@@ -1772,7 +1775,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     const b = document.querySelector("#engine-fault .toast-action");
     if (b) b.click();
   });
-  await pg.waitForTimeout(300);
+  await settle(pg);
   await analyseOpera(pg);
   const s = await pg.evaluate(() => { const e = document.getElementById("rv-summary"); return e && !e.hidden ? e.textContent : null; });
   assert(!!s && /^莉娜：这盘最要紧的是第 9 步——你的胜率从 \d+% 掉到 \d+%。$/.test(s),
@@ -1864,7 +1867,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.click('#rail button[data-view="home"]');
   await pg.click("#today-analyse");
   await pg.click("#an-board");
-  await pg.waitForTimeout(400);
+  await settle(pg);
   const asks = await pg.isVisible("#confirm-modal.show").catch(() => false);
   if (asks) { await pg.click("#confirm-ok"); await pg.waitForTimeout(600); }
   const b = await pg.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
@@ -2000,7 +2003,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   p = await panel();
   assert(/猜黑方的着法/.test(p.title), "T3：标题改成猜黑方（" + p.title + "）");
   await pg.focus("#board");
-  const key = async (k) => { await pg.keyboard.press(k); await pg.waitForTimeout(150); };
+  const key = async (k) => { await pg.keyboard.press(k); await settle(pg); };
   await key("ArrowDown"); await key("ArrowDown");
   const onE7 = await pg.evaluate(() => (document.getElementById("board-live") || {}).textContent || "");
   assert(/e7/.test(onE7), "T3：棋盘翻过来，↓↓ 把光标从 e5 带到 e7（「" + onE7 + "」）");
@@ -2037,7 +2040,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(calls.length === 4 && calls.every((c) => c.budget === 200 && !c.bg),
     "T3：每处偏差问引擎两次（大师的着、你的着），都是复盘的 200 预算、不走后台批量（" + JSON.stringify(calls) + "）");
   await pg.click("#gs-jump");
-  await pg.waitForTimeout(200);
+  await settle(pg);
   assert((await panel()).view === "4", "T3：「看这一步」跳到 3.d4 之前的局面");
 
   // (3) the same guesses again: the same scores, and no new engine call
@@ -2068,7 +2071,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   // where the runner's own 读棋 button was); a reload mid-game is harmless,
   // and so is a learn key whose gs is not an object
   await pg.evaluate(() => document.querySelector('#classic-mode button[data-cmode="read"]').click());
-  await pg.waitForTimeout(400);
+  await settle(pg);
   const quit = await pg.evaluate(() => ({ panel: !!document.getElementById("gs-panel") && !!document.getElementById("gs-panel").offsetParent, title: document.getElementById("lesson-title").textContent }));
   assert(!quit.panel && /1858/.test(quit.title), "T3：「读谱」离开猜着，读这一局（" + quit.title + "）");
   await toGuessList(pg);
@@ -2101,7 +2104,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.evaluate(() => document.querySelector('#lang-seg button[data-lang="zh-CN"]').click());
   await pg.waitForTimeout(600);
   await pg.click('#classic-mode button[data-cmode="read"]');   // 9.0 S3: 读谱, the switch
-  await pg.waitForTimeout(400);
+  await settle(pg);
   const read = await pg.evaluate(() => document.getElementById("lesson-text").textContent);
   assert(/1834/.test(read) && /麦克唐奈/.test(read), "T2（8.4）：读棋第 0 步也有开场白（" + read.slice(0, 40) + "…）");
   assert(errsG.length === 0, "T3：全程没有页面异常 — " + errsG.join(" / "));
@@ -2153,7 +2156,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(overBlack === "grab" && overWhite !== "grab", "T4：猜黑方时黑子上是手形光标、白子上不是（b8 " + overBlack + "，b1 " + overWhite + "）");
   await pg.focus("#board");
   await pg.keyboard.press("ArrowUp");
-  await pg.waitForTimeout(150);
+  await settle(pg);
   const up = await liveText();
   assert(/^e4 /.test(up), "M2：猜黑方时棋盘翻着，↑ 把光标从 e5 带到 e4（「" + up + "」）");
   assert((await settings()).flipped === false, "M2：猜黑方不把下棋的棋盘方向写进设置");
@@ -2185,7 +2188,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const tapSq = async (sq) => {
     const c = await pg.evaluate((q) => { const r = document.getElementById("board").getBoundingClientRect(); return { x: r.left + (q.charCodeAt(0) - 96.5) * r.width / 8, y: r.top + (8.5 - Number(q[1])) * r.height / 8 }; }, sq);
     await pg.mouse.click(c.x, c.y);
-    await pg.waitForTimeout(120);
+    await settle(pg);
   };
   const refuseLoad = async () => {
     // the whole path inside the page, so it lands within the other side's 0.7 s
@@ -2197,7 +2200,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       (await wait("#lib-list button[data-lib]")).click();
       return performance.now() - t0;
     });
-    await pg.waitForTimeout(300);
+    await settle(pg);
     const asked = await pg.isVisible("#confirm-cancel");
     return { t, asked };
   };
