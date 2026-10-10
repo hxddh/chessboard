@@ -155,8 +155,10 @@ const tmpFile = (name, text) => {
 async function openPage(settings, seed, ctxOpts) {
   const ctx = await browser.newContext(Object.assign({ viewport: { width: 1400, height: 1000 }, locale: "zh-CN" }, ctxOpts));
   await ctx.addInitScript(([s, sd]) => {
+    // 10.0 M0: a scenario may move the saved rung between loads (flows.diff)
+    const diff = sessionStorage.getItem("flows.diff");
     localStorage.setItem("chess.settings", JSON.stringify(Object.assign(
-      { langId: "zh-CN", soundOn: false }, s)));
+      { langId: "zh-CN", soundOn: false }, s, diff ? { difficulty: diff } : {})));
     localStorage.setItem("chess.panelOpen", "1");
     // stored state the scenario starts from — written on the first load only,
     // so a reload sees what the page itself wrote since
@@ -754,6 +756,13 @@ await scenario("精析回写库", async () => {
   const fake0 = (await minesOf(page)).some((m) => m.id === FAKE_DRILL.id);
   assert(!!trap0 && trap0.an.budget === 200 && fake0, "精析回写库：库分析完，那局 budget 200，300ms 的假题还在",
     JSON.stringify({ budget: trap0 && trap0.an.budget, fake0 }));
+  // v10-0-plan T2: every drill the pass minted is owed a review at once
+  const queued = await page.evaluate((fake) => {
+    const ms = (JSON.parse(localStorage.getItem("chess.mines") || "null") || { list: [] }).list.filter((m) => m.id !== fake);
+    const missed = (JSON.parse(localStorage.getItem("chess.puzzles") || "null") || {}).missed || {};
+    return { n: ms.length, owed: ms.filter((m) => missed[m.id] && missed[m.id].due <= Date.now()).length };
+  }, FAKE_DRILL.id);
+  assert(queued.n > 0 && queued.owed === queued.n, "T2：库分析收进的错题都排进了复习、今天就到期", JSON.stringify(queued));
   await page.waitForTimeout(500);
   await page.click("#lib-open");
   await page.waitForTimeout(300);
@@ -1293,7 +1302,7 @@ await scenario("对手角色", async () => {
   assert(!dlg.seg && mid.join() === "ben,nico,vera,sol,leo,ivy,max,iris",
     "对手角色（S2）：没有分段，打开时显示当前对手（中级·索尔）和他两边的八张卡", mid.join(","));
   assert(dlg.cards.filter((c) => c.on).length === 1 && dlg.focus === dlg.cards.find((c) => c.on).id,
-    "对手角色：「换个对手」打开时，当前的角色亮着、焦点在它上面", JSON.stringify({ focus: dlg.focus }));
+    "对手角色：空棋盘的「新局」打开时，当前的角色亮着、焦点在它上面", JSON.stringify({ focus: dlg.focus }));
   // a card by keyboard: focus it, Space (Enter in this dialog is 开始); the
   // window moves with the pick, and focus stays on the card
   await page.focus('#op-grid .op-card[data-op="iris"]');
@@ -1302,16 +1311,20 @@ await scenario("对手角色", async () => {
   const top = await dialog();
   assert(top.cards.find((c) => c.id === "iris").on && shownIds(top).join() === "leo,ivy,max,iris,otto,hugo,zoe,lars" && top.focus === "iris",
     "对手角色（S2）：键盘空格选艾瑞丝，八张卡挪到她两边，焦点留在她身上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
-  // the rung under 更多选项 moves the window too: 练习 is 莉娜's rung
+  // 10.0 M0: 更多选项 open is the whole ladder on the cards — the one place a
+  // rung is chosen; 莉娜 is at its foot
   await page.click("#ng-custom > summary");
   await page.waitForTimeout(150);
-  await page.click('#ng-custom #diff-seg button[data-diff="learner"]');
-  await page.waitForTimeout(150);
-  const low = await dialog();
-  assert(shownIds(low).join() === "pip,tomo,lina,kai,ada,remy,ben,nico" && !low.cards.find((c) => c.id === "iris").on,
-    "对手角色（S2）：在「更多选项」里换到练习档，八张卡挪到梯子底，莉娜在里面", JSON.stringify(shownIds(low)));
+  const all = await dialog();
+  assert(shownIds(all).length === 21 && all.cards.find((c) => c.id === "iris").on,
+    "对手角色（10.0 M0）：打开「更多选项」，二十一张卡全在，艾瑞丝还亮着", JSON.stringify(shownIds(all)));
   await page.click('#op-grid .op-card[data-op="lina"]');
   await page.waitForTimeout(150);
+  await page.click("#ng-custom > summary");
+  await page.waitForTimeout(150);
+  const low = await dialog();
+  assert(shownIds(low).join() === "pip,tomo,lina,kai,ada,remy,ben,nico" && low.cards.find((c) => c.id === "lina").on,
+    "对手角色（S2）：选了莉娜再收起，八张卡挪到梯子底，莉娜亮着", JSON.stringify(shownIds(low)));
   await page.click("#ng-start");
   await page.waitForTimeout(600);
   const st = await page.evaluate(() => ({
@@ -1412,7 +1425,8 @@ await scenario("你将死引擎", async () => {
   const after = await filedOf(page);
   assert(ready && after.last && after.last.r === "win" && after.last.diff === "beginner" && Number.isFinite(after.last.ra),
     "你将死引擎：记为你赢，计入人机等级分", JSON.stringify({ ready, last: after.last }));
-  assert(/^对局等级分 \d+（定级中），本局 (\+\d+|±0)/.test(after.rate), "你将死引擎：结果卡当场写着新分数（不等下一次重画）", after.rate);
+  // 10.0 M0: a provisional rating is shown alone — no 「本局 +305」 jump
+  assert(/^对局等级分 \d+（定级中）/.test(after.rate) && !/本局/.test(after.rate), "你将死引擎：结果卡当场写着新分数（不等下一次重画），定级中不写本局的跳幅", after.rate);
   // Codex #89: clearing the statistics takes the filing off the result card too
   // (9.0 S5: Ctrl+, opens the settings page; 清除统计 is in its 数据 category,
   // and the rail, not the window's ×, goes back to the board)
@@ -1466,11 +1480,17 @@ await scenario("中途换档", async () => {
   const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" });
   await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
   const replied = (n) => until(() => plies(page).then((p) => (p >= n ? p : 0)), 20000, 150);
-  const toRung = (id) => page.evaluate((x) => document.querySelector('#diff-seg button[data-diff="' + x + '"], #diff-seg-engine button[data-diff="' + x + '"]').click(), id);
   const restart = async () => {
     await page.reload();
     await page.waitForTimeout(1200);
     await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 10000 }).catch(() => {});
+  };
+  // 10.0 M0: the rung is chosen on the new-game dialog's cards only, so it
+  // changes under a game in progress only as saved settings the next load
+  // reads — moved here, then the app restarts
+  const toRung = async (id) => {
+    await page.evaluate((x) => sessionStorage.setItem("flows.diff", x), id);
+    await restart();
   };
   const newGame = async () => {
     await page.keyboard.press("n");

@@ -18,10 +18,12 @@
 import { Chess } from "../chess.js";
 import { ChessHost } from "../host.js";
 import { ChessMistakes } from "../mistakes.js";
+import { ChessSrs } from "../srs.js";
 import { loadChunk } from "../chunk.js";
 import { REVIEW_CHUNKS } from "../lazy-content.js";
 import { ChessReview } from "../review.js";
 import { ChessReviewGrade as Grade } from "../review-grade.js";
+import { ChessRepertoire } from "../repertoire.js";
 import { tdot } from "../tdot.js";
 
 /**
@@ -33,9 +35,12 @@ export function createReviewPanel(d) {
     statusText, openingFor, avail, inModal, setText, toast, savedToast, pgnFileName,
     deskHead, lineRows, paintLineRow, reviewLines, savePvAsVariation, lockPgnEdits,
     drawEvalCurve, drawEvalBar, judgeColours, renderWhyLine, renderRetry, renderMistakeList, renderMoments,
-    boardDrillSource, saveMines, savePuzzleState,
+    boardDrillSource, saveMines, savePuzzleState, rep,
   } = d;
   const document = doc;
+  /** How much of a game's opening goes into an empty book: six moves a side. */
+  const BOOK_PLIES = 12;
+  const START_FEN = ChessRepertoire.START_FEN;
   const Host = ChessHost;
   const Mistakes = ChessMistakes;
 
@@ -201,7 +206,7 @@ export function createReviewPanel(d) {
     const key = JSON.stringify([acc, sum.counts, sum.acpl, sum.judged, sum.measured, gc,
       sum.worst && [sum.worst.ply, Math.round(sum.worst.drop)], soft, store.ui.langId,
       store.session.mode, store.session.humanColor, !!worstBest, banked, sanHistory().length,
-      (a.tags || []).join(","), a.budget || 0]);
+      (a.tags || []).join(","), a.budget || 0, rep.lines(store.session.humanColor).length]);
     if (el.dataset.key === key && el.childElementCount) return;
     el.dataset.key = key;
     el.replaceChildren();
@@ -340,7 +345,36 @@ export function createReviewPanel(d) {
         el.appendChild(bank);
       }
     }
+    renderBookCheck(line);
     if (list) { list.replaceChildren(); renderMistakeList(list); list.hidden = !list.childElementCount; }
+  }
+
+  /**
+   * v10-0-plan T4: where the opening of your game left your book — the move
+   * the book has no answer for yet, or answers differently — with the way to
+   * write it down. An engine game only (whose book is the player's side), from
+   * the starting position; a move the opponent left the book with is theirs.
+   */
+  function renderBookCheck(line) {
+    const side = store.session.humanColor, sans = sanHistory();
+    const sf = startFen(); // null: the standard start
+    if (store.session.mode !== "ai" || (sf && sf !== START_FEN) || sans.length < 2) return;
+    const c = ChessRepertoire.checkGame(rep.lines(side), sans, side);
+    const mv = (p) => Math.floor(p / 2) + 1;
+    const upto = c.kind === "empty" ? sans.slice(0, Math.min(sans.length, BOOK_PLIES)) : sans.slice(0, (c.ply || 0) + 1);
+    const text = c.kind === "empty" ? tf("rv.rep.empty", [t(side === "b" ? "color.black" : "color.white")])
+      : c.kind === "silent" ? tf("rv.rep.silent", [mv(c.ply), sans[c.ply]])
+      : c.kind === "differs" ? tf("rv.rep.differs", [mv(c.ply), c.book.join(" / "), sans[c.ply]]) : "";
+    if (!text || upto.length < (side === "b" ? 2 : 1)) return;
+    const box = line("review-note rv-book");
+    const p = document.createElement("span");
+    p.textContent = text;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "tool-txt";
+    b.textContent = t("rv.rep.add");
+    b.onclick = () => rep.add(side, upto);
+    box.append(p, b);
   }
 
   /** The drill the review's turning point would bank as, or null. */
@@ -369,7 +403,7 @@ export function createReviewPanel(d) {
       delete store.session.puzzleState.solved[id];
       delete store.session.puzzleState.missed[id];
     }
-    if (r.dropped.length) savePuzzleState();
+    if (ChessMistakes.queueFresh(store.session.puzzleState.missed, r.ids, Date.now(), ChessSrs.onMiss) || r.dropped.length) savePuzzleState();
     store.commit("session", "sync");
     toast(tf("rv.banked", [cand.solution[0]]));
   }

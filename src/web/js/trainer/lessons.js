@@ -133,7 +133,9 @@ export function createLessonsUI(d) {
     const task = document.getElementById("lesson-task");
     const prog = document.getElementById("learn-progress");
     if (prog) prog.textContent = t("study.head");
-    if (title) title.textContent = tx.white + " – " + tx.black + " · " + c.year;
+    // 10.0 M0: the players are the line over the board; the card's title is
+    // where the game was played
+    if (title) { title.textContent = tdot(tx.event, c.year); title.dataset.strip = tx.white + " – " + tx.black + " · " + c.year; }
     if (body) {
       body.replaceChildren();
       const at = store.game.viewIndex;
@@ -379,7 +381,7 @@ export function createLessonsUI(d) {
     if (store.session.learn.done && store.session.learn.eg) return tf("lm.doneThen", [t(Endgames.next(store.session.learn.eg) ? "eg.tapNext" : "eg.allDone")]);
     if (store.session.learn.done) return tf("lm.doneThen", [t(store.session.learn.li + 1 < LESSONS.length ? "lm.tapNext" : "lm.allDone")]);
     const tx = taskText(curLesson(), store.session.learn.ti);
-    if (task.type === "tap") return tx.step(store.session.learn.tapStep) + " (" + (store.session.learn.tapStep + 1) + "/" + task.steps.length + ")";
+    if (task.type === "tap") return tf("lm.tapOf", [tx.step(store.session.learn.tapStep), store.session.learn.tapStep + 1, task.steps.length]);
     if (task.type === "drill" && store.session.learn.engineBusy) return t("lm.sparThinking");
     // tx, not task: reading the prompt straight off the lesson showed every
     // move/stars/drill task in Chinese to English readers — the translations
@@ -726,7 +728,11 @@ export function createLessonsUI(d) {
     if (prog) prog.textContent = gs ? Gs.m.progress() : tf("learn.doneN", eg ? [Endgames.doneCount(), Endgames.total()] : [doneCount, LESSONS.length]);
     const loc = lessonText(L);
     const title = document.getElementById("lesson-title");
-    if (title) title.textContent = tdot(!eg && !gs && tf("learn.lessonN", [store.session.learn.li + 1]), loc.part, loc.title);
+    if (title) {
+      title.textContent = tdot(!eg && !gs && tf("learn.lessonN", [store.session.learn.li + 1]), loc.part, loc.title);
+      // the line over the board names the game being guessed (app.js stripPeople)
+      if (L.game) title.dataset.strip = L.game; else delete title.dataset.strip;
+    }
     // 7.7 (v7-7-plan §4): the lesson's tasks as a row of dots — done filled,
     // current ringed; a finished lesson is a full row
     const dots = el("lesson-dots");
@@ -837,7 +843,7 @@ export function createLessonsUI(d) {
       });
     }
     const head = document.getElementById("lesson-list-h");
-    const headText = seg === "classic" ? tf("train.allClassics", [CLASSICS.length])
+    const headText = seg === "classic" ? tf("train.allClassics", [More.total()])
       : seg === "endgame" ? tf("train.allEndgames", [Endgames.total() || 90])
       : tf("train.allLessons", [LESSONS.filter((x) => x.tasks.length).length]);
     if (head && head.textContent !== headText) head.textContent = headText;
@@ -979,6 +985,6 @@ export function createLessonsUI(d) {
     wireLessonPanel,
     LESSONS, loadLearnState, saveLearnState, startLearn, stopLearn, syncStudyUI,
     curTask, startLesson, startLearnTask, learnModel, learnClick, learnEngineReply, learnUndo,
-    learnHint, syncLearnUI, Endgames, startEndgame, learnSeg, openSeg, CLASSICS, classicText,
+    learnHint, syncLearnUI, Endgames, startEndgame, learnSeg, openSeg, CLASSICS, classicText, classicsTotal: More.total,
   };
 }

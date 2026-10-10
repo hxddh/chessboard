@@ -812,6 +812,69 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   }
 }
 
+// --- v10-0-plan A2: a move that allows mate is the game's turning point
+{
+  const gctx = loadAppModules(["src/web/js/review.js", "src/web/js/review-grade.js"]);
+  const G = gctx.ChessReviewGrade;
+  // the scholar's mate: 1.e4 e5 2.Bc4 Nc6 3.Qh5 Nf6?? 4.Qxf7# — after Nf6 the
+  // engine says mate in one (a mate score, ±100000 on this scale)
+  const sans = "e4 e5 Bc4 Nc6 Qh5 Nf6 Qxf7#".split(" ");
+  const scalars = [30, 35, 30, 40, 20, 30, 100000, null];
+  const m = G.keyMoments({ sans, scalars, bests: [], seconds: [] }, null, "w", (i) => Math.floor(i / 2) + 1);
+  const nf6 = m.b.find((x) => x.san === "Nf6");
+  assert(!!nf6 && nf6.tag === "??" && nf6.after === 0 && nf6.swing > 40,
+    "A2: the move that allows mate is a key moment, its win chance falling to 0 (" + JSON.stringify(nf6) + ")");
+}
+
+// --- v10-0-plan A1: what 分析一局 was given
+{
+  const actx = loadAppModules(["src/web/js/host.js", "src/web/js/analyse-entry.js"]);
+  const read = actx.readEntry;
+  assert(typeof read === "function", "A1: readEntry is exported");
+  const id = (x) => { const e = read(x); return e.kind === "lichess" ? e.id : e.kind; };
+  assert(id("https://lichess.org/q7ZvsdUF") === "q7ZvsdUF" && id("lichess.org/q7ZvsdUFab12") === "q7ZvsdUF" &&
+    id("https://lichess.org/q7ZvsdUF/black#12") === "q7ZvsdUF" && id("https://lichess.org/embed/game/q7ZvsdUF?theme=auto") === "q7ZvsdUF",
+    "A1: a Lichess link in its several shapes gives the eight-character id");
+  assert(id("https://lichess.org/@/someone") === "pgn" && id("https://lichess.org/study/abcdefgh/ijklmnop") !== "abcdefgh",
+    "A1: a Lichess page that is not a game is not taken for one");
+  assert(id("https://www.chess.com/game/live/123456789") === "chesscom" && id("https://www.chess.com/analysis/game/live/1") === "chesscom",
+    "A1: a Chess.com game link is recognised (and answered with how to get its PGN)");
+  assert(id("") === "empty" && id("1. e4 e5 2. Nf3 *") === "pgn" && read("[Event \"x\"]\n\n1. e4 *").kind === "pgn",
+    "A1: anything else is PGN text");
+}
+
+// --- v10-0-plan T4: a book from the built-in lines, and a game against a book
+{
+  const rctx = loadAppModules(["src/web/js/openings.js", "src/web/js/drills.js", "src/web/js/repertoire.js", "src/web/js/rep-seed.js"]);
+  const R = rctx.ChessRepertoire, Sd = rctx.ChessRepSeed, rows = rctx.CHESS_OPENINGS;
+  for (const sys of Sd.SYSTEMS) {
+    const lines = Sd.linesFor(sys, rows).map((l) => l.split(" "));
+    assert(lines.length >= 5, "T4 " + sys.id + ": at least five lines to learn (" + lines.length + ")");
+    assert(lines.every((m) => sys.prefix.split(" ").every((x, i) => m[i] === x)), "T4 " + sys.id + ": every line begins with the system");
+    const ours = (i) => (sys.side === "b" ? i % 2 === 1 : i % 2 === 0);
+    const at = new Map();
+    let clash = 0;
+    for (const m of lines) for (let i = 0; i < m.length; i++) {
+      if (!ours(i)) continue;
+      const k = m.slice(0, i).join(" ");
+      if (at.has(k) && at.get(k) !== m[i]) clash++;
+      at.set(k, m[i]);
+    }
+    assert(clash === 0, "T4 " + sys.id + ": one move of ours in each position the book reaches");
+    const kept = R.addLines([], lines.map((m) => m.join(" ")), null);
+    assert(kept.added === lines.length, "T4 " + sys.id + ": no line is a prefix of another — every offered line is kept");
+  }
+  const book = [{ sans: "e4 c5 Nf3 d6 d4 cxd4" }, { sans: "e4 c5 Nc3 Nc6" }];
+  assert(R.checkGame([], ["e4", "c5"], "b").kind === "empty", "T4 checkGame: no book");
+  assert(R.checkGame(book, "e4 c5 Nf3 d6 d4 cxd4 Nxd4".split(" "), "b").kind === "inBook", "T4 checkGame: followed to the book's end");
+  const dif = R.checkGame(book, "e4 c5 Nf3 Nc6".split(" "), "b");
+  assert(dif.kind === "differs" && dif.ply === 3 && dif.book.join() === "d6", "T4 checkGame: the book plays d6 where the game played Nc6");
+  assert(R.checkGame(book, "e4 c5 c3 d5".split(" "), "b").kind === "left", "T4 checkGame: the opponent left the book — not ours to fix");
+  const sil = R.checkGame(book, "e4 c5 Nc3 Nc6 g3 g6".split(" "), "b");
+  assert(sil.kind === "silent" && sil.ply === 5, "T4 checkGame: the book stops at Nc6; after g3, our g6 is the first it does not answer");
+  assert(R.checkGame([{ sans: "e4 e5" }], ["e4", "e5", "Nf3"], "w").kind === "silent", "T4 checkGame: White's next move past the book");
+}
+
 // --- v8-0-plan B1: the theme list and the two runs (trainer/themes.js, runs.js)
 {
   const tctx = loadAppModules(["src/web/js/trainer/themes.js", "src/web/js/trainer/runs.js"]);
@@ -866,6 +929,21 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   assert(Ru.timeLeft(streak, 1e12) === Infinity && !Ru.checkClock(streak, 1e12), "streak: no clock");
   Ru.onSolve(streak); Ru.onSolve(streak); Ru.onMiss(streak);
   assert(streak.over && streak.why === "streak" && streak.score === 2, "streak: the first miss ends it, the solves are the score");
+  // v10-0-plan T1: 定级 — six answers, the aim following them with halving steps
+  {
+    const pl = Ru.newRun("place", 0, 1, 900);
+    assert(Ru.targetOf(pl) === 900 && !Ru.RUN_KINDS.includes("place"), "place: starts where it is told, and is not a panel button");
+    Ru.onSolve(pl); assert(Ru.targetOf(pl) === 1200, "place: a solve aims 300 higher");
+    Ru.onMiss(pl); assert(Ru.targetOf(pl) === 1000 && !pl.over, "place: a miss aims 200 lower, and does not end it");
+    Ru.onSolve(pl); Ru.onSolve(pl); Ru.onMiss(pl);
+    assert(!pl.over && Ru.targetOf(pl) === 1175, "place: 150, 100, 75 (" + Ru.targetOf(pl) + ")");
+    Ru.onSolve(pl);
+    assert(pl.over && pl.why === "placed" && Ru.targetOf(pl) === 1225, "place: the sixth answer ends it at the estimate");
+    assert(!Ru.recordBest({}, pl), "place: a placement is not a best score");
+    const low = Ru.newRun("place", 0, 1, 900);
+    for (let i = 0; i < 6; i++) Ru.onMiss(low);
+    assert(low.est === 400, "place: six misses stay on the scale (" + low.est + ")");
+  }
   const pst = {};
   assert(Ru.recordBest(pst, streak) && Ru.bestOf(pst, "streak") === 2, "a first score is a best");
   const worse = Ru.newRun("streak", 0, 1); Ru.onSolve(worse);

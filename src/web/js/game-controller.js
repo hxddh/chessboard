@@ -106,8 +106,7 @@ export function createGameController(d) {
     syncSettingsUI();
     // 换个对手 lands on the opponent (its persona card); everything else on 开始
     const card = OppUI.onOpen();
-    const first = opts && opts.switchOpponent && !pvp
-      ? card || modal.querySelector("#row-difficulty button.active") : el("ng-start");
+    const first = (opts && opts.switchOpponent && !pvp && card) || el("ng-start");
     Dlg.open(modal, first || undefined);
   }
 
@@ -124,6 +123,7 @@ export function createGameController(d) {
     const d = store.ui.newGame;
     if (!d) return;
     const pvp = d.mode === "pvp";
+    store.session.analysisBoard = false; // a new game is a game (v10-0-plan A1)
     const side = d.color === "random" ? (Math.random() < 0.5 ? "w" : "b") : d.color;
     store.session.colorRandom = d.color === "random";
     if (!pvp) {
@@ -226,6 +226,7 @@ export function createGameController(d) {
   /** Record an AI-game outcome decided by an app-level rule (not by mate). */
   function recordOutcome(result, ending) {
     if (store.game.recordedId) return; // this game is already filed
+    if (store.session.analysisBoard) return; // v10-0-plan A1: not a game
     const s = loadStats();
     // the id ties the record to the exact game it came from, so a later
     // analysis can only annotate the game it actually measured

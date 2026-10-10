@@ -826,6 +826,33 @@ let big = null;
   await ctx.close();
 }
 
+// --- v10-0-plan T4: 从内置开局生成 —— a first book without a file ------------
+// Library page → 从内置开局生成 → 西西里防御: its lines go into Black's
+// book, own moves one per position, and 开始背 begins in Black's chair —
+// two clicks from an empty book to the first drill.
+{
+  const ctx = await context({ book: null, view: "library" });
+  const { page, errs } = await open(ctx);
+  await page.click("#rep-seed");
+  await page.waitForTimeout(400);
+  const items = await page.evaluate(() => [...document.querySelectorAll("#pick-list .pick-item")].map((b) => b.textContent));
+  assert(items.length === 8 && /1\.e4（开放性开局）/.test(items[0]) && /执白 · \d+ 条线/.test(items[0]) && /西西里防御/.test(items[3]) && /执黑 · 6 条线/.test(items[3]),
+    "T4：八套体系可选，每套写执哪方、几条线", JSON.stringify(items));
+  await page.evaluate(() => document.querySelectorAll("#pick-list .pick-item")[3].click());
+  await page.waitForTimeout(1200);
+  const st = await page.evaluate(() => ({
+    lines: window.__chess.rep ? null : null,
+    mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode,
+    pz: JSON.parse(localStorage.getItem("chess.puzzles") || "{}"),
+    head: JSON.parse(localStorage.getItem("chess.repertoire") || "{}"),
+    view: document.getElementById("app").getAttribute("data-view"),
+  }));
+  assert(st.mode === "puzzle" && st.pz.cat === "rep" && st.pz.opSide === "b" && st.head.ln === 6,
+    "T4：选了西西里，执黑开局书多了 6 条线，开始背、坐在黑方", JSON.stringify({ mode: st.mode, cat: st.pz.cat, side: st.pz.opSide, ln: st.head.ln }));
+  assert(errs.length === 0, "T4：没有页面异常", errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }

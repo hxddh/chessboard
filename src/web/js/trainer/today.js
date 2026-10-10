@@ -13,6 +13,7 @@
  */
 import { tdot } from "../tdot.js";
 import { paintMini } from "../mini-board.js";
+import { ChessFocus as Focus } from "../focus.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -23,7 +24,7 @@ export function createTodayUI(d) {
     avail, bookNow, drawRatingTrend, el, loadStats, motifKeyOf, owedNow, puzzlesInCat, ratingLabel,
     ratingTip, runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
-    sync, t, tf, toast, pieceSrc, game, isOver, isLive,
+    sync, t, tf, toast, pieceSrc, game, isOver, isLive, rep, ecoName,
   } = d;
   const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -93,6 +94,8 @@ export function createTodayUI(d) {
       owed: owedNow(),
       byCat, byMotif,
       lessonsDone: Object.keys(store.session.learnState.done || {}).length,
+      repDue: rep.due(),
+      focus: Object.fromEntries(focusNow().items.map((it) => [Planner.focusKey(it), it.at])),
       opSolved: ALL_PUZZLES.filter((p) => p.cat === "op" && st.solved[p.id]).length,
       // stats parse deferred: only the game step reads it, and snap() copies
       games: loadStats().games.length,
@@ -127,14 +130,118 @@ export function createTodayUI(d) {
     return d.enough && d.motifs.length ? d.motifs[0].motif : null;
   }
 
+  // --- v10-0-plan T3: 本周重点 (focus.js) --------------------------------------
+
+  const inFamily = (p, f) => p.cat === "op" && Focus.familyOf(p.eco) === f;
+  /** The counters a focus item is measured on. */
+  function focusCounters() {
+    const st = store.session.puzzleState;
+    const byMotif = {};
+    for (const [m, tl] of Object.entries(st.mtally || {})) byMotif[m] = (tl.miss || 0) + (tl.solve || 0);
+    const eg = store.session.learnState.eg;
+    return { byMotif, egDone: Object.keys((eg && eg.done) || {}).length,
+      opSolved: (f) => ALL_PUZZLES.filter((p) => inFamily(p, f) && st.solved[p.id]).length };
+  }
+  /** This week's focus — composed once a week from the diagnosis, then kept with the puzzle state. */
+  function weekFocus() {
+    const st = store.session.puzzleState;
+    const have = store.session.library.filter((g) => g.an && g.side).length;
+    const r = Focus.weekOf(st.focus, Progress.weekKey(Date.now()), () => Library.diagnose(store.session.library, LIB_MIN_GAMES),
+      { opDrills: (f) => ALL_PUZZLES.filter((p) => inFamily(p, f)).length }, focusCounters(), have);
+    if (r.fresh) { st.focus = r.focus; savePuzzleState(); }
+    return r.focus;
+  }
+  /** The week's items, each with how far into it the counters are (`at`). */
+  function focusNow() {
+    const f = weekFocus(), c = focusCounters();
+    return { need: f.need || 0, items: f.items.map((it) => Object.assign({}, it, { at: Focus.progressOf(it, f.base, c) })) };
+  }
+  function focusLabel(it) {
+    if (it.kind === "motif") return tf("focus.motif", [t("motif." + it.motif), it.n]);
+    if (it.kind === "endgame") return tf("focus.endgame", [it.n]);
+    return tf("focus.opening", [tdot(it.eco, ecoName(it.eco, it.name)), it.n]);
+  }
+  function focusWhy(it) {
+    if (it.kind === "opening") return tf("focus.why.opening", [Math.round(it.score * 100)]);
+    return t("focus.why." + it.kind);
+  }
+  /** Into the training a focus item names. */
+  function focusJump(it) {
+    if (it.kind === "motif") return dailyJump({ kind: "motif", motif: it.motif });
+    if (it.kind === "endgame") { Shell.openTrain("endgame"); return true; }
+    const st = store.session.puzzleState;
+    const list = puzzlesInCat("op").filter((p) => p.eco);
+    const at = list.findIndex((p) => inFamily(p, it.family) && !st.solved[p.id]);
+    st.cat = "op";
+    savePuzzleState();
+    if (store.session.mode !== "puzzle") switchMode("puzzle");
+    startPuzzleAt("op", Math.max(0, at >= 0 ? at : list.findIndex((p) => inFamily(p, it.family))));
+    setSideTab("play", { top: true });
+    sync();
+    return true;
+  }
+  /** 今天's 本周重点 card: the items, crossed out when done; or how many games it still wants. */
+  function renderFocus() {
+    const sec = el("today-focus-sec"), ol = el("today-focus");
+    if (!sec || !ol) return;
+    const f = focusNow();
+    const analysed = store.session.library.some((g) => g.an && g.side);
+    const rows = f.items.length ? f.items : f.need && analysed ? [{ kind: "need", n: f.need }] : [];
+    sec.hidden = !rows.length;
+    const sig = JSON.stringify(rows) + "|" + store.ui.langId;
+    if (ol.dataset.sig === sig) return;
+    ol.dataset.sig = sig;
+    ol.replaceChildren(...rows.map((it, i) => {
+      const li = document.createElement("li");
+      const done = it.kind !== "need" && it.at >= it.n;
+      li.className = "daily-step" + (done ? " done" : "");
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "daily-row";
+      row.dataset.focus = String(i);
+      row.onclick = () => (it.kind === "need" ? Shell.go("library") : focusJump(it));
+      const dot = document.createElement("span");
+      dot.className = "daily-dot";
+      dot.setAttribute("aria-hidden", "true");
+      if (done) dot.appendChild(Icons.icon("check"));
+      else dot.textContent = String(i + 1);
+      const txt = document.createElement("span");
+      txt.className = "daily-txt";
+      const what = document.createElement("span");
+      what.className = "daily-what";
+      what.textContent = it.kind === "need" ? tf("focus.need", [it.n]) : focusLabel(it);
+      const why = document.createElement("span");
+      why.className = "daily-why";
+      why.textContent = it.kind === "need" ? t("focus.why.need") : tdot(focusWhy(it), done ? t("focus.done") : it.at + "/" + it.n);
+      txt.append(what, why);
+      const arrow = document.createElement("span");
+      arrow.className = "daily-arrow";
+      arrow.setAttribute("aria-hidden", "true");
+      arrow.appendChild(Icons.icon("chevron-right"));
+      row.append(dot, txt, arrow);
+      li.appendChild(row);
+      return li;
+    }));
+  }
+
   /** What the coach can see today — every signal already existed. */
   function dailySignals() {
     const st = store.session.puzzleState;
     const w = Picker.weakest(st, Object.keys(st.tally || {}));
     const today = Progress.dayKey(Date.now());
+    const games = loadStats().games;
     return {
       owed: owedNow(),
-      mineUnsolved: store.session.mines.filter((m) => !st.solved[m.id]).length,
+      // T2: a drill in the review queue is the review step's, not a second step
+      mineUnsolved: store.session.mines.filter((m) => !st.solved[m.id] && !st.missed[m.id]).length,
+      repDue: rep.due(),
+      focus: focusNow().items.find((it) => it.at < it.n) || null,
+      // T1: placed on the first run, and no game yet — the game first
+      placed: !!st.placed && !games.length,
+      // T5: nothing played, solved or learnt yet — the first lesson, alone
+      fresh: !st.placed && !games.length && !store.session.library.some((g) => g.side) && !store.session.mines.length &&
+        !Object.keys(store.session.learnState.done || {}).length && !Object.keys(st.tally || {}).length &&
+        !Object.keys(st.missed || {}).length && !Object.keys(st.solved || {}).length,
       weakCat: w ? w.cat : null,
       weakMotif: (Picker.weakestMotif(st, Object.keys(st.mtally || {})) || {}).motif || null,
       lessonNext: LESSONS.findIndex((L) => !store.session.learnState.done[L.id]),
@@ -142,7 +249,7 @@ export function createTodayUI(d) {
       // 7.1: a game played on another site today is still a game played
       // today. Until now this read `stats` alone, so someone who imported
       // this morning's blitz session was told to go and play one.
-      playedToday: loadStats().games.some((g) => Progress.dayKey(g.t) === today) ||
+      playedToday: games.some((g) => Progress.dayKey(g.t) === today) ||
         store.session.library.some((g) => g.side && Progress.dayKey(libPlayedAt(g)) === today),
       libMotif: libWeakMotif(),
       libQueued: Library.pending(store.session.library).filter((g) => !g.unplayable).length,
@@ -157,7 +264,28 @@ export function createTodayUI(d) {
     if (step.kind === "lesson") return t("daily.lesson");
     if (step.kind === "op") return t("daily.op");
     if (step.kind === "lib") return tf("daily.lib", [step.n]);
+    if (step.kind === "repdue") return tf("daily.repdue", [step.n]);
+    if (step.kind === "focus") return focusLabel(step.item);
     return t("daily.game");
+  }
+
+  /**
+   * Why a step is there (T5: every item says where it came from). The review
+   * step names the game when the first thing due is one of your own mistakes
+   * (T2) — 「昨天那局第 23 步的失误」 — dated by the game where the library
+   * knows it, else by when the drill was banked.
+   */
+  function dailyStepWhy(step) {
+    const first = step.kind === "review" ? puzzlesInCat("review")[0] : null;
+    if (first && first.cat === "mine" && Number.isFinite(first.ply)) {
+      const src = first.from && first.from.kind === "lib" ? store.session.library.find((g) => g.id === first.from.id) : null;
+      const day = (ms) => { const x = new Date(ms); return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); };
+      const days = Math.round((day(Date.now()) - day(src ? libPlayedAt(src) : first.t || Date.now())) / 864e5);
+      const when = days <= 0 ? t("daily.when.today") : days === 1 ? t("daily.when.yesterday") : tf("daily.when.days", [days]);
+      return tf("daily.why.mineFrom", [when, Math.floor(first.ply / 2) + 1]);
+    }
+    if (step.kind === "focus") return tdot(t("focus.h"), focusWhy(step.item));
+    return t("daily.why." + step.kind);
   }
 
   /**
@@ -173,14 +301,16 @@ export function createTodayUI(d) {
   function renderDailyPlan(steps, current) {
     const ol = document.getElementById("daily-plan");
     if (!ol) return;
-    ol.hidden = !steps.length;
+    // T5: one thing is the card's title already — a list of one repeats it
+    ol.hidden = steps.length < 2;
     // 7.7 (v7-7-plan §1i): the step you would go to next — the current one,
     // or the first before the plan has begun — is a control of its own. It
     // is rebuilt only when the plan or the language changed: this runs on
     // every commit, and a button rebuilt under the pointer loses the click
     // on WebKit (7.6).
     const go = current < 0 ? 0 : current;
-    const labels = steps.map(dailyStepLabel);
+    // the label and the why both feed the signature: the why names a game
+    const labels = steps.map((s) => JSON.stringify([dailyStepLabel(s), dailyStepWhy(s)]));
     const sig = current + "|" + labels.join("\u0001") + "|" + store.ui.langId;
     if (ol.dataset.sig === sig) return;
     ol.dataset.sig = sig;
@@ -199,16 +329,17 @@ export function createTodayUI(d) {
       dot.className = "daily-dot";
       dot.setAttribute("aria-hidden", "true");
       if (i < current) dot.appendChild(Icons.icon("check"));
+      else dot.textContent = String(i + 1);
       // 7.4 §5: the step, then why — two lines, see .daily-step
       const txt = document.createElement("span");
       txt.className = "daily-txt";
       const what = document.createElement("span");
       what.className = "daily-what";
-      what.textContent = labels[i];
+      what.textContent = dailyStepLabel(step);
       what.title = what.textContent;
       const why = document.createElement("span");
       why.className = "daily-why";
-      why.textContent = t("daily.why." + step.kind);
+      why.textContent = dailyStepWhy(step);
       why.title = why.textContent;
       txt.append(what, why);
       row.append(dot, txt);
@@ -241,6 +372,7 @@ export function createTodayUI(d) {
   function stepFen(step) {
     const fenOf = (p) => (p && p.fen) || null;
     if (step.kind === "review") return fenOf(puzzlesInCat("review").find((p) => p.fen));
+    if (step.kind === "repdue") return fenOf(puzzlesInCat("repdue")[0]);
     if (step.kind === "mine") return fenOf(store.session.mines.find((p) => p.fen && !store.session.puzzleState.solved[p.id]));
     if (step.kind === "weak") return fenOf(ALL_PUZZLES.find((p) => p.cat === step.cat && p.fen && !store.session.puzzleState.solved[p.id]));
     if (step.kind === "motif") return fenOf(bookNow().find((p) => p.fen && !store.session.puzzleState.solved[p.id] && motifKeyOf(p) === step.motif));
@@ -285,6 +417,7 @@ export function createTodayUI(d) {
     // the card is drawn only where it is seen: a game commit lands on every
     // move, and the live game's last move is a walk of its history (perf-e2e)
     if (store.ui.view !== "home") return;
+    renderFocus();
     const live = !store.session.todayPlanFirst ? liveGame() : null;
     const run = store.session.daily;
     const steps = run ? run.steps : planNow();
@@ -304,7 +437,7 @@ export function createTodayUI(d) {
       renderDailyPlan([], -1);
     } else {
       setText(title, dailyStepLabel(steps[at]));
-      setText(meta, tdot(t("daily.why." + steps[at].kind), steps.length > 1 && tf("daily.of", [at + 1, steps.length])));
+      setText(meta, tdot(dailyStepWhy(steps[at]), steps.length > 1 && tf("daily.of", [at + 1, steps.length])));
       setText(go, t(run ? "today.goOn" : "today.go"));
       paint(stepFen(steps[at]));
       renderDailyPlan(steps, run ? at : -1);
@@ -335,7 +468,7 @@ export function createTodayUI(d) {
   function dailyStepIsHere(step) {
     const pz = store.session.puzzle;
     if (!pz || store.session.mode !== "puzzle") return false;
-    if (step.kind === "review" || step.kind === "mine" || step.kind === "op") return pz.cat === step.kind;
+    if (step.kind === "review" || step.kind === "mine" || step.kind === "op" || step.kind === "repdue") return pz.cat === step.kind;
     if (step.kind === "weak") return pz.cat === step.cat;
     return false;
   }
@@ -353,6 +486,8 @@ export function createTodayUI(d) {
       else { startLesson(step.i); setSideTab("play", { top: true }); sync(); }
       return true;
     }
+    if (step.kind === "repdue") { rep.start(); return true; }
+    if (step.kind === "focus") return focusJump(step.item);
     if (step.kind === "game") {
       if (store.session.mode !== "ai") switchMode("ai");
       else setSideTab("play", { top: true });

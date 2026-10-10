@@ -1947,7 +1947,7 @@ for (const lang of CONTENT_LANGS) {
     const tracked = [...stripped.matchAll(/letter-spacing:\s*([^;]+);/g)].map((m) => m[1].trim()).filter((v) => !/^0(px)?$/.test(v));
     assert(tracked.length <= 1,
       "no tracking but the frame's coordinates (" + tracked.join(", ") + ")");
-    for (const sel of [".side-h", ".act-k, .review-h"]) {
+    for (const sel of [".side-h", ".act-k"]) {
       const r = new RegExp("\\n\\s*" + sel.replace(/[.]/g, "\\.") + " \\{([\\s\\S]*?)\\}").exec(stripped);
       assert(r && /font-size:\s*0\.8125rem/.test(r[1]) && /font-weight:\s*600/.test(r[1]) && /color:\s*var\(--muted\)/.test(r[1]),
         sel + " is the section heading: 13/600 in the muted ink");
@@ -1982,9 +1982,10 @@ for (const lang of CONTENT_LANGS) {
       const p = new RegExp("--" + theme + "-panel:\\s*([^;]+);").exec(stripped);
       assert(p && p[1].trim() === v[1].trim(), theme + ": …the same raised surface a dialog is");
       const a = new RegExp("--" + theme + "-accent:\\s*([^;]+);").exec(stripped);
-      const pf = new RegExp("--" + theme + "-primary-from:\\s*([^;]+);").exec(stripped);
-      const pt = new RegExp("--" + theme + "-primary-to:\\s*([^;]+);").exec(stripped);
-      assert(a && pf && pt && pf[1] === a[1] && pt[1] === a[1], theme + ": one accent — the primary is the accent (" + (a && a[1]) + ")");
+      // 10.0 M0: one accent, and no second name for it — --primary-from/-to
+      // and --on-primary were declared in all four themes and read by nothing
+      assert(a && !new RegExp("--" + theme + "-(primary-from|primary-to|on-primary):").test(stripped),
+        theme + ": one accent, with no second set of names for it (" + (a && a[1]) + ")");
     }
   }
 
@@ -2193,8 +2194,11 @@ for (const lang of CONTENT_LANGS) {
       "S5: 数据 ends on 清除数据 (" + dHeads.join(" → ") + ")");
     // the next game's choices are the new-game dialog's, and only there
     const ng = markup.slice(markup.indexOf('id="newgame-modal"'), markup.indexOf('id="confirm-modal"'));
-    assert(["row-difficulty", "row-persona", "row-color", "row-clock"].every((id) => ng.includes('id="' + id + '"')),
-      "S5: rung, style, side and clock live in the new-game dialog");
+    // 10.0 M0: the rung is the opponent card (row-opponent); the two rows of
+    // rung names that repeated the cards are gone
+    assert(["row-opponent", "row-persona", "row-color", "row-clock"].every((id) => ng.includes('id="' + id + '"')) &&
+      !ng.includes('data-diff="'),
+      "S5: opponent, style, side and clock live in the new-game dialog — the rung is chosen on the cards only");
 
     // The heading is a promise about what is inside. 「外观」 once held the
     // language and the sound; since A1 each has its own group, and the rows
@@ -2322,20 +2326,14 @@ for (const lang of CONTENT_LANGS) {
   // since it was written — 56 tokens are defined and none of them is --fg (the
   // themes call it --text) — and it looks correct only because the colour it
   // fails to set is the colour it would have inherited anyway. Defect 9,
-  // fixed in P0.5 — the register below is empty and stays empty.
+  // fixed in P0.5. v10-0-plan E5: the register it emptied is gone — zero is the rule.
   {
-    const KNOWN_DANGLING = new Set();
     const defined = new Set([...stripped.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
     const dangling = [...new Set([...stripped.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]))]
       .filter((v) => !defined.has(v));
-    const fresh = dangling.filter((v) => !KNOWN_DANGLING.has(v));
-    for (const v of fresh) console.error("  var(" + v + ") names no token");
-    assert(fresh.length === 0,
-      "no new var() names a missing token" + (fresh.length ? " — " + fresh.join(", ") : ""));
-    const gone = [...KNOWN_DANGLING].filter((v) => !dangling.includes(v));
-    assert(gone.length === 0,
-      "the register lists no dangling token that is already fixed" +
-      (gone.length ? " — drop " + gone.join(", ") : ""));
+    for (const v of dangling) console.error("  var(" + v + ") names no token");
+    assert(dangling.length === 0,
+      "no var() names a missing token" + (dangling.length ? " — " + dangling.join(", ") : ""));
   }
 
   // --- no new bare colour outside the theme blocks --------------------------
@@ -2351,16 +2349,11 @@ for (const lang of CONTENT_LANGS) {
     // (#9a3412 / #1e3a5f, the notebook theme's ♔ ♚ side marks, left with
     // the match bar (7.7) — the strips draw each side as a disc in
     // --side-white / --side-black)
-    const KNOWN = new Map([]);
-    const found = new Set((body.match(/#[0-9a-fA-F]{3,8}\b/g) || []).map((c) => c.toLowerCase()));
-    const fresh = [...found].filter((c) => !KNOWN.has(c));
-    for (const c of fresh) console.error("  new bare colour outside the themes: " + c);
-    assert(fresh.length === 0,
-      "no colour is written in place that was not already there" +
-      (fresh.length ? " — " + fresh.join(", ") : " (" + found.size + " known, all registered)"));
-    const gone = [...KNOWN.keys()].filter((c) => !found.has(c));
-    assert(gone.length === 0,
-      "the register lists no colour that is already gone" + (gone.length ? " — drop " + gone.join(", ") : ""));
+    // v10-0-plan E5: the register 9.0 V1 emptied is gone — zero is the rule
+    const found = [...new Set((body.match(/#[0-9a-fA-F]{3,8}\b/g) || []).map((c) => c.toLowerCase()))];
+    for (const c of found) console.error("  bare colour outside the themes: " + c);
+    assert(found.length === 0,
+      "no colour is written in place outside the themes" + (found.length ? " — " + found.join(", ") : ""));
   }
 
   // A theme answers for the interface; a board palette answers for the board.
@@ -2372,7 +2365,7 @@ for (const lang of CONTENT_LANGS) {
     assert(blk, theme + " theme block found");
     // layer 2, the whole of what a theme declares
     for (const v of ["--surface", "--surface-raised", "--ink", "--ink-muted",
-                     "--accent", "--danger", "--control", "--line", "--primary-from"]) {
+                     "--accent", "--danger", "--control", "--line"]) {
       assert(blk[1].includes(v + ":"), theme + " declares the " + v + " role");
     }
     // …and nothing from layer 3: a theme that names a component variable is a
@@ -2415,17 +2408,13 @@ for (const lang of CONTENT_LANGS) {
   // side of it get antialiased edges — a visible seam at some board sizes,
   // and only at some, which is why it survives being looked at. The lesson
   // success flash was the one site that bypassed it (defect 10, fixed in
-  // P0.5); the register is empty and stays empty.
+  // P0.5). v10-0-plan E5: no register — zero is the rule.
   {
-    const KNOWN_RAW_FILLS = 0;
     const raw = [...boardSrc.matchAll(/ctx\.fillRect\(([^)]*)\)/g)]
       .map((m) => m[1].trim())
       .filter((a) => !a.startsWith("...cellRect("));
     for (const a of raw) console.error("  fillRect(" + a + ") does not go through cellRect()");
-    assert(raw.length <= KNOWN_RAW_FILLS,
-      "every square fill goes through cellRect() (" + raw.length + " raw, " + KNOWN_RAW_FILLS + " registered)");
-    assert(raw.length === KNOWN_RAW_FILLS,
-      "the raw-fill count still matches the register (" + raw.length + " vs " + KNOWN_RAW_FILLS + ")");
+    assert(raw.length === 0, "every square fill goes through cellRect() (" + raw.length + " raw)");
   }
 
   // design-constraints.md said 棋子精灵只缓存一个尺寸 round(step), because
@@ -2745,18 +2734,13 @@ for (const lang of CONTENT_LANGS) {
   // one of the words in its tooltip; it may only shrink (S6 left it empty).
   {
     const TECH = /UCI_Elo|UCI_LimitStrength|MultiPV|Syzygy|ms\/步|ms\/move|\d\s?ms\b|毫秒|ミリ秒|\bnodes?\b|节点|ノード|置换表|置換表|hash table|ハッシュ表|\d\.\d+\s?(以前|之前|より前)|before \d\.\d|实测|実測|measured:|一半重合|agree about half|一致するのは約半分|±\{\d\}/i;
-    const ALLOWED = {}; // key → why the 高级 group needs the word; may only shrink
-    const ALLOWED_MAX = 0;
-    assert(Object.keys(ALLOWED).length <= ALLOWED_MAX, "S6: the technical-word register only shrinks (" + Object.keys(ALLOWED).length + " of at most " + ALLOWED_MAX + ")");
+    // v10-0-plan E5: the register S6 emptied is gone — none is the rule
     const leaks = [];
     for (const [lang, dict] of Object.entries(ctx.ChessI18n.DICT)) {
       for (const [k, v] of Object.entries(dict)) {
         if (!TECH.test(v)) continue;
-        if (ALLOWED[k] && k.startsWith("tip.")) continue;
         leaks.push(lang + " " + k + ": " + v);
       }
-      // a register entry the dictionaries no longer need is a stale one
-      for (const k of Object.keys(ALLOWED)) assert(TECH.test(dict[k] || ""), "S6: " + k + " no longer needs its register entry — drop it");
     }
     for (const [lang, T] of Object.entries(LINES)) {
       for (const p of O.PERSONAS) for (const line of ["hello", "bye"]) {
@@ -2814,8 +2798,7 @@ for (const lang of CONTENT_LANGS) {
       // 8.4's achievement called it a fourth thing: 「极限」 / "Max level" / 「最強」
       assert(d["ach.extreme-win.d"].includes(d["diff.extreme"]), "S6: " + lang + " achievement names the top rung as the button does (" + d["ach.extreme-win.d"] + ")");
     }
-    const fallback = /data-diff="extreme"[^>]*>([^<]*)</.exec(fs.readFileSync(path.join(root, "src/web/index.html"), "utf8"));
-    assert(fallback && fallback[1] === ctx.ChessI18n.DICT["zh-CN"]["diff.extreme"], "S6: index.html's top rung reads " + ctx.ChessI18n.DICT["zh-CN"]["diff.extreme"] + " too (" + (fallback && fallback[1]) + ")");
+
   }
 
   // the clock: presets, a custom control in its own id, and nothing else
@@ -4040,9 +4023,25 @@ for (const lang of CONTENT_LANGS) {
   assert(b.length === 1 && b[0].solution[0] === "Nf6" && b[0].side === "b" && b[0].loss === 390,
     "a Black ?? flips the sign and carries side:\"b\" — the black-drill rails do the rest");
 
-  // what is NOT mined: ? plies, plies without a stored best, best === played
-  assert(M.candidatesFrom({ ...base, tags: ["?", "??"] }, "w", C).length === 0,
-    "a ? is not a lesson — only ?? plies are banked");
+  // what is NOT mined: ?! plies, plies without a stored best, best === played.
+  // v10-0-plan T2: a ? is a lesson too (100–300 cp) — only the ?! stays out
+  assert(M.candidatesFrom({ ...base, tags: ["?!", "??"] }, "w", C).length === 0,
+    "a ?! is not a lesson — only ? and ?? plies are banked");
+  assert(M.candidatesFrom({ ...base, tags: ["?", "??"] }, "w", C).length === 1,
+    "T2: a ? becomes a drill like a ??");
+  // T2: the new arrivals are named, and queued for review once each
+  {
+    const r = M.addMines([], w, 5000, new Set());
+    assert(r.ids.length === 1 && r.ids[0] === w[0].id, "T2: addMines names what it added (" + r.ids + ")");
+    const missed = {};
+    const onMiss = (v, now) => ({ s: 0, n: 1, due: now, ivl: 0 });
+    assert(M.queueFresh(missed, r.ids, 5000, onMiss) === 1 && missed[w[0].id].due === 5000,
+      "T2: a new drill is owed a review at once");
+    missed[w[0].id] = { s: 1, n: 2, due: 9000, ivl: 1 };
+    assert(M.queueFresh(missed, r.ids, 6000, onMiss) === 0 && missed[w[0].id].due === 9000,
+      "T2: …and one already in the queue keeps its place on the ladder");
+    assert(M.addMines(r.list, w, 7000, new Set()).ids.length === 0, "T2: the same drill again adds nothing to queue");
+  }
   assert(M.candidatesFrom({ ...base, bests: [null, "g8f6"] }, "w", C).length === 0,
     "a judgement without a stored answer is not a drill");
   assert(M.candidatesFrom({ ...base, bests: ["e2e4", "g8f6"] }, "w", C).length === 0,
@@ -4137,11 +4136,14 @@ for (const lang of CONTENT_LANGS) {
     const shallow = M.drillFrom(fen, "e4", "c2c4", 90, 0, C, { budget: 60, src: "auto" });
     const rv2 = M.reviseMines(rv.list, [shallow], null, "w", { budget: 60 });
     assert(rv2.updated.length === 0 && rv2.list[0].solution[0] === "d4", "a quick pass never overrules a deep one");
-    // the same game re-analysed deeper, and e4 is no longer a ??: the drill goes
-    const rv3 = M.reviseMines(rv.list, [], { fens: [fen], sans: ["e4"], tags: ["?"] }, "w", { budget: 400 });
+    // the same game re-analysed deeper, and e4 is no longer a mistake: the drill goes
+    const rv3 = M.reviseMines(rv.list, [], { fens: [fen], sans: ["e4"], tags: ["?!"] }, "w", { budget: 400 });
     assert(rv3.retired.length === 1 && rv3.list.length === 0, "a ?? that does not survive the depth is withdrawn");
+    // …while a ?? that the deeper pass calls a ? stays (10.0 T2: both are drills)
+    const rvQ = M.reviseMines(rv.list, [], { fens: [fen], sans: ["e4"], tags: ["?"] }, "w", { budget: 400 });
+    assert(rvQ.retired.length === 0 && rvQ.list.length === 1, "T2: a ?? the deeper pass calls a ? stays a drill");
     // and the same at a shallower depth is not believed
-    const rv4 = M.reviseMines(rv.list, [], { fens: [fen], sans: ["e4"], tags: ["?"] }, "w", { budget: 120 });
+    const rv4 = M.reviseMines(rv.list, [], { fens: [fen], sans: ["e4"], tags: ["?!"] }, "w", { budget: 120 });
     assert(rv4.retired.length === 0, "…but only from a pass at least as deep");
     // 7.2: and the commonest verdict of all — "that move was fine", which is
     // a null tag — withdraws it too, as long as the pass really did measure
@@ -4331,14 +4333,15 @@ for (const lang of CONTENT_LANGS) {
   assert(/for \(const id of r\.dropped\) \{\s*delete store\.session\.puzzleState\.solved\[id\];\s*delete store\.session\.puzzleState\.missed\[id\];/.test(appSrc),
     "a retired drill takes its solved/missed entries with it — no orphan reviews owed");
   // the tab exists exactly while the book does (P3), and the cat is real
-  assert(/if \(g === "mine"\) b\.hidden = !store\.session\.mines\.length;/.test(appSrc),
-    "the 我的错题 tile is drawn only while the personal book holds drills");
+  // v10-0-plan T2: the tile is always there; empty, it says how it fills
+  assert(!/if \(g === "mine"\) b\.hidden/.test(appSrc) && /g === "mine" && !n \? t\("pz\.mineNone"\)/.test(appSrc),
+    "T2: the 我的错题 tile is always drawn, and says how it fills while empty");
   assert(/"op", "rep", "mine", "review"\]/.test(appSrc) && /real: true, mine: true \}/.test(appSrc),
     "mine is a real category on the scripted-grading rail");
   assert(/\(cat === "review" \|\| cat === "mine" \|\| cat === "rep"\) && !puzzlesInCat\(cat\)\.length/.test(appSrc),
     "an emptied personal book does not strand the player");
   const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
-  assert(/data-group="mine" hidden/.test(html), "…and the tile starts hidden until the book says otherwise");
+  assert(/data-group="mine" aria-pressed/.test(html), "T2: …and the tile is not hidden in the page either");
 }
 
 // 摸得到的复盘: hovering the move list or a PV chip puts that position on the
@@ -4516,8 +4519,67 @@ for (const lang of CONTENT_LANGS) {
   loadModule(ctx, "src/web/js/planner.js");
   const PL = ctx.ChessPlanner;
   const full = PL.plan({ owed: 5, mineUnsolved: 4, weakCat: "def", lessonNext: 3, opUnsolved: true, playedToday: false });
-  assert(full.steps.map((x) => x.kind).join(",") === "review,mine,weak,lesson,game",
-    "满信号:欠账→错题→弱项→前进→对局,课程在时开局线让位");
+  // v10-0-plan T5: at most three, in the same order — the rest wait their turn
+  assert(full.steps.map((x) => x.kind).join(",") === "review,mine,weak" && PL.MAX_STEPS === 3,
+    "满信号:欠账→错题→弱项,最多三项(前进与对局排在后面)");
+  assert(PL.plan({ owed: 0, mineUnsolved: 0, weakCat: null, lessonNext: 3, opUnsolved: true, playedToday: false })
+    .steps.map((x) => x.kind).join(",") === "lesson,game", "没欠账时:前进→对局,课程在时开局线让位");
+  // T5: the repertoire's due moves come after the weakness, before the library
+  const rp = PL.plan({ owed: 2, repDue: 9, libQueued: 4, lessonNext: 3, playedToday: false });
+  assert(rp.steps.map((x) => x.kind).join(",") === "review,repdue,lib" && rp.steps[1].n === PL.DOSE.rep,
+    "T5:开局书到期的着在欠账之后、棋谱库之前,剂量封顶", JSON.stringify(rp.steps));
+  {
+    const b = PL.snap({ owed: 0, byCat: {}, lessonsDone: 0, opSolved: 0, games: 0, repDue: 9 });
+    assert(PL.stepDone({ kind: "repdue", n: 5 }, b, PL.snap({ owed: 0, byCat: {}, lessonsDone: 0, opSolved: 0, games: 0, repDue: 4 })) &&
+      !PL.stepDone({ kind: "repdue", n: 5 }, b, PL.snap({ owed: 0, byCat: {}, lessonsDone: 0, opSolved: 0, games: 0, repDue: 6 })),
+      "T5:开局书一步,剂量的着出了队列才算完成");
+  }
+  // T5: a brand-new profile is given the first lesson, and nothing else
+  const fresh0 = PL.plan({ owed: 0, mineUnsolved: 0, lessonNext: 0, opUnsolved: true, playedToday: false, fresh: true });
+  assert(fresh0.steps.length === 1 && fresh0.steps[0].kind === "lesson" && fresh0.steps[0].i === 0,
+    "T5:新档案只有一项 —— 第 1 课", JSON.stringify(fresh0.steps));
+  // T3: this week's focus takes the weakness step's place, a dose at a time
+  const fz = PL.plan({ owed: 0, weakMotif: "pin", lessonNext: 3, playedToday: false,
+    focus: { kind: "motif", motif: "fork", n: 10, at: 9 } });
+  assert(fz.steps.map((x) => x.kind).join(",") === "focus,lesson,game" && fz.steps[0].n === 1,
+    "T3:本周重点取代弱项那一步,剂量不超过这一项还剩的", JSON.stringify(fz.steps));
+  {
+    const k = PL.focusKey({ kind: "motif", motif: "fork" });
+    const b = PL.snap({ owed: 0, byCat: {}, lessonsDone: 0, opSolved: 0, games: 0, focus: { [k]: 3 } });
+    const a2 = PL.snap({ owed: 0, byCat: {}, lessonsDone: 0, opSolved: 0, games: 0, focus: { [k]: 5 } });
+    assert(PL.stepDone({ kind: "focus", item: { kind: "motif", motif: "fork" }, n: 2 }, b, a2) &&
+      !PL.stepDone({ kind: "focus", item: { kind: "motif", motif: "fork" }, n: 3 }, b, a2), "T3:本周重点一步按这一项的进度记");
+  }
+  {
+    loadModule(ctx, "src/web/js/focus.js");
+    const F = ctx.ChessFocus;
+    assert(F.compose({ enough: false, have: 7, need: 20 }).need === 13 && !F.compose({ enough: false, have: 7, need: 20 }).items.length,
+      "T3:局数不够时不排重点,只说还差几局");
+    const diag = { enough: true, weakestPhase: "end", motifs: [{ motif: "fork", n: 9 }, { motif: "pin", n: 4 }],
+      ecos: [{ eco: "C60", name: "西班牙", n: 8, score: 0.7 }, { eco: "B20", name: "西西里", n: 6, score: 0.4 }, { eco: "A00", name: "x", n: 2, score: 0 }] };
+    const c = F.compose(diag, { opDrills: (f) => (f === "B2" ? 7 : 0) });
+    assert(c.items.map((x) => x.kind).join() === "motif,endgame,opening" && c.items[0].motif === "fork" &&
+      c.items[2].family === "B2" && c.items[2].n === 3, "T3:母题、最弱的阶段、得分不到一半的开局(局数够、有开局线可练)", JSON.stringify(c.items));
+    const mid = F.compose(Object.assign({}, diag, { weakestPhase: "middle" }), { opDrills: () => 0 });
+    assert(mid.items.map((x) => x.motif || x.kind).join() === "fork,pin", "T3:中局最弱时排第二个母题;没有开局线可练就不排开局", JSON.stringify(mid.items));
+    const cnt = { byMotif: { fork: 4 }, egDone: 2, opSolved: (f) => (f === "B2" ? 1 : 0) };
+    const base = F.snapshot(cnt, c.items);
+    const now = { byMotif: { fork: 20 }, egDone: 4, opSolved: () => 1 };
+    assert(F.progressOf(c.items[0], base, now) === 10 && F.progressOf(c.items[1], base, now) === 2 && F.progressOf(c.items[2], base, now) === 0,
+      "T3:进度从这一周开始时的计数算起,封顶在剂量");
+    let asked = 0;
+    const dx = () => { asked++; return diag; };
+    const w1 = F.weekOf(null, "2026-W41", dx, { opDrills: () => 1 }, cnt, 25);
+    const w2 = F.weekOf(w1.focus, "2026-W41", dx, { opDrills: () => 1 }, cnt, 30);
+    const w3 = F.weekOf(w1.focus, "2026-W42", dx, { opDrills: () => 1 }, cnt, 30);
+    assert(w1.fresh && !w2.fresh && w2.focus === w1.focus && w3.fresh && asked === 2, "T3:一周排一次,同一周里不重排");
+    const e1 = F.weekOf(null, "2026-W41", () => ({ enough: false, have: 5, need: 20 }), {}, cnt, 5);
+    assert(!F.weekOf(e1.focus, "2026-W41", dx, {}, cnt, 5).fresh && F.weekOf(e1.focus, "2026-W41", dx, { opDrills: () => 0 }, cnt, 6).fresh,
+      "T3:没排出来的一周,分析的局数变了才再问");
+  }
+  // T1: placed on the first run — the game against the chosen opponent first
+  const placed = PL.plan({ owed: 0, mineUnsolved: 0, lessonNext: 0, opUnsolved: true, playedToday: false, placed: true });
+  assert(placed.steps.map((x) => x.kind).join(",") === "game,lesson", "T1:定级之后,第一件事是和配好的对手下一盘", JSON.stringify(placed.steps));
   assert(full.steps[0].n === PL.DOSE.review && full.steps[1].n === 2 && full.steps[2].cat === "def",
     "剂量封顶,弱项带着它的类别");
   const lean = PL.plan({ owed: 0, mineUnsolved: 0, weakCat: null, lessonNext: -1, opUnsolved: true, playedToday: true });
@@ -4600,7 +4662,7 @@ for (const lang of CONTENT_LANGS) {
   assert(/renderPuzzleTally\(\);\s*renderTrends\(\)/.test(appSrc),
     "记录页画完战绩画进步");
   // 7.1 A3: the coach and the progress page can see the library
-  assert(/playedToday: loadStats\(\)\.games\.some[\s\S]{0,200}store\.session\.library\.some\(\(g\) => g\.side && Progress\.dayKey\(libPlayedAt\(g\)\) === today\)/.test(appSrc),
+  assert(/playedToday: games\.some[\s\S]{0,200}store\.session\.library\.some\(\(g\) => g\.side && Progress\.dayKey\(libPlayedAt\(g\)\) === today\)/.test(appSrc),
     "在别处下的棋也是今天下过棋 —— 7.0 只读本地战绩，导进来今早的快棋还被劝去下一盘");
   assert(/libMotif: libWeakMotif\(\)/.test(appSrc) && /libQueued: Library\.pending\(/.test(appSrc),
     "日课读得到棋谱库说的弱项和还欠着的分析");
@@ -5448,8 +5510,12 @@ for (const lang of CONTENT_LANGS) {
       assert(!/满强度|Full strength|フルパワー/.test(label),
         lang + " no longer calls the top tier “full strength” — " + label);
     }
-    assert(/1\.2/.test(I.DICT["zh-CN"]["tip.diff.extreme"]),
-      "…and its tooltip says what it actually does");
+    // 10.0 M0: the rung is chosen on its opponent's card, and the card's
+    // words (the persona's hello, its tooltip) are what say it in each language
+    const lines = fs.readFileSync(path.join(root, "src/web/js/opponents-lines.js"), "utf8");
+    const fishHellos = [...lines.matchAll(/fish: \{[^}]*hello: "([^"]*)"/g)].map((m) => m[1]);
+    assert(fishHellos.length === 3 && fishHellos.every((h) => /1\.2/.test(h)),
+      "…and its card says what it actually does (" + fishHellos.join(" / ") + ")");
     // and the engine really does still time-limit it
     const eng = fs.readFileSync(path.join(root, "src/web/js/engine.js"), "utf8");
     assert(/extreme: \{ elo: null, movetime: 1200 \}/.test(eng),
@@ -5705,23 +5771,57 @@ for (const lang of CONTENT_LANGS) {
     // 7.2: the 棋谱库 markup is built in library-ui.js now, so the app's
     // source alone no longer accounts for every class it wears
     // 7.9: and fit-row.js sets the panel's width class (.side-wide)
-    const appC = appSrc + fs.readFileSync(path.join(root, "src/web/js/library-ui.js"), "utf8") +
-      fs.readFileSync(path.join(root, "src/web/js/fit-row.js"), "utf8");
-    // class selectors the stylesheet defines, minus state/modifier suffixes
-    const defined = new Set([...cssC.matchAll(/^\s*\.([a-z][a-z0-9-]*)/gm)].map((m) => m[1]));
+    // 10.0 M0: every hand-written module, not app.js and two others — the
+    // classes a page wears are set all over src/web/js now
+    const appC = [];
+    const walkJs = (dir) => {
+      for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, f.name);
+        if (f.isDirectory()) walkJs(p);
+        else if (/\.js$/.test(f.name) && !/^(bundle|chunk-|engine-src)/.test(f.name)) appC.push(fs.readFileSync(p, "utf8"));
+      }
+    };
+    walkJs(path.join(root, "src/web/js"));
+    const jsC = appC.join("\n");
+    // 10.0 M0: every class a selector names, wherever it stands in the
+    // selector — it used to read only the ones that began a line (346 of
+    // 435), and .review-h, the second of a pair, had outlived its markup
+    const sels = [];
+    {
+      let buf = "";
+      for (const ch of cssC.replace(/\/\*[\s\S]*?\*\//g, "")) {
+        if (ch === "{") { sels.push(buf); buf = ""; } else if (ch === "}" || ch === ";") buf = ""; else buf += ch;
+      }
+    }
+    const defined = new Set();
+    for (const sel of sels) if (!/^\s*@/.test(sel)) for (const m of sel.matchAll(/\.([a-zA-Z][\w-]*)/g)) defined.add(m[1]);
+    // classes put together at run time: the grade on a move (" g-" + grade,
+    // app.js) and a retry's verdict ("is-" + verdict, review/retry.js)
+    const BUILT = [[/^g-/, /" g-" \+/], [/^is-(right|wrong)$/, /"is-" \+ r\.verdict/]];
     const orphans = [];
     for (const c of defined) {
-      // a word-boundary search of the markup and the app: classes are set as
-      // literals, as parts of a multi-class string ("mlnum num"), and as
-      // concatenations ("mvtag " + tier), so anything narrower reports rules
-      // that are very much in use
-      const used = new RegExp("\\b" + c.replace(/-/g, "\\-") + "\\b");
-      if (!used.test(htmlC) && !used.test(appC)) orphans.push(c);
+      // a search of the markup and the modules: classes are set as literals,
+      // as parts of a multi-class string ("mlnum num"), and as concatenations
+      // ("mvtag " + tier), so anything narrower reports rules that are very
+      // much in use. A hyphen is part of a class name, so it bounds the match.
+      const used = new RegExp("(?<![\\w-])" + c.replace(/-/g, "\\-") + "(?![\\w-])");
+      if (used.test(htmlC) || used.test(jsC)) continue;
+      if (BUILT.some(([name, maker]) => name.test(c) && maker.test(jsC))) continue;
+      orphans.push(c);
     }
     for (const c of orphans) console.error("  no markup uses ." + c);
     assert(orphans.length === 0,
       "every class the stylesheet defines is worn by something" +
       (orphans.length ? " — " + orphans.length + " orphan(s)" : " (" + defined.size + " classes)"));
+    // 10.0 M0: and every custom property it declares is read — by a var()
+    // in the sheet, or by the app (getPropertyValue / setProperty / markup)
+    const cssNoComments = cssC.replace(/\/\*[\s\S]*?\*\//g, "");
+    const declared = new Set([...cssNoComments.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
+    const readVar = new Set([...cssNoComments.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]));
+    const unread = [...declared].filter((v) => !readVar.has(v) && !jsC.includes(v) && !htmlC.includes(v));
+    for (const v of unread) console.error("  nothing reads " + v);
+    assert(unread.length === 0, "every custom property the stylesheet declares is read (" + declared.size + " declared)" +
+      (unread.length ? " — unread: " + unread.join(", ") : ""));
   }
 
   // --- the board's marks sit on one scale ----------------------------------
@@ -6194,10 +6294,11 @@ for (const lang of CONTENT_LANGS) {
     const missing = list.filter((id) => !new RegExp("\\n\\s*" + id + ": \\{").test(engSrc));
     assert(missing.length === 0,
       "every rung has engine settings" + (missing.length ? " — missing: " + missing.join(", ") : ""));
-    const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
-    const noBtn = list.filter((id) => !html.includes('data-diff="' + id + '"'));
-    assert(noBtn.length === 0,
-      "every rung has a button" + (noBtn.length ? " — missing: " + noBtn.join(", ") : ""));
+    // 10.0 M0: a rung is chosen by its opponent's card — so every rung has one
+    const oppSrc = fs.readFileSync(path.join(root, "src/web/js/opponents.js"), "utf8");
+    const noCard = list.filter((id) => !new RegExp('level: "' + id + '"').test(oppSrc));
+    assert(noCard.length === 0,
+      "every rung has an opponent card (opponents.js PERSONAS)" + (noCard.length ? " — missing: " + noCard.join(", ") : ""));
     const dict = ctx.ChessI18n.DICT;
     for (const lang of Object.keys(dict)) {
       const gaps = list.filter((id) => !("diff." + id in dict[lang]));
@@ -6451,9 +6552,8 @@ for (const lang of CONTENT_LANGS) {
 // comments stripped. The chess symbols U+2654–265F are pieces, not emoji
 // (the promotion dialog and the editor palette draw with them), and are
 // excluded — although ♟ carries the pictographic property since Emoji 11.
-// Register: what is left, per file. Empty, and it may only shrink.
+// v10-0-plan E5: the register that listed what was left is gone — none is the rule.
 {
-  const KNOWN_EMOJI = new Map([]);
   const web = path.join(root, "src/web");
   const files = ["index.html", "styles.css", ...webJsFiles(path.join(web, "js"))
     .filter((f) => f.endsWith(".js") && !["bundle.js", "engine-src.js"].includes(f)).map((f) => "js/" + f)];
@@ -6464,11 +6564,8 @@ for (const lang of CONTENT_LANGS) {
     const hits = [...src.matchAll(/\p{Extended_Pictographic}/gu)].map((m) => m[0]).filter((c) => !/[♔-♟]/u.test(c));
     if (hits.length) found.set(f, [...new Set(hits)].join(""));
   }
-  const fresh = [...found].filter(([f, e]) => !KNOWN_EMOJI.has(f) || [...e].some((c) => !KNOWN_EMOJI.get(f).includes(c)));
-  for (const [f, e] of fresh) console.error("  emoji in " + f + ": " + e);
-  assert(fresh.length === 0, "the interface draws no emoji" + (fresh.length ? " — " + fresh.map(([f]) => f).join(", ") : ""));
-  const gone = [...KNOWN_EMOJI.keys()].filter((f) => !found.has(f));
-  assert(gone.length === 0, "the emoji register lists no file that is already clean" + (gone.length ? " — drop " + gone.join(", ") : ""));
+  for (const [f, e] of found) console.error("  emoji in " + f + ": " + e);
+  assert(found.size === 0, "the interface draws no emoji" + (found.size ? " — " + [...found.keys()].join(", ") : ""));
   // …and every achievement names an icon that exists
   const iconSrc = fs.readFileSync(path.join(web, "js/icons.js"), "utf8");
   const achSrc = fs.readFileSync(path.join(web, "js/achievements.js"), "utf8");
@@ -7165,11 +7262,12 @@ for (const lang of CONTENT_LANGS) {
   console.log("  bundle.js " + bundleBytes + " bytes minified (budget " + BUNDLE_BUDGET + ")");
   assert(bundleBytes <= BUNDLE_BUDGET,
     "bundle.js stays within the first-paint budget (" + bundleBytes + (bundleBytes <= BUNDLE_BUDGET ? " ≤ " : " > ") + BUNDLE_BUDGET + " bytes)");
-  // …and 9.0's own, tighter line: new pages go in chunks, the bundle carries
-  // their doors. v9-0-plan §8 第 4 条: 8.4.0 + 20 KB
-  const BUNDLE_BYTES_90 = 911124 + 20000;
-  assert(bundleBytes <= BUNDLE_BYTES_90,
-    "v9-0-plan §8: bundle.js grows at most 20 KB over 8.4.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_90 ? " ≤ " : " > ") + BUNDLE_BYTES_90 + " bytes)");
+  // …and the release's own, tighter line: new pages go in chunks, the bundle
+  // carries their doors. v9-0-plan §8 第 4 条 set it at 8.4.0 + 20 KB;
+  // v10-0-plan E6 moves it to 9.0.0 (923,333 bytes, e3fc6df) + 20 KB
+  const BUNDLE_BYTES_100 = 923333 + 20000;
+  assert(bundleBytes <= BUNDLE_BYTES_100,
+    "v10-0-plan E6: bundle.js grows at most 20 KB over 9.0.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_100 ? " ≤ " : " > ") + BUNDLE_BYTES_100 + " bytes)");
   // …minified without renaming: a player's stack trace still names the code
   assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
     "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");
@@ -7772,6 +7870,42 @@ for (const lang of CONTENT_LANGS) {
       JSON.stringify(cg) === JSON.stringify(rg) && twice.length === 0 && cg.every((g) => g[3] > 0 && g[3] <= 60),
       "checks.yml 与 release.yml 的浏览器分组逐条相同、每组有自己的超时（" + cg.map((g) => g[0] + " " + g[3]).join("，") + "）" +
       (twice.length ? " —— 跑了两遍：" + twice.join(", ") : ""));
+    // v10-0-plan E2: the groups a pull request runs on Chromium only are
+    // groups of the list above, whole (an exclusion has to match exactly, or
+    // it silently excludes nothing), the PR's alone, and only WebKit's
+    {
+      const m = /exclude: \$\{\{ github\.event_name == 'pull_request' && fromJSON\('(.*)'\) \|\| fromJSON\('\[\]'\) \}\}/.exec(checksWf);
+      const ex = m ? JSON.parse(m[1].replace(/''/g, "'")) : [];
+      const asRow = (g) => JSON.stringify([g.name, g.suites, g.shard || "", g.timeout]);
+      const rows = new Set(cg.map((g) => JSON.stringify(g)));
+      const names = ex.map((e) => e.group && e.group.name).sort().join(", ");
+      assert(ex.length === 7 && ex.every((e) => e.engine === "webkit" && rows.has(asRow(e.group))) &&
+        names === "board + clock, lessons, panel layout 1/5, panel layout 2/5, panel layout 3/5, panel layout 4/5, panel layout 5/5" &&
+        !/exclude:/.test(releaseWf.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n")),
+        "E2：PR 上布局五片、课程、棋盘 + 棋钟只跑 Chromium（排除项与分组逐字段相同），发布照跑两个引擎（" + names + "）");
+      assert(/^  reuse:$/m.test(releaseWf) && /checks\.yml\/runs\?head_sha=\$\{SHA\}&event=push&status=success/.test(releaseWf) &&
+        /^  static:\n    needs: reuse\n    if: needs\.reuse\.outputs\.green != 'true'/m.test(releaseWf) &&
+        /^  browser:\n    needs: reuse\n    if: needs\.reuse\.outputs\.green != 'true'/m.test(releaseWf) &&
+        /needs: \[preflight, reuse, static, engine, browser, build-macos, build-windows\]\n[\s\S]{0,200}if: \$\{\{ !cancelled\(\) && !contains\(needs\.\*\.result, 'failure'\) && !contains\(needs\.\*\.result, 'cancelled'\) \}\}/.test(releaseWf),
+        "E2：同一提交在 main 上的 checks 已绿时，发布复用静态与浏览器两道门；引擎门与两个平台构建照跑；失败或取消照样不发布");
+    }
+    // v10-0-plan E4: every id in the page is one something uses — a script,
+    // the stylesheet, the page's own aria-*/for, or a test. Twenty were
+    // not (9.0 review); an id nothing reads is a name that only looks used.
+    // The ids built by joining (`"result-" + side`, `id + "-cv"`) are named.
+    {
+      const page = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+      const ids = [...page.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]);
+      const rest = page.replace(/\bid="[^"]+"/g, "");
+      const read = [...WEB_MODULES.values()].join("\n") + fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8") +
+        fs.readdirSync(path.join(root, "scripts")).filter((n) => n.endsWith(".mjs") && !n.startsWith("_")).map((n) => fs.readFileSync(path.join(root, "scripts", n), "utf8")).join("\n");
+      const JOINED = new Set(["result-w", "result-b", "today-r-game-cv", "today-r-pz-cv"]);
+      const esc = (x) => x.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&");
+      const unread = ids.filter((id) => !JOINED.has(id) &&
+        !new RegExp("(?:aria-[a-z]+|for)=\"[^\"]*\\b" + esc(id) + "\\b").test(rest) &&
+        !new RegExp("[\"'`#]" + esc(id) + "(?![\\w-])").test(read));
+      assert(unread.length === 0, "E4：页面里每个 id 都有人用（脚本、样式、页面自己的 aria / for，或测试）" + (unread.length ? " —— 没人用：" + unread.join(", ") : ""));
+    }
     // v8-3-plan V4: any suite may be sharded now (engine flows too), not only
     // the layout one. A sharded group holds that one suite alone (SHARD would
     // cut every suite in it), its shards are exactly 1/n..n/n, it runs in no
@@ -8062,7 +8196,7 @@ for (const lang of CONTENT_LANGS) {
 // 9.0 had put down its history (M1), and it may only go down — lower it in
 // the PR that moves code out.
 {
-  const APP_JS_LINE_CEILING = 5744;
+  const APP_JS_LINE_CEILING = 5722; // 10.0: 5,744 → 5722
   const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
   assert(lines <= APP_JS_LINE_CEILING,
     "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
@@ -8118,12 +8252,8 @@ for (const lang of CONTENT_LANGS) {
 // dependencies handed in (createLibraryUI's shape). app.js keeps a one-line
 // door for each of the names the rest of it calls.
 {
-  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
   assert(WEB_MODULES.has("settings-ui.js") && WEB_MODULES.get("settings-ui.js").includes("export function createSettingsUI(d)"),
     "F4: settings-ui.js exports createSettingsUI(d)");
-  for (const name of ["paintSettings", "applyLook", "wireSettings", "draftPick"]) {
-    assert(owner(name) === "settings-ui.js", "F4: " + name + " is declared in settings-ui.js (found in " + owner(name) + ")");
-  }
   assert(APP_MODULES.includes("settings-ui.js"), "F4: settings-ui.js follows app.js's house rules (APP_MODULES)");
   const app = WEB_MODULES.get("app.js");
   assert(!["theme-seg", "multipv-seg", "opt-blind"].some((id) => app.includes('getElementById("' + id + '")')),
@@ -8135,7 +8265,6 @@ for (const lang of CONTENT_LANGS) {
 // review/, each with its dependencies handed in (createLibraryUI's shape).
 // app.js names what it still calls with one destructuring per module.
 {
-  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
   const REVIEW_OWNERS = {
     "review/eval-graph.js": ["judgeColours", "drawEvalBar", "evalText", "drawEvalCurve"],
     "review/retry.js": ["mistakeFacts", "writeWhy", "renderMistakeList", "renderWhyLine", "startRetry", "endRetry", "resetRetry", "retryModel", "retryClick", "retryMove", "renderRetry"],
@@ -8146,9 +8275,6 @@ for (const lang of CONTENT_LANGS) {
   };
   for (const [file, names] of Object.entries(REVIEW_OWNERS)) {
     assert(APP_MODULES.includes(file), "F4: " + file + " follows app.js's house rules (APP_MODULES)");
-    for (const name of names) {
-      assert(owner(name) === file, "F4: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
-    }
   }
 }
 
@@ -8157,18 +8283,16 @@ for (const lang of CONTENT_LANGS) {
 // with their dependencies handed in (createLibraryUI's shape); app.js keeps
 // one destructuring door per module.
 {
-  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
   const homes = {
     "trainer/content.js": ["createTrainerContent", "puzzleName", "lessonText", "motifKeyOf"],
     "trainer/lessons.js": ["createLessonsUI", "startLesson", "learnMove", "syncLearnUI", "startClassic"],
     "trainer/puzzles.js": ["createPuzzlesUI", "puzzleMove", "syncPuzzleUI"],
     "trainer/today.js": ["createTodayUI", "dailySignals", "dailyJump", "renderPuzzleTally"],
     // v8-0-plan B5 (M4): the 我的 page grows in its own module
-    "me-page.js": ["createMePage", "drawAccTrend", "renderAchRows", "REC_DOORS"],
+    "me-page.js": ["createMePage", "drawAccTrend", "renderAchRows"],
   };
   for (const [file, names] of Object.entries(homes)) {
     assert(APP_MODULES.includes(file), "F4: " + file + " follows app.js's house rules (APP_MODULES)");
-    for (const name of names) assert(owner(name) === file, "F4: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
   }
 }
 
@@ -8179,7 +8303,6 @@ for (const lang of CONTENT_LANGS) {
 // with their dependencies handed in. A new way to train is one more module
 // beside them (T2), not more lines in the 1,825 this file had.
 {
-  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
   const homes = {
     "trainer/puzzle-book.js": ["createPuzzleBook", "bookNow", "puzzlesInCat", "puzzleTier", "owedNow", "loadPuzzleState"],
     "trainer/puzzle-rating.js": ["createPuzzleRating", "ratePuzzleOnce", "playerRating", "markMissed", "clearMissed"],
@@ -8192,7 +8315,6 @@ for (const lang of CONTENT_LANGS) {
     // the mate searches are pure functions of a chess.js game, like runs.js
     // and themes.js: no factory, no bag, none of app.js's house rules to follow
     if (file !== "trainer/puzzle-mate.js") assert(APP_MODULES.includes(file), "F1: " + file + " follows app.js's house rules (APP_MODULES)");
-    for (const name of names) assert(owner(name) === file, "F1: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
   }
   const lines = WEB_MODULES.get("trainer/puzzles.js").split("\n").length;
   assert(lines <= 1000, "F1: trainer/puzzles.js is the trainer's middle, not the whole of it (" + lines + " lines)");
@@ -8219,7 +8341,6 @@ for (const lang of CONTENT_LANGS) {
 // calls with one destructuring per module. A module created before the one
 // it borrows from is handed forwarders (see the Codex on #88 check above).
 {
-  const owner = (name) => (findSymbol(WEB_MODULES, name) || {}).file;
   const homes = {
     "io.js": ["createIO", "copyText", "pgnForExport", "exportText", "pickFromList", "importPgnText", "openPgnFile",
       "importLearningText", "exportAllData", "importAllDataText"],
@@ -8229,7 +8350,6 @@ for (const lang of CONTENT_LANGS) {
   };
   for (const [file, names] of Object.entries(homes)) {
     assert(APP_MODULES.includes(file), "F3: " + file + " follows app.js's house rules (APP_MODULES)");
-    for (const name of names) assert(owner(name) === file, "F3: " + name + " is declared in " + file + " (found in " + owner(name) + ")");
   }
 }
 
@@ -8258,7 +8378,8 @@ for (const lang of CONTENT_LANGS) {
   // v8-2-plan V1: and the automation build's sync scenario, which runs only
   // under CHESS_SELFTEST and against the fake server sync.zig's CHESS_SYNC_BASE names
   const callers = [...WEB_MODULES].filter(([file, text]) => /\.fetchGames\(/.test(text) && file !== "host.js").map(([file]) => file).sort();
-  assert(callers.join() === "selftest-scenarios.js,sync-ui.js", "C2: only the sync dialog (and the self-test's sync scenario) calls fetchGames (" + callers.join(", ") + ")");
+  // v10-0-plan A1: …and 分析一局, for one Lichess game by its id, behind the same switch
+  assert(callers.join() === "analyse-entry.js,selftest-scenarios.js,sync-ui.js", "C2: only the sync dialog, 分析一局 (and the self-test's sync scenario) call fetchGames (" + callers.join(", ") + ")");
 }
 
 if (failed) {

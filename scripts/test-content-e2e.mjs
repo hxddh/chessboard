@@ -281,13 +281,34 @@ for (const les of LESSONS) {
   const landed = await page.evaluate(() => ({
     mode: document.getElementById("app").getAttribute("data-mode"),
     goal: document.getElementById("puzzle-task").textContent || "",
+    fen: window.__chess.puzzle(),
   }));
-  assert(landed.mode === "puzzle" && landed.goal.includes(withP.practice),
-    `${withP.id}:按下去落在同一母题的题目上`, JSON.stringify(landed));
+  // 10.0 M0: the goal line no longer names the motif (it gave the answer
+  // away), so the puzzle is identified by its position — one of the set the
+  // button draws from, the tactics labelled with the lesson's motif
+  const place = (f) => (f || "").split(" ")[0];
+  const pool = data.CHESS_PUZZLES.filter((p) => p.cat === "tac" && p.motif === withP.practice).map((p) => place(p.fen));
+  assert(landed.mode === "puzzle" && pool.includes(place(landed.fen)) && !landed.goal.includes(withP.practice),
+    `${withP.id}:按下去落在同一母题的题目上(题面不说母题)`, JSON.stringify(landed));
 
   // back to the course for the checks that follow
   await toTrain(page, "course");
   await page.waitForTimeout(200);
+}
+
+// 10.0 M0: a tap task counts its taps in words of its own (点第 x 处，共 n 处),
+// not as a bare (1/3) beside the lesson's dots and Today's 第 x 项
+{
+  const les = LESSONS.find((l) => l.tasks[0].type === "tap");
+  await page.evaluate((want) => {
+    const rows = [...document.getElementById("lesson-list").querySelectorAll("button, .lesson-row")];
+    rows.find((r) => (r.textContent || "").includes(want))?.click();
+  }, les.title);
+  await page.waitForTimeout(500);
+  await settle();
+  const said = await page.evaluate(() => document.getElementById("lesson-task").textContent);
+  const n = les.tasks[0].steps.length;
+  assert(said.endsWith("（点第 1 处，共 " + n + " 处）") && !/\(\d\/\d\)/.test(said), "10.0 M0 点格子的题按「第几处」计数", said);
 }
 
 // a wrong move on a one-answer task is refused, with that task's own hint
@@ -327,8 +348,11 @@ await page.waitForTimeout(400);
 {
   const tiles = await page.evaluate(() => [...document.querySelectorAll("#pz-groups button[data-group]")]
     .filter((b) => !b.hidden).map((b) => ({ g: b.dataset.group, n: (b.querySelector(".pz-tile-n") || {}).textContent || "" })));
-  assert(tiles.length === 5 && !tiles.some((x) => x.g === "mine"), "9.0 S3：没有错题时五块按类做题（我的错题不出现）", JSON.stringify(tiles));
-  for (const { g, n } of tiles) {
+  // v10-0-plan T2: 我的错题 is the sixth even when empty — it says how it
+  // fills instead of a count, and is checked on its own (the mines block)
+  assert(tiles.length === 6 && tiles[5].g === "mine" && !/\d/.test(tiles[5].n),
+    "9.0 S3 / 10.0 T2：五块按类做题，加上没有题时也在的我的错题", JSON.stringify(tiles));
+  for (const { g, n } of tiles.filter((x) => x.g !== "mine")) {
     await page.click('#pz-groups button[data-group="' + g + '"]');
     let r = null;
     for (let i = 0; i < 30; i++) {
@@ -769,8 +793,19 @@ if (hasTab && REAL.length) {
     pg.on("pageerror", (e) => errs.push(e.message));
     await pg.goto(`http://127.0.0.1:${PORT}/`);
     await pg.waitForTimeout(900);
-    assert(await pg.evaluate(() => document.querySelector('#pz-groups button[data-group="mine"]').hidden),
-      "没有错题时,「我的错题」这一块不存在");
+    // v10-0-plan T2: there all the same, saying how it fills; pressed, it
+    // explains itself and leaves the puzzle on the board alone
+    const empty = await pg.evaluate(() => {
+      const b = document.querySelector('#pz-groups button[data-group="mine"]');
+      const before = document.getElementById("puzzle-task").textContent;
+      b.click();
+      return { hidden: b.hidden, n: b.querySelector(".pz-tile-n").textContent, active: b.classList.contains("active"),
+        same: document.getElementById("puzzle-task").textContent === before };
+    });
+    await pg.waitForTimeout(200);
+    const said = await pg.evaluate(() => document.getElementById("toast").textContent);
+    assert(!empty.hidden && empty.n === "分析一局就有" && !empty.active && empty.same && /自动加进来/.test(said),
+      "T2: 没有错题时「我的错题」也在，写着怎么攒；点它说明来历，不换题", JSON.stringify(empty) + " " + said);
     await ctx2.close();
   }
 
@@ -879,6 +914,57 @@ if (hasTab && REAL.length) {
   await ctx2.close();
 }
 
+// --- v10-0-plan T5 / T2: 今天 for a new profile, and a mistake that is due --
+{
+  const at = async (init) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript(init);
+    const pg = await ctx.newPage();
+    pg.on("pageerror", (e) => errs.push(e.message));
+    await pg.goto(`http://127.0.0.1:${PORT}/`);
+    await pg.waitForTimeout(900);
+    await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+    return { ctx, pg };
+  };
+  // F. nothing played, solved or learnt: one thing — the first lesson — and
+  // invitations where the numbers would be
+  {
+    const { ctx, pg } = await at(() => {
+      localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", soundOn: false }));
+    });
+    const h = await todayHero(pg);
+    const page = await pg.evaluate(() => ({
+      list: document.getElementById("daily-plan").hidden,
+      rg: document.getElementById("today-r-game").textContent, rp: document.getElementById("today-r-pz").textContent,
+      cv: [...document.querySelectorAll(".today-rating canvas")].filter((c) => !c.hidden).length,
+      bars: [...document.querySelectorAll("#today-cont .today-c:not([hidden]) .today-bar")].map((b) => b.dataset.n),
+    }));
+    assert(h.title === "学一节新课" && page.list && h.steps.length <= 1,
+      "T5:新档案的今天只有一件事(第 1 课),不再列一张只有一行的单子", JSON.stringify(h));
+    assert(page.rg === "和电脑下完一盘就有" && page.rp === "做几道谜题就有" && page.cv === 0,
+      "T5:还没有的等级分写怎么得到,不画横线和平线", JSON.stringify(page));
+    assert(page.bars.length >= 2 && page.bars.every((n) => n === "从这里开始"),
+      "T5:没开始的「继续」写「从这里开始」,不写 0/7", JSON.stringify(page.bars));
+    await ctx.close();
+  }
+  // M. a drill from yesterday's game, due: the review step says which move of which game
+  {
+    const { ctx, pg } = await at(() => {
+      const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(12, 0, 0, 0);
+      localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", soundOn: false }));
+      localStorage.setItem("chess.mines", JSON.stringify({ v: 1, list: [{ id: "mine:t5", cat: "mine",
+        fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", solution: ["Nf3"], played: "e4", loss: 350, ply: 44, t: d.getTime() }] }));
+      localStorage.setItem("chess.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: { "mine:t5": { s: 0, n: 1, due: 0, ivl: 0 } }, cat: "m1" }));
+    });
+    const h = await todayHero(pg);
+    assert(h.title === "先清复习 1 题" && /昨天那局第 23 步的失误/.test(h.meta) && h.steps.length >= 2 && h.steps.length <= 3,
+      "T2 / T5:到期的错题排在第一,写明是昨天那局第 23 步;最多三项", JSON.stringify(h));
+    const dots = await pg.evaluate(() => [...document.querySelectorAll("#daily-plan .daily-dot")].map((x) => x.textContent));
+    assert(dots.join() === dots.map((_, i) => String(i + 1)).join(), "T5:课表的圆点写序号,不像单选框", JSON.stringify(dots));
+    await ctx.close();
+  }
+}
+
 // --- 今天的训练 + 进步:教练排课在真页面上走一步,进步区按数据显隐 ----------
 {
   // A. 有欠账的存档:课表第一步是清复习,真解掉那题后课表自己前进
@@ -899,7 +985,7 @@ if (hasTab && REAL.length) {
   const h0 = await todayHero(pg);
   assert(h0.view === "home" && h0.go === "开始" && h0.steps.length > 1 && !h0.steps.some((x) => x.cur || x.done),
     "开工前:今天的主卡片按钮是「开始」,课表里没有哪一步算开始了", JSON.stringify(h0));
-  assert(/^先清复习 1 题$/.test(h0.title) && /到期的复习/.test(h0.meta) && /第 1\/\d 步/.test(h0.meta) && h0.steps[0].what === h0.title,
+  assert(/^先清复习 1 题$/.test(h0.title) && /到期的复习/.test(h0.meta) && /今天第 1 项，共 \d 项/.test(h0.meta) && h0.steps[0].what === h0.title,
     "第一步永远是欠账(主卡片和课表第一行都是它)", JSON.stringify(h0));
   await pg.click("#today-go");
   await pg.waitForTimeout(700);
@@ -923,7 +1009,7 @@ if (hasTab && REAL.length) {
   await pg.waitForTimeout(600);
   const h2 = await todayHero(pg);
   const step2 = h2.title;
-  assert(/第 2\/\d 步/.test(h2.meta) && h2.go === "接着做" && h2.steps[0].done && h2.steps[1].cur && !/复习/.test(step2),
+  assert(/今天第 2 项，共 \d 项/.test(h2.meta) && h2.go === "接着做" && h2.steps[0].done && h2.steps[1].cur && !/复习/.test(step2),
     "清完欠账,课表自己走到第二步(今天的按钮成了「接着做」)", JSON.stringify(h2));
   await pg.click('#rail button[data-view="train"]');
   await pg.waitForTimeout(400);
@@ -1455,7 +1541,7 @@ if (hasTab && REAL.length) {
   await tapP("d2"); await tapP("d6"); // w-hangq: Rxd6
   await pg.waitForTimeout(600);
   const h2 = await todayHero(pg);
-  assert(/第 2\/\d 步/.test(h2.meta) && !/复习/.test(h2.title), "#88: 解掉那 1 题，课表离开复习这一步", JSON.stringify(h2));
+  assert(/今天第 2 项，共 \d 项/.test(h2.meta) && !/复习/.test(h2.title), "#88: 解掉那 1 题，课表离开复习这一步", JSON.stringify(h2));
   // a reload does not bring the retired ids back
   await pg.reload();
   await pg.waitForTimeout(1200);
@@ -1486,6 +1572,9 @@ if (hasTab && REAL.length) {
     return {
       seg: (document.querySelector("#train-seg button.active") || { dataset: {} }).dataset.seg || null,
       title: document.getElementById("lesson-title").textContent,
+      // 10.0 M0: a classic's players are the line over the board; the card's
+      // title is where it was played (or, guessing, what you are doing)
+      game: document.getElementById("lesson-title").dataset.strip || "",
       head: document.getElementById("lesson-list-h").textContent,
       n: { i: document.querySelectorAll("#lesson-list button[data-i]").length, c: document.querySelectorAll("#lesson-list button[data-c]").length,
         gs: document.querySelectorAll("#lesson-list button[data-gs]").length, eg: document.querySelectorAll("#lesson-list button[data-eg]").length },
@@ -1507,23 +1596,23 @@ if (hasTab && REAL.length) {
   await pg.click('#train-seg button[data-seg="classic"]');
   // the thirty more are a chunk: the list is the forty once it is in
   v = await until((x) => x.seg === "classic" && !!x.cur && x.n.c === 40, 8000);
-  assert(v.seg === "classic" && v.sw === "read" && v.n.c === 40 && !v.n.i && !v.n.gs && !v.n.eg && /全部 40 局/.test(v.head) && v.cur.c === "0" && v.title === v.cur.text,
+  assert(v.seg === "classic" && v.sw === "read" && v.n.c === 40 && !v.n.i && !v.n.gs && !v.n.eg && /全部 40 局/.test(v.head) && v.cur.c === "0" && v.game === v.cur.text,
     "S3 名局:默认读谱,目录是 40 局(没有课、没有猜着的第二份),从第一局读起", JSON.stringify(v));
   await pg.evaluate(() => document.querySelector('#lesson-list button[data-c="2"]').click());
   v = await until((x) => x.cur && x.cur.c === "2");
   const game2 = v.cur.text;
-  assert(v.cur.c === "2" && v.title === game2, "S3 名局:点开第三局,读的就是它", JSON.stringify(v));
+  assert(v.cur.c === "2" && v.game === game2, "S3 名局:点开第三局,读的就是它", JSON.stringify(v));
 
   // the switch: the same game, guessed — then read again
   await pg.click('#classic-mode button[data-cmode="guess"]');
   // the guess runner is a chunk: its title is written once it is here
   v = await until((x) => x.sw === "guess" && x.cur && x.cur.gs === "2" && /猜/.test(x.title));
-  assert(v.sw === "guess" && v.n.gs === 40 && !v.n.c && v.cur.gs === "2" && v.cur.text === game2 && v.title.includes(game2.split(" · ")[0]) && /猜/.test(v.title),
+  assert(v.sw === "guess" && v.n.gs === 40 && !v.n.c && v.cur.gs === "2" && v.cur.text === game2 && v.game === game2 && /猜/.test(v.title) && !v.title.includes(game2.split(" – ")[0]),
     "S3 名局:开关拨到猜着,还是这一局,改成猜着", JSON.stringify(v));
   assert((await settings()).classicMode === "guess", "S3 名局:猜着存进设置", JSON.stringify(await settings()));
   await pg.click('#classic-mode button[data-cmode="read"]');
   v = await until((x) => x.sw === "read" && x.cur && x.cur.c === "2");
-  assert(v.sw === "read" && v.cur.c === "2" && v.title === game2, "S3 名局:拨回读谱,还是这一局,读谱", JSON.stringify(v));
+  assert(v.sw === "read" && v.cur.c === "2" && v.game === game2, "S3 名局:拨回读谱,还是这一局,读谱", JSON.stringify(v));
 
   // each segment where it was left
   await pg.click('#train-seg button[data-seg="course"]');
@@ -1536,7 +1625,7 @@ if (hasTab && REAL.length) {
   assert(pz.mode === "puzzle" && pz.view === "train" && !pz.learn && pz.picker, "S3:谜题这一段是做题,换了面板", JSON.stringify(pz));
   await pg.click('#train-seg button[data-seg="classic"]');
   v = await until((x) => x.seg === "classic" && x.cur && x.cur.c === "2");
-  assert(v.cur && v.cur.c === "2" && v.title === game2, "S3:做完题再回名局,还是第三局", JSON.stringify(v));
+  assert(v.cur && v.cur.c === "2" && v.game === game2, "S3:做完题再回名局,还是第三局", JSON.stringify(v));
   const lk = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.learn")));
   assert(lk.last === 8 && lk.cl === 2, "S3:learn 键记着课程的书签和名局的那一局", JSON.stringify({ last: lk.last, cl: lk.cl }));
 

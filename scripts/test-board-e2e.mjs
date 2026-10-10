@@ -28,6 +28,7 @@ const ROOT = path.join(HERE, "..", "src", "web");
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { CBURNETT_PIECE_SVGS } from "../src/web/js/pieces-cburnett.js";
 import { Chess } from "../src/web/js/chess.js";
+import { settle } from "./lib/settle.mjs";
 
 const MIME = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript" };
 const server = http.createServer((req, res) => {
@@ -59,11 +60,11 @@ console.log("引擎:", ENGINE);
  * with the rail's 下棋. Driven the way a person drives it, by clicks.
  */
 const toSettings = async (page, cat) => {
-  await page.click('#rail button[data-view="settings"]'); await page.waitForTimeout(200);
-  if (cat) { await page.click("#cat-" + cat); await page.waitForTimeout(150); }
+  await page.click('#rail button[data-view="settings"]'); await settle(page);
+  if (cat) { await page.click("#cat-" + cat); await settle(page); }
 };
 const toPlay = async (page) => {
-  await page.click('#rail button[data-view="play"]'); await page.waitForTimeout(250);
+  await page.click('#rail button[data-view="play"]'); await settle(page);
 };
 
 /** A shell's name (data-theme) as the look that gives it (look.js shellFor). */
@@ -98,8 +99,8 @@ async function play(theme, line) {
     return { x: r.left + (col + 0.5) * sz, y: r.top + (row + 0.5) * sz };
   }, s);
   for (const [a, b] of line) {
-    const p = await xy(a); await page.mouse.click(p.x, p.y); await page.waitForTimeout(90);
-    const q = await xy(b); await page.mouse.click(q.x, q.y); await page.waitForTimeout(220);
+    const p = await xy(a); await page.mouse.click(p.x, p.y); await settle(page);
+    const q = await xy(b); await page.mouse.click(q.x, q.y); await settle(page);
   }
   await page.waitForTimeout(500);
   const seen = await page.evaluate(() => {
@@ -329,7 +330,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     const col = flip ? 7 - f : f, row = flip ? 7 - rk : rk;
     return { x: r.left + (col + 0.5) * (r.width / 8), y: r.top + (row + 0.5) * (r.height / 8) };
   }, s);
-  const tap = async (s) => { const p = await at(s); await page.mouse.click(p.x, p.y); await page.waitForTimeout(160); };
+  const tap = async (s) => { const p = await at(s); await page.mouse.click(p.x, p.y); await settle(page); };
   const play = async (a, b) => { await tap(a); await tap(b); await page.waitForTimeout(420); };
   const read = () => page.evaluate(READ_BOARD);
 
@@ -443,7 +444,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.mouse.down();
   await page.mouse.move(from.x + 10, from.y - 10, { steps: 3 });
   await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 6 });
-  await page.waitForTimeout(150);
+  await settle(page);
   const mid = await read();
   assert(ham(mid.g1.ink, before.g1.ink) > 6,
     `拖到半路:这枚子已经不在 g1 上了(差 ${ham(mid.g1.ink, before.g1.ink)} 位)`);
@@ -480,7 +481,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const read = () => page.evaluate(READ_BOARD);
 
   await page.focus("#board");
-  await page.waitForTimeout(200);
+  await settle(page);
   assert(/棋盘已聚焦/.test(await said()), `聚焦棋盘时,读屏那一行说它被聚焦了(「${await said()}」)`);
   await key("ArrowDown"); await key("ArrowDown");
   assert((await said()).includes("e2") && (await said()).includes("白兵"),
@@ -537,7 +538,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
     return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
   }, s);
-  for (const sq of ["e2", "e4", "e7", "e5", "g1", "f3"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(160); }
+  for (const sq of ["e2", "e4", "e7", "e5", "g1", "f3"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await settle(page); }
   // viewIndex, read off the move list: which ply carries .current (0 = none)
   const view = () => page.evaluate(() => {
     const ms = [...document.querySelectorAll(".move-list .mlmove:not(.mlgap)")];
@@ -559,7 +560,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     }
     return best > 0.8;
   }, sq);
-  const key = async (k) => { await page.keyboard.press(k); await page.waitForTimeout(200); };
+  const key = async (k) => { await page.keyboard.press(k); await settle(page); };
   const focus = () => page.evaluate(() => document.activeElement && document.activeElement.id);
   assert(await focus() === "board" && await view() === 3, `§1a 鼠标走完三手,焦点在棋盘上,停在第 3 手(${await focus()} / ${await view()})`);
   await key("ArrowLeft");
@@ -609,7 +610,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   // 8.a4 h6 9.h3 Re8 10.Nbd2 Be6 11.Bb5 Bd7
   const line = "e2e4 e7e5 g1f3 b8c6 f1c4 f8c5 c2c3 g8f6 d2d3 d7d6 e1g1 e8g8 f1e1 a7a6 a2a4 h7h6 h2h3 f8e8 b1d2 c8e6 c4b5 e6d7".split(" ");
   for (const m of line) {
-    for (const sq of [m.slice(0, 2), m.slice(2)]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(100); }
+    for (const sq of [m.slice(0, 2), m.slice(2)]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await settle(page); }
   }
   const n = await page.evaluate(() => document.querySelectorAll(".move-list .mlmove:not(.mlgap)").length);
   assert(n === 22, `§1b 走完 22 着(${n})`);
@@ -619,7 +620,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const cards = new Set([await daily()]);
   for (const k of [...Array(22).fill("ArrowLeft"), ...Array(22).fill("ArrowRight")]) {
     await page.keyboard.press(k);
-    await page.waitForTimeout(40);
+    await settle(page);
     seen.add(await top());
     cards.add(await daily());
   }
@@ -665,7 +666,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     if (flip) { f = 7 - f; rk = 7 - rk; }
     return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
   }, s);
-  const click = async (page, s) => { const p = await at(page, s); await page.mouse.click(p.x, p.y); await page.waitForTimeout(160); };
+  const click = async (page, s) => { const p = await at(page, s); await page.mouse.click(p.x, p.y); await settle(page); };
   const chooser = (page) => page.evaluate(() => {
     const m = document.getElementById("promo-modal");
     const b = document.getElementById("board").getBoundingClientRect();
@@ -712,20 +713,20 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     // three paths: a click, a key, a cancel
     if (c.from === "a7" && !c.flip) {
       const r = s.pieces.find((x) => x.p === "n");
-      await page.mouse.click(r.cx, r.cy); await page.waitForTimeout(250);
+      await page.mouse.click(r.cx, r.cy); await settle(page);
       assert(!(await chooser(page)).open && await lastSan(page) === "a8=N", `§1c ${tag}:点马,升变成马(${await lastSan(page)})`);
     } else if (c.from === "d7") {
-      await page.keyboard.press("r"); await page.waitForTimeout(250);
+      await page.keyboard.press("r"); await settle(page);
       assert(!(await chooser(page)).open && (await lastSan(page)).startsWith("d8=R"), `§1c ${tag}:按 R,升变成车(${await lastSan(page)})`);
     } else if (c.from === "d2" && !c.flip) {
-      await page.keyboard.press("Escape"); await page.waitForTimeout(250);
+      await page.keyboard.press("Escape"); await settle(page);
       assert(!(await chooser(page)).open && await lastSan(page) === "", `§1c ${tag}:Esc 取消,这一步没有走`);
       await click(page, c.from); await click(page, c.to);
-      await page.keyboard.press("b"); await page.waitForTimeout(250);
+      await page.keyboard.press("b"); await settle(page);
       assert((await lastSan(page)).startsWith("d1=B"), `§1c ${tag}:取消之后再走一次,按 B 升变成象(${await lastSan(page)})`);
     } else {
       const other = await at(page, c.from[0] === "a" ? "e4" : "h4");
-      await page.mouse.click(other.x, other.y); await page.waitForTimeout(250);
+      await page.mouse.click(other.x, other.y); await settle(page);
       assert(!(await chooser(page)).open && await lastSan(page) === "", `§1c ${tag}:点棋盘别处,取消,这一步没有走`);
     }
     assert(errs.length === 0, `§1c ${tag}:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
@@ -767,7 +768,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
     return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
   }, s);
-  for (const sq of ["e2", "e4"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(160); }
+  for (const sq of ["e2", "e4"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await settle(page); }
   await page.waitForFunction(() => !!document.querySelector(".toast.show .toast-action"), null,
     { timeout: 8000 }).catch(() => {});
   const up = await page.evaluate(() => ({
@@ -777,7 +778,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   assert(up.toast && up.focused === "board",
     `引擎报错的提示条挂在那里,而焦点在棋盘上(提示条=${up.toast},焦点=${up.focused})`);
   await page.keyboard.press("Escape");
-  await page.waitForTimeout(400);
+  await settle(page);
   assert(!(await page.evaluate(() => !!document.querySelector(".toast.show"))),
     "按 Esc,它就走了 —— 哪怕焦点在棋盘上");
   await ctx.close();
@@ -805,22 +806,22 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
     return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
   }, s);
-  const tap = async (s) => { const p = await at(s); await page.mouse.click(p.x, p.y); await page.waitForTimeout(160); };
+  const tap = async (s) => { const p = await at(s); await page.mouse.click(p.x, p.y); await settle(page); };
   const brush = (c, t) => page.click(`#editor-palette button[data-color="${c}"][data-type="${t}"]`);
   const why = () => page.evaluate(() => (document.getElementById("editor-error") || {}).textContent);
   const open = () => page.evaluate(() => !(document.getElementById("sec-editor") || {}).hidden);
   const read = () => page.evaluate(READ_BOARD);
   // 9.0 S2: 编辑局面 is in the tool row's ⋯ (#more-row), not on the row itself
   const openEditor = async () => {
-    if (!(await page.isVisible("#editor-open"))) { await page.click("#more-tools"); await page.waitForTimeout(150); }
+    if (!(await page.isVisible("#editor-open"))) { await page.click("#more-tools"); await settle(page); }
     await page.click("#editor-open");
   };
 
   await openEditor();
-  await page.waitForTimeout(400);
+  await settle(page);
   assert(await open(), "编辑器打开了");
   await page.click("#editor-clear");
-  await page.waitForTimeout(250);
+  await settle(page);
   assert(/白方.*王/.test(await why()), `空棋盘上,它说得出缺什么(「${await why()}」)`);
   assert(!(await page.isEnabled("#editor-apply")), "…而且开始不了这局棋");
   await brush("w", "k"); await tap("e1");
@@ -835,7 +836,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.mouse.move(a2.x, a2.y); await page.mouse.down();
   await page.mouse.move(d2.x, d2.y, { steps: 12 });
   await page.mouse.up();
-  await page.waitForTimeout(300);
+  await settle(page);
   const painted = await read();
   // e4 again holds the keyboard focus ring, not a piece: placing men means
   // clicking the board, and clicking the board focuses it
@@ -844,14 +845,14 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     `拖着刷过去是一笔四个兵(盘上共 ${men.length} 个子:${JSON.stringify(men)})`);
 
   // 三个出口,一个一个走
-  await page.keyboard.press("Escape"); await page.waitForTimeout(300);  // 先关掉进入时的提示条
-  await page.keyboard.press("Escape"); await page.waitForTimeout(400);
+  await page.keyboard.press("Escape"); await settle(page);  // 先关掉进入时的提示条
+  await page.keyboard.press("Escape"); await settle(page);
   assert(!(await open()), "Esc 退出编辑器,面板跟着收起(2.1.6 之前它会留在屏幕上)");
-  await openEditor(); await page.waitForTimeout(400);
-  await page.click("#editor-cancel"); await page.waitForTimeout(400);
+  await openEditor(); await settle(page);
+  await page.click("#editor-cancel"); await settle(page);
   assert(!(await open()), "「取消」退出,面板收起");
-  await openEditor(); await page.waitForTimeout(400);
-  await page.click("#editor-clear"); await page.waitForTimeout(200);
+  await openEditor(); await settle(page);
+  await page.click("#editor-clear"); await settle(page);
   await brush("w", "k"); await tap("e1");
   await brush("b", "k"); await tap("e8");
   // and something to play with: two bare kings is dead drawn the moment it
@@ -892,8 +893,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
     return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
   }, s);
-  const tap = async (s) => { const p = await at(s); await page.mouse.click(p.x, p.y); await page.waitForTimeout(150); };
-  const mv = async (a, b) => { await tap(a); await tap(b); await page.waitForTimeout(260); };
+  const tap = async (s) => { const p = await at(s); await page.mouse.click(p.x, p.y); await settle(page); };
+  const mv = async (a, b) => { await tap(a); await tap(b); await settle(page); };
   const status = () => page.evaluate(() => document.getElementById("status").textContent.trim());
   const rows = () => page.evaluate(() => document.querySelectorAll(".mlrow").length);
 
@@ -902,7 +903,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 
   // 三键问句:双人模式里「认输」得先问是谁认输
   await page.click("#btn-resign");
-  await page.waitForTimeout(350);
+  await settle(page);
   const btns = await page.evaluate(() => ({
     ok: document.getElementById("confirm-ok").textContent,
     alt: document.getElementById("confirm-alt").textContent,
@@ -912,37 +913,37 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     `三键问句把两种认输各给了一颗键(${btns.ok} / ${btns.alt})`);
   // 第一颗按「取消」:改主意不该动任何东西
   await page.click("#confirm-cancel");
-  await page.waitForTimeout(250);
+  await settle(page);
   assert(/白方走子/.test(await status()), "按「取消」:这局照下,轮到白方");
   // 再问一次,这次按第三颗:黑方认输 → 白方胜
   await page.click("#btn-resign");
-  await page.waitForTimeout(250);
+  await settle(page);
   await page.click("#confirm-alt");
-  await page.waitForTimeout(400);
+  await settle(page);
   assert(/黑方认输.*白方胜/.test(await status()), `第三颗键把胜负判给了对的一方(「${await status()}」)`);
   const afterResign = await rows();
   // v8-0-plan A5: the result card floats over the board's middle now; put it
   // away, so the taps below land on the squares and not on its buttons
-  await page.click("#go-close"); await page.waitForTimeout(200);
+  await page.click("#go-close"); await settle(page);
   await mv("f1", "c4");
   assert((await rows()) === afterResign, "认输之后棋盘冻住,走不动");
 
   // 从复盘中间重下:先用界面上的那对箭头(不是键盘)退回去
-  await page.click("#rep-start"); await page.waitForTimeout(200);
-  await page.click("#rep-next"); await page.waitForTimeout(200);
-  await page.click("#rep-next"); await page.waitForTimeout(200);
+  await page.click("#rep-start"); await settle(page);
+  await page.click("#rep-next"); await settle(page);
+  await page.click("#rep-next"); await settle(page);
   const lit = await page.evaluate(() => {
     const c = document.querySelector(".mlmove.current");
     return c ? c.textContent.trim() : "";
   });
   assert(lit === "e5", `复盘箭头真的在走(高亮着法「${lit}」)`);
   await page.click("#retry-here");
-  await page.waitForTimeout(300);
+  await settle(page);
   const ask = await page.evaluate(() => document.getElementById("confirm-message").textContent.trim());
   // 6.0: the moves after the cut are kept as a variation, not dropped (v6-plan Q2.3)
   assert(/2 着/.test(ask) && /变着/.test(ask), `重下先说清代价(「${ask}」)`);
   await page.click("#confirm-ok");
-  await page.waitForTimeout(400);
+  await settle(page);
   assert((await rows()) === 1 && /白方走子/.test(await status()),
     "确认后着法真的截断到 1.e4 e5,认输的结局一并撤销,白方接着走");
   await mv("d2", "d4");
@@ -991,7 +992,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
     }, name);
     await page.mouse.click(c.x, c.y);
-    await page.waitForTimeout(140);
+    await settle(page);
   };
   await sq("e2"); await sq("e4");
   await page.waitForFunction(() => !!window.__release, null, { timeout: 8000 });
@@ -1063,7 +1064,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
     }, name);
     await page.mouse.click(c.x, c.y);
-    await page.waitForTimeout(140);
+    await settle(page);
   };
   /** 棋盘上还站着几个人 —— 和本文件开头 play() 用的是同一把尺子 */
   const men = () => page.evaluate(() => {
@@ -1093,15 +1094,15 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   }));
 
   for (const s of ["e2", "e4", "e7", "e5", "g1", "f3"]) await sq(s);
-  await page.waitForTimeout(300);
+  await settle(page);
   const before = await men();
   assert(before >= 28, `开着的棋盘上看得见棋子(数到 ${before} 个)`);
 
   // 9.0 S5: 盲棋 is in the settings page's 棋盘 category (was the 设置 tab)
   await toSettings(page, "board");
-  await page.click("#opt-blind"); await page.waitForTimeout(300);
+  await page.click("#opt-blind"); await settle(page);
   assert((await page.getAttribute("#opt-blind", "aria-pressed")) === "true", "盲棋开关按下了");
-  await toPlay(page); await page.waitForTimeout(250);
+  await toPlay(page); await settle(page);
 
   assert((await men()) === 0, `盲棋:一个棋子都不画(数到 ${await men()} 个)`);
   const co = await frame();
@@ -1111,7 +1112,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   // 播报:盲棋唯一还能告诉人「这里站着谁」的东西
   await page.evaluate(() => { document.getElementById("board").focus(); });
   await page.keyboard.press("ArrowUp");
-  await page.waitForTimeout(250);
+  await settle(page);
   const said = await page.evaluate(() => (document.getElementById("board-live") || {}).textContent || "");
   assert(said.trim().length > 0, `……#board-live 照旧在说话(「${said}」)`);
   // 还能接着下:棋子看不见不等于棋盘停了
@@ -1119,8 +1120,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const n = await page.evaluate(() => document.querySelectorAll(".move-list .mlmove").length);
   assert(n === 4, `……看不见也照样走得动(着法表 ${n} 手)`);
   await toSettings(page, "board");
-  await page.click("#opt-blind"); await page.waitForTimeout(300);
-  await toPlay(page); await page.waitForTimeout(250);
+  await page.click("#opt-blind"); await settle(page);
+  await toPlay(page); await settle(page);
   assert((await men()) >= 28, `关掉盲棋,人又都回来了(数到 ${await men()} 个)`);
 
   // --- 升主线:把变着提上去,老主线自己退到变着里 (v6-plan §5 Q2) ----------
@@ -1134,20 +1135,20 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   // 回到第 2 手之后,走一条别的:复盘位置上的一着会开成变着。data-i 是着法
   // 的序号,点它是「站到这一着之前」,所以要站在 1.e4 e5 之后得点第 3 着。
   await page.click('#move-list .mlmove[data-i="2"]');
-  await page.waitForTimeout(300);
+  await settle(page);
   await sq("f1"); await sq("c4");
-  await page.waitForTimeout(300);
+  await settle(page);
   await sq("b8"); await sq("c6");
-  await page.waitForTimeout(300);
+  await settle(page);
   const mid = await notation();
   assert(mid.vars.join(" ") === "Bc4 Nc6", `变着建起来了(「${mid.vars.join(" ")}」)`);
   assert(mid.main.join(" ") === "e4 e5 Nf3 Nc6", "……主线一个字没动");
   // 右键那一着 → 升主线
   await page.click('#move-list .mlv[aria-label="Bc4"]', { button: "right" });
-  await page.waitForTimeout(250);
+  await settle(page);
   assert(await page.isVisible("#move-menu"), "右键开出了着法菜单");
   await page.click("#mm-promote");
-  await page.waitForTimeout(400);
+  await settle(page);
   const after = await notation();
   assert(after.main.join(" ") === "e4 e5 Bc4 Nc6", `升主线之后主线换了人(「${after.main.join(" ")}」)`);
   assert(after.vars.join(" ") === "Nf3 Nc6", `……老主线退成了变着(「${after.vars.join(" ")}」)`);
@@ -1197,7 +1198,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
     }, name);
     await page.mouse.click(c.x, c.y);
-    await page.waitForTimeout(250);
+    await settle(page);
   };
   const REGISTERED = 2;   // 登记册:只减不增
   for (const [from, to, label] of [["e2", "e4", "1.e4"], ["e7", "e5", "1...e5"], ["g1", "f3", "2.Nf3"]]) {
@@ -1277,8 +1278,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) }; };
     return { a: at("e2"), b: at("e4") };
   });
-  await page.mouse.click(c.a.x, c.a.y); await page.waitForTimeout(200);
-  await page.mouse.click(c.b.x, c.b.y); await page.waitForTimeout(400);
+  await page.mouse.click(c.a.x, c.a.y); await settle(page);
+  await page.mouse.click(c.b.x, c.b.y); await settle(page);
   const played = await page.evaluate(() =>
     [...document.querySelectorAll(".move-list .mlmove")].map((m) => m.getAttribute("aria-label")).join(" "));
   assert(played === "e4", `……而「可交互」是真的可交互:点下去棋就走了(「${played}」)`);
@@ -1370,7 +1371,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   page.on("pageerror", (e) => errs.push(e.message));
   await page.route(/chunk-merida\.js/, async (route) => { await new Promise((r) => setTimeout(r, 5000)); await route.continue(); });
   await page.goto(`http://127.0.0.1:${PORT}/`);
-  await page.waitForTimeout(200);
+  await settle(page);
   await page.evaluate(() => document.querySelector('[data-piece-set="merida"]').click());
   await page.waitForTimeout(1800);   // the standard set's decode ends, Merida still loading
   await page.evaluate(() => document.querySelector('[data-piece-set="cburnett"]').click());
@@ -1403,7 +1404,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     return { x: r.left + (s.charCodeAt(0) - 97 + 0.5) * (r.width / 8), y: r.top + (8 - Number(s[1]) + 0.5) * (r.height / 8) };
   }, sq);
   // any book move is accepted in an opening drill; 1.e4 is in the book
-  for (const sq of ["e2", "e4"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(250); }
+  for (const sq of ["e2", "e4"]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await settle(page); }
   await page.waitForTimeout(500);
   const said = await page.evaluate(() => (document.getElementById("board-live") || {}).textContent || "");
   assert(/^1… [a-hKQRBNO]/.test(said.trim()), `做开局题:走完 1.e4,读屏念出对方的应着(「${said}」)`);
@@ -1439,7 +1440,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     await toSettings(page, "board");
     await page.click(`#coords-seg button[data-coords="${coordsIn ? "in" : "out"}"]`, { timeout: 2000 });
     await toPlay(page);
-    await page.waitForTimeout(300);
+    await settle(page);
     const rects = [];
     const rectNow = () => page.evaluate(() => {
       const r = document.getElementById("board").getBoundingClientRect();
@@ -1571,7 +1572,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       const r = document.getElementById("board").getBoundingClientRect();
       return { x: r.left + (n.charCodeAt(0) - 97 + 0.5) * (r.width / 8), y: r.top + (8 - Number(n[1]) + 0.5) * (r.height / 8) };
     }, s);
-    await page.mouse.click(p.x, p.y); await page.waitForTimeout(150);
+    await page.mouse.click(p.x, p.y); await settle(page);
   };
   const state = () => page.evaluate(() => {
     const m = document.getElementById("newgame-modal");
@@ -1585,49 +1586,50 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       plies: document.querySelectorAll(".mlmove").length,
       view: document.getElementById("app").getAttribute("data-view"),
       settingsShown: !document.getElementById("page-settings").hidden,
-      diffActive: (document.querySelector("#diff-seg-engine button.active, #diff-seg button.active") || {}).dataset?.diff,
+      // 10.0 M0: the rung is the lit opponent card (the rows of rung names are gone)
+      cardActive: (document.querySelector("#op-grid .op-card.active") || {}).dataset?.op,
       level: document.getElementById("black-level").textContent.trim(),
       settings: s,
       focus: document.activeElement && (document.activeElement.id || document.activeElement.dataset.op || document.activeElement.dataset.diff || document.activeElement.textContent.trim()),
-      // 9.0 S5: the four rows live in the dialog (rung and style in its 自定义
-      // fold), whether it is open or not, and nowhere on the settings page
-      rowsHome: ["row-color", "row-clock"].every((id) => document.getElementById(id).parentElement.id === "ng-host")
-        && ["row-difficulty", "row-persona"].every((id) => document.getElementById(id).parentElement.id === "ng-custom-body")
-        && !document.querySelector("#page-settings #diff-seg, #page-settings #persona-seg, #page-settings #color-seg, #page-settings #clock-seg"),
+      // 9.0 S5: the rows live in the dialog (style in its 更多选项 fold),
+      // whether it is open or not, and nowhere on the settings page
+      rowsHome: ["row-opponent", "row-color", "row-clock"].every((id) => document.getElementById(id).parentElement.id === "ng-host")
+        && document.getElementById("row-persona").parentElement.id === "ng-custom-body" && !document.getElementById("row-difficulty")
+        && !document.querySelector("#page-settings #op-grid, #page-settings #persona-seg, #page-settings #color-seg, #page-settings #clock-seg"),
     };
   });
   const stateBefore = await state();
-  assert(stateBefore.rowsHome, "开局前:四组分段控件都在新对局对话框里(档位与风格在「自定义」里),设置页上没有它们");
+  assert(stateBefore.rowsHome, "开局前:对手、执子、棋钟、风格都在新对局对话框里(风格在「更多选项」里),设置页上没有它们");
 
   // a game in progress: one step, the warning in the dialog, no second box
-  await tap("e2"); await tap("e4"); await page.waitForTimeout(400);
-  await page.click("#btn-new"); await page.waitForTimeout(300);
+  await tap("e2"); await tap("e4"); await settle(page);
+  await page.click("#btn-new"); await settle(page);
   let s = await state();
   assert(s.open && !s.confirm, `「新局」打开新对局对话框,不再先弹确认框(对话框 ${s.open} / 确认框 ${s.confirm})`);
   assert(s.warn, "……对局进行中,对话框顶上写着「会结束当前这盘」");
   // v8-0-plan B4: the opponent is a persona card first; rung and style are
   // folded under 自定义 (9.0 S5: after the side and the clock, and the
   // dialog's own rows rather than nodes borrowed from the settings page)
-  const inFold = await page.evaluate(() => ["row-difficulty", "row-persona"].every((id) => document.getElementById(id).closest("#ng-custom")));
+  const inFold = await page.evaluate(() => !!document.getElementById("row-persona").closest("#ng-custom"));
   assert(JSON.stringify(s.rows) === JSON.stringify(["row-opponent", "row-color", "row-clock", "ng-custom"]) && inFold && s.rowsHome,
-    `……里面是角色卡、执子、棋钟,档位与风格收在「更多选项」里(${s.rows.join(",")})`);
+    `……里面是角色卡、执子、棋钟,风格收在「更多选项」里(${s.rows.join(",")})`);
   assert(s.focus === "ng-start", `……焦点在「开始」上,直接回车就是再来一盘同样的(${s.focus})`);
   // the draft is not the game: choosing 执黑 here changes nothing until 开始
-  await page.click('#ng-host #color-seg button[data-color="b"]'); await page.waitForTimeout(200);
-  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+  await page.click('#ng-host #color-seg button[data-color="b"]'); await settle(page);
+  await page.keyboard.press("Escape"); await settle(page);
   s = await state();
   assert(!s.open && s.plies === 1 && s.settings.humanColor === "w" && s.rowsHome,
     `Esc 关掉:这盘还在(${s.plies} 着),执子没变(${s.settings.humanColor}),控件仍在对话框里`);
 
   // Tab stays in the dialog and walks it top to bottom
-  await page.click("#btn-new"); await page.waitForTimeout(300);
+  await page.click("#btn-new"); await settle(page);
   const order = await page.evaluate(() => {
     const m = document.getElementById("newgame-modal");
     return [...m.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent).map((b) => b.id || b.dataset.mode || (b.dataset.seg && "seg" + b.dataset.seg) || b.dataset.op || b.dataset.diff || b.dataset.persona || b.dataset.color || b.dataset.tc);
   });
-  await page.keyboard.press("Tab"); await page.waitForTimeout(80);
+  await page.keyboard.press("Tab"); await settle(page);
   const wrapped = (await state()).focus;
-  await page.keyboard.press("Shift+Tab"); await page.waitForTimeout(80);
+  await page.keyboard.press("Shift+Tab"); await settle(page);
   const back = (await state()).focus;
   // v8-1-plan T1 → 9.0 S2: no segment tabs (入门 / 进阶 / 高手) any more — the
   // eight cards around the pick (中级 is 索尔, so 本 … 艾瑞丝) come straight after 人机 / 双人
@@ -1637,38 +1639,40 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     `Tab 顺序:对手(人机 / 双人) → 八张角色卡 → … → 棋钟 → 取消 → 开始,从「开始」再 Tab 回到第一个(${order.slice(0, 10).join(",")}…${order.slice(-2).join(",")};${wrapped} / ${back})`);
   assert(!(await page.$("#op-seg")), "S2: 角色卡上面没有「入门 / 进阶 / 高手」分段了");
   // change the opponent and start: one step, the strip and the dialog's cards agree
-  await page.click('#ng-host #op-grid .op-card[data-op="max"]'); await page.waitForTimeout(150);
+  await page.click('#ng-host #op-grid .op-card[data-op="max"]'); await settle(page);
   await page.keyboard.press("Enter"); await page.waitForTimeout(500);
   s = await state();
   assert(!s.open && !s.confirm && s.plies === 0, `回车 = 开始:一步就开了新局(${s.plies} 着,没有第二个确认框)`);
-  assert(s.settings.difficulty === "hard" && s.diffActive === "hard" && /高级/.test(s.level),
-    `新档位写进设置、对话框里的分段同步、对阵条上是「${s.level}」`);
+  assert(s.settings.difficulty === "hard" && s.cardActive === "max" && /高级/.test(s.level),
+    `新档位写进设置、对话框里亮的是这张卡、对阵条上是「${s.level}」`);
   assert(s.rowsHome, "……控件仍是对话框自己的,设置页上没有");
 
   // 9.0 S2: the eight cards are a window on the ladder that holds the pick and
-  // moves with it — from a card, and from the rung chosen under 更多选项
-  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);
+  // moves with it. 10.0 M0: 更多选项 open shows the whole ladder — the one
+  // place a rung is chosen (the two rows of rung names under it are gone)
+  await page.evaluate(() => document.getElementById("btn-new").click()); await settle(page);
   const w0 = await cardsNow();
   assert(w0 === "sol,leo,ivy,max*,iris,otto,hugo,zoe", `S2:选了马克斯(高级)再开对话框,八张卡是他和他两边的人,他亮着(${w0})`);
-  await page.click("#ng-custom > summary"); await page.waitForTimeout(200);
-  await page.click('#ng-custom #diff-seg button[data-diff="beginner"]'); await page.waitForTimeout(200);
+  await page.click("#ng-custom > summary"); await settle(page);
   const w1 = await cardsNow();
-  assert(w1 === "pip*,tomo,lina,kai,ada,remy,ben,nico", `S2:在「更多选项」里选新手,八张卡挪到梯子底,皮普亮着(${w1})`);
-  await page.click('#ng-custom #diff-seg-engine button[data-diff="extreme"]'); await page.waitForTimeout(200);
+  assert(w1.split(",").length === 21 && w1.includes("max*") && !(await page.$("#diff-seg, #diff-seg-engine")),
+    `10.0 M0:打开「更多选项」,角色卡展开成全部 21 位,马克斯亮着,下面不再有第二排档位(${w1})`);
+  await page.click('#ng-host #op-grid .op-card[data-op="pip"]'); await settle(page);
+  await page.click("#ng-custom > summary"); await settle(page);
   const w2 = await cardsNow();
-  assert(w2 === "iris,otto,hugo,zoe,lars,nora,kit,fish*", `S2:再选全力,八张卡挪到梯子顶,菲什亮着(${w2})`);
-  await page.click('#ng-custom #diff-seg-engine button[data-diff="normal"]'); await page.waitForTimeout(200);
+  assert(w2 === "pip*,tomo,lina,kai,ada,remy,ben,nico", `S2:选了皮普再收起,八张卡挪到梯子底,皮普亮着(${w2})`);
+  await page.click('#ng-host #op-grid .op-card[data-op="ben"]'); await settle(page);
   const w3 = await cardsNow();
-  assert(w3 === "ben,nico,vera,sol*,leo,ivy,max,iris", `S2:选回中级,窗口回到索尔两边(${w3})`);
-  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+  assert(w3.split(",").length === 8 && w3.includes("ben*"), `S2:收起时选本,八张卡的窗口跟着他(${w3})`);
+  await page.keyboard.press("Escape"); await settle(page);
   s = await state();
   assert(!s.open && s.settings.difficulty === "hard", `……Esc 不开始:设置里还是高级(${s.settings.difficulty})`);
 
   // no moves: no warning. 随机 is offered, and remembered
-  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);   // hidden with no moves on the board; N and the menu reach the same handler
+  await page.evaluate(() => document.getElementById("btn-new").click()); await settle(page);   // hidden with no moves on the board; N and the menu reach the same handler
   s = await state();
   assert(s.open && !s.warn, "没有着法时不写「会结束当前这盘」");
-  await page.click('#ng-host #color-seg button[data-color="random"]'); await page.waitForTimeout(150);
+  await page.click('#ng-host #color-seg button[data-color="random"]'); await settle(page);
   await page.click("#ng-start"); await page.waitForTimeout(500);
   s = await state();
   assert(s.settings.colorRandom === true && ["w", "b"].includes(s.settings.humanColor),
@@ -1677,44 +1681,44 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const randomHidden = await page.evaluate(() => document.querySelector('#color-seg button[data-color="random"]').hidden
     && !document.querySelector("#page-settings #color-seg"));
   assert(randomHidden, "……对话框关着时「随机」这一格藏着,设置页上也没有执子 —— 那是开局的选项,不是换边");
-  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);   // hidden with no moves on the board; N and the menu reach the same handler
+  await page.evaluate(() => document.getElementById("btn-new").click()); await settle(page);   // hidden with no moves on the board; N and the menu reach the same handler
   const pre = await page.evaluate(() => (document.querySelector("#ng-host #color-seg button.active") || {}).dataset?.color);
   assert(pre === "random", `再开对话框,预选的仍是上次的「随机」(${pre})`);
-  await page.click("#ng-cancel"); await page.waitForTimeout(300);
+  await page.click("#ng-cancel"); await settle(page);
   // …until a side is picked: that is a side, not 随机 (Codex, #83). 9.0 S5:
   // the dialog is the one place a side is picked, so it is picked there
-  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);
-  await page.click('#ng-host #color-seg button[data-color="w"]'); await page.waitForTimeout(150);
+  await page.evaluate(() => document.getElementById("btn-new").click()); await settle(page);
+  await page.click('#ng-host #color-seg button[data-color="w"]'); await settle(page);
   await page.click("#ng-start"); await page.waitForTimeout(500);
   const picked = (await state()).settings;
-  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);
+  await page.evaluate(() => document.getElementById("btn-new").click()); await settle(page);
   const fixed = await page.evaluate(() => (document.querySelector("#ng-host #color-seg button.active") || {}).dataset?.color);
   assert(fixed === "w" && picked.humanColor === "w" && picked.colorRandom !== true,
     `在新对局里选了白方开局,下次对话框预选白方,不再是「随机」(${fixed};设置 ${picked.humanColor} / 随机 ${picked.colorRandom})`);
-  await page.click("#ng-cancel"); await page.waitForTimeout(300);
+  await page.click("#ng-cancel"); await settle(page);
 
   // the result bar's 再来一盘 opens the same dialog (9.0 M1: 换个对手 was
   // the same dialog again, and is gone)
-  await page.evaluate(() => document.getElementById("go-again").click()); await page.waitForTimeout(300);
+  await page.evaluate(() => document.getElementById("go-again").click()); await settle(page);
   s = await state();
   assert(s.open && s.view === "play" && !s.settingsShown, `「再来一盘」打开同一个对话框,留在棋盘上(${s.view})`);
   assert(await page.evaluate(() => !document.getElementById("go-switch")), "结果条上不再有「换个对手」，再来一盘就是那个对话框");
-  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+  await page.keyboard.press("Escape"); await settle(page);
 
   // two players: only who plays White (the bottom side) and the clock.
   // v8-0-plan A1: 双人 is chosen in the dialog, with the game it starts
-  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);   // hidden with no moves on the board; N and the menu reach the same handler
-  await page.click('#ng-host #mode-seg button[data-mode="pvp"]'); await page.waitForTimeout(200);
+  await page.evaluate(() => document.getElementById("btn-new").click()); await settle(page);   // hidden with no moves on the board; N and the menu reach the same handler
+  await page.click('#ng-host #mode-seg button[data-mode="pvp"]'); await settle(page);
   s = await state();
-  // 9.0 S2: 更多选项 stays (the rarer clocks are in it); its rung and style rows hide
-  const pvpFold = await page.evaluate(() => ["row-difficulty", "row-persona"].map((id) => document.getElementById(id).hidden).join());
-  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-color", "row-clock", "ng-custom"]) && pvpFold === "true,true",
-    `双人模式只显示「谁执白」、棋钟和「更多选项」(里面没有档位与风格)(${s.rows.join(",")} / ${pvpFold})`);
-  await page.click('#ng-host #color-seg button[data-color="b"]'); await page.waitForTimeout(150);
-  // 9.0 S2: 5+3 is under 更多选项, which stays in 双人 (its rung rows hide)
-  await page.click("#ng-custom > summary"); await page.waitForTimeout(150);
-  await page.click('#ng-custom #clock-seg-more button[data-tc="5+3"]'); await page.waitForTimeout(150);
-  await page.click("#ng-start"); await page.waitForTimeout(400);
+  // 9.0 S2: 更多选项 stays (the rarer clocks are in it); its style row hides
+  const pvpFold = await page.evaluate(() => String(document.getElementById("row-persona").hidden));
+  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-color", "row-clock", "ng-custom"]) && pvpFold === "true",
+    `双人模式只显示「谁执白」、棋钟和「更多选项」(里面没有风格)(${s.rows.join(",")} / ${pvpFold})`);
+  await page.click('#ng-host #color-seg button[data-color="b"]'); await settle(page);
+  // 9.0 S2: 5+3 is under 更多选项, which stays in 双人 (its style row hides)
+  await page.click("#ng-custom > summary"); await settle(page);
+  await page.click('#ng-custom #clock-seg-more button[data-tc="5+3"]'); await settle(page);
+  await page.click("#ng-start"); await settle(page);
   s = await state();
   const flipped = await page.evaluate(() => !!document.querySelector('#orient-seg button[data-orient="b"].active'));
   assert(s.settings.timeControl === "5+3" && flipped, `双人:棋钟 5+3、下方执黑(棋盘翻转 ${flipped})`);
@@ -1722,13 +1726,13 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   // chosen here would be undone the moment the game starts (Codex, #83).
   // 9.0 S5: 自动翻转 is in the settings page's 对局 category
   await toSettings(page, "game");
-  await page.click("#opt-autoflip"); await page.waitForTimeout(150);
+  await page.click("#opt-autoflip"); await settle(page);
   await toPlay(page);
-  await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);
+  await page.evaluate(() => document.getElementById("btn-new").click()); await settle(page);
   s = await state();
   assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-clock", "ng-custom"]),
     `双人、自动转向开着:不问哪一方在下方,只有棋钟(和收着更多棋钟的「更多选项」)(${s.rows.join(",")})`);
-  await page.click("#ng-start"); await page.waitForTimeout(400);
+  await page.click("#ng-start"); await settle(page);
   const white = await page.evaluate(() => !!document.querySelector('#orient-seg button[data-orient="w"].active'));
   assert(white, "双人、自动转向开着:开局白方在下方");
   assert(errs.length === 0, `新对局对话框:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
@@ -1763,7 +1767,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   }));
 
   // (a) move 0: a visible way in, in both playing modes
-  for (const [mode, label, focus] of [["ai", "换个对手", "sol"], ["pvp", "新局", "ng-start"]]) {
+  for (const [mode, label, focus] of [["ai", "新局", "sol"], ["pvp", "新局", "ng-start"]]) {
     const { ctx, page, errs } = await seeded(mode);
     const b = await page.evaluate(() => {
       const e = document.getElementById("idle-new");
@@ -1772,10 +1776,10 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     assert(!!b && b.shown && b.text === label,
       `§5 ${mode} 一步未走:棋盘旁有「${label}」可点(${JSON.stringify(b)})`);
     if (b && b.shown) {
-      await page.click("#idle-new"); await page.waitForTimeout(300);
+      await page.click("#idle-new"); await settle(page);
       const s = await ngState(page);
       assert(s.open && s.focus === focus, `§5 ${mode} …点它打开新对局对话框,焦点在 ${focus}(${JSON.stringify(s)})`);
-      await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+      await page.keyboard.press("Escape"); await settle(page);
     }
     // …and it goes once the game has begun: 本局's 新局 takes over
     const tap = async (sq) => {
@@ -1783,9 +1787,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
         const r = document.getElementById("board").getBoundingClientRect(), z = r.width / 8;
         return { x: r.left + (q.charCodeAt(0) - 97 + 0.5) * z, y: r.top + (8 - Number(q[1]) + 0.5) * z };
       }, sq);
-      await page.mouse.click(p.x, p.y); await page.waitForTimeout(150);
+      await page.mouse.click(p.x, p.y); await settle(page);
     };
-    await tap("e2"); await tap("e4"); await page.waitForTimeout(300);
+    await tap("e2"); await tap("e4"); await settle(page);
     const after = await page.evaluate(() => ({
       idle: !!(document.getElementById("idle-new") || {}).offsetParent,
       btnNew: !!document.getElementById("btn-new").offsetParent,
@@ -1795,7 +1799,11 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     await ctx.close();
   }
 
-  // (b) first launch, 「我会下棋」: the dialog, on the opponent
+  // (b) first launch, 「会走子」 (v10-0-plan T1): six placement puzzles whose
+  // aim follows the answers; the estimate becomes the puzzle rating and picks
+  // the opponent; 去今天 → 今天's first thing is a game against them — three
+  // clicks from the question to the board. Six misses (H gives each up) place
+  // at the bottom of the scale: 400, and 皮普.
   {
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
     const page = await ctx.newPage();          // nothing seeded: a new install
@@ -1803,22 +1811,41 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     page.on("pageerror", (e) => errs.push(e.message));
     await page.goto(`http://127.0.0.1:${PORT}/`);
     await page.waitForTimeout(1200);
-    const guide = await page.evaluate(() => document.querySelectorAll("#pick-list .pick-item").length);
-    assert(guide === 2, `§5 新安装:引导里两条路(${guide})`);
+    const guide = await page.evaluate(() => [...document.querySelectorAll("#pick-list .pick-item")].map((b) => b.textContent));
+    assert(guide.length === 3 && /没下过棋/.test(guide[0]) && /会走子/.test(guide[1]) && /常下棋/.test(guide[2]),
+      `T1 新安装:引导里三档自评(${guide.length})`);
     await page.evaluate(() => document.querySelectorAll("#pick-list .pick-item")[1].click());
+    await page.waitForTimeout(1200);
+    const head = () => page.evaluate(() => document.getElementById("pz-run-head").textContent);
+    assert(/定级 · 第 1 题，共 6 题/.test(await head()), "T1 选「会走子」:进入定级,第 1 题", await head());
+    for (let i = 0; i < 6; i++) { await page.keyboard.press("h"); await page.waitForTimeout(1300); }
+    const done = await head();
+    const st = await page.evaluate(() => ({ pz: JSON.parse(localStorage.getItem("chess.puzzles") || "{}"), set: JSON.parse(localStorage.getItem("chess.settings") || "{}") }));
+    assert(/定级完成：谜题等级分约 400，已为你选好对手 皮普/.test(done) && st.pz.rating && st.pz.rating.r === 400 && st.pz.placed &&
+      st.set.difficulty === "beginner", "T1 六题之后:谜题等级分 400 起步、对手配成皮普(新手)", done + " " + JSON.stringify(st.pz.rating) + " " + st.set.difficulty);
+    await page.click("#pz-run-again");
+    await page.waitForTimeout(600);
+    const today = await page.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
+      title: document.getElementById("today-hero-title").textContent }));
+    assert(today.view === "home" && today.title === "来一盘", "T1 「去今天」:今天的第一件事是和配好的对手下一盘", JSON.stringify(today));
+    await page.click("#today-go");
+    await page.waitForTimeout(600);
+    const play = await page.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
+      mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode }));
+    assert(play.view === "play" && play.mode === "ai", "T1 …第三次点击就在棋盘上,人机对局", JSON.stringify(play));
+    assert(errs.length === 0, `T1 首次启动:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+  // (b2) 「先看看棋盘」: the board, against the default rung — 休闲, not 中级
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+    const page = await ctx.newPage();
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1200);
+    await page.click("#pick-cancel");
     await page.waitForTimeout(500);
-    let s = await ngState(page);
-    const pick = await page.evaluate(() => ({
-      guide: document.getElementById("pick-modal").classList.contains("show"),
-      diff: (document.querySelector("#ng-host #diff-seg-engine button.active, #ng-host #diff-seg button.active") || {}).dataset?.diff,
-    }));
-    assert(!pick.guide && s.open, `§5 选「我会下棋」:引导关掉,新对局对话框打开(${JSON.stringify(s)})`);
-    assert(pick.diff === "easy" && s.focus === "ben", `§5 …预选初级,焦点在它的角色卡上(${pick.diff} / ${s.focus})`);
-    await page.keyboard.press("Enter"); await page.waitForTimeout(500);
-    s = await ngState(page);
     const set = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}"));
-    assert(!s.open && set.mode === "ai" && set.difficulty === "easy", `§5 …回车开局:人机、初级(${set.mode} / ${set.difficulty})`);
-    assert(errs.length === 0, `§5 首次启动:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    assert(set.mode === "ai" && set.difficulty === "casual", "T1 跳过问卷:还是人机,但默认档是休闲(" + set.mode + " / " + set.difficulty + ")");
     await ctx.close();
   }
 
@@ -1832,9 +1859,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
         const f = q.charCodeAt(0) - 97, rk = 8 - Number(q[1]);
         return { x: r.left + ((flip ? 7 - f : f) + 0.5) * z, y: r.top + ((flip ? 7 - rk : rk) + 0.5) * z };
       }, sq);
-      await page.mouse.click(p.x, p.y); await page.waitForTimeout(150);
+      await page.mouse.click(p.x, p.y); await settle(page);
     };
-    for (const [a, b] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"], ["d8", "h4"]]) { await tap(a); await tap(b); await page.waitForTimeout(250); }
+    for (const [a, b] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"], ["d8", "h4"]]) { await tap(a); await tap(b); await settle(page); }
     const undoShown = () => page.evaluate(() => {
       const u = document.getElementById("undo");
       return !!u && !u.hidden && !u.classList.contains("slot-empty");
@@ -1847,7 +1874,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     assert(r.plies === 4 && r.card, `§5 愚者杀:四着,结果卡片在(${JSON.stringify(r)})`);
     assert(!(await undoShown()), "§5 终局之后「悔棋」不在");
     assert(r.again, "§5 …自己下完的一盘,「再来一盘」还在");
-    await page.keyboard.press("z"); await page.waitForTimeout(300);
+    await page.keyboard.press("z"); await settle(page);
     const plies = await page.evaluate(() => document.querySelectorAll(".mlmove").length);
     assert(plies === 4, `§5 …按 Z 也不把杀棋收回去(${plies} 着)`);
     assert(errs.length === 0, `§5 终局:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
@@ -1873,7 +1900,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       return { plies: document.querySelectorAll(".mlmove").length, undo: !!u && !u.hidden && !u.classList.contains("slot-empty") };
     });
     assert(r.plies === 4 && !r.undo, `§5 打开的棋谱(未终局):没有「悔棋」(${JSON.stringify(r)})`);
-    await page.keyboard.press("z"); await page.waitForTimeout(300);
+    await page.keyboard.press("z"); await settle(page);
     const plies = await page.evaluate(() => document.querySelectorAll(".mlmove").length);
     assert(plies === 4, `§5 …按 Z 也不改(${plies} 着)`);
     assert(errs.length === 0, `§5 打开棋谱:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
@@ -1898,7 +1925,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     await page.goto(`http://127.0.0.1:${PORT}/`);
     await page.waitForFunction(() => window.__chess && window.__chess.board && window.__chess.board().imageRedraws >= 1,
       null, { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(400);
+    await settle(page);
     if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
     return { ctx, page, errs };
   };
@@ -2001,7 +2028,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     // v8-0-plan A1 before it), opened the way a person opens it: board, frame
     // and pieces under 棋盘, light / dark under 通用
     await toSettings(page, "board");
-    const pick = async (sel) => { await page.click(sel); await page.waitForTimeout(250); };
+    const pick = async (sel) => { await page.click(sel); await settle(page); };
     await pick('#board-pick-seg button[data-board-id="green"]');
     st = await state();
     assert(st.attrs === "night/green/flat" && st.saved.startsWith("system/green/flat"),
@@ -2036,6 +2063,18 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       null, { timeout: 8000 }).catch(() => {});
     const kings = await page.evaluate(() => [...document.querySelectorAll("#piece-pick-seg img")].filter((i) => i.src.startsWith("data:image/svg")).length);
     assert(kings === 14, `A3 棋子选择器:七套各画出黑白两王(${kings} / 14)`);
+    // 10.0 M0: each king the board swatch's size, on the current board's own squares
+    const look = await page.evaluate(() => {
+      const cs = getComputedStyle(document.documentElement), probe = document.createElement("div");
+      document.body.appendChild(probe);
+      const rgb = (v) => { probe.style.background = cs.getPropertyValue(v).trim(); return getComputedStyle(probe).backgroundColor; };
+      const want = [rgb("--sq-light"), rgb("--sq-dark")];
+      probe.remove();
+      const [w, b] = document.querySelectorAll("#piece-pick-seg .look-king");
+      return { size: w.getBoundingClientRect().width, on: [w, b].map((i) => getComputedStyle(i).backgroundColor), want };
+    });
+    assert(look.size >= 36 && look.on.join() === look.want.join(),
+      "10.0 M0 棋子选择器:两王各约 40 px,站在当前棋盘的浅格 / 深格上(" + JSON.stringify(look) + ")");
     assert(errs.length === 0, `A3 选择器:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
     await ctx.close();
   }
@@ -2076,7 +2115,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     if (fl) { f = 7 - f; rk = 7 - rk; }
     return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
   }, [sq, flip]);
-  const tap = async (page, sq, flip) => { const p = await at(page, sq, flip); await page.mouse.click(p.x, p.y); await page.waitForTimeout(160); };
+  const tap = async (page, sq, flip) => { const p = await at(page, sq, flip); await page.mouse.click(p.x, p.y); await settle(page); };
   const paintAt = (page, sq, flip, where) => page.evaluate(([s, fl, w]) => {
     const cv = document.getElementById("board");
     const step = cv.width / 8;
@@ -2102,7 +2141,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   // (1) the end of a game: the kings carry the result, the bar takes the bottom strip's place
   {
     const { ctx, page, errs } = await openA5({ mode: "pvp" });
-    for (const [a, b] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"], ["d8", "h4"]]) { await tap(page, a); await tap(page, b); await page.waitForTimeout(200); }
+    for (const [a, b] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"], ["d8", "h4"]]) { await tap(page, a); await tap(page, b); await settle(page); }
     await page.waitForTimeout(700);
     const good = await token(page, "--judge-good"), bad = await token(page, "--judge-bad");
     const e1 = await paintAt(page, "e1", false, "badge"), e8 = await paintAt(page, "e8", false, "badge");
@@ -2119,6 +2158,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     });
     assert(card.shown && card.clear && card.under && card.strip === "hidden",
       `9.0 M1 终局：结果条在棋盘下沿、占底部玩家栏的位置，不压 64 格（${JSON.stringify(card)}）`);
+    // 10.0 M0: the score on the strip says what it is
+    const score = await page.evaluate(() => { const r = document.getElementById("result-b"); return [r.textContent, r.title]; });
+    assert(score[0] === "1" && score[1].startsWith("本局得分：1"), "10.0 M0 终局：玩家栏上的比分有说明（" + score + "）");
     if (SHOTS) await page.screenshot({ path: SHOTS + "/end-of-game.png" });
     // stepping back into the game: the card and the badges step aside
     await page.click("#rep-prev");
@@ -2129,7 +2171,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     await page.click("#rep-end");
     await page.waitForTimeout(600);
     await page.click("#go-close");
-    await page.waitForTimeout(300);
+    await settle(page);
     const closed = await page.evaluate(() => document.getElementById("go-card").hidden);
     assert(closed && near(await paintAt(page, "e1", false, "badge"), bad), "A5 终局：✕ 收起结果卡，王上的徽标还在");
     assert(errs.length === 0, `A5 终局：没有页面异常${errs.length ? " — " + errs[0] : ""}`);
@@ -2140,19 +2182,19 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   // the variation is not the game's end, and its kings carry no result
   {
     const { ctx, page, errs } = await openA5({ mode: "pvp" });
-    for (const [a, b] of [["e2", "e4"], ["e7", "e5"], ["g1", "f3"], ["b8", "c6"]]) { await tap(page, a); await tap(page, b); await page.waitForTimeout(200); }
+    for (const [a, b] of [["e2", "e4"], ["e7", "e5"], ["g1", "f3"], ["b8", "c6"]]) { await tap(page, a); await tap(page, b); await settle(page); }
     // Black resigns: an ending the rules do not make, on the mainline's last position
     await page.click("#btn-resign");
-    await page.waitForTimeout(300);
+    await settle(page);
     await page.click("#confirm-alt");
     await page.waitForTimeout(600);
     await page.click("#go-close").catch(() => {});
-    await page.waitForTimeout(300);
+    await settle(page);
     const good = await token(page, "--judge-good"), bad = await token(page, "--judge-bad");
     const endW = await paintAt(page, "e1", false, "badge"), endB = await paintAt(page, "e8", false, "badge");
     // stand before 2…Nc6 and play 2…Nf6 instead: a variation, its leaf on the board
     await page.click('#move-list .mlmove[data-i="3"]');
-    await page.waitForTimeout(400);
+    await settle(page);
     await tap(page, "g8"); await tap(page, "f6");
     await page.waitForTimeout(700);
     const vW = await paintAt(page, "e1", false, "badge"), vB = await paintAt(page, "e8", false, "badge");
@@ -2311,7 +2353,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const under = await page.evaluate(() => ({ paints: window.__paints, page: !document.getElementById("page-library").hidden }));
   assert(under.page && under.paints === 0, `F3 开在棋谱库页上：被盖住的棋盘一遍都不画（画了 ${under.paints} 遍）`);
   await page.click('#rail button[data-view="play"]');
-  await page.waitForTimeout(300);
+  await settle(page);
   const back = await page.evaluate(() => window.__paints);
   // the e1 king's square: the board under it is drawn, and so is the king
   const px = await page.evaluate(() => {
@@ -2325,7 +2367,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.reload();
   await page.waitForTimeout(1500);
   await page.evaluate(() => { window.__blurs = 0; window.dispatchEvent(new Event("resize")); });
-  await page.waitForTimeout(300);
+  await settle(page);
   const blurs = await page.evaluate(() => window.__blurs);
   assert(blurs === 0, `F3 棋子的接触阴影不在棋盘画布上逐个跑 blur 滤镜（一遍画了 ${blurs} 个）`);
   assert(errs.length === 0, `F3 棋盘帧：没有页面异常${errs.length ? " — " + errs[0] : ""}`);

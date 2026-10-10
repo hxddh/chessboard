@@ -24,7 +24,7 @@ import { tdot } from "./tdot.js";
  */
 export function createMePage(d) {
   const {
-    ACH, Icons, Progress, evalAch, libPlayedAt, loadStats, setSideTab, store, switchMode, t, tf,
+    Icons, Progress, evalAch, libPlayedAt, loadStats, store, t, tf,
     Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName, Endgames, Vis,
   } = d;
 
@@ -189,57 +189,15 @@ export function createMePage(d) {
   const ACH_FOLD_AT = 3;
 
   /**
-   * The records page, before there is anything to record.
-   *
-   * It used to open on two sentences saying nothing had happened yet and
-   * fifteen padlocks — a wall with 0/15 written on it. Three doors instead,
-   * each labelled with the badge behind it, and each one *pressing the real
-   * control*: the mode row on the settings page. Going through
-   * `#mode-seg` rather than setting `store.session.mode` here is deliberate —
-   * that handler stops the engine, leaves the editor, resets the clocks,
-   * switches to the 对局 tab and says what happened, and a second copy of that
-   * list is a second copy that can drift.
+   * The records page, before there is anything to record: one sentence on
+   * what it will hold. 10.0 M0: it also had three doors (上第 1 课 / 做一道题 /
+   * 和引擎下一局) — the third copy of what 今天 and 训练 already offer; the
+   * achievements card under it names what is closest to unlocking.
    */
-  const REC_DOORS = [
-    { mode: "learn", label: "rec.goLearn", ach: "first-lesson", win: false },
-    { mode: "puzzle", label: "rec.goPuzzle", ach: "first-puzzle", win: false },
-    { mode: "ai", label: "rec.goPlay", ach: "first-win", win: true },
-  ];
-
   function renderRecordEntry() {
     invalidate();
     const box = document.getElementById("record-empty");
-    const doors = document.getElementById("record-doors");
-    if (!box || !doors) return;
-    const fresh = !hasRecord();
-    box.hidden = !fresh;
-    if (!fresh) return;
-    doors.replaceChildren();
-    for (const d of REC_DOORS) {
-      const a = ACH.find((x) => x.id === d.ach);
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "rec-door";
-      b.dataset.mode = d.mode;
-      const ic = document.createElement("span");
-      ic.className = "rec-door-ic";
-      if (a) ic.appendChild(Icons.icon(a.icon));
-      const txt = document.createElement("span");
-      txt.className = "rec-door-t";
-      const k = document.createElement("span");
-      k.className = "rec-door-k";
-      k.textContent = t(d.label);
-      const v = document.createElement("span");
-      v.className = "rec-door-v";
-      const nm = a ? (a.nameKey ? t(a.nameKey) : a.name) : "";
-      v.textContent = tf(d.win ? "rec.winUnlocks" : "rec.unlocks", [nm]);
-      txt.append(k, v);
-      b.append(ic, txt);
-      // already in that mode, the door still lands somewhere: the board,
-      // with the panel showing 对局 (setSideTab leaves the page, A1)
-      b.onclick = () => { if (d.mode !== store.session.mode) switchMode(d.mode); else setSideTab("play", { top: true }); };
-      doors.appendChild(b);
-    }
+    if (box) box.hidden = hasRecord();
   }
 
   function renderAchRows(rows, res, el) {

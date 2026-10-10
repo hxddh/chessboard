@@ -212,5 +212,7 @@ export function createEndgames(d) {
     }
   }
 
-  return { ensure, ready, whenReady, resumeId, item, lesson, record, due, next, doneCount, total, groupSize, renderList, renderMe, state };
+  /** v10-0-plan A3: every position's id, in the camp's order (⌘K lists them) */
+  const items = () => (data ? data.ITEMS.map((x) => x.id) : []);
+  return { ensure, ready, whenReady, resumeId, item, items, lesson, record, due, next, doneCount, total, groupSize, renderList, renderMe, state };
 }

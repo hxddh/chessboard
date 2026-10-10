@@ -43,6 +43,9 @@ export function createOpponentsUI(d) {
   function mount() {
     const grid = el("op-grid");
     if (!grid || grid.childElementCount) return;
+    // the fold widens the grid to the whole ladder (paint)
+    const fold = el("ng-custom");
+    if (fold) fold.addEventListener("toggle", () => paint());
     for (const p of Opponents.PERSONAS) {
       const b = doc.createElement("button");
       b.type = "button";
@@ -104,16 +107,19 @@ export function createOpponentsUI(d) {
     const pick = pickNow();
     const on = Opponents.personaFor(pick.difficulty, pick.personaId);
     // 9.0 S2: eight cards — the ladder around the pick, so the one chosen
-    // and its neighbours either way are what is on screen; every rung is
-    // under 更多选项. The window moves with the pick (a card, the fold).
+    // and its neighbours either way are what is on screen. 10.0 M0: 更多选项
+    // open shows all twenty-one — it held the same ladder a second time, as
+    // two rows of rung names (陪练档 / 棋力档), a second way to choose.
     const all = Opponents.PERSONAS;
+    const full = !!(el("ng-custom") && el("ng-custom").open);
     const at = Math.max(0, on ? all.indexOf(on) : all.findIndex((p) => p.level === pick.difficulty));
-    const from = Math.max(0, Math.min(all.length - SHOWN, at - 3));
+    const from = full ? 0 : Math.max(0, Math.min(all.length - SHOWN, at - 3));
+    const shown = full ? all.length : SHOWN;
     for (const b of grid.children) {
       const p = Opponents.personaById(b.dataset.op);
       if (!p) continue;
       const k = all.indexOf(p);
-      const out = k < from || k >= from + SHOWN;
+      const out = k < from || k >= from + shown;
       if (b.hidden !== out) b.hidden = out;
       const active = !!on && on.id === p.id;
       if (b.classList.contains("active") !== active) b.classList.toggle("active", active);
@@ -193,7 +199,11 @@ export function createOpponentsUI(d) {
     const now = Math.round(filed.after.r);
     // a first game moves the newcomer's 1500 (rating.js), and says by how much
     const delta = now - Math.round(filed.before ? filed.before.r : ChessRating.DEFAULT.r);
-    const parts = [tf("go.rating", [fmtRating(filed.after), delta > 0 ? "+" + delta : delta < 0 ? "−" + -delta : "±0"])];
+    // 10.0 M0: while it is provisional a game moves it by hundreds (+305
+    // for a first win), which on the result bar read as a broken number —
+    // the rating alone, marked 定级中, until it settles
+    const parts = [ChessRating.isProvisional(filed.after) ? tf("go.ratingProv", [fmtRating(filed.after)])
+      : tf("go.rating", [fmtRating(filed.after), delta > 0 ? "+" + delta : delta < 0 ? "−" + -delta : "±0"])];
     if (filed.perf != null) parts.push(tf("go.perf", [filed.perf]));
     return tdot(...parts);
   }

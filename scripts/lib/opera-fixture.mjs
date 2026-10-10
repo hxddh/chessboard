@@ -68,8 +68,8 @@ export async function playOpera(page, upTo = OPERA.length) {
   await page.waitForTimeout(300);
 }
 
-/** Script the engine with the table and run 分析; resolves once the report is up. */
-export async function analyseOpera(page) {
+/** Script the engine with the table (analyse calls answer from it). */
+export async function scriptOpera(page) {
   await page.evaluate((tb) => {
     window.__chess.engine.isReady = () => true;
     window.__chess.engine.analyze = async (fen) => {
@@ -81,6 +81,11 @@ export async function analyseOpera(page) {
         lines: [{ cp: s(e.cpW), mate: null, pv: e.pv, depth: 18 }, { cp: s(e.second), mate: null, pv: [], depth: 18 }] };
     };
   }, operaTable());
+}
+
+/** Script the engine with the table and run 分析; resolves once the report is up. */
+export async function analyseOpera(page) {
+  await scriptOpera(page);
   await page.click("#an-run");
   await page.waitForFunction(() => !document.getElementById("report-card").hidden, null, { timeout: 20000 });
   await page.waitForTimeout(400);

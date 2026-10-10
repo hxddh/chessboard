@@ -45,8 +45,13 @@ export function createLines(d) {
   // `go infinite` on whatever position the board shows, re-armed on every
   // cursor or line change, stopped whenever the one worker is needed for a
   // game move or a review pass. A toggle, not a mode: it follows the replay.
+  // v10-0-plan A1: the analysis board runs it whatever the setting says, on
+  // three lines at least — it is what that board is for — without saving
+  // either into the settings
+  const liveWanted = () => store.session.liveOn || !!store.session.analysisBoard;
+  const livePv = () => (store.session.analysisBoard ? Math.max(3, store.ui.multipv) : store.ui.multipv);
   function liveAllowed() {
-    return store.session.liveOn && ChessEngine && !store.session.engineDown &&
+    return liveWanted() && ChessEngine && !store.session.engineDown &&
       (store.session.mode === "ai" || store.session.mode === "pvp") &&
       !store.session.editor && !store.session.analyzing && !store.session.engineThinking &&
       // 7.6 §1a: a library pass (and 再深一遍, which runs under the same
@@ -76,14 +81,15 @@ export function createLines(d) {
     collapseEmptyGroups();
     if (!liveAllowed()) {
       stopLiveAnalysis();
-      if (el && (!store.session.liveOn || store.session.retry)) { el.hidden = true; el.replaceChildren(); el.style.minHeight = ""; }
+      if (el && (!liveWanted() || store.session.retry)) { el.hidden = true; el.replaceChildren(); el.style.minHeight = ""; }
       return;
     }
     const fen = viewGame().fen();
-    if (store.session.live && store.session.live.fen === fen && store.session.live.multipv === store.ui.multipv) return;
+    const pv = livePv();
+    if (store.session.live && store.session.live.fen === fen && store.session.live.multipv === pv) return;
     stopLiveAnalysis();
-    const rec = { fen, multipv: store.ui.multipv, info: null, raf: 0, stop: null };
-    rec.stop = ChessEngine.analyzeInfinite(fen, { multipv: store.ui.multipv }, (info) => {
+    const rec = { fen, multipv: pv, info: null, raf: 0, stop: null };
+    rec.stop = ChessEngine.analyzeInfinite(fen, { multipv: pv }, (info) => {
       if (store.session.live !== rec) return;
       rec.info = info;
       if (!rec.raf) rec.raf = requestAnimationFrame(() => { rec.raf = 0; renderLiveAnalysis(rec); });

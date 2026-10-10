@@ -61,9 +61,10 @@
                         translucent film over another card
          three inks     --ink, --ink-muted, --ink-faint
          one accent     the primary button, the current move, the selected
-                        state — and nothing else; --primary-from/to are the
-                        accent itself now (no second "press me" colour: 日
-                        had a blue primary beside a brass accent)
+                        state — and nothing else; there is no second "press
+                        me" colour (日 had a blue primary beside a brass
+                        accent; 10.0 M0 removed the --primary-from/-to names
+                        that were left over, unread)
          status         --success (a win, a gain) and --danger, only for
                         status
        ------------------------------------------------------------------ */
@@ -95,9 +96,6 @@
       --wood-win: #6cc282;
       --wood-chrome-bg: linear-gradient(180deg, rgba(36,26,18,.88), rgba(36,26,18,.4) 75%, transparent);
       --wood-danger: #e07a6a;
-      --wood-primary-from: #e8c39e;
-      --wood-primary-to: #e8c39e;
-      --wood-on-primary: #2a1c10;
       --wood-on-accent: #2a1c10;
       --wood-on-danger: #2a1613;
       --wood-card: #30241a;
@@ -125,9 +123,6 @@
       --success: var(--wood-win);
       --veil: var(--wood-chrome-bg);
       --danger: var(--wood-danger);
-      --primary-from: var(--wood-primary-from);
-      --primary-to: var(--wood-primary-to);
-      --on-primary: var(--wood-on-primary);
       --on-accent: var(--wood-on-accent);
       --on-danger: var(--wood-on-danger);
       --card-fill: var(--wood-card);
@@ -170,9 +165,6 @@
       --night-win: #66c78a;
       --night-chrome-bg: linear-gradient(180deg, rgba(8,18,15,.9), rgba(8,18,15,.35) 75%, transparent);
       --night-danger: #e8705c;
-      --night-primary-from: #7dcea0;
-      --night-primary-to: #7dcea0;
-      --night-on-primary: #07130e;
       --night-on-accent: #07130e;
       --night-on-danger: #0b1210;
       --night-card: #111d1a;
@@ -196,9 +188,6 @@
       --success: var(--night-win);
       --veil: var(--night-chrome-bg);
       --danger: var(--night-danger);
-      --primary-from: var(--night-primary-from);
-      --primary-to: var(--night-primary-to);
-      --on-primary: var(--night-on-primary);
       --on-accent: var(--night-on-accent);
       --on-danger: var(--night-on-danger);
       --card-fill: var(--night-card);
@@ -241,9 +230,6 @@
       --day-win: #23813d;
       --day-chrome-bg: linear-gradient(180deg, rgba(247,241,224,.95), rgba(247,241,224,.4) 75%, transparent);
       --day-danger: #b8382a;
-      --day-primary-from: #8a5a24;
-      --day-primary-to: #8a5a24;
-      --day-on-primary: #ffffff;
       --day-on-accent: #ffffff;
       --day-on-danger: #fdf6f4;
       --day-card: #f8f1e4;
@@ -267,9 +253,6 @@
       --success: var(--day-win);
       --veil: var(--day-chrome-bg);
       --danger: var(--day-danger);
-      --primary-from: var(--day-primary-from);
-      --primary-to: var(--day-primary-to);
-      --on-primary: var(--day-on-primary);
       --on-accent: var(--day-on-accent);
       --on-danger: var(--day-on-danger);
       --card-fill: var(--day-card);
@@ -302,9 +285,6 @@
       --notebook-win: #257a44;
       --notebook-chrome-bg: linear-gradient(180deg, rgba(244,247,254,.96), rgba(244,247,254,.45) 75%, transparent);
       --notebook-danger: #b0301f;
-      --notebook-primary-from: #3b6ea5;
-      --notebook-primary-to: #3b6ea5;
-      --notebook-on-primary: #ffffff;
       --notebook-on-accent: #ffffff;
       --notebook-on-danger: #fbf3f2;
       --notebook-card: #f4f7fe;
@@ -328,9 +308,6 @@
       --success: var(--notebook-win);
       --veil: var(--notebook-chrome-bg);
       --danger: var(--notebook-danger);
-      --primary-from: var(--notebook-primary-from);
-      --primary-to: var(--notebook-primary-to);
-      --on-primary: var(--notebook-on-primary);
       --on-accent: var(--notebook-on-accent);
       --on-danger: var(--notebook-on-danger);
       --card-fill: var(--notebook-card);
@@ -1576,7 +1553,7 @@
        the exact thing WebKit drops clicks for (7.5, 16px; held-click.mjs
        measures centre drift for that reason, and a 1px nudge failed it). A
        scale keeps the centre where the pointer went down. 0.98 is the gentlest
-       step already in the file (.rec-door) — a full-width lesson row at
+       step already in the file (the record page's doors had it) — a full-width lesson row at
        0.97 would pull in 9px a side. `:where()` keeps it at the weight of one
        class, so the families with a press of their own (.act-btn, the
        segments, .icon-btn, .promo-row) keep theirs. No transition is added:
@@ -1615,8 +1592,18 @@
       border-radius: 3px; box-shadow: 0 0 0 1px var(--card-border);
     }
     .look-board { display: block; width: 100%; height: 100%; }
-    .look-kings { display: flex; gap: 2px; }
-    .look-king { display: block; width: 24px; height: 24px; }
+    /* 10.0 M0: the set as it stands on the board — the white king on the
+       current board's light square, the black on its dark one, each the
+       board swatch's height; the squares give way before the segment does */
+    .look-kings {
+      display: flex; width: 80px; max-width: 100%; overflow: hidden;
+      border-radius: 3px; box-shadow: 0 0 0 1px var(--card-border);
+    }
+    .look-king {
+      display: block; flex: 0 1 40px; min-width: 0; aspect-ratio: 1;
+      padding: 4px; box-sizing: border-box; background: var(--sq-light);
+    }
+    .look-king + .look-king { background: var(--sq-dark); }
     /* v8-0-plan B4: the personas in the new-game dialog — a card per rung,
        two columns, each an avatar (an icons.js shape on the card's own
        ground), the name, and the rating with the style under it. The same
@@ -1952,7 +1939,7 @@
     /* grouped action links */
     .act-group { margin-top: 16px; }
     .act-group:first-of-type { margin-top: 8px; }
-    .act-k, .review-h {
+    .act-k {
       /* same pinned label box as .side-h — these are the same kind of thing,
          and before this one was a 2px-margin inline span and the other a
          12px-margin block, which is most of why the group spacings came out
@@ -1995,18 +1982,19 @@
     .daily-what, .daily-why { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .daily-what { font-size: 0.875rem; color: var(--text); }
     .daily-why { font-size: 0.75rem; color: var(--muted); }
-    /* the state, before the words: hollow = to come, ringed = next, filled
-       with a tick = done */
+    /* the state, before the words: numbered = to come, ringed = next, filled
+       with a tick = done (v10-0-plan T5: a number, so the list reads as
+       steps in order and not as a set of radio buttons) */
     .daily-dot {
       width: 16px; height: 16px; border-radius: 50%;
       display: grid; place-items: center;
       border: 1.5px solid color-mix(in srgb, var(--muted) 70%, transparent);
-      font-size: 0.6875rem; color: var(--bg);
+      font-size: 0.6875rem; color: var(--muted); font-variant-numeric: tabular-nums;
     }
     /* 9.0 V1: the step you are on is the selected state (the accent's
        ring); a done step is a fact, in the ink — not the accent */
     .daily-step.current .daily-dot { border-color: var(--accent); box-shadow: inset 0 0 0 3px var(--accent-soft); }
-    .daily-step.done .daily-dot { background: var(--text); border-color: var(--text); }
+    .daily-step.done .daily-dot { background: var(--text); border-color: var(--text); color: var(--bg); }
     .daily-arrow { color: var(--faint); font-size: 1rem; display: grid; }
     .daily-step.done .daily-what { color: var(--muted); text-decoration: line-through; }
     .daily-step.current .daily-what { font-weight: 600; }
@@ -2388,6 +2376,26 @@
       border-color: color-mix(in srgb, var(--accent) 60%, var(--card-border));
     }
     .text-input.bad { border-color: var(--danger); }
+    /* v10-0-plan A1: 分析一局's paste box — PGN is lines of text */
+    .an-text { display: block; resize: vertical; line-height: var(--lh-body); }
+    /* v10-0-plan A3: ⌘K — one box, the rows under it, the selected one in the
+       accent's tint (the selected state, as every list here draws it) */
+    .modal.pal-modal { width: min(560px, calc(100vw - 32px)); }
+    /* 分析一局: three ways in and two answers — the buttons wrap rather than run out of the card */
+    .modal.an-modal { width: min(560px, calc(100vw - 32px)); }
+    .an-modal .close-row.split, .an-modal .btn-pair { flex-wrap: wrap; }
+    .an-modal .close-row.split > .btn-pair:last-child { margin-left: auto; }
+    .pal-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; max-height: min(420px, 60vh); overflow-y: auto; margin-top: 8px; }
+    .pal-row {
+      appearance: none; display: flex; width: 100%; box-sizing: border-box; align-items: center; justify-content: space-between; gap: 12px;
+      min-height: var(--ctl-h-sm); padding: 4px 12px; border: 0; border-radius: var(--radius-sm);
+      background: transparent; color: var(--text); font: inherit; font-size: 0.875rem; text-align: left; cursor: pointer;
+    }
+    .pal-row:hover { background: var(--btn-ghost); }
+    .pal-row[aria-selected="true"] { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
+    .pal-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pal-kind { flex: none; font-size: 0.75rem; color: var(--muted); }
+    .pal-hint { margin-top: 8px; }
 
     /* pawn promotion chooser */
     /* 7.8 §1c: on the board, not over it. The backdrop is clear and unblurred;
@@ -3148,16 +3156,6 @@
     .km-coach { color: var(--text); }
     #rv-learn-row { margin-top: 8px; }
     .rt-prog { font-size: 0.75rem; font-weight: 600; color: var(--muted); }
-    /* The difficulty row is two scales, so it is labelled as two. v8-0-plan
-       §5: those two labels stand in for the row's own (see index.html), so
-       they are dressed as one — 11px muted caps beside 陪练风格 / 执子 / 棋钟
-       at 14px read as a lower rank in the 新对局 dialog, where the four rows
-       are the whole dialog and nothing else says which is which. */
-    .diff-group {
-      display: block; margin: 8px 0 4px;
-      font-size: 0.8125rem; font-weight: 400; color: var(--muted);
-    }
-    .diff-group:first-of-type { margin-top: 0; }
 
     /* Achievement grouping (1.24): a wall of padlocks says "you have nothing";
        a group header plus the nearest one says "start here". */
@@ -3408,23 +3406,6 @@
       margin: 0 0 12px;
       font-size: 0.875rem; line-height: var(--lh-body); color: var(--muted);
     }
-    .rec-doors { display: flex; flex-direction: column; gap: 0; }
-    .rec-door {
-      appearance: none; text-align: left; width: 100%;
-      display: flex; align-items: center; gap: 12px;
-      padding: 8px; border-radius: var(--radius-sm);
-      border: 0;
-      background: transparent;
-      color: var(--text); font: inherit; cursor: pointer;
-      transition: border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease), transform var(--dur-quick) var(--ease);
-    }
-    .rec-door + .rec-door { box-shadow: 0 -1px 0 var(--line); }
-    .rec-door:hover { background: var(--btn-ghost); }
-    .rec-door:active { transform: scale(0.98); }
-    .rec-door-ic { font-size: 1rem; line-height: var(--lh-tight); flex-shrink: 0; color: var(--muted); }
-    .rec-door-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-    .rec-door-k { font-size: 0.875rem; font-weight: 600; line-height: var(--lh-tight); }
-    .rec-door-v { font-size: 0.75rem; color: var(--muted); line-height: var(--lh-tight); }
     /* the fold at the end of the locked list — an .act-btn like every other
        action in the panel, just not stretched across the column */
     .ach-more { margin-top: 8px; flex: none; justify-self: start; padding: 0 12px; }
@@ -3776,6 +3757,11 @@ span[data-icon] { display: inline-grid; place-items: center; }
    and those arrived in 16 (Codex, #84). */
 .tool-lbl { display: none; }
 .side-wide .tool-row { column-gap: 2px; row-gap: 4px; }
+/* 10.0 M0: five places that stay put — a tool not available now (复制 and
+   导出 before the first move) keeps its slot, unseen and out of reach, so
+   开局 and 更多 do not stand at the two ends of the row at move 0 and slide
+   inwards with the first move */
+.side-wide .tool-row > .tool-ic[hidden] { display: flex; visibility: hidden; }
 .side-wide .tool-row .tool-ic {
   flex: 1 1 0; min-width: 0; width: auto;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
@@ -3824,6 +3810,10 @@ span[data-icon] { display: inline-grid; place-items: center; }
   animation: result-in var(--dur-slow) var(--ease);
 }
 #board-wrap:has(> .go-card:not([hidden])) > .pstrip.at-bottom { visibility: hidden; }
+/* 10.0 M0: the bar's 1–0 is the score; the opponent's line keeps no lone
+   「0」 beside it (the wide layout's cards keep theirs — the card is not
+   in a strip's place there) */
+#board-wrap:has(> .go-card:not([hidden])) > .pstrip.at-top .ps-result { display: none; }
 @keyframes result-in {
   from { opacity: 0; translate: 0 6px; }
   to { opacity: 1; translate: 0 0; }
@@ -3877,6 +3867,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   border: 1px solid var(--card-border); border-radius: var(--radius-sm);
 }
 #app.pv-wide #board-wrap:has(> .go-card:not([hidden])) > .pstrip.at-bottom { visibility: visible; }
+#app.pv-wide #board-wrap:has(> .go-card:not([hidden])) > .pstrip.at-top .ps-result:not([hidden]) { display: inline; }
 #app.pv-wide #board-wrap:has(> .go-card:not([hidden])) > .info-col { visibility: hidden; }
 #app.pv-wide .go-txt { flex-basis: calc(100% - 88px); height: auto; }
 #app.pv-wide .go-result, #app.pv-wide .go-sub { white-space: normal; }
@@ -4274,7 +4265,8 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .today-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
 .today-head .page-h { margin: 0; }
 .today-brand { margin: 0 0 8px; font-size: 0.875rem; }
-.today-head > .act-btn, .today-acts > .act-btn { flex: none; width: auto; min-width: 128px; padding: 0 16px; }
+.today-head-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; flex: none; }
+.today-head-acts > .act-btn, .today-acts > .act-btn { flex: none; width: auto; min-width: 128px; padding: 0 16px; }
 .today-date { margin: 4px 0 0; font-size: 0.875rem; color: var(--muted); }
 .today-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px; align-items: stretch; margin-bottom: 24px; }
 .today-card {
@@ -4342,6 +4334,10 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .today-rating > div { display: grid; gap: 4px; }
 .today-rating b { font-size: 1.875rem; font-weight: 600; line-height: var(--lh-tight); }
 .today-rating canvas { display: block; width: 100%; height: 40px; }
+.today-rating canvas[hidden] { display: none; }
+/* v10-0-plan T5: a rating not yet earned is a line of how to earn it */
+.today-rating b.today-invite { font-size: 0.875rem; font-weight: 400; line-height: var(--lh-body); color: var(--muted); }
+.today-bar.fresh > i { visibility: hidden; }
 /* the static board of a card (mini-board.js): the board's own colours */
 .mini-board {
   display: grid; grid-template-columns: repeat(8, 1fr); aspect-ratio: 1;

@@ -637,11 +637,23 @@ const SyncRequest = struct {
     max: usize = SYNC_GAMES_DEFAULT,
     /// ms since the epoch; games from before it are not wanted (0: all)
     since: u64 = 0,
+    /// v10-0-plan A1: one Lichess game by its id (分析一局 from a link) —
+    /// then there is no user, and the answer is that game alone
+    game_buf: [LICHESS_GAME_ID]u8 = undefined,
+    game_len: usize = 0,
 
     fn user(self: *const SyncRequest) []const u8 {
         return self.name_buf[0..self.name_len];
     }
+
+    fn game(self: *const SyncRequest) []const u8 {
+        return self.game_buf[0..self.game_len];
+    }
 };
+
+/// A Lichess game id is eight letters and digits (a link may add four more,
+/// the side the link was made from; the page sends the eight).
+const LICHESS_GAME_ID = 8;
 
 /// A millisecond timestamp field: jsonUintField stops at 12 digits, a
 /// timestamp has 13.
@@ -664,6 +676,15 @@ fn syncRequest(payload: []const u8) ?SyncRequest {
     else
         return null;
     var req: SyncRequest = .{ .site = site };
+    var id_buf: [16]u8 = undefined;
+    if (jsonStringField(payload, "game", &id_buf)) |id| {
+        if (site != .lichess or id.len != LICHESS_GAME_ID) return null;
+        for (id) |c| if (!std.ascii.isAlphanumeric(c)) return null;
+        @memcpy(req.game_buf[0..LICHESS_GAME_ID], id);
+        req.game_len = LICHESS_GAME_ID;
+        req.max = 1;
+        return req;
+    }
     const given = jsonStringField(payload, "user", &req.name_buf) orelse return null;
     if (given.len < SYNC_NAME_MIN or !tokenValid(given, SYNC_NAME_MAX)) return null;
     req.name_len = given.len;
@@ -683,6 +704,11 @@ fn lichessUrl(buf: []u8, name: []const u8, max: usize, since: u64) ?[]const u8 {
     if (since == 0) return base;
     const tail = std.fmt.bufPrint(buf[base.len..], "&since={d}&sort=dateAsc", .{since}) catch return null;
     return buf[0 .. base.len + tail.len];
+}
+
+/// v10-0-plan A1: one game, as PGN, with the clock comments the library reads.
+fn lichessGameUrl(buf: []u8, id: []const u8) ?[]const u8 {
+    return std.fmt.bufPrint(buf, "https://lichess.org/game/export/{s}?clocks=true&evals=false&opening=false", .{id}) catch null;
 }
 
 /// Chess.com's paths take the name in lower case.
@@ -1008,7 +1034,8 @@ fn syncFetch(gpa: std.mem.Allocator, getter: Getter, req: SyncRequest, output: [
     var url_buf: [640]u8 = undefined;
     switch (req.site) {
         .lichess => {
-            const url = lichessUrl(&url_buf, req.user(), req.max, req.since) orelse return syncErrorAnswer(output, "bad_request", 0);
+            const asked = if (req.game_len > 0) lichessGameUrl(&url_buf, req.game()) else lichessUrl(&url_buf, req.user(), req.max, req.since);
+            const url = asked orelse return syncErrorAnswer(output, "bad_request", 0);
             var body: std.Io.Writer.Allocating = .init(gpa);
             defer body.deinit();
             var counter: GameCounter = .{ .job = job, .max = req.max };
@@ -1249,6 +1276,18 @@ test "a sync request is a site, a plain user name and a bounded count" {
     try std.testing.expect(syncRequest("{\"site\":\"lichess\",\"user\":\"abcdefghijklmnopqrstuvwxyz01234\"}") == null);
     try std.testing.expect(syncRequest("{\"site\":\"lichess\"}") == null);
     try std.testing.expect(syncRequest("{\"site\":\"fics\",\"user\":\"sync_tester\"}") == null);
+}
+
+test "A1: one Lichess game by its id — eight letters and digits, Lichess only" {
+    const a = syncRequest("{\"site\":\"lichess\",\"game\":\"q7ZvsdUF\"}").?;
+    try std.testing.expectEqualStrings("q7ZvsdUF", a.game());
+    try std.testing.expectEqual(@as(usize, 1), a.max);
+    try std.testing.expect(syncRequest("{\"site\":\"chesscom\",\"game\":\"q7ZvsdUF\"}") == null);
+    try std.testing.expect(syncRequest("{\"site\":\"lichess\",\"game\":\"q7Zvsd\"}") == null);
+    try std.testing.expect(syncRequest("{\"site\":\"lichess\",\"game\":\"../../ab\"}") == null);
+    try std.testing.expect(syncRequest("{\"site\":\"lichess\",\"game\":\"q7ZvsdUFxyz1\"}") == null);
+    var buf: [256]u8 = undefined;
+    try std.testing.expectEqualStrings("https://lichess.org/game/export/q7ZvsdUF?clocks=true&evals=false&opening=false", lichessGameUrl(&buf, "q7ZvsdUF").?);
 }
 
 test "the sync URLs carry the name and nothing else about the person" {

@@ -102,6 +102,10 @@ export const CHUNKS = [
   // v8-0-plan A4 + F5: the review's picture and its key-moments card (lazy-content.js REVIEW_CHUNKS)
   { entry: "src/web/js/report.js", out: "src/web/js/chunk-report.js", global: "ChessReport", min: 3000 },
   { entry: "src/web/js/review/moments.js", out: "src/web/js/chunk-moments.js", global: "createMoments", min: 3000 },
+  // v10-0-plan T1: the first-run question and its placement — a fresh install only
+  { entry: "src/web/js/onboarding.js", out: "src/web/js/chunk-onboarding.js", global: "createOnboarding", min: 500 },
+  // v10-0-plan A3: the ⌘K panel, on the key's first press (palette-lazy.js)
+  { entry: "src/web/js/palette.js", out: "src/web/js/chunk-palette.js", global: "createPalette", min: 2000 },
   // v8-0-plan B4: the ladder, personas, rating and styles (opponents-lazy.js)
   { entry: "src/web/js/opponents-chunk.js", out: "src/web/js/chunk-opponents.js", global: "CHESS_OPPONENTS", min: 15000 },
   // v8-0-plan C1: the library as a database — IndexedDB, search, 本机 games (library-ui.js)
@@ -241,6 +245,13 @@ export async function build({ write = true, minify = true } = {}) {
     const body = cr.outputFiles[0].text +
       "\n;for (var k in __chunk) if (Object.prototype.hasOwnProperty.call(__chunk, k)) window[k] = __chunk[k];\n";
     if (write) fs.writeFileSync(path.join(root, c.out), body);
+  }
+  // 10.0 M0: a chunk no longer built (9.0 dropped chunk-lc-old-*) is removed,
+  // not left beside the live ones — chunk-*.js is build output (.gitignore)
+  if (write) {
+    const live = new Set(CHUNKS.map((c) => path.basename(c.out)));
+    const dir = path.join(root, "src/web/js");
+    for (const f of fs.readdirSync(dir)) if (/^chunk-.+\.js$/.test(f) && !live.has(f)) fs.rmSync(path.join(dir, f));
   }
   return text;
 }

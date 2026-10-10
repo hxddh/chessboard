@@ -58,6 +58,12 @@ export function createOpponentsLazy(d) {
     mount: call("mount"), paint: call("paint"), maybeOffer: call("maybeOffer"),
     reset: () => { d.store.game.opp = null; if (ui) ui.reset(); },
     opponent,
+    /** v10-0-plan T1: the rung nearest a rating (null until the chunk is here) */
+    levelNear: (r) => {
+      if (!mod) return null;
+      const O = mod.Opponents, gap = (lv) => Math.abs(O.ratingOf(lv) - r);
+      return O.LEVELS.reduce((a, b) => (gap(b) < gap(a) ? b : a));
+    },
     /** a saved game's opponent, vetted (null: bound again at the next search) */
     savedOpponent: (o) => (o && typeof o.diff === "string" && typeof o.style === "string" ? o : null),
     syncOffer: call("syncOffer"), wireOffer: call("wireOffer"), paintHello: call("paintHello"),

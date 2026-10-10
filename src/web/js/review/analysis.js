@@ -29,6 +29,7 @@ import { factsOf } from "../progress-metrics.js";
 import { ChessReview } from "../review.js";
 import { ChessReviewGrade as Grade } from "../review-grade.js";
 import { ChessReviewPass } from "../review-pass.js";
+import { ChessSrs } from "../srs.js";
 import { motifOf } from "../motif.js";
 import { tdot } from "../tdot.js";
 
@@ -200,7 +201,8 @@ export function createAnalysis(d) {
           delete store.session.puzzleState.solved[id];
           delete store.session.puzzleState.missed[id];
         }
-        if (dropped.length) savePuzzleState();
+        // v10-0-plan T2: what the game got wrong is owed a review at once
+        if (Mistakes.queueFresh(store.session.puzzleState.missed, r.ids, Date.now(), ChessSrs.onMiss) || dropped.length) savePuzzleState();
         mined = r.added;
         revised = rv.updated.length;
         withdrawn = rv.retired.length;

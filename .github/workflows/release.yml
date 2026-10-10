@@ -80,7 +80,29 @@ jobs:
             --jq "[.[] | select(.tag_name==\"${TAG}\") | select(.draft==false)] | .[0].id // empty")
           [ -z "$published" ] || { echo "${TAG} is already published"; exit 1; }
 
+  # v10-0-plan E2 (§8 第 4 条): a release of a commit main has already
+  # checked — checks.yml on its push, every browser group on both engines,
+  # the static suite on three platforms — does not run those again. The
+  # engine soundness gates (release-only) and both platform builds always
+  # run. A rehearsal from a branch has no such run, and runs everything.
+  reuse:
+    runs-on: ubuntu-latest
+    outputs:
+      green: ${{ steps.find.outputs.green }}
+    steps:
+      - name: a green checks run on this commit's push to main?
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          n=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/checks.yml/runs?head_sha=${SHA}&event=push&status=success&per_page=1" --jq '.total_count' || echo 0)
+          if [ "${n:-0}" -gt 0 ]; then echo "green=true" >> "$GITHUB_OUTPUT"; echo "checks.yml is green on ${SHA}: static and browser gates reused"; else echo "green=false" >> "$GITHUB_OUTPUT"; fi
+
   static:
+    needs: reuse
+    if: needs.reuse.outputs.green != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -170,6 +192,8 @@ jobs:
   # scripts/test-chess.mjs checks every suite in `npm run test:e2e` is here,
   # and (v8-2-plan V4) that the group list is checks.yml's, entry for entry.
   browser:
+    needs: reuse
+    if: needs.reuse.outputs.green != 'true'
     runs-on: ubuntu-latest
     # v8-2-plan V4: each group's own limit, the same numbers as checks.yml
     # (was 60 for every group)
@@ -325,7 +349,10 @@ jobs:
       sdk_version: ${{ inputs.sdk_version }}
 
   publish:
-    needs: [preflight, static, engine, browser, build-macos, build-windows]
+    needs: [preflight, reuse, static, engine, browser, build-macos, build-windows]
+    # static and browser are skipped when `reuse` found them green on this
+    # commit already; anything failed or cancelled still stops the release
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

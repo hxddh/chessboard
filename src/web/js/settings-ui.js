@@ -104,9 +104,6 @@ export function createSettingsUI(d) {
       difficulty: store.session.difficulty, personaId: store.session.personaId,
       color: store.session.humanColor, timeControl: store.game.timeControl,
     };
-    document.querySelectorAll("#diff-seg button, #diff-seg-engine button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.diff === pick.difficulty);
-    });
     document.querySelectorAll("#persona-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.persona === pick.personaId);
     });
@@ -134,10 +131,8 @@ export function createSettingsUI(d) {
         if (inp && document.activeElement !== inp && Number(inp.value) !== v) inp.value = String(v);
       }
     }
-    const diffRow = document.getElementById("row-difficulty");
     const colorRow = document.getElementById("row-color");
     const clockRow = document.getElementById("row-clock");
-    if (diffRow) diffRow.hidden = ngMode !== "ai";
     const personaRow = document.getElementById("row-persona");
     if (personaRow) personaRow.hidden = ngMode !== "ai";
     // in the dialog a two-player game also chooses a side: which one sits at
@@ -230,16 +225,7 @@ export function createSettingsUI(d) {
       const inp = document.getElementById(id);
       if (inp) inp.onchange = () => { pickTc(customTc()); paintSettings(); };
     }
-    const onDiffClick = (ev) => {
-      const b = ev.target.closest("button[data-diff]");
-      if (!b || draftPick("difficulty", b.dataset.diff) || b.dataset.diff === store.session.difficulty) return;
-      store.session.difficulty = b.dataset.diff;
-      saveSettings();
-      store.commit("session", "sync");
-    };
-    document.getElementById("diff-seg").onclick = onDiffClick;
-    const diffEngineSeg = document.getElementById("diff-seg-engine");
-    if (diffEngineSeg) diffEngineSeg.onclick = onDiffClick;
+    // 10.0 M0: the rung is chosen on the opponent cards only (opponents-ui.js)
     document.getElementById("persona-seg").onclick = (ev) => {
       const b = ev.target.closest("button[data-persona]");
       if (!b || draftPick("personaId", b.dataset.persona) || b.dataset.persona === store.session.personaId) return;

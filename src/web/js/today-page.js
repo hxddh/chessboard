@@ -33,7 +33,7 @@ const RECENT = 4;
  */
 export function createTodayPage(d) {
   const {
-    doc, store, t, tf, tdot, Chess, pieceSrc, LESSONS, lessonText, Endgames, CLASSICS, classicText,
+    doc, store, t, tf, tdot, Chess, pieceSrc, LESSONS, lessonText, Endgames, CLASSICS, classicsTotal, classicText,
     loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText, drawRatingTrend,
     Shell, requestNewGame,
   } = d;
@@ -117,7 +117,9 @@ export function createTodayPage(d) {
     const bar = node.querySelector(".today-bar");
     if (bar) {
       bar.style.setProperty("--p", String(total ? Math.round((done / total) * 100) : 0));
-      bar.dataset.n = done + "/" + total;
+      // v10-0-plan T5: not begun is an invitation, not an empty bar and 0/7
+      bar.classList.toggle("fresh", !done);
+      bar.dataset.n = done ? done + "/" + total : t("today.notStarted");
     }
   }
 
@@ -151,7 +153,7 @@ export function createTodayPage(d) {
       const tx = classicText(c);
       const gs = ls.gs || {};
       fillCard(card("classic"), fenOfClassic(ci), tdot(t("train.classic"), String(c.year)),
-        tx.white + " – " + tx.black, CLASSICS.filter((x) => gs[x.id]).length, CLASSICS.length);
+        tx.white + " – " + tx.black, CLASSICS.filter((x) => gs[x.id]).length, classicsTotal ? classicsTotal() : CLASSICS.length);
     }
   }
 
@@ -196,15 +198,20 @@ export function createTodayPage(d) {
   }
 
   function renderRatings() {
+    // v10-0-plan T5: a rating not yet earned says how to earn it — no dash,
+    // no flat line, no 1500 nobody has played for
+    const rate = (id, has, text, ys) => {
+      const b = $(id), cv = $(id + "-cv");
+      put(b, has ? text : t(id === "today-r-game" ? "today.rGameNone" : "today.rPzNone"));
+      if (b) b.classList.toggle("today-invite", !has);
+      if (cv) cv.hidden = ys.length < 2;
+      if (cv && cv.clientWidth && ys.length > 1) drawRatingTrend(cv, ys);
+    };
     const series = Metrics.gameRatingSeries(loadStats().games, 60);
-    put($("today-r-game"), series.length ? String(series[series.length - 1].r) : "—");
-    const gcv = $("today-r-game-cv");
-    if (gcv && gcv.clientWidth) drawRatingTrend(gcv, series.length > 1 ? series.map((p) => p.r) : [1, 1]);
+    rate("today-r-game", series.length > 0, series.length ? String(series[series.length - 1].r) : "", series.map((p) => p.r));
     const st = store.session.puzzleState || {};
-    put($("today-r-pz"), puzzleRatingText());
-    const pcv = $("today-r-pz-cv");
     const ys = (Array.isArray(st.rhist) ? st.rhist : []).map((h) => h.r);
-    if (pcv && pcv.clientWidth) drawRatingTrend(pcv, ys.length > 1 ? ys : [1, 1]);
+    rate("today-r-pz", ys.length > 0, puzzleRatingText(), ys);
   }
 
   function render() {

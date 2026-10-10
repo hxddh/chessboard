@@ -65,7 +65,7 @@ export function createPuzzlesUI(d) {
     Audio2, BoardView, RepUI, animateReply, appGameOver, avail, checkNewAchievements, choosePromotion,
     clearPreview, clearSelection, confirmNative, cursorSquare, dailyJump, dailyStepIsHere, el, gameLoadPgn,
     gameReset, invalidateEngine, kingSquare, loadHistoryRecord, loadLibraryEntry, loadStats, maybeEngineTurn,
-    motifKeyOf, moveSound, puzzleIdea, puzzleMotif, puzzleName, renderPuzzleTally, renderRepertoire,
+    motifKeyOf, moveSound, puzzleIdea, puzzleMotif, puzzleName, goalName, renderPuzzleTally, renderRepertoire,
     resetClocks, sanHistory, saveGame, saveSettings, selectSquare, setIcon, setText, setViewIndex, sideName,
     startLearn, stopLearn, store, sync, t, tf, toast, switchMode, setSideTab, drawRatingTrend,
   } = d;
@@ -90,6 +90,7 @@ export function createPuzzlesUI(d) {
     ...Book, ...Rating,
     doc: document, store, t, tf, el, avail, setText, sync, toast, Audio2, drawRatingTrend, motifKeyOf,
     saveSettings, switchMode, setSideTab, seatPuzzle, startPuzzles, puzzleHumanSide, makeVis: (k, alive) => Vis.make(k, alive),
+    onPlaced: d.onPlaced, goHome: d.goHome,
   });
   // v8-2-plan T2: 看 N 步后 and 盲走收官, beside the modes above — the door
   // (trainer/visual.js); the modes themselves are chunk-visual.js
@@ -234,14 +235,14 @@ export function createPuzzlesUI(d) {
     if (isOpeningCat(p.cat)) return tf(p.side === "b" ? "pz.goalOpB" : "pz.goalOp", [puzzleName(p), Math.ceil(p.line.length / 2)]);
     // v8-0-plan B1: a Lichess puzzle keeps its side, and the goal says which
     const b = p.side === "b";
-    if (p.cat === "win") return tf(b ? "pz.goalWinB" : "pz.goalWin", [puzzleName(p), p.gain]);
-    if (p.cat === "tac") return tf(b ? "pz.goalTacB" : "pz.goalTac", [puzzleName(p), puzzleMotif(p), p.gain]);
-    if (p.cat === "real") return tf("pz.goalReal", [puzzleName(p), p.men, p.gain]);
-    if (p.cat === "def") return tf(b ? "pz.goalDefB" : "pz.goalDef", [puzzleName(p)]);
-    if (p.cat === "draw") return tf("pz.goalDraw", [puzzleName(p)]);
+    if (p.cat === "win") return tf(b ? "pz.goalWinB" : "pz.goalWin", [goalName(p), p.gain]);
+    if (p.cat === "tac") return tf(b ? "pz.goalTacB" : "pz.goalTac", [goalName(p), t("pz.forcing"), p.gain]);
+    if (p.cat === "real") return tf("pz.goalReal", [goalName(p), p.men, p.gain]);
+    if (p.cat === "def") return tf(b ? "pz.goalDefB" : "pz.goalDef", [goalName(p)]);
+    if (p.cat === "draw") return tf("pz.goalDraw", [goalName(p)]);
     // the count is a word in Chinese ("一步"), a numeral in English — so it
     // goes through the dictionary rather than being interpolated raw
-    return tf(b ? "pz.goalMateB" : "pz.goalMate", [puzzleName(p), t("pz.n." + (PUZZLE_MOVES[p.cat] || 1))]);
+    return tf(b ? "pz.goalMateB" : "pz.goalMate", [goalName(p), t("pz.n." + (PUZZLE_MOVES[p.cat] || 1))]);
   }
 
   /** The chair the solver sits in: white everywhere except black op drills. */
@@ -764,6 +765,19 @@ export function createPuzzlesUI(d) {
     startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx + 1);
   }
 
+  /**
+   * 已解 N / M for what is being practised: inside a kind (9.0 S3) that
+   * kind's count, built-in and bank together — the built-in book's 1,386
+   * beside a kind of 53k was two different "all" on one screen (10.0 M0).
+   */
+  function solvedOf() {
+    const solved = store.session.puzzleState.solved, cat = store.session.puzzleState.cat;
+    if (isGroupCat(cat)) {
+      const g = cat.slice(GROUP_CAT.length);
+      return [Modes.groupList(g).filter((p) => solved[p.id]).length, Modes.groupCount(g)];
+    }
+    return [bookNow().filter((p) => solved[p.id]).length, bookNow().length];
+  }
   function syncPuzzleUI() {
     paintPuzzlePanel();
     // v8-0-plan B1: the rating, the run card and the theme row, over the rest
@@ -787,10 +801,10 @@ export function createPuzzlesUI(d) {
       const g = b.dataset.group;
       b.classList.toggle("active", g === on);
       b.setAttribute("aria-pressed", g === on ? "true" : "false");
-      if (g === "mine") b.hidden = !store.session.mines.length;
       const n = g === "opening" ? ALL_PUZZLES.filter((p) => p.cat === "op").length
         : g === "mine" ? store.session.mines.length : Modes.groupCount(g);
-      setText(b.querySelector(".pz-tile-n"), tf("pz.countN", [n]));
+      // v10-0-plan T2: 我的错题 is always there; empty, it says how it fills
+      setText(b.querySelector(".pz-tile-n"), g === "mine" && !n ? t("pz.mineNone") : tf("pz.countN", [n]));
     });
   }
 
@@ -805,8 +819,7 @@ export function createPuzzlesUI(d) {
     if (!store.session.puzzle) {
       syncOpSideSeg(store.session.puzzleState.cat);
       const emptyProg = document.getElementById("puzzle-progress");
-      if (emptyProg) emptyProg.textContent = tf("pz.solvedCount",
-        [bookNow().filter((p) => store.session.puzzleState.solved[p.id]).length, bookNow().length]);
+      if (emptyProg) emptyProg.textContent = tf("pz.solvedCount", solvedOf());
       const emptyTask = document.getElementById("puzzle-task");
       if (emptyTask) emptyTask.textContent = t("theme.loading");
       const emptyList = document.getElementById("puzzle-list");
@@ -815,21 +828,21 @@ export function createPuzzlesUI(d) {
       return;
     }
     const list = puzzlesInCat(store.session.puzzle.cat);
-    const solvedAll = bookNow().filter((p) => store.session.puzzleState.solved[p.id]).length;
     const missedCount = puzzlesInCat("review").length;
     const prog = document.getElementById("puzzle-progress");
     if (prog) {
       prog.textContent = store.session.puzzle.cat === "review"
         ? tf("pz.missedCount", [missedCount])
         : store.session.puzzle.cat === "repdue" ? tf("rep.dueLeft", [list.length])
-        : tf("pz.solvedCount", [solvedAll, bookNow().length]);
+        : tf("pz.solvedCount", solvedOf());
     }
     syncOpSideSeg(store.session.puzzle.cat);
     const task = document.getElementById("puzzle-task");
     if (task) {
       // 「第 N 题」 is the chip's job now (7.3 B4) — the card carries the goal,
       // the detail and, where there is one, the puzzle's rating
-      task.textContent = store.session.puzzle.done
+      // a run's puzzle is done when answered either way, and its card says how
+      task.textContent = store.session.puzzle.done && !store.session.puzzle.run
         ? t("pz.solvedNext")
         : tdot(puzzleGoalText(), puzzleRatingOf(store.session.puzzle.p) != null && tf("pz.ratingOf", [puzzleRatingOf(store.session.puzzle.p)]));
     }
@@ -894,7 +907,8 @@ export function createPuzzlesUI(d) {
     // 9.0 S3: the six kinds, and the review queue as its own card
     document.getElementById("pz-groups").onclick = (ev) => {
       const b = ev.target.closest("button[data-group]");
-      if (b) Modes.goGroup(b.dataset.group);
+      if (b && b.dataset.group === "mine" && !store.session.mines.length) toast(t("pz.mineEmpty"), "fix");
+      else if (b) Modes.goGroup(b.dataset.group);
     };
     document.getElementById("pz-review").onclick = () => {
       if (store.session.run) { Modes.endRun(); store.session.run = null; }
@@ -968,12 +982,13 @@ export function createPuzzlesUI(d) {
   // Mistakes are the same modules the book imports.
   const { onMinedArrived, ALL_PUZZLES, Library, loadMines, saveMines, Planner, loadPuzzleState, practiceLeft } = Book;
   const { ratingLabel, ratingTip } = Rating;
+  const { startPlacement, goTheme } = Modes; // v10-0-plan T1 (the first-run question), A3 (⌘K)
   return {
     wirePuzzlePanel,
     onMinedArrived, ALL_PUZZLES, Library, Mistakes, loadMines, saveMines, Progress, Planner,
     saveProgress, bookNow, loadPuzzleState, savePuzzleState, Srs, Picker,
     owedNow, ratingLabel, ratingTip, practiceLeft, puzzlesInCat, puzzleRatingOf,
     startPuzzleAt, startPuzzles, stopPuzzles, puzzleModel, puzzleHumanSide, puzzleClick,
-    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, closeThemes: () => Modes.closeThemes(), Vis,
+    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, closeThemes: () => Modes.closeThemes(), Vis, startPlacement, goTheme,
   };
 }

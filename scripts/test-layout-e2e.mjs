@@ -42,6 +42,7 @@ import { PAGE_HOOK, makeFrameWatch } from "./lib/frame-watch.mjs";
 import { layoutProbe } from "./lib/layout-probe.mjs";
 import { playOpera, analyseOpera } from "./lib/opera-fixture.mjs";
 import { loadAppModules } from "./lib/app-module.mjs";
+import { settle } from "./lib/settle.mjs";
 
 // v8-0-plan F1: SHARD=i/n runs every n-th scenario; unset runs all of them
 const scenario = makeScenarioGate(process.env.SHARD);
@@ -130,7 +131,7 @@ const CATS = ["general", "board", "sound", "game", "data", "advanced"];
  */
 async function showCat(page, cat) {
   await page.evaluate((c) => document.getElementById("cat-" + c).click(), cat);
-  await page.waitForTimeout(250);
+  await settle(page);
 }
 /**
  * 9.0 S5: 难度 / 风格 / 执子 / 棋钟 live in the new-game dialog only (they
@@ -141,10 +142,10 @@ async function showCat(page, cat) {
  */
 async function openNewGame(page, custom = true) {
   await page.evaluate(() => document.getElementById("btn-new").click());
-  await page.waitForTimeout(400);
+  await settle(page);
   if (custom) {
     await page.evaluate(() => { const d = document.getElementById("ng-custom"); if (d) d.open = true; });
-    await page.waitForTimeout(200);
+    await settle(page);
   }
 }
 /**
@@ -154,7 +155,7 @@ async function openNewGame(page, custom = true) {
  * needs the editor or the slots never measures a page without them.
  */
 async function pressMore(page, id) {
-  if (!(await page.isVisible("#" + id))) { await page.click("#more-tools", { timeout: 3000 }); await page.waitForTimeout(250); }
+  if (!(await page.isVisible("#" + id))) { await page.click("#more-tools", { timeout: 3000 }); await settle(page); }
   await page.click("#" + id, { timeout: 3000 });
 }
 /** 开始: the dialog's draft becomes the settings and the game starts. */
@@ -182,8 +183,8 @@ if (scenario()) {
       [...document.querySelectorAll("#newgame-modal .theme-row.wrap")].filter((r) => r.offsetParent).length);
     assert(rows > 0, lang + ": the wrapped segments are on screen (" + rows + ")");
     // …and the settings page's own wrapped rows (the look pickers, 棋盘)
-    await page.keyboard.press("Escape"); await page.waitForTimeout(300);
-    await page.click('.rail-btn[data-view="settings"]'); await page.waitForTimeout(300);
+    await page.keyboard.press("Escape"); await settle(page);
+    await page.click('.rail-btn[data-view="settings"]'); await settle(page);
     await showCat(page, "board");
     const look = await page.evaluate(() =>
       [...document.querySelectorAll("#set-board .theme-row.wrap")].filter((r) => r.offsetParent).length);
@@ -203,7 +204,7 @@ if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "play");
     await page.evaluate(() => document.getElementById("btn-new").click());
-    await page.waitForTimeout(400);
+    await settle(page);
     const seg = await page.evaluate(() => {
       const el = document.getElementById("mode-seg");
       const pane = el.closest(".modal").getBoundingClientRect();
@@ -260,25 +261,23 @@ if (scenario()) {
       engine: ["初級", "初級+", "中級−", "中級", "中級+", "上級−", "上級", "上級+", "エキスパート", "エキスパート+", "マスター", "マスター+", "強力", "強力+", "全力"] },
   };
   for (const lang of LANGS) {
-    // 9.0 S5: the rungs are the new-game dialog's (自定义), not the 设置 tab's
+    // 9.0 S5: the rungs are the new-game dialog's. 10.0 M0: chosen on the
+    // opponent cards alone — 更多选项 open shows all twenty-one; the two rows
+    // of rung names that repeated them are gone. A card names its rung (or,
+    // for the three with a style, the style) under the persona's name.
     const { ctx, page } = await open(lang, "ai", "play");
     await openNewGame(page);
-    const labels = await page.evaluate(() => ({
-      spar: [...document.querySelectorAll("#diff-seg button")].map((b) => b.textContent.trim()),
-      engine: [...document.querySelectorAll("#diff-seg-engine button")].map((b) => b.textContent.trim()),
-      groups: [...document.querySelectorAll("#row-difficulty .diff-group")].map((s) => s.textContent.trim()),
-      // there must be no third heading above the two group labels
-      keys: [...document.querySelectorAll("#row-difficulty .setting-k")].length,
-    }));
-    assert(labels.spar.length === 6 && labels.engine.length === 15, lang + ": 6 sparring tiers, 15 engine tiers");
-    assert(labels.groups.length === 2, lang + ": both groups are labelled");
-    assert(labels.keys === 0, lang + ": no redundant 难度 heading above the group labels");
-    const all = labels.spar.concat(labels.engine);
-    assert(new Set(all).size === all.length, lang + ": all twenty-one labels are distinct — " + all.join(" / "));
-    assert(JSON.stringify(labels.spar) === JSON.stringify(EXPECT[lang].spar),
-      lang + ": the sparring pair is the reviewed one — " + labels.spar.join(" / "));
-    assert(JSON.stringify(labels.engine) === JSON.stringify(EXPECT[lang].engine),
-      lang + ": the engine ladder is the reviewed one — " + labels.engine.join(" / "));
+    const cards = await page.evaluate(() => [...document.querySelectorAll("#op-grid .op-card")].filter((b) => !b.hidden).map((b) => ({
+      name: b.querySelector(".op-name").textContent.trim(), rating: Number(b.querySelector(".op-rating").textContent),
+      sub: b.querySelector(".op-style").textContent.trim() })));
+    const rows = await page.evaluate(() => document.querySelectorAll("#row-difficulty, #diff-seg, #diff-seg-engine").length);
+    assert(cards.length === 21 && rows === 0, lang + ": 21 opponent cards with 更多选项 open, and no second list of rungs (" + cards.length + " / " + rows + ")");
+    assert(new Set(cards.map((c) => c.name)).size === 21, lang + ": all twenty-one names are distinct");
+    assert(cards.every((c, i) => i === 0 || c.rating > cards[i - 1].rating), lang + ": the cards climb the ladder in rating order");
+    const ladder = EXPECT[lang].spar.concat(EXPECT[lang].engine);
+    const off = cards.map((c, i) => [c.sub, ladder[i]]).filter(([sub]) => ladder.includes(sub));
+    assert(off.length >= 18 && off.every(([sub, want]) => sub === want),
+      lang + ": each card's rung is the reviewed label — " + off.map(([sub]) => sub).join(" / "));
     await ctx.close();
   }
 }
@@ -406,7 +405,7 @@ if (scenario()) {
     const wide = await page.evaluate(() => document.querySelector(".chrome").getBoundingClientRect().height);
     assert(wide === 0, lang + ": 1400 wide, the bar takes no height (" + wide + ")");
     await page.setViewportSize({ width: 760, height: 900 });
-    await page.waitForTimeout(400);
+    await settle(page);
     const bar = await page.evaluate(() => {
       const ch = document.querySelector(".chrome");
       const cr = ch.getBoundingClientRect();
@@ -465,7 +464,7 @@ if (scenario()) {
         return { x: r.left + (co + 0.5) * (r.width / 8), y: r.top + (ro + 0.5) * (r.height / 8) };
       }, sq);
       await page.mouse.click(pt.x, pt.y);
-      await page.waitForTimeout(200);
+      await settle(page);
     }
   };
   const read = () => page.evaluate(() => {
@@ -497,21 +496,21 @@ if (scenario()) {
   assert(played.b.active && !played.w.active, "…and after 1.f3 it is Black's strip that is lit");
 
   await page.click("#toggle-panel");
-  await page.waitForTimeout(400);
+  await settle(page);
   const shut = await read();
   assert(shut.w.shown && shut.b.shown && shut.w.name && shut.b.name,
     "shutting the panel does not take the players away (" + shut.w.name + " / " + shut.b.name + ")");
   // F turns the board and the strips go with it
   await page.keyboard.press("f");
-  await page.waitForTimeout(300);
+  await settle(page);
   const flipped = await read();
   assert(flipped.w.top && !flipped.b.top, "a flipped board carries the strips round: White is above now");
   assert(Math.abs(flipped.w.b - flipped.board.t) <= 1, "…still hugging the edge it moved to");
   await page.keyboard.press("f");
-  await page.waitForTimeout(300);
+  await settle(page);
   // Fool's mate: the result goes on the strips, and nobody is lit any more
   await clickSquares(["e7", "e5", "g2", "g4", "d8", "h4"]);
-  await page.waitForTimeout(400);
+  await settle(page);
   const over = await read();
   assert(over.w.result === "0" && over.b.result === "1", "checkmate writes the score on the strips (" + over.w.result + " / " + over.b.result + ")");
   assert(!over.w.active && !over.b.active, "…and neither side is lit once the game is over");
@@ -529,9 +528,10 @@ if (scenario()) {
     wIcon: (document.querySelector("#av-w svg") || {}).dataset?.icon,
     wName: document.getElementById("white-role").textContent.trim(),
   }));
-  // v8-0-plan B4: the persona of the rung (中级, no style: 索尔, a star), with its rating
-  assert(r.bName === "索尔" && /中级 1700/.test(r.bLevel), "the engine's strip names its persona, level and rating (" + r.bName + " · " + r.bLevel + ")");
-  assert(r.bIcon === "star" && r.wIcon === "user", "…with the persona's icon on it, and yours on your own (" + r.bIcon + " / " + r.wIcon + ")");
+  // v8-0-plan B4: the persona of the rung, with its rating — 10.0 T1: a new
+  // install's rung is 休闲 (托莫, an hourglass), no longer 中级 (索尔)
+  assert(r.bName === "托莫" && /休闲 670/.test(r.bLevel), "the engine's strip names its persona, level and rating (" + r.bName + " · " + r.bLevel + ")");
+  assert(r.bIcon === "hourglass" && r.wIcon === "user", "…with the persona's icon on it, and yours on your own (" + r.bIcon + " / " + r.wIcon + ")");
   await ctx.close();
 }
 
@@ -589,7 +589,7 @@ if (scenario()) for (const [w, h] of [[1400, 900], [900, 700], [520, 520]]) {
     await page.click('#newgame-modal #persona-seg button[data-persona="principled"]');
     await page.click('#newgame-modal #clock-seg-more button[data-tc="3+2"]');
     await startNewGame(page);
-    if (w <= 820) { await page.keyboard.press("p"); await page.waitForTimeout(400); }
+    if (w <= 820) { await page.keyboard.press("p"); await settle(page); }
     const r = await page.evaluate(() => {
       const ch = document.querySelector(".chrome");
       const wrap = document.getElementById("board-wrap").getBoundingClientRect();
@@ -662,13 +662,13 @@ if (scenario()) for (const [when, mode, setup] of [
         return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
       }, sq);
       await page.mouse.click(c.x, c.y);
-      await page.waitForTimeout(120);
+      await settle(page);
     }
   }],
 ]) {
   const { ctx, page } = await open("zh-CN", mode, "play");
   await setup(page);
-  await page.waitForTimeout(400);
+  await settle(page);
   const bad = await page.evaluate(() => {
     const out = [];
     for (const b of document.querySelectorAll("button, input, select")) {
@@ -759,10 +759,10 @@ if (scenario()) {
                    y: r.top + (8 - Number(x[1]) + 0.5) * (r.height / 8) };
         }, sqr);
         await page.mouse.click(pt.x, pt.y);
-        await page.waitForTimeout(240);
+        await settle(page);
       };
       await prep(page, sqClick);
-      await page.waitForTimeout(300);
+      await settle(page);
       return { ctx, page };
     };
     const snapshot = (page) => page.evaluate(() => {
@@ -794,7 +794,7 @@ if (scenario()) {
         });
         since = showing ? 0 : since + 300;
         if (since >= QUIET_MS) return;
-        await page.waitForTimeout(300);
+        await settle(page);
       }
     };
     const { ctx: c0, page: p0 } = await fresh();
@@ -820,7 +820,7 @@ if (scenario()) {
       // canvas, and erasing the keyboard cursor is a canvas change worth
       // exactly 3384 pixels that has nothing to do with the button
       await page.evaluate((i) => document.querySelector(i).focus(), id);
-      await page.waitForTimeout(200);
+      await settle(page);
       await quiet(page);
       const before = await snapshot(page);
       await page.click(id, { timeout: 2000 }).catch(() => {});
@@ -851,12 +851,12 @@ if (scenario()) {
   const { ctx, page } = await open("zh-CN", "pvp", "settings");
   await showCat(page, "game");
   await page.click("#opt-autoflip");
-  await page.waitForTimeout(300);
+  await settle(page);
   assert(await page.evaluate(() => document.getElementById("opt-autoflip").getAttribute("aria-pressed")) === "true",
     "自动翻转:开关按下去真的开了");
   // back to the board by the rail (was: the panel's 对局 tab)
   await page.click('.rail-btn[data-view="play"]');
-  await page.waitForTimeout(400);
+  await settle(page);
   const view = () => page.evaluate(() => [...document.querySelectorAll("#orient-seg button")]
     .filter((b) => b.classList.contains("active")).map((b) => b.dataset.orient)[0]);
   const play = async (sqr) => {
@@ -868,7 +868,7 @@ if (scenario()) {
       return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
     }, [sqr, flipped]);
     await page.mouse.click(pt.x, pt.y);
-    await page.waitForTimeout(260);
+    await settle(page);
   };
   await play("e2"); await play("e4");
   assert(await view() === "b", "自动翻转:白走完一手,棋盘转向黑方");
@@ -882,9 +882,9 @@ if (scenario()) {
     Storage.prototype.setItem = function (...a) { n++; return orig.apply(this, a); };
     window.__writes = () => n; return 0;
   });
-  await page.click("#rep-prev"); await page.waitForTimeout(400);
+  await page.click("#rep-prev"); await settle(page);
   assert(await view() === "b", "复盘退一手,棋盘不动 —— 复盘不是对局");
-  await page.click("#rep-prev"); await page.waitForTimeout(400);
+  await page.click("#rep-prev"); await settle(page);
   assert(await view() === "b", "……再退一手,还是不动");
   assert(await page.evaluate(() => window.__writes()) === 0,
     "……而且这两步没有写设置(此前每翻一次就存一次盘)");
@@ -906,7 +906,7 @@ if (scenario()) for (const lang of LANGS) {
     // 档位 / 风格 / 执子 / 棋钟)
     const { ctx, page } = await open(lang, "ai", "settings");
     await page.evaluate((th) => document.documentElement.setAttribute("data-theme", th), theme);
-    await page.waitForTimeout(250);
+    await settle(page);
     const readClipped = (where) => page.evaluate((w) => {
       const out = [];
       for (const e of document.querySelectorAll("button, .setting-k, .side-h, .act-k, .vs-role")) {
@@ -927,7 +927,7 @@ if (scenario()) for (const lang of LANGS) {
       await showCat(page, cat);
       clipped.push(...await readClipped(cat));
     }
-    await page.click('.rail-btn[data-view="play"]'); await page.waitForTimeout(300);
+    await page.click('.rail-btn[data-view="play"]'); await settle(page);
     await openNewGame(page);
     clipped.push(...await readClipped("newgame"));
     for (const c of new Set(clipped)) console.error("  clipped: " + c);
@@ -960,7 +960,7 @@ if (scenario()) for (const tab of ["play", "settings"]) {
   await page.evaluate(() => {
     for (const d of document.querySelectorAll("#side details")) d.open = true;
   });
-  await page.waitForTimeout(300);
+  await settle(page);
   const past = () => page.evaluate((onPage) => {
     const res = [];
     if (!onPage) {
@@ -1013,7 +1013,7 @@ if (scenario()) for (const tab of ["play", "settings"]) {
   await page.evaluate(() => {
     for (const d of document.querySelectorAll("#side details")) d.open = true;
   });
-  await page.waitForTimeout(300);
+  await settle(page);
   const read = () => page.evaluate((sel) => {
     const out = [];
     for (const b of document.querySelectorAll(sel)) {
@@ -1056,7 +1056,7 @@ if (scenario()) for (const tab of ["play", "settings"]) {
 if (scenario()) {
   const TOKENS = ["--bg","--panel","--panel-border","--text","--muted","--accent","--win",
     "--btn","--btn-hover","--btn-ghost","--card","--card-border",
-    "--primary-from","--primary-to","--danger","--on-primary","--on-accent","--on-danger"];
+    "--danger","--on-accent","--on-danger"];
   for (const theme of ["wood","night","day","notebook"]) {
     const { ctx, page } = await open("zh-CN", "ai", "settings", theme);
     const empty = await page.evaluate((names) => {
@@ -1095,7 +1095,7 @@ if (scenario()) {
   const bad = [];
   for (let i = 0; i < 14; i++) {
     await page.keyboard.press("Tab");
-    await page.waitForTimeout(50);
+    await settle(page);
     const r = await page.evaluate(() => {
       const e = document.activeElement;
       if (!e || e === document.body) return null;
@@ -1162,14 +1162,14 @@ if (scenario()) for (const theme of ["wood", "night", "day", "notebook"]) {
   }, sel);
   const low = [];
   for (const cat of CATS) { await showCat(page, cat); low.push(...(await measure("#page-settings *")).map((l) => cat + ":" + l)); }
-  await page.click('.rail-btn[data-view="play"]'); await page.waitForTimeout(300);
+  await page.click('.rail-btn[data-view="play"]'); await settle(page);
   low.push(...await measure(".chrome *, #strip-tools *"));
   await openNewGame(page);
   low.push(...(await measure("#newgame-modal *")).map((l) => "newgame:" + l));
-  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+  await page.keyboard.press("Escape"); await settle(page);
   // 9.0 S1 / S3: 今天, and 训练's panel — its switch, the lesson card and the
   // puzzle picker (the rating, the review card, the six tiles, 换个练法)
-  await page.click('.rail-btn[data-view="home"]'); await page.waitForTimeout(400);
+  await page.click('.rail-btn[data-view="home"]'); await settle(page);
   low.push(...(await measure("#page-home *")).map((l) => "today:" + l));
   await page.click('.rail-btn[data-view="train"]'); await page.waitForTimeout(500);
   for (const seg of ["course", "puzzle"]) {
@@ -1248,58 +1248,34 @@ if (scenario()) {
   }
 }
 
-// --- 3m3. the records page opens as a door, not as a wall -----------------
+// --- 3m3. the records page opens on a sentence, not as a wall -----------
 // A fresh install used to open 记录 on two grey sentences saying nothing had
 // happened yet and fifteen 🔒 rows under a 0/15 — a wall with the score
-// already on it. Now: a card naming what the page will hold and three doors,
-// each labelled with the badge behind it, and the locked list folds after the
-// three closest.
+// already on it. 8.x put three doors there (上课 / 做题 / 下棋); 10.0 M0 took
+// them away again — they were the third copy of what 今天 and 训练 offer.
+// Now: one sentence naming what the page will hold, and the locked list
+// folded after the three closest.
 if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "record");
   const fresh = await page.evaluate(() => {
     const card = document.getElementById("record-empty");
-    const doors = [...document.querySelectorAll(".rec-door")];
     const locked = [...document.querySelectorAll(".ach-item:not(.got)")].filter((e) => e.offsetParent);
     const more = document.getElementById("ach-more");
-    return { shown: !!card && !card.hidden,
-             doors: doors.map((b) => b.dataset.mode),
-             subs: doors.map((b) => b.querySelector(".rec-door-v").textContent.trim()),
+    return { shown: !!card && !card.hidden, buttons: card ? card.querySelectorAll("button").length : -1,
+             text: card ? card.textContent.trim() : "",
              locked: locked.length, more: more ? more.textContent.trim() : null };
   });
-  assert(fresh.shown, "全新安装打开记录页,先看到的是入口卡片");
-  assert(fresh.doors.join(",") === "learn,puzzle,ai",
-    "……三扇门:上课、做题、下棋(" + fresh.doors.join(", ") + ")");
-  assert(fresh.subs.every((x) => x.includes("「")),
-    "……每扇门上写着它开的那个成就(" + fresh.subs.join(" / ") + ")");
+  assert(fresh.shown && fresh.text.length > 0, "全新安装打开记录页,先看到一句话说这一页会记什么(" + fresh.text + ")");
+  assert(fresh.buttons === 0, "……那张卡片上没有训练的入口(今天、训练已经有了)(" + fresh.buttons + ")");
   assert(fresh.locked === 3, "锁着的成就只站出来三个,不是十五个(" + fresh.locked + ")");
   assert(fresh.more && /12/.test(fresh.more), "……其余的收在一个数字后面(" + fresh.more + ")");
 
   // the fold opens
   await page.click("#ach-more");
-  await page.waitForTimeout(250);
+  await settle(page);
   const opened = await page.evaluate(() =>
     [...document.querySelectorAll(".ach-item:not(.got)")].filter((e) => e.offsetParent).length);
   assert(opened === 15, "按下去十五个都在(" + opened + ")");
-
-  // and a door goes where it says: 教学 mode, on the 对局 tab
-  await page.click('.rec-door[data-mode="learn"]');
-  await page.waitForTimeout(600);
-  // 9.0 S5: the panel has no tabs — "on the 对局 tab" is "on the 学习 board,
-  // with the lesson card showing in the panel's one pane"
-  const went = await page.evaluate(() => ({
-    mode: document.getElementById("app").dataset.mode,
-    view: document.getElementById("app").dataset.view,
-    lesson: !!document.getElementById("sec-learn") && !document.getElementById("sec-learn").hidden
-      && !!document.getElementById("sec-learn").offsetParent,
-  }));
-  assert(went.mode === "learn", "「上第 1 课」真的进了教学(" + went.mode + ")");
-  // 9.0 S3: 学习 is 训练's 课程 segment — the view is train, the switch on 课程
-  const seg = await page.evaluate(() => {
-    const b = document.querySelector('#train-seg button[aria-pressed="true"]');
-    return b ? b.dataset.seg : null;
-  });
-  assert(went.view === "train" && went.lesson, "……并且落在训练页面板里的课程卡上(" + went.view + ")");
-  assert(seg === "course", "……训练的切换停在「课程」上(" + seg + ")");
   await ctx.close();
 }
 
@@ -1314,7 +1290,7 @@ if (scenario()) {
 if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   const bare = await page.evaluate(() => {
-    const sel = 'button, [role="tab"], summary, .lesson-item, .hist-row, .ach-item, .mlrow, .rec-door';
+    const sel = 'button, [role="tab"], summary, .lesson-item, .hist-row, .ach-item, .mlrow';
     return [...new Set([...document.querySelectorAll(sel)].filter((e) => e.offsetParent)
       .filter((e) => ["none", "all"].includes(getComputedStyle(e).transitionProperty))
       .map((e) => e.id || e.className || e.tagName))];
@@ -1339,14 +1315,14 @@ if (scenario()) {
     .filter((e) => e.offsetParent)
     .filter((e) => ["none", "all"].includes(getComputedStyle(e).transitionProperty))
     .map((e) => e.id || e.className || e.tagName))], root);
-  await page.click('.rail-btn[data-view="home"]'); await page.waitForTimeout(400);
+  await page.click('.rail-btn[data-view="home"]'); await settle(page);
   const bareToday = await bareIn("#page-home");
-  await page.click('.rail-btn[data-view="train"]'); await page.waitForTimeout(400);
+  await page.click('.rail-btn[data-view="train"]'); await settle(page);
   await page.click('#train-seg button[data-seg="puzzle"]'); await page.waitForTimeout(600);
   const bareTrain = await bareIn("#pane-play");
   assert(bareToday.length === 0 && bareTrain.length === 0, "今天页与训练面板上能按的东西也都声明了过渡" +
     (bareToday.length + bareTrain.length ? " —— 没有的:" + bareToday.concat(bareTrain).join(", ") : ""));
-  await page.click('.rail-btn[data-view="settings"]'); await page.waitForTimeout(400);
+  await page.click('.rail-btn[data-view="settings"]'); await settle(page);
   const tab = await page.evaluate(async () => {
     const cur = document.querySelector(".set-cat[aria-selected=\"true\"]");
     const next = [...document.querySelectorAll(".set-cat")].find((b) => b !== cur);
@@ -1399,13 +1375,13 @@ if (scenario()) {
       .map((e) => e.id || e.className || e.tagName));
   const anon = [];
   for (const cat of CATS) { await showCat(page, cat); anon.push(...await nameless()); }
-  await page.click('.rail-btn[data-view="play"]'); await page.waitForTimeout(300);
+  await page.click('.rail-btn[data-view="play"]'); await settle(page);
   await openNewGame(page);
   anon.push(...await nameless());
   // 9.0 S1 / S3: 今天 (its cards are buttons with a mini board in them), and
   // 训练's panel in each of its four segments
-  await page.keyboard.press("Escape"); await page.waitForTimeout(300);
-  await page.click('.rail-btn[data-view="home"]'); await page.waitForTimeout(400);
+  await page.keyboard.press("Escape"); await settle(page);
+  await page.click('.rail-btn[data-view="home"]'); await settle(page);
   const todayN = await page.evaluate(() => [...document.querySelectorAll("#page-home button")].filter((e) => e.offsetParent).length);
   assert(todayN >= 5, "今天 has its buttons on screen (" + todayN + ")");
   anon.push(...(await nameless()).map((x) => "today:" + x));
@@ -1425,7 +1401,7 @@ if (scenario()) {
 // contents stacked in that one column. P3.5.
 if (scenario()) {
   const { ctx, page } = await open("zh-CN", "learn", "play");
-  await page.waitForTimeout(400);
+  await settle(page);
   const st = await page.evaluate(() => {
     const side = document.getElementById("side");
     const idx = document.querySelector("#sec-learn .reading-index");
@@ -1479,7 +1455,8 @@ if (scenario()) {
   });
   assert(!st.shut.open, "the rungs and styles start folded (自定义)");
   assert(st.shut.visibleButtons === 0, "…so none of the buttons is on screen (" + st.shut.visibleButtons + ")");
-  assert(st.openButtons >= 14, "…and they are all there when you open it (" + st.openButtons + ")");
+  // 10.0 M0: five clocks and four styles — the rungs are the cards above it
+  assert(st.openButtons >= 9, "…and they are all there when you open it (" + st.openButtons + ")");
   await ctx.close();
 }
 
@@ -1551,13 +1528,13 @@ if (scenario()) {
       const rows = [];
       for (const cat of CATS) { await showCat(page, cat); rows.push(...await segs(cat)); }
       if (mode === "ai" || mode === "pvp") {
-        await page.click('.rail-btn[data-view="play"]'); await page.waitForTimeout(300);
+        await page.click('.rail-btn[data-view="play"]'); await settle(page);
         await openNewGame(page);
         rows.push(...await segs("newgame"));
       } else {
         // 9.0 S3: 训练's own segments are in the panel — the four-way switch
         // over it, and 名局's 读谱 / 猜着 (shown on the 名局 segment)
-        await page.click('.rail-btn[data-view="train"]'); await page.waitForTimeout(400);
+        await page.click('.rail-btn[data-view="train"]'); await settle(page);
         rows.push(...await segs("train"));
         if (mode === "learn") {
           await page.click('#train-seg button[data-seg="classic"]'); await page.waitForTimeout(600);
@@ -1719,13 +1696,13 @@ if (scenario()) {
                  y: r.top + (8 - Number(s[1]) + 0.5) * (r.height / 8) };
       }, sq);
       await page.mouse.click(pt.x, pt.y);
-      await page.waitForTimeout(220);
+      await settle(page);
     }
   };
   await clickSquares(["e2", "e4", "e7", "e5"]);
   const atLive = await bar();
   await page.click("#rep-prev");
-  await page.waitForTimeout(400);
+  await settle(page);
   const backOne = await bar();
   assert(atLive.length === 4 && backOne.length === 4, "four transport keys (" + atLive.map((b) => b.id).join(", ") + ")");
   assert(atLive.every((b) => b.icon), "…drawn as icons, not as « ‹ › » characters");
@@ -1785,7 +1762,7 @@ if (scenario()) {
   assert(t.hasClose && t.closeNamed && t.closeFocused,
     "…with a close control that is focusable and named");
   await page.keyboard.press("Escape");
-  await page.waitForTimeout(300);
+  await settle(page);
   assert(await page.evaluate(() => !document.getElementById("toast").classList.contains("show")),
     "…and Escape sends it away, like everything else transient here");
   // the receipt tier is polite, not assertive: it must not interrupt.
@@ -1794,7 +1771,7 @@ if (scenario()) {
   // 步」 or 「没有欠账」, either one an ok-tier message.
   // 9.0 S1: the plan's button is 今天's primary (#today-go), on that page
   await page.click('.rail-btn[data-view="home"]');
-  await page.waitForTimeout(400);
+  await settle(page);
   const ok = await page.evaluate(async () => {
     document.getElementById("today-go").click();
     await new Promise((r) => setTimeout(r, 300));
@@ -2273,7 +2250,7 @@ if (scenario()) {
       open: (document.querySelector('.set-cat[aria-selected="true"]') || {}).id,
       secs: Object.fromEntries([...document.querySelectorAll(".set-pane")].map((p) =>
         [p.id.slice(4), [...p.querySelectorAll(":scope > section")].map((s) => (s.querySelector(".side-h") || {}).textContent || "?")])),
-      gameRows: ["row-difficulty", "row-persona", "row-color", "row-clock", "mode-seg"]
+      gameRows: ["row-opponent", "row-persona", "row-color", "row-clock", "mode-seg"]
         .filter((id) => document.getElementById(id) && document.getElementById(id).closest("#page-settings")),
     }));
     const all = Object.values(pg.secs).flat();
@@ -2307,11 +2284,11 @@ if (scenario()) {
     "…and the panel has no tab row");
   // and the panel is still closable without it
   await page.click("#toggle-panel");
-  await page.waitForTimeout(400);
+  await settle(page);
   const open1 = await page.evaluate(() => document.getElementById("app").classList.contains("panel-open"));
   assert(!open1, "the topbar ☰ still closes the panel");
   await page.keyboard.press("p");
-  await page.waitForTimeout(400);
+  await settle(page);
   const open2 = await page.evaluate(() => document.getElementById("app").classList.contains("panel-open"));
   assert(open2, "…and P still opens it");
   await ctx.close();
@@ -2436,8 +2413,9 @@ if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "puzzle", "play");
     const seg = await pickerFits(page);
-    assert(seg.n === 5 && seg.groups === "mate,tactic,endgame,defense,opening",
-      lang + ": five kinds, 我的错题 not drawn with no drills (" + seg.groups + ")");
+    // v10-0-plan T2: 我的错题 is drawn with no drills too, saying how it fills
+    assert(seg.n === 6 && seg.groups === "mate,tactic,endgame,defense,opening,mine",
+      lang + ": five kinds and 我的错题, there with no drills (" + seg.groups + ")");
     assert(seg.cols === 3, lang + ": the tiles lay out three across (" + seg.cols + ")");
     assert(seg.heights.length === 1 && seg.named, lang + ": every tile is one height and named (" + seg.heights.join(", ") + ")");
     assert(seg.tight.length === 0, lang + ": no kind's name or count is cut" + (seg.tight.length ? " — " + seg.tight.join(", ") : ""));
@@ -2483,7 +2461,7 @@ async function openLibFilters(page) {
     return { wasShut: !!d && !d.open, search: !!q && !!q.offsetParent && q.checkVisibility() };
   });
   await page.click("#lib-filters > summary");
-  await page.waitForTimeout(300);
+  await settle(page);
   return { ...was, open: await page.evaluate(() => document.getElementById("lib-filters").open) };
 }
 
@@ -2545,7 +2523,7 @@ if (scenario()) {
     const { ctx, page } = await open("zh-CN", mode, "play");
     // the sheet has no button — 「?」 and the native Help menu are its two doors
     await page.keyboard.press("Shift+Slash");
-    await page.waitForTimeout(400);
+    await settle(page);
     const rows = await page.evaluate(async () => {
       const l = document.getElementById("keys-list");
       const out = [];
@@ -2602,7 +2580,7 @@ if (scenario()) {
     // the history's own dialog is gone, and the same ruler applies to this one
     // 9.0 S4: the history is 棋谱's now (moved from 我的)
     await page.click('#rail button[data-view="library"]');
-    await page.waitForTimeout(400);
+    await settle(page);
     assert(await page.evaluate(() => !!document.getElementById("sec-history").closest("#page-library")
       && !!document.getElementById("hist-open").offsetParent), lang + ": 对局历史 and its 「全部 N 局」 are on 棋谱");
     await page.click("#hist-open", { timeout: 2500 });
@@ -2881,7 +2859,7 @@ if (scenario()) {
     await page.waitForTimeout(900);
     await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
     await pressMore(page, "slots-open");
-    await page.waitForTimeout(400);
+    await settle(page);
     const r = await page.evaluate(() => {
       const rows = [...document.querySelectorAll("#slots-list > *")].filter((e) => e.offsetParent);
       const box = document.querySelector("#slots-modal .modal");
@@ -2980,7 +2958,8 @@ if (scenario()) {
       stored: JSON.parse(localStorage.getItem("chess.settings") || "{}").langId,
     }));
     assert(r.shown, locale + ": a new install opens the guide");
-    assert(r.items === 2, locale + ": …with both ways in (" + r.items + ")");
+    // v10-0-plan T1: three ways in — never played, knows the moves, plays often
+    assert(r.items === 3, locale + ": …with the three ways in (" + r.items + ")");
     assert(r.stored === lang, locale + ": the app starts in the system's language (" + r.stored + ")");
     assert((r.firstTab || "").trim() === tab,
       locale + ": …and the interface is in it — 「" + (r.firstTab || "").trim() + "」");
@@ -3023,9 +3002,9 @@ if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en",
       const p = await page.evaluate((s) => { const r = document.getElementById("board").getBoundingClientRect();
         const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
         return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) }; }, sq);
-      await page.mouse.click(p.x, p.y); await page.waitForTimeout(140);
+      await page.mouse.click(p.x, p.y); await settle(page);
     }
-    await page.waitForTimeout(400);
+    await settle(page);
   }
   const shape = await page.evaluate((root) => {
     const vis = (e) => { const b = e.getBoundingClientRect();
@@ -3075,7 +3054,7 @@ if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en",
   // 9.0 S5: that window is the settings page (the tiles in 棋盘, measured
   // against the segments of every category, as the window held them all)
   await page.click('.rail-btn[data-view="settings"]');
-  await page.waitForTimeout(300);
+  await settle(page);
   await showCat(page, "board");
   const look = await page.evaluate(() => {
     const m = document.getElementById("page-settings");
@@ -3113,8 +3092,8 @@ if (scenario()) {
     // 9.0 M1: the result is a bar under the board, not in the panel
     [...document.querySelectorAll("#side .act-btn.primary, #go-card .act-btn.primary")].filter((b) => b.offsetParent).map((b) => b.id));
   const play = async (a, b) => {
-    for (const sq of [a, b]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(140); }
-    await page.waitForTimeout(320);
+    for (const sq of [a, b]) { const p = await at(sq); await page.mouse.click(p.x, p.y); await settle(page); }
+    await settle(page);
   };
   assert((await primaries()).length === 0, "开局:没有任何动作被填成主按钮");
   await play("f2", "f3"); await play("e7", "e5");
@@ -3183,8 +3162,8 @@ if (scenario()) {
     return { x: r.left + (x.charCodeAt(0) - 97 + 0.5) * (r.width / 8), y: r.top + (8 - Number(x[1]) + 0.5) * (r.height / 8) };
   }, sq);
   const play = async (page, a, b) => {
-    for (const sq of [a, b]) { const p = await at(page, sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(160); }
-    await page.waitForTimeout(280);
+    for (const sq of [a, b]) { const p = await at(page, sq); await page.mouse.click(p.x, p.y); await settle(page); }
+    await settle(page);
   };
   // v8-0-plan A1: a trainer is the rail's; 双人 comes with a new game
   const toSetup = async (page, mode) => {
@@ -3197,9 +3176,9 @@ if (scenario()) {
       await page.waitForTimeout(800);
       assert(await page.evaluate((m) => document.getElementById("app").dataset.mode === m, mode), "训练 → " + seg + " puts the board in " + mode);
     } else {
-      await page.click('#rail button[data-view="play"]'); await page.waitForTimeout(400);
+      await page.click('#rail button[data-view="play"]'); await settle(page);
       if (await page.evaluate((m) => JSON.parse(localStorage.getItem("chess.settings")).mode !== m, mode)) {
-        await page.evaluate(() => document.getElementById("btn-new").click()); await page.waitForTimeout(300);
+        await page.evaluate(() => document.getElementById("btn-new").click()); await settle(page);
         await page.click(`#mode-seg button[data-mode="${mode}"]`);
         await page.click("#ng-start"); await page.waitForTimeout(800);
       }
@@ -3235,7 +3214,7 @@ if (scenario()) {
   {
     const { ctx, page } = await openBridged("ai");
     await page.keyboard.press("?");
-    await page.waitForTimeout(400);
+    await settle(page);
     const up = await page.evaluate(() => [...document.querySelectorAll(".modal-bg.show")].map((d) => d.id).join(","));
     assert(up === "keys-modal", `快捷键表打开了(${up})`);
     const before = await orient(page);
@@ -3267,7 +3246,7 @@ if (scenario()) {
   {
     const { ctx, page } = await openBridged("ai");
     await page.keyboard.press("?");
-    await page.waitForTimeout(400);
+    await settle(page);
     const accels = await page.evaluate(() =>
       [...document.querySelectorAll("#keys-list kbd.accel")].map((k) => k.textContent));
     assert(accels.length >= 7,
@@ -3323,7 +3302,7 @@ if (scenario()) {
   };
   // v8-0-plan A1: the deletions are in 偏好设置; 9.0 S5: the settings page's 「数据」
   const toData = async (page) => {
-    await page.click('.rail-btn[data-view="settings"]'); await page.waitForTimeout(300);
+    await page.click('.rail-btn[data-view="settings"]'); await settle(page);
     await showCat(page, "data");
   };
   const asked = (page) => page.evaluate(() => window.__asked);
@@ -3397,10 +3376,10 @@ if (scenario()) {
                  y: r.top + (8 - Number(s[1]) + 0.5) * (r.height / 8) };
       }, sq);
       await page.mouse.click(pt.x, pt.y);
-      await page.waitForTimeout(180);
+      await settle(page);
     };
     await mv("e2"); await mv("e4");
-    await page.waitForTimeout(300);
+    await settle(page);
     return { ctx, page };
   };
 
@@ -3710,7 +3689,7 @@ if (scenario()) {
         [shut.chromeBottom, shut.top, shut.bottom, shut.boardTop].map(Math.round).join(" / ") + "）");
       assert(!shut.clipped, tag + " 两行之内说得完");
       await page.click("#toggle-panel");
-      await page.waitForTimeout(400);
+      await settle(page);
       const up = await measure(page);
       if (vp.width <= 820) {
         // the panel is over or under the board here, not beside it: the strip
@@ -3747,13 +3726,13 @@ if (scenario()) {
                y: r.top + (8 - Number(s[1]) + 0.5) * (r.height / 8) };
     }, sq);
     await page.mouse.click(pt.x, pt.y);
-    await page.waitForTimeout(180);
+    await settle(page);
   };
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "pvp", "play");
     await mv(page, "e2"); await mv(page, "e4");
     await page.click("#rep-start");
-    await page.waitForTimeout(300);
+    await settle(page);
     const r = await page.evaluate(() => {
       const b = document.getElementById("retry-here");
       const range = document.createRange();
@@ -3766,14 +3745,14 @@ if (scenario()) {
   }
   const { ctx, page } = await open("zh-CN", "pvp", "play");
   await mv(page, "e2"); await mv(page, "e4");
-  await page.waitForTimeout(300);
+  await settle(page);
   const zh = await page.evaluate(() => (document.querySelector("#move-list .mlmenu") || {}).title);
   // 9.0 S5: the language is the settings page's (通用), not the 设置 tab's
-  await page.click('.rail-btn[data-view="settings"]'); await page.waitForTimeout(300);
+  await page.click('.rail-btn[data-view="settings"]'); await settle(page);
   await showCat(page, "general");
   await page.click('#lang-seg button[data-lang="en"]');
-  await page.waitForTimeout(400);
-  await page.click('.rail-btn[data-view="play"]'); await page.waitForTimeout(300);
+  await settle(page);
+  await page.click('.rail-btn[data-view="play"]'); await settle(page);
   const en = await page.evaluate(() => {
     const m = document.querySelector("#move-list .mlmenu");
     return m ? { title: m.title, aria: m.getAttribute("aria-label") } : null;
@@ -3791,7 +3770,7 @@ const mv = async (page, sq) => {
              y: r.top + (8 - Number(s[1]) + 0.5) * (r.height / 8) };
   }, sq);
   await page.mouse.click(pt.x, pt.y);
-  await page.waitForTimeout(180);
+  await settle(page);
 };
 
 // --- 7.7 (v7-7-plan §1g, §1h, §2): the board is the anchor -----------------
@@ -3888,14 +3867,14 @@ if (scenario()) {
   assert(r.folded.every(Boolean), "…存档槽 / 编辑局面 / 导出复盘图 收在「更多」里,对局中不露面");
   // 9.0 S1: and on 今天 the next thing is this game — the plan gives way to it
   await page.click('.rail-btn[data-view="home"]');
-  await page.waitForTimeout(400);
+  await settle(page);
   const hero = await page.evaluate(() => ({ go: document.getElementById("today-go").textContent.trim(),
     plan: !!document.getElementById("daily-plan").offsetParent }));
   assert(hero.go === "接着下" && !hero.plan, "…对局进行中,「今天」的主卡是这一盘(「" + hero.go + "」),计划让位");
   await page.click('.rail-btn[data-view="play"]');
-  await page.waitForTimeout(400);
+  await settle(page);
   await page.click("#review-open");
-  await page.waitForTimeout(200);
+  await settle(page);
   assert(await page.evaluate(() => !!document.getElementById("review-actions").offsetParent), "…按「复盘」键,它们就出来");
   await ctx.close();
 }
@@ -3927,7 +3906,7 @@ if (scenario()) {
     ["认输", async (page) => {
       for (const sq of ["e2", "e4"]) await mv(page, sq);
       await page.click("#btn-resign");
-      await page.waitForTimeout(300);
+      await settle(page);
       const btn = await page.evaluate(() => {
         const ok = document.getElementById("confirm-ok");
         const probe = document.createElement("div");
@@ -3946,7 +3925,7 @@ if (scenario()) {
     ["和棋", async (page) => {
       for (const sq of ["e2", "e4"]) await mv(page, sq);
       await page.click("#btn-offerdraw");
-      await page.waitForTimeout(300);
+      await settle(page);
       await page.click("#confirm-ok");
     }, /和棋/, /协议和棋/],
   ];
@@ -3981,7 +3960,7 @@ if (scenario()) {
     // under ten seconds the running clock shows tenths
     let tenths = false;
     for (let i = 0; i < 80 && !tenths; i++) {
-      await page.waitForTimeout(50);
+      await page.waitForTimeout(50); // the clock running down, not the page settling (E3)
       tenths = await page.evaluate(() => /^0:0\d\.\d$/.test(document.getElementById("clock-b").textContent.trim()));
     }
     assert(tenths, "超时前最后十秒,钟显示到 0.1 秒");
@@ -3997,16 +3976,16 @@ if (scenario()) {
     for (const sq of ["f2", "f3", "e7", "e5", "g2", "g4", "d8", "h4"]) await mv(page, sq);
     await page.waitForTimeout(500);
     await page.click("#go-close");
-    await page.waitForTimeout(200);
+    await settle(page);
     const s = await cardState(page);
     assert(!s.shown && s.primaries.length === 1 && s.primaries[0] === "an-run",
       "✕ puts the card away, and 分析 in the review row is the one filled button again (" + s.primaries.join(", ") + ")");
     // Codex on #82: the ✕ was remembered by (plies, FEN, result), so the same
     // mate in the next game came up already dismissed
     await page.click("#btn-new");
-    await page.waitForTimeout(300);
+    await settle(page);
     await page.click("#ng-start");   // v7-8-plan §4: a finished game — no warning, just 开始
-    await page.waitForTimeout(400);
+    await settle(page);
     for (const sq of ["f2", "f3", "e7", "e5", "g2", "g4", "d8", "h4"]) await mv(page, sq);
     await page.waitForTimeout(500);
     assert((await cardState(page)).shown, "the same mate in the next game gets its card again, the ✕ was for the last one");
@@ -4025,7 +4004,7 @@ if (scenario()) {
       Object.defineProperty(navigator, "clipboard", { configurable: true,
         value: { readText: () => Promise.resolve(pgn), writeText: () => Promise.resolve() } });
     });
-    if (!(await page.isVisible("#pgn-paste"))) { await page.click("#more-tools"); await page.waitForTimeout(250); }
+    if (!(await page.isVisible("#pgn-paste"))) { await page.click("#more-tools"); await settle(page); }
     await page.click("#pgn-paste");
     await page.waitForTimeout(800);
     const s = await cardState(page);
@@ -4044,7 +4023,7 @@ if (scenario()) {
         value: { readText: () => Promise.resolve(pgn), writeText: () => Promise.resolve() } });
     });
     const paste = async () => {
-      if (!(await page.isVisible("#pgn-paste"))) { await page.click("#more-tools"); await page.waitForTimeout(250); }
+      if (!(await page.isVisible("#pgn-paste"))) { await page.click("#more-tools"); await settle(page); }
       await page.click("#pgn-paste");
       await page.waitForTimeout(800);
       if (await page.isVisible("#confirm-modal.show").catch(() => false)) { await page.click("#confirm-ok"); await page.waitForTimeout(600); }
@@ -4052,7 +4031,7 @@ if (scenario()) {
     await paste();
     const first = (await cardState(page)).shown;
     await page.click("#go-close");
-    await page.waitForTimeout(200);
+    await settle(page);
     await paste();
     assert(first && (await cardState(page)).shown, "同一局已完的棋谱再导入一次：终局卡重新出现，上一次的 ✕ 不算数");
     await ctx.close();
@@ -4085,13 +4064,13 @@ if (scenario()) for (const [when, mode, act] of [
   ["棋谱库", "ai", async (page) => { await page.click('#rail button[data-view="library"]'); }],
   // 9.0 S5: the 设置 tab is the settings page — every category of it
   ...CATS.map((c) => ["设置页·" + c, "pvp", async (page) => {
-    await page.click('#rail button[data-view="settings"]'); await page.waitForTimeout(300);
+    await page.click('#rail button[data-view="settings"]'); await settle(page);
     await showCat(page, c);
   }]),
 ]) {
   const { ctx, page } = await open("zh-CN", mode, "play");
   await act(page);
-  await page.waitForTimeout(400);
+  await settle(page);
   const p = await page.evaluate(() => [...document.querySelectorAll(".primary")].filter((e) => !!e.offsetParent && !e.closest(".modal-bg")).map((e) => e.id));
   assert(p.length <= 1, when + ":可见的主按钮 ≤ 1(" + p.join(", ") + ")");
   if (when === "教学·第 1 课") {
@@ -4112,7 +4091,7 @@ if (scenario()) {
   assert(!(await fb()).shown, "做题:还没走,没有反馈卡");
   // a1 rook to a2 is legal in the first mate-in-one and does not mate
   await mv(page, "a1"); await mv(page, "a2");
-  await page.waitForTimeout(400);
+  await settle(page);
   const wrong = await fb();
   assert(wrong.shown && wrong.bad && /再想想/.test(wrong.head) && wrong.hint,
     "走错:叉、「再想想」和提示入口(" + JSON.stringify(wrong) + ")");
@@ -4192,7 +4171,7 @@ if (scenario()) {
     assert(g0.length >= 4 && ok(g0), "§4d " + lang + " 做题页各段间距只有 8 / 20:" + show(g0));
     if (lang === "zh-CN") {
       await mv(page, "a1"); await mv(page, "a2");
-      await page.waitForTimeout(400);
+      await settle(page);
       const g1 = await gaps(page);
       assert(ok(g1), "§4d 走错之后(反馈卡)仍只有 8 / 20:" + show(g1));
       await mv(page, "a1"); await mv(page, "a8");
@@ -4215,7 +4194,7 @@ if (scenario()) {
     const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
     return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
   }, sq);
-  const tap = async (page, sq) => { const p = await sqAt(page, sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(120); };
+  const tap = async (page, sq) => { const p = await sqAt(page, sq); await page.mouse.click(p.x, p.y); await settle(page); };
 
   // §1a：每个看得见的 .act-btn 都有左右内边距，高度正好是 --row-h（两行字也
   // 装得下，行距是紧的）。例外只有一种：同一行里有标签要折成三行（英文的
@@ -4277,7 +4256,9 @@ if (scenario()) {
     const r = await page.evaluate(() => {
       const first = "等宽字体";
       const monoRe = /SF Mono|Menlo|Consolas|ui-monospace|monospace/i;
-      const els = [...document.querySelectorAll("#daily-plan .daily-what, #daily-plan .daily-why")];
+      // 10.0 T5: a plan of one thing (a new profile's first lesson) is the
+      // card's title and line alone — the list of one is not drawn
+      const els = [...document.querySelectorAll("#daily-plan .daily-what, #daily-plan .daily-why, #today-hero-title, #today-hero-meta")];
       return { n: els.filter((e) => e.offsetParent).length, first, mono: els.filter((e) => monoRe.test(getComputedStyle(e).fontFamily)).map((e) => e.textContent) };
     });
     assert(r.n > 0 && r.mono.length === 0, `§1b ${lang}：今天的训练 ${r.n} 段文字都不用 ${r.first}` + (r.mono.length ? " —— " + r.mono.join(" / ") : ""));
@@ -4304,17 +4285,17 @@ if (scenario()) {
       return best > 0.8;
     }, sq);
     await tap(page, "e2"); await tap(page, "e4");
-    await page.waitForTimeout(300);
+    await settle(page);
     const focused = await page.evaluate(() => document.activeElement && document.activeElement.id);
     assert(focused === "board" && !(await ringed("e4")) && !(await ringed("e5")),
       `§1c 鼠标走完 e2-e4，棋盘有焦点（${focused}）但没有画键盘光标`);
     // 7.8 §1a：方向键在光标没画出来时翻棋谱；进光标模式的是回车
     await page.keyboard.press("Enter");
     await page.keyboard.press("ArrowUp");
-    await page.waitForTimeout(150);
+    await settle(page);
     assert(await ringed("e5"), "§1c 按回车进光标模式，再按方向键，光标出现（e4 → e5）");
     await tap(page, "a2");
-    await page.waitForTimeout(150);
+    await settle(page);
     assert(!(await ringed("e5")), "§1c 再用鼠标点一下，光标又收起来");
     await ctx.close();
   }
@@ -4332,7 +4313,7 @@ if (scenario()) {
       });
       await tap(page, "e2"); await tap(page, "e4");
       await page.waitForSelector(".toast.show .toast-action", { timeout: 8000 }).catch(() => {});
-      await page.waitForTimeout(350);
+      await settle(page);
       const hit = () => page.evaluate(() => {
         const t = document.getElementById("toast");
         const a = t.getBoundingClientRect(), b = document.getElementById("board").getBoundingClientRect();
@@ -4345,7 +4326,7 @@ if (scenario()) {
         `§1d ${vp.width}×${vp.height} 面板${panel === "1" ? "开" : "关"}：故障 toast 不压棋盘（toast ${fault.a} / 棋盘 ${fault.b}）`);
       await page.keyboard.press("Escape");
       await page.evaluate(() => { const b = document.getElementById("pgn-copy"); if (b && b.offsetParent) b.click(); });
-      await page.waitForTimeout(350);
+      await settle(page);
       const receipt = await hit();
       if (receipt.shown) {
         assert(!receipt.cross, `§1d ${vp.width}×${vp.height} 面板${panel === "1" ? "开" : "关"}：回执 toast 不压棋盘（「${receipt.text}」 ${receipt.a}）`);
@@ -4359,7 +4340,7 @@ if (scenario()) {
   {
     const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 600, height: 900 });
     for (const sq of ["f2", "f3", "e7", "e5", "g2", "g4", "d8", "h4"]) await tap(page, sq);
-    await page.waitForTimeout(400);
+    await settle(page);
     const check = () => page.evaluate(() => {
       const t = document.getElementById("toast");
       const a = t.getBoundingClientRect();
@@ -4373,7 +4354,7 @@ if (scenario()) {
     if (end.shown) assert(end.hits.length === 0, `§1d …终局的 toast「${end.text}」不压结果卡的按钮（${end.hits.join(", ")}）`);
     // a receipt raised while the card is up — the same place any toast takes
     await page.evaluate(() => document.getElementById("pgn-copy").click());
-    await page.waitForTimeout(350);
+    await settle(page);
     const rc = await check();
     assert(rc.shown && rc.hits.length === 0, `§1d …再来一条 toast「${rc.text}」（上缘 ${rc.top}px），也不压结果卡的按钮（${rc.hits.join(", ")}）`);
     await ctx.close();
@@ -4385,7 +4366,7 @@ if (scenario()) {
     const { ctx, page } = await open(lang, "pvp", "play");
     // 1.Nf3 Nc6 2.Nc3 Nf6 3.e4 d6 4.Bb5 Bd7 5.Qe2 Qc8 6.Kd1 Kd8
     for (const sq of ["g1", "f3", "b8", "c6", "b1", "c3", "g8", "f6", "e2", "e4", "d7", "d6", "f1", "b5", "c8", "d7", "d1", "e2", "d8", "c8", "e1", "d1", "e8", "d8"]) await tap(page, sq);
-    await page.waitForTimeout(300);
+    await settle(page);
     const figs = await page.evaluate(() => {
       const ctx2 = document.createElement("canvas").getContext("2d");
       return [...document.querySelectorAll(".move-list .mlmove .mlfig")].map((f) => {
@@ -4430,7 +4411,7 @@ if (scenario()) {
     const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
     return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
   }, sq);
-  const tap = async (page, sq) => { const p = await sqAt(page, sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(120); };
+  const tap = async (page, sq) => { const p = await sqAt(page, sq); await page.mouse.click(p.x, p.y); await settle(page); };
   // 意大利开局十手：五行，其中有兵种字形（字形是 inline-block，不能把基线带跑）
   const ITALIAN = ["e2", "e4", "e7", "e5", "g1", "f3", "b8", "c6", "f1", "c4", "f8", "c5", "c2", "c3", "g8", "f6", "d2", "d4", "e5", "d4"];
   const SIZES = [{ width: 1440, height: 900 }, { width: 1024, height: 700 }, { width: 600, height: 900 }];
@@ -4441,7 +4422,7 @@ if (scenario()) {
       // 9.0 M3: a portrait drawer shows the list at nine tenths only (the
       // strip stands in for it at half) — the grip's tap takes it there
       await page.evaluate(() => { const g = document.getElementById("sheet-grip"); if (g && g.offsetParent) document.getElementById("app").classList.add("sheet-full"); });
-      await page.waitForTimeout(300);
+      await settle(page);
       const r = await page.evaluate(() => {
         const vis = (e) => { const b = e.getBoundingClientRect(); return e.offsetParent !== null && b.width > 0 && b.height > 0; };
         // the bottom of the last line box of the element's first text run
@@ -4515,7 +4496,7 @@ if (scenario()) {
                  y: r.top + (8 - Number(s[1]) + 0.5) * (r.height / 8) };
       }, sq);
       await page.mouse.click(pt.x, pt.y);
-      await page.waitForTimeout(160);
+      await settle(page);
     }
   };
   // Every visible button in the panel, measured: its height, how many lines
@@ -4557,7 +4538,7 @@ if (scenario()) {
       const at = `7.9 ${lang} ${vp.width}×${vp.height}：`;
       const { ctx, page, errs } = await open(lang, "pvp", "play", "wood", vp);
       await clickSquares(page, ["e2", "e4", "e7", "e5", "g1", "f3", "b8", "c6"]);
-      await page.waitForTimeout(300);
+      await settle(page);
 
       // §1a — 悔棋、提示 are the right end of the opponent's strip: on its
       // centre line (the disc's), and flush with the frame's right edge
@@ -4597,16 +4578,16 @@ if (scenario()) {
       for (const state of ["live", "back"]) {
         if (state === "back") {
           await page.click("#rep-prev");
-          await page.waitForTimeout(250);
+          await settle(page);
           await page.click("#more-tools");
-          await page.waitForTimeout(250);
+          await settle(page);
         }
         const st = at + "[" + state + "] ";
         // 9.0 S2: 精析 is in 分析's ⋯ menu — opened, it is a panel button like
         // the others (measured below with them), named, inside the column
         if (state === "back") {
           await page.click("#an-more > summary");
-          await page.waitForTimeout(250);
+          await settle(page);
           const m = await page.evaluate(() => {
             const sum = document.querySelector("#an-more > summary"), deep = document.getElementById("an-deep");
             const side = document.getElementById("side").getBoundingClientRect(), r = deep.getBoundingClientRect();
@@ -4763,7 +4744,7 @@ if (scenario()) {
     await page.keyboard.press("p");
     await page.waitForTimeout(450);
     await page.keyboard.press("f");
-    await page.waitForTimeout(300);
+    await settle(page);
     const flipped = await page.evaluate(() => ({
       topId: document.querySelector(".pstrip.at-top").id,
       holder: document.getElementById("strip-tools").parentElement.id,
@@ -4784,7 +4765,7 @@ if (scenario()) {
     for (const vp of [{ width: 1400, height: 900 }, { width: 1200, height: 800 }, { width: 390, height: 700 }]) {
       const { ctx, page, errs } = await open(lang, "ai", "play", "wood", vp);
       await page.evaluate(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true })));
-      await page.waitForTimeout(400);
+      await settle(page);
       const k = await page.evaluate(() => {
         const m = document.querySelector("#keys-modal .modal"), l = document.getElementById("keys-list");
         const box = m.getBoundingClientRect();
@@ -4812,7 +4793,7 @@ if (scenario()) {
     // the new-game dialog: one size for every group title in it
     const { ctx, page } = await open(lang, "ai", "play");
     await page.evaluate(() => document.getElementById("btn-new").click());
-    await page.waitForTimeout(400);
+    await settle(page);
     const sizes = await page.evaluate(() => [...document.querySelectorAll("#ng-host .diff-group, #ng-host .setting-k")]
       .filter((e) => e.offsetParent).map((e) => e.textContent.trim() + " " + getComputedStyle(e).fontSize + "/" + getComputedStyle(e).fontWeight));
     const distinct = new Set(sizes.map((s) => s.split(" ").pop()));
@@ -4843,7 +4824,7 @@ if (scenario()) {
     // 9.0 S3: 谜题 / 学习 are one entry, 训练; the six are now with 设置
     for (const v of ["home", "train", "library", "me", "settings", "play"]) {
       await page.click('#rail button[data-view="' + v + '"]');
-      await page.waitForTimeout(350);
+      await settle(page);
       const b = await railBox();
       seen.add(b.rail + " | " + b.buttons);
       if (v === "play") assert(b.board === first.board, tag + ": 走遍六个入口回到「下棋」,棋盘逐像素在原处(" + first.board + " → " + b.board + ")");
@@ -4913,7 +4894,7 @@ const seedTodayStats = () => {
 };
 async function todayChecks(tag, page) {
   if (!(await page.isVisible("#page-home"))) {
-    await page.click('#rail button[data-view="home"]'); await page.waitForTimeout(400);
+    await page.click('#rail button[data-view="home"]'); await settle(page);
   }
   // the camp's card waits for its chunk (today-page.js renderContinue)
   await page.waitForFunction(() => !document.querySelector('#today-cont .today-c[data-seg="endgame"]').hidden, null, { timeout: 6000 }).catch(() => {});
@@ -5003,25 +4984,25 @@ if (scenario()) {
       };
       await check("首页", "#page-home");
       await todayChecks(tag, page);
-      await page.click('#rail button[data-view="library"]'); await page.waitForTimeout(300);
+      await page.click('#rail button[data-view="library"]'); await settle(page);
       await check("棋谱库", "#page-library");
       await page.click("#lib-diagnose"); await page.waitForTimeout(900);
       await check("诊断", "#lib-modal .modal");
-      await page.keyboard.press("Escape"); await page.waitForTimeout(200);
+      await page.keyboard.press("Escape"); await settle(page);
       await page.click("#lib-open"); await page.waitForTimeout(500);
       await check("棋谱列表", "#lib-list-modal .modal");
-      await page.keyboard.press("Escape"); await page.waitForTimeout(200);
-      await page.click('#rail button[data-view="me"]'); await page.waitForTimeout(300);
+      await page.keyboard.press("Escape"); await settle(page);
+      await page.click('#rail button[data-view="me"]'); await settle(page);
       await check("我的", "#page-me");
       // 9.0 S5: 设置 is a page too (the 偏好设置 window and the 设置 tab), a
       // category at a time
-      await page.click('#rail button[data-view="settings"]'); await page.waitForTimeout(300);
+      await page.click('#rail button[data-view="settings"]'); await settle(page);
       for (const cat of CATS) { await showCat(page, cat); await check("设置·" + cat, "#page-settings"); }
-      await page.click('#rail button[data-view="me"]'); await page.waitForTimeout(300);
+      await page.click('#rail button[data-view="me"]'); await settle(page);
       // …and a page is as wide as the window lets it be: the diagnosis was
       // cut at 460px
       if (w >= 1024) {
-        await page.click('#rail button[data-view="library"]'); await page.waitForTimeout(200);
+        await page.click('#rail button[data-view="library"]'); await settle(page);
         await page.click("#lib-diagnose"); await page.waitForTimeout(700);
         const cw = await page.evaluate(() => Math.round(document.querySelector("#lib-modal .modal").getBoundingClientRect().width));
         assert(cw >= 900, tag + ": 诊断是整页宽(" + cw + "px),不再是 460px 的弹窗");
@@ -5137,7 +5118,7 @@ const a2Paste = async (page, pgn) => {
     Object.defineProperty(navigator, "clipboard", { configurable: true,
       value: { readText: () => Promise.resolve(p), writeText: () => Promise.resolve() } });
   }, pgn);
-  if (!(await page.isVisible("#pgn-paste"))) { await page.click("#more-tools"); await page.waitForTimeout(250); }
+  if (!(await page.isVisible("#pgn-paste"))) { await page.click("#more-tools"); await settle(page); }
   await page.click("#pgn-paste");
   await page.waitForTimeout(900);
   if (await page.isVisible("#confirm-modal.show").catch(() => false)) { await page.click("#confirm-ok"); await page.waitForTimeout(600); }
@@ -5147,7 +5128,7 @@ if (scenario()) {
   for (const [w, h] of A2_SIZES) {
     const { ctx, page, errs } = await open("zh-CN", "pvp", "play", "wood", { width: w, height: h });
     for (const sq of A2_ITALIAN) await mv(page, sq);
-    await page.waitForTimeout(400);
+    await settle(page);
     let m = await page.evaluate(layoutProbe);
     // 9.0 M3: a portrait drawer's list is its nine tenths' — the bar under
     // it is measured there (the half stop has the strip instead)
@@ -5221,7 +5202,7 @@ if (scenario()) {
     });
     await page.evaluate(() => window.__mlStart());
     await page.keyboard.press("End");
-    await page.waitForTimeout(300);
+    await settle(page);
     const measure = () => page.evaluate(() => {
       const box = (e) => e.getBoundingClientRect();
       const list = document.getElementById("move-list"), bar = document.getElementById("replay-seg");
@@ -5326,7 +5307,7 @@ if (scenario()) {
 if (scenario()) {
   const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: 1664, height: 900 });
   for (const sq of A2_ITALIAN) await mv(page, sq);
-  await page.waitForTimeout(300);
+  await settle(page);
   const read = () => page.evaluate(() => {
     const box = (e) => { const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom, w: b.width }; };
     const top = document.querySelector(".pstrip.at-top"), bot = document.querySelector(".pstrip.at-bottom");
@@ -5350,12 +5331,12 @@ if (scenario()) {
     "A2：开局名在两张卡片之间（" + JSON.stringify(r.opening) + "）");
   assert(r.panelOpening === "none", "A2：…面板里那一行让位，不说两遍");
   await page.keyboard.press("f");
-  await page.waitForTimeout(300);
+  await settle(page);
   const flipped = await read();
   assert(flipped.topId === "strip-w" && Math.abs(flipped.top.t - flipped.wrap.t) <= 1, "A2：翻转棋盘，白方的卡片到上面");
   await page.keyboard.press("f");
   await page.keyboard.press("p");
-  await page.waitForTimeout(400);
+  await settle(page);
   const shut = await read();
   // shut, the board may take the panel's room (as in the two-column layout
   // since 7.x) and the column goes with it
@@ -5428,7 +5409,7 @@ if (scenario()) {
 if (scenario()) {
   for (const [w, wide] of [[1340, false], [1600, true]]) {
     const { ctx, page } = await open("zh-CN", "pvp", "play", "wood", { width: w, height: 900 });
-    await page.waitForTimeout(400);
+    await settle(page);
     const r = await page.evaluate(() => {
       const a = document.getElementById("app");
       const box = (id) => document.getElementById(id).getBoundingClientRect();
@@ -5467,10 +5448,10 @@ if (scenario()) {
       // fit below measures it too
       document.getElementById("rv-full").open = true;
     });
-    await page.waitForTimeout(300);
+    await settle(page);
     for (const frame of ["flat", "frame"]) {
       await page.evaluate((f) => document.querySelector('#frame-seg button[data-frame="' + f + '"]').click(), frame);
-      await page.waitForTimeout(400);
+      await settle(page);
       const r = await page.evaluate(() => {
         const box = (e) => e.getBoundingClientRect();
         const w = box(document.getElementById("board-wrap")), b = box(document.getElementById("eval-bar"));
@@ -5570,7 +5551,7 @@ if (scenario()) {
       const { ctx, page, errs } = await open(lang, "ai", "play", "wood", viewport);
       await page.waitForFunction(() => document.querySelectorAll("#op-grid .op-card").length > 8, null, { timeout: 5000 }).catch(() => {});
       await page.evaluate(() => document.getElementById("btn-new").click());
-      await page.waitForTimeout(400);
+      await settle(page);
       // this file stubs the engine, whose fault banner then lands over a
       // phone-width dialog's top: out of the way, it is not what is measured
       await page.evaluate(() => { const f = document.getElementById("engine-fault"); if (f) f.style.display = "none"; });
@@ -5599,10 +5580,14 @@ if (scenario()) {
         `${tag}: ${r.cards} 张卡片都在对话框里、名字和分数没被截 (${r.cardSpill.join(", ") || "—"}; ${r.sideways}px)`);
       assert(r.more === 0, `${tag}: 「更多选项」收着时里面的按钮一个也不露 (${r.more})`);
       await page.evaluate(() => { document.getElementById("ng-custom").open = true; });
-      await page.waitForTimeout(250);
+      await settle(page);
       const o = await measure();
-      assert(o.more >= 14 && o.moreSpill.length === 0 && o.morePast === 0 && o.sideways <= 0,
+      // 10.0 M0: its buttons are the rarer clocks and the styles (5 + 4); the
+      // rungs are the cards, all twenty-one of them now, as tidy as the eight
+      assert(o.more >= 9 && o.moreSpill.length === 0 && o.morePast === 0 && o.sideways <= 0,
         `${tag}: 打开「更多选项」，${o.more} 个按钮都在对话框里、字不出按钮、不横向滚动 (${o.moreSpill.join(", ") || "—"}; ${o.sideways}px)`);
+      assert(o.cards === 21 && o.cardSpill.length === 0 && o.past === 0,
+        `${tag}: …对手卡展开成全部 ${o.cards} 张，都在对话框里、没被截 (${o.cardSpill.join(", ") || "—"})`);
       assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
       await ctx.close();
     }
@@ -5684,7 +5669,7 @@ if (scenario()) {
         const b = document.querySelector('#lesson-list button[data-eg="rp-lucena2"]');
         if (b) b.click();
       });
-      await page.waitForTimeout(400);
+      await settle(page);
       const learn = await page.evaluate(() => {
         const sec = document.getElementById("sec-learn"), box = sec.getBoundingClientRect();
         const out = [];
@@ -5783,11 +5768,11 @@ if (scenario()) {
     const out = [];
     for (const v of [WIDE, NARROW]) {
       await page.setViewportSize(v);
-      await page.waitForTimeout(300);
+      await settle(page);
       out.push([v, await probe(page)]);
     }
     await page.setViewportSize(WIDE);
-    await page.waitForTimeout(200);
+    await settle(page);
     return out;
   };
   for (const lang of LANGS) {
@@ -5907,13 +5892,13 @@ if (scenario()) {
       for (const kind of ["look", "blind"]) {
         await page.click(`#pz-modes button[data-run="${kind}"]`);
         await page.waitForFunction(() => !document.getElementById("pz-vis").hidden, null, { timeout: 6000 }).catch(() => {});
-        await page.waitForTimeout(300);
+        await settle(page);
         for (const when of ["asked", "answered"]) {
           if (when === "answered") {
             // 答案 (H) gives the question up: the card shows the answer and 下一题
             await page.evaluate(() => document.activeElement && document.activeElement.blur());
             await page.keyboard.press("h");
-            await page.waitForTimeout(400);
+            await settle(page);
           }
           const r = await cardFits(page);
           const at = `${tag} ${kind}/${when}`;
@@ -6018,6 +6003,46 @@ if (scenario()) {
     }
   }
 }
+// v10-0-plan A1 / A3: the two new dialogs — 分析一局 and ⌘K — in three
+// languages, wide and at phone width: nothing out of the card, no sideways
+// scroll, every row of the panel one line inside its list, its kind in view
+if (scenario()) {
+  for (const lang of LANGS) {
+    for (const viewport of [{ width: 1400, height: 900 }, { width: 390, height: 760 }]) {
+      const { ctx, page } = await open(lang, "ai", "home", "wood", viewport);
+      const tag = "A1/A3 (" + lang + ", " + viewport.width + ")";
+      const fits = (sel) => page.evaluate((s) => {
+        const m = document.querySelector(s + " .modal"), r = m.getBoundingClientRect();
+        const out = [...m.querySelectorAll("button, textarea, input, .pal-row, .pal-kind")].filter((e) => e.offsetParent)
+          .filter((e) => { const b = e.getBoundingClientRect(); return b.right > r.right + 0.5 || b.left < r.left - 0.5; })
+          .map((e) => e.id || e.className || e.textContent.slice(0, 12));
+        return { out, sideways: m.scrollWidth - m.clientWidth, inView: r.left >= 0 && r.right <= innerWidth + 0.5 };
+      }, sel);
+      await page.click("#today-analyse");
+      await page.fill("#an-text", "https://lichess.org/q7ZvsdUF");
+      await page.click("#an-go");
+      await settle(page);
+      const a = await fits("#analyse-modal");
+      assert(a.out.length === 0 && a.sideways <= 0 && a.inView, tag + ": 分析一局 —— 按钮、输入框都在卡片里，不横向滚动 (" + a.out.join(", ") + "; " + a.sideways + "px)");
+      await page.keyboard.press("Escape");
+      await settle(page);
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
+      await page.waitForSelector("#palette-modal.show", { timeout: 4000 }).catch(() => {});
+      await settle(page);
+      const p = await fits("#palette-modal");
+      const rows = await page.evaluate(() => {
+        const list = document.getElementById("palette-list").getBoundingClientRect();
+        const rs = [...document.querySelectorAll("#palette-list .pal-row")];
+        return { n: rs.length, heights: [...new Set(rs.map((b) => Math.round(b.getBoundingClientRect().height)))],
+          kinds: rs.filter((b) => { const k = b.querySelector(".pal-kind").getBoundingClientRect(); return k.width > 0 && k.right <= list.right + 0.5; }).length };
+      });
+      assert(p.out.length === 0 && p.sideways <= 0 && p.inView && rows.n > 10 && rows.heights.length === 1 && rows.kinds === rows.n,
+        tag + ": ⌘K —— 每行一样高、类别都在列表里，不出卡片 (" + JSON.stringify({ out: p.out, rows }) + ")");
+      await ctx.close();
+    }
+  }
+}
+
 const { shard, total } = scenario.done();
 console.log(`shard ${shard.index}/${shard.count}: ${Math.ceil((total - shard.index + 1) / shard.count)} of ${total} scenarios`);
 await browser.close();

@@ -34,6 +34,9 @@ import { createTodayUI } from "./trainer/today.js";
 import { createMePage } from "./me-page.js";
 import { createShell } from "./shell.js";
 import { createTodayPage } from "./today-page.js";
+import { createAnalyseEntry } from "./analyse-entry.js";
+import { createPaletteLazy } from "./palette-lazy.js";
+import { THEME_IDS } from "./trainer/themes.js";
 import { createPrefsUI } from "./prefs-ui.js";
 import { ChessReview } from "./review.js";
 import { createAnalysis } from "./review/analysis.js";
@@ -289,8 +292,8 @@ import { loadChunk } from "./chunk.js";
     session: {
       /** @type {'ai'|'pvp'} */
       mode: "ai",
-      /** @type {'easy'|'normal'|'hard'|'extreme'} */
-      difficulty: "normal",
+      /** a rung of opponents.js LEVELS — 休闲 for a new install (v10-0-plan T1) */
+      difficulty: "casual",
       /** @type {'w'|'b'} human side in AI mode */
       humanColor: "w",
       /** v7-8-plan §4: the last new game was started with 执子「随机」, so the
@@ -1669,7 +1672,8 @@ import { loadChunk } from "./chunk.js";
 
   /** If it's the engine's turn in AI mode, think and play its reply. */
   async function maybeEngineTurn() {
-    if (store.session.mode !== "ai" || !ChessEngine) return;
+    // v10-0-plan A1: on the analysis board nobody is playing the engine
+    if (store.session.mode !== "ai" || !ChessEngine || store.session.analysisBoard) return;
     if (appGameOver() || game.turn() === store.session.humanColor) return;
     // a failed boot is not retried by moving: the pill says so instead
     if (engineOut()) { sync(); return; }
@@ -1967,7 +1971,7 @@ import { loadChunk } from "./chunk.js";
     store, t, tf,
   });
   const {
-    contentField, lessonText, taskText, puzzleName, motifKeyOf, puzzleMotif, puzzleIdea,
+    contentField, lessonText, taskText, puzzleName, goalName, motifKeyOf, puzzleMotif, puzzleIdea,
     MINED_ORDINAL,
   } = TrainerContent;
   // v8-0-plan F4: 学习 — the lessons and the classic games (trainer/lessons.js)
@@ -1994,7 +1998,7 @@ import { loadChunk } from "./chunk.js";
     checkNewAchievements, choosePromotion, clearPreview, clearSelection, confirmNative,
     cursorSquare, el, evalScalar: (e) => evalScalar(e), gameLoadPgn, gameReset, invalidateEngine, kingSquare,
     loadHistoryRecord, loadStats, maybeEngineTurn, motifKeyOf, moveSound, puzzleIdea, puzzleMotif,
-    puzzleName, renderAchievements, renderRecordEntry, renderStats, resetClocks, sanHistory,
+    puzzleName, goalName, renderAchievements, renderRecordEntry, renderStats, resetClocks, sanHistory,
     saveGame, saveSettings, selectSquare, setIcon, setText, setViewIndex, sideName, startLearn,
     stopLearn, store, sync, t, tf, toast, writeSan, switchMode, setSideTab, drawRatingTrend,
     RepUI: { allDrills: () => RepUI.allDrills(), treeFor: (s) => RepUI.treeFor(s), drills: (s) => RepUI.drills(s), total: () => RepUI.total(), due: () => RepUI.dueDrills(), grade: (p, ok) => RepUI.gradeCard(p, ok), ready: () => RepUI.ready(), booted: () => RepUI.booted() },
@@ -2002,14 +2006,16 @@ import { loadChunk } from "./chunk.js";
     loadLibraryEntry: (e) => loadLibraryEntry(e),
     dailyJump: (s) => dailyJump(s),
     dailyStepIsHere: (s) => dailyStepIsHere(s),
-    renderPuzzleTally: () => renderPuzzleTally(),
+    renderPuzzleTally: () => renderPuzzleTally(), goHome: () => Shell.go("home"),
+    // the opponent sits 300 below the placed puzzle rating: a puzzle rating runs ahead of a whole game's
+    onPlaced: (r) => { const lv = OppUI.levelNear(r - 300); if (!lv) return ""; store.session.difficulty = lv; store.session.personaId = "off"; saveSettings(); const o = OppUI.strip(lv, "off"); return tdot(o.name, o.level); },
   });
   const {
     onMinedArrived, ALL_PUZZLES, Library, Mistakes, loadMines, saveMines, Progress, Planner,
     saveProgress, bookNow, loadPuzzleState, savePuzzleState, Srs, Picker,
     owedNow, ratingLabel, ratingTip, practiceLeft, puzzlesInCat,
     startPuzzleAt, startPuzzles, stopPuzzles, puzzleModel, puzzleHumanSide, puzzleClick,
-    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI,
+    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, startPlacement, goTheme,
   } = PuzzlesUI;
 
   /**
@@ -2095,7 +2101,7 @@ import { loadChunk } from "./chunk.js";
     savedToast: (name, path, revealed) => savedToast(name, path, revealed), pgnFileName: () => pgnFileName(),
     deskHead, lineRows, paintLineRow, reviewLines, savePvAsVariation, lockPgnEdits,
     drawEvalCurve, drawEvalBar, judgeColours, renderWhyLine, renderRetry, renderMistakeList, renderMoments: Moments.render,
-    boardDrillSource, saveMines, savePuzzleState,
+    boardDrillSource, saveMines, savePuzzleState, rep: { lines: (s) => RepUI.linesOf(s), add: (s, sans) => RepUI.edit(s, sans) },
   });
   const { setAnalyzeUI, renderReview, exportReport } = ReviewPanel;
 
@@ -2385,7 +2391,7 @@ import { loadChunk } from "./chunk.js";
     ratingTip, runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
     sync, t, tf, toast, pieceSrc: (k) => BoardView.pieceSrc(k), game, isOver: () => appGameOver(), isLive: () => isLive(),
-    Shell: { go: (id) => Shell.go(id), openTrain: (g) => Shell.openTrain(g) },
+    Shell: { go: (id) => Shell.go(id), openTrain: (g) => Shell.openTrain(g) }, rep: { due: () => (RepUI.booted() ? RepUI.dueDrills().length : 0), start: () => startRepDrills(true) }, ecoName: (e, n) => LibraryUI.libEcoName(e, n),
   });
   const {
     renderPuzzleTally, libPlayedAt, dailySignals, dailyStepLabel, syncDailyUI,
@@ -2423,7 +2429,7 @@ import { loadChunk } from "./chunk.js";
   // read the library's diagnosis: the openings you actually play and have
   // nothing written down about, worst record first.
   const RepUI = createRepertoireUI({
-    doc: document, store, Persist, t, tf, toast, confirmNative, openPgnFile: (sink) => openPgnFile(sink), sync, library: LibraryUI,
+    doc: document, store, Persist, t, tf, toast, confirmNative, openPgnFile: (sink) => openPgnFile(sink), sync, library: LibraryUI, pickFromList: (...a) => pickFromList(...a),
     exportText: (name, text, mime, title, recent) => exportText(name, text, mime, title, recent),
     // the gap list compares the book against the openings this player has
     // actually played, and that comparison is only as good as the ECO codes
@@ -2672,7 +2678,7 @@ import { loadChunk } from "./chunk.js";
   }
 
   // v8-0-plan F4/B5: the 我的 page's renderers (me-page.js)
-  const MePage = createMePage({ ACH, Icons, Progress, evalAch, libPlayedAt, loadStats, setSideTab, store, switchMode, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n), Endgames: LessonsUI.Endgames, startEndgame: (id) => LessonsUI.startEndgame(id), Vis: PuzzlesUI.Vis });
+  const MePage = createMePage({ Icons, Progress, evalAch, libPlayedAt, loadStats, store, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n), Endgames: LessonsUI.Endgames, startEndgame: (id) => LessonsUI.startEndgame(id), Vis: PuzzlesUI.Vis });
   function renderTrends() { MePage.renderTrends(); }
   function renderAchievements() { MePage.renderAchievements(); }
   function renderRecordEntry() { MePage.renderRecordEntry(); }
@@ -3128,7 +3134,7 @@ import { loadChunk } from "./chunk.js";
       // A lesson that is not a drill has no opponent: 9.0 V3 — that strip
       // names the lesson instead of standing empty over the board
       const drill = !!(store.session.learn && curTask().type === "drill");
-      const title = (el("lesson-title") || {}).textContent || "";
+      const lt = el("lesson-title"), title = lt ? lt.dataset.strip || lt.textContent : "";
       return {
         w: { icon: "graduation-cap", name: t("role.student"), level: "" },
         b: drill ? { icon: "bot", name: t(store.session.learn.eg ? "eg.engine" : "role.sparring"), level: "" }
@@ -3140,7 +3146,7 @@ import { loadChunk } from "./chunk.js";
       const asBlack = !!(store.session.puzzle && store.session.puzzle.p.side === "b");
       const you = { icon: "user", name: t(asBlack ? "role.youB" : "role.you"), level: "" };
       const pr = store.session.puzzle ? PuzzlesUI.puzzleRatingOf(store.session.puzzle.p) : null;
-      const book = { icon: "puzzle", name: t("role.puzzle"), level: pr != null ? String(pr) : "" };
+      const book = { icon: "puzzle", name: t("role.puzzle"), level: pr != null ? tf("pz.ratingOf", [pr]) : "" };
       return asBlack ? { w: book, b: you } : { w: you, b: book };
     }
     // Two players: a loaded game names its players — the file's [White] /
@@ -3218,6 +3224,7 @@ import { loadChunk } from "./chunk.js";
         res.hidden = !score;
         if (score) {
           setText(res, score[side]);
+          res.title = tf("ps.score", [score[side]]);
           res.classList.toggle("win", score[side] === "1");
         }
       }
@@ -3906,55 +3913,11 @@ import { loadChunk } from "./chunk.js";
     gameResultToken, resultFromFile, clearEndingFlags, forgetFileResult, adoptHeaderResult,
   } = GameCtl;
 
-  /**
-   * One question, asked once, on a genuinely fresh install.
-   *
-   * Everything the app has for a beginner — the interactive course, the Beginner
-   * engine that makes real mistakes on purpose — was reachable only by someone
-   * who already knew to go looking. Until 1.7 the first screen was a 1700-rated
-   * Stockfish, which is exactly the "hard to get started" complaint the whole
-   * teaching side was built to answer.
-   *
-   * Dismissing the dialog leaves the player where they already are, so this can
-   * never trap anyone: the worst case is the old behaviour.
-   */
-  async function runOnboarding() {
-    // 5.1: the first door is marked as the one to take, and the third way out
-    // says where it leads — 「取消」 on a first-run question left nobody knowing
-    // which mode they had landed in (audit, work package E). It lands where
-    // 「我会下棋」 lands, with nothing said: the board is the answer.
-    const choice = await pickFromList(t("ob.title"), [
-      { label: t("ob.newLabel"), sub: t("ob.newSub"), tag: t("ob.recommended") },
-      { label: t("ob.knowLabel"), sub: t("ob.knowSub") },
-    ], { cancelLabel: t("ob.later") });
-    if (choice === 0) {
-      store.session.mode = "learn";
-      // …and the engine they meet after the first lessons is the one built
-      // for them. Up to 7.5 this branch left `difficulty` at the default
-      // "normal" (Elo 1700), so the self-declared beginner got a stronger
-      // opponent than 「我会下棋」 does (7.6 §3a).
-      store.session.difficulty = "beginner";
-      startLearn();
-    } else {
-      // they can play, but "normal" is Elo 1700 — start a rung lower and let
-      // the difficulty row (now visible) speak for itself. The engine reads
-      // `difficulty` at search time, so setting it here is enough.
-      store.session.mode = "ai";
-      store.session.difficulty = "easy";
-    }
-    // …but not where the panel is a full-height sheet over the board: ending
-    // the onboarding by covering the thing it just set up is not a welcome.
-    // The ☰ is in the corner and the board is what they came for (7.3 §1).
-    setPanelOpen(!panelCoversBoard());
-    saveSettings();
-    store.commit("session", "sync");
-    // v8-0-plan §5: 「我会下棋」 is someone about to choose an opponent, so
-    // they are shown the choice — the new-game dialog, on the opponent row,
-    // with 初级 already picked — instead of a game against a rung they never
-    // saw being chosen. 「以后再说」 still leaves them on the board.
-    if (choice === 1) openNewGame({ switchOpponent: true });
-    else if (choice !== 0) maybeEngineTurn();
-  }
+  // v10-0-plan T1: the first-run question and its placement (onboarding.js, chunk-onboarding.js)
+  const runOnboarding = () => loadChunk("chunk-onboarding.js", "createOnboarding").then((create) => create({
+    t, store, startLearn, setPanelOpen, panelCoversBoard, saveSettings, maybeEngineTurn,
+    pickFromList: (...a) => pickFromList(...a), startPlacement,
+  }).run(), () => {});
 
   // --- position editor + FEN loading ---
   const PALETTE = [
@@ -4336,12 +4299,10 @@ import { loadChunk } from "./chunk.js";
     if (!show) return;
     OppUI.paintHello();
     // v8-0-plan §5: the way to the new-game dialog before the first move —
-    // the opponent in an engine game, the side and clock between two players
+    // 新局, as 本局 names it once the game has begun (10.0 M0: not 换个对手;
+    // in an engine game the dialog still opens on the opponent's card)
     const ng = document.getElementById("idle-new");
-    if (ng) {
-      const label = t(store.session.mode === "ai" ? "go.switch" : "chrome.new");
-      if (ng.textContent !== label) ng.textContent = label;
-    }
+    if (ng && ng.textContent !== t("chrome.new")) ng.textContent = t("chrome.new");
     const body = document.getElementById("idle-body") || el;
     body.replaceChildren();
     const line = (k, v) => {
@@ -4654,7 +4615,7 @@ import { loadChunk } from "./chunk.js";
     sanHistory: () => sanHistory(),
     statusText: () => statusText(),
     onSquareClick: (sq) => onSquareClick(sq),
-    escapeKey: () => escapeKey(),
+    escapeKey: () => escapeKey(), openPalette: () => Palette.open(),
     dialogOpen: () => dialogOpen(), pageShown: () => Shell.pageShown(),
     promoOpen: () => !!promoModal && promoModal.classList.contains("show"),
     confirmOpen: () => confirmModal.classList.contains("show"),
@@ -5218,9 +5179,25 @@ import { loadChunk } from "./chunk.js";
   Shell.wire();
   // 9.0 S1: 今天 — the page around the coach's card (today-page.js)
   const TodayPage = createTodayPage({ doc: document, store, t, tf, tdot, Chess, pieceSrc: (k) => BoardView.pieceSrc(k), LESSONS, lessonText, Endgames: LessonsUI.Endgames,
-    CLASSICS: LessonsUI.CLASSICS, classicText: LessonsUI.classicText, loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText: () => ratingLabel(),
+    CLASSICS: LessonsUI.CLASSICS, classicsTotal: LessonsUI.classicsTotal, classicText: LessonsUI.classicText, loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText: () => ratingLabel(),
     drawRatingTrend, Shell, requestNewGame: () => requestNewGame() });
   TodayPage.wire();
+  // v10-0-plan A1: 分析一局 — into the review in one step — and the blank analysis board
+  const AnalyseEntry = createAnalyseEntry({ doc: document, t, Persist, Dlg, openPgnFile: (s) => openPgnFile(s), importPgnText: (x, l) => importPgnText(x, l, undefined, true),
+    analyse: () => { setSideTab("play", { top: true }); analyzeGame(SCAN_BUDGET); }, openNetSettings: () => { store.ui.setCat = "data"; Shell.go("settings"); },
+    blankBoard: async () => {
+      if (sanHistory().length && !appGameOver() && !(await confirmNative(t("an.replaceAsk"), t("an.board"), { ok: t("an.board"), cancel: t("act.cancel") }))) return;
+      switchMode("pvp"); store.session.analysisBoard = true; loadFenAsGame(new Chess().fen(), t("an.boardNote")); Shell.toBoard();
+    } });
+  AnalyseEntry.wire();
+  // v10-0-plan A3: ⌘K — find a lesson, an endgame, a theme, a game or an action (palette.js, a chunk)
+  const Palette = createPaletteLazy({ doc: document, t, tf, tdot, Dlg, store, LESSONS, lessonText, THEME_IDS, Endgames: LessonsUI.Endgames,
+    SETTING_CATS: ["general", "board", "sound", "game", "data", "advanced"], run: {
+      newGame: () => { Shell.go("play"); requestNewGame(); }, analyse: () => AnalyseEntry.open(), blank: () => document.getElementById("an-board").click(),
+      paste: () => pastePgn(), editor: () => { Shell.go("play"); document.getElementById("editor-open").click(); }, fen: () => openFenModal(),
+      exportPgn: () => downloadPgn(), flip: () => { Shell.go("play"); setFlipped(!store.game.flipped); }, go: (v) => Shell.go(v),
+      train: (s) => Shell.openTrain(s), settings: (c) => { store.ui.setCat = c; Shell.go("settings"); }, lesson: (i) => dailyJump({ kind: "lesson", i }),
+      theme: (id) => goTheme(id), endgame: (id) => LessonsUI.startEndgame(id), libGame: (e) => loadLibraryEntry(e) } });
   // v8-0-plan C3: 开局浏览器 — the key, the panel's state; the panel itself is a chunk
   createExplorerLazy({ store, t, tf, tdot, viewGame, movePath, startClockIfIdle, saveSettings, library: LibraryUI, repertoire: RepUI, saved: Persist.read("settings").value,
     toBoard: () => { Shell.go("play"); setSideTab("play"); } });
@@ -5237,6 +5214,7 @@ import { loadChunk } from "./chunk.js";
     const wasLearn = store.session.mode === "learn";
     const wasPuzzle = store.session.mode === "puzzle";
     store.session.mode = mode;
+    store.session.analysisBoard = false;
     // entering a clocked mode mid-game gets fresh clocks
     store.game.flagFall = null;
     if (store.session.mode === "pvp" || store.session.mode === "ai") resetClocks();
@@ -5624,6 +5602,8 @@ import { loadChunk } from "./chunk.js";
     Dlg.register(document.getElementById("theme-modal"), () => PuzzlesUI.closeThemes());
     Dlg.register(pickModal, () => finishPick(null));
     Dlg.register(fenModal, closeFenModal);
+    Dlg.register(document.getElementById("analyse-modal"), () => AnalyseEntry.close());
+    Dlg.register(document.getElementById("palette-modal"), () => Palette.close());
     Dlg.register(confirmModal, () => finishConfirm(false));
     Dlg.register(document.getElementById("newgame-modal"), closeNewGame);
     Dlg.register(keysModal, closeKeyHelp);

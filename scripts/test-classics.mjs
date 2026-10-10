@@ -38,6 +38,12 @@ const more = new Set(MORE.games.map((g) => g.id));
 // ------------------------------------------------------------------ games
 assert(TEN.length === 10 && MORE.games.length === 30 && games.length === 40,
   "40 classics: 10 in the bundle, 30 in the chunk (" + TEN.length + " + " + MORE.games.length + ")");
+// 10.0 M0: a count made before the chunk arrives says MORE_COUNT for it
+{
+  const src = fs.readFileSync(path.join(__dirname, "..", "src/web/js/trainer/classics-more.js"), "utf8");
+  const n = Number((/export const MORE_COUNT = (\d+);/.exec(src) || [])[1]);
+  assert(n === MORE.games.length, "trainer/classics-more.js MORE_COUNT is the chunk's game count (" + n + " / " + MORE.games.length + ")");
+}
 const ids = new Set();
 const plies = new Map();
 {

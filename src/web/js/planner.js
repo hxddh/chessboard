@@ -23,6 +23,13 @@
  *   6. game   — play, if today has had none. Training that never becomes a
  *      game is the opening-trainer mistake all over again.
  *
+ * v10-0-plan T5: the sitting is at most `MAX_STEPS` of these, taken in the
+ * order above with the repertoire's due moves (`repdue`) between the
+ * weakness and the library — what is owed before what is new — and a
+ * brand-new profile (`fresh`: nothing played, solved or learnt yet) is
+ * given the first lesson alone, not a list of things it has no reason to
+ * know about yet.
+ *
  * A step only exists when its source has something to serve (P3 in time:
  * an inapplicable step is not listed). The plan never grabs the wheel —
  * the caller renders it as an invitation, exactly like 为你出一题.
@@ -33,7 +40,10 @@
  */
 
 /** How much of each thing one sitting asks for. */
-const DOSE = { review: 3, mine: 2, weak: 2 };
+const DOSE = { review: 3, mine: 2, weak: 2, rep: 5, focusOne: 1 };
+
+/** v10-0-plan T5: a sitting is a short list — three things, each one line. */
+const MAX_STEPS = 3;
 
 /**
  * Compose the sitting from the signals.
@@ -48,20 +58,32 @@ const DOSE = { review: 3, mine: 2, weak: 2 };
  *   lessonNext: number,    // index of first unfinished lesson, or -1
  *   opUnsolved: boolean,   // any unsolved opening line (either chair)
  *   playedToday: boolean,  // a game was played today, here or elsewhere
+ *   repDue: number,        // repertoire moves due today (T5)
+ *   fresh: boolean,        // nothing played, solved or learnt yet (T5)
+ *   placed: boolean,       // placed on first run and no game played yet (T1)
+ *   focus: object|null,    // this week's first unfinished focus item, with `at` (T3)
  * }
  * @returns {{steps: Array<{kind: string, cat?: string, n?: number, i?: number}>}}
  */
 function plan(sig) {
+  // v10-0-plan T1: someone the placement just matched with an opponent is
+  // asked to play them first — what they said they came for
+  if (sig.placed) return { steps: [{ kind: "game" }].concat(plan(Object.assign({}, sig, { placed: false, fresh: false, playedToday: true })).steps).slice(0, MAX_STEPS) };
+  if (sig.fresh && sig.lessonNext >= 0) return { steps: [{ kind: "lesson", i: sig.lessonNext }] };
   const steps = [];
   if (sig.owed > 0) steps.push({ kind: "review", n: Math.min(sig.owed, DOSE.review) });
   if (sig.mineUnsolved > 0) steps.push({ kind: "mine", n: Math.min(sig.mineUnsolved, DOSE.mine) });
   // the weak step repeats what review/mine already cover only when the weak
   // category is a real third thing — a session of three copies of one idea
   // is one idea, not a session
+  // v10-0-plan T3: this week's focus is the sharpest statement of all — what
+  // the player's own games say, made into a week's work — and takes the
+  // weakness step's place; a sitting does a dose of it, not the whole week
+  if (sig.focus) steps.push({ kind: "focus", item: sig.focus, n: Math.min(DOSE[sig.focus.kind === "motif" ? "weak" : "focusOne"], sig.focus.n - (sig.focus.at || 0)) });
   // 5.2: a motif the player keeps missing is the sharper statement of the
   // same weakness — it replaces the shelf step rather than joining it, so
   // the sitting still says one thing about weakness
-  if (sig.weakMotif) steps.push({ kind: "motif", motif: sig.weakMotif, n: DOSE.weak });
+  else if (sig.weakMotif) steps.push({ kind: "motif", motif: sig.weakMotif, n: DOSE.weak });
   // 7.1: failing that, what the player's OWN GAMES say catches them. The
   // puzzle tally only knows the puzzles they have attempted here, so someone
   // who imported an archive and has answered nothing yet — the exact person
@@ -70,11 +92,12 @@ function plan(sig) {
   // only because the tally measures answers this app watched.
   else if (sig.libMotif) steps.push({ kind: "motif", motif: sig.libMotif, n: DOSE.weak, from: "lib" });
   else if (sig.weakCat && sig.weakCat !== "mine") steps.push({ kind: "weak", cat: sig.weakCat, n: DOSE.weak });
+  if (sig.repDue > 0) steps.push({ kind: "repdue", n: Math.min(sig.repDue, DOSE.rep) });
   if (sig.libQueued > 0) steps.push({ kind: "lib", n: sig.libQueued });
   if (sig.lessonNext >= 0) steps.push({ kind: "lesson", i: sig.lessonNext });
   else if (sig.opUnsolved) steps.push({ kind: "op" });
   if (!sig.playedToday) steps.push({ kind: "game" });
-  return { steps };
+  return { steps: steps.slice(0, MAX_STEPS) };
 }
 
 /**
@@ -98,6 +121,8 @@ function snap(src) {
     byMotif: Object.assign({}, src.byMotif || {}),
     lessonsDone: src.lessonsDone,
     opSolved: src.opSolved,
+    repDue: src.repDue || 0,
+    focus: Object.assign({}, src.focus || {}),
     games: src.games,
     libAnalysed: src.libAnalysed || 0,
   };
@@ -126,6 +151,10 @@ function stepDone(step, before, after) {
     case "motif": return ((after.byMotif || {})[step.motif] || 0) - ((before.byMotif || {})[step.motif] || 0) >= step.n;
     case "lesson": return after.lessonsDone > before.lessonsDone;
     case "op": return after.opSolved > before.opSolved;
+    // the due moves are graded one by one; the step is done when the dose
+    // has gone out of the queue, or the queue is empty
+    case "focus": { const k = focusKey(step.item); return ((after.focus || {})[k] || 0) - ((before.focus || {})[k] || 0) >= step.n; }
+    case "repdue": return after.repDue === 0 || before.repDue - after.repDue >= step.n;
     case "game": return after.games > before.games;
     // one analysed game completes it: the pass runs for as long as the player
     // leaves it running, and a step that only ticks when the whole queue is
@@ -135,4 +164,7 @@ function stepDone(step, before, after) {
   }
 }
 
-export const ChessPlanner = { DOSE, plan, snap, stepDone };
+/** A focus item's key in snap().focus — the counters' progress on it. */
+function focusKey(it) { return it.kind + ":" + (it.motif || it.family || ""); }
+
+export const ChessPlanner = { DOSE, MAX_STEPS, plan, snap, stepDone, focusKey };

@@ -250,6 +250,11 @@ const SHOTS = [
   { name: "train-puzzle-600-day-zh", vp: TALL, lang: "zh-CN", theme: "day", mode: "puzzle", view: "train" },
   // the panel shut: the board alone
   { name: "closed-1440-wood-en", vp: WIDE, lang: "en", theme: "wood", mode: "ai", panel: "0" },
+  // v10-0-plan A3 / A1: ⌘K with a query typed, and 分析一局 with a link that needs the network
+  { name: "palette-1440-wood-ja", vp: WIDE, lang: "ja", theme: "wood", mode: "ai", view: "home",
+    at: async (page) => { await page.keyboard.press("Control+k"); await page.waitForTimeout(600); await page.keyboard.type("終盤"); await page.waitForTimeout(300); } },
+  { name: "analyse-1024-night-en", vp: MID, lang: "en", theme: "night", mode: "ai", view: "home",
+    at: async (page) => { await page.click("#today-analyse"); await page.fill("#an-text", "https://lichess.org/q7ZvsdUF"); await page.click("#an-go"); await page.waitForTimeout(300); } },
 ];
 
 /** A shell's name (data-theme) as the look that gives it (look.js shellFor). */
