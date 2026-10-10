@@ -152,8 +152,12 @@ export function createTodayPage(d) {
     if (c) {
       const tx = classicText(c);
       const gs = ls.gs || {};
+      const total = classicsTotal ? classicsTotal() : CLASSICS.length;
+      // counted from the records, not the loaded list: until the chunk is in,
+      // CLASSICS holds ten of the forty and a game guessed among the other
+      // thirty went missing from the count (Codex on #113)
       fillCard(card("classic"), fenOfClassic(ci), tdot(t("train.classic"), String(c.year)),
-        tx.white + " – " + tx.black, CLASSICS.filter((x) => gs[x.id]).length, classicsTotal ? classicsTotal() : CLASSICS.length);
+        tx.white + " – " + tx.black, Math.min(total, Object.keys(gs).filter((k) => gs[k]).length), total);
     }
   }
 

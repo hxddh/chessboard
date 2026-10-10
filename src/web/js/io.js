@@ -316,7 +316,6 @@ export function createIO(d) {
     // this, analysing it wrote its accuracy onto that earlier record
     // (v10-0-plan A1; loadHistoryRecord sets its own id after the import)
     store.game.recordedId = null;
-    store.session.analysisBoard = !!asAnalysis;
     clearEndingFlags();
     // the file's [Result] survives the import as a terminal state: a decisive
     // result that the board does not explain is a resignation, a draw that
@@ -328,6 +327,12 @@ export function createIO(d) {
     resetClocks(); syncAutoFlip();
     // a trainer draws its own board and a page covers it: the game opens in play, on the board (Codex on #86)
     if (store.session.mode === "learn" || store.session.mode === "puzzle") switchMode(store.ui.playMode === "pvp" ? "pvp" : "ai");
+    // after the switch, which clears it: 分析一局 from a trainer (⌘K) is still
+    // an analysis, not a game the engine replies in (Codex on #113). The
+    // switch has already asked for the engine's move, and that ask does not
+    // look at the flag again once it is under way: retire it (Codex on #114).
+    store.session.analysisBoard = !!asAnalysis;
+    if (asAnalysis) invalidateEngine();
     Shell.toBoard(); store.commit("game", "action"); saveGame();
     toast(sanHistory().length
       ? tf("msg.import.doneN", [moveCount(Math.ceil(sanHistory().length / 2))])

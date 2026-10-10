@@ -172,16 +172,23 @@ export function createAnalysis(d) {
     store.session.analyzing = false;
     store.session.analyzeProgress = "";
     fileAnalysis(fens[0], h, store.session.analysis);
+    // Whether one side of this game is this player. An imported game keeps
+    // whatever mode was on (usually ai), so the mode alone said "you" about a
+    // pasted game and drilled whichever side humanColor last named — the
+    // opponent's mistakes, half the time (Codex on #113). Only a game from
+    // this app's own record (recordedId) has a "you".
+    const hasYou = store.session.mode === "ai" && !store.session.analysisBoard &&
+      (!store.game.imported || store.game.recordedId != null);
     // a library game on the board: the deeper look goes back to its entry
-    // (7.6 §1c). The miner below only runs in ai mode, where the game has a
-    // "you"; anywhere else the library's own miner takes this one.
-    LibraryUI.adoptBoardAnalysis({ fens, sans: h, scalars, bests, budget: perMove }, store.session.mode !== "ai");
+    // (7.6 §1c). The miner below only runs where the game has a "you";
+    // anywhere else the library's own miner takes this one.
+    LibraryUI.adoptBoardAnalysis({ fens, sans: h, scalars, bests, budget: perMove }, !hasYou);
     recordAccuracy();
     // 错题自炼: the pass just judged every move — bank the player's ?? plies
     // as drills before the judgement scrolls away. Only in games where one
     // side is this player (ai mode); a pvp or imported game has no "you".
     let mined = 0, revised = 0, withdrawn = 0;
-    if (store.session.mode === "ai") {
+    if (hasYou) {
       const rev = { budget: perMove, src: "auto", from: boardDrillSource() };
       const pass = { fens, sans: h, tags, bests, scalars, pvs, losses: plyLosses(fens, scalars) };
       const cands = withMotifs(Mistakes.candidatesFrom(pass, store.session.humanColor, Chess, rev));

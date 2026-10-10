@@ -264,6 +264,26 @@ const state = (page) => page.evaluate(() => {
   await ctx.close();
 }
 
+// --- 今天 · 名局: guessed games counted from the records (Codex on #113) ----------
+// Until chunk-classics-more.js is in, CLASSICS holds the ten bundled games; a
+// game guessed among the other thirty went missing from the card's count.
+{
+  const { ctx, page, errs } = await open({ view: "home" });
+  await page.evaluate(() => {
+    const at = Date.now();
+    localStorage.setItem("chess.learn", JSON.stringify({ v: 1, done: {}, last: 0, gs: {
+      "morphy-opera-1858": { w: { same: 17, n: 17, avg: 0, at } },
+      "labourdonnais-mcdonnell-1834": { b: { same: 20, n: 25, avg: 3.1, at } } } }));
+  });
+  await page.reload();
+  await page.waitForTimeout(900);
+  await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+  const n = await page.evaluate(() => { const b = document.querySelector('#today-cont .today-c[data-seg="classic"] .today-bar'); return b ? b.dataset.n : ""; });
+  assert(n === "2/40", "今天：名局卡按记录数已猜的局 —— 分块里的那一局也算上（" + n + "）");
+  assert(errs.length === 0, "今天 · 名局：没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
 // --- 4. 今天: the page the app opens on, each part going somewhere --------------
 // 9.0 S1: was 首页's three cards (继续上次 / 今天的训练 / 下一步建议, each a
 // sentence and a .home-go). What each did is somewhere on 今天 now: 继续上次
