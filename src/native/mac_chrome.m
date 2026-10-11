@@ -100,6 +100,13 @@ static void ChessConfigure(NSWindow *window) {
     if (!(window.styleMask & NSWindowStyleMaskTitled)) return;
     NSView *content = window.contentView;
     if (content == nil) return;
+    // Only over a WKWebView: the page is told about full screen through it
+    // (ChessTellPage), and a page that cannot be told would keep a stale
+    // inset (Codex on #116 — the -Dweb-engine=chromium build hosts CEF). Not
+    // there yet is not "never": nothing is marked, and the page's own
+    // chess.setChrome, which can only come from a page that exists, runs
+    // this again.
+    if (ChessFindWebView(content) == nil) return;
     objc_setAssociatedObject(window, &ChessConfiguredKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
     window.styleMask |= NSWindowStyleMaskFullSizeContentView;

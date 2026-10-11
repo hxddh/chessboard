@@ -2102,6 +2102,8 @@ for (const lang of CONTENT_LANGS) {
       /performWindowDragWithEvent/.test(m) && /AppleActionOnDoubleClick/.test(m) &&
       /NSWindowDidEnterFullScreenNotification/.test(m) && /NSWindowDidExitFullScreenNotification/.test(m),
       "mac_chrome.m: transparent full-size titlebar, a strip that drags and double-clicks as the system does, out of the way in full screen");
+    assert(/if \(ChessFindWebView\(content\) == nil\) return;\s*objc_setAssociatedObject\(window, &ChessConfiguredKey/.test(m),
+      "mac_chrome.m: the inset shell turns on only over a WKWebView, the page it can tell about full screen (not under CEF)");
     const bz = fs.readFileSync(path.join(root, "build.zig"), "utf8");
     const mac = /if \(platform == \.macos\) \{([\s\S]*?)\n    \} else/.exec(bz);
     assert(mac && /addCSourceFile\(\.\{ \.file = b\.path\("src\/native\/mac_chrome\.m"\)/.test(mac[1]) && (bz.match(/addCSourceFile\(\.\{ \.file = b\.path\("src\/native\/mac_chrome\.m"\)/g) || []).length === 1,
