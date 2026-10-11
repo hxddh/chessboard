@@ -394,11 +394,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     "将军:被将的王那一格底色变了");
   // f8/b4 gain the last-move tint and d4/e5 lose it — that is the same move
   const expected = ["e1", "f8", "b4", "d4", "e5"];
-  // 11.0 V3: the wood board is grain now, and a scaled pattern can round a
-  // level differently from one frame to the next (measured: ±1 on every
-  // square at once) — a changed square is one that moved by more than that
-  const shifted = (a, b) => !a || !b ? a !== b : a.some((v, i) => Math.abs(v - b[i]) > 2);
-  const alsoChanged = SQUARES.filter((s) => !expected.includes(s) && shifted(chk[s].bgMean, took[s].bgMean));
+  const alsoChanged = SQUARES.filter((s) => !expected.includes(s) &&
+    JSON.stringify(chk[s].bgMean) !== JSON.stringify(took[s].bgMean));
   assert(alsoChanged.length === 0, `…而且只有它和这一手的四格变(另有 ${JSON.stringify(alsoChanged)})`);
 
   // 翻转:内容跟着格名走,像素真的镜像
@@ -1304,9 +1301,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
     localStorage.setItem("chess.settings", JSON.stringify({
-      // a flat board: each draw() then starts with exactly one fillRect at
-      // (0, 0); the wood grain (11.0 V3) lays a second one over a8
-      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "green" }));
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
     window.__full = 0;
     const real = CanvasRenderingContext2D.prototype.fillRect;
     CanvasRenderingContext2D.prototype.fillRect = function (x, y, ...rest) {
@@ -2112,18 +2107,6 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       return seen.size;
     });
     assert(spread > 20, `A3 大理石:空格子上有纹理(${spread} 种颜色,平涂只有 1 种)`);
-    // v11-0-plan V3: and the wood board is wood grain, not two flat colours
-    await toSettings(page, "board");
-    await pick('#board-pick-seg button[data-board-id="wood"]');
-    await toPlay(page);
-    const grain = await page.evaluate(() => {
-      const c = document.getElementById("board"), g = c.getContext("2d"), step = c.width / 8;
-      const d = g.getImageData(Math.round(3 * step + step * 0.1), Math.round(3 * step + step * 0.1), Math.round(step * 0.8), Math.round(step * 0.8)).data;
-      const seen = new Set();
-      for (let i = 0; i < d.length; i += 4) seen.add(d[i] + "," + d[i + 1] + "," + d[i + 2]);
-      return seen.size;
-    });
-    assert(grain > 20, `11.0 V3 木:空格子上有木纹(${grain} 种颜色)`);
     await toSettings(page, "board");
     // the kings in the piece picker: fetched once the row is on screen
     await page.evaluate(() => document.getElementById("piece-pick-seg").scrollIntoView());

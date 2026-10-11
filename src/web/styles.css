@@ -498,8 +498,8 @@
          undoes 缺陷 17 (men sitting on flat colour with no contact at all);
          half keeps the contact at the base and loses the smudge. */
       --piece-shadow: rgba(38,20,4,.13);
-      /* v8-0-plan A3: paper and marble name a texture here; 11.0 V3: wood too */
-      --board-texture: wood;
+      /* v8-0-plan A3: flat colour; paper and marble name a texture here */
+      --board-texture: none;
       --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #e0b07a, #c9965c 45%, #b8864e);
