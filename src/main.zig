@@ -390,6 +390,8 @@ fn onStop(context: *anyopaque, runtime: *native_sdk.Runtime) anyerror!void {
     self.pending.close();
 }
 
+extern fn chess_mac_chrome_init() void;
+
 pub fn main(init: std.process.Init) !void {
     var app_state = App{ .env_map = init.environ_map, .io = init.io };
     // Q1.1: the data dir, before anything can ask for it. Q1.6: the language
@@ -400,6 +402,9 @@ pub fn main(init: std.process.Init) !void {
     // v8-4-plan V1: before the runner, which creates the WebView2 environment
     app_state.resolveWebView2UserData();
     const lang = app_state.launchLanguage();
+    // 11.0 W: the Mac's inset window shell — set up before the runner opens
+    // its window (src/native/mac_chrome.m; build.zig compiles it on macOS only)
+    if (comptime runner.mac_shell) chess_mac_chrome_init();
     const ran = runner.runWithOptions(app_state.app(), .{
         .app_name = windowTitleFor(lang),
         .window_title = windowTitleFor(lang),
@@ -431,6 +436,10 @@ pub fn main(init: std.process.Init) !void {
 // only the files its test blocks happen to touch.
 test "the whole app is semantically analysed by the test build" {
     _ = &main;
+}
+
+test {
+    _ = @import("chrome.zig");
 }
 
 test "the packaged page sits in resources beside bin (v8-3-plan V1)" {

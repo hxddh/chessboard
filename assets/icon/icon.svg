@@ -17,6 +17,19 @@
       <stop offset="0" stop-color="#34210f"/>
       <stop offset="1" stop-color="#1f1309"/>
     </linearGradient>
+    <!-- 11.0 S: light and depth — a soft light from above on the tile, the
+         knight's own shadow on it, and a faint rim of light on its face -->
+    <radialGradient id="light" cx="0.35" cy="0.12" r="0.9">
+      <stop offset="0" stop-color="#fff6e0" stop-opacity="0.45"/>
+      <stop offset="0.55" stop-color="#fff6e0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#9a6a3a" stop-opacity="0.55"/>
+      <stop offset="0.5" stop-color="#7a5230" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="cast" x="-15%" y="-15%" width="130%" height="130%">
+      <feGaussianBlur stdDeviation="2.4"/>
+    </filter>
     <filter id="drop" x="-10%" y="-10%" width="120%" height="125%">
       <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
       <feOffset dy="10"/>
@@ -25,10 +38,16 @@
     </filter>
   </defs>
   <rect x="100" y="100" width="824" height="824" rx="185.4" fill="url(#tile)" filter="url(#drop)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185.4" fill="url(#light)"/>
+  <!-- the knight's shadow, falling down and to the right of it -->
+  <g transform="translate(233 223) scale(6.1)" filter="url(#cast)" opacity="0.32">
+    <path fill="#3a1d05" d="M 25 87 C 29 79 44 72 50 63 C 51 69 46 73 39 71.5 C 35 71 31 70 28.5 68.5 L 26.5 65.5 L 22.5 67.5 C 17 67.5 13 64.5 12 59.5 C 11 55.5 12 52 14 49 C 20 40 30 30 40 24 C 43 22 46 20 48 19 L 51 7 C 51.5 5 53.5 5 54.5 6.5 L 58 15 L 63 6 C 64 4.5 66 5 66 7 L 67 21 C 76 28 83 40 84 54 C 85 66 83 78 81 87 Z M 26 86 L 84 86 C 85.7 86 87 87.3 87 89 L 87 93 C 87 94.7 85.7 96 84 96 L 26 96 C 24.3 96 23 94.7 23 93 L 23 89 C 23 87.3 24.3 86 26 86 Z"/>
+  </g>
   <!-- a hairline of light along the top edge, as the system's own icons have -->
   <rect x="101" y="101" width="822" height="822" rx="184.4" fill="none" stroke="#ffffff" stroke-opacity="0.22" stroke-width="2"/>
   <g transform="translate(213 193) scale(6.1)">
     <path fill="url(#ink)" d="M 25 87 C 29 79 44 72 50 63 C 51 69 46 73 39 71.5 C 35 71 31 70 28.5 68.5 L 26.5 65.5 L 22.5 67.5 C 17 67.5 13 64.5 12 59.5 C 11 55.5 12 52 14 49 C 20 40 30 30 40 24 C 43 22 46 20 48 19 L 51 7 C 51.5 5 53.5 5 54.5 6.5 L 58 15 L 63 6 C 64 4.5 66 5 66 7 L 67 21 C 76 28 83 40 84 54 C 85 66 83 78 81 87 Z M 26 86 L 84 86 C 85.7 86 87 87.3 87 89 L 87 93 C 87 94.7 85.7 96 84 96 L 26 96 C 24.3 96 23 94.7 23 93 L 23 89 C 23 87.3 24.3 86 26 86 Z"/>
+    <path fill="none" stroke="url(#rim)" stroke-width="0.6" stroke-linejoin="round" d="M 25 87 C 29 79 44 72 50 63 C 51 69 46 73 39 71.5 C 35 71 31 70 28.5 68.5 L 26.5 65.5 L 22.5 67.5 C 17 67.5 13 64.5 12 59.5 C 11 55.5 12 52 14 49 C 20 40 30 30 40 24 C 43 22 46 20 48 19 L 51 7 C 51.5 5 53.5 5 54.5 6.5 L 58 15 L 63 6 C 64 4.5 66 5 66 7 L 67 21"/>
     <circle cx="43" cy="32" r="2.4" fill="#f4bd6a"/>
   </g>
 </svg>

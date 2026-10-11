@@ -55,7 +55,8 @@ export function createOpponentsUI(d) {
       const av = doc.createElement("span");
       av.className = "op-av";
       av.setAttribute("aria-hidden", "true");
-      av.appendChild(d.icon(p.icon));
+      // v11-0-plan V1: a face, not an icon
+      if (d.portrait) d.portrait(av, p.id); else av.appendChild(d.icon(p.icon));
       const txt = doc.createElement("span");
       txt.className = "op-txt";
       const name = doc.createElement("span");
@@ -168,6 +169,7 @@ export function createOpponentsUI(d) {
     if (style && style !== "off") bits.push(styleName(style));
     return {
       icon: p ? p.icon : "bot",
+      portrait: p ? p.id : "fish",
       name: p ? nameOf(p) : "Stockfish",
       level: tdot(...bits),
     };
@@ -323,7 +325,10 @@ export function createOpponentsUI(d) {
   function paintHello() {
     const node = el("op-hello");
     if (!node) return;
-    const line = store.session.mode === "ai" ? hello(store.session.difficulty, store.session.personaId) : null;
+    // v11-0-plan P: the card shows the name beside the face, so the line is
+    // only what they say
+    const p = store.session.mode === "ai" ? Opponents.personaFor(store.session.difficulty, store.session.personaId) : null;
+    const line = p ? L()[p.id].hello : null;
     if (line) setText(node, line);
     if (node.hidden !== !line) node.hidden = !line;
   }

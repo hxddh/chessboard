@@ -90,6 +90,27 @@ export function createGameController(d) {
     startNewGame();
   }
 
+  /**
+   * v11-0-plan U2: 今天 · 下一盘 starts the game — the last opponent, side and
+   * clock, as 开始 on an untouched dialog would — instead of opening the
+   * dialog to ask again. Two clicks from launch to a move (今天 is the first
+   * page; this is the second), not three. A game still being played keeps the
+   * dialog and its 「会结束当前这盘」 line: that one has something to lose.
+   */
+  function playNext() {
+    const live = ["ai", "pvp"].includes(store.session.mode);
+    if (live && sanHistory().length && !appGameOver() && !store.game.imported) { Shell.toBoard(); openNewGame(); return; }
+    stopEditor(t("msg.editor.exited"));
+    // the draft an untouched dialog would hold, started as 开始 starts it
+    const pvp = store.session.mode === "pvp";
+    store.ui.newGame = {
+      mode: pvp ? "pvp" : "ai", difficulty: store.session.difficulty, personaId: store.session.personaId,
+      color: store.session.colorRandom ? "random" : pvp ? (store.game.flipped ? "b" : "w") : store.session.humanColor,
+      timeControl: store.game.timeControl,
+    };
+    startFromDialog();
+  }
+
   function openNewGame(opts) {
     const modal = el("newgame-modal");
     if (!modal) { startNewGame(); return; }
@@ -409,7 +430,7 @@ export function createGameController(d) {
   }
 
   return {
-    canTakeBack, undo, requestNewGame, openNewGame, closeNewGame, startFromDialog, retryFromHere, doResign,
+    canTakeBack, undo, requestNewGame, playNext, openNewGame, closeNewGame, startFromDialog, retryFromHere, doResign,
     recordOutcome, coachRemember, coachAfterEngineReply, doOfferDraw, acceptDraw, doClaimDraw,
     gameResultToken, resultFromFile, clearEndingFlags, forgetFileResult, adoptHeaderResult,
   };

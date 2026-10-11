@@ -131,12 +131,14 @@
    * @param {string} [cls] extra class names
    * @returns {SVGSVGElement}
    */
+  // v11-0-plan S: one pen for the whole set, 1.5 on the 24 grid (Lucide's
+  // 2 read heavier than the type beside it; at 16px 1.5 is a whole pixel)
   function icon(name, cls) {
     const svg = document.createElementNS(NS, "svg");
     svg.setAttribute("viewBox", "0 0 24 24");
     svg.setAttribute("fill", "none");
     svg.setAttribute("stroke", "currentColor");
-    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-width", "1.5");
     svg.setAttribute("stroke-linecap", "round");
     svg.setAttribute("stroke-linejoin", "round");
     svg.setAttribute("aria-hidden", "true");

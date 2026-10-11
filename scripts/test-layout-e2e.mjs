@@ -44,6 +44,9 @@ import { playOpera, analyseOpera } from "./lib/opera-fixture.mjs";
 import { loadAppModules } from "./lib/app-module.mjs";
 import { settle } from "./lib/settle.mjs";
 
+/** v11-0-plan U3: the kinds, runs, themes and list are under 更多练法 */
+async function openPzMore(page) { await page.evaluate(() => { const f = document.getElementById("pz-more"); if (f) f.open = true; }); }
+
 // v8-0-plan F1: SHARD=i/n runs every n-th scenario; unset runs all of them
 const scenario = makeScenarioGate(process.env.SHARD);
 // v8-3-plan V4: every 400 ms fallback logged with its evidence, and counted
@@ -524,14 +527,15 @@ if (scenario()) {
   const r = await page.evaluate(() => ({
     bName: document.getElementById("black-role").textContent.trim(),
     bLevel: document.getElementById("black-level").textContent.trim(),
-    bIcon: (document.querySelector("#av-b svg") || {}).dataset?.icon,
+    bIcon: document.getElementById("av-b").dataset.icon,
     wIcon: (document.querySelector("#av-w svg") || {}).dataset?.icon,
     wName: document.getElementById("white-role").textContent.trim(),
   }));
   // v8-0-plan B4: the persona of the rung, with its rating — 10.0 T1: a new
   // install's rung is 休闲 (托莫, an hourglass), no longer 中级 (索尔)
   assert(r.bName === "托莫" && /休闲 670/.test(r.bLevel), "the engine's strip names its persona, level and rating (" + r.bName + " · " + r.bLevel + ")");
-  assert(r.bIcon === "hourglass" && r.wIcon === "user", "…with the persona's icon on it, and yours on your own (" + r.bIcon + " / " + r.wIcon + ")");
+  // v11-0-plan V1: the persona is a face (托莫's portrait), you keep your icon
+  assert(r.bIcon === "pt:tomo" && r.wIcon === "user", "…with the persona's portrait on it, and your icon on your own (" + r.bIcon + " / " + r.wIcon + ")");
   await ctx.close();
 }
 
@@ -744,7 +748,8 @@ if (scenario()) {
     // so they are found again by their group and their data attribute.
     ["训练·谜题·选题器", { mode: "puzzle", tab: "play", min: 12,
       sel: "#train-seg button, #pz-hero button, #pz-review, #pz-groups button, #pz-modes button, #pz-themes-row button" },
-      async () => {}],
+      // v11-0-plan U3: the kinds and the runs are one fold down (更多练法)
+      async (page) => { await openPzMore(page); }],
     ["训练·名局·读谱", { mode: "learn", tab: "play", min: 4, sel: "#train-seg button, #classic-mode button" },
       async (page) => { await page.click('#train-seg button[data-seg="classic"]'); await page.waitForTimeout(700); }],
   ];
@@ -2381,7 +2386,9 @@ if (scenario()) {
 // The same claims, of them: three across, one height, no name or count cut
 // (a tile's name ellipsizes, so "cut" is its own scrollWidth), and the two
 // rows' labels and buttons whole too.
-const pickerFits = (page) => page.evaluate(() => {
+// v11-0-plan U3: measured with 更多练法 open — the kinds and runs live there
+const pickerFits = async (page) => { await openPzMore(page); return pickerMeasure(page); };
+const pickerMeasure = (page) => page.evaluate(() => {
   const g = document.getElementById("pz-groups");
   const tiles = [...g.querySelectorAll(".pz-tile")].filter((b) => !b.hidden && b.offsetParent);
   const cut = (e) => e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1;
@@ -5891,7 +5898,7 @@ if (scenario()) {
       await page.waitForTimeout(900);
       await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
       for (const kind of ["look", "blind"]) {
-        await page.click(`#pz-modes button[data-run="${kind}"]`);
+        await openPzMore(page); await page.click(`#pz-modes button[data-run="${kind}"]`);
         await page.waitForFunction(() => !document.getElementById("pz-vis").hidden, null, { timeout: 6000 }).catch(() => {});
         await settle(page);
         for (const when of ["asked", "answered"]) {

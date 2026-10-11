@@ -29,6 +29,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { seedLibrary } from "./lib/library-view.mjs";
+import { PROSE_COUNT } from "./lib/prose-count.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "src", "web");
@@ -284,6 +285,80 @@ const state = (page) => page.evaluate(() => {
   await ctx.close();
 }
 
+// --- 11.0 W: the Mac's inset window shell, as the page sees it --------------
+// The shell answers chess.setChrome with "inset": the app starts 28 px down
+// and nothing that takes a click sits under the native drag strip. Any
+// other answer (a browser, Windows) leaves the layout alone.
+{
+  for (const answer of ["inset", "none"]) {
+    const ctx = await browser.newContext({ viewport: WIDE, locale: "zh-CN" });
+    await ctx.addInitScript((a) => {
+      if (!sessionStorage.getItem("seeded")) {
+        sessionStorage.setItem("seeded", "1");
+        localStorage.setItem("chess.settings", JSON.stringify({ mode: "ai", langId: "zh-CN", soundOn: false, view: "play", appearance: "dark" }));
+      }
+      window.__chromeAsked = [];
+      window.zero = {
+        invoke: (name, p) => {
+          if (name === "chess.setChrome") { window.__chromeAsked.push(p); return Promise.resolve({ ok: true, chrome: a }); }
+          return Promise.resolve(null);
+        },
+        on: () => () => {}, off: () => {}, platform: { supports: () => Promise.resolve(false) },
+        clipboard: { readText: () => Promise.resolve(""), writeText: () => Promise.resolve(true) },
+      };
+    }, answer);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+    const r = await page.evaluate(() => {
+      const top = document.getElementById("app").getBoundingClientRect().top;
+      const hits = [];
+      for (let x = 4; x < innerWidth; x += 24) {
+        for (const y of [2, 14, 26]) {
+          const e = document.elementFromPoint(x, y);
+          if (e && e.closest("button, a, input, select, textarea, [role=button], canvas")) hits.push(x + "," + y + ":" + (e.id || e.className || e.tagName));
+        }
+      }
+      return { top, hits, asked: window.__chromeAsked.slice(-1)[0] || null, attr: document.documentElement.getAttribute("data-chrome") };
+    });
+    if (answer === "inset") {
+      assert(r.top === 28 && r.attr === "inset", "W：外壳答 inset —— 整个应用从 28px 处开始（" + r.top + "，" + r.attr + "）");
+      assert(r.hits.length === 0, "W：拖动条下面（顶上 28px）没有可点的东西" + (r.hits.length ? "（" + r.hits.slice(0, 3).join(" ") + "）" : ""));
+      assert(r.asked && r.asked.dark === true, "W：木主题（深色）告诉外壳 dark: true（" + JSON.stringify(r.asked) + "）");
+    } else {
+      assert(r.top === 0 && r.attr === null, "W：外壳答 none —— 布局照旧（" + r.top + "，" + r.attr + "）");
+    }
+    assert(errs.length === 0, "W（" + answer + "）：没有页面异常 " + errs.join(" / "));
+    await ctx.close();
+  }
+}
+
+// --- 11.0 U1: fewer words ----------------------------------------------------
+// The explanation a person reads on the three screens opened most — the board
+// before a game, the puzzles, 今天 — measured as lib/prose-count.mjs counts
+// it (visible running text that is not a control, a heading, a number or the
+// notation). 10.1.0 measured 60 + 32 + 77 = 169 characters at 1440×900 in
+// zh-CN; the plan's target is 40% fewer, so at most 101.
+{
+  const BASE_101 = 169;
+  const counts = {};
+  const said = {};
+  for (const [name, settings] of [["play", { mode: "ai" }], ["puzzle", { mode: "puzzle" }], ["today", { mode: "ai", view: "home" }]]) {
+    const { ctx, page } = await open(settings);
+    if (settings.view) { await page.click('.rail-btn[data-view="home"]').catch(() => {}); await page.waitForTimeout(600); }
+    const r = await page.evaluate(PROSE_COUNT, "#app");
+    counts[name] = r.chars;
+    said[name] = r.samples.join(" | ");
+    await ctx.close();
+  }
+  const total = counts.play + counts.puzzle + counts.today;
+  assert(total <= Math.floor(BASE_101 * 0.6),
+    "11.0 U1：下棋、谜题、今天三屏的说明文字 " + total + " 字（10.1.0 是 " + BASE_101 + "，目标减 40%）" + JSON.stringify(counts) + " " + JSON.stringify(said));
+}
+
 // --- 今天 · 进度圈: just above the 900px breakpoint the card is narrowest (Codex on #115)
 {
   const { ctx, page, errs } = await open({ view: "home" }, { width: 920, height: 800 });
@@ -316,7 +391,7 @@ const state = (page) => page.evaluate(() => {
       newGame: vis(document.getElementById("today-new")) ? txt("today-new") : "",
       heroBoard: document.querySelectorAll("#today-hero-board .mini-sq").length,
       rings: [...document.querySelectorAll("#today-rings .today-ring")].map((r) => r.dataset.k + ":" + r.querySelector("b").textContent),
-      note: txt("today-prog-note"),
+      note: vis(document.getElementById("today-prog-note")) ? txt("today-prog-note") : "",
       cont: [...document.querySelectorAll("#today-cont .today-c")].filter(vis)
         .map((c) => c.dataset.seg + ":" + c.querySelector("b").textContent.trim() + ":" + c.querySelectorAll(".mini-sq").length),
       gamesEmpty: vis(document.getElementById("today-games-empty")),
@@ -325,22 +400,23 @@ const state = (page) => page.evaluate(() => {
   });
   assert(!!today.head && !!today.date && !!today.hero && !!today.go && today.heroBoard === 64 && today.newGame === "下一盘",
     "S1: 今天页有问候、日期,主卡是一句话 + 一块小棋盘 + 按钮,旁边是「下一盘」(" + JSON.stringify(today) + ")");
-  assert(today.rings.join() === "lesson:0/1,puzzle:0/5,game:0/1" && !!today.note,
-    "S1: 今天的三项进度:课 0/1、题 0/5、局 0/1,下面说还差什么(" + today.rings.join() + " · " + today.note + ")");
+  // v11-0-plan U1: the rings say what is left; no sentence repeats them
+  assert(today.rings.join() === "lesson:0/1,puzzle:0/5,game:0/1" && !today.note,
+    "S1: 今天的三项进度:课 0/1、题 0/5、局 0/1,圈里就是还差多少,下面不再用一句话复述(" + today.rings.join() + " · " + today.note + ")");
   assert(today.cont.length === 3 && today.cont.map((c) => c.split(":")[0]).join() === "course,endgame,classic"
     && today.cont.every((c) => c.split(":")[1] && c.split(":")[2] === "64") && /第 1 课/.test(today.cont[0]),
     "S1: 「继续」三张卡 课程 / 残局 / 名局,各有名字和棋盘;课程停在第 1 课(" + JSON.stringify(today.cont) + ")");
   assert(today.gamesEmpty && today.ratings.every(Boolean), "S1: 还没有对局时说没有;两个等级分都有字(" + JSON.stringify(today.ratings) + ")");
   assert((await state(page)).view === "home", "A1: 上次停在今天,打开还是今天");
-  // 下一盘, with no game on the board, starts one: the new-game dialog
+  // 下一盘, with no game on the board, starts one — 11.0 U2: at once, with the
+  // last opponent, not through the new-game dialog
   await page.click("#today-new");
   await page.waitForTimeout(400);
   const after = await page.evaluate(() => ({
     view: document.getElementById("app").getAttribute("data-view"),
     ng: document.getElementById("newgame-modal").classList.contains("show"),
   }));
-  assert(after.view === "play" && after.ng, "A1 × S1: 「下一盘」→ 下棋 + 新对局对话框(" + JSON.stringify(after) + ")");
-  await page.click("#ng-cancel");
+  assert(after.view === "play" && !after.ng, "A1 × S1 × 11.0 U2: 「下一盘」→ 直接在棋盘上开局,不经过对话框(" + JSON.stringify(after) + ")");
   // the hero's button starts the plan: its first step, on the view it happens in
   await page.click('#rail button[data-view="home"]');
   await page.waitForTimeout(200);

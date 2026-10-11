@@ -278,6 +278,17 @@ import { easeFromCss } from "./motion.js";
    */
   let _imageRedraws = 0;
 
+  /**
+   * v11-0-plan V2 (b): Colin Burnett's drawing, kept, with a finer pen. Its
+   * 1.5-unit outline was cut for 45px squares; on a 100px square it is a 3px
+   * black rule round every man, and the board read heavy. 1.2 keeps every
+   * line of the drawing and its legibility on both square colours. Only the
+   * default set: the others were drawn with their own weights.
+   */
+  function refined(set, svg) {
+    return set === "cburnett" ? svg.replace(/stroke-width="1\.5"/g, 'stroke-width="1.2"') : svg;
+  }
+
   function initPieceImages() {
     const svgs = PIECE_SETS[_set]();
     if (!svgs || typeof Image === "undefined") return;
@@ -296,7 +307,7 @@ import { easeFromCss } from "./motion.js";
       const img = new Image();
       fresh[key] = img;
       const loaded = new Promise((res) => { img.onload = res; img.onerror = res; });
-      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgs[key]);
+      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(refined(want, svgs[key]));
       // decode() rejects on an undecodable image; the glyph fallback then
       // covers that one piece (spriteFor checks naturalWidth)
       return img.decode ? img.decode().catch(() => loaded) : loaded;
@@ -373,9 +384,19 @@ import { easeFromCss } from "./motion.js";
       c = document.createElement("canvas");
       c.width = size;
       c.height = size;
-      c.getContext("2d").drawImage(img, 0, 0, size, size);
+      const g = c.getContext("2d");
       // v8-0-plan A3: the paper board prints every set in its ink
       const ink = parseInk(paint().pieceInk);
+      // v11-0-plan V2 (b): and a breath of relief — a soft shade under the
+      // man's own outline, so it stands off the square rather than being
+      // printed on it (the contact shadow is the ground; this is the body).
+      // Not on paper: ink has no relief.
+      if (!ink && _set === "cburnett") {
+        g.shadowColor = "rgba(0, 0, 0, 0.22)";
+        g.shadowBlur = size * 0.03;
+        g.shadowOffsetY = size * 0.015;
+      }
+      g.drawImage(img, 0, 0, size, size);
       if (ink) inkSprite(c, img, ink);
       _sprites[ck] = c;
     }
@@ -389,7 +410,7 @@ import { easeFromCss } from "./motion.js";
    */
   function pieceSrc(key) {
     const svgs = PIECE_SETS[_set]() || CBURNETT_PIECE_SVGS;
-    return svgs && svgs[key] ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgs[key]) : "";
+    return svgs && svgs[key] ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(refined(_set, svgs[key])) : "";
   }
 
   /** Where `sq` is drawn right now: screen column and row, 0–7 from top left. */
@@ -728,6 +749,21 @@ import { easeFromCss } from "./motion.js";
     // around the board (see .coords in styles.css), which is where a real
     // board has them and where they cannot sit on top of the a1/h1 rooks.
     drawCoords(m.flipped, m.coords !== false);
+    // v11-0-plan M: a won game's king stands in a small glow — the quiet
+    // celebration (no confetti), grown in with the result badges and drawn
+    // under the man. Under reduced motion it is simply there.
+    for (const r of m.result || []) {
+      if (!r || r.kind !== "win" || !r.sq) continue;
+      const { sr, sc } = screenPos(r.sq, m.flipped);
+      const cx = sc * step + step / 2, cy = sr * step + step / 2;
+      const a = 0.42 * ease(fxAt(_fx.badge, durMs("--dur-slow"), now));
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, step * 0.62);
+      g.addColorStop(0, fade(P.judgeGood, a));
+      g.addColorStop(0.55, fade(P.judgeGood, a * 0.45));
+      g.addColorStop(1, fade(P.judgeGood, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(...cellRect(sr, sc));
+    }
     // pieces: crisp vector sprites, Unicode glyphs only while sprites decode
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -823,9 +859,14 @@ import { easeFromCss } from "./motion.js";
       const lands = (sq) => { const r = m.position[8 - Number(sq[1])]; return !!(r && r[FILES.indexOf(sq[0])]); };
       if (_anim.taken && _anim.segs.some((sg) => lands(sg.to))) {
         const { sr, sc } = screenPos(_anim.taken.sq, m.flipped);
+        // v11-0-plan M: and it sinks as it goes — a fifth smaller by the end,
+        // about its own centre (a transform, not a third sprite size)
+        const cx = sc * step + step / 2, cy = sr * step + step / 2, k = 1 - 0.2 * t;
         ctx.save();
         ctx.globalAlpha = 1 - t;
-        paintPiece(_anim.taken.piece, sc * step + step / 2, sr * step + step / 2);
+        ctx.translate(cx, cy);
+        ctx.scale(k, k);
+        paintPiece(_anim.taken.piece, 0, 0);
         ctx.restore();
       }
       let painted = 0;

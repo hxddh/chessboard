@@ -462,6 +462,30 @@ await scenario("分析/精析", async () => {
   await ctx.close();
 });
 
+// --- 11.0 U2: 复盘这局, one click to the moment that mattered ------------------
+await scenario("复盘这局", async () => {
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
+  // the trap played to its mate: 7...Nf3#
+  await openPgn(page, TRAP.replace('[Result "*"]', '[Result "0-1"]').replace("7. Be2 *", "7. Be2 Nf3# 0-1"));
+  const card = await page.evaluate(() => !document.getElementById("go-card").hidden && !!document.getElementById("go-analyse").offsetParent);
+  assert(card, "复盘这局：将死之后结果卡在，「复盘这局」可按");
+  const busy = () => page.evaluate(() => /停/.test(document.getElementById("an-run").textContent || ""));
+  await page.click("#go-analyse");
+  await until(busy, 3000, 50);
+  await until(async () => !(await busy()), 60000);
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(() => {
+    const cur = document.querySelector(".move-list .mlmove.current");
+    const tag = cur && cur.querySelector(".mvtag");
+    return { pos: (document.getElementById("replay-pos").textContent || "").trim(), tag: tag ? tag.textContent.trim() : "",
+      tags: [...document.querySelectorAll(".move-list .mvtag")].map((e) => e.textContent.trim()) };
+  });
+  assert(/^\d+ \/ 14$/.test(r.pos) && !/^14 /.test(r.pos) && (r.tag === "??" || (r.tag === "?" && !r.tags.includes("??"))),
+    "11.0 U2：「复盘这局」一次点击，分析完停在最重的那一手上，不在终局", JSON.stringify(r));
+  assert(!errs.length, "复盘这局：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
 // --- 4. 持续分析 --------------------------------------------------------------
 await scenario("持续分析", async () => {
   const { ctx, page, errs } = await openPage({ mode: "pvp" });
@@ -1332,10 +1356,13 @@ await scenario("对手角色", async () => {
     role: document.getElementById("black-role").textContent.trim(),
     level: document.getElementById("black-level").textContent.trim(),
     hello: document.getElementById("op-hello").hidden ? "" : document.getElementById("op-hello").textContent.trim(),
+    card: document.getElementById("idle-name").textContent.trim(),
+    face: !!document.querySelector("#idle-av.portrait svg"),
   }));
   assert(st.s.difficulty === "learner" && st.s.personaId === "principled" && st.role === "莉娜" && /练习 \d+ · 重原则/.test(st.level),
     "对手角色：选莉娜 = 练习档 × 重原则，对阵条写着名字、档位、等级分和风格", JSON.stringify(st));
-  assert(/^莉娜：/.test(st.hello), "对手角色：开局前，空棋盘的卡片上是她的开场白", st.hello);
+  // v11-0-plan P: the card names her once, beside her face; the line is hers alone
+  assert(st.card === "莉娜" && st.face && st.hello && !/^莉娜/.test(st.hello), "对手角色：开局前，空棋盘的卡片上是她的头像、名字和开场白", JSON.stringify(st));
   await page.evaluate(() => { window.__uci = []; });
   await clickMove(page, "e2", "e4");
   const n = await until(() => plies(page).then((p) => (p >= 2 ? p : 0)), 20000, 150);

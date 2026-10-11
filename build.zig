@@ -409,6 +409,17 @@ fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.B
         app_mod.linkFramework("ScreenCaptureKit", .{ .weak = true });
         app_mod.linkFramework("CoreVideo", .{});
         app_mod.linkFramework("MediaToolbox", .{});
+        // 11.0 W: the app's own window shell — traffic lights inside the
+        // content, a native drag strip over the top 28 pt, the appearance from
+        // the theme (src/native/mac_chrome.m; main.zig calls it on macOS).
+        // Plain ObjC whichever web engine is built; it looks for a WKWebView
+        // to tell the page about full screen and finds none under CEF.
+        {
+            const sdk_include = if (b.sysroot) |sysroot| b.fmt("-I{s}/usr/include", .{sysroot}) else "";
+            const chrome_flags: []const []const u8 = if (b.sysroot) |sysroot| &.{ "-fobjc-arc", "-fno-sanitize=builtin", "-ObjC", "-mmacosx-version-min=11.0", "-isysroot", sysroot, sdk_include } else &.{ "-fobjc-arc", "-fno-sanitize=builtin", "-ObjC", "-mmacosx-version-min=11.0" };
+            app_mod.addCSourceFile(.{ .file = b.path("src/native/mac_chrome.m"), .flags = chrome_flags });
+            app_mod.linkFramework("WebKit", .{});
+        }
         app_mod.linkFramework("Accelerate", .{});
         app_mod.linkFramework("Foundation", .{});
         app_mod.linkFramework("CoreText", .{});

@@ -35,7 +35,7 @@ export function createTodayPage(d) {
   const {
     doc, store, t, tf, tdot, Chess, pieceSrc, LESSONS, lessonText, Endgames, CLASSICS, classicsTotal, classicText,
     loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText, drawRatingTrend,
-    Shell, requestNewGame,
+    Shell, playNext,
   } = d;
   const $ = (id) => doc.getElementById(id);
   const put = (node, s) => { if (node && node.textContent !== s) node.textContent = s; };
@@ -72,7 +72,7 @@ export function createTodayPage(d) {
 
   function renderProgress(now) {
     const c = counts(now);
-    const left = [];
+    let done = true;
     for (const ring of doc.querySelectorAll("#today-rings .today-ring")) {
       const k = ring.dataset.k;
       const goal = TODAY_GOALS[k];
@@ -80,9 +80,12 @@ export function createTodayPage(d) {
       put(ring.querySelector("b"), c[k] + "/" + goal);
       ring.style.setProperty("--p", String(Math.round((n / goal) * 100)));
       ring.classList.toggle("done", c[k] >= goal);
-      if (c[k] < goal) left.push(tf("today.left." + k, [goal - c[k]]));
+      if (c[k] < goal) done = false;
     }
-    put($("today-prog-note"), left.length ? tf("today.leftNote", [tdot(...left)]) : t("today.allDone"));
+    // v11-0-plan U1: the rings already say what is left (「题 2/5」); the line
+    // under them said it again in a sentence. It speaks only when the day is done.
+    const note = $("today-prog-note");
+    if (note) { note.hidden = !done; if (done) put(note, t("today.allDone")); }
     const run = ChessProgress.streak(ChessProgress.coerce(store.session.progress), now);
     const streak = $("today-streak");
     if (streak) {
@@ -229,7 +232,11 @@ export function createTodayPage(d) {
 
   function wire() {
     const nw = $("today-new");
-    if (nw) nw.onclick = () => { Shell.go("play"); requestNewGame(); };
+    // v11-0-plan U2: straight into the game (game-controller.js playNext)
+    if (nw) nw.onclick = () => playNext();
+    // …and 为你出一题, the puzzle page's own pick, without stopping on its segment
+    const pz = $("today-puzzle");
+    if (pz) pz.onclick = () => { Shell.openTrain("puzzle"); const b = $("puzzle-smart"); if (b) b.click(); };
     const all = $("today-all-games");
     if (all) all.onclick = () => Shell.go("library");
     const cont = $("today-cont");

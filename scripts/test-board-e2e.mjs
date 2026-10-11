@@ -706,7 +706,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     assert(s.open && s.role === "dialog" && s.modal === "true", `§1c ${tag}:选择器是一个模态 dialog`);
     assert(inside && column && inward,
       `§1c ${tag}:四个棋子都在棋盘内、在 ${c.to} 那一列、从升变格往里排(${s.pieces.map((x) => x.p + "@" + Math.round(x.cx) + "," + Math.round(x.cy)).join(" ")})`);
-    assert(s.pieces.every((x) => x.svg === CBURNETT_PIECE_SVGS[c.turn + x.p]),
+    // 11.0 V2: the board draws cburnett with the finer pen, and so does the picker
+    const finer = (svg) => svg.replace(/stroke-width="1\.5"/g, 'stroke-width="1.2"');
+    assert(s.pieces.every((x) => x.svg === finer(CBURNETT_PIECE_SVGS[c.turn + x.p])),
       `§1c ${tag}:画的是棋盘那一套(cburnett)的${c.turn === "w" ? "白" : "黑"}子,不是 Unicode 字符`);
     assert(s.blur === "none" || s.blur === "", `§1c ${tag}:棋盘不模糊(${s.blur})`);
     assert(s.pieces.map((x) => x.name).join("") === "后车象马" && s.focus === "q", `§1c ${tag}:读屏名字照旧、焦点在「后」上`);
@@ -1836,6 +1838,47 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     assert(errs.length === 0, `T1 首次启动:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
     await ctx.close();
   }
+  // (b1) v11-0-plan U2: from 今天, 下一盘 is the game — one click, the last
+  // opponent, no dialog in between (it was 下一盘 → dialog → 开始)
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript(() => {
+      if (sessionStorage.getItem("seeded")) return;
+      sessionStorage.setItem("seeded", "1");
+      localStorage.setItem("chess.settings", JSON.stringify({ mode: "puzzle", langId: "zh-CN", soundOn: false, difficulty: "learner", personaId: "principled", humanColor: "w" }));
+    });
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    await page.click('.rail-btn[data-view="home"]'); await settle(page);
+    let clicks = 0;
+    await page.click("#today-new"); clicks++;
+    await page.waitForTimeout(700);
+    const r = await page.evaluate(() => ({
+      view: document.getElementById("app").getAttribute("data-view"),
+      dialog: !document.getElementById("newgame-modal").hidden && getComputedStyle(document.getElementById("newgame-modal")).display !== "none",
+      mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode,
+      opp: document.getElementById("idle-name").textContent.trim(),
+    }));
+    assert(clicks === 1 && r.view === "play" && !r.dialog && r.mode === "ai" && r.opp === "莉娜",
+      "11.0 U2:今天 →「下一盘」一次点击就在棋盘上，对手是上次的莉娜，中间没有对话框", JSON.stringify(r));
+    // and a puzzle that suits you: one click from 今天 as well (it was 训练 →
+    // 谜题 → 为你出一题 for anyone whose last segment was not the puzzles)
+    await page.click('.rail-btn[data-view="home"]'); await settle(page);
+    await page.click("#today-puzzle");
+    await page.waitForTimeout(900);
+    const pz = await page.evaluate(() => ({
+      view: document.getElementById("app").getAttribute("data-view"),
+      mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode,
+      task: (document.getElementById("puzzle-task").textContent || "").trim(),
+    }));
+    assert(pz.view === "train" && pz.mode === "puzzle" && !!pz.task,
+      "11.0 U2:今天 →「为你出一题」一次点击就是一道题", JSON.stringify(pz));
+    assert(errs.length === 0, `11.0 U2:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
   // (b2) 「先看看棋盘」: the board, against the default rung — 休闲, not 中级
   {
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
@@ -1874,6 +1917,14 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     assert(r.plies === 4 && r.card, `§5 愚者杀:四着,结果卡片在(${JSON.stringify(r)})`);
     assert(!(await undoShown()), "§5 终局之后「悔棋」不在");
     assert(r.again, "§5 …自己下完的一盘,「再来一盘」还在");
+    // v11-0-plan P: one way on — the panel's 新局 is not a second 再来一盘,
+    // and comes back once the card is put away
+    const dup = () => page.evaluate(() => ({ nw: !document.getElementById("btn-new").hidden, grp: !document.getElementById("game-actions").hidden }));
+    const d0 = await dup();
+    assert(!d0.nw && !d0.grp, `11.0 P:结果卡在时,右栏没有第二个「新局」,空的「本局」组也收起(${JSON.stringify(d0)})`);
+    await page.evaluate(() => document.getElementById("go-close").click()); await settle(page);
+    const d1 = await dup();
+    assert(d1.nw, `11.0 P:关掉结果卡后,「新局」回到右栏(${JSON.stringify(d1)})`);
     await page.keyboard.press("z"); await settle(page);
     const plies = await page.evaluate(() => document.querySelectorAll(".mlmove").length);
     assert(plies === 4, `§5 …按 Z 也不把杀棋收回去(${plies} 着)`);

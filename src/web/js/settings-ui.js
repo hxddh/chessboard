@@ -175,6 +175,13 @@ export function createSettingsUI(d) {
     const root = document.documentElement;
     const reframed = root.getAttribute("data-frame") !== at.frame;
     root.setAttribute("data-theme", at.theme);
+    // 11.0 W: the Mac window's appearance follows the theme, and the answer
+    // says whether the inset shell is on (the page then leaves its top 28 pt)
+    if (Host.setChrome) {
+      Host.setChrome(at.theme === "wood" || at.theme === "night").then((c) => {
+        if (c === "none") root.removeAttribute("data-chrome"); else root.setAttribute("data-chrome", c);
+      });
+    }
     root.setAttribute("data-board", at.board);
     root.setAttribute("data-frame", at.frame);
     BoardView.setPieceSet(store.ui.pieceSet);

@@ -2093,6 +2093,53 @@ for (const lang of CONTENT_LANGS) {
       "…and <b>, <strong> and headings take it too, not the browser's 700");
   }
 
+  // 11.0 W: the Mac's inset window shell is the app's own native code,
+  // built and called on macOS only, and the page leaves its top 28 pt only
+  // when the shell says it is on
+  {
+    const m = fs.readFileSync(path.join(root, "src/native/mac_chrome.m"), "utf8");
+    assert(/NSWindowStyleMaskFullSizeContentView/.test(m) && /titlebarAppearsTransparent = YES/.test(m) &&
+      /performWindowDragWithEvent/.test(m) && /AppleActionOnDoubleClick/.test(m) &&
+      /NSWindowDidEnterFullScreenNotification/.test(m) && /NSWindowDidExitFullScreenNotification/.test(m),
+      "mac_chrome.m: transparent full-size titlebar, a strip that drags and double-clicks as the system does, out of the way in full screen");
+    assert(/if \(ChessFindWebView\(content\) == nil\) return;\s*objc_setAssociatedObject\(window, &ChessConfiguredKey/.test(m),
+      "mac_chrome.m: the inset shell turns on only over a WKWebView, the page it can tell about full screen (not under CEF)");
+    const bz = fs.readFileSync(path.join(root, "build.zig"), "utf8");
+    const mac = /if \(platform == \.macos\) \{([\s\S]*?)\n    \} else/.exec(bz);
+    assert(mac && /addCSourceFile\(\.\{ \.file = b\.path\("src\/native\/mac_chrome\.m"\)/.test(mac[1]) && (bz.match(/addCSourceFile\(\.\{ \.file = b\.path\("src\/native\/mac_chrome\.m"\)/g) || []).length === 1,
+      "build.zig compiles mac_chrome.m in the macOS branch and nowhere else");
+    const mz = fs.readFileSync(path.join(root, "src/main.zig"), "utf8");
+    assert(/if \(comptime runner\.mac_shell\) chess_mac_chrome_init\(\);[\s\S]*runner\.runWithOptions/.test(mz) &&
+      /if \(comptime runner\.mac_shell\) code = chess_mac_chrome_set/.test(fs.readFileSync(path.join(root, "src/chrome.zig"), "utf8")) &&
+      /pub const mac_shell = std\.mem\.eql\(u8, build_options\.platform, "macos"\);/.test(fs.readFileSync(path.join(root, "src/runner.zig"), "utf8")),
+      "main.zig sets the shell up on the macOS platform (not the null backend on a Mac host), before the runner opens its window");
+    assert(/\.name = "chess\.setChrome"/.test(fs.readFileSync(path.join(root, "src/bridge.zig"), "utf8")),
+      "chess.setChrome is an app command");
+    assert(/html\[data-chrome="inset"\] \{ --titlebar-h: 28px; \}/.test(stripped) &&
+      /#app \{ margin-top: var\(--titlebar-h\); height: calc\(100% - var\(--titlebar-h\)\); \}/.test(stripped),
+      "the page starts below the strip only when the shell answers inset");
+  }
+
+  // 11.0 M: the motion list, each on a token, and each stopped by the
+  // reduced-motion rule — the slide, the capture (fading and sinking), the
+  // check's pulse, the badges and the won king's glow on the canvas; the
+  // result card rising in and the page crossfade in the stylesheet
+  {
+    const bj = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
+    assert(/if \(_reduceMotion\) \{ _anim = null; return; \}/.test(bj) && /_fx\.pulse = check && !_reduceMotion/.test(bj) &&
+      /_fx\.badge = badge && !_reduceMotion/.test(bj),
+      "11.0 M: the slide, the check pulse and the badges start only without reduced motion");
+    assert(/ctx\.globalAlpha = 1 - t;\s*ctx\.translate\(cx, cy\);\s*ctx\.scale\(k, k\);/.test(bj),
+      "11.0 M: the captured man fades and sinks under the arriving one");
+    assert(/r\.kind !== "win"[\s\S]{0,400}fxAt\(_fx\.badge, durMs\("--dur-slow"\), now\)/.test(bj),
+      "11.0 M: a won game's king glows in on --dur-slow, with the result badges");
+    assert(/\.go-card \{[^}]*animation: result-in var\(--dur-slow\) var\(--ease\);/.test(stripped) &&
+      /\.page:not\(\[hidden\]\) \{ animation: pane-in var\(--dur-base\) var\(--ease\); \}/.test(stripped),
+      "11.0 M: the result card rises in and the pages cross-fade, on the duration tokens");
+    assert(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?animation-duration: \.01ms !important;/.test(stripped),
+      "11.0 M: …and every keyframe stops under reduced motion");
+  }
+
   // The action rows, and the two ways this has been got wrong. As
   // flex + space-between + wrap they laid out differently in every group —
   // 3 items spread edge to edge, 4 packed tight at widths 40–64, a 5th
@@ -7318,10 +7365,13 @@ for (const lang of CONTENT_LANGS) {
     "bundle.js stays within the first-paint budget (" + bundleBytes + (bundleBytes <= BUNDLE_BUDGET ? " ≤ " : " > ") + BUNDLE_BUDGET + " bytes)");
   // …and the release's own, tighter line: new pages go in chunks, the bundle
   // carries their doors. v9-0-plan §8 第 4 条 set it at 8.4.0 + 20 KB;
-  // v10-0-plan E6 moves it to 9.0.0 (923,333 bytes, e3fc6df) + 20 KB
-  const BUNDLE_BYTES_100 = 923333 + 20000;
-  assert(bundleBytes <= BUNDLE_BYTES_100,
-    "v10-0-plan E6: bundle.js grows at most 20 KB over 9.0.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_100 ? " ≤ " : " > ") + BUNDLE_BYTES_100 + " bytes)");
+  // v10-0-plan E6 moved it to 9.0.0 (923,333 bytes, e3fc6df) + 20 KB, and
+  // 11.0 moves it to 10.1.0 (942,990 bytes, da720ac) + 20 KB — the same rule,
+  // one release on: the portraits, the textures and the new pages go in
+  // chunks, the bundle carries their doors
+  const BUNDLE_BYTES_110 = 942990 + 20000;
+  assert(bundleBytes <= BUNDLE_BYTES_110,
+    "11.0: bundle.js grows at most 20 KB over 10.1.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_110 ? " ≤ " : " > ") + BUNDLE_BYTES_110 + " bytes)");
   // …minified without renaming: a player's stack trace still names the code
   assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
     "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");

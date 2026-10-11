@@ -12,6 +12,8 @@ import { ChessHost } from "./host.js";
 import { ChessI18n } from "./i18n.js";
 import { tdot } from "./tdot.js";
 import { ChessIcons } from "./icons.js";
+import { setPortrait } from "./portraits.js";
+import { createIdleCard } from "./idle-card.js";
 import { ChessLazy } from "./lazy-content.js";
 import { ChessMaterial } from "./material.js";
 import { ChessLearning } from "./learning.js";
@@ -1589,7 +1591,7 @@ import { loadChunk } from "./chunk.js";
     has: (_, k) => DIFF_IDS.includes(k),
   });
   // v8-0-plan B4: the personas, the engine's clock plan, resign and draw offers, your rating
-  const OppUI = createOpponentsLazy({ loadStats, saveStats, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), parseTc: (x) => parseTc(x), onReady: () => { syncSettingsUI(); store.commit("game", "action"); },
+  const OppUI = createOpponentsLazy({ loadStats, saveStats, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), portrait: (slot, id) => setPortrait(slot, id), parseTc: (x) => parseTc(x), onReady: () => { syncSettingsUI(); store.commit("game", "action"); },
     doc: document, store, t, tf, setText, afterPress, acceptDraw: () => acceptDraw(), diffName: (id) => diffName(id),
     repaint: () => syncSettingsUI(), saveSettings, saveGame, announce: (m) => announce(m),
     // game-controller.js is created further down (v8-1-plan F3): late bindings go in as forwarders
@@ -3114,6 +3116,7 @@ import { loadChunk } from "./chunk.js";
   function setIcon(slot, name) {
     if (!slot || slot.dataset.icon === name) return;
     slot.dataset.icon = name;
+    slot.classList.remove("portrait");
     slot.replaceChildren(Icons.icon(name));
   }
 
@@ -3208,7 +3211,8 @@ import { loadChunk } from "./chunk.js";
       const p = people[side];
       strip.classList.toggle("is-empty", !p);
       if (!p) continue;
-      setIcon(el("av-" + side), p.icon);
+      // v11-0-plan V1: an opponent is a face; the player and the labels keep their icon
+      if (p.portrait) setPortrait(el("av-" + side), p.portrait); else setIcon(el("av-" + side), p.icon);
       setText(el(side === "w" ? "white-role" : "black-role"), p.name);
       setText(el(side === "w" ? "white-level" : "black-level"), p.level);
       strip.classList.toggle("is-label", !!p.label);
@@ -3469,7 +3473,11 @@ import { loadChunk } from "./chunk.js";
     // the 「本局」 group — a heading over a single item, promising a group of
     // actions on this game while this game had not begun. Same test the resume
     // check uses: moves played, or a position someone set up on purpose.
-    avail(el("btn-new"), !modal && (h.length > 0 || !!startFen()));
+    // v11-0-plan P: while the result card stands with 再来一盘, that is the
+    // one way on — the panel's 新局 was the same action a second time
+    const end = !modal && over && isLive() ? gameEnding() : null;
+    const again = !!end && store.session.goDismissed !== end.sig && !store.game.imported;
+    avail(el("btn-new"), !modal && (h.length > 0 || !!startFen()) && !again);
 
 
     // Hint is the one control that stays put while it is busy: it is in the
@@ -3640,7 +3648,9 @@ import { loadChunk } from "./chunk.js";
     // exactly the mis-slotting that makes narrowing a call site dangerous:
     // commit("game") would have moved the board and left the strip behind.
     for (const slice of ["game", "session"]) store.subscribe(slice, renderMaterial);
-    for (const slice of ["game", "session"]) store.subscribe(slice, renderIdleCard);
+    const IdleCard = createIdleCard({ store, t, tf, tdot, setText, sanHistory, loadStats, historyLabel, historyWhen, recommendation,
+      strip: (lv, st) => OppUI.strip(lv, st), paintHello: () => OppUI.paintHello(), portrait: setPortrait });
+    for (const slice of ["game", "session"]) store.subscribe(slice, IdleCard.render);
 
     // the settings panel reads the game too (the clock preset is a game fact),
     // so it hears about all three
@@ -4279,69 +4289,6 @@ import { loadChunk } from "./chunk.js";
    * is most of the point. In the puzzle and lesson modes the pieces on the
    * board are a constructed exercise, not a game's remains, so it stays empty.
    */
-  /**
-   * The card that stands in for an empty notation list.
-   *
-   * At move 0 the play tab had nothing to show below the replay bar — measured
-   * on 1.12, 239px of a 619px pane, which is 39% and is also the very first
-   * screen of every new game and of every new install. Nothing here is new
-   * information: the last result and the running record come out of the same
-   * statistics the record tab reads, and the suggestion is `recommendation()`,
-   * which until now only ever appeared on a tab most players never open.
-   */
-  function renderIdleCard() {
-    const el = document.getElementById("idle-card");
-    if (!el) return;
-    // only on an untouched board in a real game — lessons and puzzles have
-    // their own copy filling this space
-    const show = (store.session.mode === "ai" || store.session.mode === "pvp") && !sanHistory().length && !store.session.editor;
-    el.hidden = !show;
-    if (!show) return;
-    OppUI.paintHello();
-    // v8-0-plan §5: the way to the new-game dialog before the first move —
-    // 新局, as 本局 names it once the game has begun (10.0 M0: not 换个对手;
-    // in an engine game the dialog still opens on the opponent's card)
-    const ng = document.getElementById("idle-new");
-    if (ng && ng.textContent !== t("chrome.new")) ng.textContent = t("chrome.new");
-    const body = document.getElementById("idle-body") || el;
-    body.replaceChildren();
-    const line = (k, v) => {
-      const row = document.createElement("div");
-      row.className = "idle-line";
-      const a = document.createElement("span");
-      a.className = "idle-k";
-      a.textContent = k;
-      const b = document.createElement("span");
-      b.className = "idle-v";
-      b.textContent = v;
-      row.append(a, b);
-      body.appendChild(row);
-    };
-    const st = loadStats();
-    const games = st.games || [];
-    const last = games[games.length - 1];
-    if (last) {
-      line(t("idle.last"), tdot(historyLabel(last), historyWhen(last.t)));
-      const mine = games.filter((g) => g.diff === store.session.difficulty);
-      const w = mine.filter((g) => g.result === "win").length;
-      const l = mine.filter((g) => g.result === "loss").length;
-      const d = mine.length - w - l;
-      if (mine.length) line(diffName(store.session.difficulty), tf("stats.wld", [w, l, d]));
-    } else {
-      // one sentence, not a left-aligned label against a right-aligned bold
-      // value pretending to be a statistic (audit, work package E)
-      const ready = document.createElement("div");
-      ready.className = "idle-v";
-      ready.textContent = tdot(t("idle.ready"), t(store.session.mode === "ai" ? "idle.vsEngine" : "idle.vsHuman"));
-      body.appendChild(ready);
-    }
-    const rec = recommendation();
-    const tip = document.createElement("div");
-    tip.className = "idle-rec";
-    tip.textContent = rec || t("idle.tip");
-    body.appendChild(tip);
-  }
-
   function renderMaterial() {
     const Mat = ChessMaterial;
     const wEl = document.getElementById("taken-w");
@@ -4976,7 +4923,12 @@ import { loadChunk } from "./chunk.js";
   document.getElementById("back-main").onclick = () => { backToMain(); };
 
   // the result card (7.7 §4)
-  document.getElementById("go-analyse").onclick = () => { analyzeGame(SCAN_BUDGET); };
+  // v11-0-plan U2: one click to the moment that mattered — the review opens on
+  // the player's worst move, unless they have moved the cursor meanwhile
+  document.getElementById("go-analyse").onclick = () => { analyzeGame(SCAN_BUDGET).then(() => {
+    const k = Analysis.keyMoment();
+    if (k != null && store.game.viewIndex === sanHistory().length) { store.ui.reviewOpen = true; setViewIndex(k); }
+  }); };
   // v7-8-plan §4: the new-game dialog, the last choices in it — with the
   // rung the result line suggested, if it suggested one (9.0 M1: the bar's
   // second button, 换个对手, was the same dialog with that one change)
@@ -5180,7 +5132,7 @@ import { loadChunk } from "./chunk.js";
   // 9.0 S1: 今天 — the page around the coach's card (today-page.js)
   const TodayPage = createTodayPage({ doc: document, store, t, tf, tdot, Chess, pieceSrc: (k) => BoardView.pieceSrc(k), LESSONS, lessonText, Endgames: LessonsUI.Endgames,
     CLASSICS: LessonsUI.CLASSICS, classicsTotal: LessonsUI.classicsTotal, classicText: LessonsUI.classicText, loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText: () => ratingLabel(),
-    drawRatingTrend, Shell, requestNewGame: () => requestNewGame() });
+    drawRatingTrend, Shell, playNext: () => GameCtl.playNext() });
   TodayPage.wire();
   // v10-0-plan A1: 分析一局 — into the review in one step — and the blank analysis board
   const AnalyseEntry = createAnalyseEntry({ doc: document, t, Persist, Dlg, openPgnFile: (s) => openPgnFile(s), importPgnText: (x, l) => importPgnText(x, l, undefined, true),

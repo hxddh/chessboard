@@ -122,11 +122,14 @@ async function trainSeg(page, seg) {
   await page.click(`#train-seg button[data-seg="${seg}"]`);
   await page.waitForTimeout(1200); // 残局 and 名局 come in chunks
 }
-/** The new-game dialog (9.0 S2), opened the way a player does: 今天's 下一盘. */
+/**
+ * The new-game dialog (9.0 S2), opened the way a player does: the board's
+ * 新局 (11.0 U2: 今天's 下一盘 starts the game itself now, no dialog).
+ */
 async function newGame(page) {
-  await page.click('#rail button[data-view="home"]');
+  await page.click('#rail button[data-view="play"]');
   await page.waitForTimeout(300);
-  await page.click("#today-new");
+  await page.click("#idle-new");
   await page.waitForSelector("#newgame-modal.show", { timeout: 4000 }).catch(() => console.error("  ! 没等到新对局对话框"));
   await page.waitForTimeout(350);
 }
