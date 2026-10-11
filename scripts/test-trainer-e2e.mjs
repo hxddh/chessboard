@@ -52,6 +52,9 @@ import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { compileModuleSync, ENTRY, MINIFY } from "./bundle.mjs";
 import { seedLibrary } from "./lib/library-view.mjs";
 
+/** v11-0-plan U3: the kinds, runs, themes and list are under 更多练法 */
+async function openPzMore(page) { await page.evaluate(() => { const f = document.getElementById("pz-more"); if (f) f.open = true; }); }
+
 // --- the fixture index -----------------------------------------------------
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "trainer-e2e-"));
 const imp = spawnSync(process.execPath, [path.join(HERE, "import-puzzles.mjs"),
@@ -272,6 +275,11 @@ const hasMateIn = (g, n) => {
   assert(/^\d+（定级中）/.test(await hf.text("#pz-rating-v") || ""), "c: 新档案也有评级，标「定级中」（v9-0-plan S6：不是「?」）", await hf.text("#pz-rating-v"));
   // …shown, not filed: a rating is written by an answer, never by the view
   // (test-library-e2e: a rote drill must leave `rating` unset)
+  // v11-0-plan U3: two layers — 为你出一题 and the reviews on top, the kinds
+  // and the runs one fold down under 更多练法, shut until asked for
+  assert(await hf.shown("#puzzle-smart") && await hf.shown("#pz-review") && !(await hf.shown("#pz-groups-sec")) && !(await hf.shown("#pz-modes")),
+    "11.0 U3: 上层只有「为你出一题」和复习，按类做题与挑战收在「更多练法」里");
+  await openPzMore(fresh.page);
   assert(!(await hf.shown("#pz-run")) && await hf.shown("#pz-groups-sec"), "c: 新档案在练习里（没有挑战在跑，按类做题在）");
   await fresh.page.evaluate(() => document.getElementById("puzzle-next").click());
   await fresh.page.waitForTimeout(300);
@@ -286,7 +294,7 @@ const hasMateIn = (g, n) => {
   const h = helpers(page);
   await toPuzzles(page);
   await page.waitForTimeout(500);
-  await page.click("#pz-themes-open");
+  await openPzMore(page); await page.click("#pz-themes-open");
   await page.waitForTimeout(300);
   assert(await page.evaluate(() => document.getElementById("theme-modal").classList.contains("show")), "b: 「按主题练」打开主题页");
   const rows = () => page.evaluate(() => [...document.querySelectorAll("#theme-list button[data-theme]")].map((b) => ({ id: b.dataset.theme, text: b.textContent, off: b.disabled })));
@@ -446,7 +454,7 @@ async function solveCurrent(page, h) {
   // depends on the seed and the local book only, and the promotion path is
   // taken on every run, not by luck.
   await page.clock.setFixedTime(1790596830270);
-  await page.click('#pz-modes button[data-run="streak"]');
+  await openPzMore(page); await page.click('#pz-modes button[data-run="streak"]');
   await page.waitForTimeout(600);
   const occ0 = await h.occupied();
   const first = POOL.find((q) => squaresOf(q.fen) === occ0 || mirror(squaresOf(q.fen)) === occ0);
@@ -470,7 +478,7 @@ async function solveCurrent(page, h) {
   assert(best && best.best === 2, "a: 最佳成绩存下了", JSON.stringify(best));
   await page.reload();
   await page.waitForTimeout(1200);
-  await page.click('#pz-modes button[data-run="streak"]');
+  await openPzMore(page); await page.click('#pz-modes button[data-run="streak"]');
   await page.waitForTimeout(600);
   assert(/最佳 2/.test(await h.text("#pz-run-best")), "a: 重开之后最佳成绩还在", await h.text("#pz-run-best"));
   // 9.0 S3: no 练习 button — 结束 ends the run, its card keeps the score and
@@ -479,13 +487,13 @@ async function solveCurrent(page, h) {
   await page.waitForTimeout(500);
   assert(await h.shown("#pz-run-again") && !(await h.shown("#pz-run-stop")) && await h.shown("#pz-groups-sec") && await h.shown("#pz-hero"),
     "a: 结束：卡片停在结束，选题回来", await h.text("#pz-run-head"));
-  await page.click('#pz-groups button[data-group="mate"]');
+  await openPzMore(page); await page.click('#pz-groups button[data-group="mate"]');
   await page.waitForTimeout(500);
   assert(!(await h.shown("#pz-run")) && await h.shown("#pz-groups-sec") && !!(await h.text("#puzzle-task")) &&
     !(await page.evaluate(() => document.querySelector("#pz-modes button.active"))), "a: 点一块按类做题，回到练习，挑战的卡片收起");
 
   // 冲刺: the clock and three strikes
-  await page.click('#pz-modes button[data-run="rush"]');
+  await openPzMore(page); await page.click('#pz-modes button[data-run="rush"]');
   await page.waitForTimeout(600);
   assert(/^[23]:\d\d$/.test(await h.text("#pz-run-clock") || ""), "a: 冲刺有 3 分钟的钟", await h.text("#pz-run-clock"));
   assert(/失误 0\/3/.test(await h.text("#pz-run-strikes")), "a: 失误 0/3", await h.text("#pz-run-strikes"));
@@ -510,7 +518,7 @@ async function solveCurrent(page, h) {
   const h = helpers(page);
   const runsOf = () => page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles") || "{}").runs || {});
   const secs = async () => { const m = /^(\d):(\d\d)$/.exec(await h.text("#pz-run-clock") || ""); return m ? +m[1] * 60 + +m[2] : null; };
-  await page.click('#pz-modes button[data-run="rush"]');
+  await openPzMore(page); await page.click('#pz-modes button[data-run="rush"]');
   await page.waitForTimeout(600);
   const answered = await solveCurrent(page, h);
   await page.waitForTimeout(900);
@@ -554,7 +562,7 @@ async function solveCurrent(page, h) {
   // the clock runs out
   const { ctx, page } = await open(null, { clock: true });
   const h = helpers(page);
-  await page.click('#pz-modes button[data-run="rush"]');
+  await openPzMore(page); await page.click('#pz-modes button[data-run="rush"]');
   await page.clock.runFor(1000);
   assert(/^2:5\d$/.test(await h.text("#pz-run-clock") || ""), "a: 钟在走", await h.text("#pz-run-clock"));
   await page.clock.runFor(181000);
@@ -574,7 +582,7 @@ async function solveCurrent(page, h) {
   const early = await page.evaluate(() => !window.LC_INDEX);
   await toPuzzles(page);
   await page.waitForTimeout(200);
-  await page.click("#pz-themes-open");
+  await openPzMore(page); await page.click("#pz-themes-open");
   await page.waitForTimeout(200);
   await page.click('#theme-list button[data-theme="fork"]').catch(() => {});
   await page.waitForTimeout(200);
@@ -589,7 +597,7 @@ async function solveCurrent(page, h) {
   const sheet = await open(null, { mode: "ai", early: true });
   await toPuzzles(sheet.page);
   await sheet.page.waitForTimeout(200);
-  await sheet.page.click("#pz-themes-open");
+  await openPzMore(sheet.page); await sheet.page.click("#pz-themes-open");
   await sheet.page.waitForTimeout(200);
   const sheetM1 = () => sheet.page.evaluate(() => (document.querySelector('#theme-list button[data-theme="m1"]') || {}).textContent || "");
   const sheetBefore = await sheetM1();
@@ -606,7 +614,7 @@ async function solveCurrent(page, h) {
   run.page.on("request", (q) => { if (/chunk-lc-\d{4}\.js/.test(q.url())) runAsked.push(q.url().split("/").pop()); });
   await toPuzzles(run.page);
   await run.page.waitForTimeout(200);
-  await run.page.click('#pz-modes button[data-run="rush"]');
+  await openPzMore(run.page); await run.page.click('#pz-modes button[data-run="rush"]');
   const runEarly = await run.page.evaluate(() => !window.LC_INDEX) && runAsked.length === 0;
   await run.page.waitForFunction(() => !!window.LC_INDEX, null, { timeout: 10000 }).catch(() => {});
   await run.page.waitForTimeout(800);
@@ -623,7 +631,7 @@ async function solveCurrent(page, h) {
   const h = helpers(page);
   await toPuzzles(page);
   await page.waitForTimeout(500);
-  await page.click("#pz-themes-open");
+  await openPzMore(page); await page.click("#pz-themes-open");
   await page.waitForTimeout(300);
   const rowsF = await page.evaluate(() => [...document.querySelectorAll("#theme-list button[data-theme]")].map((b) => ({ id: b.dataset.theme, text: b.textContent, off: b.disabled })));
   const bandOf = (r) => Math.floor(r / 200) * 200;
@@ -650,7 +658,7 @@ async function solveCurrent(page, h) {
   const h2 = helpers(two.page);
   await toPuzzles(two.page);
   await two.page.waitForTimeout(500);
-  await two.page.click("#pz-themes-open");
+  await openPzMore(two.page); await two.page.click("#pz-themes-open");
   await two.page.waitForTimeout(300);
   if (pick) await two.page.click('#theme-list button[data-theme="' + pick.id + '"]');
   await two.page.waitForTimeout(2500);
@@ -674,7 +682,7 @@ async function solveCurrent(page, h) {
   const h = helpers(page);
   await toPuzzles(page);
   await page.waitForTimeout(500);
-  await page.click("#pz-themes-open");
+  await openPzMore(page); await page.click("#pz-themes-open");
   await page.waitForTimeout(300);
   await page.click('#theme-list button[data-theme="m1"]');
   await page.waitForTimeout(800);
@@ -774,7 +782,7 @@ async function solveCurrent(page, h) {
     tiles.find((x) => x.g === "mine").n === "分析一局就有",
     "m: 六块按类做题，没有错题时「我的错题」也在、写着怎么攒", JSON.stringify(tiles.map((x) => x.g + (x.hidden ? "(隐)" : ""))));
   assert(mate && mate.n === mateN + " 题" && mate.on, "m: 杀棋这一块数的是内置 + 题库两本书（" + localMate.length + " + 题库），存着的一步杀落在这一块上", JSON.stringify(mate));
-  await page.click('#pz-groups button[data-group="mate"]');
+  await openPzMore(page); await page.click('#pz-groups button[data-group="mate"]');
   await page.waitForTimeout(2500);
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles")).cat);
   const near = [...new Set(lcAsked)];
@@ -790,7 +798,7 @@ async function solveCurrent(page, h) {
   assert(localRows.length === localMate.length && lcRows.length === loadedLc.length && lcRows.length > 0,
     "m: 列表里两本书都在：内置 " + localRows.length + " 道 + 题库（已到的分段）" + lcRows.length + " 道", JSON.stringify({ local: localMate.length, lc: loadedLc.map((p) => p.id) }));
   // the bands are in: into the tile again, and it seats the nearest of the pool
-  await page.click('#pz-groups button[data-group="mate"]');
+  await openPzMore(page); await page.click('#pz-groups button[data-group="mate"]');
   await page.waitForTimeout(800);
   const pool = localMate.concat(loadedLc);
   const prOf = (p) => (Number.isFinite(p.rating) ? p.rating : null);
@@ -831,7 +839,7 @@ async function solveCurrent(page, h) {
       "m: 「下一题」是离 " + R + " 最近的下一道，不是列表里的下一道", JSON.stringify({ shown2, best2 }));
   }
   // 开局 is the book's opening drills, with the side row
-  await page.click('#pz-groups button[data-group="opening"]');
+  await openPzMore(page); await page.click('#pz-groups button[data-group="opening"]');
   await page.waitForTimeout(600);
   const op = await page.evaluate(() => ({ cat: JSON.parse(localStorage.getItem("chess.puzzles")).cat, side: !document.getElementById("row-op-side").hidden,
     lit: (document.querySelector("#pz-groups button.active") || { dataset: {} }).dataset.group }));
@@ -911,7 +919,7 @@ const wrongSquare = (q) => ["a1", "h8", "a8", "h1", "d4", "e5"].find((s) => !(q.
   const { ctx, page } = await open(null);
   const h = helpers(page);
   await page.clock.setFixedTime(T);
-  await page.click('#pz-modes button[data-run="look"]');
+  await openPzMore(page); await page.click('#pz-modes button[data-run="look"]');
   await page.waitForTimeout(900);
   const q0 = await VIS.lookQuestion(Chess, LOOK_POOL, seed, 0, 2);
   assert(q0 && q0.pid.startsWith("lc-") && LOOK_POOL.some((p) => p.id === q0.pid), "h: 看 N 步的题来自题库按评级取的分段（新玩家 1500 → " + lookBand() + "）", q0 && q0.key);
@@ -949,14 +957,14 @@ const wrongSquare = (q) => ["a1", "h8", "a8", "h1", "d4", "e5"].find((s) => !(q.
   // determinism across pages: a second page at the same clock opens on the same moves
   const two = await open(null);
   await two.page.clock.setFixedTime(T);
-  await two.page.click('#pz-modes button[data-run="look"]');
+  await openPzMore(two.page); await two.page.click('#pz-modes button[data-run="look"]');
   await two.page.waitForTimeout(900);
   assert((await helpers(two.page).text("#pz-vis-moves")).includes(VIS.lineText(q0.start, q0.sans)), "h: 另开一页，同一时刻开始，第一题相同");
   await two.ctx.close();
   // the queue: the next set opens on the question that was missed
   const again = await open(st);
   await again.page.clock.setFixedTime(T + 86400000);
-  await again.page.click('#pz-modes button[data-run="look"]');
+  await openPzMore(again.page); await again.page.click('#pz-modes button[data-run="look"]');
   await again.page.waitForTimeout(900);
   const ha = helpers(again.page);
   assert((await ha.text("#pz-vis-moves")).includes(VIS.lineText(q1.start, q1.sans)) && /复习/.test(await ha.text("#pz-run-head")),
@@ -975,12 +983,12 @@ for (const [lang, label, head, ask, go] of [["en", "Look ahead", /Look ahead/, /
   const h = helpers(page);
   assert(await h.text('#pz-modes button[data-run="look"]') === label, `h/${lang}: 入口按钮是「${label}」`);
   await page.clock.setFixedTime(1790600000000);
-  await page.click('#pz-modes button[data-run="look"]');
+  await openPzMore(page); await page.click('#pz-modes button[data-run="look"]');
   await page.waitForTimeout(900);
   assert(head.test(await h.text("#pz-run-head")) && ask.test(await h.text("#pz-vis-q")) && await h.text("#pz-vis-go") === go,
     `h/${lang}: 卡片、问题与按钮都是这种语言`, (await h.text("#pz-run-head")) + " | " + (await h.text("#pz-vis-q")));
   assert(!/[一-鿿]{2}/.test((await h.text("#pz-vis")) || "") || lang === "ja", `h/${lang}: 卡片里没有中文`, await h.text("#pz-vis"));
-  await page.click('#pz-modes button[data-run="blind"]');
+  await openPzMore(page); await page.click('#pz-modes button[data-run="blind"]');
   await page.waitForTimeout(900);
   assert(await h.text('#pz-modes button[data-run="blind"]') === (lang === "en" ? "Blind mate" : "目隠し詰め") &&
     (lang === "en" ? /Blind mate/ : /目隠し詰め/).test(await h.text("#pz-run-head")), `h/${lang}: 盲走的卡片也是这种语言`, await h.text("#pz-run-head"));
@@ -992,7 +1000,7 @@ for (const [lang, label, head, ask, go] of [["en", "Look ahead", /Look ahead/, /
   const { ctx, page } = await open(null);
   const h = helpers(page);
   await page.clock.setFixedTime(T);
-  await page.focus('#pz-modes button[data-run="blind"]');
+  await openPzMore(page); await page.focus('#pz-modes button[data-run="blind"]');
   await page.keyboard.press("Enter");
   await page.waitForTimeout(900);
   const p0 = blindAt(seed, 0, 0, []);
@@ -1104,7 +1112,7 @@ for (const [lang, label, head, ask, go] of [["en", "Look ahead", /Look ahead/, /
   const before = errs.length;
   const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { q: { "mn-301-38-72|3|1955526313": { s: 0, n: 1, due: 0, ivl: 0 } } } } });
   const h = helpers(page);
-  await page.click('#pz-modes button[data-run="look"]');
+  await openPzMore(page); await page.click('#pz-modes button[data-run="look"]');
   await page.waitForTimeout(1500);
   assert(errs.length === before && !!(await h.text("#pz-vis-q")) && !!(await h.text("#pz-vis-moves")),
     "i/P2-2: 出过路兵吃子题的那道复习题：没有异常，卡片有问题可答", (await h.text("#pz-vis-q")) + " | " + errs.slice(before).join(" | "));
@@ -1119,7 +1127,7 @@ for (const [lang, label, head, ask, go] of [["en", "Look ahead", /Look ahead/, /
   const { ctx, page } = await open(null, { extra: { "chess.library": lib, "chess.save": JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }) } });
   const h = helpers(page);
   await page.clock.setFixedTime(T);
-  await page.click('#pz-modes button[data-run="blind"]');
+  await openPzMore(page); await page.click('#pz-modes button[data-run="blind"]');
   await page.waitForTimeout(600);
   const p0 = blindAt(seed, 0, 0, []);
   await page.fill("#pz-vis-in", p0.solution[0]);
@@ -1193,12 +1201,12 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: rated(2100), blind: rated(2150) } });
   const h = helpers(page);
   await page.clock.setFixedTime(T);
-  await page.click('#pz-modes button[data-run="look"]');
+  await openPzMore(page); await page.click('#pz-modes button[data-run="look"]');
   const q = await VIS.lookQuestion(Chess, VIS.lookPool(bandList(lookBand(2100))), seed, 0, 2);
   const shown = await visMoves(page);
   assert(lookBand(2100) === 2000 && q.pid.startsWith("lc-") && shown.includes(VIS.lineText(q.start, q.sans)),
     "j/T1: 看 N 步评级 2100，题从 2000 分段出", q.key + " | " + shown);
-  await page.click('#pz-modes button[data-run="blind"]');
+  await openPzMore(page); await page.click('#pz-modes button[data-run="blind"]');
   await page.waitForTimeout(900);
   const p = blindAt(seed, 0, 0, [], blindBand(2150));
   assert(blindBand(2150) === 2000 && p.id.startsWith("lc-") && p.rating >= 2000 && p.rating < 2200 && await h.faces(p.fen) === (p.fen.split(" ")[1] === "b"),
@@ -1214,14 +1222,14 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   const { ctx, page } = await open(null);
   const h = helpers(page);
   await page.clock.setFixedTime(T);
-  await page.click('#pz-modes button[data-run="look"]');
+  await openPzMore(page); await page.click('#pz-modes button[data-run="look"]');
   const q = await VIS.lookQuestion(Chess, LOCAL_LOOK, seed, 0, 2);
   const shown = await visMoves(page);
   assert(!q.pid.startsWith("lc-") && shown.includes(VIS.lineText(q.start, q.sans)) && !!(await h.text("#pz-vis-q")),
     "j/T1: 分段载不进来，看 N 步从本地题库出题", shown);
   await answerLook(page, h, q);
   assert(/答对了/.test(await h.feedback()), "j/T1: 本地题照常作答", await h.feedback());
-  await page.click('#pz-modes button[data-run="blind"]');
+  await openPzMore(page); await page.click('#pz-modes button[data-run="blind"]');
   await page.waitForTimeout(900);
   const p = VIS.blindPick(LOCAL_BLIND, seed, 0, 0, []);
   assert(!p.id.startsWith("lc-") && await h.faces(p.fen) === (p.fen.split(" ")[1] === "b"), "j/T1: 分段载不进来，盲走从本地的一步杀出题", p.id);
@@ -1255,7 +1263,7 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   for (let i = 0; i < 2; i++) {
     const { ctx, page } = await open(st);
     const t0 = Date.now();
-    await page.click('#pz-modes button[data-run="look"]');
+    await openPzMore(page); await page.click('#pz-modes button[data-run="look"]');
     seen.push(await visMoves(page, 60000));
     if (i === 0) console.log("  j/T2: 引擎启动 + 出第一题", Date.now() - t0, "ms");
     await ctx.close();
@@ -1267,7 +1275,7 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   // engine unavailable (the stub): the same review falls back to pickMove's rule and the set goes on
   if (plain) {
     const { ctx, page } = await open(st);
-    await page.click('#pz-modes button[data-run="look"]');
+    await openPzMore(page); await page.click('#pz-modes button[data-run="look"]');
     const fb = await visMoves(page);
     assert(fb.includes(VIS.lineText(plain.start, plain.sans)) && !!(await helpers(page).text("#pz-vis-q")),
       "j/T2: 没有引擎时照 pickMove 的规则接着走，题照常出", fb);
@@ -1325,10 +1333,10 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   {
     const { ctx, page } = await open(null);
     const h = helpers(page);
-    await page.click('#pz-modes button[data-run="look"]');
+    await openPzMore(page); await page.click('#pz-modes button[data-run="look"]');
     const busy0 = await busy(page, "look");
     await page.waitForTimeout(150);
-    await page.click('#pz-modes button[data-run="blind"]');
+    await openPzMore(page); await page.click('#pz-modes button[data-run="blind"]');
     await page.waitForTimeout(4000);
     assert(busy0 === "true" && await busy(page, "look") === null && await busy(page, "blind") === null,
       "k/P2-1: 看 N 步出题期间按钮标着 aria-busy，换了模式就撤掉", busy0 + " / " + await busy(page, "look"));
@@ -1340,7 +1348,7 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   }
   {
     const { ctx, page } = await open(null);
-    await page.click('#pz-modes button[data-run="look"]');
+    await openPzMore(page); await page.click('#pz-modes button[data-run="look"]');
     await page.waitForTimeout(150);
     await page.click('#rail button[data-view="play"]');
     await page.waitForTimeout(4000);
@@ -1386,7 +1394,7 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   {
     const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { solve: 0, miss: 1, q: { [k82]: due0 } } } }, { extra: { "chess.settings": settings(128) } });
     await watch(page);
-    await page.click('#pz-modes button[data-run="look"]');
+    await openPzMore(page); await page.click('#pz-modes button[data-run="look"]');
     const shown = await visMoves(page, 60000);
     assert(shown.includes(VIS.lineText(q82.start, q82.sans)), "k/P2-2: 页面上本地题的复习题与 pickMove 出的相同（引擎在也不用）", shown + " | 期望 " + VIS.lineText(q82.start, q82.sans));
     await ctx.close();
@@ -1396,9 +1404,9 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
     // before the first question is in — no search after it but the one running
     const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { solve: 0, miss: 1, q: { [qa.key]: due0 } } } });
     await watch(page);
-    await page.click('#pz-modes button[data-run="look"]');
+    await openPzMore(page); await page.click('#pz-modes button[data-run="look"]');
     await page.waitForFunction(() => window.__evals.length > 0, null, { timeout: 30000 }).catch(() => {});
-    await page.click('#pz-groups button[data-group="mate"]');
+    await openPzMore(page); await page.click('#pz-groups button[data-group="mate"]');
     const left = await page.evaluate(() => Date.now());
     await page.waitForTimeout(5000);
     const after = await page.evaluate((t) => window.__evals.filter((x) => x > t).length, left);
@@ -1413,7 +1421,7 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
     const { ctx, page } = await open({ v: 1, solved: {}, vis: { look: { solve: 0, miss: 1, q } } }, { extra: { "chess.settings": settings(128) } });
     const h = helpers(page);
     await watch(page);
-    await page.click('#pz-modes button[data-run="look"]');
+    await openPzMore(page); await page.click('#pz-modes button[data-run="look"]');
     const shown = await visMoves(page, 60000);
     assert(shown.includes(VIS.lineText(qb.start, qb.sans)), "k: 第一道复习题出来了", shown);
     // answered, and 练习 in the same task: the answer has already asked for
@@ -1443,7 +1451,7 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
     const cap = process.env.CI ? 2500 : 1000;
     const firstAt = async (page) => {
       const t0 = Date.now();
-      await page.click('#pz-modes button[data-run="look"]');
+      await openPzMore(page); await page.click('#pz-modes button[data-run="look"]');
       const shown = await visMoves(page, 60000);
       return { ms: Date.now() - t0, shown };
     };

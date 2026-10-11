@@ -2083,7 +2083,17 @@ for (const lang of CONTENT_LANGS) {
     const bad = ws.filter((w) => !["400", "600"].includes(w));
     assert(bad.length === 0,
       "two weights only" + (bad.length ? " — also found: " + [...new Set(bad)].join(", ") : ""));
-    // 11.0 W: the Mac's inset window shell is the app's own native code,
+    // 10.1 F3: and the second one is rare. 8.4–10.0 set 72 rules in 600 —
+    // every button, tab, tag and label — so nothing stood out and a Chinese
+    // panel read as bold throughout. 600 is for titles, section heads, the
+    // numbers that matter and the current item; this only shrinks.
+    const strong = ws.filter((w) => w === "600").length;
+    assert(strong <= 30, "600 is the exception, not the voice: " + strong + " rules (≤ 30)");
+    assert(/\n\s*b, strong, h1, h2, h3, h4 \{ font-weight: 600; \}/.test(stripped),
+      "…and <b>, <strong> and headings take it too, not the browser's 700");
+  }
+
+  // 11.0 W: the Mac's inset window shell is the app's own native code,
   // built and called on macOS only, and the page leaves its top 28 pt only
   // when the shell says it is on
   {
@@ -2106,14 +2116,24 @@ for (const lang of CONTENT_LANGS) {
       "the page starts below the strip only when the shell answers inset");
   }
 
-  // 10.1 F3: and the second one is rare. 8.4–10.0 set 72 rules in 600 —
-    // every button, tab, tag and label — so nothing stood out and a Chinese
-    // panel read as bold throughout. 600 is for titles, section heads, the
-    // numbers that matter and the current item; this only shrinks.
-    const strong = ws.filter((w) => w === "600").length;
-    assert(strong <= 30, "600 is the exception, not the voice: " + strong + " rules (≤ 30)");
-    assert(/\n\s*b, strong, h1, h2, h3, h4 \{ font-weight: 600; \}/.test(stripped),
-      "…and <b>, <strong> and headings take it too, not the browser's 700");
+  // 11.0 M: the motion list, each on a token, and each stopped by the
+  // reduced-motion rule — the slide, the capture (fading and sinking), the
+  // check's pulse, the badges and the won king's glow on the canvas; the
+  // result card rising in and the page crossfade in the stylesheet
+  {
+    const bj = fs.readFileSync(path.join(root, "src/web/js/board.js"), "utf8");
+    assert(/if \(_reduceMotion\) \{ _anim = null; return; \}/.test(bj) && /_fx\.pulse = check && !_reduceMotion/.test(bj) &&
+      /_fx\.badge = badge && !_reduceMotion/.test(bj),
+      "11.0 M: the slide, the check pulse and the badges start only without reduced motion");
+    assert(/ctx\.globalAlpha = 1 - t;\s*ctx\.translate\(cx, cy\);\s*ctx\.scale\(k, k\);/.test(bj),
+      "11.0 M: the captured man fades and sinks under the arriving one");
+    assert(/r\.kind !== "win"[\s\S]{0,400}fxAt\(_fx\.badge, durMs\("--dur-slow"\), now\)/.test(bj),
+      "11.0 M: a won game's king glows in on --dur-slow, with the result badges");
+    assert(/\.go-card \{[^}]*animation: result-in var\(--dur-slow\) var\(--ease\);/.test(stripped) &&
+      /\.page:not\(\[hidden\]\) \{ animation: pane-in var\(--dur-base\) var\(--ease\); \}/.test(stripped),
+      "11.0 M: the result card rises in and the pages cross-fade, on the duration tokens");
+    assert(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?animation-duration: \.01ms !important;/.test(stripped),
+      "11.0 M: …and every keyframe stops under reduced motion");
   }
 
   // The action rows, and the two ways this has been got wrong. As

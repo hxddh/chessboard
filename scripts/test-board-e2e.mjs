@@ -394,8 +394,11 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     "将军:被将的王那一格底色变了");
   // f8/b4 gain the last-move tint and d4/e5 lose it — that is the same move
   const expected = ["e1", "f8", "b4", "d4", "e5"];
-  const alsoChanged = SQUARES.filter((s) => !expected.includes(s) &&
-    JSON.stringify(chk[s].bgMean) !== JSON.stringify(took[s].bgMean));
+  // 11.0 V3: the wood board is grain now, and a scaled pattern can round a
+  // level differently from one frame to the next (measured: ±1 on every
+  // square at once) — a changed square is one that moved by more than that
+  const shifted = (a, b) => !a || !b ? a !== b : a.some((v, i) => Math.abs(v - b[i]) > 2);
+  const alsoChanged = SQUARES.filter((s) => !expected.includes(s) && shifted(chk[s].bgMean, took[s].bgMean));
   assert(alsoChanged.length === 0, `…而且只有它和这一手的四格变(另有 ${JSON.stringify(alsoChanged)})`);
 
   // 翻转:内容跟着格名走,像素真的镜像
@@ -706,7 +709,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     assert(s.open && s.role === "dialog" && s.modal === "true", `§1c ${tag}:选择器是一个模态 dialog`);
     assert(inside && column && inward,
       `§1c ${tag}:四个棋子都在棋盘内、在 ${c.to} 那一列、从升变格往里排(${s.pieces.map((x) => x.p + "@" + Math.round(x.cx) + "," + Math.round(x.cy)).join(" ")})`);
-    assert(s.pieces.every((x) => x.svg === CBURNETT_PIECE_SVGS[c.turn + x.p]),
+    // 11.0 V2: the board draws cburnett with the finer pen, and so does the picker
+    const finer = (svg) => svg.replace(/stroke-width="1\.5"/g, 'stroke-width="1.2"');
+    assert(s.pieces.every((x) => x.svg === finer(CBURNETT_PIECE_SVGS[c.turn + x.p])),
       `§1c ${tag}:画的是棋盘那一套(cburnett)的${c.turn === "w" ? "白" : "黑"}子,不是 Unicode 字符`);
     assert(s.blur === "none" || s.blur === "", `§1c ${tag}:棋盘不模糊(${s.blur})`);
     assert(s.pieces.map((x) => x.name).join("") === "后车象马" && s.focus === "q", `§1c ${tag}:读屏名字照旧、焦点在「后」上`);
@@ -1299,7 +1304,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
+      // a flat board: each draw() then starts with exactly one fillRect at
+      // (0, 0); the wood grain (11.0 V3) lays a second one over a8
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "green" }));
     window.__full = 0;
     const real = CanvasRenderingContext2D.prototype.fillRect;
     CanvasRenderingContext2D.prototype.fillRect = function (x, y, ...rest) {
@@ -1834,6 +1841,47 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode }));
     assert(play.view === "play" && play.mode === "ai", "T1 …第三次点击就在棋盘上,人机对局", JSON.stringify(play));
     assert(errs.length === 0, `T1 首次启动:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+  // (b1) v11-0-plan U2: from 今天, 下一盘 is the game — one click, the last
+  // opponent, no dialog in between (it was 下一盘 → dialog → 开始)
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript(() => {
+      if (sessionStorage.getItem("seeded")) return;
+      sessionStorage.setItem("seeded", "1");
+      localStorage.setItem("chess.settings", JSON.stringify({ mode: "puzzle", langId: "zh-CN", soundOn: false, difficulty: "learner", personaId: "principled", humanColor: "w" }));
+    });
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    await page.click('.rail-btn[data-view="home"]'); await settle(page);
+    let clicks = 0;
+    await page.click("#today-new"); clicks++;
+    await page.waitForTimeout(700);
+    const r = await page.evaluate(() => ({
+      view: document.getElementById("app").getAttribute("data-view"),
+      dialog: !document.getElementById("newgame-modal").hidden && getComputedStyle(document.getElementById("newgame-modal")).display !== "none",
+      mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode,
+      opp: document.getElementById("idle-name").textContent.trim(),
+    }));
+    assert(clicks === 1 && r.view === "play" && !r.dialog && r.mode === "ai" && r.opp === "莉娜",
+      "11.0 U2:今天 →「下一盘」一次点击就在棋盘上，对手是上次的莉娜，中间没有对话框", JSON.stringify(r));
+    // and a puzzle that suits you: one click from 今天 as well (it was 训练 →
+    // 谜题 → 为你出一题 for anyone whose last segment was not the puzzles)
+    await page.click('.rail-btn[data-view="home"]'); await settle(page);
+    await page.click("#today-puzzle");
+    await page.waitForTimeout(900);
+    const pz = await page.evaluate(() => ({
+      view: document.getElementById("app").getAttribute("data-view"),
+      mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode,
+      task: (document.getElementById("puzzle-task").textContent || "").trim(),
+    }));
+    assert(pz.view === "train" && pz.mode === "puzzle" && !!pz.task,
+      "11.0 U2:今天 →「为你出一题」一次点击就是一道题", JSON.stringify(pz));
+    assert(errs.length === 0, `11.0 U2:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
     await ctx.close();
   }
   // (b2) 「先看看棋盘」: the board, against the default rung — 休闲, not 中级

@@ -343,36 +343,43 @@
           <span class="pz-review-txt"><b data-i18n="pz.review">复习</b><small data-i18n="pz.reviewSub">做错过的题，隔几天再来一次</small></span>
           <span class="pz-review-n num" id="pz-review-n"></span>
         </button>
-        <div class="pz-groups-sec" id="pz-groups-sec">
-          <h3 class="side-h" data-i18n="pz.groups">按类做题</h3>
-          <div class="pz-tiles" id="pz-groups" role="group" aria-label="按类做题" data-i18n-aria="pz.groups">
-            <button type="button" class="pz-tile" data-group="mate" aria-pressed="false" title="一步、两步、三步将死，内置题与 Lichess 题一起" data-i18n-title="tip.grp.mate"><span class="pz-tile-ic" data-icon="crown" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.mate">杀棋</span><span class="pz-tile-n num"></span></button>
-            <button type="button" class="pz-tile" data-group="tactic" aria-pressed="false" title="捉双、牵制、串击、闪击 —— 净得子力的一手" data-i18n-title="tip.grp.tactic"><span class="pz-tile-ic" data-icon="swords" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.tactic">战术</span><span class="pz-tile-n num"></span></button>
-            <button type="button" class="pz-tile" data-group="endgame" aria-pressed="false" title="车兵、后、轻子与兵残局里的那一手" data-i18n-title="tip.grp.endgame"><span class="pz-tile-ic" data-icon="hourglass" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.endgame">残局</span><span class="pz-tile-n num"></span></button>
-            <button type="button" class="pz-tile" data-group="defense" aria-pressed="false" title="对方下一步就要将死或得子，找出守得住的一手" data-i18n-title="tip.grp.defense"><span class="pz-tile-ic" data-icon="shield" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.defense">防守</span><span class="pz-tile-n num"></span></button>
-            <button type="button" class="pz-tile" data-group="opening" aria-pressed="false" title="照谱走主流开局，执白执黑都能练" data-i18n-title="tip.grp.opening"><span class="pz-tile-ic" data-icon="book-open" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.opening">开局</span><span class="pz-tile-n num"></span></button>
-            <button type="button" class="pz-tile" data-group="mine" aria-pressed="false" title="你自己对局里的失着，重摆一遍找对的那手" data-i18n-title="tip.grp.mine"><span class="pz-tile-ic" data-icon="circle-x" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.mine">我的错题</span><span class="pz-tile-n num"></span></button>
+        <!-- v11-0-plan U3: two layers. On top, 为你出一题, today's reviews and
+             the puzzle on the board; the six kinds, the runs, the themes and
+             the list are one fold down, 更多练法 — a dozen controls that were
+             all on screen at once, every visit, for the one most people press. -->
+        <details class="reading-index pz-more" id="pz-more">
+          <summary class="setting-summary"><h2 class="side-h" data-i18n="pz.more">更多练法</h2></summary>
+          <div class="pz-groups-sec" id="pz-groups-sec">
+            <h3 class="side-h" data-i18n="pz.groups">按类做题</h3>
+            <div class="pz-tiles" id="pz-groups" role="group" aria-label="按类做题" data-i18n-aria="pz.groups">
+              <button type="button" class="pz-tile" data-group="mate" aria-pressed="false" title="一步、两步、三步将死，内置题与 Lichess 题一起" data-i18n-title="tip.grp.mate"><span class="pz-tile-ic" data-icon="crown" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.mate">杀棋</span><span class="pz-tile-n num"></span></button>
+              <button type="button" class="pz-tile" data-group="tactic" aria-pressed="false" title="捉双、牵制、串击、闪击 —— 净得子力的一手" data-i18n-title="tip.grp.tactic"><span class="pz-tile-ic" data-icon="swords" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.tactic">战术</span><span class="pz-tile-n num"></span></button>
+              <button type="button" class="pz-tile" data-group="endgame" aria-pressed="false" title="车兵、后、轻子与兵残局里的那一手" data-i18n-title="tip.grp.endgame"><span class="pz-tile-ic" data-icon="hourglass" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.endgame">残局</span><span class="pz-tile-n num"></span></button>
+              <button type="button" class="pz-tile" data-group="defense" aria-pressed="false" title="对方下一步就要将死或得子，找出守得住的一手" data-i18n-title="tip.grp.defense"><span class="pz-tile-ic" data-icon="shield" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.defense">防守</span><span class="pz-tile-n num"></span></button>
+              <button type="button" class="pz-tile" data-group="opening" aria-pressed="false" title="照谱走主流开局，执白执黑都能练" data-i18n-title="tip.grp.opening"><span class="pz-tile-ic" data-icon="book-open" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.opening">开局</span><span class="pz-tile-n num"></span></button>
+              <button type="button" class="pz-tile" data-group="mine" aria-pressed="false" title="你自己对局里的失着，重摆一遍找对的那手" data-i18n-title="tip.grp.mine"><span class="pz-tile-ic" data-icon="circle-x" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.mine">我的错题</span><span class="pz-tile-n num"></span></button>
+            </div>
           </div>
-        </div>
-        <div class="pz-modes" id="pz-modes">
-          <h3 class="side-h" data-i18n="pz.ways">换个练法</h3>
-          <div class="pz-modes-row">
-            <span class="setting-k" data-i18n="pz.challenge">挑战</span>
-            <button type="button" class="act-btn" data-run="rush" aria-pressed="false" title="3 分钟内尽量多做，错 3 题出局，题目越来越难" data-i18n-title="tip.run.rush" data-i18n="run.rush">冲刺</button>
-            <button type="button" class="act-btn" data-run="streak" aria-pressed="false" title="一直做到第一次答错，题目越来越难" data-i18n-title="tip.run.streak" data-i18n="run.streak">连胜</button>
+          <div class="pz-modes" id="pz-modes">
+            <h3 class="side-h" data-i18n="pz.ways">换个练法</h3>
+            <div class="pz-modes-row">
+              <span class="setting-k" data-i18n="pz.challenge">挑战</span>
+              <button type="button" class="act-btn" data-run="rush" aria-pressed="false" title="3 分钟内尽量多做，错 3 题出局，题目越来越难" data-i18n-title="tip.run.rush" data-i18n="run.rush">冲刺</button>
+              <button type="button" class="act-btn" data-run="streak" aria-pressed="false" title="一直做到第一次答错，题目越来越难" data-i18n-title="tip.run.streak" data-i18n="run.streak">连胜</button>
+            </div>
+            <div class="pz-modes-row">
+              <span class="setting-k" data-i18n="pz.special">专项</span>
+              <button type="button" class="act-btn" data-run="look" aria-pressed="false" title="局面不动，读完接下来几步再答题" data-i18n-title="tip.cat.look" data-i18n="pz.cat.look">看 N 步</button>
+              <button type="button" class="act-btn" data-run="blind" aria-pressed="false" title="杀棋局面只亮 3 秒，凭记忆走出杀着" data-i18n-title="tip.cat.blind" data-i18n="pz.cat.blind">盲走</button>
+            </div>
           </div>
-          <div class="pz-modes-row">
-            <span class="setting-k" data-i18n="pz.special">专项</span>
-            <button type="button" class="act-btn" data-run="look" aria-pressed="false" title="局面不动，读完接下来几步再答题" data-i18n-title="tip.cat.look" data-i18n="pz.cat.look">看 N 步</button>
-            <button type="button" class="act-btn" data-run="blind" aria-pressed="false" title="杀棋局面只亮 3 秒，凭记忆走出杀着" data-i18n-title="tip.cat.blind" data-i18n="pz.cat.blind">盲走</button>
+          <div class="link-row" id="pz-themes-row">
+            <button type="button" class="tool-txt" id="pz-themes-open" title="全部主题，各有多少题、你做过几道、你在这个主题上的谜题等级分" data-i18n-title="tip.theme.browse" data-i18n="theme.browse">按主题细分</button>
           </div>
-        </div>
-        <div class="link-row" id="pz-themes-row">
-          <button type="button" class="tool-txt" id="pz-themes-open" title="全部主题，各有多少题、你做过几道、你在这个主题上的谜题等级分" data-i18n-title="tip.theme.browse" data-i18n="theme.browse">按主题细分</button>
-        </div>
-        <details class="reading-index pz-group" id="pz-list-fold">
-          <summary class="setting-summary"><h2 class="side-h" data-i18n="side.puzzleList">题目列表</h2></summary>
-          <div class="lesson-list" id="puzzle-list" aria-label="题目列表" data-i18n-aria="aria.puzzleList"></div>
+          <details class="reading-index pz-group" id="pz-list-fold">
+            <summary class="setting-summary"><h2 class="side-h" data-i18n="side.puzzleList">题目列表</h2></summary>
+            <div class="lesson-list" id="puzzle-list" aria-label="题目列表" data-i18n-aria="aria.puzzleList"></div>
+          </details>
         </details>
       </section>
 
@@ -647,6 +654,8 @@
           <span class="today-head-acts">
             <!-- v10-0-plan A1: a game from elsewhere, straight to its review (analyse-entry.js) -->
             <button type="button" class="act-btn" id="today-analyse" data-i18n="an.open">分析一局</button>
+            <!-- v11-0-plan U2: a puzzle that suits you, one click from the first page -->
+            <button type="button" class="act-btn" id="today-puzzle" data-i18n="pz.smart">为你出一题</button>
             <button type="button" class="act-btn" id="today-new" data-i18n="today.newGame">下一盘</button>
           </span>
         </header>

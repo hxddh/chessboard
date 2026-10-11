@@ -227,6 +227,25 @@ export function createAnalysis(d) {
     if (!store.ui.appForeground) Host.notify({ title: t("ntf.analysisDone"), body: done });
   }
 
+  /**
+   * v11-0-plan U2: where 复盘这局 lands once the pass is in — the player's
+   * worst move (the first ??, else the first ?; in a game against the engine,
+   * only the player's own), as the replay index that shows it with its mark.
+   * Null for a clean game: then the review opens where the game ended.
+   */
+  function keyMoment() {
+    const a = store.session.analysis;
+    if (!a || !a.tags) return null;
+    const first = baseGame().turn();
+    const mine = store.session.mode === "ai" ? store.session.humanColor : null;
+    const side = (k) => ((k % 2 === 0) === (first === "w") ? "w" : "b");
+    for (const want of ["??", "?"]) {
+      const k = a.tags.findIndex((tag, i) => tag === want && (!mine || side(i) === mine));
+      if (k >= 0) return k + 1;
+    }
+    return null;
+  }
+
   // --- 7.6 §1c: analyses kept across a reload --------------------------------
   //
   // A finished pass is filed under the line it measured (analysis-store.js),
@@ -386,7 +405,7 @@ export function createAnalysis(d) {
   }
 
   return {
-    evalScalar, analysisFor, SCAN_BUDGET, analyzeGame, recallAnalysis, restoreAnalysis, plyLosses, withMotifs,
+    evalScalar, analysisFor, SCAN_BUDGET, analyzeGame, keyMoment, recallAnalysis, restoreAnalysis, plyLosses, withMotifs,
     recordAccuracy, wire,
   };
 }

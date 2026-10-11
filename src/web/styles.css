@@ -4082,9 +4082,12 @@ span[data-icon] { display: inline-grid; place-items: center; }
   text-align: center;
   font-size: 0.875rem; color: var(--muted); opacity: 1;
 }
+/* v11-0-plan S: the icon became a small line drawing — a man of the board
+   beside what the section holds (a pawn and a chart, a rook and the shelf,
+   the book with a king's cross, a king and a clock), 48px on a 1.5 pen */
 .hint.empty-note::before {
   content: ""; grid-row: 1;
-  width: 24px; height: 24px; background: currentColor;
+  width: 48px; height: 48px; background: currentColor; opacity: .8;
   -webkit-mask: var(--empty-ic) center / contain no-repeat;
   mask: var(--empty-ic) center / contain no-repeat;
 }
@@ -4109,10 +4112,10 @@ span[data-icon] { display: inline-grid; place-items: center; }
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='10 3 80 94'%3E%3Cpath fill='black' d='M25 87C29 79 44 72 50 63C51 69 46 73 39 71.5C35 71 31 70 28.5 68.5L26.5 65.5L22.5 67.5C17 67.5 13 64.5 12 59.5C11 55.5 12 52 14 49C20 40 30 30 40 24C43 22 46 20 48 19L51 7C51.5 5 53.5 5 54.5 6.5L58 15L63 6C64 4.5 66 5 66 7L67 21C76 28 83 40 84 54C85 66 83 78 81 87ZM26 86H84C85.7 86 87 87.3 87 89V93C87 94.7 85.7 96 84 96H26C24.3 96 23 94.7 23 93V89C23 87.3 24.3 86 26 86ZM43 29.6A2.4 2.4 0 1 0 43 34.4A2.4 2.4 0 1 0 43 29.6Z'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='10 3 80 94'%3E%3Cpath fill='black' d='M25 87C29 79 44 72 50 63C51 69 46 73 39 71.5C35 71 31 70 28.5 68.5L26.5 65.5L22.5 67.5C17 67.5 13 64.5 12 59.5C11 55.5 12 52 14 49C20 40 30 30 40 24C43 22 46 20 48 19L51 7C51.5 5 53.5 5 54.5 6.5L58 15L63 6C64 4.5 66 5 66 7L67 21C76 28 83 40 84 54C85 66 83 78 81 87ZM26 86H84C85.7 86 87 87.3 87 89V93C87 94.7 85.7 96 84 96H26C24.3 96 23 94.7 23 93V89C23 87.3 24.3 86 26 86ZM43 29.6A2.4 2.4 0 1 0 43 34.4A2.4 2.4 0 1 0 43 29.6Z'/%3E%3C/svg%3E") center / contain no-repeat;
 }
-#stats-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3v16a2 2 0 0 0 2 2h16'/%3E%3Cpath d='M18 17V9'/%3E%3Cpath d='M13 17V5'/%3E%3Cpath d='M8 17v-3'/%3E%3C/svg%3E"); }
-#lib-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m16 6 4 14'/%3E%3Cpath d='M12 6v14'/%3E%3Cpath d='M8 8v12'/%3E%3Cpath d='M4 4v16'/%3E%3C/svg%3E"); }
-#rep-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5v16'/%3E%3Cpath d='M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z'/%3E%3C/svg%3E"); }
-#hist-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 22h14'/%3E%3Cpath d='M5 2h14'/%3E%3Cpath d='M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22'/%3E%3Cpath d='M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2'/%3E%3C/svg%3E"); }
+#stats-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 13a4 4 0 1 0 0 8a4 4 0 1 0 0-8ZM10 24h8M11.5 24c0 4.5-1 8.5-3.5 12h12c-2.5-3.5-3.5-7.5-3.5-12M7 40h14M28 40V31M34 40V25M40 40V17M26 40h16'/%3E%3C/svg%3E"); }
+#lib-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 40h14M12 36h10M13 36l1-13h6l1 13M12 23h10M12 23v-6h2.5v3h2v-3h1v3h2v-3h2.5v6M30 40V14M35 40V18M38 18l5 22M28 40h16'/%3E%3C/svg%3E"); }
+#rep-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M24 19v23M24 19c-3-2-7-3-14-3v23c7 0 11 1 14 3c3-2 7-3 14-3V16c-7 0-11 1-14 3ZM24 6v6M21 9h6'/%3E%3C/svg%3E"); }
+#hist-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 6v6M13 9h6M10 23c0-4.5 2.7-8 6-8s6 3.5 6 8M10 23h12M11 23l-1 13h12l-1-13M8 40h16M36 21a7 7 0 1 0 0 14a7 7 0 1 0 0-14ZM36 24.5V28l2.5 2'/%3E%3C/svg%3E"); }
 
 /* ------------------------------------------------------------------
    One empty state on the record page (7.9 §4a). 7.8.0 had three on one

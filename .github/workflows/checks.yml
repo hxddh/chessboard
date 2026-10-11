@@ -410,12 +410,27 @@ jobs:
           E2E_REQUIRED: "1"
           OUT: shots
         run: node scripts/shots.mjs
+      # v11-0-plan S: on a pull request, the same set from the base branch
+      # beside it — shots-compare.mjs writes compare.html, base left, head
+      # right, for a person to look through (not a pixel assertion)
+      - name: take the base branch's set
+        if: github.event_name == 'pull_request'
+        env:
+          E2E_REQUIRED: "1"
+        run: |
+          git fetch --depth=1 origin "${{ github.base_ref }}"
+          git worktree add base FETCH_HEAD
+          ln -s "$PWD/node_modules" base/node_modules
+          (cd base && npm run build && OUT="$PWD/../shots-base" node scripts/shots.mjs) || echo "the base set did not finish"
+          node scripts/shots-compare.mjs "shots-base/${{ matrix.engine }}" "shots/${{ matrix.engine }}" "shots/${{ matrix.engine }}"
       - name: upload the screenshots
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: shots-${{ matrix.engine }}
-          path: shots/${{ matrix.engine }}/
+          path: |
+            shots/${{ matrix.engine }}/
+            shots-base/${{ matrix.engine }}/
           if-no-files-found: warn
           retention-days: 14
 

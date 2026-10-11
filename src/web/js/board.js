@@ -749,6 +749,21 @@ import { easeFromCss } from "./motion.js";
     // around the board (see .coords in styles.css), which is where a real
     // board has them and where they cannot sit on top of the a1/h1 rooks.
     drawCoords(m.flipped, m.coords !== false);
+    // v11-0-plan M: a won game's king stands in a small glow — the quiet
+    // celebration (no confetti), grown in with the result badges and drawn
+    // under the man. Under reduced motion it is simply there.
+    for (const r of m.result || []) {
+      if (!r || r.kind !== "win" || !r.sq) continue;
+      const { sr, sc } = screenPos(r.sq, m.flipped);
+      const cx = sc * step + step / 2, cy = sr * step + step / 2;
+      const a = 0.42 * ease(fxAt(_fx.badge, durMs("--dur-slow"), now));
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, step * 0.62);
+      g.addColorStop(0, fade(P.judgeGood, a));
+      g.addColorStop(0.55, fade(P.judgeGood, a * 0.45));
+      g.addColorStop(1, fade(P.judgeGood, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(...cellRect(sr, sc));
+    }
     // pieces: crisp vector sprites, Unicode glyphs only while sprites decode
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -844,9 +859,14 @@ import { easeFromCss } from "./motion.js";
       const lands = (sq) => { const r = m.position[8 - Number(sq[1])]; return !!(r && r[FILES.indexOf(sq[0])]); };
       if (_anim.taken && _anim.segs.some((sg) => lands(sg.to))) {
         const { sr, sc } = screenPos(_anim.taken.sq, m.flipped);
+        // v11-0-plan M: and it sinks as it goes — a fifth smaller by the end,
+        // about its own centre (a transform, not a third sprite size)
+        const cx = sc * step + step / 2, cy = sr * step + step / 2, k = 1 - 0.2 * t;
         ctx.save();
         ctx.globalAlpha = 1 - t;
-        paintPiece(_anim.taken.piece, sc * step + step / 2, sr * step + step / 2);
+        ctx.translate(cx, cy);
+        ctx.scale(k, k);
+        paintPiece(_anim.taken.piece, 0, 0);
         ctx.restore();
       }
       let painted = 0;

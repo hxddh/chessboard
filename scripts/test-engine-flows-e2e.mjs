@@ -462,6 +462,30 @@ await scenario("分析/精析", async () => {
   await ctx.close();
 });
 
+// --- 11.0 U2: 复盘这局, one click to the moment that mattered ------------------
+await scenario("复盘这局", async () => {
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
+  // the trap played to its mate: 7...Nf3#
+  await openPgn(page, TRAP.replace('[Result "*"]', '[Result "0-1"]').replace("7. Be2 *", "7. Be2 Nf3# 0-1"));
+  const card = await page.evaluate(() => !document.getElementById("go-card").hidden && !!document.getElementById("go-analyse").offsetParent);
+  assert(card, "复盘这局：将死之后结果卡在，「复盘这局」可按");
+  const busy = () => page.evaluate(() => /停/.test(document.getElementById("an-run").textContent || ""));
+  await page.click("#go-analyse");
+  await until(busy, 3000, 50);
+  await until(async () => !(await busy()), 60000);
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(() => {
+    const cur = document.querySelector(".move-list .mlmove.current");
+    const tag = cur && cur.querySelector(".mvtag");
+    return { pos: (document.getElementById("replay-pos").textContent || "").trim(), tag: tag ? tag.textContent.trim() : "",
+      tags: [...document.querySelectorAll(".move-list .mvtag")].map((e) => e.textContent.trim()) };
+  });
+  assert(/^\d+ \/ 14$/.test(r.pos) && !/^14 /.test(r.pos) && (r.tag === "??" || (r.tag === "?" && !r.tags.includes("??"))),
+    "11.0 U2：「复盘这局」一次点击，分析完停在最重的那一手上，不在终局", JSON.stringify(r));
+  assert(!errs.length, "复盘这局：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
 // --- 4. 持续分析 --------------------------------------------------------------
 await scenario("持续分析", async () => {
   const { ctx, page, errs } = await openPage({ mode: "pvp" });

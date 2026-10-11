@@ -4923,7 +4923,12 @@ import { loadChunk } from "./chunk.js";
   document.getElementById("back-main").onclick = () => { backToMain(); };
 
   // the result card (7.7 §4)
-  document.getElementById("go-analyse").onclick = () => { analyzeGame(SCAN_BUDGET); };
+  // v11-0-plan U2: one click to the moment that mattered — the review opens on
+  // the player's worst move, unless they have moved the cursor meanwhile
+  document.getElementById("go-analyse").onclick = () => { analyzeGame(SCAN_BUDGET).then(() => {
+    const k = Analysis.keyMoment();
+    if (k != null && store.game.viewIndex === sanHistory().length) { store.ui.reviewOpen = true; setViewIndex(k); }
+  }); };
   // v7-8-plan §4: the new-game dialog, the last choices in it — with the
   // rung the result line suggested, if it suggested one (9.0 M1: the bar's
   // second button, 换个对手, was the same dialog with that one change)
@@ -5127,7 +5132,7 @@ import { loadChunk } from "./chunk.js";
   // 9.0 S1: 今天 — the page around the coach's card (today-page.js)
   const TodayPage = createTodayPage({ doc: document, store, t, tf, tdot, Chess, pieceSrc: (k) => BoardView.pieceSrc(k), LESSONS, lessonText, Endgames: LessonsUI.Endgames,
     CLASSICS: LessonsUI.CLASSICS, classicsTotal: LessonsUI.classicsTotal, classicText: LessonsUI.classicText, loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText: () => ratingLabel(),
-    drawRatingTrend, Shell, requestNewGame: () => requestNewGame() });
+    drawRatingTrend, Shell, playNext: () => GameCtl.playNext() });
   TodayPage.wire();
   // v10-0-plan A1: 分析一局 — into the review in one step — and the blank analysis board
   const AnalyseEntry = createAnalyseEntry({ doc: document, t, Persist, Dlg, openPgnFile: (s) => openPgnFile(s), importPgnText: (x, l) => importPgnText(x, l, undefined, true),

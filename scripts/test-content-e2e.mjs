@@ -33,6 +33,9 @@ const ROOT = path.join(HERE, "..", "src", "web");
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
 import { compileModuleSync } from "./bundle.mjs";
 
+/** v11-0-plan U3: the kinds, runs, themes and list are under 更多练法 */
+async function openPzMore(page) { await page.evaluate(() => { const f = document.getElementById("pz-more"); if (f) f.open = true; }); }
+
 // the same data the page will load, so the test knows the right answers
 const data = { console };
 data.globalThis = data; data.window = data;
@@ -161,7 +164,7 @@ async function toTrain(pg, seg) {
 }
 async function openPuzzleList(pg) {
   const shut = await pg.evaluate(() => { const f = document.getElementById("pz-list-fold"); return !!f && !f.open; });
-  if (shut) { await pg.click("#pz-list-fold > summary"); await pg.waitForTimeout(200); }
+  if (shut) { await openPzMore(pg); await pg.click("#pz-list-fold > summary"); await pg.waitForTimeout(200); }
 }
 
 /**
@@ -353,7 +356,7 @@ await page.waitForTimeout(400);
   assert(tiles.length === 6 && tiles[5].g === "mine" && !/\d/.test(tiles[5].n),
     "9.0 S3 / 10.0 T2：五块按类做题，加上没有题时也在的我的错题", JSON.stringify(tiles));
   for (const { g, n } of tiles.filter((x) => x.g !== "mine")) {
-    await page.click('#pz-groups button[data-group="' + g + '"]');
+    await openPzMore(page); await page.click('#pz-groups button[data-group="' + g + '"]');
     let r = null;
     for (let i = 0; i < 30; i++) {
       await page.waitForTimeout(150);
@@ -376,7 +379,7 @@ await page.waitForTimeout(400);
 // tile's list.
 await toTrain(page, "puzzle");
 await page.waitForTimeout(400);
-await page.click('#pz-groups button[data-group="tactic"]');
+await openPzMore(page); await page.click('#pz-groups button[data-group="tactic"]');
 await page.waitForTimeout(800);
 const realRow = (name) => new RegExp("^(✓ )?\\d+\\. " + name + "$");
 const realListed = () => page.evaluate((re) => [...document.querySelectorAll("#puzzle-list button[data-i]")]
@@ -758,7 +761,7 @@ if (hasTab && REAL.length) {
   }
   assert(await pg.evaluate(() => { const b = document.querySelector('#pz-groups button[data-group="opening"]'); return b.classList.contains("active") && !document.querySelector('#pz-groups button[data-group="mate"]').classList.contains("active"); }),
     "9.0 S3：背谱时亮的是「开局」这一块");
-  await pg.click('#pz-groups button[data-group="mate"]');
+  await openPzMore(pg); await pg.click('#pz-groups button[data-group="mate"]');
   await pg.waitForTimeout(400);
   assert(await pg.evaluate(() => document.getElementById("row-op-side").hidden),
     "别的题型里「执方」这一行不存在（换到杀棋）");
