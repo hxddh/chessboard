@@ -72,7 +72,13 @@ export function createReviewPanel(d) {
     // the export and the mark legend describe a report — none, and they do
     // not stand there promising one (audit F7)
     avail(document.getElementById("report-export"), !!analysisFor());
-    avail(document.getElementById("analysis-legend"), !!analysisFor());
+    // v11-0-plan P: the mark legend is a first-time note — it stands under
+    // the first analysis kept on this device; after that the curve carries it
+    // as its tooltip, and the marks speak for themselves
+    const kept = store.session.analysesKept;
+    avail(document.getElementById("analysis-legend"), !!analysisFor() && !(kept && kept.length > 1));
+    const box = document.querySelector(".curve-box");
+    if (box && box.title !== t("hint.analysis")) box.title = t("hint.analysis");
     const pvEl = document.getElementById("pv-line");
     if (pvEl) {
       const a = analysisFor();

@@ -498,8 +498,8 @@
          undoes 缺陷 17 (men sitting on flat colour with no contact at all);
          half keeps the contact at the base and loses the smudge. */
       --piece-shadow: rgba(38,20,4,.13);
-      /* v8-0-plan A3: flat colour; paper and marble name a texture here */
-      --board-texture: none;
+      /* v8-0-plan A3: paper and marble name a texture here; 11.0 V3: wood too */
+      --board-texture: wood;
       --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #e0b07a, #c9965c 45%, #b8864e);
@@ -1317,6 +1317,12 @@
     /* whose move: the side's own disc takes the accent ring, beside the side
        it names — where the 行 badge and the corner pill used to split it */
     .pstrip.is-active .ps-av { box-shadow: 0 0 0 2px var(--accent); }
+    /* v11-0-plan V1: an opponent's face (portraits.js). Round, cropped by
+       the slot; the side it plays is the ring, in the side's colour */
+    .portrait { border-radius: 50%; overflow: hidden; padding: 0; }
+    .portrait > svg { display: block; width: 100%; height: 100%; }
+    .pstrip[data-side="w"] .ps-av.portrait { border: 2px solid var(--side-white); }
+    .pstrip[data-side="b"] .ps-av.portrait { border: 2px solid var(--side-black); }
     .ps-who {
       display: flex; align-items: baseline; gap: 8px;
       min-width: 0; flex-shrink: 1; overflow: hidden;
@@ -1745,6 +1751,7 @@
       display: grid; place-items: center; font-size: 1rem;
       color: var(--muted); background: var(--btn-ghost);
     }
+    .op-av.portrait { width: 40px; height: 40px; border-radius: 50%; background: none; box-shadow: 0 0 0 1px var(--card-edge); }
     .op-txt { display: flex; flex-direction: column; min-width: 0; }
     .op-name { font-size: 0.875rem; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
     .op-meta { display: flex; flex-wrap: wrap; gap: 0 8px; font-size: 0.75rem; line-height: var(--lh-tight); }
@@ -1890,10 +1897,15 @@
       background: var(--card);
       display: grid; gap: 8px;
     }
+    /* v11-0-plan P: the opponent, as a face and a name */
+    .idle-op { display: flex; align-items: center; gap: 12px; }
+    .idle-op[hidden] { display: none; }
+    .idle-av { flex: none; width: 48px; height: 48px; box-shadow: 0 0 0 1px var(--card-edge); }
+    .idle-who { display: grid; gap: 2px; min-width: 0; }
+    .idle-name { font-size: 1.125rem; font-weight: 600; color: var(--text); }
+    .idle-lvl { font-size: 0.75rem; color: var(--muted); }
     /* the rebuilt part of the card; its lines are the card's grid items */
     #idle-body { display: contents; }
-    .idle-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-    .idle-k { font-size: 0.75rem; color: var(--muted); }
     .idle-v { font-size: 0.875rem; color: var(--text); font-weight: 400; }
     /* 9.0 V1: advice is ink, not the accent (the accent is for the primary
        button, the current move and the selected state) */

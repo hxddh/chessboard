@@ -1332,10 +1332,13 @@ await scenario("对手角色", async () => {
     role: document.getElementById("black-role").textContent.trim(),
     level: document.getElementById("black-level").textContent.trim(),
     hello: document.getElementById("op-hello").hidden ? "" : document.getElementById("op-hello").textContent.trim(),
+    card: document.getElementById("idle-name").textContent.trim(),
+    face: !!document.querySelector("#idle-av.portrait svg"),
   }));
   assert(st.s.difficulty === "learner" && st.s.personaId === "principled" && st.role === "莉娜" && /练习 \d+ · 重原则/.test(st.level),
     "对手角色：选莉娜 = 练习档 × 重原则，对阵条写着名字、档位、等级分和风格", JSON.stringify(st));
-  assert(/^莉娜：/.test(st.hello), "对手角色：开局前，空棋盘的卡片上是她的开场白", st.hello);
+  // v11-0-plan P: the card names her once, beside her face; the line is hers alone
+  assert(st.card === "莉娜" && st.face && st.hello && !/^莉娜/.test(st.hello), "对手角色：开局前，空棋盘的卡片上是她的头像、名字和开场白", JSON.stringify(st));
   await page.evaluate(() => { window.__uci = []; });
   await clickMove(page, "e2", "e4");
   const n = await until(() => plies(page).then((p) => (p >= 2 ? p : 0)), 20000, 150);

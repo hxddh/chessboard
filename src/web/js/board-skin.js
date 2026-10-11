@@ -1,5 +1,5 @@
 /**
- * Board materials: the paper and marble textures, and ink-coloured pieces
+ * Board materials: the paper, marble and wood textures, and ink-coloured pieces
  * (v8-0-plan A3).
  *
  * A board palette in styles.css names its texture (--board-texture: none |
@@ -91,6 +91,23 @@ const RECIPES = {
         return w > 0 ? [30, 34, 48, Math.min(0.10, w * 0.3)] : [255, 252, 240, Math.min(0.10, -w * 0.3)];
       }
       return s > 0 ? [120, 100, 70, Math.min(0.06, s * 0.16)] : [255, 255, 250, Math.min(0.08, -s * 0.2)];
+    };
+  },
+  /**
+   * v11-0-plan V3: wood. Growth rings run across the square (a sine down the
+   * tile, whole turns so it wraps), bent by a slow stretched noise so no two
+   * rows are straight, with a fine open grain over them — the darker late
+   * wood where the ring peaks, the pale early wood between. As faint as the
+   * others: a board of wood, not a picture of one.
+   */
+  wood(dark) {
+    const bend = fbm(3, 2, dark ? 103 : 107, 3);
+    const pore = fbm(2, 8, dark ? 109 : 113, 12);
+    return (x, y) => {
+      const ring = Math.sin((y * 18 + bend(x, y) * 1.1) * Math.PI * 2);
+      const late = Math.pow((ring + 1) / 2, 4);
+      const g = late * 0.7 + (pore(x, y) - 0.5) * 0.7 - 0.12;
+      return g > 0 ? [70, 36, 12, Math.min(dark ? 0.08 : 0.06, g * 0.11)] : [255, 238, 205, Math.min(0.05, -g * 0.12)];
     };
   },
   /** Marble: turbulent veins across a softly clouded ground. */

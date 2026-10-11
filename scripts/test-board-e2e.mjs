@@ -1874,6 +1874,14 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     assert(r.plies === 4 && r.card, `§5 愚者杀:四着,结果卡片在(${JSON.stringify(r)})`);
     assert(!(await undoShown()), "§5 终局之后「悔棋」不在");
     assert(r.again, "§5 …自己下完的一盘,「再来一盘」还在");
+    // v11-0-plan P: one way on — the panel's 新局 is not a second 再来一盘,
+    // and comes back once the card is put away
+    const dup = () => page.evaluate(() => ({ nw: !document.getElementById("btn-new").hidden, grp: !document.getElementById("game-actions").hidden }));
+    const d0 = await dup();
+    assert(!d0.nw && !d0.grp, `11.0 P:结果卡在时,右栏没有第二个「新局」,空的「本局」组也收起(${JSON.stringify(d0)})`);
+    await page.evaluate(() => document.getElementById("go-close").click()); await settle(page);
+    const d1 = await dup();
+    assert(d1.nw, `11.0 P:关掉结果卡后,「新局」回到右栏(${JSON.stringify(d1)})`);
     await page.keyboard.press("z"); await settle(page);
     const plies = await page.evaluate(() => document.querySelectorAll(".mlmove").length);
     assert(plies === 4, `§5 …按 Z 也不把杀棋收回去(${plies} 着)`);
@@ -2056,6 +2064,18 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       return seen.size;
     });
     assert(spread > 20, `A3 大理石:空格子上有纹理(${spread} 种颜色,平涂只有 1 种)`);
+    // v11-0-plan V3: and the wood board is wood grain, not two flat colours
+    await toSettings(page, "board");
+    await pick('#board-pick-seg button[data-board-id="wood"]');
+    await toPlay(page);
+    const grain = await page.evaluate(() => {
+      const c = document.getElementById("board"), g = c.getContext("2d"), step = c.width / 8;
+      const d = g.getImageData(Math.round(3 * step + step * 0.1), Math.round(3 * step + step * 0.1), Math.round(step * 0.8), Math.round(step * 0.8)).data;
+      const seen = new Set();
+      for (let i = 0; i < d.length; i += 4) seen.add(d[i] + "," + d[i + 1] + "," + d[i + 2]);
+      return seen.size;
+    });
+    assert(grain > 20, `11.0 V3 木:空格子上有木纹(${grain} 种颜色)`);
     await toSettings(page, "board");
     // the kings in the piece picker: fetched once the row is on screen
     await page.evaluate(() => document.getElementById("piece-pick-seg").scrollIntoView());

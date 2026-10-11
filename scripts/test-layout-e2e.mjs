@@ -524,14 +524,15 @@ if (scenario()) {
   const r = await page.evaluate(() => ({
     bName: document.getElementById("black-role").textContent.trim(),
     bLevel: document.getElementById("black-level").textContent.trim(),
-    bIcon: (document.querySelector("#av-b svg") || {}).dataset?.icon,
+    bIcon: document.getElementById("av-b").dataset.icon,
     wIcon: (document.querySelector("#av-w svg") || {}).dataset?.icon,
     wName: document.getElementById("white-role").textContent.trim(),
   }));
   // v8-0-plan B4: the persona of the rung, with its rating — 10.0 T1: a new
   // install's rung is 休闲 (托莫, an hourglass), no longer 中级 (索尔)
   assert(r.bName === "托莫" && /休闲 670/.test(r.bLevel), "the engine's strip names its persona, level and rating (" + r.bName + " · " + r.bLevel + ")");
-  assert(r.bIcon === "hourglass" && r.wIcon === "user", "…with the persona's icon on it, and yours on your own (" + r.bIcon + " / " + r.wIcon + ")");
+  // v11-0-plan V1: the persona is a face (托莫's portrait), you keep your icon
+  assert(r.bIcon === "pt:tomo" && r.wIcon === "user", "…with the persona's portrait on it, and your icon on your own (" + r.bIcon + " / " + r.wIcon + ")");
   await ctx.close();
 }
 

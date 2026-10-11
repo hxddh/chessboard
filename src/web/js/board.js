@@ -278,6 +278,17 @@ import { easeFromCss } from "./motion.js";
    */
   let _imageRedraws = 0;
 
+  /**
+   * v11-0-plan V2 (b): Colin Burnett's drawing, kept, with a finer pen. Its
+   * 1.5-unit outline was cut for 45px squares; on a 100px square it is a 3px
+   * black rule round every man, and the board read heavy. 1.2 keeps every
+   * line of the drawing and its legibility on both square colours. Only the
+   * default set: the others were drawn with their own weights.
+   */
+  function refined(set, svg) {
+    return set === "cburnett" ? svg.replace(/stroke-width="1\.5"/g, 'stroke-width="1.2"') : svg;
+  }
+
   function initPieceImages() {
     const svgs = PIECE_SETS[_set]();
     if (!svgs || typeof Image === "undefined") return;
@@ -296,7 +307,7 @@ import { easeFromCss } from "./motion.js";
       const img = new Image();
       fresh[key] = img;
       const loaded = new Promise((res) => { img.onload = res; img.onerror = res; });
-      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgs[key]);
+      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(refined(want, svgs[key]));
       // decode() rejects on an undecodable image; the glyph fallback then
       // covers that one piece (spriteFor checks naturalWidth)
       return img.decode ? img.decode().catch(() => loaded) : loaded;
@@ -373,9 +384,19 @@ import { easeFromCss } from "./motion.js";
       c = document.createElement("canvas");
       c.width = size;
       c.height = size;
-      c.getContext("2d").drawImage(img, 0, 0, size, size);
+      const g = c.getContext("2d");
       // v8-0-plan A3: the paper board prints every set in its ink
       const ink = parseInk(paint().pieceInk);
+      // v11-0-plan V2 (b): and a breath of relief — a soft shade under the
+      // man's own outline, so it stands off the square rather than being
+      // printed on it (the contact shadow is the ground; this is the body).
+      // Not on paper: ink has no relief.
+      if (!ink && _set === "cburnett") {
+        g.shadowColor = "rgba(0, 0, 0, 0.22)";
+        g.shadowBlur = size * 0.03;
+        g.shadowOffsetY = size * 0.015;
+      }
+      g.drawImage(img, 0, 0, size, size);
       if (ink) inkSprite(c, img, ink);
       _sprites[ck] = c;
     }
@@ -389,7 +410,7 @@ import { easeFromCss } from "./motion.js";
    */
   function pieceSrc(key) {
     const svgs = PIECE_SETS[_set]() || CBURNETT_PIECE_SVGS;
-    return svgs && svgs[key] ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgs[key]) : "";
+    return svgs && svgs[key] ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(refined(_set, svgs[key])) : "";
   }
 
   /** Where `sq` is drawn right now: screen column and row, 0–7 from top left. */

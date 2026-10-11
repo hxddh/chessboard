@@ -52,7 +52,7 @@ export function createOpponentsLazy(d) {
   }
   const call = (name, dflt) => (...a) => (ui ? ui[name](...a) : dflt);
   const facade = {
-    strip: (level, style) => (ui ? ui.strip(level, style) : { icon: "bot", name: "Stockfish", level: d.diffName(level) }),
+    strip: (level, style) => (ui ? ui.strip(level, style) : { icon: "bot", portrait: "fish", name: "Stockfish", level: d.diffName(level) }),
     plan: (side) => { if (d.store.session.mode === "ai") opponent(); return ui ? ui.plan(side) : null; }, // an engine search binds it
     resigns: call("resigns", false), onOpen: call("onOpen", null),
     mount: call("mount"), paint: call("paint"), maybeOffer: call("maybeOffer"),
