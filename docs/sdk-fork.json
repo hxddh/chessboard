@@ -189,6 +189,12 @@
    "file": "build.zig",
    "kind": "ours",
    "title": "runner.zig 是独立模块，zig build test 另跑它的测试（R15 的测试与 window_placement.zig 自带的测试）"
+  },
+  {
+   "id": "B14",
+   "file": "build.zig",
+   "kind": "ours",
+   "title": "macOS 上编译应用自己的 ObjC 窗口外壳（src/native/mac_chrome.m）并链 WebKit（11.0 W）"
   }
  ],
  "hunks": [
@@ -7608,6 +7614,33 @@
    ],
    "after": [
     "}"
+   ]
+  },
+  {
+   "group": "B14",
+   "file": "build.zig",
+   "at": 2493,
+   "before": [
+    "        // (vDSP) turns it into band magnitudes.",
+    "        app_mod.linkFramework(\"MediaToolbox\", .{});"
+   ],
+   "up": [],
+   "ours": [
+    "        // 11.0 W: the app's own window shell — traffic lights inside the",
+    "        // content, a native drag strip over the top 28 pt, the appearance from",
+    "        // the theme (src/native/mac_chrome.m; main.zig calls it on macOS).",
+    "        // Plain ObjC whichever web engine is built; it looks for a WKWebView",
+    "        // to tell the page about full screen and finds none under CEF.",
+    "        {",
+    "            const sdk_include = if (b.sysroot) |sysroot| b.fmt(\"-I{s}/usr/include\", .{sysroot}) else \"\";",
+    "            const chrome_flags: []const []const u8 = if (b.sysroot) |sysroot| &.{ \"-fobjc-arc\", \"-fno-sanitize=builtin\", \"-ObjC\", \"-mmacosx-version-min=11.0\", \"-isysroot\", sysroot, sdk_include } else &.{ \"-fobjc-arc\", \"-fno-sanitize=builtin\", \"-ObjC\", \"-mmacosx-version-min=11.0\" };",
+    "            app_mod.addCSourceFile(.{ .file = b.path(\"src/native/mac_chrome.m\"), .flags = chrome_flags });",
+    "            app_mod.linkFramework(\"WebKit\", .{});",
+    "        }"
+   ],
+   "after": [
+    "        app_mod.linkFramework(\"Accelerate\", .{});",
+    "        app_mod.linkFramework(\"Foundation\", .{});"
    ]
   }
  ]

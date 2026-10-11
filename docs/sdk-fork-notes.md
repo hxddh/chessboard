@@ -90,11 +90,12 @@ node scripts/sdk-diff.mjs <SDK 目录> --suggest   # 另外把每个没登记的
 | B11 | ours | **从 app.zon 推断 web 层**。<br>我们用一个只读 web 相关字段的精简解析（`@embedFile("app.zon")`），自己写 `resolveWebLayer` / `parseWebEngine` / `parseWebLayer`。<br>上游用 `web_layer_contract`，并顺带读权限、`persist`、服务包、图片预算、更新开关等，那些只服务于 B03 和 R05 里我们没有的功能。<br>上游「更新与 Chromium 引擎不能同时开」的配置期检查也在这一组：我们两者都没开。 |
 | B12 | lag | **x86_64 强制 LLVM 后端**（`useLlvmWorkaround`）。<br>Zig 0.16 的自研 x86_64 后端会错编 SysV 调用约定里浮点参数多的 C 函数，只影响 x86_64 的 Debug 构建。我们的发布件是 ReleaseFast（本来就走 LLVM）；Windows 是另一套调用约定；macOS 发布件是 arm64。<br>影响：只可能出现在 x86_64 Linux/macOS 的 Debug 开发构建上。<br>建议：0.10.2 时照抄（一行）。 |
 | B13 | ours | **`zig build test` 另跑 runner 模块的测试**（8.2 M4）。<br>`src/runner.zig` 是独立模块（`runner_mod`），应用的测试二进制以 `main.zig` 为根，从来不跑它里面的测试。R15 的测试与 `window_placement.zig` 自带的测试要在 runner 模块里才拿得到 `prepareStateStore`，所以加一个以 `runner_mod` 为根的测试。上游对应的是 `native test` 的分析对象，见 B05。 |
+| B14 | ours | **应用自己的 macOS 窗口外壳**（11.0 W）。<br>SDK 0.10.1 的拖动区只给它自己的画布控件用，WKWebView 盖住标题栏后网页里无法声明可拖动区域。`src/native/mac_chrome.m` 由我们自己编译（只在 macOS 分支，带 `-fobjc-arc`），链 WebKit：标题栏透明、内容通到顶，WebView 上方一条 28 pt 的原生拖动条，窗口外观跟主题（`chess.setChrome`）。<br>上游没有对应的东西；SDK 哪天有了网页拖动区，就整组删掉、改用 SDK 的。 |
 
 ## 数字（登记于 0.10.1）
 
-- **29 组，175 块**：ours 18 组、unused 4 组、lag 7 组（8.2 M4 把 R15、B09 两组 lag 修成 ours，加了 B13，评审修正加了 R16；F2 登记时是 27 组：ours 14、unused 4、lag 9）。
+- **30 组，176 块**：ours 19 组、unused 4 组、lag 7 组（11.0 W 加了 B14；8.2 M4 把 R15、B09 两组 lag 修成 ours，加了 B13，评审修正加了 R16；F2 登记时是 27 组：ours 14、unused 4、lag 9）。
 - **runner.zig**：16 组，94 块，上游 882 行对我们 374 行。
-- **build.zig**：13 组，81 块，上游 2,539 行对我们 394 行。
+- **build.zig**：14 组，82 块，上游 2,539 行对我们 394 行。
 - **window_placement.zig**：没有差异。
   - 其中 B02、B03 两组占了上游的 2,045 行：上游是给所有应用用的构建库，我们只是一个应用。
