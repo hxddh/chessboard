@@ -404,7 +404,7 @@ pub fn main(init: std.process.Init) !void {
     const lang = app_state.launchLanguage();
     // 11.0 W: the Mac's inset window shell — set up before the runner opens
     // its window (src/native/mac_chrome.m; build.zig compiles it on macOS only)
-    if (comptime builtin.os.tag == .macos) chess_mac_chrome_init();
+    if (comptime runner.mac_shell) chess_mac_chrome_init();
     const ran = runner.runWithOptions(app_state.app(), .{
         .app_name = windowTitleFor(lang),
         .window_title = windowTitleFor(lang),

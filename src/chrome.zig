@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const runner = @import("runner");
 const native_sdk = @import("native_sdk");
 
 const jsonBoolField = @import("bridge.zig").jsonBoolField;
@@ -25,7 +26,7 @@ pub fn setChrome(context: *anyopaque, invocation: native_sdk.bridge.Invocation, 
     _ = context;
     const dark = jsonBoolField(invocation.request.payload, "dark") orelse return error.InvalidRequest;
     var code: c_int = 0;
-    if (comptime builtin.os.tag == .macos) code = chess_mac_chrome_set(@intFromBool(dark));
+    if (comptime runner.mac_shell) code = chess_mac_chrome_set(@intFromBool(dark));
     return std.fmt.bufPrint(output, "{{\"ok\":true,\"chrome\":\"{s}\"}}", .{chromeState(code)}) catch return error.HandlerFailed;
 }
 

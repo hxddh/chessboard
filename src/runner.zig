@@ -525,6 +525,10 @@ fn shortcutModifiers(comptime shortcut: anytype) native_sdk.ShortcutModifiers {
 /// which has no build_options of its own: the automation driver's seams in
 /// bridge.zig / sync.zig compile in only then (v8-2-plan §9 M4 评审修正).
 pub const automation_build = build_options.automation;
+/// 11.0 W: whether this exe drives the macOS platform — not the null backend
+/// built on a Mac host — for main.zig and chrome.zig: the app's own window
+/// shell (src/native/mac_chrome.m) is compiled into exactly these builds.
+pub const mac_shell = std.mem.eql(u8, build_options.platform, "macos");
 
 pub fn runWithOptions(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {
     if (build_options.debug_overlay) {

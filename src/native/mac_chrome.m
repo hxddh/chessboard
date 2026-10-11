@@ -147,8 +147,17 @@ int chess_mac_chrome_set(int dark) {
     app.appearance = [NSAppearance appearanceNamed:(dark ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua)];
     for (NSWindow *window in app.windows) ChessConfigure(window);
     if (!ChessAnyConfigured) return 0;
-    for (NSWindow *window in app.windows) {
-        if (window.styleMask & NSWindowStyleMaskFullScreen) return 2;
+    // The answer is for the page that asked, not for any window that happens
+    // to be full screen (Codex on #116): the page asking is in the key window
+    // (a theme change is a click in it) or, at launch before anything is key,
+    // the main one; failing both, the first window that carries a strip. The
+    // full-screen observers tell each page about its own window afterwards.
+    NSWindow *asking = app.keyWindow ?: app.mainWindow;
+    if (!asking || !ChessStripOf(asking)) {
+        asking = nil;
+        for (NSWindow *window in app.windows) {
+            if (ChessStripOf(window)) { asking = window; break; }
+        }
     }
-    return 1;
+    return (asking && (asking.styleMask & NSWindowStyleMaskFullScreen)) ? 2 : 1;
 }

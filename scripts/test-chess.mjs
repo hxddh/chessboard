@@ -2107,8 +2107,10 @@ for (const lang of CONTENT_LANGS) {
     assert(mac && /addCSourceFile\(\.\{ \.file = b\.path\("src\/native\/mac_chrome\.m"\)/.test(mac[1]) && (bz.match(/addCSourceFile\(\.\{ \.file = b\.path\("src\/native\/mac_chrome\.m"\)/g) || []).length === 1,
       "build.zig compiles mac_chrome.m in the macOS branch and nowhere else");
     const mz = fs.readFileSync(path.join(root, "src/main.zig"), "utf8");
-    assert(/if \(comptime builtin\.os\.tag == \.macos\) chess_mac_chrome_init\(\);[\s\S]*runner\.runWithOptions/.test(mz),
-      "main.zig sets the shell up on macOS, before the runner opens its window");
+    assert(/if \(comptime runner\.mac_shell\) chess_mac_chrome_init\(\);[\s\S]*runner\.runWithOptions/.test(mz) &&
+      /if \(comptime runner\.mac_shell\) code = chess_mac_chrome_set/.test(fs.readFileSync(path.join(root, "src/chrome.zig"), "utf8")) &&
+      /pub const mac_shell = std\.mem\.eql\(u8, build_options\.platform, "macos"\);/.test(fs.readFileSync(path.join(root, "src/runner.zig"), "utf8")),
+      "main.zig sets the shell up on the macOS platform (not the null backend on a Mac host), before the runner opens its window");
     assert(/\.name = "chess\.setChrome"/.test(fs.readFileSync(path.join(root, "src/bridge.zig"), "utf8")),
       "chess.setChrome is an app command");
     assert(/html\[data-chrome="inset"\] \{ --titlebar-h: 28px; \}/.test(stripped) &&

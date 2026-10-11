@@ -110,7 +110,7 @@
    "id": "R16",
    "file": "src/runner.zig",
    "kind": "ours",
-   "title": "pub const automation_build：把 -Dautomation 交给应用模块，automation 驱动的两个接缝只在 automation 构建里编进去（8.2 M4 评审修正）"
+   "title": "pub const automation_build：把 -Dautomation 交给应用模块，automation 驱动的两个接缝只在 automation 构建里编进去（8.2 M4 评审修正）；pub const mac_shell：只有 macOS 平台构建才调用应用自己的窗口外壳（11.0 W）"
   },
   {
    "id": "B01",
@@ -1426,6 +1426,10 @@
     "/// which has no build_options of its own: the automation driver's seams in",
     "/// bridge.zig / sync.zig compile in only then (v8-2-plan §9 M4 评审修正).",
     "pub const automation_build = build_options.automation;",
+    "/// 11.0 W: whether this exe drives the macOS platform — not the null backend",
+    "/// built on a Mac host — for main.zig and chrome.zig: the app's own window",
+    "/// shell (src/native/mac_chrome.m) is compiled into exactly these builds.",
+    "pub const mac_shell = std.mem.eql(u8, build_options.platform, \"macos\");",
     ""
    ],
    "after": [
