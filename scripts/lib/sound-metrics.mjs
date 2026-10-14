@@ -24,7 +24,7 @@ import { loadAppModules } from "./app-module.mjs";
 /** The bank, loaded the way the other scripts load app modules. */
 export function loadSoundBank() {
   const ctx = loadAppModules(["src/web/js/sound-bank.js"]);
-  return { renderSound: ctx.renderSound, SOUND_NAMES: [...ctx.SOUND_NAMES] };
+  return { renderSound: ctx.renderSound, SOUND_NAMES: [...ctx.SOUND_NAMES], soundKeys: ctx.soundKeys, STRIKES: ctx.STRIKES };
 }
 
 /** FNV-1a over the samples quantised to 16 bits — what a WAV of it would hold. */

@@ -75,7 +75,7 @@ import { drawSpark } from "./charts.js";
   // `shapes`: the arrows and circles the board draws now — the player's, the premove's, the engine's (7.8 §2);
   // `board`: the renderer's counters (v8-0-plan F5); `puzzle`: the FEN of the puzzle on the board (A5); `analysisBoard`: the A1 flag
   window.__chess = { engine: ChessEngine, shapes: () => shapesToDraw(), board: () => ChessBoardView.stats(),
-    puzzle: () => (store.session.puzzle && store.session.puzzle.g ? store.session.puzzle.g.fen() : null), analysisBoard: () => !!store.session.analysisBoard };
+    puzzle: () => (store.session.puzzle && store.session.puzzle.g ? store.session.puzzle.g.fen() : null), analysisBoard: () => !!store.session.analysisBoard, audio: ChessAudio };
 
   const Host = ChessHost;
   const Review = ChessReview;
@@ -3227,7 +3227,7 @@ import { drawSpark } from "./charts.js";
     const check = g.in_check();
     if (mv.flags && /[kq]/.test(mv.flags)) { Audio2.playCastle(mv.color); return; }
     if (mv.promotion) { Audio2.playPromote(mv.color); return; }
-    Audio2.playMove(mv.color, { captured: !!mv.captured, check });
+    Audio2.playMove(mv.color, { captured: !!mv.captured, check, piece: mv.piece });
   }
 
   /**

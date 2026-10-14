@@ -110,6 +110,8 @@ export const CHUNKS = [
   { entry: "src/web/js/opponents-chunk.js", out: "src/web/js/chunk-opponents.js", global: "CHESS_OPPONENTS", min: 15000 },
   // v8-0-plan C1: the library as a database — IndexedDB, search, 本机 games (library-ui.js)
   { entry: "src/web/js/library-page.js", out: "src/web/js/chunk-libdb.js", global: "CHESS_LIBDB", min: 15000 },
+  // 12.0 A: recorded takes, when sounds/ has any (scripts/sound-kit.mjs; audio.js asks only then)
+  { entry: "src/web/js/sound-kit.js", out: "src/web/js/chunk-sounds.js", global: "SOUND_KIT", min: 0 },
   // v8-0-plan C2: the sync dialog, on its button's first click (prefs-ui.js)
   { entry: "src/web/js/sync-ui.js", out: "src/web/js/chunk-sync.js", global: "createSyncUI", min: 2000 },
   // v8-1-plan T3: the repertoire by position — records, cards, cross-check (repertoire-ui.js)

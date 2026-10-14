@@ -8510,6 +8510,38 @@ for (const lang of CONTENT_LANGS) {
   assert(direct.length === 0, "12.0 C: the charts read their colours from charts.js, not each its own (" + direct.join(", ") + ")");
 }
 
+// --- 12.0 A: the way in for recordings (scripts/sound-kit.mjs) ---------------
+// None ship — no recording could be found whose licence GPLv3 carries and
+// whose source could be checked (sound-bank.js) — so the packer is held here,
+// on WAVs made in memory: what it takes, what it refuses, and the budget.
+{
+  const { packKit, parseWav, kitModules, KIT_BUDGET } = await import("./sound-kit.mjs");
+  const wav = (seconds, { rate = 44100, bits = 16, channels = 1 } = {}) => {
+    const n = Math.round(seconds * rate) * channels * (bits / 8);
+    const b = Buffer.alloc(44 + n);
+    b.write("RIFF", 0); b.writeUInt32LE(36 + n, 4); b.write("WAVE", 8);
+    b.write("fmt ", 12); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(channels, 22);
+    b.writeUInt32LE(rate, 24); b.writeUInt32LE(rate * channels * bits / 8, 28); b.writeUInt16LE(channels * bits / 8, 32); b.writeUInt16LE(bits, 34);
+    b.write("data", 36); b.writeUInt32LE(n, 40);
+    return b;
+  };
+  const names = ["move", "capture"];
+  const ok = packKit([{ file: "move-2.wav", bytes: wav(0.1) }, { file: "move-1.wav", bytes: wav(0.12) }, { file: "capture-1.wav", bytes: wav(0.2) }], names);
+  assert(ok.names.join() === "capture,move" && ok.kit.move.length === 2 && Buffer.from(ok.kit.move[0], "base64").length === wav(0.12).length,
+    "12.0 A: the kit packs each event's takes in file order, base64");
+  const refuse = (files, re) => { try { packKit(files, names); return false; } catch (e) { return re.test(e.message); } };
+  assert(refuse([{ file: "boom-1.wav", bytes: wav(0.1) }], /name it/), "12.0 A: a file not named for an event is refused");
+  assert(refuse([{ file: "move-1.wav", bytes: wav(0.1, { bits: 8 }) }], /16-bit/), "12.0 A: …and one that is not 16-bit PCM");
+  assert(refuse([{ file: "move-1.wav", bytes: wav(2.5) }], /at most 2/), "12.0 A: …and one longer than two seconds");
+  const big = Array.from({ length: 4 }, (_, i) => ({ file: "move-" + i + ".wav", bytes: wav(1.0) }));
+  assert(refuse(big, /budget/) && KIT_BUDGET === 300 * 1024, "12.0 A: …and a kit over 300 KB in all");
+  assert(parseWav(Buffer.from("not a wav file at all, no header here at all.....")) instanceof Error, "12.0 A: not a WAV is an error, not a crash");
+  const empty = kitModules(packKit([], names));
+  const shipped = fs.readFileSync(path.join(root, "src/web/js/sound-kit-names.js"), "utf8");
+  assert(shipped === empty.names, "12.0 A: no recordings ship, and the generated list says so (sound-kit-names.js is what the script writes for an empty sounds/)");
+  assert(fs.existsSync(path.join(root, "sounds/CREDITS.md")), "12.0 A: sounds/CREDITS.md says what a recording needs to come in");
+}
+
 if (failed) {
   console.error(failed + " test(s) failed");
   process.exit(1);
