@@ -18,6 +18,7 @@
  */
 import { ChessProgressMetrics as Metrics } from "./progress-metrics.js";
 import { tdot } from "./tdot.js";
+import { chartTokens, drawSpark } from "./charts.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -95,38 +96,11 @@ export function createMePage(d) {
     if (showCurve) drawAccTrend(cv, series);
   }
 
-  /** The accuracy sparkline — the eval curve's dress, the record's data. */
+  /** The accuracy sparkline (charts.js): 50–100 %, the honest floor for a
+   *  metric that rarely dips below it, and a fixed scale so two visits to
+   *  this page are comparable; 75 % is the reference line. */
   function drawAccTrend(cv, series) {
-    const dpr = window.devicePixelRatio || 1;
-    const W = Math.max(1, Math.round(cv.clientWidth * dpr));
-    const H = Math.max(1, Math.round(cv.clientHeight * dpr));
-    if (cv.width !== W) cv.width = W;
-    if (cv.height !== H) cv.height = H;
-    const ctx = cv.getContext("2d");
-    ctx.clearRect(0, 0, W, H);
-    const css = getComputedStyle(document.documentElement);
-    const cMuted = css.getPropertyValue("--muted").trim() || "#999";
-    const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
-    const n = series.length - 1;
-    const pad = 4 * dpr;
-    // 50–100%: the honest floor for a metric that rarely dips below it, and
-    // a fixed scale so two visits to this page are comparable
-    const x = (i) => (n ? (i / n) * (W - 2 * pad) + pad : W / 2);
-    const y = (a) => H - pad - (Math.max(50, Math.min(100, a)) - 50) / 50 * (H - 2 * pad);
-    ctx.strokeStyle = cMuted;
-    ctx.globalAlpha = 0.35;
-    ctx.lineWidth = dpr;
-    ctx.beginPath(); ctx.moveTo(0, y(75)); ctx.lineTo(W, y(75)); ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = cAccent;
-    ctx.lineWidth = 1.6 * dpr;
-    ctx.beginPath();
-    series.forEach((g, i) => { if (i) ctx.lineTo(x(i), y(g.acc)); else ctx.moveTo(x(i), y(g.acc)); });
-    ctx.stroke();
-    ctx.fillStyle = cAccent;
-    series.forEach((g, i) => {
-      ctx.beginPath(); ctx.arc(x(i), y(g.acc), 1.8 * dpr, 0, Math.PI * 2); ctx.fill();
-    });
+    drawSpark(document, cv, series.map((g) => g.acc), { lo: 50, hi: 100, ref: 75, dots: true });
   }
 
   function renderAchievements() {
@@ -295,8 +269,8 @@ export function createMePage(d) {
       drawHeat(cal, grid);
     }
     // strengths and weaknesses, at the diagnosis page's own floor
-    const sw = Metrics.strengths((store.session.puzzleState || {}).themes,
-      Library.diagnose(store.session.library, LIB_MIN_GAMES));
+    const diag = Library.diagnose(store.session.library, LIB_MIN_GAMES);
+    const sw = Metrics.strengths((store.session.puzzleState || {}).themes, diag);
     const swEl = byId("me-sw");
     swEl.hidden = !(sw.strong.length || sw.weak.length);
     if (!swEl.hidden) renderStrengths(swEl, sw);
@@ -305,7 +279,13 @@ export function createMePage(d) {
     const any = m.convert.n + m.resil.n + m.clock.n > 0;
     byId("me-metrics-head").hidden = byId("me-metrics").hidden = !any;
     if (any) renderMetrics(byId("me-metrics"), m);
-    sec.hidden = !showRating && !grid.active && swEl.hidden && !any;
+    // 12.0 C: where the mistakes fall — the share of moves that were ? or ??
+    // in each phase, as bars, at the same floor (a chart of three games is
+    // the diagnosis page's own warning)
+    const ph = diag.enough ? ["opening", "middle", "end"].filter((k) => diag.phase[k].badRate != null) : [];
+    byId("me-phase-head").hidden = byId("me-phase").hidden = ph.length < 2;
+    if (ph.length >= 2) renderPhase(byId("me-phase"), diag, ph);
+    sec.hidden = !showRating && !grid.active && swEl.hidden && !any && ph.length < 2;
   }
 
   /**
@@ -320,15 +300,13 @@ export function createMePage(d) {
     if (cv.height !== H) cv.height = H;
     const ctx = cv.getContext("2d");
     ctx.clearRect(0, 0, W, H);
-    const css = getComputedStyle(document.documentElement);
-    const cMuted = css.getPropertyValue("--muted").trim() || "#999";
-    const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
+    const k = chartTokens(document);
     const gap = 3 * dpr;
     const cell = Math.max(2 * dpr, Math.min((H - 6 * gap) / 7, (W - (grid.weeks - 1) * gap) / grid.weeks));
     const max = Math.max(1, ...grid.cells.map((c) => c.n));
     for (const c of grid.cells) {
-      // three steps of the accent over a faint empty square
-      ctx.fillStyle = c.n ? cAccent : cMuted;
+      // three steps of --chart-now over a faint empty square of --chart-line
+      ctx.fillStyle = c.n ? k.now : k.line;
       ctx.globalAlpha = c.n ? 0.35 + 0.65 * Math.ceil((c.n / max) * 3) / 3 : 0.15;
       ctx.fillRect(c.col * (cell + gap), c.row * (cell + gap), cell, cell);
     }
@@ -372,6 +350,22 @@ export function createMePage(d) {
    * many games it needs and how many it has (the acceptance: 每项指标都标明
    * 最少需要多少局).
    */
+  /** A bar per phase, as long as its share of mistakes against the worst one's. */
+  function renderPhase(el, diag, keys) {
+    const name = { opening: tf("diag.phaseOpening", [Library.OPENING_UNTIL]), middle: t("diag.phaseMiddle"), end: t("diag.phaseEnd") };
+    const max = Math.max(...keys.map((k) => diag.phase[k].badRate)) || 1;
+    el.replaceChildren(...keys.map((k) => {
+      const r = diag.phase[k].badRate;
+      const row = meRow(name[k], pct(r));
+      const bar = document.createElement("span");
+      bar.className = "me-bar" + (k === diag.weakestPhase ? " is-weak" : "");
+      bar.style.setProperty("--p", String(Math.round((r / max) * 100)));
+      bar.setAttribute("aria-hidden", "true");
+      row.appendChild(bar);
+      return row;
+    }));
+  }
+
   function renderMetrics(el, m) {
     el.replaceChildren();
     const rows = [

@@ -14,6 +14,7 @@
  */
 import { ChessReview } from "../review.js";
 import { tdot } from "../tdot.js";
+import { chartTokens, fitCanvas } from "../charts.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -126,6 +127,7 @@ export function createEvalGraph(d) {
       cv.setAttribute("aria-valuemax", String(a.scalars.length - 1));
       cv.setAttribute("aria-valuenow", String(store.game.viewIndex));
       cv.setAttribute("aria-valuetext", tdot(tf("curve.at", [store.game.viewIndex]), frac == null ? t("rv.evalNone") : evalText(cp)));
+      if (document.activeElement === cv && cv.matches(":focus-visible")) tipAt(store.game.viewIndex);
     }
     if (frac == null) {
       // measured and level is not the same thing as never measured
@@ -167,14 +169,9 @@ export function createEvalGraph(d) {
     // the 记录 tab or switching language on the 设置 tab. Nothing drawn from
     // a box that is not laid out; the ResizeObserver on the canvas redraws it
     // the moment it gets a size again.
-    if (!cv.clientWidth || !cv.clientHeight) return;
-    const dpr = window.devicePixelRatio || 1;
-    const W = Math.max(1, Math.round(cv.clientWidth * dpr));
-    const H = Math.max(1, Math.round(cv.clientHeight * dpr));
-    if (cv.width !== W) cv.width = W;
-    if (cv.height !== H) cv.height = H;
-    const ctx = cv.getContext("2d");
-    ctx.clearRect(0, 0, W, H);
+    const fit = fitCanvas(cv);
+    if (!fit) return;
+    const { ctx, W, H, dpr } = fit;
     const n = a.scalars.length - 1;
     // 7.8 §2: the height is White's win chance, 50 % on the midline — the
     // scale the marks are judged on. It was ±5 pawns linear, where a game
@@ -182,12 +179,9 @@ export function createEvalGraph(d) {
     // first thirty moves and a mate as the same height as +5.
     const x = (i) => plotX(i, n, W, dpr);
     const y = (s) => 4 * dpr + (1 - Review.winPct(s) / 100) * (H - 8 * dpr);
-    const css = getComputedStyle(document.documentElement);
-    const tok = (name, fallback) => css.getPropertyValue(name).trim() || fallback;
-    const cData = tok("--data", tok("--muted", "#999"));
-    const cLine = tok("--line", cData);
-    const cAccent = tok("--accent", cData);
-    const cPanel = tok("--panel", cData);
+    // 12.0 C: the chart tokens (charts.js)
+    const k = chartTokens(document);
+    const cData = k.line, cLine = k.grid, cAccent = k.now, cPanel = k.panel;
     const JC = judgeColours();
 
     // 9.0 M2: one thin line in the data colour over a faint fill of the
@@ -211,7 +205,7 @@ export function createEvalGraph(d) {
       ctx.lineTo(r, H);
       ctx.closePath();
       ctx.fillStyle = cData;
-      ctx.globalAlpha = 0.12;
+      ctx.globalAlpha = k.area;
       ctx.fill();
       ctx.globalAlpha = 1;
       i0 = i1 + 1;
@@ -324,6 +318,47 @@ export function createEvalGraph(d) {
   }
   const bestMemo = new WeakMap();
 
+  /**
+   * 7.8 §2: what is at position `i`, as Lichess's graph says it — the move
+   * that led there and the score after it; 12.0 C: and White's win chance,
+   * the scale the curve is drawn on. Shown for the pointer, and for the
+   * keyboard while the curve has focus (←/→ walk it, drawEvalBar calls this).
+   */
+  function tipAt(i) {
+    const a = analysisFor();
+    const curveEl = document.getElementById("eval-curve");
+    const tipEl = document.getElementById("curve-tip");
+    if (!a || !tipEl || !curveEl) return;
+    const rect = curveEl.getBoundingClientRect();
+    const n = a.scalars.length - 1;
+    const s = a.scalars[i];
+    const score = s == null ? t("rv.evalNone") : tdot(evalText(s), tf("curve.win", [Math.round(Review.winPct(s))]));
+    const vh = verboseHistory();
+    const mv = i > 0 ? vh[i - 1] : null;
+    const head = mv ? tf("curve.hover", [boardMoveNo(i - 1), (mv.color === "b" ? "…" : "") + mv.san, score])
+      : tf("curve.atScore", [0, score]);
+    if (tipEl.childElementCount !== 3) {
+      const main = document.createElement("span");
+      const best = document.createElement("span");
+      best.className = "curve-tip-best";
+      const h = document.createElement("span");
+      h.className = "curve-tip-hint";
+      tipEl.replaceChildren(main, best, h);
+    }
+    setText(tipEl.firstElementChild, head);
+    // 9.0 M2: on a ? or ??, what the engine would have played instead
+    setText(tipEl.children[1], i > 0 ? bestText(a, i - 1) : "");
+    setText(tipEl.lastElementChild, t("tip.evalCurve"));
+    tipEl.hidden = false;
+    // centred on the point, kept inside the panel
+    const wrap = tipEl.offsetParent || curveEl.parentElement;
+    const wr = wrap.getBoundingClientRect();
+    const half = tipEl.offsetWidth / 2;
+    const px = rect.left - wr.left + 4 + (n ? (i / n) * (rect.width - 8) : rect.width / 2);
+    tipEl.style.left = Math.max(half, Math.min(wr.width - half, px)) + "px";
+    tipEl.style.top = (rect.top - wr.top) + "px";
+  }
+
   /** The curve answers the pointer: a click or a drag walks the replay, a hover says where. */
   function wire() {
     const curveEl = document.getElementById("eval-curve");
@@ -361,40 +396,17 @@ export function createEvalGraph(d) {
       const tipEl = document.getElementById("curve-tip");
       const showCurveTip = (ev) => {
         const a = analysisFor();
-        if (!a || !tipEl) return;
+        if (!a) return;
         const rect = curveEl.getBoundingClientRect();
         const n = a.scalars.length - 1;
         const frac = Math.max(0, Math.min(1, (ev.clientX - rect.left - 4) / Math.max(1, rect.width - 8)));
-        const i = Math.round(frac * n);
-        const s = a.scalars[i];
-        const score = s == null ? t("rv.evalNone") : evalText(s);
-        const vh = verboseHistory();
-        const mv = i > 0 ? vh[i - 1] : null;
-        const head = mv ? tf("curve.hover", [boardMoveNo(i - 1), (mv.color === "b" ? "…" : "") + mv.san, score])
-          : tf("curve.atScore", [0, score]);
-        if (tipEl.childElementCount !== 3) {
-          const main = document.createElement("span");
-          const best = document.createElement("span");
-          best.className = "curve-tip-best";
-          const h = document.createElement("span");
-          h.className = "curve-tip-hint";
-          tipEl.replaceChildren(main, best, h);
-        }
-        setText(tipEl.firstElementChild, head);
-        // 9.0 M2: on a ? or ??, what the engine would have played instead
-        setText(tipEl.children[1], i > 0 ? bestText(a, i - 1) : "");
-        setText(tipEl.lastElementChild, t("tip.evalCurve"));
-        tipEl.hidden = false;
-        // centred on the point, kept inside the panel
-        const wrap = tipEl.offsetParent || curveEl.parentElement;
-        const wr = wrap.getBoundingClientRect();
-        const half = tipEl.offsetWidth / 2;
-        const px = rect.left - wr.left + 4 + (n ? (i / n) * (rect.width - 8) : rect.width / 2);
-        tipEl.style.left = Math.max(half, Math.min(wr.width - half, px)) + "px";
-        tipEl.style.top = (rect.top - wr.top) + "px";
+        tipAt(Math.round(frac * n));
       };
       curveEl.onpointermove = (ev) => { showCurveTip(ev); if (ev.buttons & 1) jumpOnCurve(ev); };
-      curveEl.onpointerleave = () => { if (tipEl) tipEl.hidden = true; };
+      curveEl.onpointerleave = () => { if (tipEl && document.activeElement !== curveEl) tipEl.hidden = true; };
+      // the keyboard's readout: focus shows the board's position, blur hides it
+      curveEl.onfocus = () => { if (curveEl.matches(":focus-visible")) tipAt(store.game.viewIndex); };
+      curveEl.onblur = () => { if (tipEl) tipEl.hidden = true; };
       curveEl.style.cursor = "pointer";
     }
   }

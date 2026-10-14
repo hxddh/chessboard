@@ -18,6 +18,7 @@
  * 7.0), and "does not exist" is easier to be sure of than "is hidden".
  * @module diag-charts
  */
+import { chartTokens } from "./charts.js";
 
 /**
  * @param {object} d doc, t, tf, judgeColours, libMoveNo — library-ui.js's own
@@ -43,11 +44,10 @@ export function createDiagCharts(d) {
     cv.height = H;
     const ctx = cv.getContext("2d");
     ctx.clearRect(0, 0, W, H);
-    const css = getComputedStyle(doc.documentElement);
-    return { ctx, W, H, dpr,
-      muted: css.getPropertyValue("--muted").trim() || "#999",
-      accent: css.getPropertyValue("--accent").trim() || "#e8c39e",
-      text: css.getPropertyValue("--text").trim() || "#ddd" };
+    // 12.0 C: the chart tokens (charts.js) — the bars in the data colour,
+    // the one that matters in --chart-now, the words in --chart-label
+    const k = chartTokens(doc);
+    return { ctx, W, H, dpr, muted: k.label, accent: k.now, text: k.ink };
   }
 
   /**

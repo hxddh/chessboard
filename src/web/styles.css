@@ -438,6 +438,13 @@
       --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
       --accent-line: color-mix(in srgb, var(--accent) 55%, transparent);
       --data: var(--muted);
+      /* 12.0 C: the charts' dress (charts.js) — the data line, how faint the
+         area under it, a reference hairline, the one "now" point, the words */
+      --chart-line: var(--data);
+      --chart-area: 0.12;
+      --chart-grid: var(--line);
+      --chart-now: var(--accent);
+      --chart-label: var(--muted);
     }
     /* 10.1 (Codex on #115): the macOS floor is 11.0, whose WKWebView may be
        Safari 14 or 15 — no color-mix(). A custom property holding one is
@@ -3632,6 +3639,26 @@
        keyboard and a screen reader get it for free. */
     /* 9.0 V1: a door is told by the fill under the pointer, as every other
        row that can be pressed is — not by a dashed rule appearing */
+    /* 12.0 C: a difficulty's record as a bar under its row — won in
+       --chart-now, drawn in the data colour, lost in the mark colour */
+    .stat-row:has(> .wdl) { position: relative; }
+    /* drawn in the row's bottom padding, so the list keeps one row height */
+    .wdl {
+      --w: 0; --d: 0; --l: 0;
+      position: absolute; left: 2px; right: 2px; bottom: 0;
+      display: flex; height: 2px; border-radius: var(--radius-sm); overflow: hidden;
+    }
+    .wdl > i { flex: 0 1 0; min-width: 0; }
+    .wdl > .w { flex-grow: var(--w); background: var(--chart-now); }
+    .wdl > .d { flex-grow: var(--d); background: var(--chart-line); opacity: 0.5; }
+    .wdl > .l { flex-grow: var(--l); background: var(--judge-bad); }
+    /* …and a phase's share of mistakes, the worst one in the mark colour */
+    .me-bar {
+      --p: 0; flex: 0 0 100%; display: block; height: 4px; margin: 2px 0 4px;
+      border-radius: var(--radius-sm);
+      background: linear-gradient(90deg, var(--chart-line) calc(var(--p) * 1%), var(--chart-grid) 0);
+    }
+    .me-bar.is-weak { background: linear-gradient(90deg, var(--judge-bad) calc(var(--p) * 1%), var(--chart-grid) 0); }
     button.stat-row, button.hint-link {
       width: 100%; font: inherit; text-align: left;
       background: transparent; border: 0;

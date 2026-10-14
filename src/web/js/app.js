@@ -58,6 +58,7 @@ import { watchPlayLayout } from "./play-layout.js";
 import { createStore } from "./store.js";
 import { SELFTEST_BOOT } from "./selftest-boot.js";
 import { loadChunk } from "./chunk.js";
+import { drawSpark } from "./charts.js";
 
   /**
    * The one deliberate global: the seam the browser tests reach through.
@@ -2181,38 +2182,12 @@ import { loadChunk } from "./chunk.js";
   // nudge in 1.7) — so 7.7 gives it the result card's filled button instead
   // of a message that leaves after four seconds (v7-7-plan §4).
 
-  /** The rating sparkline: the accuracy one's dress, on the rating's own scale. */
+  /** The rating sparkline (charts.js): a window around the data, rounded to
+   *  hundreds, so a flat run is a visibly flat line and a climb a climb. */
   function drawRatingTrend(cv, ys) {
-    const dpr = window.devicePixelRatio || 1;
-    const W = Math.max(1, Math.round(cv.clientWidth * dpr));
-    const H = Math.max(1, Math.round(cv.clientHeight * dpr));
-    if (cv.width !== W) cv.width = W;
-    if (cv.height !== H) cv.height = H;
-    const ctx = cv.getContext("2d");
-    ctx.clearRect(0, 0, W, H);
-    const css = getComputedStyle(document.documentElement);
-    const cMuted = css.getPropertyValue("--muted").trim() || "#999";
-    const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
-    const n = ys.length - 1;
-    const pad = 4 * dpr;
-    // a window around the data, rounded to hundreds, so a flat run is a
-    // visibly flat line and a climb is a visible climb
     const lo = Math.floor((Math.min(...ys) - 50) / 100) * 100;
     const hi = Math.ceil((Math.max(...ys) + 50) / 100) * 100;
-    const x = (i) => (n ? (i / n) * (W - 2 * pad) + pad : W / 2);
-    const y = (v) => H - pad - (v - lo) / Math.max(1, hi - lo) * (H - 2 * pad);
-    ctx.strokeStyle = cMuted;
-    ctx.globalAlpha = 0.35;
-    ctx.lineWidth = dpr;
-    ctx.beginPath(); ctx.moveTo(pad, y(ys[0])); ctx.lineTo(W - pad, y(ys[0])); ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = cAccent;
-    ctx.lineWidth = 1.5 * dpr;
-    ctx.beginPath();
-    ys.forEach((v, i) => { if (i) ctx.lineTo(x(i), y(v)); else ctx.moveTo(x(i), y(v)); });
-    ctx.stroke();
-    ctx.fillStyle = cAccent;
-    ctx.beginPath(); ctx.arc(x(n), y(ys[n]), 1.8 * dpr, 0, Math.PI * 2); ctx.fill();
+    drawSpark(document, cv, ys, { lo, hi, ref: ys[0] });
   }
 
   function renderStats() {
@@ -2242,7 +2217,13 @@ import { loadChunk } from "./chunk.js";
       const val = document.createElement("span");
       val.className = "stat-v num";
       val.textContent = tf("stats.wld", [a.win, a.loss, a.draw]);
-      row.append(name, val);
+      // 12.0 C: and as a bar — won, drawn, lost, in proportion
+      const bar = document.createElement("span");
+      bar.className = "wdl";
+      bar.setAttribute("aria-hidden", "true");
+      for (const [c, n] of [["w", a.win], ["d", a.draw], ["l", a.loss]]) bar.style.setProperty("--" + c, String(n));
+      bar.append(...["w", "d", "l"].map((c) => Object.assign(document.createElement("i"), { className: c })));
+      row.append(name, val, bar);
       el.appendChild(row);
     }
     if (withAcc.length) {

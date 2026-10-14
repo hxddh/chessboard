@@ -1330,6 +1330,32 @@ if (scenario()) {
   }
 }
 
+// --- 3m6. 12.0 C: a chart's line and its "now" are seen, in every theme -----
+// WCAG 1.4.11 asks 3:1 of the graphics a reader needs; the charts' tokens
+// (charts.js) are held to it against the panel they are drawn on, each theme
+// on a page of its own (see 3m for why).
+if (scenario()) for (const theme of ["wood", "night", "day", "notebook"]) {
+  const { ctx, page } = await open("zh-CN", "ai", "play", theme);
+  const cr = await page.evaluate(() => {
+    const cv = document.createElement("canvas"); cv.width = cv.height = 1;
+    const g2 = cv.getContext("2d", { willReadFrequently: true });
+    const rgb = (css) => { g2.clearRect(0, 0, 1, 1); g2.fillStyle = "#000"; g2.fillStyle = css; g2.fillRect(0, 0, 1, 1); return [...g2.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+    const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    const L = ([r, g3, b]) => 0.2126 * lin(r) + 0.7152 * lin(g3) + 0.0722 * lin(b);
+    const side = document.getElementById("side");
+    const probe = document.createElement("i");
+    side.appendChild(probe);
+    const of = (tk) => { probe.style.color = "var(" + tk + ")"; return rgb(getComputedStyle(probe).color); };
+    const bg = rgb(getComputedStyle(side).backgroundColor);
+    const ratio = (c) => { const a = L(c), b = L(bg); return Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100; };
+    const out = { line: ratio(of("--chart-line")), now: ratio(of("--chart-now")) };
+    probe.remove();
+    return out;
+  });
+  assert(cr.line >= 3 && cr.now >= 3, "12.0 C:" + theme + " 图表的线与「现在」对面板 ≥ 3:1(" + JSON.stringify(cr) + ")");
+  await ctx.close();
+}
+
 // --- 3m4. the two state changes that used to jump -------------------------
 // Hover and press were never the gap: measured across the three tabs, of every
 // clickable element in the app exactly one had no transition declared. What

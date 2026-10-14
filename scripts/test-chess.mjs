@@ -8486,6 +8486,30 @@ for (const lang of CONTENT_LANGS) {
   assert(callers.join() === "analyse-entry.js,selftest-scenarios.js,sync-ui.js", "C2: only the sync dialog, 分析一局 (and the self-test's sync scenario) call fetchGames (" + callers.join(", ") + ")");
 }
 
+// --- 12.0 C: the charts' one dress ------------------------------------------
+// Five readers through 11.0 took their own colours — the rating and accuracy
+// sparklines drew their line in --accent, the brightest ink on the page for
+// the least important picture on it. Now every chart reads the --chart-*
+// tokens through charts.js, and the geometry of a sparkline is a pure
+// function this file can hold.
+{
+  const { sparkPoints } = await import("../src/web/js/charts.js");
+  const pts = sparkPoints([1000, 1100, 1200], 1000, 1200, 200, 100, 4);
+  assert(pts[0].x === 4 && pts[2].x === 196 && pts[0].y === 96 && pts[2].y === 4 && pts[1].y === 50,
+    "12.0 C: a sparkline spans its box inside the margin, low at the bottom (" + JSON.stringify(pts) + ")");
+  const clamp = sparkPoints([0, 2000], 1000, 1200, 200, 100, 4);
+  assert(clamp[0].y === 96 && clamp[1].y === 4, "12.0 C: a value outside the window is held to its edge, not drawn off the canvas");
+  const one = sparkPoints([1500], 1500, 1500, 200, 100, 4);
+  assert(one.length === 1 && one[0].x === 100 && Number.isFinite(one[0].y), "12.0 C: one value stands in the middle, with no division by zero");
+  assert(sparkPoints([], 0, 1, 200, 100, 4).length === 0, "12.0 C: no data, no points");
+  const css = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
+  for (const tk of ["--chart-line", "--chart-area", "--chart-grid", "--chart-now", "--chart-label"])
+    assert((css.match(new RegExp("\\n\\s*" + tk + ":", "g")) || []).length === 1, "12.0 C: " + tk + " is declared once");
+  const drawers = ["review/eval-graph.js", "diag-charts.js", "me-page.js", "app.js"];
+  const direct = drawers.filter((f) => /getPropertyValue\("--(?:muted|accent|data|line|text)"\)/.test(fs.readFileSync(path.join(root, "src/web/js", f), "utf8")));
+  assert(direct.length === 0, "12.0 C: the charts read their colours from charts.js, not each its own (" + direct.join(", ") + ")");
+}
+
 if (failed) {
   console.error(failed + " test(s) failed");
   process.exit(1);

@@ -1041,11 +1041,25 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       const el = document.getElementById("curve-tip");
       return { hidden: !el || el.hidden, text: el && el.firstElementChild ? el.firstElementChild.textContent : "" };
     });
-    assert(!tip.hidden && /^第 \d+ 回合 …?\S+ [+−]?\d+\.\d$/.test(tip.text),
-      "悬停在曲线上:「第 N 回合 着法 分值」(「" + tip.text + "」)");
+    // 12.0 C: and White's win chance, the scale the curve is drawn on
+    assert(!tip.hidden && /^第 \d+ 回合 …?\S+ [+−]?#?(\d+\.\d)? · 白方胜率 \d+%$/.test(tip.text),
+      "悬停在曲线上:「第 N 回合 着法 分值 · 白方胜率 n%」(「" + tip.text + "」)");
     await pgC.mouse.move(box.x, box.y - 200);
     await settle(pgC);
     assert(await pgC.evaluate(() => { const el = document.getElementById("curve-tip"); return !!el && el.hidden; }), "……指针离开就收起");
+    // 12.0 C: the keyboard gets the same readout — focus the curve, walk it
+    // with →, and the tip follows the board's position
+    await pgC.keyboard.press("Home").catch(() => {});
+    await pgC.focus("#eval-curve");
+    await pgC.keyboard.press("Tab"); await pgC.keyboard.press("Shift+Tab");
+    await pgC.keyboard.press("ArrowRight");
+    await settle(pgC);
+    const kb = await pgC.evaluate(() => {
+      const el = document.getElementById("curve-tip"), cv = document.getElementById("eval-curve");
+      return { focused: document.activeElement === cv, hidden: !el || el.hidden, text: el && el.firstElementChild ? el.firstElementChild.textContent : "", now: cv.getAttribute("aria-valuenow") };
+    });
+    assert(kb.focused && !kb.hidden && /白方胜率 \d+%$/.test(kb.text),
+      "12.0 C:键盘聚焦曲线、按 → 走一步，读数跟着棋盘的位置(" + JSON.stringify(kb) + ")");
     await pgC.close();
   }
   assert(errsC.length === 0, "曲线:全程没有页面异常 — " + errsC.join(" / "));
