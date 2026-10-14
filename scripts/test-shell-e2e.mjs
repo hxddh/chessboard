@@ -390,6 +390,10 @@ const state = (page) => page.evaluate(() => {
       head: txt("home-h"), date: txt("today-date"), hero: txt("today-hero-title"), go: txt("today-go"),
       newGame: vis(document.getElementById("today-new")) ? txt("today-new") : "",
       heroBoard: document.querySelectorAll("#today-hero-board .mini-sq").length,
+      // 12.0 S: the pen follows the square — a card's 14 px squares get about
+      // a pixel of outline, the hero's bigger ones a finer pen (1.2 from 37 px)
+      pens: [document.querySelector("#today-cont .today-c .mini-sq img"), document.querySelector("#today-hero-board .mini-sq img")]
+        .map((i) => { const m = i && /stroke-width%3D%22([\d.]+)%22/.exec(i.src); return m ? Number(m[1]) : null; }),
       rings: [...document.querySelectorAll("#today-rings .today-ring")].map((r) => r.dataset.k + ":" + r.querySelector("b").textContent),
       note: vis(document.getElementById("today-prog-note")) ? txt("today-prog-note") : "",
       cont: [...document.querySelectorAll("#today-cont .today-c")].filter(vis)
@@ -401,6 +405,7 @@ const state = (page) => page.evaluate(() => {
   assert(!!today.head && !!today.date && !!today.hero && !!today.go && today.heroBoard === 64 && today.newGame === "下一盘",
     "S1: 今天页有问候、日期,主卡是一句话 + 一块小棋盘 + 按钮,旁边是「下一盘」(" + JSON.stringify(today) + ")");
   // v11-0-plan U1: the rings say what is left; no sentence repeats them
+  assert(today.pens[0] >= 2 && today.pens[1] >= 1.2 && today.pens[1] < today.pens[0], "12.0 S: 小棋盘的棋子描边随格子变粗：卡片的小格比主卡的大格粗（卡片 " + today.pens[0] + "、主卡 " + today.pens[1] + "）");
   assert(today.rings.join() === "lesson:0/1,puzzle:0/5,game:0/1" && !today.note,
     "S1: 今天的三项进度:课 0/1、题 0/5、局 0/1,圈里就是还差多少,下面不再用一句话复述(" + today.rings.join() + " · " + today.note + ")");
   assert(today.cont.length === 3 && today.cont.map((c) => c.split(":")[0]).join() === "course,endgame,classic"

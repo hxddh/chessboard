@@ -139,7 +139,10 @@ export const CHUNKS = [
  * it in test-chess.mjs; this line is the backstop for a whole language's
  * content coming back (~200 KB each).
  */
-export const BUNDLE_BUDGET = 951642;
+// 12.0: the same line as the per-release rule in test-chess.mjs (10.1.0's
+// 942,990 bytes + 20 KB) — it sat 2 KB over 11.0, so the first lines of 12.0
+// crossed it while the release's own budget had room
+export const BUNDLE_BUDGET = 962990;
 
 /**
  * v8-1-plan F2 (option a): whitespace and syntax, never identifiers. A stack

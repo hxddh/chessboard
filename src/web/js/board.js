@@ -285,8 +285,14 @@ import { easeFromCss } from "./motion.js";
    * line of the drawing and its legibility on both square colours. Only the
    * default set: the others were drawn with their own weights.
    */
-  function refined(set, svg) {
-    return set === "cburnett" ? svg.replace(/stroke-width="1\.5"/g, 'stroke-width="1.2"') : svg;
+  function refined(set, svg, px) {
+    if (set !== "cburnett") return svg;
+    // 12.0 S: …and at a small size, a heavier one. The 1.2 pen is 1.1 px on
+    // a 40 px square and 0.4 px on the 14 px squares of a card's board, where
+    // a white man's outline faded into the light square. Below ~37 px the
+    // pen is held at about one CSS pixel (45 units / the square), to 2.6.
+    const w = px > 0 ? Math.min(2.6, Math.max(1.2, 45 / px)) : 1.2;
+    return svg.replace(/stroke-width="1\.5"/g, 'stroke-width="' + w.toFixed(2).replace(/\.?0+$/, "") + '"');
   }
 
   function initPieceImages() {
@@ -408,9 +414,9 @@ import { easeFromCss } from "./motion.js";
    * in-board promotion picker draws with the same art as the board, not the
    * Unicode glyphs it used to. A data: URL of the SVG the sprites decode.
    */
-  function pieceSrc(key) {
+  function pieceSrc(key, px) {
     const svgs = PIECE_SETS[_set]() || CBURNETT_PIECE_SVGS;
-    return svgs && svgs[key] ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(refined(_set, svgs[key])) : "";
+    return svgs && svgs[key] ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(refined(_set, svgs[key], px)) : "";
   }
 
   /** Where `sq` is drawn right now: screen column and row, 0–7 from top left. */

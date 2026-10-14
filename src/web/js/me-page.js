@@ -158,35 +158,12 @@ export function createMePage(d) {
       tip.textContent = tf("ach.nextOf", [nm, desc]);
       el.appendChild(tip);
     }
-    const groups = [];
-    if (unlocked.length) groups.push(["ach.got", unlocked, false]);
-    // The locked group is the long one and it only ever gets longer at the far
-    // end: on a new install it is all fifteen, sorted by how close they are, so
-    // rows four to fifteen are a list of things that are not close. Three, and
-    // the rest behind a count you can press. The 展开 state is session-only —
-    // it is a way of looking at the list, not a setting.
-    if (locked.length) groups.push(["ach.locked", locked, true]);
-    for (const [key, rows, foldable] of groups) {
-      const h = document.createElement("div");
-      h.className = "ach-group";
-      h.textContent = tf("ui.pair", [t(key), rows.length]);
-      el.appendChild(h);
-      const fold = foldable && rows.length > ACH_FOLD_AT && !store.session.achAll;
-      renderAchRows(fold ? rows.slice(0, ACH_FOLD_AT) : rows, res, el);
-      if (foldable && rows.length > ACH_FOLD_AT) {
-        const more = document.createElement("button");
-        more.type = "button";
-        more.className = "act-btn ach-more";
-        more.id = "ach-more";
-        more.textContent = fold ? tf("ach.more", [rows.length - ACH_FOLD_AT]) : t("ach.less");
-        more.onclick = () => { store.session.achAll = !store.session.achAll; renderAchievements(); };
-        el.appendChild(more);
-      }
-    }
+    // 12.0 F: one grid of medals — earned ones first, then the rest by how
+    // close they are — each the badge's own icon (lit when earned, faint with
+    // its progress drawn round it when not), the name under it. Fifteen
+    // tiles fit three short rows, so nothing is folded away any more.
+    renderAchRows(unlocked.concat(locked), res, el);
   }
-
-  /** How many locked badges stand open before the rest fold away. */
-  const ACH_FOLD_AT = 3;
 
   /**
    * The records page, before there is anything to record: one sentence on
@@ -207,17 +184,18 @@ export function createMePage(d) {
       b.title = r.ach.descKey ? t(r.ach.descKey) : r.ach.desc;
       const ic = document.createElement("span");
       ic.className = "ach-ic";
-      ic.appendChild(Icons.icon(r.unlocked ? r.ach.icon : "lock"));
+      ic.appendChild(Icons.icon(r.ach.icon));
       const nm = document.createElement("span");
       nm.className = "ach-nm";
       nm.textContent = r.ach.nameKey ? t(r.ach.nameKey) : r.ach.name;
       b.append(ic, nm);
-      // "12/53" on a locked counting badge — the puzzle set nearly doubled in
-      // 1.6, so "solve every mate" silently got much longer with nothing on
-      // screen to say how far along you were
+      // a locked counting badge draws how far along it is round its medal,
+      // and says it — "12/53" (the puzzle set nearly doubled in 1.6, and
+      // "solve every mate" silently got longer with nothing to show for it)
       if (!r.unlocked && r.ach.progress) {
         const [done, total] = r.ach.progress(res.summary);
         if (total > 0 && done < total) {
+          ic.style.setProperty("--p", String(Math.round((100 * done) / total)));
           const pg = document.createElement("span");
           pg.className = "ach-pg num";
           pg.textContent = done + "/" + total;

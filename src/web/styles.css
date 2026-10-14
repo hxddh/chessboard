@@ -3299,16 +3299,12 @@
        beside a blank, then "还差一点 15" beside another blank. They are not
        badges; they are the rows the badges are filed under, and a row spans
        its table. */
-    .ach-next, .ach-group { grid-column: 1 / -1; }
+    .ach-next { grid-column: 1 / -1; }
     /* 9.0 V1: a line of the card, not a box inside it */
     .ach-next {
       margin-bottom: 8px; padding: 0;
       font-size: 0.875rem; line-height: var(--lh-body); color: var(--text);
     }
-    .ach-group {
-      margin: 16px 0 4px; font-size: 0.8125rem; font-weight: 400; color: var(--muted);
-    }
-    .ach-group:first-child { margin-top: 0; }
 
     /* A one-line note under a setting, for the thing the label cannot say. */
     .setting-note {
@@ -3492,7 +3488,7 @@
     .rt-acts { display: flex; gap: 8px; margin-top: 8px; }
     .rt-acts .pv-act { margin-left: 0; }
 
-    .ach-pg { margin-left: auto; font-size: 0.75rem; color: var(--muted); flex: none; }
+    .ach-pg { font-size: 0.75rem; color: var(--muted); }
     /* the "what next?" suggestion under the statistics */
     .stat-rec { margin-top: 8px; color: var(--text); }
 
@@ -3540,45 +3536,44 @@
       margin: 0 0 12px;
       font-size: 0.875rem; line-height: var(--lh-body); color: var(--muted);
     }
-    /* the fold at the end of the locked list — an .act-btn like every other
-       action in the panel, just not stretched across the column */
-    .ach-more { margin-top: 8px; flex: none; justify-self: start; padding: 0 12px; }
-    /* 9.0 V1: the badges are rows of their card, split by the hairline —
-       fifteen bordered boxes inside a bordered card were the box-in-box the
-       plan counts. A locked badge is told by its fainter ink and its lock,
-       not by fading the whole row to half. */
+    /* 12.0 F: the badges are medals in a grid. 9.0–11.0 made them a
+       one-column list after a two-column grid broke names mid-word (规则通/关)
+       and let rows grow to different heights; a tile has neither problem:
+       the tiles of a row line up, the name sits under its medal on at most
+       two lines, and a CJK name never breaks inside a word (keep-all). */
     .ach-body {
-      display: grid; grid-template-columns: minmax(0, 1fr); gap: 0;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px;
     }
     .ach-item {
-      display: flex; align-items: center; gap: 8px;
-      /* so the counter can drop to a second line rather than squeeze the name
-         into breaking mid-word — see .ach-nm */
-      flex-wrap: wrap;
-      padding: 8px 0; border-radius: 0;
-      border: 0; border-top: 1px solid var(--line);
-      background: transparent;
-      color: var(--faint);
-      transition: opacity var(--dur-quick) var(--ease), border-color var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
+      display: grid; grid-template-rows: 48px auto auto; justify-items: center; align-content: start;
+      row-gap: 4px; padding: 8px 4px;
+      text-align: center; color: var(--faint);
+      border-radius: var(--radius-md);
+      transition: background var(--dur-quick) var(--ease);
     }
+    .ach-item:hover { background: var(--btn-ghost); }
     .ach-item.got { color: var(--text); }
-    .ach-ic { font-size: 1rem; line-height: var(--lh-tight); flex-shrink: 0; }
-    .ach-nm {
-      font-size: 0.875rem; color: var(--text); line-height: var(--lh-tight);
-      /* `overflow-wrap: anywhere` was added in 2.0.1 to stop the name pushing
-         its card past the panel edge. It stopped the overflow by breaking the
-         word instead: nine of the fifteen badges read 规则通/关, 熟能生/巧,
-         杀法大/师 — a four-character name split after the third. That is not a
-         narrower failure than the overflow, it is the same failure with the
-         evidence hidden.
-         What was actually short of room is the row, not the name: the icon,
-         the name and a 0/111 counter share ~114px, and only the badges that
-         carry a counter wrapped. So the counter gets out of the way — it drops
-         under the name when both cannot fit — and the name breaks only where a
-         language says it may. */
-      min-width: 0;
+    .ach-ic {
+      --p: 0;
+      width: 48px; height: 48px; border-radius: 50%;
+      display: grid; place-items: center; font-size: 1.125rem;
+      /* a locked medal: its progress drawn round it, on the hairline */
+      background:
+        radial-gradient(closest-side, var(--card) 90%, transparent 91%),
+        conic-gradient(var(--muted) calc(var(--p) * 1%), var(--line) 0);
     }
-    .ach-item:not(.got) .ach-nm { color: var(--faint); }
+    .ach-item.got .ach-ic {
+      color: var(--brand);
+      background:
+        radial-gradient(closest-side, var(--btn-ghost) 90%, transparent 91%),
+        conic-gradient(var(--brand) 100%, var(--brand) 0);
+    }
+    .ach-nm {
+      font-size: 0.75rem; line-height: var(--lh-tight); color: var(--text);
+      word-break: keep-all; overflow-wrap: normal;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .ach-item:not(.got) .ach-nm { color: var(--muted); }
 
     .stats-body { display: flex; flex-direction: column; gap: 2px; }
     /* 7.3 B3: one shape for every `label → value` row in the app.
@@ -4183,6 +4178,15 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .pz-hero-top { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: 16px; }
 .pz-hero-r { display: grid; gap: 4px; }
 .pz-hero-v { font-size: 1.875rem; font-weight: 600; line-height: var(--lh-tight); }
+/* 12.0 F: the figure, then what qualifies it — a quiet tag, and a theme's
+   own rating on a line of its own */
+.pz-hero-v { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; }
+.prov-tag {
+  font-size: 0.75rem; font-weight: 400; line-height: var(--lh-tight); color: var(--muted);
+  padding: 2px 8px; border-radius: 999px; border: 1px solid var(--card-edge);
+}
+.pz-hero-more { flex-basis: 100%; font-size: 0.875rem; font-weight: 400; color: var(--muted); }
+.pz-rating-soon { font-size: 0.75rem; color: var(--muted); align-self: center; }
 #pz-hero #pz-rating-curve { height: 40px; border-bottom: 0; }
 #puzzle-smart { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; }
 .pz-review {
@@ -4449,6 +4453,11 @@ span[data-icon] { display: inline-grid; place-items: center; }
     conic-gradient(var(--text) calc(var(--p) * 1%), var(--ring-track) 0);
 }
 .today-ring.done { background: radial-gradient(closest-side, var(--card) 87%, transparent 88%), conic-gradient(var(--success) 100%, var(--ring-track) 0); }
+/* 12.0 F: the ring draws to its value rather than appearing at it — --p is
+   a registered number, so the conic gradient can be transitioned (reduced
+   motion stops it with every other transition) */
+@property --p { syntax: "<number>"; inherits: false; initial-value: 0; }
+.today-ring { transition: --p calc(var(--dur-slow) * 2) var(--ease); }
 .today-ring b { font-size: 0.875rem; font-weight: 600; }
 .today-ring span { font-size: 0.75rem; color: var(--muted); }
 .today-cont { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }

@@ -356,9 +356,6 @@ import { loadChunk } from "./chunk.js";
       /** the newest-first list the rendered rows index into */
       histCache: [],
       achSeen: null,  // filled in below, where it can first be computed
-      /** 记录页:锁着的成就是全展开还是只留最近的三个。不落盘 —— 这是一种
-       *  看法,不是一项设置。 */
-      achAll: false,
     },
     ui: {
       soundOn: true,
@@ -2392,7 +2389,7 @@ import { loadChunk } from "./chunk.js";
     bookNow, drawRatingTrend, el, loadStats, motifKeyOf, owedNow, puzzlesInCat, ratingLabel,
     ratingTip, runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
-    sync, t, tf, toast, pieceSrc: (k) => BoardView.pieceSrc(k), game, isOver: () => appGameOver(), isLive: () => isLive(),
+    sync, t, tf, toast, pieceSrc: (k, px) => BoardView.pieceSrc(k, px), game, isOver: () => appGameOver(), isLive: () => isLive(),
     Shell: { go: (id) => Shell.go(id), openTrain: (g) => Shell.openTrain(g) }, rep: { due: () => (RepUI.booted() ? RepUI.dueDrills().length : 0), start: () => startRepDrills(true) }, ecoName: (e, n) => LibraryUI.libEcoName(e, n),
   });
   const {
@@ -5130,7 +5127,7 @@ import { loadChunk } from "./chunk.js";
     onHome: () => { TodayPage.render(); syncDailyUI(); }, onMe: () => MePage.onShow(), learnSeg: () => LessonsUI.learnSeg(), openSeg: (g) => LessonsUI.openSeg(g) });
   Shell.wire();
   // 9.0 S1: 今天 — the page around the coach's card (today-page.js)
-  const TodayPage = createTodayPage({ doc: document, store, t, tf, tdot, Chess, pieceSrc: (k) => BoardView.pieceSrc(k), LESSONS, lessonText, Endgames: LessonsUI.Endgames,
+  const TodayPage = createTodayPage({ doc: document, store, t, tf, tdot, Chess, pieceSrc: (k, px) => BoardView.pieceSrc(k, px), LESSONS, lessonText, Endgames: LessonsUI.Endgames,
     CLASSICS: LessonsUI.CLASSICS, classicsTotal: LessonsUI.classicsTotal, classicText: LessonsUI.classicText, loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText: () => ratingLabel(),
     drawRatingTrend, Shell, playNext: () => GameCtl.playNext() });
   TodayPage.wire();

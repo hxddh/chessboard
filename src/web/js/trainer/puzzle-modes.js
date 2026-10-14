@@ -28,6 +28,7 @@
 import { ChessDialog } from "../dialog.js";
 import { ChessPuzzleDb } from "../puzzle-db.js";
 import { ChessLazy } from "../lazy-content.js";
+import { countTo } from "../count-to.js";
 import { ChessRating } from "../rating.js";
 import { THEME_IDS, themesOf, themeRecord, attemptsIn, filterThemes } from "./themes.js";
 import { ChessRuns as Runs } from "./runs.js";
@@ -575,6 +576,38 @@ export function createPuzzleModes(d) {
     }
   }
 
+  /**
+   * 12.0 F: the big rating is a figure, and "provisional" is a tag beside it,
+   * not a full-width bracket set in the figure's own size (「1500（定级中）」).
+   * Rebuilt only when what it says changes.
+   */
+  function paintRating(v, r, extra) {
+    if (!v) return;
+    const prov = ChessRating.isProvisional(r);
+    const sig = [Math.round(r.r), prov, extra || "", store.ui.langId].join("|");
+    if (v.dataset.sig === sig) return;
+    v.dataset.sig = sig;
+    // the figure's own node is kept, so a new rating counts up or down to
+    // itself from the one shown (count-to.js) instead of being swapped in
+    const num = v.querySelector(".num") || doc.createElement("span");
+    num.className = "num";
+    countTo(num, r.r);
+    const kids = [num];
+    if (prov) {
+      const tag = doc.createElement("span");
+      tag.className = "prov-tag";
+      tag.textContent = t("rating.provTag");
+      kids.push(tag);
+    }
+    if (extra) {
+      const more = doc.createElement("span");
+      more.className = "pz-hero-more";
+      more.textContent = extra;
+      kids.push(more);
+    }
+    v.replaceChildren(...kids);
+  }
+
   // --- the panel -------------------------------------------------------------
 
   /** The rating, its curve, the mode row, the run card and the theme row. */
@@ -586,14 +619,19 @@ export function createPuzzleModes(d) {
     const v = el("pz-rating-v");
     const theme = !run && isThemeCat(cat) ? cat.slice(THEME_CAT.length) : null;
     const tr = theme ? themeRating(theme) : null;
-    setText(v, tdot(ratingText(seenRating()), theme && tf("ui.pair", [themeName(theme), tr ? ratingText(tr) : "—"])));
+    paintRating(v, seenRating(), theme && tf("ui.pair", [themeName(theme), tr ? ratingText(tr) : "—"]));
     if (v) v.title = ChessRating.isProvisional(seenRating()) ? t("tip.ratingProv") : "";
+    // 12.0 C: a curve needs three points; until then it says how many more
+    // answers make one, instead of drawing a flat line through one point
     const cv = el("pz-rating-curve");
-    if (cv && cv.clientWidth) {
-      const ys = (Array.isArray(st.rhist) ? st.rhist : []).map((h) => h.r);
-      if (!ys.length) ys.push(Math.round(seenRating().r));
-      drawRatingTrend(cv, ys.length > 1 ? ys : [ys[0], ys[0]]);
+    const ys = (Array.isArray(st.rhist) ? st.rhist : []).map((h) => h.r);
+    const soon = el("pz-rating-soon");
+    if (cv) cv.hidden = ys.length < 3;
+    if (soon) {
+      soon.hidden = ys.length >= 3;
+      if (ys.length < 3) setText(soon, tf("pz.curveSoon", [3 - ys.length]));
     }
+    if (cv && !cv.hidden && cv.clientWidth) drawRatingTrend(cv, ys);
     // 9.0 S3: 挑战 and 专项 are buttons, lit while their run is on
     doc.querySelectorAll("#pz-modes button[data-run]").forEach((b) => {
       const on = !!run && b.dataset.run === run.kind;
