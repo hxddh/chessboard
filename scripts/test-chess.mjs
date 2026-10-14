@@ -8538,7 +8538,7 @@ for (const lang of CONTENT_LANGS) {
   assert(parseWav(Buffer.from("not a wav file at all, no header here at all.....")) instanceof Error, "12.0 A: not a WAV is an error, not a crash");
   const empty = kitModules(packKit([], names));
   const shipped = fs.readFileSync(path.join(root, "src/web/js/sound-kit-names.js"), "utf8");
-  assert(shipped === empty.names, "12.0 A: no recordings ship, and the generated list says so (sound-kit-names.js is what the script writes for an empty sounds/)");
+  assert(shipped.replace(/\r\n/g, "\n") === empty.names, "12.0 A: no recordings ship, and the generated list says so (sound-kit-names.js is what the script writes for an empty sounds/)");
   assert(fs.existsSync(path.join(root, "sounds/CREDITS.md")), "12.0 A: sounds/CREDITS.md says what a recording needs to come in");
 }
 
