@@ -49,7 +49,8 @@ const PUT_SLICE = 6;
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
 
 /**
- * `records` into store `s` of transaction `t`, PUT_SLICE ms of them per task.
+ * Requests on transaction `t`, PUT_SLICE ms of them per task: `steps` are
+ * thunks, each issuing one request (a put) and returning it.
  *
  * v8-1-plan F3: every put() structured-clones its record on the spot, and a
  * restore from the native shards puts the whole library in with one call —
@@ -57,15 +58,22 @@ const now = () => (typeof performance !== "undefined" ? performance.now() : Date
  * mirror's first write. The next slice is queued from the last request's
  * success, when the transaction is active again, so it is still one
  * transaction: all of the records or (abort) none of them.
+ *
+ * 12.0: the summary shards that go with the games ("meta", v8-1-plan F3) are
+ * steps here too — about sixty large clones of their own, written before the
+ * first slice and outside its budget, made an import's longest task 14–18 ms
+ * (test-persist-e2e). `began` is when this task's work on the transaction
+ * began — the deletes of a replace — so the first slice counts from there.
  * @returns {Promise<true>} the transaction's commit
  */
-function putSliced(t, s, records) {
-  let i = 0, refused = null;
+function runSliced(t, steps, began) {
+  let i = 0, refused = null, first = began;
   const slice = () => {
-    const t0 = now();
+    const t0 = first != null ? first : now();
+    first = null;
     let req = null;
     try {
-      do req = s.put(records[i++]); while (i < records.length && now() - t0 < PUT_SLICE);
+      do req = steps[i++](); while (i < steps.length && now() - t0 < PUT_SLICE);
     } catch (e) {
       // a record the store refuses (DataError, DataCloneError): nothing of
       // this call lands, and the caller hears that error, not "aborted"
@@ -73,10 +81,10 @@ function putSliced(t, s, records) {
       try { t.abort(); } catch (_) { /* already finished */ }
       return;
     }
-    if (i < records.length) req.onsuccess = slice;
+    if (i < steps.length) req.onsuccess = slice;
   };
   const done = committed(t).catch((e) => { throw refused || e; });
-  if (records.length) slice();
+  if (steps.length) slice();
   return done;
 }
 
@@ -87,10 +95,13 @@ function putSliced(t, s, records) {
  */
 const SUM_ALL = "sum:*";
 
-/** A meta write ({put: [[key, value]], del: [key]}) into store `m` of an open transaction. */
+/**
+ * A meta write ({put: [[key, value]], del: [key]}) into store `m` of an open
+ * transaction: the deletes now (cheap), the puts as runSliced steps.
+ */
 function applyMeta(m, meta) {
   for (const k of meta.del || []) m.delete(k === SUM_ALL ? IDBKeyRange.bound(SUM_KEY, SUM_KEY + "\uffff") : k);
-  for (const [k, v] of meta.put || []) m.put(v, k);
+  return (meta.put || []).map(([k, v]) => () => m.put(v, k));
 }
 
 /**
@@ -133,9 +144,9 @@ async function idbBackend(idb, name, open) {
    */
   const gamesTx = (meta) => {
     const t = tx(meta ? ["games", "meta"] : ["games"], "readwrite");
-    if (meta) applyMeta(t.objectStore("meta"), meta);
-    return t;
+    return { t, steps: meta ? applyMeta(t.objectStore("meta"), meta) : [] };
   };
+  const putsOf = (s, records) => records.map((r) => () => s.put(r));
   return {
     kind: "idb",
     // a page at a time: one getAll() of a big library is one long structured
@@ -164,25 +175,28 @@ async function idbBackend(idb, name, open) {
     },
     async put(records, meta) {
       if (!records.length && !meta) return true;
-      const t = gamesTx(meta);
-      return putSliced(t, t.objectStore("games"), records);
+      const began = now();
+      const { t, steps } = gamesTx(meta);
+      return runSliced(t, steps.concat(putsOf(t.objectStore("games"), records)), began);
     },
     async remove(ids, meta) {
       if (!ids.length && !meta) return true;
-      const t = gamesTx(meta);
+      const began = now();
+      const { t, steps } = gamesTx(meta);
       const s = t.objectStore("games");
       for (const id of ids) s.delete(id);
-      return committed(t);
+      return runSliced(t, steps, began);
     },
     async replace(ids, records, meta) {
-      const t = gamesTx(meta);
+      const began = now();
+      const { t, steps } = gamesTx(meta);
       const s = t.objectStore("games");
       for (const id of ids) s.delete(id);
-      return putSliced(t, s, records);
+      return runSliced(t, steps.concat(putsOf(s, records)), began);
     },
     // the summary goes with the games; its id stays (see SUM_ID)
     async clear() {
-      const t = gamesTx({ del: [SUM_ALL] });
+      const { t } = gamesTx({ del: [SUM_ALL] });
       t.objectStore("games").clear();
       return committed(t);
     },
@@ -195,9 +209,9 @@ async function idbBackend(idb, name, open) {
     // v8-1-plan F3: the stored summary (library-sum.js)
     async summary() { return readStored(db); },
     async writeMeta(meta) {
+      const began = now();
       const t = tx(["meta"], "readwrite");
-      applyMeta(t.objectStore("meta"), meta);
-      return committed(t);
+      return runSliced(t, applyMeta(t.objectStore("meta"), meta), began);
     },
   };
 }
