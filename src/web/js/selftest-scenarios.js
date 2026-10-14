@@ -68,12 +68,17 @@ const line = (sans) => ({ id: "rep-" + hash36(sans), sans, eco: "", name: "" });
 /** The book rep-seed writes: a line a side. */
 export const SEED_BOOK = { v: 1, w: [line("e4 e5 Nf3 Nc6 Bb5")], b: [line("d4 Nf6 c4 e6")] };
 
-/** The longest gap between animation frames from now until stop(). */
+/**
+ * The longest gap between animation frames from now until stop(), and (12.0
+ * R) when it ended, in ms from the start — so a long one can be placed
+ * against what the scenario was doing then (the answer arrived at `ms`).
+ */
 function frameGaps() {
-  let last = performance.now(), max = 0, n = 0, on = true;
-  const tick = (t) => { if (!on) return; max = Math.max(max, t - last); last = t; n++; requestAnimationFrame(tick); };
+  const t0 = performance.now();
+  let last = t0, max = 0, at = 0, n = 0, on = true;
+  const tick = (t) => { if (!on) return; if (t - last > max) { max = t - last; at = t - t0; } last = t; n++; requestAnimationFrame(tick); };
   requestAnimationFrame(tick);
-  return () => { on = false; return { maxMs: Math.round(max), frames: n }; };
+  return () => { on = false; return { maxMs: Math.round(max), at: Math.round(at), frames: n }; };
 }
 
 /** What chessboard.book holds now. */

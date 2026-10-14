@@ -290,7 +290,8 @@ async function runLive() {
     const li = reports.sync.checks.lichess;
     if (li && li.frames) {
       extra.frames = li.frames;
-      if (li.frames.frames >= 10) check("R6:frames", li.frames.maxMs < THRESHOLDS.syncFrameGapMs, "同步期间页面最长帧间隔 " + li.frames.maxMs + " ms（< " + THRESHOLDS.syncFrameGapMs + "），共 " + li.frames.frames + " 帧");
+      if (li.frames.frames >= 10) check("R6:frames", li.frames.maxMs < THRESHOLDS.syncFrameGapMs, "同步期间页面最长帧间隔 " + li.frames.maxMs + " ms（< " + THRESHOLDS.syncFrameGapMs + "），共 " + li.frames.frames + " 帧" +
+        (li.frames.at != null ? "；最长的一段在第 " + li.frames.at + " ms 结束，答复在第 " + li.ms + " ms 到" : ""));
       else console.log("note: 同步期间页面只画了 " + li.frames.frames + " 帧（窗口不在前台？），帧间隔不判");
     }
     const asked = fake.requests.filter((r) => r.path === "/api/games/user/slow_tester");

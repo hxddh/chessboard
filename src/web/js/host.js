@@ -777,7 +777,28 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * @returns {Promise<any>} null when there is no bridge
    */
   function fetchGames(p) {
-    return hasZero() && typeof global.zero.invoke === "function" ? global.zero.invoke("chess.fetchGames", p) : Promise.resolve(null);
+    if (!(hasZero() && typeof global.zero.invoke === "function")) return Promise.resolve(null);
+    return global.zero.invoke("chess.fetchGames", p).then((r) => (r && typeof r.held === "number" ? readHeld(r) : r));
+  }
+
+  /**
+   * 12.0 R: an answer too big for one frame (sync.zig PART_BYTES) is held
+   * by the native side and read here in parts, a task apart, so no single
+   * frame stops the page — 100 games in one frame held it for a second
+   * (R6:frames). The parts join into the answer's own JSON text, and the
+   * caller gets exactly the object one frame would have carried.
+   */
+  async function readHeld(r) {
+    const parts = [];
+    let from = 0;
+    while (from < r.bytes) {
+      const a = await global.zero.invoke("chess.fetchedPart", { ticket: r.held, from });
+      if (!a || typeof a.part !== "string" || !(a.next > from)) return { error: "parse" };
+      parts.push(a.part);
+      from = a.next;
+      await new Promise((go) => setTimeout(go, 0));
+    }
+    try { return JSON.parse(parts.join("")); } catch (_) { return { error: "parse" }; }
   }
 
   /**

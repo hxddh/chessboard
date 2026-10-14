@@ -185,6 +185,10 @@ pub const Pending = struct {
     // the loop thread's alone
     slots: [2]AsyncSlot = .{ .{}, .{} },
     next_gen: u32 = 1,
+    /// 12.0 R: a sync answer too big for one frame, kept here while the page
+    /// reads it in parts (chess.fetchedPart), and the ticket it was given
+    held: ?[]u8 = null,
+    held_ticket: u32 = 0,
 
     /// The platform's wake service, from the Runtime runner.zig published.
     fn bindWake(self: *Pending, context: ?*anyopaque, wake_fn: ?*const fn (context: ?*anyopaque) anyerror!void) void {
@@ -271,6 +275,14 @@ pub const Pending = struct {
             const slot = &self.slots[@intFromEnum(c.kind)];
             if (!slot.busy or slot.gen != c.gen) continue;
             slot.busy = false;
+            if (c.kind == .sync and c.text.len > PART_BYTES) {
+                if (self.hold(c.gen, c.text)) |ticket| {
+                    var head: [64]u8 = undefined;
+                    const text = std.fmt.bufPrint(&head, "{{\"held\":{d},\"bytes\":{d}}}", .{ ticket, c.text.len }) catch failText(c.kind);
+                    respondNow(slot.responder, slot.id(), text, failText(c.kind));
+                    continue;
+                }
+            }
             respondNow(slot.responder, slot.id(), c.text, failText(c.kind));
         }
     }
@@ -288,6 +300,7 @@ pub const Pending = struct {
         self.lock.unlock();
         for (taken[0..n]) |c| c.free();
         for (&self.slots) |*slot| slot.busy = false;
+        self.release();
         // no new wake can start now; one already inside wake_fn returns in
         // microseconds (enqueue-only). Bounded all the same, as the SDK's
         // quiesceChannelWake is: a wake that never returns is abandoned
@@ -315,6 +328,47 @@ pub const Pending = struct {
         while (current >> 32 == gen) {
             current = self.progress.cmpxchgWeak(current, next, .acq_rel, .acquire) orelse return;
         }
+    }
+
+    /// Loop thread: keep a copy of a sync answer for chess.fetchedPart; its
+    /// ticket, or null when the copy cannot be had (the answer then goes out
+    /// whole, as before).
+    fn hold(self: *Pending, gen: u32, text: []const u8) ?u32 {
+        self.release();
+        const copy = std.heap.page_allocator.dupe(u8, text) catch return null;
+        self.held = copy;
+        self.held_ticket = gen;
+        return gen;
+    }
+
+    fn release(self: *Pending) void {
+        if (self.held) |buf| std.heap.page_allocator.free(buf);
+        self.held = null;
+    }
+
+    /// Loop thread: one part of the held answer, from byte `from`, as
+    /// {"part":"<the bytes, JSON-escaped>","next":k}; the page joins the parts
+    /// and parses the whole. A part ends on a UTF-8 boundary, so each is text
+    /// on its own. The last part releases the copy.
+    fn part(self: *Pending, ticket: usize, from: usize, output: []u8) []const u8 {
+        const text = self.held orelse return heldGone(output);
+        if (ticket != self.held_ticket or from > text.len) return heldGone(output);
+        var end = @min(from + PART_BYTES, text.len);
+        while (end < text.len and end > from and (text[end] & 0xC0) == 0x80) end -= 1;
+        // an answer of escapes is longer escaped than PART_BYTES: halve until
+        // the part fits the frame
+        while (end > from + 64 and jsonEscapedLen(text[from..end]) + 48 > output.len) {
+            end = from + (end - from) / 2;
+            while (end < text.len and end > from and (text[end] & 0xC0) == 0x80) end -= 1;
+        }
+        var n: usize = 0;
+        if (!jsonAppend(output, &n, "{\"part\":\"")) return heldGone(output);
+        if (n + jsonEscapedLen(text[from..end]) + 48 > output.len) return heldGone(output);
+        jsonEscapeInto(output, &n, text[from..end]);
+        const tail = std.fmt.bufPrint(output[n..], "\",\"next\":{d}}}", .{end}) catch return heldGone(output);
+        n += tail.len;
+        if (end == text.len) self.release();
+        return output[0..n];
     }
 
     /// Loop thread: games in so far for the sync in flight, or null.
@@ -607,6 +661,20 @@ const NetGetter = struct {
 // Asynchronous since v8-1-plan N1 (see "async bridge" above). Everything but
 // the requests themselves is a function the tests below run on canned
 // answers, the requests included — through a Getter.
+
+/// 12.0 R: a sync answer longer than this is not sent in one frame. The
+/// page's main thread takes a frame in one piece — the whole answer parsed
+/// and run before the next paint — and 100 games (233 KB) held it for a
+/// second on the macOS CI runner (R6:frames). Above this size the answer
+/// stays here and the page reads it in parts of this size, yielding between.
+const PART_BYTES: usize = 16 * 1024;
+
+fn heldGone(output: []u8) []const u8 {
+    const text = "{\"error\":\"gone\"}";
+    if (output.len < text.len) return "";
+    @memcpy(output[0..text.len], text);
+    return output[0..text.len];
+}
 
 const SYNC_GAMES_DEFAULT: usize = 20;
 /// T4: the dialog offers 20 / 50 / 100 new games; an incremental sync also
@@ -1172,6 +1240,16 @@ pub fn fetchGames(context: *anyopaque, invocation: native_sdk.bridge.Invocation,
         .sync = req,
         .sync_base = syncBase(self),
     }));
+}
+
+/// 12.0 R: one part of a held sync answer — {"ticket":t,"from":k} — as
+/// {"part":"…","next":k}, or {"error":"gone"} for a ticket no longer held.
+pub fn fetchedPart(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    const self: *App = @ptrCast(@alignCast(context));
+    const payload = invocation.request.payload;
+    const ticket = jsonUintField(payload, "ticket") orelse return heldGone(output);
+    const from = jsonUintField(payload, "from") orelse return heldGone(output);
+    return self.pending.part(ticket, from, output);
 }
 
 /// T4: 已取到 k 局 — the page asks while its sync is out. {"busy":false}
@@ -2331,4 +2409,40 @@ test "V1 seams (M4 评审修正): a base's port is 1–65535" {
         try env.put("CHESS_SYNC_BASE", bad);
         try std.testing.expectEqualStrings("", syncBaseOf(&env, true));
     }
+}
+
+test "a held sync answer goes out in parts that join back to it, on UTF-8 boundaries" {
+    var p: Pending = .{};
+    defer p.release();
+    // é (C3 A9) every seventh byte: a part may not end between its two bytes
+    var text: [40000]u8 = undefined;
+    for (&text, 0..) |*b, i| b.* = switch (i % 7) {
+        0 => 0xC3,
+        1 => 0xA9,
+        else => 'a',
+    };
+    const ticket = p.hold(5, &text).?;
+    try std.testing.expectEqual(@as(u32, 5), ticket);
+    var out: [64 * 1024]u8 = undefined;
+    // a ticket it does not hold, or a start past the end, is "gone"
+    try std.testing.expectEqualStrings("{\"error\":\"gone\"}", p.part(6, 0, &out));
+    try std.testing.expectEqualStrings("{\"error\":\"gone\"}", p.part(5, text.len + 1, &out));
+    var from: usize = 0;
+    var parts: usize = 0;
+    while (from < text.len) : (parts += 1) {
+        const frame = p.part(5, from, &out);
+        const head = "{\"part\":\"";
+        try std.testing.expect(std.mem.startsWith(u8, frame, head));
+        const mark = std.mem.lastIndexOf(u8, frame, "\",\"next\":").?;
+        const next = try std.fmt.parseInt(usize, frame[mark + 9 .. frame.len - 1], 10);
+        try std.testing.expect(next > from and next - from <= PART_BYTES);
+        try std.testing.expect(next == text.len or (text[next] & 0xC0) != 0x80);
+        // nothing here needs escaping, so the part is the bytes themselves
+        try std.testing.expectEqualSlices(u8, text[from..next], frame[head.len..mark]);
+        from = next;
+    }
+    try std.testing.expect(parts >= 3);
+    // the last part let the copy go
+    try std.testing.expect(p.held == null);
+    try std.testing.expectEqualStrings("{\"error\":\"gone\"}", p.part(5, 0, &out));
 }

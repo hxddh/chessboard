@@ -108,7 +108,26 @@ async function nativeFetch(p) {
 const browser = await launchBrowser();
 console.log("引擎:", ENGINE);
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
-await ctx.exposeFunction("__nativeFetch", (p) => nativeFetch(p));
+// 12.0 R: as sync.zig does, an answer over PART_BYTES is held and read back
+// through chess.fetchedPart in parts that end on a UTF-8 boundary
+const PART_BYTES = 16 * 1024;
+let held = null, heldTicket = 0, heldParts = 0;
+await ctx.exposeFunction("__nativeFetch", async (p) => {
+  const r = await nativeFetch(p);
+  const text = Buffer.from(JSON.stringify(r), "utf8");
+  if (text.length <= PART_BYTES) return r;
+  held = text; heldTicket += 1;
+  return { held: heldTicket, bytes: text.length };
+});
+await ctx.exposeFunction("__nativePart", (q) => {
+  if (!held || q.ticket !== heldTicket || q.from > held.length) return { error: "gone" };
+  let end = Math.min(q.from + PART_BYTES, held.length);
+  while (end < held.length && end > q.from && (held[end] & 0xc0) === 0x80) end--;
+  const part = held.subarray(q.from, end).toString("utf8");
+  heldParts += 1;
+  if (end === held.length) held = null;
+  return { part, next: end };
+});
 await ctx.exposeFunction("__nativeProgress", () => (progress == null ? { busy: false, count: 0 } : { busy: true, count: progress }));
 
 /** One launch: a new page on the same profile, running `scenario`; its last report. */
@@ -125,6 +144,7 @@ async function launch(scenario, drive, expectOk = true) {
         if (cmd === "chess.selftestReport") { window.__reports.push(JSON.parse(JSON.stringify(payload))); return Promise.resolve({ written: true }); }
         if (cmd === "chess.fetchGames") return window.__nativeFetch(payload);
         if (cmd === "chess.fetchProgress") return window.__nativeProgress();
+        if (cmd === "chess.fetchedPart") return window.__nativePart(payload);
         if (cmd === "chess.openPgn" || cmd === "chess.saveText") return Promise.resolve({ cancelled: true });
         return Promise.resolve(true);
       },
@@ -171,6 +191,8 @@ const sync = await launch("sync");
 const li = sync.checks.lichess || {};
 assert(li.count === 100 && li.progress && li.progress.distinct >= 3 && li.progress.rising, "sync: 100 games, 已取到 k 局 counting up (" + JSON.stringify(li.progress) + ")");
 assert(li.frames && li.frames.frames > 0, "sync: the frames were timed meanwhile (" + JSON.stringify(li.frames) + ")");
+// 12.0 R: the 100 games came back held and in parts, and joined to the same answer
+assert(heldParts >= 10 && li.count === 100, "12.0 R sync: the 100-game answer was read back in " + heldParts + " parts, not one frame");
 const asked = fake.requests.filter((r) => r.path === "/api/games/user/slow_tester");
 assert(asked.length === 3 && !asked[0].query.since && asked.slice(1).every((r) => r.query.since && r.query.sort === "dateAsc"), "sync: the second and third Lichess requests carry since= and sort=dateAsc (R6a)");
 assert(sync.checks.chesscom && sync.checks.chesscom.count === 9, "sync: Chess.com's month without its four Chess960 games (R7)");
