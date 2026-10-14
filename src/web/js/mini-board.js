@@ -36,14 +36,17 @@ function menOf(fen) {
  * Draw `fen` into `el` (an element with the .mini-board class).
  * @param {HTMLElement} el
  * @param {string} fen
- * @param {{last?: string, flip?: boolean, pieceSrc: (key: string) => string, set?: string}} opts
+ * @param {{last?: string, flip?: boolean, pieceSrc: (key: string, px?: number) => string, set?: string}} opts
  *   `last` is a UCI-ish "e2e4" (from and to squares lit), `set` names the
  *   piece set so a change of set repaints
  */
 export function paintMini(el, fen, opts) {
   if (!el) return;
   const o = opts || {};
-  const sig = [fen, o.last || "", o.flip ? "b" : "w", o.set || ""].join("|");
+  // 12.0 S: the square's size, for the pen the men are drawn with (board.js
+  // pieceSrc) — to the nearest 4 px, so a card that resizes repaints once
+  const px = Math.round((el.clientWidth || 0) / 8 / 4) * 4;
+  const sig = [fen, o.last || "", o.flip ? "b" : "w", o.set || "", px].join("|");
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
   const men = menOf(fen);
@@ -60,7 +63,7 @@ export function paintMini(el, fen, opts) {
       if (key) {
         const img = document.createElement("img");
         img.alt = "";
-        img.src = o.pieceSrc(key);
+        img.src = o.pieceSrc(key, px);
         cell.appendChild(img);
       }
       cells.push(cell);

@@ -187,7 +187,8 @@ let SET = "wood";
 const bankAt = async (sr) => {
   const m = await import("/js/sound-bank.js");
   const o = {};
-  for (const n of m.SOUND_NAMES) o[window.__pcmHash(m.renderSound(n, sr))] = n;
+  // 12.0 A: every take of every event, each at every heft it has
+  for (const k of m.soundKeys()) o[window.__pcmHash(m.renderSound(k.name, sr, k))] = k.name;
   return o;
 };
 
@@ -433,9 +434,55 @@ SET = "wood";
     const bank = await a.page.evaluate(bankAt, sr);
     const names = Object.values(bank);
     const want = Object.keys(LABEL);
-    assert(names.length === want.length && want.every((n) => names.includes(n)),
-      `${sr} Hz:${want.length} 种事件各有一个声音,哈希两两不同(得到 ${names.length} 个不同的哈希)`);
+    const keys = await a.page.evaluate(async () => (await import("/js/sound-bank.js")).soundKeys().length);
+    // 12.0 A: and every take is a sound of its own — no two buffers alike
+    assert(names.length === keys && want.every((n) => names.includes(n)) && new Set(names).size === want.length,
+      `${sr} Hz:${want.length} 种事件、${keys} 个缓冲区(四种敲法 × 轻重),哈希两两不同(得到 ${names.length} 个不同的哈希)`);
   }
+  await a.close();
+}
+
+// 12.0 A:同一种声音,连着两次不是同一段 —— 换一种敲法
+{
+  const a = await open({ mode: "pvp" });
+  await a.heard();
+  const bufs = [];
+  for (const [f, t] of [["e2", "e4"], ["e7", "e5"], ["g1", "f3"], ["b8", "c6"]]) {
+    await a.move(f, t);
+    await a.page.waitForTimeout(200);
+    const raw = await a.page.evaluate(() => { const v = window.__voices.filter((x) => x[0] === "buf"); window.__voices.length = 0; return v; });
+    bufs.push(raw[raw.length - 1] ? raw[raw.length - 1][1] : "");
+  }
+  assert(bufs.every(Boolean) && bufs.every((h, i) => i === 0 || h !== bufs[i - 1]),
+    `连走四步,相邻两步的落子声不是同一段缓冲(${bufs.join(" ")})`);
+  await a.close();
+}
+
+// 12.0 A:放进录音(scripts/sound-kit.mjs 的格式),有录音的事件就放录音,
+// 没有的照旧放渲染的木质音
+{
+  const a = await open({ mode: "pvp" });
+  await a.heard();
+  const kitHash = await a.page.evaluate(async () => {
+    const sr = 44100, n = Math.round(sr * 0.12);
+    const b = new DataView(new ArrayBuffer(44 + n * 2));
+    const w = (o, str) => { for (let i = 0; i < str.length; i++) b.setUint8(o + i, str.charCodeAt(i)); };
+    w(0, "RIFF"); b.setUint32(4, 36 + n * 2, true); w(8, "WAVE"); w(12, "fmt "); b.setUint32(16, 16, true);
+    b.setUint16(20, 1, true); b.setUint16(22, 1, true); b.setUint32(24, sr, true); b.setUint32(28, sr * 2, true);
+    b.setUint16(32, 2, true); b.setUint16(34, 16, true); w(36, "data"); b.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) b.setInt16(44 + i * 2, Math.round(Math.sin(i / 7) * Math.exp(-i / 900) * 12000), true);
+    let bin = ""; const u = new Uint8Array(b.buffer); for (let i = 0; i < u.length; i++) bin += String.fromCharCode(u[i]);
+    await window.__chess.audio.useKit({ move: [btoa(bin)] }, ["move"]);
+    window.__voices.length = 0;
+    return true;
+  });
+  await a.move("e2", "e4");
+  await a.page.waitForTimeout(200);
+  const played = await a.page.evaluate(() => window.__voices.filter((x) => x[0] === "buf"));
+  const wood = played.length ? await a.page.evaluate(bankAt, played[0][2]) : {};
+  const rec = played.filter((x) => !wood[x[1]]);
+  assert(kitHash && played.length >= 1 && rec.length >= 1,
+    `给了录音的落子,放的是录音,不是渲染的那几段(${JSON.stringify(played)})`);
   await a.close();
 }
 
@@ -455,6 +502,19 @@ SET = "wood";
   assert(m.castle.centroidHz >= 1500 && m.lift.decayMs < 40 && m.lift.peak < m.move.peak,
     "易位还是木头落子;拿起比落子短、比落子轻");
   assert(m.loss.peak < m.win.peak, "输棋比赢棋轻(audio.js playLoss:输是学棋时的常态)");
+  // 12.0 A: the takes are the same kind of sound — every one a wooden click
+  // within 7.7's numbers — and none of them clips
+  const { soundKeys, STRIKES } = loadSoundBank();
+  const all = soundKeys().map((k) => ({ k, m: measure(renderSound(k.name, 44100, k), 44100) }));
+  const off = all.filter(({ k, m: x }) => x.attackMs >= 5 || x.peak >= 0.98 ||
+    (k.name === "move" && (x.decayMs < 60 || x.decayMs > 150 || x.centroidHz < 1500 || x.centroidHz > 4000)));
+  assert(STRIKES >= 3 && off.length === 0,
+    `每个常用声音 ${STRIKES} 种敲法,都在木头落子的数字里、峰值不过载(不合格:${JSON.stringify(off.slice(0, 3))})`);
+  // …and a placement weighs what the piece weighs
+  const mv = (heft) => measure(renderSound("move", 44100, { heft }), 44100);
+  const light = mv("light"), heavy = mv("heavy");
+  assert(heavy.centroidHz < light.centroidHz && heavy.peak > light.peak && heavy.decayMs >= light.decayMs,
+    `落兵轻而高,落车后王重而低(兵 ${light.centroidHz} Hz / ${light.peak};重子 ${heavy.centroidHz} Hz / ${heavy.peak})`);
 }
 
 // 新的一局:两个上行的木琴音。经典音效这里本来就不出声,也还是不出声。

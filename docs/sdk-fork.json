@@ -195,6 +195,12 @@
    "file": "build.zig",
    "kind": "ours",
    "title": "macOS 上编译应用自己的 ObjC 窗口外壳（src/native/mac_chrome.m）并链 WebKit（11.0 W）"
+  },
+  {
+   "id": "B15",
+   "file": "build.zig",
+   "kind": "ours",
+   "title": "Windows 上编译应用自己的窗口外壳（src/native/win_chrome.c）：标题栏跟主题明暗、Windows 11 上 Mica（12.0 N）"
   }
  ],
  "hunks": [
@@ -1430,6 +1436,8 @@
     "/// built on a Mac host — for main.zig and chrome.zig: the app's own window",
     "/// shell (src/native/mac_chrome.m) is compiled into exactly these builds.",
     "pub const mac_shell = std.mem.eql(u8, build_options.platform, \"macos\");",
+    "/// 12.0 N: the same for the Windows platform's chrome (src/native/win_chrome.c).",
+    "pub const win_shell = std.mem.eql(u8, build_options.platform, \"windows\");",
     ""
    ],
    "after": [
@@ -7645,6 +7653,26 @@
    "after": [
     "        app_mod.linkFramework(\"Accelerate\", .{});",
     "        app_mod.linkFramework(\"Foundation\", .{});"
+   ]
+  },
+  {
+   "group": "B15",
+   "file": "build.zig",
+   "at": 2601,
+   "before": [
+    "            },",
+    "        }"
+   ],
+   "up": [],
+   "ours": [
+    "        // 12.0 N: the app's own window chrome — the title bar dark or light",
+    "        // with the theme, Mica on Windows 11 (src/native/win_chrome.c; chrome.zig",
+    "        // calls it on Windows). dwmapi is loaded at run time, not linked.",
+    "        app_mod.addCSourceFile(.{ .file = b.path(\"src/native/win_chrome.c\"), .flags = &.{} });"
+   ],
+   "after": [
+    "        app_mod.linkSystemLibrary(\"c\", .{});",
+    "        app_mod.linkSystemLibrary(\"c++\", .{});"
    ]
   }
  ]

@@ -58,6 +58,7 @@ import { watchPlayLayout } from "./play-layout.js";
 import { createStore } from "./store.js";
 import { SELFTEST_BOOT } from "./selftest-boot.js";
 import { loadChunk } from "./chunk.js";
+import { drawSpark } from "./charts.js";
 
   /**
    * The one deliberate global: the seam the browser tests reach through.
@@ -74,7 +75,7 @@ import { loadChunk } from "./chunk.js";
   // `shapes`: the arrows and circles the board draws now — the player's, the premove's, the engine's (7.8 §2);
   // `board`: the renderer's counters (v8-0-plan F5); `puzzle`: the FEN of the puzzle on the board (A5); `analysisBoard`: the A1 flag
   window.__chess = { engine: ChessEngine, shapes: () => shapesToDraw(), board: () => ChessBoardView.stats(),
-    puzzle: () => (store.session.puzzle && store.session.puzzle.g ? store.session.puzzle.g.fen() : null), analysisBoard: () => !!store.session.analysisBoard };
+    puzzle: () => (store.session.puzzle && store.session.puzzle.g ? store.session.puzzle.g.fen() : null), analysisBoard: () => !!store.session.analysisBoard, audio: ChessAudio };
 
   const Host = ChessHost;
   const Review = ChessReview;
@@ -356,9 +357,6 @@ import { loadChunk } from "./chunk.js";
       /** the newest-first list the rendered rows index into */
       histCache: [],
       achSeen: null,  // filled in below, where it can first be computed
-      /** 记录页:锁着的成就是全展开还是只留最近的三个。不落盘 —— 这是一种
-       *  看法,不是一项设置。 */
-      achAll: false,
     },
     ui: {
       soundOn: true,
@@ -397,6 +395,7 @@ import { loadChunk } from "./chunk.js";
       ...LOOK_DEFAULT,
       /** pvp: flip the board to face the side to move after every move */
       autoFlipPvp: false,
+      haptics: true,
       /** 9.0 S5: the settings page's open category (shell.js SETTING_CATS) */
       setCat: "general",
       /** 9.0 S3: 训练's last segment (shell.js TRAIN_SEGS), and 名局 read or guessed */
@@ -1457,6 +1456,7 @@ import { loadChunk } from "./chunk.js";
       if (s.timeControl === "off" || parseTc(s.timeControl)) store.game.timeControl = s.timeControl;
       if (typeof s.coachOn === "boolean") store.session.coachOn = s.coachOn;
       if (typeof s.autoFlipPvp === "boolean") store.ui.autoFlipPvp = s.autoFlipPvp;
+      if (typeof s.haptics === "boolean") store.ui.haptics = s.haptics;
       if (I18n && typeof s.langId === "string") store.ui.langId = I18n.setLang(s.langId);
       if (typeof s.setCat === "string") store.ui.setCat = s.setCat;
       if (typeof s.liveOn === "boolean") store.session.liveOn = s.liveOn;
@@ -1469,7 +1469,7 @@ import { loadChunk } from "./chunk.js";
   }
   function saveSettings() {
     try {
-      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, setCat: store.ui.setCat, liveOn: store.session.liveOn, trainSeg: store.ui.trainSeg, classicMode: store.ui.classicMode, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
+      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, haptics: store.ui.haptics, langId: store.ui.langId, setCat: store.ui.setCat, liveOn: store.session.liveOn, trainSeg: store.ui.trainSeg, classicMode: store.ui.classicMode, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
         volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv, bgWorker: store.ui.bgWorker === true,
         textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
         // v8-0-plan A3: the look
@@ -2184,38 +2184,12 @@ import { loadChunk } from "./chunk.js";
   // nudge in 1.7) — so 7.7 gives it the result card's filled button instead
   // of a message that leaves after four seconds (v7-7-plan §4).
 
-  /** The rating sparkline: the accuracy one's dress, on the rating's own scale. */
+  /** The rating sparkline (charts.js): a window around the data, rounded to
+   *  hundreds, so a flat run is a visibly flat line and a climb a climb. */
   function drawRatingTrend(cv, ys) {
-    const dpr = window.devicePixelRatio || 1;
-    const W = Math.max(1, Math.round(cv.clientWidth * dpr));
-    const H = Math.max(1, Math.round(cv.clientHeight * dpr));
-    if (cv.width !== W) cv.width = W;
-    if (cv.height !== H) cv.height = H;
-    const ctx = cv.getContext("2d");
-    ctx.clearRect(0, 0, W, H);
-    const css = getComputedStyle(document.documentElement);
-    const cMuted = css.getPropertyValue("--muted").trim() || "#999";
-    const cAccent = css.getPropertyValue("--accent").trim() || "#e8c39e";
-    const n = ys.length - 1;
-    const pad = 4 * dpr;
-    // a window around the data, rounded to hundreds, so a flat run is a
-    // visibly flat line and a climb is a visible climb
     const lo = Math.floor((Math.min(...ys) - 50) / 100) * 100;
     const hi = Math.ceil((Math.max(...ys) + 50) / 100) * 100;
-    const x = (i) => (n ? (i / n) * (W - 2 * pad) + pad : W / 2);
-    const y = (v) => H - pad - (v - lo) / Math.max(1, hi - lo) * (H - 2 * pad);
-    ctx.strokeStyle = cMuted;
-    ctx.globalAlpha = 0.35;
-    ctx.lineWidth = dpr;
-    ctx.beginPath(); ctx.moveTo(pad, y(ys[0])); ctx.lineTo(W - pad, y(ys[0])); ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = cAccent;
-    ctx.lineWidth = 1.5 * dpr;
-    ctx.beginPath();
-    ys.forEach((v, i) => { if (i) ctx.lineTo(x(i), y(v)); else ctx.moveTo(x(i), y(v)); });
-    ctx.stroke();
-    ctx.fillStyle = cAccent;
-    ctx.beginPath(); ctx.arc(x(n), y(ys[n]), 1.8 * dpr, 0, Math.PI * 2); ctx.fill();
+    drawSpark(document, cv, ys, { lo, hi, ref: ys[0] });
   }
 
   function renderStats() {
@@ -2245,7 +2219,13 @@ import { loadChunk } from "./chunk.js";
       const val = document.createElement("span");
       val.className = "stat-v num";
       val.textContent = tf("stats.wld", [a.win, a.loss, a.draw]);
-      row.append(name, val);
+      // 12.0 C: and as a bar — won, drawn, lost, in proportion
+      const bar = document.createElement("span");
+      bar.className = "wdl";
+      bar.setAttribute("aria-hidden", "true");
+      for (const [c, n] of [["w", a.win], ["d", a.draw], ["l", a.loss]]) bar.style.setProperty("--" + c, String(n));
+      bar.append(...["w", "d", "l"].map((c) => Object.assign(document.createElement("i"), { className: c })));
+      row.append(name, val, bar);
       el.appendChild(row);
     }
     if (withAcc.length) {
@@ -2392,7 +2372,7 @@ import { loadChunk } from "./chunk.js";
     bookNow, drawRatingTrend, el, loadStats, motifKeyOf, owedNow, puzzlesInCat, ratingLabel,
     ratingTip, runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
-    sync, t, tf, toast, pieceSrc: (k) => BoardView.pieceSrc(k), game, isOver: () => appGameOver(), isLive: () => isLive(),
+    sync, t, tf, toast, pieceSrc: (k, px) => BoardView.pieceSrc(k, px), game, isOver: () => appGameOver(), isLive: () => isLive(),
     Shell: { go: (id) => Shell.go(id), openTrain: (g) => Shell.openTrain(g) }, rep: { due: () => (RepUI.booted() ? RepUI.dueDrills().length : 0), start: () => startRepDrills(true) }, ecoName: (e, n) => LibraryUI.libEcoName(e, n),
   });
   const {
@@ -3249,7 +3229,7 @@ import { loadChunk } from "./chunk.js";
     const check = g.in_check();
     if (mv.flags && /[kq]/.test(mv.flags)) { Audio2.playCastle(mv.color); return; }
     if (mv.promotion) { Audio2.playPromote(mv.color); return; }
-    Audio2.playMove(mv.color, { captured: !!mv.captured, check });
+    Audio2.playMove(mv.color, { captured: !!mv.captured, check, piece: mv.piece });
   }
 
   /**
@@ -4539,6 +4519,8 @@ import { loadChunk } from "./chunk.js";
     // sound, and the piece visibly flies home. That one is ours, and only
     // after a real drag — a plain click-to-select lands here too, and a piece
     // being picked up is not a piece being refused.
+    // 12.0 N: a piece set down by dragging taps the trackpad once (macOS)
+    if (sq && !refused && wasDrag.x && store.ui.haptics) Host.haptic();
     if (sq && sq !== wasDrag.from) onSquareClick(sq); // drop = play/reselect
     else if (held && wasDrag.x) Audio2.playRefused();
     if (held) BoardView.reboundDrag(held, wasDrag.from, p.x, p.y);
@@ -5130,7 +5112,7 @@ import { loadChunk } from "./chunk.js";
     onHome: () => { TodayPage.render(); syncDailyUI(); }, onMe: () => MePage.onShow(), learnSeg: () => LessonsUI.learnSeg(), openSeg: (g) => LessonsUI.openSeg(g) });
   Shell.wire();
   // 9.0 S1: 今天 — the page around the coach's card (today-page.js)
-  const TodayPage = createTodayPage({ doc: document, store, t, tf, tdot, Chess, pieceSrc: (k) => BoardView.pieceSrc(k), LESSONS, lessonText, Endgames: LessonsUI.Endgames,
+  const TodayPage = createTodayPage({ doc: document, store, t, tf, tdot, Chess, pieceSrc: (k, px) => BoardView.pieceSrc(k, px), LESSONS, lessonText, Endgames: LessonsUI.Endgames,
     CLASSICS: LessonsUI.CLASSICS, classicsTotal: LessonsUI.classicsTotal, classicText: LessonsUI.classicText, loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText: () => ratingLabel(),
     drawRatingTrend, Shell, playNext: () => GameCtl.playNext() });
   TodayPage.wire();

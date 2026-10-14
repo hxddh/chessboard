@@ -32,7 +32,9 @@
  *
  * @module audio
  */
-import { SOUND_NAMES, renderSound } from "./sound-bank.js";
+import { SOUND_NAMES, VARIED, STRIKES, HEFTED, heftOf, renderSound } from "./sound-bank.js";
+import { KIT_NAMES } from "./sound-kit-names.js";
+import { loadChunk } from "./chunk.js";
 
   let audioCtx = null;
   let master = null;
@@ -54,16 +56,67 @@ import { SOUND_NAMES, renderSound } from "./sound-bank.js";
    */
   let bankCtx = null;
   const bank = new Map();
-  function sampleBuffer(ctx, name) {
+  function sampleBuffer(ctx, name, take) {
     if (bankCtx !== ctx) { bank.clear(); bankCtx = ctx; }
-    let b = bank.get(name);
+    const key = name + "|" + take.strike + "|" + take.heft;
+    let b = bank.get(key);
     if (!b) {
-      const pcm = renderSound(name, ctx.sampleRate);
+      const pcm = renderSound(name, ctx.sampleRate, take);
       b = ctx.createBuffer(1, pcm.length, ctx.sampleRate);
       b.getChannelData(0).set(pcm);
-      bank.set(name, b);
+      bank.set(key, b);
     }
     return b;
+  }
+
+  /**
+   * 12.0 A: recorded takes (scripts/sound-kit.mjs), for the events that have
+   * them — none, until someone adds recordings with a licence to match. Asked
+   * for on the first sound, decoded per AudioContext; until they are here,
+   * and for every event without one, the rendered set plays.
+   */
+  let kitCtx = null, kitAsked = false;
+  const kit = new Map();
+  function kitBuffer(ctx, name) {
+    if (!KIT_NAMES.includes(name)) return null;
+    if (kitCtx !== ctx) { kit.clear(); kitCtx = ctx; kitAsked = false; }
+    if (!kitAsked) {
+      kitAsked = true;
+      loadChunk("chunk-sounds.js", "SOUND_KIT").then((k) => useKit(ctx, k)).catch(() => {});
+    }
+    const takes = kit.get(name);
+    if (!takes || !takes.length) return null;
+    let i = Math.floor((wobble(0.5) - 0.5) * takes.length) % takes.length;
+    if (takes.length > 1 && i === lastStrike[name]) i = (i + 1) % takes.length;
+    lastStrike[name] = i;
+    return takes[i];
+  }
+  /** Decode a kit ({name: [base64 WAV, …]}) into buffers for `ctx`. */
+  function useKit(ctx, k) {
+    return Promise.all(Object.entries(k || {}).map(([name, list]) => Promise.all(list.map((b64) => {
+      const bin = atob(b64), bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      // WKWebView before Safari 14.1 answered through callbacks, not a promise
+      return new Promise((res, rej) => {
+        const p = ctx.decodeAudioData(bytes.buffer, res, rej);
+        if (p && typeof p.then === "function") p.then(res, rej);
+      });
+    })).then((bufs) => { if (kitCtx === ctx) kit.set(name, bufs); })));
+  }
+
+  /**
+   * 12.0 A: which take of `name` plays — one of sound-bank.js STRIKES at
+   * random, never the one that played last, at the piece's heft.
+   */
+  const lastStrike = {};
+  function takeOf(name, piece) {
+    const heft = HEFTED.includes(name) ? heftOf(piece) : "mid";
+    if (!VARIED.includes(name)) return { strike: 0, heft };
+    // wobble(0.5) is the seeded 0.5–1.5: less a half, a uniform 0–1
+    let k = Math.floor((wobble(0.5) - 0.5) * STRIKES) % STRIKES;
+    if (k === lastStrike[name]) k = (k + 1) % STRIKES;
+    lastStrike[name] = k;
+    return { strike: k, heft };
   }
 
   /**
@@ -73,15 +126,16 @@ import { SOUND_NAMES, renderSound } from "./sound-bank.js";
    * @param {number} [rate]  playback rate. A placement is wobbled ±3%, which
    *   moves its pitch and its length together, the way a slightly different
    *   blow would; anything with a tune plays at exactly 1.
+   * @param {string} [piece]  the piece set down (chess.js letter), for its heft
    * @returns {boolean} true when the wooden set is in use (whether or not the
    *   platform let it play), so the caller skips its classic voices
    */
-  function sample(name, rate = 1) {
+  function sample(name, rate = 1, piece) {
     if (soundSet !== "wood") return false;
     try {
       const ctx = ensureAudio();
       const src = ctx.createBufferSource();
-      src.buffer = sampleBuffer(ctx, name);
+      src.buffer = kitBuffer(ctx, name) || sampleBuffer(ctx, name, takeOf(name, piece));
       src.playbackRate.value = rate;
       const g = ctx.createGain();
       g.gain.value = rate === 1 ? 1 : wobble(0.08);
@@ -173,7 +227,7 @@ import { SOUND_NAMES, renderSound } from "./sound-bank.js";
     if (!enabled()) return;
     // check outranks capture: it is the one the player has to answer
     const o0 = opts || {};
-    if (sample(o0.check ? "check" : o0.captured ? "capture" : "move", placeRate(color))) return;
+    if (sample(o0.check ? "check" : o0.captured ? "capture" : "move", placeRate(color), o0.piece)) return;
     try {
       const ctx = ensureAudio();
       const t0 = ctx.currentTime;
@@ -550,4 +604,12 @@ import { SOUND_NAMES, renderSound } from "./sound-bank.js";
 
   export const ChessAudio = { init, playMove, playWin, playLoss, playStar, playDraw,
     playRefused, playLift, playCastle, playPromote, playStart, playWrong, playLowTime,
-    noteClock, setVolume, getVolume, setSoundSet, getSoundSet, SOUND_SETS, selftest };
+    noteClock, setVolume, getVolume, setSoundSet, getSoundSet, SOUND_SETS, selftest,
+    // the e2e hands it a kit as the chunk would (test-audio-e2e)
+    useKit: (k, names) => {
+      for (const n of names || []) if (!KIT_NAMES.includes(n)) KIT_NAMES.push(n);
+      const ctx = ensureAudio();
+      if (kitCtx !== ctx) { kit.clear(); kitCtx = ctx; }
+      kitAsked = true;
+      return useKit(ctx, k);
+    } };

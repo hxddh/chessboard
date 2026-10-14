@@ -1352,7 +1352,12 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
     S.put = function () {
       const p = window.__puts;
       const t = performance.now();
-      if (t - p.last > 1) p.start = t;
+      // a run is the puts of one task: the first put of a task starts it, and
+      // a microtask — which runs only once this task's script is done — ends
+      // it. (12.0: "within 1 ms of the last put" joined a slice queued from
+      // its predecessor's onsuccess on a fast runner — a separate task — into
+      // one 20 ms "run" of three 6 ms slices.)
+      if (!p.open) { p.open = true; p.start = t; queueMicrotask(() => { p.open = false; }); }
       try { return put.apply(this, arguments); } finally {
         p.last = performance.now();
         p.n++;

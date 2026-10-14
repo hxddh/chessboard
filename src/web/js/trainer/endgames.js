@@ -147,12 +147,15 @@ export function createEndgames(d) {
   const groupSize = (g) => (data ? data.ITEMS.filter((x) => x.g === g).length : 0);
 
   /** The camp's part of the lesson list, after the classics; fetched on first draw. */
-  function renderList(list, curId) {
+  function renderList(list, curId, onlyItsGroup) {
     if (!data) { ensure(); return; }
     const eg = state();
     const soon = new Set(due());
+    const mine = onlyItsGroup ? (data.ITEMS.find((x) => x.id === curId) || {}).g : null;
     let n = 0;
     for (const gr of data.GROUPS) {
+      // 12.0 L: the numbering runs on through the groups left out
+      if (mine && gr.id !== mine) { n += data.ITEMS.filter((x) => x.g === gr.id).length; continue; }
       const h = document.createElement("div");
       h.className = "lesson-part";
       h.textContent = tdot(t("eg.camp"), tf("ui.pair", [word(gr.n), doneCount(gr.id) + "/" + data.ITEMS.filter((x) => x.g === gr.id).length]));

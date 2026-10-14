@@ -144,7 +144,11 @@ const global = typeof window !== "undefined" ? window : globalThis;
   };
 
   let worker = null;
-  let wasmBytes = null; // decoded once, handed to every worker this session builds
+  // 12.0 R: the engine as base64, kept for every worker this session builds,
+  // each of which decodes it itself. Decoded here, 9.7 MB of text through
+  // atob and a 7 M-step loop held the page's main thread — 804 ms in one
+  // macOS run, at the start of a sync (R6:frames, automation-scenarios.mjs).
+  let wasmB64 = null;
   let readyPromise = null;
   let lineHandlers = [];
   let gen = 0;
@@ -185,11 +189,17 @@ const global = typeof window !== "undefined" ? window : globalThis;
       loaderText,
       "var __F = module.exports;",
       "var __engine = null;",
+      "// 12.0 R: the engine arrives as base64 and is decoded here, off the page's thread",
+      "function __bytes(b64) {",
+      "  var bin = atob(b64), u = new Uint8Array(bin.length);",
+      "  for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);",
+      "  return u;",
+      "}",
       "onmessage = function (ev) {",
       "  var msg = ev.data;",
       "  if (msg && msg.type === 'init') {",
       "    var eng = {",
-      "      wasmBinary: new Uint8Array(msg.wasm),",
+      "      wasmBinary: msg.wasm ? new Uint8Array(msg.wasm) : __bytes(msg.b64),",
       "      listener: function (line) { postMessage(line); },",
       "    };",
       "    // 7.4: a wasm that will not compile rejects this promise, and",
@@ -210,13 +220,6 @@ const global = typeof window !== "undefined" ? window : globalThis;
       "  }",
       "};",
     ].join("\n");
-  }
-
-  function b64ToBuffer(b64) {
-    const bin = atob(b64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return bytes.buffer;
   }
 
   function onLine(line) {
@@ -315,13 +318,13 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * paint waited on parsing a payload the first paint does not use. The tag is
    * now injected here, on demand. zero:// cannot fetch() a packaged file but
    * it can load a classic script, which is the same road index.html takes.
-   * The string is dropped from the window once decoded: the worker owns the
-   * bytes from then on and nothing else needs 9.7 MB of text around.
+   * The window's global is dropped once read: this module keeps the one copy
+   * the workers are built from, and each worker decodes it (12.0 R).
    */
   let sourcesPromise = null;
-  let loaderSrc = null; // kept for the same reason as wasmBytes: rebuilds
+  let loaderSrc = null; // kept for the same reason as wasmB64: rebuilds
   function haveSources() {
-    return !!(loaderSrc || global.CHESS_SF_LOADER) && !!(wasmBytes || global.CHESS_SF_WASM_B64);
+    return !!(loaderSrc || global.CHESS_SF_LOADER) && !!(wasmB64 || global.CHESS_SF_WASM_B64);
   }
   function loadSources() {
     if (haveSources()) return Promise.resolve();
@@ -367,12 +370,11 @@ const global = typeof window !== "undefined" ? window : globalThis;
       const loaderText = global.CHESS_SF_LOADER || loaderSrc;
       if (!loaderText) throw new Error("engine sources missing");
       loaderSrc = loaderText;
-      // the base64 is needed once; after that the decoded bytes are the source
-      // of truth, and a rebuilt worker is built from them alone.
-      if (!wasmBytes) {
-        const wasmB64 = global.CHESS_SF_WASM_B64;
+      // the global is read once; after that this module's copy is the source
+      // of truth, and a rebuilt worker is built from it alone.
+      if (!wasmB64) {
+        wasmB64 = global.CHESS_SF_WASM_B64;
         if (!wasmB64) throw new Error("engine sources missing");
-        wasmBytes = b64ToBuffer(wasmB64);
         global.CHESS_SF_WASM_B64 = "";
       }
       const blobUrl = URL.createObjectURL(new Blob([workerSource(loaderText)], { type: "text/javascript" }));
@@ -386,11 +388,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
       worker.onerror = (ev) => teardown("engine worker error: " + ((ev && ev.message) || "unknown"));
       const readyWait = waitFor((l) => l === "__sf_ready__" ||
         (typeof l === "string" && l.startsWith("__sf_fail__")), 30000, "boot");
-      // the buffer is transferred, not copied: the worker is its only reader.
-      // A rebuilt worker (teardown after a hang) needs the bytes again, so a
-      // copy is handed over and the decoded original stays here.
-      const payload = wasmBytes.slice(0);
-      worker.postMessage({ type: "init", wasm: payload }, [payload]);
+      // the worker decodes it (12.0 R); a rebuilt worker gets the same text
+      worker.postMessage({ type: "init", b64: wasmB64 });
       const said = await readyWait;
       if (said !== "__sf_ready__") throw new Error("engine boot failed: " + said.slice(12).trim());
       const uciWait = waitFor((l) => l === "uciok", 10000, "boot");
@@ -830,7 +829,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
       if (!lane) {
         lane = createBgLane({
           spawn: () => new Worker(URL.createObjectURL(new Blob([workerSource(loaderSrc)], { type: "text/javascript" }))),
-          wasm: () => wasmBytes.slice(0),
+          b64: () => wasmB64,
           optionCmds: fullStrengthCmds,
           readInfo,
         });

@@ -28,6 +28,7 @@
 import { ChessDialog } from "../dialog.js";
 import { ChessPuzzleDb } from "../puzzle-db.js";
 import { ChessLazy } from "../lazy-content.js";
+import { countTo } from "../count-to.js";
 import { ChessRating } from "../rating.js";
 import { THEME_IDS, themesOf, themeRecord, attemptsIn, filterThemes } from "./themes.js";
 import { ChessRuns as Runs } from "./runs.js";
@@ -575,7 +576,105 @@ export function createPuzzleModes(d) {
     }
   }
 
+  /**
+   * 12.0 F: the big rating is a figure, and "provisional" is a tag beside it,
+   * not a full-width bracket set in the figure's own size (「1500（定级中）」).
+   * Rebuilt only when what it says changes.
+   */
+  function paintRating(v, r, extra) {
+    if (!v) return;
+    const prov = ChessRating.isProvisional(r);
+    const sig = [Math.round(r.r), prov, extra || "", store.ui.langId].join("|");
+    if (v.dataset.sig === sig) return;
+    v.dataset.sig = sig;
+    // the figure's own node is kept, so a new rating counts up or down to
+    // itself from the one shown (count-to.js) instead of being swapped in
+    const num = v.querySelector(".num") || doc.createElement("span");
+    num.className = "num";
+    countTo(num, r.r);
+    const kids = [num];
+    if (prov) {
+      const tag = doc.createElement("span");
+      tag.className = "prov-tag";
+      tag.textContent = t("rating.provTag");
+      kids.push(tag);
+    }
+    if (extra) {
+      const more = doc.createElement("span");
+      more.className = "pz-hero-more";
+      more.textContent = extra;
+      kids.push(more);
+    }
+    v.replaceChildren(...kids);
+  }
+
   // --- the panel -------------------------------------------------------------
+
+  /**
+   * 12.0 L: the panel's lower half — what this puzzle is and how you do at
+   * it, where 11.0 left 410px blank under 更多练法. While it is open, its
+   * kind and how many of that kind you have solved; once it is over, its
+   * themes (naming one before would give the answer away, as 10.0 M0's goal
+   * names take care not to) with your record on each, a click from more of
+   * the same.
+   */
+  function renderAbout(run) {
+    const box = el("pz-about"), rows = el("pz-about-rows");
+    if (!box || !rows) return;
+    const pz = store.session.puzzle;
+    const p = pz && pz.p;
+    const kind = p && !run && isRatedCat(p.cat) ? ALL_PUZZLES.filter((q) => q.cat === p.cat) : [];
+    box.hidden = !kind.length;
+    if (box.hidden) return;
+    const st = store.session.puzzleState;
+    const ids = pz.done || pz.usedAnswer ? themesOf(p, motifKeyOf(p)) : [];
+    const row = (name, nums, id) => {
+      const r = doc.createElement(id ? "button" : "div");
+      r.className = "pz-about-row";
+      if (id) {
+        r.type = "button";
+        r.dataset.theme = id;
+        r.title = t("pz.aboutGo");
+      }
+      const b = doc.createElement("b");
+      b.textContent = name;
+      const n = doc.createElement("span");
+      n.className = "num";
+      n.textContent = nums;
+      r.append(b, n);
+      return r;
+    };
+    const head = (text) => {
+      const h = doc.createElement("h3");
+      h.className = "side-h";
+      h.textContent = text;
+      return h;
+    };
+    // the kind: how far through it, and the first answers in it
+    const solved = kind.filter((q) => st.solved[q.id]).length;
+    const kindRow = row(t("pz.cat." + p.cat), solved + "/" + kind.length);
+    const bar = doc.createElement("span");
+    bar.className = "today-bar pz-about-bar";
+    bar.style.setProperty("--p", String(Math.round((solved / kind.length) * 100)));
+    bar.append(doc.createElement("i"));
+    const tl = (st.tally || {})[p.cat] || {};
+    // the kind is a theme too (themes.js GATED), with its own rating
+    const gated = themesOf(p, null).includes(p.cat);
+    const kr = gated && themeRating(p.cat);
+    const out = [head(t("pz.aboutKind")), kindRow, bar];
+    if (gated) out.push(row(t("pz.aboutRating"), kr ? ratingText(kr) : "—"));
+    out.push(row(t("pz.aboutFirst"), tf("pz.aboutRec", [tl.solve || 0, tl.miss || 0])));
+    // …and once it is over, what it was about
+    if (ids.length) {
+      out.push(head(t("pz.aboutThemes")));
+      for (const id of ids) {
+        const rec = (st.themes || {})[id] || {};
+        out.push(row(themeName(id), tf("pz.aboutRec", [rec.solve || 0, rec.miss || 0]), id));
+      }
+    }
+    rows.replaceChildren(...out);
+  }
+
 
   /** The rating, its curve, the mode row, the run card and the theme row. */
   function render() {
@@ -586,14 +685,20 @@ export function createPuzzleModes(d) {
     const v = el("pz-rating-v");
     const theme = !run && isThemeCat(cat) ? cat.slice(THEME_CAT.length) : null;
     const tr = theme ? themeRating(theme) : null;
-    setText(v, tdot(ratingText(seenRating()), theme && tf("ui.pair", [themeName(theme), tr ? ratingText(tr) : "—"])));
+    paintRating(v, seenRating(), theme && tf("ui.pair", [themeName(theme), tr ? ratingText(tr) : "—"]));
+    renderAbout(run);
     if (v) v.title = ChessRating.isProvisional(seenRating()) ? t("tip.ratingProv") : "";
+    // 12.0 C: a curve needs three points; until then it says how many more
+    // answers make one, instead of drawing a flat line through one point
     const cv = el("pz-rating-curve");
-    if (cv && cv.clientWidth) {
-      const ys = (Array.isArray(st.rhist) ? st.rhist : []).map((h) => h.r);
-      if (!ys.length) ys.push(Math.round(seenRating().r));
-      drawRatingTrend(cv, ys.length > 1 ? ys : [ys[0], ys[0]]);
+    const ys = (Array.isArray(st.rhist) ? st.rhist : []).map((h) => h.r);
+    const soon = el("pz-rating-soon");
+    if (cv) cv.hidden = ys.length < 3;
+    if (soon) {
+      soon.hidden = ys.length >= 3;
+      if (ys.length < 3) setText(soon, tf("pz.curveSoon", [3 - ys.length]));
     }
+    if (cv && !cv.hidden && cv.clientWidth) drawRatingTrend(cv, ys);
     // 9.0 S3: 挑战 and 专项 are buttons, lit while their run is on
     doc.querySelectorAll("#pz-modes button[data-run]").forEach((b) => {
       const on = !!run && b.dataset.run === run.kind;
@@ -688,6 +793,11 @@ export function createPuzzleModes(d) {
       if (!b || b.dataset.tprog === store.ui.themeUi.prog) return;
       store.ui.themeUi.prog = b.dataset.tprog;
       renderThemes();
+    };
+    const about = el("pz-about-rows");
+    if (about) about.onclick = (ev) => {
+      const b = ev.target.closest("button[data-theme]");
+      if (b) goTheme(b.dataset.theme);
     };
     const list = el("theme-list");
     if (list) list.onclick = (ev) => {

@@ -1264,23 +1264,95 @@ if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "record");
   const fresh = await page.evaluate(() => {
     const card = document.getElementById("record-empty");
-    const locked = [...document.querySelectorAll(".ach-item:not(.got)")].filter((e) => e.offsetParent);
-    const more = document.getElementById("ach-more");
+    const tiles = [...document.querySelectorAll(".ach-item")].filter((e) => e.offsetParent);
     return { shown: !!card && !card.hidden, buttons: card ? card.querySelectorAll("button").length : -1,
              text: card ? card.textContent.trim() : "",
-             locked: locked.length, more: more ? more.textContent.trim() : null };
+             tiles: tiles.length, medals: tiles.filter((e) => e.querySelector(".ach-ic svg")).length,
+             fold: !!document.getElementById("ach-more") };
   });
   assert(fresh.shown && fresh.text.length > 0, "全新安装打开记录页,先看到一句话说这一页会记什么(" + fresh.text + ")");
   assert(fresh.buttons === 0, "……那张卡片上没有训练的入口(今天、训练已经有了)(" + fresh.buttons + ")");
-  assert(fresh.locked === 3, "锁着的成就只站出来三个,不是十五个(" + fresh.locked + ")");
-  assert(fresh.more && /12/.test(fresh.more), "……其余的收在一个数字后面(" + fresh.more + ")");
+  // 12.0 F: fifteen medals in a grid, each its own icon — no fold, no padlocks
+  assert(fresh.tiles === 15 && fresh.medals === 15 && !fresh.fold, "12.0 F:十五枚成就都是带自己图标的勋章,一屏看完,不再折叠(" + JSON.stringify(fresh) + ")");
+  await ctx.close();
+}
 
-  // the fold opens
-  await page.click("#ach-more");
-  await settle(page);
-  const opened = await page.evaluate(() =>
-    [...document.querySelectorAll(".ach-item:not(.got)")].filter((e) => e.offsetParent).length);
-  assert(opened === 15, "按下去十五个都在(" + opened + ")");
+// --- 3m5. 12.0 L: cards end on one line, and the panel is not half blank ----
+// Measured on 11.0 at 1400×900: 我的 left a 520×560 hole beside 成就, 棋谱 one
+// beside 开局书, 今天's 最近对局 ended 90px above 等级分 next to it; the
+// training panel was 41–53% blank under its shut fold.
+if (scenario()) {
+  const rows = (page, sel) => page.evaluate((s) => {
+    const cards = [...document.querySelectorAll(s)].filter((e) => e.offsetParent);
+    const byTop = new Map();
+    for (const c of cards) {
+      const r = c.getBoundingClientRect();
+      const k = Math.round(r.top);
+      if (!byTop.has(k)) byTop.set(k, []);
+      byTop.get(k).push({ b: r.bottom, w: r.width, l: r.left, r: r.right });
+    }
+    const box = cards.length ? cards[0].parentElement.getBoundingClientRect() : { left: 0, right: 0 };
+    return [...byTop.values()].map((row) => ({
+      spread: Math.max(...row.map((x) => x.b)) - Math.min(...row.map((x) => x.b)),
+      // a row reaches the far edge of its grid, or it is half empty
+      gap: box.right - Math.max(...row.map((x) => x.r)),
+    }));
+  }, sel);
+  for (const [tab, sel] of [["me", "#page-me .page-cols > .page-sec"], ["library", "#page-library .page-cols > .page-sec"], ["home", "#page-home .today-row .today-card"]]) {
+    const { ctx, page } = await open("zh-CN", "ai", tab);
+    await settle(page);
+    const rs = await rows(page, sel);
+    assert(rs.length > 0 && rs.every((r) => r.spread <= 1 && r.gap <= 1),
+      "12.0 L:" + tab + " 并排的卡片底边对齐、每一行都排满(" + JSON.stringify(rs) + ")");
+    await ctx.close();
+  }
+  const blank = (page) => page.evaluate(() => {
+    const side = document.getElementById("side").getBoundingClientRect();
+    let bottom = side.top;
+    for (const e of document.querySelectorAll("#side *")) {
+      if (e.childElementCount && !/^(BUTTON|SUMMARY|CANVAS|svg)$/.test(e.tagName)) continue;
+      if (!e.offsetParent) continue;
+      const q = e.getBoundingClientRect();
+      if (q.height <= 0 || q.width <= 0) continue;
+      bottom = Math.max(bottom, Math.min(q.bottom, side.bottom));
+    }
+    return Math.round(((side.bottom - bottom) / side.height) * 100);
+  });
+  for (const [seg, mode] of [["course", "learn"], ["puzzle", "puzzle"], ["endgame", "learn"]]) {
+    const { ctx, page } = await open("zh-CN", mode, "play");
+    if (seg !== "puzzle") { await page.click(`#train-seg button[data-seg="${seg}"]`).catch(() => {}); await page.waitForTimeout(600); }
+    await settle(page);
+    const b = await blank(page);
+    const unit = await page.evaluate((sg) => sg === "puzzle" ? !document.getElementById("pz-about").hidden
+      : !document.getElementById("lesson-unit").hidden && !!document.querySelector("#lesson-unit .lesson-item.current"), seg);
+    assert(b <= 30 && unit, "12.0 L:训练·" + seg + " 右栏下半有这一单元 / 这一类,空白 " + b + "%(≤ 30%)");
+    await ctx.close();
+  }
+}
+
+// --- 3m6. 12.0 C: a chart's line and its "now" are seen, in every theme -----
+// WCAG 1.4.11 asks 3:1 of the graphics a reader needs; the charts' tokens
+// (charts.js) are held to it against the panel they are drawn on, each theme
+// on a page of its own (see 3m for why).
+if (scenario()) for (const theme of ["wood", "night", "day", "notebook"]) {
+  const { ctx, page } = await open("zh-CN", "ai", "play", theme);
+  const cr = await page.evaluate(() => {
+    const cv = document.createElement("canvas"); cv.width = cv.height = 1;
+    const g2 = cv.getContext("2d", { willReadFrequently: true });
+    const rgb = (css) => { g2.clearRect(0, 0, 1, 1); g2.fillStyle = "#000"; g2.fillStyle = css; g2.fillRect(0, 0, 1, 1); return [...g2.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+    const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    const L = ([r, g3, b]) => 0.2126 * lin(r) + 0.7152 * lin(g3) + 0.0722 * lin(b);
+    const side = document.getElementById("side");
+    const probe = document.createElement("i");
+    side.appendChild(probe);
+    const of = (tk) => { probe.style.color = "var(" + tk + ")"; return rgb(getComputedStyle(probe).color); };
+    const bg = rgb(getComputedStyle(side).backgroundColor);
+    const ratio = (c) => { const a = L(c), b = L(bg); return Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100; };
+    const out = { line: ratio(of("--chart-line")), now: ratio(of("--chart-now")) };
+    probe.remove();
+    return out;
+  });
+  assert(cr.line >= 3 && cr.now >= 3, "12.0 C:" + theme + " 图表的线与「现在」对面板 ≥ 3:1(" + JSON.stringify(cr) + ")");
   await ctx.close();
 }
 
@@ -1590,7 +1662,7 @@ if (scenario()) {
           // with its name, not a heading over a stray button
           const labelled = g.closest("#page-settings") && [...g.querySelectorAll(".setting-row")]
             .some((r) => r.offsetParent && r.querySelector(".setting-k:not(.sr-only)") && r.querySelector("button, input"));
-          if (items.length <= 1 && !labelled && !g.querySelector(".stats-body, .hist-body, .ach-body, .move-list, .lesson-text"))
+          if (items.length <= 1 && !labelled && !g.querySelector(".stats-body, .hist-body, .ach-body, .move-list, .lesson-text, .pz-about-rows"))
             out.push({ h: heading.textContent.trim(), n: items.length,
                        items: items.map((e) => e.textContent.trim().slice(0, 8)) });
         }
@@ -1628,45 +1700,30 @@ if (scenario()) {
       // was happening: the 0/111 counter sat on the same line and squeezed it
       // until `overflow-wrap: anywhere` broke 规则通/关 rather than the row
       // giving way. Measure the name on one line and compare with the room.
-      const wrapped = [...body.querySelectorAll(".ach-nm")].map((n) => {
-        const lh = parseFloat(getComputedStyle(n).lineHeight);
-        const lines = Math.round(n.getBoundingClientRect().height / lh);
-        if (lines <= 1) return null;
-        const probe = n.cloneNode(true);
-        probe.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap;width:auto";
-        n.parentElement.appendChild(probe);
-        const need = probe.getBoundingClientRect().width;
-        probe.remove();
-        const room = n.parentElement.getBoundingClientRect().width -
-          [...n.parentElement.children].filter((e) => e !== n)
-            .reduce((a, e) => a + e.getBoundingClientRect().width + 6, 0) - 16;
-        return need <= room ? { t: n.textContent.trim(), lines, need: Math.round(need), room: Math.round(room) } : null;
-      }).filter(Boolean);
+      // 12.0 F: a name sits under its medal on at most two lines, and wraps
+      // only between words (keep-all keeps a CJK name whole)
+      const lines = [...body.querySelectorAll(".ach-nm")].map((n) => ({
+        t: n.textContent.trim(), lines: Math.round(n.getBoundingClientRect().height / parseFloat(getComputedStyle(n).lineHeight)),
+        clipped: n.scrollHeight > n.clientHeight + 1 }));
+      const wrapped = lines.filter((l) => l.lines > 2 || l.clipped || (/[\u3000-\u9fff]/.test(l.t) && l.lines > 1 && l.t.length <= 6));
       const over = [...body.querySelectorAll(".ach-item")]
         .map((e) => Math.round(e.getBoundingClientRect().right - br.right)).filter((x) => x > 1);
       const badges = [...body.querySelectorAll(".ach-item")].map((e) => ({
         t: (e.querySelector(".ach-nm") || {}).textContent || "",
-        h: Math.round(e.getBoundingClientRect().height) }));
+        top: Math.round(e.getBoundingClientRect().top), h: Math.round(e.getBoundingClientRect().height) }));
       return { full, wrapped, over, badges, cols: getComputedStyle(body).gridTemplateColumns.split(" ").length };
     });
     for (const f of r.full)
       assert(f.spans, lang + ": ." + f.c.split(" ")[0] + " spans the grid rather than taking one badge's cell");
     assert(r.wrapped.length === 0,
-      lang + ": no achievement name is broken while its row had the room — " +
-      r.wrapped.map((w) => w.t + " (" + w.need + "px into " + w.room + ")").join(", "));
+      lang + ": 12.0 F: every name fits under its medal (≤ 2 lines, a short CJK name on one) — " + r.wrapped.map((w) => w.t + " ×" + w.lines).join(", "));
     assert(r.over.length === 0, lang + ": no badge runs past the grid (" + r.over.join(", ") + ")");
-    // Fifteen badges are a list, and a list has one row height. In two columns
-    // each row took its own: a name that wrapped, or a counter that dropped to
-    // a second line, raised that row and left its neighbours alone. Measured on
-    // the shipped build — Chinese 33 and 55, English 33/54/55/76/90, Japanese
-    // 33/54/55/68/76. One column at the full panel width fits every name in
-    // every language on one line with the counter beside it, which is the same
-    // row the statistics directly above it are already made of.
-    const heights = [...new Set(r.badges.map((b) => b.h))];
-    assert(r.cols === 1, lang + ": the badges are one list, not two columns (" + r.cols + ")");
-    assert(heights.length === 1,
-      lang + ": every badge is the same height (" + heights.join(", ") + ") — tallest is 「" +
-      (r.badges.find((b) => b.h === Math.max(...heights)) || {}).t + "」");
+    // 12.0 F: a grid of medals, and each row of it lines up — one top, one height
+    const rows = new Map();
+    for (const b of r.badges) rows.set(b.top, (rows.get(b.top) || new Set()).add(b.h));
+    assert(r.cols >= 3, lang + ": 12.0 F: the badges are a grid (" + r.cols + " columns)");
+    assert([...rows.values()].every((hs) => hs.size === 1),
+      lang + ": 12.0 F: the tiles of each row are one height (" + [...rows.entries()].map(([t, hs]) => t + ":" + [...hs].join("/")).join(" ") + ")");
     await ctx.close();
   }
 }

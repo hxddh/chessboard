@@ -71,7 +71,7 @@ node scripts/sdk-diff.mjs <SDK 目录> --suggest   # 另外把每个没登记的
 | R13 | lag | **辅助函数的先后顺序与措辞**。分叉时的旧排版，没有跟上游重排。<br>`windowLabel` 等函数位置不同、几处注释措辞不同，`manifestStringField` 没有上游的 null 分支（app.zon 没有写 null 的字符串字段）。<br>`dock_visible` 的编译期报错是我们改成中文的。<br>行为相同。 |
 | R14 | ours | **上游自己的两个测试不抄**。它们断言的是 SDK 测试用清单里的值（`example.com` 的更新源、`app.refresh` 命令）；拿我们的 app.zon 编译会失败。<br>web 层的三个判断（`manifestHasWebContent` / `manifestWebDeclaration` / `webLayerEnabled` 与编译期检查）放在文件末尾，内容与上游相同，注释略短。 |
 | R15 | ours | **恢复窗口位置**（8.2 M4 起照上游；F2 登记时是 lag）。<br>上游：`window_placement.applySavedWindow` 换上保存的 frame，同时把 `initial_placement` 标成 `.restored`。8.1 及以前我们只换 frame，`initial_placement` 留在 `.default`。<br>8.1 实际表现：SDK 的 `AppInfo.inferLegacyExplicitOrigin` 把原点不为 (0,0) 的 `.default` 当成写死的位置（`.explicit`），所以位置多半是碰巧回来的；保存在 (0,0) 的窗口仍是 `.default`，macOS 主机把它居中到主屏（`appkit_host.m` 的 `centerOnPrimary`）。F2 登记时写的「每次都居中」漏看了这层推断。另外 `.explicit` 与 `.restored` 在 macOS 上换算外框、夹进屏幕的方式不同（后者按最终标题栏换算），只有走 `.restored` 才是上游测过的那条路。<br>现在：`prepareStateStore` 与上游逐行相同，`window_placement.zig` 原样抄入（`files` 里第三对，`sdk-diff` 同样盯着）。剩下的差异只有文件末尾我们自己的测试：用 null 平台走一遍「首次启动 → 保存 → 再启动」，断言主机拿到 `.restored`（原点 (140,90) 与 (0,0) 各一次），并顺带跑 `window_placement.zig` 自带的测试。修之前这条测试是红的（拿到 `.explicit`）。<br>真机核对：`docs/manual-check.md`「8.2 真机路线（30 分钟）」macOS 第 6 步（X1）。 |
-| R16 | ours | **`pub const automation_build`**（8.2 M4 评审修正）。<br>应用模块（main.zig 及其拆出的文件）没有 `build_options`，`-Dautomation` 只到 runner。automation 驱动的两个接缝（`CHESS_SELFTEST_SCENARIO`、`CHESS_SYNC_BASE`，bridge.zig `seamsOpen`）要在编译期就随它关掉：发布件不带 automation，什么环境变量都打不开；普通自检（只设 `CHESS_SELFTEST=1`）照旧。<br>放在 runner 里转出一行，build.zig 不用动。<br>11.0 W 在同一处加了 `pub const mac_shell`：`-Dplatform=null` 在 Mac 上构建时 OS 仍是 macOS，但 `build.zig` 只在 macOS 平台分支编译 `mac_chrome.m`，所以 main.zig / chrome.zig 按平台而不是按 OS 决定是否调用它。 |
+| R16 | ours | **`pub const automation_build`**（8.2 M4 评审修正）。<br>应用模块（main.zig 及其拆出的文件）没有 `build_options`，`-Dautomation` 只到 runner。automation 驱动的两个接缝（`CHESS_SELFTEST_SCENARIO`、`CHESS_SYNC_BASE`，bridge.zig `seamsOpen`）要在编译期就随它关掉：发布件不带 automation，什么环境变量都打不开；普通自检（只设 `CHESS_SELFTEST=1`）照旧。<br>放在 runner 里转出一行，build.zig 不用动。<br>11.0 W 在同一处加了 `pub const mac_shell`：`-Dplatform=null` 在 Mac 上构建时 OS 仍是 macOS，但 `build.zig` 只在 macOS 平台分支编译 `mac_chrome.m`，所以 main.zig / chrome.zig 按平台而不是按 OS 决定是否调用它。<br>12.0 N 同样加了 `pub const win_shell`，给 chrome.zig 决定是否调用 `win_chrome.c`。 |
 
 ## build.zig ↔ build/app.zig
 
@@ -91,10 +91,11 @@ node scripts/sdk-diff.mjs <SDK 目录> --suggest   # 另外把每个没登记的
 | B12 | lag | **x86_64 强制 LLVM 后端**（`useLlvmWorkaround`）。<br>Zig 0.16 的自研 x86_64 后端会错编 SysV 调用约定里浮点参数多的 C 函数，只影响 x86_64 的 Debug 构建。我们的发布件是 ReleaseFast（本来就走 LLVM）；Windows 是另一套调用约定；macOS 发布件是 arm64。<br>影响：只可能出现在 x86_64 Linux/macOS 的 Debug 开发构建上。<br>建议：0.10.2 时照抄（一行）。 |
 | B13 | ours | **`zig build test` 另跑 runner 模块的测试**（8.2 M4）。<br>`src/runner.zig` 是独立模块（`runner_mod`），应用的测试二进制以 `main.zig` 为根，从来不跑它里面的测试。R15 的测试与 `window_placement.zig` 自带的测试要在 runner 模块里才拿得到 `prepareStateStore`，所以加一个以 `runner_mod` 为根的测试。上游对应的是 `native test` 的分析对象，见 B05。 |
 | B14 | ours | **应用自己的 macOS 窗口外壳**（11.0 W）。<br>SDK 0.10.1 的拖动区只给它自己的画布控件用，WKWebView 盖住标题栏后网页里无法声明可拖动区域。`src/native/mac_chrome.m` 由我们自己编译（只在 macOS 分支，带 `-fobjc-arc`），链 WebKit：标题栏透明、内容通到顶，WebView 上方一条 28 pt 的原生拖动条，窗口外观跟主题（`chess.setChrome`）。<br>上游没有对应的东西；SDK 哪天有了网页拖动区，就整组删掉、改用 SDK 的。 |
+| B15 | ours | **应用自己的 Windows 窗口外壳**（12.0 N）。<br>SDK 0.10.1 的 Windows 主机不设 DWM 属性：标题栏一直是系统默认的白/灰，深色主题（木、夜）下是一条亮边。`src/native/win_chrome.c` 由我们自己编译（只在 Windows 分支），`chess.setChrome` 时把本进程的顶层窗口设成 immersive dark mode（跟主题明暗），并在 Windows 11 上把系统背景设成 Mica；dwmapi 运行时加载，不加链接依赖，Windows 10 上 Mica 那一步失败就跳过。<br>上游哪天有了窗口外观的接口，就整组删掉、改用 SDK 的。 |
 
 ## 数字（登记于 0.10.1）
 
-- **30 组，176 块**：ours 19 组、unused 4 组、lag 7 组（11.0 W 加了 B14；8.2 M4 把 R15、B09 两组 lag 修成 ours，加了 B13，评审修正加了 R16；F2 登记时是 27 组：ours 14、unused 4、lag 9）。
+- **31 组，177 块**：ours 20 组、unused 4 组、lag 7 组（12.0 N 加了 B15；11.0 W 加了 B14；8.2 M4 把 R15、B09 两组 lag 修成 ours，加了 B13，评审修正加了 R16；F2 登记时是 27 组：ours 14、unused 4、lag 9）。
 - **runner.zig**：16 组，94 块，上游 882 行对我们 374 行。
 - **build.zig**：14 组，82 块，上游 2,539 行对我们 394 行。
 - **window_placement.zig**：没有差异。

@@ -20,7 +20,7 @@
  * WebView's own storage does anyway (WKWebView keeps it under the real
  * user's ~/Library, WebView2 beside the exe; see selftest-app.mjs). In order:
  *
- *   rep-seed       snapshot menus = the manifest's; chess.selftestMode,
+ *   rep-seed       snapshot menus = the manifest's; chess.setChrome (12.0 N), chess.selftestMode,
  *                  chess.appdataPath, chess.fetchProgress over the bridge;
  *                  20 `wait` acks while idle; (R5) no connection to anywhere
  *                  but loopback from the app's process; the page: 允许联网同步
@@ -258,6 +258,12 @@ async function runLive() {
     check("bridge:appdataPath", where && where.ok, JSON.stringify(where));
     const prog = await app.bridge({ id: "a3", command: "chess.fetchProgress", payload: {} });
     check("bridge:fetchProgress", prog && prog.ok && prog.result.busy === false, JSON.stringify(prog));
+    // 12.0 N: the window takes the theme — on Windows every window's title
+    // bar (and Mica where the system has it, Windows 11), on macOS the inset
+    // shell (11.0 W). The page sets it again from its own theme right after.
+    const chrome = await app.bridge({ id: "a4", command: "chess.setChrome", payload: { dark: true } });
+    if (process.platform === "win32") check("N:titlebar", chrome && chrome.ok && chrome.result.titlebar >= 1, "标题栏跟主题：" + JSON.stringify(chrome && chrome.result));
+    if (process.platform === "darwin") check("N:inset", chrome && chrome.ok && ["inset", "full"].includes(chrome.result.chrome), "嵌入式外壳：" + JSON.stringify(chrome && chrome.result));
     const acks = [];
     for (let i = 0; i < 20; i++) acks.push(await app.send("wait"));
     const st = extra.latency.idle = latencyStats(acks);
@@ -290,7 +296,10 @@ async function runLive() {
     const li = reports.sync.checks.lichess;
     if (li && li.frames) {
       extra.frames = li.frames;
-      if (li.frames.frames >= 10) check("R6:frames", li.frames.maxMs < THRESHOLDS.syncFrameGapMs, "同步期间页面最长帧间隔 " + li.frames.maxMs + " ms（< " + THRESHOLDS.syncFrameGapMs + "），共 " + li.frames.frames + " 帧");
+      if (li.frames.frames >= 10) check("R6:frames", li.frames.maxMs < THRESHOLDS.syncFrameGapMs, "同步期间页面最长帧间隔 " + li.frames.maxMs + " ms（< " + THRESHOLDS.syncFrameGapMs + "），共 " + li.frames.frames + " 帧" +
+        (li.frames.at != null ? "；最长的一段在第 " + li.frames.at + " ms 结束，答复在第 " + li.ms + " ms 到" : "") +
+        // 12.0 R: when, after the page loaded, and what arrived meanwhile
+        (li.frames.sinceLoad != null ? "；同步在页面加载后第 " + li.frames.sinceLoad + " ms 开始，超 250 ms 的帧 " + JSON.stringify(li.frames.long || []) + "，其间到的资源 " + JSON.stringify(li.frames.res || []) : ""));
       else console.log("note: 同步期间页面只画了 " + li.frames.frames + " 帧（窗口不在前台？），帧间隔不判");
     }
     const asked = fake.requests.filter((r) => r.path === "/api/games/user/slow_tester");

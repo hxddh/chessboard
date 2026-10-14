@@ -53,6 +53,38 @@
 export const SOUND_NAMES = ["move", "capture", "check", "castle", "promote", "lift", "refused",
   "start", "win", "loss", "draw", "lowtime", "star", "wrong"];
 
+/**
+ * 12.0 A: the sounds heard every move come in strikes — four takes each,
+ * a slightly different spot of the plate and a different grain of contact
+ * noise — so a game is not one recording played forty times. audio.js picks
+ * one at random, never the same twice running, and still wobbles its rate.
+ */
+export const VARIED = ["move", "capture", "check", "castle", "promote", "lift"];
+export const STRIKES = 4;
+/** where on the plate each take lands: four nearby spots, take 0 the 7.7 one */
+const SPOT = [1, 0.986, 1.013, 0.995];
+
+/**
+ * …and a placement weighs what the piece weighs: a pawn is set down lighter
+ * and higher, a rook, a queen or a king lower and with more of the board in
+ * it. "mid" is 7.7's placement unchanged.
+ */
+export const HEFTS = { light: { p: 1.06, w: 0, l: 0.85 }, mid: { p: 1, w: 0, l: 1 }, heavy: { p: 0.93, w: 0.35, l: 1.08 } };
+export const HEFTED = ["move", "capture"];
+/** The heft of a piece letter (chess.js `piece`). */
+export const heftOf = (piece) => (piece === "p" ? "light" : piece === "r" || piece === "q" || piece === "k" ? "heavy" : "mid");
+
+/** Every buffer the wooden set can play, as renderSound's arguments. */
+export function soundKeys() {
+  const out = [];
+  for (const name of SOUND_NAMES) {
+    const strikes = VARIED.includes(name) ? STRIKES : 1;
+    const hefts = HEFTED.includes(name) ? Object.keys(HEFTS) : ["mid"];
+    for (const heft of hefts) for (let strike = 0; strike < strikes; strike++) out.push({ name, strike, heft });
+  }
+  return out;
+}
+
 /** mulberry32: a small seeded PRNG, [-1, 1). */
 function rng(seed) {
   let a = seed >>> 0;
@@ -175,27 +207,27 @@ const NOTE = { G4: 392.0, A4: 440.0, "F#4": 369.99, C5: 523.25, D5: 587.33, E5: 
  * losing is quieter than winning (audio.js playLoss says why).
  */
 const RECIPES = {
-  move: [0.16, 0.40, (o, sr) => place(o, sr, 0, { seed: 11 })],
-  capture: [0.26, 0.48, (o, sr) => {
-    place(o, sr, 0, { pitch: 1.18, level: 0.7, seed: 21 });          // piece on piece
-    place(o, sr, 0.028, { pitch: 0.82, weight: 1, level: 1.1, seed: 22 }); // down, hard
+  move: [0.16, 0.40, (o, sr, V) => place(o, sr, 0, { pitch: V.p, weight: V.w, seed: 11 + V.s })],
+  capture: [0.26, 0.48, (o, sr, V) => {
+    place(o, sr, 0, { pitch: 1.18 * V.p, level: 0.7, seed: 21 + V.s });          // piece on piece
+    place(o, sr, 0.028, { pitch: 0.82 * V.p, weight: 1, level: 1.1, seed: 22 + V.s }); // down, hard
   }],
-  check: [0.55, 0.42, (o, sr) => {
-    place(o, sr, 0, { seed: 31 });
-    bar(o, sr, 0.05, NOTE.E6, { level: 0.55, tau: 0.16, seed: 32 });
+  check: [0.55, 0.42, (o, sr, V) => {
+    place(o, sr, 0, { pitch: V.p, seed: 31 + V.s });
+    bar(o, sr, 0.05, NOTE.E6, { level: 0.55, tau: 0.16, seed: 32 + V.s });
   }],
-  castle: [0.30, 0.42, (o, sr) => {
-    place(o, sr, 0, { pitch: 0.93, seed: 41 });          // the king
-    place(o, sr, 0.095, { pitch: 1.07, level: 0.85, seed: 42 }); // the rook
+  castle: [0.30, 0.42, (o, sr, V) => {
+    place(o, sr, 0, { pitch: 0.93 * V.p, seed: 41 + V.s });          // the king
+    place(o, sr, 0.095, { pitch: 1.07 * V.p, level: 0.85, seed: 42 + V.s }); // the rook
   }],
-  promote: [0.80, 0.44, (o, sr) => {
-    place(o, sr, 0, { pitch: 0.9, weight: 0.6, seed: 51 });
-    bar(o, sr, 0.03, NOTE.A4 / 2, { level: 0.55, tau: 0.30, seed: 52 });
-    bar(o, sr, 0.03, NOTE.E5 / 2, { level: 0.35, tau: 0.26, seed: 53 });
+  promote: [0.80, 0.44, (o, sr, V) => {
+    place(o, sr, 0, { pitch: 0.9 * V.p, weight: 0.6, seed: 51 + V.s });
+    bar(o, sr, 0.03, NOTE.A4 / 2, { level: 0.55, tau: 0.30, seed: 52 + V.s });
+    bar(o, sr, 0.03, NOTE.E5 / 2, { level: 0.35, tau: 0.26, seed: 53 + V.s });
   }],
-  lift: [0.05, 0.14, (o, sr) => {
-    contact(o, sr, 0, { f: 3800, q: 1.0, amp: 0.5, tau: 0.0015, seed: 61 });
-    mode(o, sr, 0, 4100, 0.12, 0.006);
+  lift: [0.05, 0.14, (o, sr, V) => {
+    contact(o, sr, 0, { f: 3800 * V.p, q: 1.0, amp: 0.5, tau: 0.0015, seed: 61 + V.s });
+    mode(o, sr, 0, 4100 * V.p, 0.12, 0.006);
   }],
   refused: [0.16, 0.26, (o, sr) => knock(o, sr, 0, 150, { seed: 71 })],
   start: [1.00, 0.30, (o, sr) => {
@@ -235,17 +267,23 @@ const RECIPES = {
  *
  * @param {string} name  one of SOUND_NAMES
  * @param {number} sampleRate
+ * @param {{strike?: number, heft?: string}} [take]  which of the STRIKES, and
+ *   the piece's weight (HEFTS); the events not in VARIED / HEFTED ignore them
  * @returns {Float32Array}
  */
-export function renderSound(name, sampleRate) {
+export function renderSound(name, sampleRate, { strike = 0, heft = "mid" } = {}) {
   const rec = RECIPES[name];
   if (!rec) throw new Error("no such sound: " + name);
   const [len, peak, build] = rec;
   const out = new Float32Array(Math.ceil(len * sampleRate));
-  build(out, sampleRate);
+  const h = HEFTS[heft] || HEFTS.mid;
+  const k0 = Math.max(0, Math.min(STRIKES - 1, strike | 0));
+  // take 0 at mid heft is 7.7's sound, sample for sample
+  build(out, sampleRate, { s: k0 * 1000, p: SPOT[k0] * h.p, w: h.w });
   let m = 0;
   for (let i = 0; i < out.length; i++) m = Math.max(m, Math.abs(out[i]));
-  const k = m > 0 ? peak / m : 0;
+  // a heft is also a loudness: normalised to the recipe's peak, then scaled
+  const k = m > 0 ? (peak * (HEFTED.includes(name) ? h.l : 1)) / m : 0;
   const fade = Math.round(0.025 * sampleRate);
   for (let i = 0; i < out.length; i++) {
     const tail = out.length - i;
