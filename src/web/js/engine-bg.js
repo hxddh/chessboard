@@ -23,7 +23,7 @@
 /**
  * @param {object} d
  * @param {Function} d.spawn        () => a Worker running the engine source
- * @param {Function} d.wasm         () => an ArrayBuffer copy of the wasm
+ * @param {Function} d.b64          () => the engine as base64 (each worker decodes it itself, 12.0 R)
  * @param {Function} d.optionCmds   (multipv) => the setoption lines analyzeInner sends
  * @param {Function} d.readInfo     engine.js readInfo(line, slots)
  */
@@ -58,8 +58,7 @@ export function createBgLane(d) {
       worker.onmessage = (ev) => { for (const h of handlers.slice()) h(ev.data); };
       worker.onerror = () => close();
       const ready = waitFor((l) => l === "__sf_ready__" || (typeof l === "string" && l.startsWith("__sf_fail__")), 30000);
-      const payload = d.wasm();
-      worker.postMessage({ type: "init", wasm: payload }, [payload]);
+      worker.postMessage({ type: "init", b64: d.b64() });
       if ((await ready) !== "__sf_ready__") throw new Error("engine boot failed");
       const ok = waitFor((l) => l === "uciok", 10000);
       send("uci");
