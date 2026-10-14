@@ -76,9 +76,24 @@ export const SEED_BOOK = { v: 1, w: [line("e4 e5 Nf3 Nc6 Bb5")], b: [line("d4 Nf
 function frameGaps() {
   const t0 = performance.now();
   let last = t0, max = 0, at = 0, n = 0, on = true;
-  const tick = (t) => { if (!on) return; if (t - last > max) { max = t - last; at = t - t0; } last = t; n++; requestAnimationFrame(tick); };
+  const long = [];
+  const tick = (t) => {
+    if (!on) return;
+    if (t - last > 250) long.push([Math.round(last - t0), Math.round(t - t0)]);
+    if (t - last > max) { max = t - last; at = t - t0; }
+    last = t; n++; requestAnimationFrame(tick);
+  };
   requestAnimationFrame(tick);
-  return () => { on = false; return { maxMs: Math.round(max), at: Math.round(at), frames: n }; };
+  // 12.0 R: what else was going on — how long after the page loaded this
+  // started, and the scripts and requests that arrived inside the longest gap
+  return () => {
+    on = false;
+    const from = t0 + at - max - 50, to = t0 + at;
+    const res = (performance.getEntriesByType ? performance.getEntriesByType("resource") : [])
+      .filter((e) => e.responseEnd >= from && e.startTime <= to)
+      .map((e) => String(e.name).split("/").pop() + "@" + Math.round(e.responseEnd - t0));
+    return { maxMs: Math.round(max), at: Math.round(at), frames: n, sinceLoad: Math.round(t0), long, res };
+  };
 }
 
 /** What chessboard.book holds now. */

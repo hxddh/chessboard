@@ -44,18 +44,22 @@ typedef struct {
     int mica;
 } ChessChromeWalk;
 
-/* Every visible top-level window of this process with a caption. */
+/* Every top-level window of this process with a caption. */
 static BOOL CALLBACK chess_chrome_each(HWND hwnd, LPARAM lp) {
     ChessChromeWalk *w = (ChessChromeWalk *)lp;
     DWORD pid = 0;
     GetWindowThreadProcessId(hwnd, &pid);
-    if (pid != GetCurrentProcessId() || !IsWindowVisible(hwnd)) return TRUE;
+    /* not only the visible ones: at boot the host may not have shown its
+       window yet when the page first asks */
+    if (pid != GetCurrentProcessId()) return TRUE;
     if ((GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_CAPTION) != WS_CAPTION) return TRUE;
     BOOL dark = w->dark;
     if (FAILED(w->set(hwnd, CHESS_DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof dark)))
         w->set(hwnd, CHESS_DWMWA_USE_IMMERSIVE_DARK_MODE_OLD, &dark, sizeof dark);
     int backdrop = CHESS_DWMSBT_MAINWINDOW;
     if (SUCCEEDED(w->set(hwnd, CHESS_DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof backdrop))) w->mica++;
+    /* Windows 10 does not repaint the frame for the attribute by itself */
+    SetWindowPos(hwnd, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     w->windows++;
     return TRUE;
 }

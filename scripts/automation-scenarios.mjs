@@ -297,7 +297,9 @@ async function runLive() {
     if (li && li.frames) {
       extra.frames = li.frames;
       if (li.frames.frames >= 10) check("R6:frames", li.frames.maxMs < THRESHOLDS.syncFrameGapMs, "同步期间页面最长帧间隔 " + li.frames.maxMs + " ms（< " + THRESHOLDS.syncFrameGapMs + "），共 " + li.frames.frames + " 帧" +
-        (li.frames.at != null ? "；最长的一段在第 " + li.frames.at + " ms 结束，答复在第 " + li.ms + " ms 到" : ""));
+        (li.frames.at != null ? "；最长的一段在第 " + li.frames.at + " ms 结束，答复在第 " + li.ms + " ms 到" : "") +
+        // 12.0 R: when, after the page loaded, and what arrived meanwhile
+        (li.frames.sinceLoad != null ? "；同步在页面加载后第 " + li.frames.sinceLoad + " ms 开始，超 250 ms 的帧 " + JSON.stringify(li.frames.long || []) + "，其间到的资源 " + JSON.stringify(li.frames.res || []) : ""));
       else console.log("note: 同步期间页面只画了 " + li.frames.frames + " 帧（窗口不在前台？），帧间隔不判");
     }
     const asked = fake.requests.filter((r) => r.path === "/api/games/user/slow_tester");

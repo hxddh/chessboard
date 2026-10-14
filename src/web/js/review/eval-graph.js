@@ -127,7 +127,7 @@ export function createEvalGraph(d) {
       cv.setAttribute("aria-valuemax", String(a.scalars.length - 1));
       cv.setAttribute("aria-valuenow", String(store.game.viewIndex));
       cv.setAttribute("aria-valuetext", tdot(tf("curve.at", [store.game.viewIndex]), frac == null ? t("rv.evalNone") : evalText(cp)));
-      if (document.activeElement === cv && cv.matches(":focus-visible")) tipAt(store.game.viewIndex);
+      if (keyFocused(cv)) tipAt(store.game.viewIndex);
     }
     if (frac == null) {
       // measured and level is not the same thing as never measured
@@ -319,6 +319,17 @@ export function createEvalGraph(d) {
   const bestMemo = new WeakMap();
 
   /**
+   * Has `el` the keyboard's focus (a Tab, not a click)? Safari 14 — the
+   * macOS 11 floor's WKWebView — has no :focus-visible and throws on it;
+   * there the readout stays the pointer's (a11y.js focusIsVisible, the
+   * same guard).
+   */
+  function keyFocused(el) {
+    if (!el || document.activeElement !== el) return false;
+    try { return el.matches(":focus-visible"); } catch (_) { return false; }
+  }
+
+  /**
    * 7.8 §2: what is at position `i`, as Lichess's graph says it — the move
    * that led there and the score after it; 12.0 C: and White's win chance,
    * the scale the curve is drawn on. Shown for the pointer, and for the
@@ -403,9 +414,9 @@ export function createEvalGraph(d) {
         tipAt(Math.round(frac * n));
       };
       curveEl.onpointermove = (ev) => { showCurveTip(ev); if (ev.buttons & 1) jumpOnCurve(ev); };
-      curveEl.onpointerleave = () => { if (tipEl && document.activeElement !== curveEl) tipEl.hidden = true; };
+      curveEl.onpointerleave = () => { if (tipEl && !keyFocused(curveEl)) tipEl.hidden = true; };
       // the keyboard's readout: focus shows the board's position, blur hides it
-      curveEl.onfocus = () => { if (curveEl.matches(":focus-visible")) tipAt(store.game.viewIndex); };
+      curveEl.onfocus = () => { if (keyFocused(curveEl)) tipAt(store.game.viewIndex); };
       curveEl.onblur = () => { if (tipEl) tipEl.hidden = true; };
       curveEl.style.cursor = "pointer";
     }
