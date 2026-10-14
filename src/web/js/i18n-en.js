@@ -255,6 +255,7 @@
       "pz.goalDef": "{0} · Black mates next move — find a way to stop it",
       "pz.goalDraw": "{0} · White is lost — give away the last piece that can move, and the capture leaves White stalemated",
       "pz.goalMate": "{0} · White to play, mate in {1}",
+      "pz.goalSide": "{0} · White to play", "pz.goalSideB": "{0} · Black to play",
       "pz.n.1": "1", "pz.n.2": "2", "pz.n.3": "3",
       "pz.wrongCapture": "That capture loses material — count the defenders and do the maths",
       "pz.notTheMove": "Not the strongest move — look again, exactly one move really wins material here",

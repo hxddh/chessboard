@@ -276,8 +276,11 @@ const hasMateIn = (g, n) => {
   assert(/^\d+定级中$/.test(await hf.text("#pz-rating-v") || "") && await fresh.page.evaluate(() => !!document.querySelector("#pz-rating-v .num + .prov-tag")),
     "c: 新档案也有评级，「定级中」是数字旁的小标签（v9-0-plan S6：不是「?」；12.0 F：不再是全角括号）", await hf.text("#pz-rating-v"));
   // 12.0 C: one answer is not a curve — it says how many more make one
-  assert(await fresh.page.evaluate(() => document.getElementById("pz-rating-curve").hidden && /再做 \d 题就有曲线/.test(document.getElementById("pz-rating-soon").textContent)),
-    "12.0 C: 不到三个点时不画一条平线，写「再做 n 题就有曲线」");
+  assert(await fresh.page.evaluate(() => document.getElementById("pz-rating-curve").hidden && /^\d 题后出曲线$/.test(document.getElementById("pz-rating-soon").textContent)),
+    "12.0 C: 不到三个点时不画一条平线，写「n 题后出曲线」");
+  // 12.0 F: 「一步杀 #1 · 白先」, not 「一步杀 #1 · 白先，一步内将死」
+  const goal = await hf.text("#puzzle-task") || "";
+  assert(/^一步杀 #\d+ · 白先( · |$)/.test(goal) && !/步内将死/.test(goal), "12.0 F: 题面不把「一步杀」说两遍", goal);
   // …shown, not filed: a rating is written by an answer, never by the view
   // (test-library-e2e: a rote drill must leave `rating` unset)
   // v11-0-plan U3: two layers — 为你出一题 and the reviews on top, the kinds

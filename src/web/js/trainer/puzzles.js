@@ -242,7 +242,10 @@ export function createPuzzlesUI(d) {
     if (p.cat === "draw") return tf("pz.goalDraw", [goalName(p)]);
     // the count is a word in Chinese ("一步"), a numeral in English — so it
     // goes through the dictionary rather than being interpolated raw
-    return tf(b ? "pz.goalMateB" : "pz.goalMate", [goalName(p), t("pz.n." + (PUZZLE_MOVES[p.cat] || 1))]);
+    // 12.0 F: a name that already says 「一步杀」 does not say it twice
+    const named = goalName(p);
+    if (named.startsWith(t("pz.cat." + p.cat))) return tf(b ? "pz.goalSideB" : "pz.goalSide", [named]);
+    return tf(b ? "pz.goalMateB" : "pz.goalMate", [named, t("pz.n." + (PUZZLE_MOVES[p.cat] || 1))]);
   }
 
   /** The chair the solver sits in: white everywhere except black op drills. */
