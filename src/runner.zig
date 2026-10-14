@@ -529,6 +529,8 @@ pub const automation_build = build_options.automation;
 /// built on a Mac host — for main.zig and chrome.zig: the app's own window
 /// shell (src/native/mac_chrome.m) is compiled into exactly these builds.
 pub const mac_shell = std.mem.eql(u8, build_options.platform, "macos");
+/// 12.0 N: the same for the Windows platform's chrome (src/native/win_chrome.c).
+pub const win_shell = std.mem.eql(u8, build_options.platform, "windows");
 
 pub fn runWithOptions(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {
     if (build_options.debug_overlay) {

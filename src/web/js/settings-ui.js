@@ -81,6 +81,10 @@ export function createSettingsUI(d) {
     if (rowVol) rowVol.hidden = !store.ui.soundOn;
     const rowSet = document.getElementById("row-sound-set");
     if (rowSet) rowSet.hidden = !store.ui.soundOn;
+    // 12.0 N: the trackpad's tap, where the shell has one
+    sw("opt-haptics", store.ui.haptics);
+    const rowHap = document.getElementById("row-haptics");
+    if (rowHap) rowHap.hidden = !(Host.hasHaptic && Host.hasHaptic());
     document.querySelectorAll("#sound-set-seg button").forEach((b) => b.classList.toggle("active", b.dataset.soundSet === store.ui.soundSet));
     document.querySelectorAll("#hash-seg button").forEach((b) => b.classList.toggle("active", Number(b.dataset.hash) === store.ui.hash));
     // the engine's knobs follow the store here, not at wire time: wiring runs
@@ -180,6 +184,8 @@ export function createSettingsUI(d) {
     if (Host.setChrome) {
       Host.setChrome(at.theme === "wood" || at.theme === "night").then((c) => {
         if (c === "none") root.removeAttribute("data-chrome"); else root.setAttribute("data-chrome", c);
+        // the answer also says whether the trackpad can be tapped (12.0 N)
+        paintSettings();
       });
     }
     root.setAttribute("data-board", at.board);
@@ -296,6 +302,12 @@ export function createSettingsUI(d) {
       paintSettings();
       if (store.ui.soundOn) Audio2.playMove("w");
       toast(store.ui.soundOn ? t("msg.sound.on") : t("msg.sound.off"));
+    };
+    document.getElementById("opt-haptics").onclick = () => {
+      store.ui.haptics = !store.ui.haptics;
+      saveSettings();
+      paintSettings();
+      if (store.ui.haptics) Host.haptic();
     };
     // 6.0 (v6-plan Q2.8): volume, coordinates, blindfold
     Audio2.setVolume(store.ui.volume / 100);

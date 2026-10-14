@@ -336,6 +336,75 @@ const state = (page) => page.evaluate(() => {
   }
 }
 
+// --- 12.0 N: the trackpad's tap, where the shell has one -------------------
+// setChrome's answer says whether the shell can tap the trackpad (macOS).
+// Where it can, 设置 · 声音 has 触感反馈, and a piece dragged and set down on
+// a legal square asks for one tap — a click-move and a refused drop do not;
+// turned off, nothing is asked. Where it cannot, the row is not there.
+{
+  for (const can of [true, false]) {
+    const ctx = await browser.newContext({ viewport: WIDE, locale: "zh-CN" });
+    await ctx.addInitScript((c) => {
+      if (!sessionStorage.getItem("seeded")) {
+        sessionStorage.setItem("seeded", "1");
+        localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", soundOn: false, view: "play", appearance: "dark" }));
+      }
+      window.__taps = 0;
+      window.zero = {
+        invoke: (name) => {
+          if (name === "chess.setChrome") return Promise.resolve({ ok: true, chrome: "none", haptic: c });
+          if (name === "chess.haptic") { window.__taps++; return Promise.resolve({ ok: true, felt: true }); }
+          return Promise.resolve(null);
+        },
+        on: () => () => {}, off: () => {}, platform: { supports: () => Promise.resolve(false) },
+        clipboard: { readText: () => Promise.resolve(""), writeText: () => Promise.resolve(true) },
+      };
+    }, can);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(900);
+    await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
+    const at = (sq) => page.evaluate((n) => {
+      const r = document.getElementById("board").getBoundingClientRect();
+      const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
+      return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+    }, sq);
+    const drag = async (a, b) => {
+      const p = await at(a), q = await at(b);
+      await page.mouse.move(p.x, p.y); await page.mouse.down();
+      await page.mouse.move(p.x + 8, p.y - 8, { steps: 3 });
+      await page.mouse.move(q.x, q.y, { steps: 6 }); await page.mouse.up();
+      await page.waitForTimeout(250);
+    };
+    const taps = () => page.evaluate(() => window.__taps);
+    await drag("e2", "e4");
+    const afterDrop = await taps();
+    await drag("e7", "e3");   // not a legal square: refused, no tap
+    const afterRefused = await taps();
+    await page.click('.rail-btn[data-view="settings"]');
+    await page.evaluate(() => document.getElementById("cat-sound").click());
+    await page.waitForTimeout(300);
+    const row = await page.evaluate(() => { const r = document.getElementById("row-haptics"); return !!r && !r.hidden && !!r.offsetParent; });
+    if (can) {
+      assert(afterDrop === 1 && afterRefused === 1, "12.0 N：拖一个子、落在能走的格子上 —— 触控板轻震一次；落在不能走的格子上不震（" + afterDrop + " / " + afterRefused + "）");
+      assert(row, "12.0 N：外壳能震的时候，设置 · 声音里有「触感反馈」");
+      await page.evaluate(() => document.getElementById("opt-haptics").click());   // off (and no tap)
+      const off = await taps();
+      await page.click('.rail-btn[data-view="play"]'); await page.waitForTimeout(300);
+      await drag("e7", "e5");
+      assert(await taps() === off, "12.0 N：关掉「触感反馈」，落子不再震");
+      const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}").haptics);
+      assert(kept === false, "12.0 N：…并且记进设置（haptics: " + kept + "）");
+    } else {
+      assert(afterDrop === 0 && !row, "12.0 N：外壳不能震（浏览器、Windows）—— 不问、没有这一行（" + afterDrop + "，" + row + "）");
+    }
+    assert(errs.length === 0, "12.0 N（" + can + "）：没有页面异常 " + errs.join(" / "));
+    await ctx.close();
+  }
+}
+
 // --- 11.0 U1: fewer words ----------------------------------------------------
 // The explanation a person reads on the three screens opened most — the board
 // before a game, the puzzles, 今天 — measured as lib/prose-count.mjs counts

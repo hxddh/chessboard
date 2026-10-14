@@ -949,6 +949,13 @@
                   <span class="setting-k" data-i18n="side.volume">音量</span>
                   <input type="range" id="opt-volume" class="range" min="0" max="100" step="5" value="100" aria-label="音量" data-i18n-aria="side.volume" title="音效音量" data-i18n-title="tip.volume" />
                 </div>
+                <!-- 12.0 N: shown only where the shell can tap the trackpad (macOS) -->
+                <div class="setting-row" id="row-haptics" hidden>
+                  <span class="setting-k" data-i18n="side.haptics">触感反馈</span>
+                  <button type="button" class="switch" id="opt-haptics" aria-pressed="true" title="用触控板拖动棋子、落下时轻轻一震" data-i18n-title="tip.haptics" aria-label="触感反馈" data-i18n-aria="side.haptics">
+                    <span class="switch-knob"></span>
+                  </button>
+                </div>
                 <div class="setting-row stack" id="row-sound-set">
                   <span class="setting-k" data-i18n="side.soundSet">音色</span>
                   <div class="theme-row" id="sound-set-seg" role="group" aria-label="音色" data-i18n-aria="side.soundSet" title="木质：木头棋子落在木头棋盘上；经典：清脆的电子音" data-i18n-title="tip.soundSet">

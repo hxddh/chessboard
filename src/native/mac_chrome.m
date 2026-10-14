@@ -168,3 +168,13 @@ int chess_mac_chrome_set(int dark) {
     }
     return (asking && (asking.styleMask & NSWindowStyleMaskFullScreen)) ? 2 : 1;
 }
+
+/// 12.0 N: one light tap of a Force Touch trackpad — a piece set down by
+/// dragging it. NSHapticFeedbackManager plays it only while a finger is on
+/// such a trackpad, and silently does nothing anywhere else (a mouse, an
+/// older trackpad), which is what a drop made with them should feel like.
+int chess_mac_haptic(void) {
+    [[NSHapticFeedbackManager defaultPerformer] performFeedbackPattern:NSHapticFeedbackPatternAlignment
+                                                      performanceTime:NSHapticFeedbackPerformanceTimeNow];
+    return 1;
+}

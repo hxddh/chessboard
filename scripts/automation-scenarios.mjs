@@ -20,7 +20,7 @@
  * WebView's own storage does anyway (WKWebView keeps it under the real
  * user's ~/Library, WebView2 beside the exe; see selftest-app.mjs). In order:
  *
- *   rep-seed       snapshot menus = the manifest's; chess.selftestMode,
+ *   rep-seed       snapshot menus = the manifest's; chess.setChrome (12.0 N), chess.selftestMode,
  *                  chess.appdataPath, chess.fetchProgress over the bridge;
  *                  20 `wait` acks while idle; (R5) no connection to anywhere
  *                  but loopback from the app's process; the page: 允许联网同步
@@ -258,6 +258,12 @@ async function runLive() {
     check("bridge:appdataPath", where && where.ok, JSON.stringify(where));
     const prog = await app.bridge({ id: "a3", command: "chess.fetchProgress", payload: {} });
     check("bridge:fetchProgress", prog && prog.ok && prog.result.busy === false, JSON.stringify(prog));
+    // 12.0 N: the window takes the theme — on Windows every window's title
+    // bar (and Mica where the system has it, Windows 11), on macOS the inset
+    // shell (11.0 W). The page sets it again from its own theme right after.
+    const chrome = await app.bridge({ id: "a4", command: "chess.setChrome", payload: { dark: true } });
+    if (process.platform === "win32") check("N:titlebar", chrome && chrome.ok && chrome.result.titlebar >= 1, "标题栏跟主题：" + JSON.stringify(chrome && chrome.result));
+    if (process.platform === "darwin") check("N:inset", chrome && chrome.ok && ["inset", "full"].includes(chrome.result.chrome), "嵌入式外壳：" + JSON.stringify(chrome && chrome.result));
     const acks = [];
     for (let i = 0; i < 20; i++) acks.push(await app.send("wait"));
     const st = extra.latency.idle = latencyStats(acks);

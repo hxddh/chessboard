@@ -395,6 +395,7 @@ import { drawSpark } from "./charts.js";
       ...LOOK_DEFAULT,
       /** pvp: flip the board to face the side to move after every move */
       autoFlipPvp: false,
+      haptics: true,
       /** 9.0 S5: the settings page's open category (shell.js SETTING_CATS) */
       setCat: "general",
       /** 9.0 S3: 训练's last segment (shell.js TRAIN_SEGS), and 名局 read or guessed */
@@ -1455,6 +1456,7 @@ import { drawSpark } from "./charts.js";
       if (s.timeControl === "off" || parseTc(s.timeControl)) store.game.timeControl = s.timeControl;
       if (typeof s.coachOn === "boolean") store.session.coachOn = s.coachOn;
       if (typeof s.autoFlipPvp === "boolean") store.ui.autoFlipPvp = s.autoFlipPvp;
+      if (typeof s.haptics === "boolean") store.ui.haptics = s.haptics;
       if (I18n && typeof s.langId === "string") store.ui.langId = I18n.setLang(s.langId);
       if (typeof s.setCat === "string") store.ui.setCat = s.setCat;
       if (typeof s.liveOn === "boolean") store.session.liveOn = s.liveOn;
@@ -1467,7 +1469,7 @@ import { drawSpark } from "./charts.js";
   }
   function saveSettings() {
     try {
-      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, langId: store.ui.langId, setCat: store.ui.setCat, liveOn: store.session.liveOn, trainSeg: store.ui.trainSeg, classicMode: store.ui.classicMode, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
+      Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, haptics: store.ui.haptics, langId: store.ui.langId, setCat: store.ui.setCat, liveOn: store.session.liveOn, trainSeg: store.ui.trainSeg, classicMode: store.ui.classicMode, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
         volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv, bgWorker: store.ui.bgWorker === true,
         textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
         // v8-0-plan A3: the look
@@ -4517,6 +4519,8 @@ import { drawSpark } from "./charts.js";
     // sound, and the piece visibly flies home. That one is ours, and only
     // after a real drag — a plain click-to-select lands here too, and a piece
     // being picked up is not a piece being refused.
+    // 12.0 N: a piece set down by dragging taps the trackpad once (macOS)
+    if (sq && !refused && wasDrag.x && store.ui.haptics) Host.haptic();
     if (sq && sq !== wasDrag.from) onSquareClick(sq); // drop = play/reselect
     else if (held && wasDrag.x) Audio2.playRefused();
     if (held) BoardView.reboundDrag(held, wasDrag.from, p.x, p.y);

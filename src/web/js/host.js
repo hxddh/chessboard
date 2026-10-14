@@ -740,9 +740,19 @@ const global = typeof window !== "undefined" ? window : globalThis;
     if (!hasZero() || typeof global.zero.invoke !== "function") return "none";
     try {
       const r = await global.zero.invoke("chess.setChrome", { dark: !!dark });
+      canHaptic = !!(r && typeof r === "object" && r.haptic === true);
       const c = r && typeof r === "object" ? r.chrome : null;
       return c === "inset" || c === "full" ? c : "none";
     } catch (_) { return "none"; }
+  }
+
+  /** 12.0 N: whether this shell can tap the trackpad — setChrome's answer says (macOS). */
+  let canHaptic = false;
+  function hasHaptic() { return canHaptic; }
+  /** 12.0 N: one light tap of the trackpad, for a piece set down by dragging. Fire and forget. */
+  function haptic() {
+    if (!canHaptic || !hasZero() || typeof global.zero.invoke !== "function") return;
+    try { Promise.resolve(global.zero.invoke("chess.haptic", {})).catch(() => {}); } catch (_) {}
   }
 
   /**
@@ -897,6 +907,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
     appdataPath,
     setMenuLanguage,
     setChrome,
+    hasHaptic,
+    haptic,
     checkUpdate,
     fetchGames,
     fetchProgress,

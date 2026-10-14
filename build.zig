@@ -520,6 +520,10 @@ fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.B
                 app_mod.addLibraryPath(b.path(b.fmt("{s}/Release", .{cef_dir})));
             },
         }
+        // 12.0 N: the app's own window chrome — the title bar dark or light
+        // with the theme, Mica on Windows 11 (src/native/win_chrome.c; chrome.zig
+        // calls it on Windows). dwmapi is loaded at run time, not linked.
+        app_mod.addCSourceFile(.{ .file = b.path("src/native/win_chrome.c"), .flags = &.{} });
         app_mod.linkSystemLibrary("c", .{});
         app_mod.linkSystemLibrary("c++", .{});
         app_mod.linkSystemLibrary("user32", .{});

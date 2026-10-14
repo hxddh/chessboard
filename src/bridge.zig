@@ -13,6 +13,7 @@ const saveText = @import("dialogs.zig").saveText;
 const App = @import("main.zig").App;
 const setMenuLanguage = @import("menus.zig").setMenuLanguage;
 const setChrome = @import("chrome.zig").setChrome;
+const haptic = @import("chrome.zig").haptic;
 const checkUpdate = @import("sync.zig").checkUpdate;
 const fetchGames = @import("sync.zig").fetchGames;
 const fetchProgress = @import("sync.zig").fetchProgress;
@@ -98,6 +99,8 @@ pub const APP_COMMANDS = [_]AppCommand{
     // 11.0 W: the window's appearance from the theme; answers whether the
     // Mac's inset window shell is on (chrome.zig, src/native/mac_chrome.m)
     .{ .name = "chess.setChrome", .invoke_fn = setChrome },
+    // 12.0 N: a light trackpad tap for a piece dropped by dragging (macOS)
+    .{ .name = "chess.haptic", .invoke_fn = haptic },
     .{ .name = "chess.checkUpdate", .async_fn = checkUpdate },
     .{ .name = "chess.fetchGames", .async_fn = fetchGames },
     .{ .name = "chess.fetchProgress", .invoke_fn = fetchProgress },
@@ -1314,7 +1317,7 @@ test "every app command has a chess. name and no two share one" {
         // a handler of one kind or the other, never both, never neither
         try std.testing.expect((cmd.invoke_fn == null) != (cmd.async_fn == null));
     }
-    try std.testing.expectEqual(@as(usize, 15), APP_COMMANDS.len);
+    try std.testing.expectEqual(@as(usize, 16), APP_COMMANDS.len);
 }
 
 test "the network commands are asynchronous and reach the SDK's async registry" {
