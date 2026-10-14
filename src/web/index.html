@@ -253,6 +253,9 @@
           <button type="button" class="tool-btn" id="lesson-practice" data-i18n="act.practice" title="用同一母题的题目接着练" data-i18n-title="tip.lesson.practice">接着练</button>
           <button type="button" class="tool-btn" id="lesson-next" data-i18n="act.next" title="进入下一课" data-i18n-title="tip.lesson.next">下一课</button>
         </div>
+        <!-- 12.0 L: the unit (课程) or group (残局) this one is in, under the
+             controls — trainer/lessons.js renderCatalog -->
+        <div class="lesson-list lesson-unit" id="lesson-unit" aria-label="本单元" data-i18n-aria="aria.lessonUnit" hidden></div>
         <details class="reading-index" id="lesson-fold">
           <summary class="setting-summary"><h2 class="side-h" id="lesson-list-h">目录</h2></summary>
           <div class="lesson-list" id="lesson-list" aria-label="课程列表" data-i18n-aria="aria.lessonList"></div>
@@ -344,6 +347,11 @@
           <span class="pz-review-txt"><b data-i18n="pz.review">复习</b><small data-i18n="pz.reviewSub">做错过的题，隔几天再来一次</small></span>
           <span class="pz-review-n num" id="pz-review-n"></span>
         </button>
+        <!-- 12.0 L: this puzzle's kind, then its themes, and your record on
+             each (trainer/puzzle-modes.js renderAbout) -->
+        <section class="pz-about" id="pz-about" aria-label="这一类" data-i18n-aria="pz.aboutKind" hidden>
+          <div class="pz-about-rows" id="pz-about-rows"></div>
+        </section>
         <!-- v11-0-plan U3: two layers. On top, 为你出一题, today's reviews and
              the puzzle on the board; the six kinds, the runs, the themes and
              the list are one fold down, 更多练法 — a dozen controls that were
@@ -804,7 +812,7 @@
             </div>
             <div class="hist-body" id="hist-body"></div>
           </section>
-          <section class="side-section page-sec" id="sec-rep">
+          <section class="side-section page-sec page-wide" id="sec-rep">
             <!-- 我的开局书 (7.2, v7-2-plan §3). The trainer's built-in book
                  teaches opening principles through the openings everybody plays;
                  this one is the four or five things THIS player intends to play,
@@ -1149,7 +1157,7 @@
             </div>
             <div class="stats-body" id="vis-body"></div>
           </section>
-          <section class="side-section page-sec">
+          <section class="side-section page-sec page-wide">
             <div class="side-h-row">
               <h2 class="side-h" data-i18n="side.ach">成就</h2>
               <span class="side-h-meta num" id="ach-count">0/0</span>

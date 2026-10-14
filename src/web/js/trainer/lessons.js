@@ -851,35 +851,7 @@ export function createLessonsUI(d) {
       list.replaceChildren();
       if (seg === "course") {
         // a unit's head carries its progress, so the list reads as fourteen units
-        const units = new Map();
-        for (const x of LESSONS) {
-          if (!x.tasks.length) continue;
-          const part = lessonText(x).part;
-          const u = units.get(part) || { n: 0, done: 0 };
-          u.n++;
-          if (store.session.learnState.done[x.id]) u.done++;
-          units.set(part, u);
-        }
-        let lastPart = null;
-        LESSONS.forEach((x, i) => {
-          if (!x.tasks.length) return; // T1: an advanced lesson, its chunk still on the way
-          const xl = lessonText(x);
-          if (xl.part !== lastPart) {
-            lastPart = xl.part;
-            const h = document.createElement("div");
-            h.className = "lesson-part";
-            const u = units.get(xl.part);
-            h.textContent = tf("ui.pair", [xl.part, u.done + "/" + u.n]);
-            list.appendChild(h);
-          }
-          const b = document.createElement("button");
-          b.type = "button";
-          b.className = "lesson-item" + (!eg && !gs && i === li ? " current" : "");
-          b.dataset.i = String(i);
-          const mark = store.session.learnState.done[x.id] ? "✓ " : "";
-          b.textContent = mark + (i + 1) + ". " + xl.title;
-          list.appendChild(b);
-        });
+        courseRows(list, unitCounts(), li, eg || gs, null);
       } else if (seg === "classic") {
         // v8-4-plan T2: the thirty more follow each ten, headed by their eras
         const gsDone = store.session.learnState.gs || {};
@@ -906,6 +878,70 @@ export function createLessonsUI(d) {
         });
       } else Endgames.renderList(list, eg);
     }
+    // 12.0 L: the panel's lower half is the unit you are in — its lessons and
+    // how far through it you are — not a blank under a shut fold (measured on
+    // 11.0 at 1440: 410 of the panel's 900px empty on 课程, 480 on 残局)
+    const unit = document.getElementById("lesson-unit");
+    if (unit) {
+      unit.replaceChildren();
+      if (seg === "course" && !eg && !gs && LESSONS[li]) courseRows(unit, unitCounts(), li, null, lessonText(LESSONS[li]).part);
+      else if (seg === "endgame" && eg) Endgames.renderList(unit, eg, true);
+      // a long unit shows its stretch around the current one: the camp's
+      // sixteen king-and-pawn endings ran off the bottom of the panel
+      const items = [...unit.querySelectorAll(".lesson-item")];
+      const SHOWN = 8;
+      if (items.length > SHOWN) {
+        const at = Math.max(0, items.findIndex((b) => b.classList.contains("current")));
+        const from = Math.min(Math.max(0, at - 2), items.length - SHOWN);
+        items.forEach((b, i) => { if (i < from || i >= from + SHOWN) b.remove(); });
+      }
+      // one line each: a long title ends in … inside its row, whole on hover
+      for (const b of unit.querySelectorAll(".lesson-item")) {
+        const span = document.createElement("span");
+        span.textContent = b.textContent;
+        b.title = b.title || b.textContent;
+        b.replaceChildren(span);
+      }
+      unit.hidden = !unit.childElementCount;
+    }
+  }
+  /** Each unit's size and how many of it are done, by its name. */
+  function unitCounts() {
+    const units = new Map();
+    for (const x of LESSONS) {
+      if (!x.tasks.length) continue;
+      const part = lessonText(x).part;
+      const u = units.get(part) || { n: 0, done: 0 };
+      u.n++;
+      if (store.session.learnState.done[x.id]) u.done++;
+      units.set(part, u);
+    }
+    return units;
+  }
+
+  /** The course's rows — every unit, or (12.0 L) only the one named. */
+  function courseRows(list, units, li, other, only) {
+    let lastPart = null;
+    LESSONS.forEach((x, i) => {
+      if (!x.tasks.length) return; // T1: an advanced lesson, its chunk still on the way
+      const xl = lessonText(x);
+      if (only && xl.part !== only) return;
+      if (xl.part !== lastPart) {
+        lastPart = xl.part;
+        const h = document.createElement("div");
+        h.className = "lesson-part";
+        const u = units.get(xl.part);
+        h.textContent = tf("ui.pair", [xl.part, u.done + "/" + u.n]);
+        list.appendChild(h);
+      }
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "lesson-item" + (!other && i === li ? " current" : "");
+      b.dataset.i = String(i);
+      const mark = store.session.learnState.done[x.id] ? "✓ " : "";
+      b.textContent = mark + (i + 1) + ". " + xl.title;
+      list.appendChild(b);
+    });
   }
 
   /** The lesson panel's controls — wired from app.js's boot as before (v8-0-plan F4). */
@@ -970,7 +1006,7 @@ export function createLessonsUI(d) {
       if (learnSeg() === "classic") openClassic(store.session.learnState.cl || 0);
       sync();
     };
-    document.getElementById("lesson-list").onclick = (ev) => {
+    const pick = (ev) => {
       const b = ev.target.closest("button[data-i]");
       if (b && (store.session.learn || store.session.study)) startLesson(Number(b.dataset.i));
       const cb = ev.target.closest("button[data-c]");
@@ -980,6 +1016,8 @@ export function createLessonsUI(d) {
       const eb = ev.target.closest("button[data-eg]");
       if (eb && (store.session.learn || store.session.study)) startEndgame(eb.dataset.eg);
     };
+    document.getElementById("lesson-list").onclick = pick;
+    document.getElementById("lesson-unit").onclick = pick;
   }
   return {
     wireLessonPanel,

@@ -1277,6 +1277,59 @@ if (scenario()) {
   await ctx.close();
 }
 
+// --- 3m5. 12.0 L: cards end on one line, and the panel is not half blank ----
+// Measured on 11.0 at 1400×900: 我的 left a 520×560 hole beside 成就, 棋谱 one
+// beside 开局书, 今天's 最近对局 ended 90px above 等级分 next to it; the
+// training panel was 41–53% blank under its shut fold.
+if (scenario()) {
+  const rows = (page, sel) => page.evaluate((s) => {
+    const cards = [...document.querySelectorAll(s)].filter((e) => e.offsetParent);
+    const byTop = new Map();
+    for (const c of cards) {
+      const r = c.getBoundingClientRect();
+      const k = Math.round(r.top);
+      if (!byTop.has(k)) byTop.set(k, []);
+      byTop.get(k).push({ b: r.bottom, w: r.width, l: r.left, r: r.right });
+    }
+    const box = cards.length ? cards[0].parentElement.getBoundingClientRect() : { left: 0, right: 0 };
+    return [...byTop.values()].map((row) => ({
+      spread: Math.max(...row.map((x) => x.b)) - Math.min(...row.map((x) => x.b)),
+      // a row reaches the far edge of its grid, or it is half empty
+      gap: box.right - Math.max(...row.map((x) => x.r)),
+    }));
+  }, sel);
+  for (const [tab, sel] of [["me", "#page-me .page-cols > .page-sec"], ["library", "#page-library .page-cols > .page-sec"], ["home", "#page-home .today-row .today-card"]]) {
+    const { ctx, page } = await open("zh-CN", "ai", tab);
+    await settle(page);
+    const rs = await rows(page, sel);
+    assert(rs.length > 0 && rs.every((r) => r.spread <= 1 && r.gap <= 1),
+      "12.0 L:" + tab + " 并排的卡片底边对齐、每一行都排满(" + JSON.stringify(rs) + ")");
+    await ctx.close();
+  }
+  const blank = (page) => page.evaluate(() => {
+    const side = document.getElementById("side").getBoundingClientRect();
+    let bottom = side.top;
+    for (const e of document.querySelectorAll("#side *")) {
+      if (e.childElementCount && !/^(BUTTON|SUMMARY|CANVAS|svg)$/.test(e.tagName)) continue;
+      if (!e.offsetParent) continue;
+      const q = e.getBoundingClientRect();
+      if (q.height <= 0 || q.width <= 0) continue;
+      bottom = Math.max(bottom, Math.min(q.bottom, side.bottom));
+    }
+    return Math.round(((side.bottom - bottom) / side.height) * 100);
+  });
+  for (const [seg, mode] of [["course", "learn"], ["puzzle", "puzzle"], ["endgame", "learn"]]) {
+    const { ctx, page } = await open("zh-CN", mode, "play");
+    if (seg !== "puzzle") { await page.click(`#train-seg button[data-seg="${seg}"]`).catch(() => {}); await page.waitForTimeout(600); }
+    await settle(page);
+    const b = await blank(page);
+    const unit = await page.evaluate((sg) => sg === "puzzle" ? !document.getElementById("pz-about").hidden
+      : !document.getElementById("lesson-unit").hidden && !!document.querySelector("#lesson-unit .lesson-item.current"), seg);
+    assert(b <= 30 && unit, "12.0 L:训练·" + seg + " 右栏下半有这一单元 / 这一类,空白 " + b + "%(≤ 30%)");
+    await ctx.close();
+  }
+}
+
 // --- 3m4. the two state changes that used to jump -------------------------
 // Hover and press were never the gap: measured across the three tabs, of every
 // clickable element in the app exactly one had no transition declared. What
@@ -1583,7 +1636,7 @@ if (scenario()) {
           // with its name, not a heading over a stray button
           const labelled = g.closest("#page-settings") && [...g.querySelectorAll(".setting-row")]
             .some((r) => r.offsetParent && r.querySelector(".setting-k:not(.sr-only)") && r.querySelector("button, input"));
-          if (items.length <= 1 && !labelled && !g.querySelector(".stats-body, .hist-body, .ach-body, .move-list, .lesson-text"))
+          if (items.length <= 1 && !labelled && !g.querySelector(".stats-body, .hist-body, .ach-body, .move-list, .lesson-text, .pz-about-rows"))
             out.push({ h: heading.textContent.trim(), n: items.length,
                        items: items.map((e) => e.textContent.trim().slice(0, 8)) });
         }

@@ -2220,6 +2220,32 @@
       color: var(--muted);
     }
     .lesson-list { display: flex; flex-direction: column; gap: 2px; }
+    /* 12.0 L: the unit under the controls, headed by its name and count */
+    .lesson-unit { margin: 16px 0 8px; }
+    /* on screen, so a control like the others: one height, one line */
+    .lesson-unit > .lesson-item { display: flex; align-items: center; min-height: var(--ctl-h-sm); }
+    .lesson-unit > .lesson-item > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* 12.0 L: the puzzle's kind, then its themes — a row each, the record in figures */
+    .pz-about {
+      margin-top: 8px; padding: 12px;
+      border: 1px solid var(--card-edge); border-radius: var(--radius-md);
+      background: var(--card);
+    }
+    .pz-about-rows { display: flex; flex-direction: column; gap: 2px; }
+    .pz-about-rows > .side-h { margin: 0 0 4px; }
+    .pz-about-rows > .side-h:not(:first-child) { margin-top: 12px; }
+    .pz-about-bar { margin: 0 0 4px; }
+    .pz-about-row {
+      appearance: none; display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+      border: 0; background: transparent; color: var(--text); text-align: left;
+      font: inherit; font-size: 0.875rem;
+      padding: 4px 8px; margin: 0 -8px; border-radius: var(--radius-sm);
+    }
+    .pz-about-row > b { font-weight: 400; }
+    .pz-about-row > .num { color: var(--muted); font-size: 0.8125rem; }
+    button.pz-about-row { cursor: pointer; transition: background var(--dur-quick) var(--ease); }
+    button.pz-about-row:hover { background: var(--btn-ghost); }
+    .lesson-unit > .lesson-part:first-child { margin-top: 0; color: var(--text); }
     .lesson-item {
       appearance: none; text-align: left;
       border: 0; background: transparent;
@@ -4390,12 +4416,26 @@ span[data-icon] { display: inline-grid; place-items: center; }
   margin: 0 0 24px;
   font-size: 1.875rem; font-weight: 600; line-height: var(--lh-tight);
 }
+/* 12.0 L: cards side by side are one height, and a row is never half
+   empty — a long card (成就, 开局书) takes the whole row, and so does a card
+   left alone at the end of the pairs. Measured on 11.0 at 1440: 我的 left
+   a 520×560 hole beside 成就, 棋谱 one beside 开局书. */
 .page-cols {
   display: grid; gap: 24px;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
-  align-items: start;
+  align-items: stretch;
+}
+.page-cols > .page-wide,
+.page-cols > .page-sec:not([hidden], .page-wide):nth-child(odd of .page-sec:not([hidden], .page-wide)):nth-last-child(1 of .page-sec:not([hidden], .page-wide)) {
+  grid-column: 1 / -1;
+}
+/* …and an empty state in a card stretched to its neighbour sits in the
+   middle of it, not at the top of a blank */
+.page-sec > :has(> .empty-note:only-child) {
+  flex: 1; display: flex; flex-direction: column; justify-content: center;
 }
 .page-sec {
+  display: flex; flex-direction: column;
   min-width: 0;
   padding: 16px;
   border: 1px solid var(--card-edge); border-radius: var(--radius-md);
@@ -4422,6 +4462,11 @@ span[data-icon] { display: inline-grid; place-items: center; }
   background: var(--card);
 }
 .today-block { min-width: 0; margin-bottom: 24px; }
+/* 12.0 L: 最近对局 and 等级分 side by side end on one line — the card under
+   each heading fills the block, and an empty one says so in its middle */
+.today-row > .today-block { display: flex; flex-direction: column; }
+.today-row > .today-block > .today-card { flex: 1; }
+.today-games-card:has(> .today-games:empty) { display: flex; flex-direction: column; justify-content: center; }
 .today-row > .today-block { margin-bottom: 0; }
 .today-block > .side-h, .today-block > .side-h-row { margin: 0 0 8px; }
 .today-meta { margin: 0; font-size: 0.75rem; line-height: var(--lh-body); color: var(--muted); }
