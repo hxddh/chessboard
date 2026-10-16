@@ -14,8 +14,8 @@ import { loadAppModules, ROOT } from "./lib/app-module.mjs";
 let failed = 0;
 const assert = (ok, msg) => { if (ok) console.log("ok   " + msg); else { failed++; console.error("FAIL " + msg); } };
 
-const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/human/lc0-tables.js", "src/web/js/human/maia-net.js"]);
-const { Chess, IDX_TO_MOVE, CONV_POLICY_MAP, parseNet, encodePlanes, moveIndex, movePolicy, maiaCore } = ctx;
+const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/human/lc0-tables.js", "src/web/js/human/maia-net.js", "src/web/js/human/pick.js"]);
+const { Chess, IDX_TO_MOVE, CONV_POLICY_MAP, parseNet, encodePlanes, moveIndex, movePolicy, maiaCore, pickHuman, guardMoves, guardPolicy } = ctx;
 
 // --- the tables -------------------------------------------------------------------
 assert(IDX_TO_MOVE.length === 1858 && new Set(IDX_TO_MOVE).size === 1858, "1858 policy moves, none twice");
@@ -127,6 +127,22 @@ assert(top(play([], "8/4P1k1/8/8/8/8/5K2/8 w - - 0 1"), 1) === "e7e8q" && top(pl
   const a = rebuilt.movePolicy(n2, [c.fen()], legal), b = movePolicy(net, [c.fen()], legal);
   assert(a.length === b.length && a.every((r, i) => r.uci === b[i].uci && Math.abs(r.p - b[i].p) < 1e-6),
     "maiaCore rebuilt from its own text (as the worker builds it) answers exactly as the module does");
+}
+
+// --- the draw and the guard (human/pick.js) ---------------------------------------
+{
+  const pol = [{ uci: "e2e4", p: 0.6 }, { uci: "d2d4", p: 0.3 }, { uci: "g1f3", p: 0.095 }, { uci: "a2a3", p: 0.005 }];
+  const seq = (xs) => { let i = 0; return () => xs[i++ % xs.length]; };
+  const draws = (temp) => { const n = {}; const rng = seq([...Array(200).keys()].map((k) => (k + 0.5) / 200)); for (let k = 0; k < 200; k++) { const u = pickHuman(pol, { temp }, rng, null); n[u] = (n[u] || 0) + 1; } return n; };
+  const warm = draws(1), cold = draws(0.5);
+  assert(!warm.a2a3 && !cold.a2a3, "a move under 1% is never drawn");
+  assert(Math.abs(warm.e2e4 - 120) <= 2 && cold.e2e4 > warm.e2e4, "temp 1 draws by the net's odds (e4 120 of 200); a colder draw takes the likely move more (" + warm.e2e4 + " → " + cold.e2e4 + ")");
+  const styled = pickHuman(pol, { temp: 1 }, () => 0, (u) => (u === "d2d4" ? 5 : u === "g1f3" ? 9 : 0));
+  assert(styled === "d2d4", "a style picks among the moves at least half as likely as the one drawn (d4 for e4; Nf3 is too rare)");
+  assert(guardMoves(pol).join() === "e2e4,d2d4,g1f3", "the guard asks about the moves the draw could play");
+  const sc = new Map([["e2e4", -250], ["d2d4", 20], ["g1f3", -100]]);
+  assert(guardPolicy(pol, sc, 150).map((r) => r.uci).join() === "d2d4,g1f3", "the guard drops a move more than `guard` below the best (e4 at −270)");
+  assert(guardPolicy(pol, new Map(), 150) === pol, "…and keeps them all when nothing was scored");
 }
 
 // …and nothing in the worker is eval'd: the page's CSP has no 'unsafe-eval'

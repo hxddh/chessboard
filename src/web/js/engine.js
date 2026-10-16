@@ -76,6 +76,18 @@ const global = typeof window !== "undefined" ? window : globalThis;
    *   the step measured ~58% (a win-chance rung between them measured
    *   55% / 52% and was taken out again).
    *
+   * 13.0 H — 扎实 … 高级− (`solid` … `hardminus`) are people now: Maia
+   * (human/, docs/v13-0-plan.md §1), the net of the band nearest the rung,
+   * its move drawn at temperature `temp` (human/pick.js). How strong a net
+   * plays on its own was measured against rungs of known rating first, ten
+   * games a pairing: 1100 at temp 1.5 / 1 ≈ 1130 / 1260, 1500 at 1 / 0.6 ≈
+   * 1425 / 1615, 1900 at 1 / 0.6 / 0.35 ≈ 1535 / 1670 / 1685 — a net tops
+   * out near 1700 however cold it is drawn. The two strongest rungs add
+   * `guard`: the depth-8 look the rung makes anyway scores the moves the net
+   * could play, and those more than `guard` centipawns below the best are
+   * not drawn (1700 at 0.6, guard 300 ≈ 1805; 1900 at 0.6, guard 200 ≈
+   * 2070). Each rung keeps its Stockfish row, which plays if Maia cannot.
+   *
    * These notes sit here and not beside the rows: a comment inside the
    * literal ships in the bundle (esbuild keeps it), and F5's budget is bytes.
    */
@@ -126,13 +138,13 @@ const global = typeof window !== "undefined" ? window : globalThis;
     learner: { skill: 1, depth: 2, multipv: 10, winT: 37, minMs: 350 },
     improver: { skill: 2, depth: 2, multipv: 10, winT: 24, minMs: 350 },
     steady: { skill: 3, depth: 3, multipv: 8, winT: 19, minMs: 350 },
-    solid: { maia: 1100, temp: 1, skill: 4, depth: 4, multipv: 8, winT: 14, minMs: 350 },
-    easy: { maia: 1300, temp: 1, elo: 1320, depth: 1, minMs: 500 },
-    easyplus: { maia: 1300, temp: 0.7, elo: 1500, depth: 2, multipv: 6, minMs: 550 },
-    normalminus: { maia: 1500, temp: 1, elo: 1500, depth: 2, minMs: 600 },
-    normal: { maia: 1700, temp: 1, elo: 1700, depth: 3, minMs: 700 },
-    normalplus: { maia: 1700, temp: 0.7, elo: 1840, depth: 4, minMs: 750 },
-    hardminus: { maia: 1900, temp: 1, elo: 2080, depth: 5, minMs: 800 },
+    solid: { maia: 1100, temp: 1.1, skill: 4, depth: 4, multipv: 8, winT: 14, minMs: 350 },
+    easy: { maia: 1300, temp: 1.15, elo: 1320, depth: 1, minMs: 500 },
+    easyplus: { maia: 1500, temp: 1, elo: 1500, depth: 2, multipv: 6, minMs: 550 },
+    normalminus: { maia: 1500, temp: 0.8, elo: 1500, depth: 2, minMs: 600 },
+    normal: { maia: 1700, temp: 0.55, elo: 1700, depth: 3, minMs: 700 },
+    normalplus: { maia: 1700, temp: 0.6, guard: 300, elo: 1840, depth: 4, minMs: 750 },
+    hardminus: { maia: 1900, temp: 0.6, guard: 250, elo: 2080, depth: 5, minMs: 800 },
     hard: { elo: 2290, depth: 6, minMs: 800 },
     hardplus: { elo: 2450, depth: 7, minMs: 850 },
     expert: { elo: 2570, depth: 8, minMs: 900 },
