@@ -22,7 +22,7 @@ const scoreOf = (line) => {
   return m[1] === "mate" ? (v > 0 ? 100000 - v : -100000 - v) : v;
 };
 
-export async function startPlayer({ Chess, ChessEngine, ChessPersona, parseNet, movePolicy }) {
+export async function startPlayer({ Chess, ChessEngine, ChessPersona, parseNet, movePolicy, Pick }) {
   // 13.0 H: the Maia rungs' nets, read once each (scripts/test-human.mjs holds them)
   const nets = {};
   const netOf = (band) => nets[band] || (nets[band] = parseNet(require("zlib").gunzipSync(fs.readFileSync(path.join(ROOT, "third_party/maia/maia-" + band + ".pb.gz")))));
@@ -54,10 +54,11 @@ export async function startPlayer({ Chess, ChessEngine, ChessPersona, parseNet, 
    *   choice among 14 candidates within the style's slack
    * @returns {Promise<{uci: string, score: number|null}|null>}
    */
-  async function move(fen, row, rng, style, fens) {
+  async function move(fen, row, rng, style, fens, only) {
     const styled = !!style && style !== "off";
-    // 13.0 H: a Maia rung — engine.js humanMove's draw, then the same shallow
-    // full-strength look for the score the resign and draw rules read
+    // 13.0 H: a Maia rung — engine.js's: the same shallow full-strength look
+    // (on a guarded rung, MultiPV over the moves the net could play), then
+    // human/pick.js's draw
     if (row.maia && parseNet && fens) {
       const g = new Chess(fen);
       const legal = g.moves({ verbose: true }).map((m) => m.from + m.to + (m.promotion || ""));
@@ -68,8 +69,10 @@ export async function startPlayer({ Chess, ChessEngine, ChessPersona, parseNet, 
         const mv = a.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || undefined });
         return mv ? ChessPersona.score(style, mv, a, before) : null;
       } : null;
-      const uci = ChessEngine.pickHuman(pol, row, rng, styleOf);
-      const look = await move(fen, { depth: 8 }, rng, "off");
+      const moves = row.guard ? Pick.guardMoves(pol) : null;
+      const look = await move(fen, { depth: 8, multipv: moves ? moves.length : 0 }, rng, "off", null, moves);
+      const kept = moves && look ? Pick.guardPolicy(pol, new Map(look.list.map((c) => [c.uci, c.score])), row.guard) : pol;
+      const uci = Pick.pickHuman(kept, row, rng, styleOf);
       return uci ? { uci, score: look ? look.score : null, nodes: look ? look.nodes : 0 } : null;
     }
     const tier = styled && !row.winT ? Object.assign({}, row, { multipv: Math.max(row.multipv || 0, 14) }) : row;
@@ -103,7 +106,7 @@ export async function startPlayer({ Chess, ChessEngine, ChessPersona, parseNet, 
     };
     listeners.push(collect);
     const done = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), (tier.movetime || 2000) + 60000);
-    send(ChessEngine.searchCmd(tier, rng));
+    send(ChessEngine.searchCmd(tier, rng) + (only ? " searchmoves " + only.join(" ") : ""));
     let line;
     try { line = await done; } finally { listeners.splice(listeners.indexOf(collect), 1); }
     let uci = line.split(/\s+/)[1];
@@ -119,7 +122,7 @@ export async function startPlayer({ Chess, ChessEngine, ChessPersona, parseNet, 
       }
       else if (!tier.worstBias && tier.elo == null) uci = ChessEngine.pickCandidate(list, tier, rng) || uci;
     }
-    return uci && uci !== "(none)" ? { uci, score: own, nodes } : null;
+    return uci && uci !== "(none)" ? { uci, score: own, nodes, list } : null;
   }
 
   return { newGame, move };

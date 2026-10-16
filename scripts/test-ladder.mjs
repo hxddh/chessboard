@@ -48,8 +48,9 @@ const arg = (name, dflt) => {
   return hit ? hit.slice(name.length + 3) : dflt;
 };
 const MODE = process.argv[2];
-const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/engine.js", "src/web/js/persona.js", "src/web/js/opponents.js", "src/web/js/human/maia-net.js"]);
+const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/engine.js", "src/web/js/persona.js", "src/web/js/opponents.js", "src/web/js/human/maia-net.js", "src/web/js/human/pick.js"]);
 const { Chess, ChessEngine, ChessPersona, Opponents, parseNet, movePolicy } = ctx;
+const Pick = { pickHuman: ctx.pickHuman, guardMoves: ctx.guardMoves, guardPolicy: ctx.guardPolicy };
 /**
  * v8-1-plan T1: --rungs=FILE plays a ladder of candidate rungs instead of the
  * shipped one — {id: settings}, weakest first (the settings are engine.js
@@ -161,7 +162,7 @@ async function play() {
   }
   const keyOf = (job) => job.a + ":" + JSON.stringify(tierOf(job.a)) + "|" + job.b + ":" + JSON.stringify(tierOf(job.b)) + "|" + job.k;
   const todo = schedule().filter((_, i) => i % sn === si - 1).filter((job) => !done.has(keyOf(job)));
-  const player = await startPlayer({ Chess, ChessEngine, ChessPersona, parseNet, movePolicy });
+  const player = await startPlayer({ Chess, ChessEngine, ChessPersona, parseNet, movePolicy, Pick });
   const started = Date.now();
   let n = 0;
   for (const job of todo) {

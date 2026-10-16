@@ -41,8 +41,9 @@ const rngFrom = (seed) => () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
-const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/engine.js", "src/web/js/persona.js", "src/web/js/opponents.js", "src/web/js/human/maia-net.js"]);
+const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/engine.js", "src/web/js/persona.js", "src/web/js/opponents.js", "src/web/js/human/maia-net.js", "src/web/js/human/pick.js"]);
 const { Chess, ChessEngine, ChessPersona, Opponents, parseNet, movePolicy } = ctx;
+const Pick = { pickHuman: ctx.pickHuman, guardMoves: ctx.guardMoves, guardPolicy: ctx.guardPolicy };
 
 // --- the fixture -----------------------------------------------------------------
 
@@ -115,7 +116,7 @@ async function measure() {
   }
   // the rungs Maia replaces, each on the band nearest its ladder rating
   const ratings = (await import("./measurements.mjs")).read().ladder.rating;
-  const player = await startPlayer({ Chess, ChessEngine, ChessPersona });
+  const player = await startPlayer({ Chess, ChessEngine, ChessPersona, parseNet, movePolicy, Pick });
   const rungs = Object.keys(ratings).filter((id) => ratings[id] >= 1100 && ratings[id] < 2000);
   for (const id of rungs) {
     const band = BANDS.reduce((a, b) => (Math.abs(b + 50 - ratings[id]) < Math.abs(a + 50 - ratings[id]) ? b : a));
@@ -125,8 +126,9 @@ async function measure() {
     let hit = 0;
     await player.newGame();
     for (const r of doc.bands[band]) {
-      const { c } = replay(r.moves);
-      const mv = await player.move(c.fen(), row, rng, p ? p.style : "off");
+      // the rung as it plays: a Maia rung draws from its net (with the game so far)
+      const { c, fens } = replay(r.moves);
+      const mv = await player.move(c.fen(), row, rng, p ? p.style : "off", fens);
       if (mv && mv.uci === r.human) hit++;
     }
     result.rungs[id] = { rating: ratings[id], band, n: doc.bands[band].length, match: Math.round((hit / doc.bands[band].length) * 1000) / 10 };

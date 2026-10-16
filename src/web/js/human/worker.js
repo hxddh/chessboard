@@ -18,6 +18,7 @@
  */
 import { maiaCore } from "./maia-net.js";
 import { IDX_TO_MOVE, CONV_POLICY_MAP } from "./lc0-tables.js";
+import { pickHuman, guardMoves, guardPolicy } from "./pick.js";
 
 /** The worker's whole program — its text is the worker's source, called with maiaCore. */
 function workerMain(makeCore) {
@@ -115,5 +116,6 @@ export function createHuman(d) {
     return { pol: r.pol, ms: r.ms };
   }
 
-  return { load, policy, BANDS: [1100, 1300, 1500, 1700, 1900] };
+  // the draw rides along: engine.js reaches it here, outside the first paint
+  return { load, policy, pick: pickHuman, guardMoves, guardPolicy, BANDS: [1100, 1300, 1500, 1700, 1900] };
 }

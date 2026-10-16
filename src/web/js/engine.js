@@ -515,9 +515,12 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // 13.0 H: a Maia rung plays the move its net draws; Stockfish then only
     // reads the position (a shallow full-strength look, for the resign and
     // draw rules), and the rung's own Stockfish row plays if Maia cannot
+    // — or, on a guarded rung (human/pick.js guardPolicy), scores the moves
+    // the net could play, so the draw can leave out the ones that blunder
     const human = base.maia && persona && persona.Chess && persona.fens ? await humanMove(fen, base, persona, styled ? P : null) : null;
     if (myGen !== gen) return null;
-    if (human) tier = { depth: 8, minMs: base.minMs };
+    const only = human && base.guard ? human.H.guardMoves(human.pol) : null;
+    if (human) tier = { depth: 8, minMs: base.minMs, multipv: only ? only.length : 0 };
     // UCI options are sticky on the worker — always set every knob a tier
     // could have touched so no search inherits another tier's handicap.
     send("setoption name MultiPV value " + (tier.multipv || 1));
@@ -553,13 +556,16 @@ const global = typeof window !== "undefined" ? window : globalThis;
     lineHandlers.push(collect);
     const budget = (tier.movetime || 2000) + 15000;
     const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), budget, "search");
-    send(searchCmd(tier, Math.random));
+    send(searchCmd(tier, Math.random) + (only ? " searchmoves " + only.join(" ") : ""));
     let line;
     try { line = await wait; }
     finally { lineHandlers = lineHandlers.filter((h) => h !== collect); }
     if (myGen !== gen) return null; // game moved on (undo/new/import)
-    let picked = parseUci(human || line.split(/\s+/)[1]);
-    if (human) { /* the net's move stands */ } else if (tier.multipv && cands.size > 1 && tier.winT) {
+    let picked = parseUci(line.split(/\s+/)[1]);
+    if (human) {
+      const pol = only ? human.H.guardPolicy(human.pol, new Map([...cands.values()].map((c) => [c.uci, c.score])), base.guard) : human.pol;
+      picked = parseUci(human.H.pick(pol, base, Math.random, human.styleOf)) || picked;
+    } else if (tier.multipv && cands.size > 1 && tier.winT) {
       // the win-chance rungs weigh a style into the same draw instead of
       // letting it overrule the draw: the strength stays the rung's
       const list = [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
@@ -596,10 +602,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
   }
 
   /**
-   * 13.0 H: a Maia rung's move — the net's distribution over the legal moves
-   * (human/worker.js), drawn by pickHuman. Null, and the rung's Stockfish row
-   * plays, when the net cannot answer: not loaded, a worker error, or over
-   * 2 s for one move (the first load of a band is allowed its own time).
+   * 13.0 H: a Maia rung's distribution over the legal moves (human/worker.js),
+   * with the draw (human/pick.js) and the style's taste beside it. Null, and
+   * the rung's Stockfish row plays, when the net cannot answer: not loaded, a
+   * worker error, or over 2 s for one move (a band's first load has its own time).
    */
   // what the last Maia move cost in the worker, and how many fell back (e2e)
   let humanFailures = 0, humanMs = 0;
@@ -618,40 +624,11 @@ const global = typeof window !== "undefined" ? window : globalThis;
         const mv = a.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || undefined });
         return mv ? P.score(persona.id, mv, a, before) : null;
       } : null;
-      return pickHuman(pol, tier, Math.random, styleOf);
+      return { pol, styleOf, H };
     } catch (_) {
       humanFailures++;
       return null;
     }
-  }
-
-  /**
-   * 13.0 H: the draw a Maia rung makes from its net's distribution — shared
-   * with the calibration (scripts/lib/ladder-player.mjs), like pickCandidate.
-   * Moves under 1% are never played (the long tail is noise, not people);
-   * the rest are drawn with weights p^(1/temp), a temperature under 1
-   * being a little stronger than the band. A style (persona.js) then
-   * chooses, among the moves at least half as likely as the one drawn (and
-   * 5% at least), the one it likes best — the draw decides how good the
-   * move is, the style only which of the likely ones, as pickByWinLoss.
-   */
-  function pickHuman(pol, tier, rng, styleOf) {
-    if (!pol || !pol.length) return null;
-    let rows = pol.filter((r) => r.p >= 0.01);
-    if (!rows.length) rows = pol.slice(0, 1);
-    const inv = 1 / Math.max(0.05, tier.temp || 1);
-    const w = rows.map((r) => Math.pow(r.p, inv));
-    let x = rng() * w.reduce((a, b) => a + b, 0), drawn = rows[rows.length - 1];
-    for (let i = 0; i < rows.length; i++) { x -= w[i]; if (x <= 0) { drawn = rows[i]; break; } }
-    if (!styleOf) return drawn.uci;
-    let best = drawn, bestS = styleOf(drawn.uci);
-    if (bestS == null) bestS = -Infinity;
-    for (const r of rows) {
-      if (r.p < Math.max(0.05, drawn.p / 2)) continue;
-      const sc = styleOf(r.uci);
-      if (sc != null && sc > bestS) { best = r; bestS = sc; }
-    }
-    return best.uci;
   }
 
   /**
@@ -1047,4 +1024,4 @@ const global = typeof window !== "undefined" ? window : globalThis;
     };
   }
 
-  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate, pickHuman, human: () => ({ fails: humanFailures, ms: humanMs }), searchCmd, winPct, nodesFor, NODES_PER_MS };
+  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate, human: () => ({ fails: humanFailures, ms: humanMs }), searchCmd, winPct, nodesFor, NODES_PER_MS };
