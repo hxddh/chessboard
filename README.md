@@ -111,7 +111,7 @@ wasm 1.79 MB），vendored 于 `third_party/stockfish/`。zero:// 方案不能�
 - **Node 26**：10-28 进 LTS 后 CI 换到 26，`engines` 仍是 ≥ 24。
 - **SDK**：上游发版就单独升（`scripts/sdk-diff.mjs`），不绑版本日期。
 - **以后**：西班牙语（评估在 10.0 计划 §3，暂不做）、Chess960、研究 / 笔记本、换引擎形态。
-- **跨版本还没做的**：签名与公证、msix、`.updates` 签名自动更新（都缺证书或密钥）；macOS 侧栏材质（要让 WebView 背景透明，只能在 Mac 真机上试）；木质音效的录音版（缺许可证合适的录音，`sounds/` 已留好入口）；残局训练营里 8 子的「三兵突破」超出任何残局表，只能用 Stockfish 核对；评估条的数字仍在条外（棋盘左边放不下）；`test-chess.mjs` 按领域拆文件。
+- **跨版本还没做的**：签名与公证、msix、`.updates` 签名自动更新（都缺证书或密钥）；macOS 侧栏材质（要让 WebView 背景透明，只能在 Mac 真机上试）；木质音效的录音版（缺许可证合适的录音，`sounds/` 已留好入口）；残局训练营里 8 子的「三兵突破」超出任何残局表，只能用 Stockfish 核对；评估条的数字仍在条外（棋盘左边放不下）。
 
 真机走查的清单在 [docs/manual-check.md](docs/manual-check.md)。
 
