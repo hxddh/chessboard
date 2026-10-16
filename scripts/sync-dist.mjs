@@ -31,6 +31,9 @@ import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
 import { CHUNKS } from "./bundle.mjs";
 
+/** the Maia bands gen-maia-src.mjs writes (kept in step by test-human.mjs) */
+const MAIA_BANDS = [1100, 1300, 1500, 1700, 1900];
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..");
 const DIST = path.join(ROOT, "frontend", "dist");
@@ -38,6 +41,7 @@ const DIST = path.join(ROOT, "frontend", "dist");
 const run = (script) => execFileSync(process.execPath, [path.join(HERE, script)], { cwd: ROOT, stdio: "inherit" });
 
 run("gen-engine-src.mjs");
+run("gen-maia-src.mjs");
 run("bundle.mjs");
 
 fs.rmSync(DIST, { recursive: true, force: true });
@@ -53,6 +57,9 @@ const FILES = [
   ["src/web/js/engine-src.js", "js/engine-src.js"],
   ["LICENSE", "licenses/LICENSE.txt"],
   ["third_party/stockfish/COPYING.txt", "licenses/stockfish-COPYING.txt"],
+  // 13.0 H: the five Maia nets (scripts/gen-maia-src.mjs), and their licence
+  ...MAIA_BANDS.map((b) => ["src/web/js/maia-" + b + ".js", "js/maia-" + b + ".js"]),
+  ["third_party/maia/LICENSE", "licenses/maia-LICENSE.txt"],
   // 9.0 V2: the one bundled face, Inter (Latin, variable, ~48 KB), which
   // styles.css loads as fonts/…; its OFL travels with the other licences
   ["src/web/fonts/inter-latin-wght-normal.woff2", "fonts/inter-latin-wght-normal.woff2"],
@@ -76,6 +83,13 @@ if (size("js/bundle.js") <= 400000) {
 if (size("js/engine-src.js") <= 2000000) {
   console.error("FAIL: frontend/dist/js/engine-src.js 太小 —— 没带上完整的 wasm");
   process.exit(1);
+}
+// 13.0 H: each net is 1.7 MB of weights, 2.3 MB as base64
+for (const b of MAIA_BANDS) {
+  if (size("js/maia-" + b + ".js") <= 2000000) {
+    console.error(`FAIL: frontend/dist/js/maia-${b}.js 太小 —— 没带上完整的 Maia 网络`);
+    process.exit(1);
+  }
 }
 for (const c of CHUNKS) {
   const rel = "js/" + path.basename(c.out);

@@ -40,6 +40,28 @@
       "note": "已是最新。另外四种构建：lite 多线程（1.6 MB，需要 SharedArrayBuffer / 跨源隔离，SDK 的 zero:// 不发 COOP/COEP）；完整 NNUE 单线程 / 多线程（约 99 MB，安装包要涨一个数量级）；asm.js（更慢）。都不换。"
     },
     {
+      "name": "Maia（CSSLab/maia-chess，maia-1100 / 1300 / 1500 / 1700 / 1900）",
+      "kind": "engine",
+      "current": "五个 lc0 网络（6 × 64，SE，卷积策略头），各 1.24–1.31 MB gz，vendored 在 third_party/maia/（sha256 见 README）",
+      "pinnedIn": ["third_party/maia/maia-*.pb.gz", "scripts/gen-maia-src.mjs"],
+      "latest": "maia_weights/ 自 2020 年发布后未变（九个 1100–1900）；Maia-2（2024，统一模型、PyTorch）是另一套格式",
+      "source": ["https://github.com/CSSLab/maia-chess maia_weights/（2026-10-16 下载，GPL-3.0）"],
+      "checkedAt": "2026-10-16",
+      "recommendation": "not-needed",
+      "note": "13.0 H。没有新版；Maia-2 要 PyTorch 运行时，不换。"
+    },
+    {
+      "name": "Leela Chess Zero 的两张表（lc0 v0.30.0 kIdxToMove、kConvPolicyMap）",
+      "kind": "data",
+      "current": "v0.30.0，抄进 src/web/js/human/lc0-tables.js",
+      "pinnedIn": ["src/web/js/human/lc0-tables.js"],
+      "latest": "表是 lc0 网络格式的一部分，各版相同",
+      "source": ["https://github.com/LeelaChessZero/lc0 v0.30.0 src/chess/bitboard.cc、src/neural/shared/policy_map.h（GPL-3.0）"],
+      "checkedAt": "2026-10-16",
+      "recommendation": "not-needed",
+      "note": "13.0 H。scripts/test-human.mjs 校验数量与唯一性。"
+    },
+    {
       "name": "chess.js",
       "kind": "js-library (vendored)",
       "current": "0.13.4（src/web/js/chess.js，BSD-2-Clause，无逻辑改动）",
