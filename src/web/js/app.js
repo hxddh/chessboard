@@ -831,6 +831,12 @@ import { drawSpark } from "./charts.js";
     return store.game._san;
   }
   function isLive() { return store.game.viewIndex === sanHistory().length; }
+  /** 13.0 H: every position of the game, for a Maia rung (its input is the last eight) */
+  function gameFens() {
+    const g = new Chess(startFen() || undefined), out = [g.fen()];
+    for (const m of verboseHistory()) { g.move({ from: m.from, to: m.to, promotion: m.promotion }); out.push(g.fen()); }
+    return out;
+  }
 
   /** Custom start FEN when the game was imported from a [SetUp]/[FEN] PGN. */
   function startFen() {
@@ -1706,7 +1712,7 @@ import { drawSpark } from "./charts.js";
       if (attempt) await new Promise((r) => setTimeout(r, 250));
       // the personality only ever colours a real game against the engine; the
       // lesson drills need the engine defending honestly or the drill is a lie
-      try { mv = await ChessEngine.bestMove(game.fen(), store.session.difficulty, budget, { id: store.session.personaId, Chess, style: OppUI.style() }); }
+      try { mv = await ChessEngine.bestMove(game.fen(), store.session.difficulty, budget, { id: store.session.personaId, Chess, style: OppUI.style(), fens: gameFens() }); }
       catch (_) { mv = null; }
       if (token !== store.game.engineToken) return; // game changed while thinking
     }

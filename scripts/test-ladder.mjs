@@ -48,8 +48,8 @@ const arg = (name, dflt) => {
   return hit ? hit.slice(name.length + 3) : dflt;
 };
 const MODE = process.argv[2];
-const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/engine.js", "src/web/js/persona.js", "src/web/js/opponents.js"]);
-const { Chess, ChessEngine, ChessPersona, Opponents } = ctx;
+const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/engine.js", "src/web/js/persona.js", "src/web/js/opponents.js", "src/web/js/human/maia-net.js"]);
+const { Chess, ChessEngine, ChessPersona, Opponents, parseNet, movePolicy } = ctx;
 /**
  * v8-1-plan T1: --rungs=FILE plays a ladder of candidate rungs instead of the
  * shipped one — {id: settings}, weakest first (the settings are engine.js
@@ -161,7 +161,7 @@ async function play() {
   }
   const keyOf = (job) => job.a + ":" + JSON.stringify(tierOf(job.a)) + "|" + job.b + ":" + JSON.stringify(tierOf(job.b)) + "|" + job.k;
   const todo = schedule().filter((_, i) => i % sn === si - 1).filter((job) => !done.has(keyOf(job)));
-  const player = await startPlayer({ Chess, ChessEngine, ChessPersona });
+  const player = await startPlayer({ Chess, ChessEngine, ChessPersona, parseNet, movePolicy });
   const started = Date.now();
   let n = 0;
   for (const job of todo) {
@@ -190,7 +190,8 @@ async function play() {
  */
 async function playGame(player, white, black, opening, rng) {
   const g = new Chess();
-  for (const san of opening.split(" ")) g.move(san);
+  const fens = [g.fen()]; // 13.0 H: a Maia rung's input is the game so far
+  for (const san of opening.split(" ")) { g.move(san); fens.push(g.fen()); }
   await player.newGame();
   const own = { w: [], b: [] };
   const lastOffer = { w: null, b: null };
@@ -202,9 +203,10 @@ async function playGame(player, white, black, opening, rng) {
   while (!g.game_over() && plies < 300) {
     const side = g.turn();
     const [, tier] = side === "w" ? white : black;
-    const mv = await player.move(g.fen(), tier, rng, tier.style);
+    const mv = await player.move(g.fen(), tier, rng, tier.style, fens);
     if (!mv) break;
     if (!g.move({ from: mv.uci.slice(0, 2), to: mv.uci.slice(2, 4), promotion: mv.uci[4] || "q" })) break;
+    fens.push(g.fen());
     plies++;
     searched[side][0] += mv.nodes || 0; searched[side][1]++;
     if (mv.score != null) own[side].push(mv.score);
@@ -361,10 +363,15 @@ function fit() {
   const { R, se, cov } = fitBT(ids, all, 2);
   // the two anchors: 初级 and 中级 on the shipped ladder; --anchors=a,b names
   // the candidates that play UCI_Elo 1320 and 1700 in a --rungs run
+  // the candidates that play UCI_Elo 1320 and 1700 in a --rungs run.
+  // --anchorAt=x,y gives the two anchors' ratings instead (13.0 H: 初级 and
+  // 中级 play Maia now, so the scale is held by two rungs left as they were,
+  // at the ratings they hold on record — --anchors=steady,hard --anchorAt=1059,1982)
   const [anA, anB] = arg("anchors", "easy,normal").split(",");
+  const [atA, atB] = arg("anchorAt", "1320,1700").split(",").map(Number);
   const ai = ids.indexOf(anA), bi = ids.indexOf(anB);
-  const scale = ai >= 0 && bi >= 0 ? 380 / (R[bi] - R[ai]) : 1;
-  const base = ai >= 0 ? 1320 - scale * R[ai] : 1500;
+  const scale = ai >= 0 && bi >= 0 ? (atB - atA) / (R[bi] - R[ai]) : 1;
+  const base = ai >= 0 ? atA - scale * R[ai] : 1500;
   const rating = Object.fromEntries(ids.map((id, i) => [id, Math.round(base + scale * R[i])]));
   const ratingSe = Object.fromEntries(ids.map((id, i) => [id, Math.round(scale * se[i])]));
   const pct = (d) => 100 / (1 + Math.pow(10, -d / 400));

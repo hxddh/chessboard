@@ -22,7 +22,10 @@ const scoreOf = (line) => {
   return m[1] === "mate" ? (v > 0 ? 100000 - v : -100000 - v) : v;
 };
 
-export async function startPlayer({ Chess, ChessEngine, ChessPersona }) {
+export async function startPlayer({ Chess, ChessEngine, ChessPersona, parseNet, movePolicy }) {
+  // 13.0 H: the Maia rungs' nets, read once each (scripts/test-human.mjs holds them)
+  const nets = {};
+  const netOf = (band) => nets[band] || (nets[band] = parseNet(require("zlib").gunzipSync(fs.readFileSync(path.join(ROOT, "third_party/maia/maia-" + band + ".pb.gz")))));
   const listeners = [];
   const engine = {
     wasmBinary: new Uint8Array(fs.readFileSync(path.join(ROOT, "third_party/stockfish/stockfish-19-lite-single.wasm"))),
@@ -51,8 +54,24 @@ export async function startPlayer({ Chess, ChessEngine, ChessPersona }) {
    *   choice among 14 candidates within the style's slack
    * @returns {Promise<{uci: string, score: number|null}|null>}
    */
-  async function move(fen, row, rng, style) {
+  async function move(fen, row, rng, style, fens) {
     const styled = !!style && style !== "off";
+    // 13.0 H: a Maia rung — engine.js humanMove's draw, then the same shallow
+    // full-strength look for the score the resign and draw rules read
+    if (row.maia && parseNet && fens) {
+      const g = new Chess(fen);
+      const legal = g.moves({ verbose: true }).map((m) => m.from + m.to + (m.promotion || ""));
+      const pol = movePolicy(netOf(row.maia), fens.slice(-100), legal);
+      const before = new Chess(fen);
+      const styleOf = styled ? (uci) => {
+        const a = new Chess(fen);
+        const mv = a.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || undefined });
+        return mv ? ChessPersona.score(style, mv, a, before) : null;
+      } : null;
+      const uci = ChessEngine.pickHuman(pol, row, rng, styleOf);
+      const look = await move(fen, { depth: 8 }, rng, "off");
+      return uci ? { uci, score: look ? look.score : null, nodes: look ? look.nodes : 0 } : null;
+    }
     const tier = styled && !row.winT ? Object.assign({}, row, { multipv: Math.max(row.multipv || 0, 14) }) : row;
     await ready();
     send("setoption name MultiPV value " + (tier.multipv || 1));
