@@ -371,8 +371,23 @@ function fit() {
   const [anA, anB] = arg("anchors", "easy,normal").split(",");
   const [atA, atB] = arg("anchorAt", "1320,1700").split(",").map(Number);
   const ai = ids.indexOf(anA), bi = ids.indexOf(anB);
-  const scale = ai >= 0 && bi >= 0 ? (atB - atA) / (R[bi] - R[ai]) : 1;
-  const base = ai >= 0 ? atA - scale * R[ai] : 1500;
+  let scale = ai >= 0 && bi >= 0 ? (atB - atA) / (R[bi] - R[ai]) : 1;
+  let base = ai >= 0 ? atA - scale * R[ai] : 1500;
+  // 13.0 H: --anchors=kept — the scale held by every rung that plays as it
+  // did when the ladder was last recorded, at the ratings on record: a
+  // least-squares line through them, so re-stepping some rungs does not
+  // move the rest (two fixed anchors would carry the whole ladder with
+  // whatever changed between them)
+  let keptIds = [];
+  if (anA === "kept" && prev && prev.rating && prev.settings) {
+    keptIds = ids.filter((id) => prev.rating[id] != null && prev.settings[id] && JSON.stringify(prev.settings[id]) === JSON.stringify(shipped(id)));
+    if (keptIds.length >= 2) {
+      const xs = keptIds.map((id) => R[ids.indexOf(id)]), ys = keptIds.map((id) => prev.rating[id]);
+      const mx = xs.reduce((a, b) => a + b, 0) / xs.length, my = ys.reduce((a, b) => a + b, 0) / ys.length;
+      scale = xs.reduce((a, x, k) => a + (x - mx) * (ys[k] - my), 0) / xs.reduce((a, x) => a + (x - mx) ** 2, 0);
+      base = my - scale * mx;
+    }
+  }
   const rating = Object.fromEntries(ids.map((id, i) => [id, Math.round(base + scale * R[i])]));
   const ratingSe = Object.fromEntries(ids.map((id, i) => [id, Math.round(scale * se[i])]));
   const pct = (d) => 100 / (1 + Math.pow(10, -d / 400));
@@ -411,7 +426,7 @@ function fit() {
   }
   const monotone = R.every((r, i) => i === 0 || r > R[i - 1]);
   const hours = games.reduce((a, g) => a + g.ms, 0) / 3600000;
-  console.log(`\n${games.length} 盘新对局（引擎 ${hours.toFixed(2)} 小时）+ ${carried} 盘沿用；${stale} 盘的设置已不是 engine.js 的，未计入；两锚 ${anA} ${atA} / ${anB} ${atB}，原始尺度 ×${scale.toFixed(3)}`);
+  console.log(`\n${games.length} 盘新对局（引擎 ${hours.toFixed(2)} 小时）+ ${carried} 盘沿用；${stale} 盘的设置已不是 engine.js 的，未计入；${keptIds.length ? "定标 " + keptIds.length + " 个没变的档（最小二乘）" : "两锚 " + anA + " " + atA + " / " + anB + " " + atB}，原始尺度 ×${scale.toFixed(3)}`);
   // a movetime rung is as strong as the machine is fast: what it searched here
   const npm = {};
   for (const id of ids.filter((x) => shipped(x).movetime)) {
