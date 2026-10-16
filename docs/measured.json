@@ -980,6 +980,87 @@
       "installDelta": 2959523
     }
   },
+  "human": {
+    "what": "move matching: how often the opponent plays the move a person of the band played",
+    "source": "lichess_db_standard_rated_2017-01.pgn, lichess_db_standard_rated_2018-01.pgn, lichess_db_standard_rated_2019-01.pgn",
+    "maia": {
+      "1100": {
+        "n": 400,
+        "match": 51.5,
+        "msPerMove": 61
+      },
+      "1300": {
+        "n": 400,
+        "match": 54.8,
+        "msPerMove": 63
+      },
+      "1500": {
+        "n": 400,
+        "match": 50.7,
+        "msPerMove": 62
+      },
+      "1700": {
+        "n": 400,
+        "match": 52.5,
+        "msPerMove": 63
+      },
+      "1900": {
+        "n": 400,
+        "match": 53.3,
+        "msPerMove": 65
+      }
+    },
+    "rungs": {
+      "solid": {
+        "rating": 1191,
+        "band": 1100,
+        "n": 400,
+        "match": 37.3
+      },
+      "easy": {
+        "rating": 1268,
+        "band": 1300,
+        "n": 400,
+        "match": 34
+      },
+      "easyplus": {
+        "rating": 1397,
+        "band": 1300,
+        "n": 400,
+        "match": 36.8
+      },
+      "normalminus": {
+        "rating": 1509,
+        "band": 1500,
+        "n": 400,
+        "match": 46.5
+      },
+      "normal": {
+        "rating": 1606,
+        "band": 1500,
+        "n": 400,
+        "match": 47
+      },
+      "normalplus": {
+        "rating": 1747,
+        "band": 1700,
+        "n": 400,
+        "match": 46.8
+      },
+      "hardminus": {
+        "rating": 1908,
+        "band": 1900,
+        "n": 400,
+        "match": 49.8
+      },
+      "hard": {
+        "rating": 1990,
+        "band": 1900,
+        "n": 400,
+        "match": 29.8
+      }
+    }
+  },
   "ladder": {
     "what": "所有档位循环对下（node 里的 Stockfish 19 lite，engine.js 的档位设置与取子规则，opponents.js 的认输与提和），Bradley–Terry 极大似然拟合（相邻两档各加 2 盘虚拟和棋作先验）；13.0 起以设置没变的各档（anchor.kept）在上次记录里的分数做最小二乘定标，设置没变的档位之间，上一次记录的对局照算（carried）。区间是 95%：直接对局按每盘得分的样本方差，拟合按两档等级分之差的协方差",
     "script": "scripts/test-ladder.mjs play --shard=i/n … ; scripts/test-ladder.mjs fit --record",
