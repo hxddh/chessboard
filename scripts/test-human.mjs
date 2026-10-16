@@ -116,7 +116,7 @@ assert(top(play(["e4"]), 1) === "e7e5", "1100 answers 1.e4 with …e5");
 assert(top(play([], "8/4P1k1/8/8/8/8/5K2/8 w - - 0 1"), 1) === "e7e8q" && top(play([], "8/5k2/8/8/8/8/4p1K1/8 b - - 0 1"), 1) === "e2e1q",
   "a pawn on the seventh promotes to a queen, for either side");
 
-// The worker is built from maiaCore's own text (human/worker.js): it must
+// The worker carries maiaCore as source text (human/worker.js): it must
 // refer to nothing outside itself, or the worker dies on its first message.
 {
   const rebuilt = new Function("return (" + maiaCore.toString() + ")")()(Array.from(IDX_TO_MOVE), Int16Array.from(CONV_POLICY_MAP));
@@ -127,6 +127,13 @@ assert(top(play([], "8/4P1k1/8/8/8/8/5K2/8 w - - 0 1"), 1) === "e7e8q" && top(pl
   const a = rebuilt.movePolicy(n2, [c.fen()], legal), b = movePolicy(net, [c.fen()], legal);
   assert(a.length === b.length && a.every((r, i) => r.uci === b[i].uci && Math.abs(r.p - b[i].p) < 1e-6),
     "maiaCore rebuilt from its own text (as the worker builds it) answers exactly as the module does");
+}
+
+// …and nothing in the worker is eval'd: the page's CSP has no 'unsafe-eval'
+// and a blob worker inherits it (the 13.0 e2e found the worker dead on that)
+{
+  const src = fs.readFileSync(path.join(ROOT, "src/web/js/human/worker.js"), "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+  assert(!/new Function|\beval\(/.test(src), "the Maia worker is built from source text, nothing eval'd");
 }
 
 if (failed) { console.error(failed + " test(s) failed"); process.exit(1); }

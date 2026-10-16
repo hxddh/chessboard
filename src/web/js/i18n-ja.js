@@ -439,7 +439,7 @@
       "clock.off": "時計なし",
       "boardName.wood": "木目", "boardName.green": "グリーン", "boardName.blue": "ブルー", "boardName.paper": "紙と墨", "boardName.marble": "マーブル",
       "act.analyze": "解析", "act.deep": "精密解析", "act.stopAt": "中止 {0}", "act.retryHere": "ここから続ける",
-      "act.live": "常時解析", "tip.live": "盤上の局面をエンジンが解析し続け、検討カーソルに追従します", "an.depthN": "深さ {0}", "curve.atScore": "{0} 手目 {1}", "an.winPct": "勝率 {0}%", "an.line": "第 {0} 候補",
+      "act.live": "常時解析", "tip.live": "盤上の局面をエンジンが解析し続け、検討カーソルに追従します", "set.humanLine": "人の指し手", "tip.humanLine": "エンジン候補の下に、同じレーティングの人がこの局面でよく指す手を表示", "hl.head": "{0} の人：", "hl.rare": "この対局の {0}：めったに指されない", "hl.common": "同じレベルの人の {1}% もこう指します：{0} 帯でよくあるミス、練習の価値あり。", "an.depthN": "深さ {0}", "curve.atScore": "{0} 手目 {1}", "an.winPct": "勝率 {0}%", "an.line": "第 {0} 候補",
       "msg.premove.set": "先行入力 {0}", "msg.premove.dropped": "先行入力は無効になりました",
       "act.pgnCopy": "コピー", "act.export": "書き出す", "act.paste": "貼り付け", "act.open": "開く",
       "act.fen": "FEN", "act.loadFen": "FEN 読込", "act.editor": "編集",

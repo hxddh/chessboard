@@ -410,7 +410,7 @@ function fit() {
   }
   const monotone = R.every((r, i) => i === 0 || r > R[i - 1]);
   const hours = games.reduce((a, g) => a + g.ms, 0) / 3600000;
-  console.log(`\n${games.length} 盘新对局（引擎 ${hours.toFixed(2)} 小时）+ ${carried} 盘沿用；${stale} 盘的设置已不是 engine.js 的，未计入；两锚 1320 / 1700，原始尺度 ×${scale.toFixed(3)}`);
+  console.log(`\n${games.length} 盘新对局（引擎 ${hours.toFixed(2)} 小时）+ ${carried} 盘沿用；${stale} 盘的设置已不是 engine.js 的，未计入；两锚 ${anA} ${atA} / ${anB} ${atB}，原始尺度 ×${scale.toFixed(3)}`);
   // a movetime rung is as strong as the machine is fast: what it searched here
   const npm = {};
   for (const id of ids.filter((x) => shipped(x).movetime)) {

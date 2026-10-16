@@ -1,9 +1,11 @@
 /**
  * The Maia worker, from the page's side (13.0 H).
  *
- * One worker for every band. It is built from `maiaCore`'s own text (the
- * function refers to nothing outside itself; the two lc0 tables travel in
- * the init message), and each band's weights arrive as base64 that the
+ * One worker for every band. Its source is `workerMain`'s text called with
+ * `maiaCore`'s (the function refers to nothing outside itself; the two lc0
+ * tables travel in the init message) — text, not eval: the page's CSP has
+ * no 'unsafe-eval', and a blob worker inherits it, so the core cannot be
+ * rebuilt from a string in there. Each band's weights arrive as base64 that the
  * worker decodes — the page only hands strings over. 12.0's R6 found what
  * decoding 9.7 MB on the page's thread does to a frame (engine.js); the
  * nets are 1.7 MB each and are not decoded here either.
@@ -17,8 +19,8 @@
 import { maiaCore } from "./maia-net.js";
 import { IDX_TO_MOVE, CONV_POLICY_MAP } from "./lc0-tables.js";
 
-/** The worker's whole program — its text is the worker's source. */
-function workerMain() {
+/** The worker's whole program — its text is the worker's source, called with maiaCore. */
+function workerMain(makeCore) {
   let core = null;
   const nets = {};
   self.onmessage = (ev) => {
@@ -26,7 +28,7 @@ function workerMain() {
     const reply = (o) => self.postMessage(Object.assign({ id: m.id }, o));
     try {
       if (m.type === "init") {
-        core = new Function("return (" + m.core + ")")()(m.moves, Int16Array.from(m.map));
+        core = makeCore(m.moves, Int16Array.from(m.map));
         reply({ ok: true });
       } else if (m.type === "net") {
         const bin = atob(m.b64), bytes = new Uint8Array(bin.length);
@@ -68,7 +70,7 @@ export function createHuman(d) {
   function boot() {
     if (booting) return booting;
     booting = (async () => {
-      const src = "(" + workerMain.toString() + ")()";
+      const src = "(" + workerMain.toString() + ")(" + maiaCore.toString() + ")";
       worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
       worker.onmessage = (ev) => {
         const r = ev.data || {};
@@ -79,7 +81,7 @@ export function createHuman(d) {
         if (r.ok) p.resolve(r); else p.reject(new Error(r.err || "maia: failed"));
       };
       worker.onerror = (ev) => { const err = new Error("maia worker: " + ((ev && ev.message) || "error")); for (const p of pending.values()) { clearTimeout(p.timer); p.reject(err); } pending.clear(); };
-      await ask({ type: "init", core: maiaCore.toString(), moves: IDX_TO_MOVE, map: Array.from(CONV_POLICY_MAP) }, 10000);
+      await ask({ type: "init", moves: IDX_TO_MOVE, map: Array.from(CONV_POLICY_MAP) }, 10000);
     })();
     booting.catch(() => { booting = null; });
     return booting;

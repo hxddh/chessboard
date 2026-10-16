@@ -5,5 +5,6 @@
  * @module human/chunk
  */
 import { createHuman } from "./worker.js";
+import { createHumanLine } from "../review/human-line.js";
 
-export const CHESS_HUMAN = { createHuman };
+export const CHESS_HUMAN = { createHuman, createHumanLine };

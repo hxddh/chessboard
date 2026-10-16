@@ -601,7 +601,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * plays, when the net cannot answer: not loaded, a worker error, or over
    * 2 s for one move (the first load of a band is allowed its own time).
    */
-  let humanFailures = 0;
+  // what the last Maia move cost in the worker, and how many fell back (e2e)
+  let humanFailures = 0, humanMs = 0;
   async function humanMove(fen, tier, persona, P) {
     try {
       const H = await humanEngine();
@@ -609,7 +610,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
       const g = new persona.Chess(fen);
       const legal = g.moves({ verbose: true }).map((m) => m.from + m.to + (m.promotion || ""));
       const fens = persona.fens[persona.fens.length - 1] === fen ? persona.fens : persona.fens.concat([fen]);
-      const { pol } = await H.policy(tier.maia, fens.slice(-100), legal, 2000);
+      const { pol, ms } = await H.policy(tier.maia, fens.slice(-100), legal, 2000);
+      humanMs = ms;
       const before = new persona.Chess(fen);
       const styleOf = P ? (uci) => {
         const a = new persona.Chess(fen);
@@ -1045,4 +1047,4 @@ const global = typeof window !== "undefined" ? window : globalThis;
     };
   }
 
-  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate, pickHuman, humanFailed: () => humanFailures, searchCmd, winPct, nodesFor, NODES_PER_MS };
+  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate, pickHuman, human: () => ({ fails: humanFailures, ms: humanMs }), searchCmd, winPct, nodesFor, NODES_PER_MS };

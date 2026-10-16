@@ -45,6 +45,7 @@ import { createAnalysis } from "./review/analysis.js";
 import { createBoardMarks } from "./review/board-marks.js";
 import { createEvalGraph } from "./review/eval-graph.js";
 import { createLines } from "./review/lines.js";
+import { createHumanLineLazy } from "./human-lazy.js";
 import { createReviewPanel } from "./review/panel.js";
 import { createRetry } from "./review/retry.js";
 import { createMomentsLazy } from "./review/moments-lazy.js";
@@ -387,6 +388,8 @@ import { drawSpark } from "./charts.js";
       showSoftMark: false,
       // 7.8 §2: the engine lines drawn as board arrows (持续分析 and the review)
       engineArrows: true,
+      // 13.0 I: 「人会怎么走」 under the engine lines (review/human-line.js)
+      humanLine: true,
       // a pointer is pressed inside #live-line: its rows hold still (paintLive)
       liveHeld: false,
       /** 6.0 (v6-plan Q3.6): the text size step */
@@ -1444,6 +1447,7 @@ import { drawSpark } from "./charts.js";
       if (typeof s.coordsIn === "boolean") store.ui.coordsInside = s.coordsIn;
       if (typeof s.showSoftMark === "boolean") store.ui.showSoftMark = s.showSoftMark;
       if (typeof s.engineArrows === "boolean") store.ui.engineArrows = s.engineArrows;
+      if (typeof s.humanLine === "boolean") store.ui.humanLine = s.humanLine;
       if (typeof s.blindfold === "boolean") store.ui.blindfold = s.blindfold;
       if ([16, 32, 64, 128].includes(s.hash)) store.ui.hash = s.hash;
       if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
@@ -1476,7 +1480,7 @@ import { drawSpark } from "./charts.js";
   function saveSettings() {
     try {
       Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, haptics: store.ui.haptics, langId: store.ui.langId, setCat: store.ui.setCat, liveOn: store.session.liveOn, trainSeg: store.ui.trainSeg, classicMode: store.ui.classicMode, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
-        volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv, bgWorker: store.ui.bgWorker === true,
+        volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, humanLine: store.ui.humanLine, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv, bgWorker: store.ui.bgWorker === true,
         textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
         // v8-0-plan A3: the look
         appearance: store.ui.appearance, boardId: store.ui.boardId, boardFrame: store.ui.boardFrame,
@@ -2045,6 +2049,7 @@ import { drawSpark } from "./charts.js";
   const {
     sansOf, stopLiveAnalysis, syncLiveAnalysis, renderLiveAnalysis, deskHead, lineRows, paintLineRow, reviewLines,
   } = Lines;
+  const HumanLine = createHumanLineLazy({ Chess, doc: document, store, t, tf, viewGame, gameAt, sanHistory, analysisFor: () => analysisFor(), inModal, loadStats, writeSan, setText });
 
   /** textContent, written only when it differs — a same-text write still
       replaces the text node, and still costs a layout. */
@@ -3616,7 +3621,7 @@ import { drawSpark } from "./charts.js";
     store.subscribe("session", renderReplayBar);
     store.subscribe("session", renderGameActions);
     store.subscribe("session", setAnalyzeUI);
-    for (const slice of ["game", "session", "ui"]) store.subscribe(slice, syncLiveAnalysis);
+    for (const slice of ["game", "session", "ui"]) { store.subscribe(slice, syncLiveAnalysis); store.subscribe(slice, HumanLine.sync); }
     store.subscribe("session", syncLearnUI);
     store.subscribe("session", syncStudyUI);
     store.subscribe("game", syncStudyUI);

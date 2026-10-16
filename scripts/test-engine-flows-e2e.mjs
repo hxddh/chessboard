@@ -104,6 +104,11 @@ const ROOT = path.join(HERE, "..", "src", "web");
   }
 }
 
+// 13.0 H / I: the Maia weights, as the app loads them (js/maia-<band>.js)
+if (["1100", "1300", "1500", "1700", "1900"].some((b) => !fs.existsSync(path.join(ROOT, "js", "maia-" + b + ".js")))) {
+  execFileSync(process.execPath, [path.join(HERE, "gen-maia-src.mjs")], { stdio: "inherit" });
+}
+
 const { launchBrowser, ENGINE } = await import("./e2e-browser.mjs");
 
 const MIME = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript" };
@@ -1852,6 +1857,83 @@ if (f4 && (F4_REC.before || F4_REC.after) && !failed) {
   else record("engineScheduler", Object.assign({}, prev, { env, after: { quiet: f4.res.quiet, busy: f4.res.busy, preempted: f4.preempted },
     determinism: f4.compared, secondWorker: f4.secondWorker || null }));
 }
+
+// --- 13.0 I: 人会怎么走 ---------------------------------------------------------
+// Under the review's engine lines: what 1500 players play here (no game
+// rating yet), from Maia in its worker; it follows the cursor, it moves
+// under 持续分析's lines on the analysis board, and 设置·高级 turns it off.
+await scenario("人会怎么走", async () => {
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
+  await openPgn(page, TRAP);
+  await runAn(page, "#an-run", 60000);
+  const line = () => page.evaluate(() => {
+    const el = document.getElementById("human-line");
+    return el && !el.hidden && !el.getAttribute("aria-busy") && /%/.test(el.textContent)
+      ? { text: el.textContent.trim(), under: el.previousElementSibling && el.previousElementSibling.id } : null;
+  });
+  await page.keyboard.press("Home");
+  const at0 = await until(line, 20000, 100);
+  assert(!!at0 && /^1500 分的人：/.test(at0.text) && /e4 \d+%/.test(at0.text) && at0.under === "pv-line",
+    "人会怎么走：复盘的引擎线下面，开局局面里 1500 分的人走 e4 的比例", JSON.stringify(at0));
+  for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowRight");
+  const at6 = await until(() => line().then((l) => (l && l.text !== (at0 && at0.text) ? l : null)), 10000, 100);
+  assert(!!at6 && /^1500 分的人：/.test(at6.text), "人会怎么走：跟着复盘游标走（第 6 步之后换了一行）", JSON.stringify(at6));
+  const t0 = Date.now();
+  for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowRight");
+  const fast = await until(() => line().then((l) => (l && l.text !== (at6 && at6.text) ? l : null)), 10000, 50);
+  assert(!!fast && Date.now() - t0 < 3000, "人会怎么走：连按六步，最后一个局面 3 秒内有答案（" + (Date.now() - t0) + "ms）");
+  // the analysis board: under 持续分析's lines
+  await page.click('#rail button[data-view="home"]');
+  await page.click("#today-analyse");
+  await page.click("#an-board");
+  await page.waitForTimeout(600);
+  if (await page.isVisible("#confirm-modal.show").catch(() => false)) { await page.click("#confirm-ok"); await page.waitForTimeout(600); }
+  const board = await until(line, 20000, 100);
+  assert(!!board && board.under === "live-line" && /e4 \d+%/.test(board.text), "人会怎么走：分析棋盘上在持续分析的线下面", JSON.stringify(board));
+  // 设置·高级: off, and it stays off after a reload
+  await page.click('#rail button[data-view="settings"]');
+  await page.click("#cat-advanced");
+  const was = await page.getAttribute("#opt-human-line", "aria-pressed");
+  await page.click("#opt-human-line");
+  await page.click('#rail button[data-view="play"]');
+  await page.waitForTimeout(300);
+  const off = await page.evaluate(() => document.getElementById("human-line").hidden);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}").humanLine);
+  assert(was === "true" && off && saved === false, "人会怎么走：默认开；设置·高级里关掉就不显示，并存进设置", JSON.stringify({ was, off, saved }));
+  assert(!errs.length, "人会怎么走：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+// --- 13.0 H: a Maia rung plays ------------------------------------------------
+// 初级 (easy) is Maia 1300 now: it answers from the net, in its worker, in
+// well under a frame budget's worth of work per move — and with its weights
+// gone it still answers, as the Stockfish rung it was.
+await scenario("Maia对手", async () => {
+  for (const missing of [false, true]) {
+    const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "easy" });
+    if (missing) await page.route(/maia-1300\.js/, (r) => r.fulfill({ status: 404, body: "" }));
+    let n = 0;
+    const moves = [["e2", "e4"], ["d2", "d4"], ["g1", "f3"]];
+    for (let i = 0; i < moves.length; i++) {
+      const g = await savedGame(page);
+      const mv = moves[i];
+      if (!g.moves({ verbose: true }).some((m) => m.from === mv[0] && m.to === mv[1])) break;
+      await clickMove(page, mv[0], mv[1]);
+      n = await until(() => plies(page).then((p) => (p >= 2 * (i + 1) ? p : 0)), 20000, 100);
+      if (!n) break;
+      await page.waitForTimeout(200);
+    }
+    const st = await page.evaluate(() => window.__chess.engine.human());
+    if (!missing) {
+      assert(n >= 6 && st.fails === 0 && st.ms > 0 && st.ms <= 200,
+        "Maia 对手：初级三手都由 Maia 1300 应着，每手在 worker 里 ≤ 200 ms（最后一手 " + st.ms + " ms）", JSON.stringify({ n, st }));
+    } else {
+      assert(n >= 6 && st.fails >= 1, "Maia 对手：权重文件缺了，初级照样应着（退回 Stockfish 档）", JSON.stringify({ n, st }));
+    }
+    assert(!errs.length, "Maia 对手：页面没有报错", errs.join(" / "));
+    await ctx.close();
+  }
+});
 
 const { shard, total } = gate.done();
 if (shard.count > 1) console.log(`shard ${shard.index}/${shard.count}: ${Math.ceil((total - shard.index + 1) / shard.count)} of ${total} scenarios`);
