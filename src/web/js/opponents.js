@@ -18,20 +18,23 @@ const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", 
  * Each rung's rating, and how sure the fit is about it (±, one standard
  * error). From a round-robin of all rungs against each other in node
  * Stockfish, fitted as Bradley–Terry by maximum likelihood and put on the
- * familiar scale by two anchors: 初级 = 1320 and 中级 = 1700, the two UCI_Elo
- * numbers the app shipped with. docs/measured.json `ladder` has the games and
- * the fit; scripts/test-chess.mjs fails if these stop agreeing with it.
+ * familiar scale — through 12.0 by two anchors, 初级 = 1320 and 中级 = 1700
+ * (the two UCI_Elo numbers the app shipped with); since 13.0, when those two
+ * became Maia rungs, by a least-squares line through every rung whose
+ * settings did not change, at its rating on record. docs/measured.json
+ * `ladder` has the games and the fit; scripts/test-chess.mjs fails if these
+ * stop agreeing with it.
  */
 const RATING = {
-  beginner: 514, casual: 670, learner: 785, improver: 944, steady: 1059, solid: 1208, easy: 1320,
-  easyplus: 1420, normalminus: 1542, normal: 1700, normalplus: 1797, hardminus: 1876, hard: 1982,
-  hardplus: 2104, expert: 2239, expertplus: 2339, master: 2460, masterplus: 2574, strong: 2683,
-  strongplus: 2807, extreme: 2877,
+  beginner: 517, casual: 671, learner: 781, improver: 937, steady: 1063, solid: 1191, easy: 1268,
+  easyplus: 1397, normalminus: 1509, normal: 1606, normalplus: 1747, hardminus: 1908, hard: 1990,
+  hardplus: 2102, expert: 2240, expertplus: 2339, master: 2460, masterplus: 2573, strong: 2682,
+  strongplus: 2806, extreme: 2875,
 };
 const RATING_SE = {
-  beginner: 0, casual: 18, learner: 19, improver: 21, steady: 22, solid: 25, easy: 38, easyplus: 43,
-  normalminus: 47, normal: 53, normalplus: 57, hardminus: 60, hard: 63, hardplus: 66, expert: 70,
-  expertplus: 72, master: 75, masterplus: 79, strong: 82, strongplus: 85, extreme: 91,
+  beginner: 0, casual: 18, learner: 19, improver: 20, steady: 23, solid: 46, easy: 53, easyplus: 64,
+  normalminus: 73, normal: 81, normalplus: 89, hardminus: 95, hard: 100, hardplus: 102, expert: 104,
+  expertplus: 106, master: 108, masterplus: 111, strong: 113, strongplus: 115, extreme: 119,
 };
 
 /**
@@ -41,8 +44,11 @@ const RATING_SE = {
  * played on: a record filed from 8.1 on carries `lad`, and one without it
  * is 8.0's and keeps 8.0's numbers — a profile replayed from its games
  * (rateHistory) comes out exactly where it stood.
+ *
+ * 13.0 H made seven rungs Maia and fitted the ladder again: ladder 3. A game
+ * filed with `lad: 2` (8.1 … 12.0) keeps that ladder's numbers.
  */
-const LADDER = 2;
+const LADDER = 3;
 // (8.0's twelve rungs as a string: a literal naming some of today's rungs
 // would read as a partial copy of the ladder — test-chess holds every such
 // literal to naming all of them)
@@ -50,6 +56,10 @@ const LEVELS_80 = "beginner casual learner improver steady solid easy easyplus n
 const of80 = (xs) => Object.fromEntries(LEVELS_80.map((id, i) => [id, xs[i]]));
 const RATING_80 = of80([70, 266, 409, 608, 752, 941, 1320, 1418, 1662, 1700, 1994, 2633]);
 const RATING_SE_80 = of80([0, 23, 24, 26, 28, 31, 95, 106, 119, 126, 144, 238]);
+// ladder 2 (8.1 … 12.0), every rung in LEVELS order
+const ofLevels = (xs) => Object.fromEntries(LEVELS.map((id, i) => [id, xs[i]]));
+const RATING_2 = ofLevels([514, 670, 785, 944, 1059, 1208, 1320, 1420, 1542, 1700, 1797, 1876, 1982, 2104, 2239, 2339, 2460, 2574, 2683, 2807, 2877]);
+const RATING_SE_2 = ofLevels([0, 18, 19, 21, 22, 25, 38, 43, 47, 53, 57, 60, 63, 66, 70, 72, 75, 79, 82, 85, 91]);
 
 /**
  * The personas: one per rung, each with a style from persona.js and an icon
@@ -222,9 +232,11 @@ function acceptsDraw(engineCp) { return engineCp == null || engineCp < ACCEPT_CP
 function opponentOf(level, lad) {
   // an 8.0 game (no `lad`) against a rung 8.0 had: 8.0's numbers
   const old = lad == null && Number.isFinite(RATING_80[level]);
-  const r = old ? RATING_80[level] : ratingOf(level);
+  // …and a ladder-2 game (8.1 … 12.0): that ladder's
+  const two = lad === 2 && Number.isFinite(RATING_2[level]);
+  const r = old ? RATING_80[level] : two ? RATING_2[level] : ratingOf(level);
   if (r == null) return null;
-  return { r, rd: Math.max(30, (old ? RATING_SE_80 : RATING_SE)[level] || 0) };
+  return { r, rd: Math.max(30, (old ? RATING_SE_80 : two ? RATING_SE_2 : RATING_SE)[level] || 0) };
 }
 
 const SCORE = { win: 1, draw: 0.5, loss: 0 };

@@ -112,6 +112,8 @@ export const CHUNKS = [
   { entry: "src/web/js/library-page.js", out: "src/web/js/chunk-libdb.js", global: "CHESS_LIBDB", min: 15000 },
   // 12.0 A: recorded takes, when sounds/ has any (scripts/sound-kit.mjs; audio.js asks only then)
   { entry: "src/web/js/sound-kit.js", out: "src/web/js/chunk-sounds.js", global: "SOUND_KIT", min: 0 },
+  // 13.0 H: Maia — the network code and lc0's tables, and the worker built from them (human-lazy.js)
+  { entry: "src/web/js/human/chunk.js", out: "src/web/js/chunk-human.js", global: "CHESS_HUMAN", min: 20000 },
   // v8-0-plan C2: the sync dialog, on its button's first click (prefs-ui.js)
   { entry: "src/web/js/sync-ui.js", out: "src/web/js/chunk-sync.js", global: "createSyncUI", min: 2000 },
   // v8-1-plan T3: the repertoire by position — records, cards, cross-check (repertoire-ui.js)

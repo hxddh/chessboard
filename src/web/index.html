@@ -590,6 +590,9 @@
             <div class="rv-mistakes" id="rv-mistakes" hidden></div>
           </details>
           <div class="pv-line num" id="pv-line" hidden></div>
+          <!-- 13.0 I: 「人会怎么走」 (review/human-line.js; it moves itself under
+               #live-line on the analysis board) -->
+          <div class="human-line" id="human-line" hidden></div>
           <!-- 7.8 §3: on a ? / ??, why it was one; and 再试一次 from the
                position before it (built by renderWhyLine / renderRetry). -->
           <div class="why-line" id="why-line" hidden></div>
@@ -1054,6 +1057,12 @@
                 <div class="setting-row">
                   <span class="setting-k" data-i18n="act.live">持续分析</span>
                   <button type="button" class="switch" id="opt-live" aria-pressed="false" title="引擎持续分析棋盘上的局面，跟随复盘游标" data-i18n-title="tip.live">
+                    <span class="switch-knob"></span>
+                  </button>
+                </div>
+                <div class="setting-row">
+                  <span class="setting-k" data-i18n="set.humanLine">人会怎么走</span>
+                  <button type="button" class="switch" id="opt-human-line" aria-pressed="true" title="引擎栏下面，同等级分的人在这个局面最常走的几步" data-i18n-title="tip.humanLine">
                     <span class="switch-knob"></span>
                   </button>
                 </div>

@@ -72,6 +72,7 @@ export function createSettingsUI(d) {
     // attribute on #app because the board rect is the layout's, not the canvas's
     appEl.setAttribute("data-coords", store.ui.coordsOn && (store.ui.coordsInside || !framed) ? "in" : "out");
     sw("opt-softmark", store.ui.showSoftMark);
+    sw("opt-human-line", store.ui.humanLine !== false);
     sw("opt-engine-arrows", store.ui.engineArrows);
     sw("opt-blind", store.ui.blindfold);
     document.querySelectorAll("#text-seg button").forEach((b) => b.classList.toggle("active", b.dataset.text === store.ui.textSize));
@@ -370,6 +371,12 @@ export function createSettingsUI(d) {
       saveSettings();
       paintSettings();
       draw();
+    };
+    document.getElementById("opt-human-line").onclick = () => {
+      store.ui.humanLine = store.ui.humanLine === false;
+      saveSettings();
+      paintSettings();
+      store.commit("ui", "action");
     };
     document.getElementById("opt-softmark").onclick = () => {
       store.ui.showSoftMark = !store.ui.showSoftMark;

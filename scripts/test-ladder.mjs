@@ -23,14 +23,16 @@
  * without its draw model — with two virtual draws between neighbours as the
  * prior, so a 10–0 pairing gives a finite gap. It is then put on the app's
  * scale by the two numbers the app shipped with: 初级 (UCI_Elo 1320) and
- * 中级 (UCI_Elo 1700).
+ * 中级 (UCI_Elo 1700) — or, since 13.0 made those two Maia rungs, with
+ * --anchors=kept: by a least-squares line through every rung that plays as
+ * it did when the ladder was last recorded, at its rating on record.
  *
  * Heavy: the Elo rungs think 0.5–1.2 s a move. Run in shards, one at a time,
  * in the background; every game is appended to the shard's file as it ends,
  * so a stopped run resumes where it stopped.
  *
  *   node scripts/test-ladder.mjs play --shard=1/4 --out=DIR [--adjacent=40] [--near=16] [--far=6]
- *   node scripts/test-ladder.mjs fit --in=DIR [--record]
+ *   node scripts/test-ladder.mjs fit --in=DIR[,DIR2] [--anchors=kept] [--record]
  *   node scripts/test-ladder.mjs play --only=casual,learner --adjacent=40 --out=DIR   (tuning)
  *   node scripts/test-ladder.mjs play --pairs=strongplus:extreme:300,master:masterplus:200 --shard=1/64 --out=DIR
  *   … play … --dry-run   prints the schedule (every pairing, this shard's share) and plays nothing
@@ -48,8 +50,9 @@ const arg = (name, dflt) => {
   return hit ? hit.slice(name.length + 3) : dflt;
 };
 const MODE = process.argv[2];
-const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/engine.js", "src/web/js/persona.js", "src/web/js/opponents.js"]);
-const { Chess, ChessEngine, ChessPersona, Opponents } = ctx;
+const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/engine.js", "src/web/js/persona.js", "src/web/js/opponents.js", "src/web/js/human/maia-net.js", "src/web/js/human/pick.js"]);
+const { Chess, ChessEngine, ChessPersona, Opponents, parseNet, movePolicy } = ctx;
+const Pick = { pickHuman: ctx.pickHuman, guardMoves: ctx.guardMoves, guardPolicy: ctx.guardPolicy };
 /**
  * v8-1-plan T1: --rungs=FILE plays a ladder of candidate rungs instead of the
  * shipped one — {id: settings}, weakest first (the settings are engine.js
@@ -161,7 +164,7 @@ async function play() {
   }
   const keyOf = (job) => job.a + ":" + JSON.stringify(tierOf(job.a)) + "|" + job.b + ":" + JSON.stringify(tierOf(job.b)) + "|" + job.k;
   const todo = schedule().filter((_, i) => i % sn === si - 1).filter((job) => !done.has(keyOf(job)));
-  const player = await startPlayer({ Chess, ChessEngine, ChessPersona });
+  const player = await startPlayer({ Chess, ChessEngine, ChessPersona, parseNet, movePolicy, Pick });
   const started = Date.now();
   let n = 0;
   for (const job of todo) {
@@ -190,7 +193,8 @@ async function play() {
  */
 async function playGame(player, white, black, opening, rng) {
   const g = new Chess();
-  for (const san of opening.split(" ")) g.move(san);
+  const fens = [g.fen()]; // 13.0 H: a Maia rung's input is the game so far
+  for (const san of opening.split(" ")) { g.move(san); fens.push(g.fen()); }
   await player.newGame();
   const own = { w: [], b: [] };
   const lastOffer = { w: null, b: null };
@@ -202,9 +206,10 @@ async function playGame(player, white, black, opening, rng) {
   while (!g.game_over() && plies < 300) {
     const side = g.turn();
     const [, tier] = side === "w" ? white : black;
-    const mv = await player.move(g.fen(), tier, rng, tier.style);
+    const mv = await player.move(g.fen(), tier, rng, tier.style, fens);
     if (!mv) break;
     if (!g.move({ from: mv.uci.slice(0, 2), to: mv.uci.slice(2, 4), promotion: mv.uci[4] || "q" })) break;
+    fens.push(g.fen());
     plies++;
     searched[side][0] += mv.nodes || 0; searched[side][1]++;
     if (mv.score != null) own[side].push(mv.score);
@@ -361,10 +366,30 @@ function fit() {
   const { R, se, cov } = fitBT(ids, all, 2);
   // the two anchors: 初级 and 中级 on the shipped ladder; --anchors=a,b names
   // the candidates that play UCI_Elo 1320 and 1700 in a --rungs run
+  // the candidates that play UCI_Elo 1320 and 1700 in a --rungs run.
+  // --anchorAt=x,y gives the two anchors' ratings instead (13.0 H: 初级 and
+  // 中级 play Maia now, so the scale is held by two rungs left as they were,
+  // at the ratings they hold on record — --anchors=steady,hard --anchorAt=1059,1982)
   const [anA, anB] = arg("anchors", "easy,normal").split(",");
+  const [atA, atB] = arg("anchorAt", "1320,1700").split(",").map(Number);
   const ai = ids.indexOf(anA), bi = ids.indexOf(anB);
-  const scale = ai >= 0 && bi >= 0 ? 380 / (R[bi] - R[ai]) : 1;
-  const base = ai >= 0 ? 1320 - scale * R[ai] : 1500;
+  let scale = ai >= 0 && bi >= 0 ? (atB - atA) / (R[bi] - R[ai]) : 1;
+  let base = ai >= 0 ? atA - scale * R[ai] : 1500;
+  // 13.0 H: --anchors=kept — the scale held by every rung that plays as it
+  // did when the ladder was last recorded, at the ratings on record: a
+  // least-squares line through them, so re-stepping some rungs does not
+  // move the rest (two fixed anchors would carry the whole ladder with
+  // whatever changed between them)
+  let keptIds = [];
+  if (anA === "kept" && prev && prev.rating && prev.settings) {
+    keptIds = ids.filter((id) => prev.rating[id] != null && prev.settings[id] && JSON.stringify(prev.settings[id]) === JSON.stringify(shipped(id)));
+    if (keptIds.length >= 2) {
+      const xs = keptIds.map((id) => R[ids.indexOf(id)]), ys = keptIds.map((id) => prev.rating[id]);
+      const mx = xs.reduce((a, b) => a + b, 0) / xs.length, my = ys.reduce((a, b) => a + b, 0) / ys.length;
+      scale = xs.reduce((a, x, k) => a + (x - mx) * (ys[k] - my), 0) / xs.reduce((a, x) => a + (x - mx) ** 2, 0);
+      base = my - scale * mx;
+    }
+  }
   const rating = Object.fromEntries(ids.map((id, i) => [id, Math.round(base + scale * R[i])]));
   const ratingSe = Object.fromEntries(ids.map((id, i) => [id, Math.round(scale * se[i])]));
   const pct = (d) => 100 / (1 + Math.pow(10, -d / 400));
@@ -403,7 +428,7 @@ function fit() {
   }
   const monotone = R.every((r, i) => i === 0 || r > R[i - 1]);
   const hours = games.reduce((a, g) => a + g.ms, 0) / 3600000;
-  console.log(`\n${games.length} 盘新对局（引擎 ${hours.toFixed(2)} 小时）+ ${carried} 盘沿用；${stale} 盘的设置已不是 engine.js 的，未计入；两锚 1320 / 1700，原始尺度 ×${scale.toFixed(3)}`);
+  console.log(`\n${games.length} 盘新对局（引擎 ${hours.toFixed(2)} 小时）+ ${carried} 盘沿用；${stale} 盘的设置已不是 engine.js 的，未计入；${keptIds.length ? "定标 " + keptIds.length + " 个没变的档（最小二乘）" : "两锚 " + anA + " " + atA + " / " + anB + " " + atB}，原始尺度 ×${scale.toFixed(3)}`);
   // a movetime rung is as strong as the machine is fast: what it searched here
   const npm = {};
   for (const id of ids.filter((x) => shipped(x).movetime)) {
@@ -416,7 +441,7 @@ function fit() {
   if (RECORDING) {
     record("ladder", {
       what: "所有档位循环对下（node 里的 Stockfish 19 lite，engine.js 的档位设置与取子规则，opponents.js 的认输与提和），" +
-        "Bradley–Terry 极大似然拟合（相邻两档各加 2 盘虚拟和棋作先验），以初级 = 1320、中级 = 1700 两点定标；" +
+        "Bradley–Terry 极大似然拟合（相邻两档各加 2 盘虚拟和棋作先验）；" + (keptIds.length ? "13.0 起以设置没变的各档（anchor.kept）在上次记录里的分数做最小二乘定标，" : "以初级 = 1320、中级 = 1700 两点定标；") +
         "设置没变的档位之间，上一次记录的对局照算（carried）。区间是 95%：直接对局按每盘得分的样本方差，拟合按两档等级分之差的协方差",
       script: "scripts/test-ladder.mjs play --shard=i/n … ; scripts/test-ladder.mjs fit --record",
       games: games.length + carried,
@@ -425,6 +450,7 @@ function fit() {
       engineHours: Math.round(hours * 100) / 100,
       nodesPerMove: npm,
       scale: Math.round(scale * 1000) / 1000,
+      anchor: keptIds.length ? { kept: keptIds } : { [anA]: atA, [anB]: atB },
       rating, ratingSe,
       raw: Object.fromEntries(ids.map((id, i) => [id, Math.round(R[i])])),
       adjacent,

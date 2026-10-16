@@ -533,7 +533,9 @@ if (scenario()) {
   }));
   // v8-0-plan B4: the persona of the rung, with its rating — 10.0 T1: a new
   // install's rung is 休闲 (托莫, an hourglass), no longer 中级 (索尔)
-  assert(r.bName === "托莫" && /休闲 670/.test(r.bLevel), "the engine's strip names its persona, level and rating (" + r.bName + " · " + r.bLevel + ")");
+  // (the rating is the ladder's, docs/measured.json: a re-calibration moves it)
+  const casualR = JSON.parse(fs.readFileSync(path.join(HERE, "..", "docs", "measured.json"), "utf8")).ladder.rating.casual;
+  assert(r.bName === "托莫" && r.bLevel.includes("休闲 " + casualR), "the engine's strip names its persona, level and rating (" + r.bName + " · " + r.bLevel + ")");
   // v11-0-plan V1: the persona is a face (托莫's portrait), you keep your icon
   assert(r.bIcon === "pt:tomo" && r.wIcon === "user", "…with the persona's portrait on it, and your icon on your own (" + r.bIcon + " / " + r.wIcon + ")");
   await ctx.close();

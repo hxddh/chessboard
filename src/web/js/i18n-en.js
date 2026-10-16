@@ -439,7 +439,7 @@
       "clock.off": "No clock",
       "boardName.wood": "Wood", "boardName.green": "Green", "boardName.blue": "Blue", "boardName.paper": "Paper & ink", "boardName.marble": "Marble",
       "act.analyze": "Analyse", "act.deep": "Deep", "act.stopAt": "Stop {0}", "act.retryHere": "Play on from here",
-      "act.live": "Live analysis", "tip.live": "Keep the engine analysing the position on the board, following the replay cursor", "an.depthN": "Depth {0}", "curve.atScore": "Ply {0} {1}", "an.winPct": "Win {0}%", "an.line": "Line {0}",
+      "act.live": "Live analysis", "tip.live": "Keep the engine analysing the position on the board, following the replay cursor", "set.humanLine": "Human moves", "tip.humanLine": "Under the engine lines: the moves players of your rating most often play here", "hl.head": "{0} players:", "hl.rare": "Game: {0}, rarely played", "hl.common": "{1}% of players at your level play this too: a common {0} mistake, worth drilling.", "an.depthN": "Depth {0}", "curve.atScore": "Ply {0} {1}", "an.winPct": "Win {0}%", "an.line": "Line {0}",
       "msg.premove.set": "Premove {0}", "msg.premove.dropped": "Premove no longer legal",
       "act.pgnCopy": "Copy", "act.export": "Export", "act.paste": "Paste", "act.open": "Open",
       "act.fen": "FEN", "act.loadFen": "Load FEN", "act.editor": "Edit",

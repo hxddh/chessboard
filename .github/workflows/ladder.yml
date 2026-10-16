@@ -120,7 +120,7 @@ jobs:
       # --record writes the fit into this checkout's docs/measured.json,
       # which is uploaded below; the exit code is the verdict
       - name: fit
-        run: node scripts/test-ladder.mjs fit --in=out --record
+        run: node scripts/test-ladder.mjs fit --in=out --anchors=kept --record
       - uses: actions/upload-artifact@v7
         if: always()
         with:

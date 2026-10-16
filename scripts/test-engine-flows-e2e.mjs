@@ -26,7 +26,7 @@
  *   9  分析存盘        an analysis survives a reload and a 对局历史 load, no search
  *   10 精析回写库      精析 of a library game writes budget/accuracy back, via reviseMines
  *   11 再深一遍        the 400 ms re-pass of one library game, reviseMines included
- *   12 人机高档棋钟    a short clock caps 不限档's movetime; normal sends UCI_Elo 1700 at its pick depth
+ *   12 人机高档棋钟    a short clock caps 不限档's movetime; hard sends UCI_Elo 2290 at its pick depth
  *   13 多主变          multipv=3 in 分析 and in 持续分析
  *   14 FEN黑先         a [SetUp] game with Black to move is numbered and marked right
  *
@@ -102,6 +102,11 @@ const ROOT = path.join(HERE, "..", "src", "web");
   if (!fs.existsSync(src) || fs.statSync(src).size <= 2000000) {
     execFileSync(process.execPath, [path.join(HERE, "gen-engine-src.mjs")], { stdio: "inherit" });
   }
+}
+
+// 13.0 H / I: the Maia weights, as the app loads them (js/maia-<band>.js)
+if (["1100", "1300", "1500", "1700", "1900"].some((b) => !fs.existsSync(path.join(ROOT, "js", "maia-" + b + ".js")))) {
+  execFileSync(process.execPath, [path.join(HERE, "gen-maia-src.mjs")], { stdio: "inherit" });
 }
 
 const { launchBrowser, ENGINE } = await import("./e2e-browser.mjs");
@@ -842,7 +847,8 @@ await scenario("再深一遍", async () => {
 // A clock caps the think time — since v8-0-plan B4 at a fortieth of what is
 // left plus most of the increment (opponents.js thinkPlan), never past the
 // rung's own. v8-1-plan T1: the UCI_Elo rungs search to their pick depth
-// (normal: UCI_Elo 1700, depth 3), so the one movetime rung left to cap is
+// (hard: UCI_Elo 2290, depth 6; 13.0 made 中级 a Maia rung, so the Elo rung
+// checked here is 高级), so the one movetime rung left to cap is
 // 不限档 (1.2 s); hard was 2200 at 900 ms through 8.0.
 await scenario("人机高档棋钟", async () => {
   // Black's clock stands at 20 s with White to move, so it does not tick while
@@ -868,17 +874,17 @@ await scenario("人机高档棋钟", async () => {
   assert(!hard.errs.length, "人机高档棋钟：页面没有报错", hard.errs.join(" / "));
   await hard.ctx.close();
 
-  const normal = await openPage({ mode: "ai", difficulty: "normal", humanColor: "w", timeControl: "5+3" });
+  const normal = await openPage({ mode: "ai", difficulty: "hard", humanColor: "w", timeControl: "5+3" });
   await clickMove(normal.page, "e2", "e4");
   const n2 = await until(() => plies(normal.page).then((p) => (p >= 2 ? p : 0)), 15000, 100);
   const uci2 = await normal.page.evaluate(() => window.__uci);
   // M3 review: a depth rung also carries the clock's ceiling (`go depth D movetime ceil`) so a
   // tight clock caps it; with 5+3 and a full clock that ceiling is seconds, never the binding limit
-  const go2 = uci2.map((c) => /^go depth 3(?: movetime (\d+))?$/.exec(c)).find(Boolean);
-  assert(n2 >= 2 && uci2.includes("setoption name UCI_Elo value 1700") && !!go2 && (go2[1] == null || Number(go2[1]) >= 2000) &&
+  const go2 = uci2.map((c) => /^go depth 6(?: movetime (\d+))?$/.exec(c)).find(Boolean);
+  assert(n2 >= 2 && uci2.includes("setoption name UCI_Elo value 2290") && !!go2 && (go2[1] == null || Number(go2[1]) >= 2000) &&
     !uci2.some((c) => /^go movetime/.test(c)),
-    "人机高档棋钟：normal 档、5+3 钟上时间充足，按 UCI_Elo 1700、搜到选着的第 3 层应着，钟给的上限不卡它（v8-1-plan T1）", JSON.stringify(uci2));
-  assert(!normal.errs.length, "人机高档棋钟：normal 档页面没有报错", normal.errs.join(" / "));
+    "人机高档棋钟：hard 档、5+3 钟上时间充足，按 UCI_Elo 2290、搜到选着的第 6 层应着，钟给的上限不卡它（v8-1-plan T1）", JSON.stringify(uci2));
+  assert(!normal.errs.length, "人机高档棋钟：hard 档页面没有报错", normal.errs.join(" / "));
   await normal.ctx.close();
 });
 
@@ -1832,7 +1838,8 @@ await scenario("第二个引擎", async () => {
   }
   const r = await playBesideThePass({ bgWorker: true });
   console.log("F4 应手等待(第二个引擎):", JSON.stringify(r.res));
-  assert(r.bgOn && r.busy.length >= 6 && r.after.moveOn.join() === "0" && r.after.passOn.join() === "1",
+  assert(r.bgOn && r.busy.length >= 6 && // (13.0: the Maia worker, made for 中级's moves, sits between the two in the list)
+    r.after.moveOn.join() === "0" && r.after.passOn.length === 1 && r.after.passOn[0] > 0,
     "第二个引擎：设置里打开后，人机的应着在第一个 worker、棋谱库在第二个上（" + JSON.stringify([r.after.moveOn, r.after.passOn]) + "）");
   assert(r.preempted === 0, "第二个引擎：两边互不抢占");
   const ref = await referencePass(r.filed.length);
@@ -1852,6 +1859,83 @@ if (f4 && (F4_REC.before || F4_REC.after) && !failed) {
   else record("engineScheduler", Object.assign({}, prev, { env, after: { quiet: f4.res.quiet, busy: f4.res.busy, preempted: f4.preempted },
     determinism: f4.compared, secondWorker: f4.secondWorker || null }));
 }
+
+// --- 13.0 I: 人会怎么走 ---------------------------------------------------------
+// Under the review's engine lines: what 1500 players play here (no game
+// rating yet), from Maia in its worker; it follows the cursor, it moves
+// under 持续分析's lines on the analysis board, and 设置·高级 turns it off.
+await scenario("人会怎么走", async () => {
+  const { ctx, page, errs } = await openPage({ mode: "pvp" });
+  await openPgn(page, TRAP);
+  await runAn(page, "#an-run", 60000);
+  const line = () => page.evaluate(() => {
+    const el = document.getElementById("human-line");
+    return el && !el.hidden && !el.getAttribute("aria-busy") && /%/.test(el.textContent)
+      ? { text: el.textContent.trim(), under: el.previousElementSibling && el.previousElementSibling.id } : null;
+  });
+  await page.keyboard.press("Home");
+  const at0 = await until(line, 20000, 100);
+  assert(!!at0 && /^1500 分的人：/.test(at0.text) && /e4 \d+%/.test(at0.text) && at0.under === "pv-line",
+    "人会怎么走：复盘的引擎线下面，开局局面里 1500 分的人走 e4 的比例", JSON.stringify(at0));
+  for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowRight");
+  const at6 = await until(() => line().then((l) => (l && l.text !== (at0 && at0.text) ? l : null)), 10000, 100);
+  assert(!!at6 && /^1500 分的人：/.test(at6.text), "人会怎么走：跟着复盘游标走（第 6 步之后换了一行）", JSON.stringify(at6));
+  const t0 = Date.now();
+  for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowRight");
+  const fast = await until(() => line().then((l) => (l && l.text !== (at6 && at6.text) ? l : null)), 10000, 50);
+  assert(!!fast && Date.now() - t0 < 3000, "人会怎么走：连按六步，最后一个局面 3 秒内有答案（" + (Date.now() - t0) + "ms）");
+  // the analysis board: under 持续分析's lines
+  await page.click('#rail button[data-view="home"]');
+  await page.click("#today-analyse");
+  await page.click("#an-board");
+  await page.waitForTimeout(600);
+  if (await page.isVisible("#confirm-modal.show").catch(() => false)) { await page.click("#confirm-ok"); await page.waitForTimeout(600); }
+  const board = await until(line, 20000, 100);
+  assert(!!board && board.under === "live-line" && /e4 \d+%/.test(board.text), "人会怎么走：分析棋盘上在持续分析的线下面", JSON.stringify(board));
+  // 设置·高级: off, and it stays off after a reload
+  await page.click('#rail button[data-view="settings"]');
+  await page.click("#cat-advanced");
+  const was = await page.getAttribute("#opt-human-line", "aria-pressed");
+  await page.click("#opt-human-line");
+  await page.click('#rail button[data-view="play"]');
+  await page.waitForTimeout(300);
+  const off = await page.evaluate(() => document.getElementById("human-line").hidden);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}").humanLine);
+  assert(was === "true" && off && saved === false, "人会怎么走：默认开；设置·高级里关掉就不显示，并存进设置", JSON.stringify({ was, off, saved }));
+  assert(!errs.length, "人会怎么走：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+// --- 13.0 H: a Maia rung plays ------------------------------------------------
+// 初级 (easy) is Maia 1300 now: it answers from the net, in its worker, in
+// well under a frame budget's worth of work per move — and with its weights
+// gone it still answers, as the Stockfish rung it was.
+await scenario("Maia对手", async () => {
+  for (const missing of [false, true]) {
+    const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "easy" });
+    if (missing) await page.route(/maia-1300\.js/, (r) => r.fulfill({ status: 404, body: "" }));
+    let n = 0;
+    const moves = [["e2", "e4"], ["d2", "d4"], ["g1", "f3"]];
+    for (let i = 0; i < moves.length; i++) {
+      const g = await savedGame(page);
+      const mv = moves[i];
+      if (!g.moves({ verbose: true }).some((m) => m.from === mv[0] && m.to === mv[1])) break;
+      await clickMove(page, mv[0], mv[1]);
+      n = await until(() => plies(page).then((p) => (p >= 2 * (i + 1) ? p : 0)), 20000, 100);
+      if (!n) break;
+      await page.waitForTimeout(200);
+    }
+    const st = await page.evaluate(() => window.__chess.engine.human());
+    if (!missing) {
+      assert(n >= 6 && st.fails === 0 && st.ms > 0 && st.ms <= 200,
+        "Maia 对手：初级三手都由 Maia 1300 应着，每手在 worker 里 ≤ 200 ms（最后一手 " + st.ms + " ms）", JSON.stringify({ n, st }));
+    } else {
+      assert(n >= 6 && st.fails >= 1, "Maia 对手：权重文件缺了，初级照样应着（退回 Stockfish 档）", JSON.stringify({ n, st }));
+    }
+    assert(!errs.length, "Maia 对手：页面没有报错", errs.join(" / "));
+    await ctx.close();
+  }
+});
 
 const { shard, total } = gate.done();
 if (shard.count > 1) console.log(`shard ${shard.index}/${shard.count}: ${Math.ceil((total - shard.index + 1) / shard.count)} of ${total} scenarios`);

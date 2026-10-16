@@ -16,6 +16,7 @@
 // needs is imported.
 import { PRIO, createScheduler } from "./engine-sched.js";
 import { createBgLane } from "./engine-bg.js";
+import { humanEngine } from "./human-lazy.js";
 const global = typeof window !== "undefined" ? window : globalThis;
   /**
    * difficulty id → search settings; elo:null = full strength.
@@ -75,6 +76,18 @@ const global = typeof window !== "undefined" ? window : globalThis;
    *   the step measured ~58% (a win-chance rung between them measured
    *   55% / 52% and was taken out again).
    *
+   * 13.0 H — 扎实 … 高级− (`solid` … `hardminus`) are people now: Maia
+   * (human/, docs/v13-0-plan.md §1), the net of the band nearest the rung,
+   * its move drawn at temperature `temp` (human/pick.js). How strong a net
+   * plays on its own was measured against rungs of known rating first, ten
+   * games a pairing: 1100 at temp 1.5 / 1 ≈ 1130 / 1260, 1500 at 1 / 0.6 ≈
+   * 1425 / 1615, 1900 at 1 / 0.6 / 0.35 ≈ 1535 / 1670 / 1685 — a net tops
+   * out near 1700 however cold it is drawn. The two strongest rungs add
+   * `guard`: the depth-8 look the rung makes anyway scores the moves the net
+   * could play, and those more than `guard` centipawns below the best are
+   * not drawn (1700 at 0.6, guard 300 ≈ 1805; 1900 at 0.6, guard 200 ≈
+   * 2070). Each rung keeps its Stockfish row, which plays if Maia cannot.
+   *
    * These notes sit here and not beside the rows: a comment inside the
    * literal ships in the bundle (esbuild keeps it), and F5's budget is bytes.
    */
@@ -125,13 +138,13 @@ const global = typeof window !== "undefined" ? window : globalThis;
     learner: { skill: 1, depth: 2, multipv: 10, winT: 37, minMs: 350 },
     improver: { skill: 2, depth: 2, multipv: 10, winT: 24, minMs: 350 },
     steady: { skill: 3, depth: 3, multipv: 8, winT: 19, minMs: 350 },
-    solid: { skill: 4, depth: 4, multipv: 8, winT: 14, minMs: 350 },
-    easy: { elo: 1320, depth: 1, minMs: 500 },
-    easyplus: { elo: 1500, depth: 2, multipv: 6, minMs: 550 },
-    normalminus: { elo: 1500, depth: 2, minMs: 600 },
-    normal: { elo: 1700, depth: 3, minMs: 700 },
-    normalplus: { elo: 1840, depth: 4, minMs: 750 },
-    hardminus: { elo: 2080, depth: 5, minMs: 800 },
+    solid: { maia: 1100, temp: 1.7, skill: 4, depth: 4, multipv: 8, winT: 14, minMs: 350 },
+    easy: { maia: 1300, temp: 1.35, elo: 1320, depth: 1, minMs: 500 },
+    easyplus: { maia: 1500, temp: 1.15, elo: 1500, depth: 2, multipv: 6, minMs: 550 },
+    normalminus: { maia: 1500, temp: 0.7, elo: 1500, depth: 2, minMs: 600 },
+    normal: { maia: 1700, temp: 0.55, elo: 1700, depth: 3, minMs: 700 },
+    normalplus: { maia: 1700, temp: 0.6, guard: 450, elo: 1840, depth: 4, minMs: 750 },
+    hardminus: { maia: 1900, temp: 0.6, guard: 315, elo: 2080, depth: 5, minMs: 800 },
     hard: { elo: 2290, depth: 6, minMs: 800 },
     hardplus: { elo: 2450, depth: 7, minMs: 850 },
     expert: { elo: 2570, depth: 8, minMs: 900 },
@@ -495,7 +508,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     const cap = plan ? plan.search : maxMs;
     const pace = plan && Number.isFinite(plan.pace) ? plan.pace : null;
     const ceil = plan && Number.isFinite(plan.ceil) && plan.ceil > 0 ? plan.ceil : 0;
-    const tier = cap && base.movetime && !base.depth
+    let tier = cap && base.movetime && !base.depth
       ? Object.assign({}, base, { movetime: Math.max(120, Math.min(base.movetime, Math.floor(cap))) })
       // v8-1-plan T1: a node rung short of time searches what the time buys
       : cap && base.nodes ? Object.assign({}, base, { nodes: Math.min(base.nodes, nodesFor(cap)) })
@@ -511,6 +524,15 @@ const global = typeof window !== "undefined" ? window : globalThis;
     send("isready");
     await drain;
     if (myGen !== gen) return null;
+    // 13.0 H: a Maia rung plays the move its net draws; Stockfish then only
+    // reads the position (a shallow full-strength look, for the resign and
+    // draw rules), and the rung's own Stockfish row plays if Maia cannot
+    // — or, on a guarded rung (human/pick.js guardPolicy), scores the moves
+    // the net could play, so the draw can leave out the ones that blunder
+    const human = base.maia && persona && persona.Chess && persona.fens ? await humanMove(fen, base, persona, styled ? P : null) : null;
+    if (myGen !== gen) return null;
+    const only = human && base.guard ? human.H.guardMoves(human.pol) : null;
+    if (human) tier = { depth: 8, minMs: base.minMs, multipv: only ? only.length : 0 };
     // UCI options are sticky on the worker — always set every knob a tier
     // could have touched so no search inherits another tier's handicap.
     send("setoption name MultiPV value " + (tier.multipv || 1));
@@ -546,13 +568,16 @@ const global = typeof window !== "undefined" ? window : globalThis;
     lineHandlers.push(collect);
     const budget = (tier.movetime || 2000) + 15000;
     const wait = waitFor((l) => typeof l === "string" && l.startsWith("bestmove"), budget, "search");
-    send(searchCmd(tier, Math.random));
+    send(searchCmd(tier, Math.random) + (only ? " searchmoves " + only.join(" ") : ""));
     let line;
     try { line = await wait; }
     finally { lineHandlers = lineHandlers.filter((h) => h !== collect); }
     if (myGen !== gen) return null; // game moved on (undo/new/import)
     let picked = parseUci(line.split(/\s+/)[1]);
-    if (tier.multipv && cands.size > 1 && tier.winT) {
+    if (human) {
+      const pol = only ? human.H.guardPolicy(human.pol, new Map([...cands.values()].map((c) => [c.uci, c.score])), base.guard) : human.pol;
+      picked = parseUci(human.H.pick(pol, base, Math.random, human.styleOf)) || picked;
+    } else if (tier.multipv && cands.size > 1 && tier.winT) {
       // the win-chance rungs weigh a style into the same draw instead of
       // letting it overrule the draw: the strength stays the rung's
       const list = [...cands.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
@@ -586,6 +611,36 @@ const global = typeof window !== "undefined" ? window : globalThis;
     }
     if (picked) picked.score = ownScore;
     return picked;
+  }
+
+  /**
+   * 13.0 H: a Maia rung's distribution over the legal moves (human/worker.js),
+   * with the draw (human/pick.js) and the style's taste beside it. Null, and
+   * the rung's Stockfish row plays, when the net cannot answer: not loaded, a
+   * worker error, or over 2 s for one move (a band's first load has its own time).
+   */
+  // what the last Maia move cost in the worker, and how many fell back (e2e)
+  let humanFailures = 0, humanMs = 0;
+  async function humanMove(fen, tier, persona, P) {
+    try {
+      const H = await humanEngine();
+      await H.load(tier.maia);
+      const g = new persona.Chess(fen);
+      const legal = g.moves({ verbose: true }).map((m) => m.from + m.to + (m.promotion || ""));
+      const fens = persona.fens[persona.fens.length - 1] === fen ? persona.fens : persona.fens.concat([fen]);
+      const { pol, ms } = await H.policy(tier.maia, fens.slice(-100), legal, 2000);
+      humanMs = ms;
+      const before = new persona.Chess(fen);
+      const styleOf = P ? (uci) => {
+        const a = new persona.Chess(fen);
+        const mv = a.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || undefined });
+        return mv ? P.score(persona.id, mv, a, before) : null;
+      } : null;
+      return { pol, styleOf, H };
+    } catch (_) {
+      humanFailures++;
+      return null;
+    }
   }
 
   /**
@@ -981,4 +1036,4 @@ const global = typeof window !== "undefined" ? window : globalThis;
     };
   }
 
-  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate, searchCmd, winPct, nodesFor, NODES_PER_MS };
+  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate, human: () => ({ fails: humanFailures, ms: humanMs }), searchCmd, winPct, nodesFor, NODES_PER_MS };
