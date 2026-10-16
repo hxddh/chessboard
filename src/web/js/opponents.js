@@ -18,9 +18,12 @@ const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", 
  * Each rung's rating, and how sure the fit is about it (±, one standard
  * error). From a round-robin of all rungs against each other in node
  * Stockfish, fitted as Bradley–Terry by maximum likelihood and put on the
- * familiar scale by two anchors: 初级 = 1320 and 中级 = 1700, the two UCI_Elo
- * numbers the app shipped with. docs/measured.json `ladder` has the games and
- * the fit; scripts/test-chess.mjs fails if these stop agreeing with it.
+ * familiar scale — through 12.0 by two anchors, 初级 = 1320 and 中级 = 1700
+ * (the two UCI_Elo numbers the app shipped with); since 13.0, when those two
+ * became Maia rungs, by a least-squares line through every rung whose
+ * settings did not change, at its rating on record. docs/measured.json
+ * `ladder` has the games and the fit; scripts/test-chess.mjs fails if these
+ * stop agreeing with it.
  */
 const RATING = {
   beginner: 514, casual: 670, learner: 785, improver: 944, steady: 1059, solid: 1208, easy: 1320,

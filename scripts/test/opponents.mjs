@@ -422,7 +422,11 @@ export async function run() {
       const off = O.LEVELS.filter((id) => O.RATING[id] !== lad.rating[id] || O.RATING_SE[id] !== lad.ratingSe[id]);
       assert(off.length === 0, "B4: opponents.js's ratings are docs/measured.json's" + (off.length ? " — " + off.join(",") : ""));
       assert(O.LEVELS.every((id, i) => i === 0 || O.RATING[id] > O.RATING[O.LEVELS[i - 1]]), "B4: the ladder is monotone");
-      assert(lad.rating.easy === 1320 && lad.rating.normal === 1700, "B4: anchored at 1320 and 1700");
+      // 13.0 H: 初级 and 中级 are Maia rungs now, no longer the UCI_Elo 1320 and
+      // 1700 the scale was pinned to; the scale is a least-squares line through
+      // every rung left as it was (test-ladder.mjs fit --anchors=kept)
+      assert(!!lad.anchor && Array.isArray(lad.anchor.kept) && lad.anchor.kept.length >= 10 && lad.anchor.kept.every((id) => O.LEVELS.includes(id)),
+        "B4: the scale is held by the rungs left as they were (" + (lad.anchor && lad.anchor.kept ? lad.anchor.kept.length : 0) + ")");
       // the plan's acceptance (B4 for 新手 → 扎实, v8-1-plan T1 for the whole
       // ladder): every step one the stronger side scores 60–75% on, as fitted.
       // Each step's 95% interval is recorded beside it (`fitCi`, `h2hCi`) —

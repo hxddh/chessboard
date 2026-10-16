@@ -23,14 +23,16 @@
  * without its draw model — with two virtual draws between neighbours as the
  * prior, so a 10–0 pairing gives a finite gap. It is then put on the app's
  * scale by the two numbers the app shipped with: 初级 (UCI_Elo 1320) and
- * 中级 (UCI_Elo 1700).
+ * 中级 (UCI_Elo 1700) — or, since 13.0 made those two Maia rungs, with
+ * --anchors=kept: by a least-squares line through every rung that plays as
+ * it did when the ladder was last recorded, at its rating on record.
  *
  * Heavy: the Elo rungs think 0.5–1.2 s a move. Run in shards, one at a time,
  * in the background; every game is appended to the shard's file as it ends,
  * so a stopped run resumes where it stopped.
  *
  *   node scripts/test-ladder.mjs play --shard=1/4 --out=DIR [--adjacent=40] [--near=16] [--far=6]
- *   node scripts/test-ladder.mjs fit --in=DIR [--record]
+ *   node scripts/test-ladder.mjs fit --in=DIR[,DIR2] [--anchors=kept] [--record]
  *   node scripts/test-ladder.mjs play --only=casual,learner --adjacent=40 --out=DIR   (tuning)
  *   node scripts/test-ladder.mjs play --pairs=strongplus:extreme:300,master:masterplus:200 --shard=1/64 --out=DIR
  *   … play … --dry-run   prints the schedule (every pairing, this shard's share) and plays nothing
@@ -439,7 +441,7 @@ function fit() {
   if (RECORDING) {
     record("ladder", {
       what: "所有档位循环对下（node 里的 Stockfish 19 lite，engine.js 的档位设置与取子规则，opponents.js 的认输与提和），" +
-        "Bradley–Terry 极大似然拟合（相邻两档各加 2 盘虚拟和棋作先验），以初级 = 1320、中级 = 1700 两点定标；" +
+        "Bradley–Terry 极大似然拟合（相邻两档各加 2 盘虚拟和棋作先验）；" + (keptIds.length ? "13.0 起以设置没变的各档（anchor.kept）在上次记录里的分数做最小二乘定标，" : "以初级 = 1320、中级 = 1700 两点定标；") +
         "设置没变的档位之间，上一次记录的对局照算（carried）。区间是 95%：直接对局按每盘得分的样本方差，拟合按两档等级分之差的协方差",
       script: "scripts/test-ladder.mjs play --shard=i/n … ; scripts/test-ladder.mjs fit --record",
       games: games.length + carried,
@@ -448,6 +450,7 @@ function fit() {
       engineHours: Math.round(hours * 100) / 100,
       nodesPerMove: npm,
       scale: Math.round(scale * 1000) / 1000,
+      anchor: keptIds.length ? { kept: keptIds } : { [anA]: atA, [anB]: atB },
       rating, ratingSe,
       raw: Object.fromEntries(ids.map((id, i) => [id, Math.round(R[i])])),
       adjacent,
