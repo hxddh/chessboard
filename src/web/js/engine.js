@@ -144,7 +144,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     normalminus: { maia: 1500, temp: 0.7, elo: 1500, depth: 2, minMs: 600 },
     normal: { maia: 1700, temp: 0.55, elo: 1700, depth: 3, minMs: 700 },
     normalplus: { maia: 1700, temp: 0.6, guard: 450, elo: 1840, depth: 4, minMs: 750 },
-    hardminus: { maia: 1900, temp: 0.6, guard: 330, elo: 2080, depth: 5, minMs: 800 },
+    hardminus: { maia: 1900, temp: 0.6, guard: 315, elo: 2080, depth: 5, minMs: 800 },
     hard: { elo: 2290, depth: 6, minMs: 800 },
     hardplus: { elo: 2450, depth: 7, minMs: 850 },
     expert: { elo: 2570, depth: 8, minMs: 900 },
