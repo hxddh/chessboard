@@ -342,9 +342,12 @@ export async function run() {
         assert(replayed.n === 37, "T1: old and new records replay together");
       }
       assert(O.ratingOfStats({ v: 2, games: [{ t: now, diff: "normal", result: "win" }] }).r > 1500, "B4: …when it has none stored");
+      // (a game on today's ladder: an unmarked one is 8.0's, rated by 8.0's numbers)
       const s1700 = O.ratingOf("normal");
-      assert(O.performance([{ level: "normal", result: "draw" }]) === s1700, "B4: performance of a draw is the opponent's rating");
-      assert(O.performance([{ level: "normal", result: "win" }]) === s1700 + 400, "B4: …and a perfect score is capped at +400");
+      assert(O.performance([{ level: "normal", result: "draw", lad: O.LADDER }]) === s1700, "B4: performance of a draw is the opponent's rating");
+      assert(O.performance([{ level: "normal", result: "win", lad: O.LADDER }]) === s1700 + 400, "B4: …and a perfect score is capped at +400");
+      assert(O.opponentOf("normal", 2).r === 1700 && O.opponentOf("normal", O.LADDER).r === O.ratingOf("normal"),
+        "13.0: a game filed on ladder 2 (8.1 … 12.0) keeps that ladder's rating for its rung");
       const five = (r, level) => new Array(5).fill({ level, result: r });
       assert(O.advice(five("win", "normal"), "normal", { r: 1800, rd: 60 }) === "up" &&
         O.advice(five("loss", "normal"), "normal", { r: 1500, rd: 60 }) === "down" &&
