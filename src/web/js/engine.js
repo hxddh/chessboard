@@ -138,7 +138,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     learner: { skill: 1, depth: 2, multipv: 10, winT: 37, minMs: 350 },
     improver: { skill: 2, depth: 2, multipv: 10, winT: 24, minMs: 350 },
     steady: { skill: 3, depth: 3, multipv: 8, winT: 19, minMs: 350 },
-    solid: { maia: 1100, temp: 1.6, skill: 4, depth: 4, multipv: 8, winT: 14, minMs: 350 },
+    solid: { maia: 1100, temp: 1.7, skill: 4, depth: 4, multipv: 8, winT: 14, minMs: 350 },
     easy: { maia: 1300, temp: 1.35, elo: 1320, depth: 1, minMs: 500 },
     easyplus: { maia: 1500, temp: 1.15, elo: 1500, depth: 2, multipv: 6, minMs: 550 },
     normalminus: { maia: 1500, temp: 0.7, elo: 1500, depth: 2, minMs: 600 },
