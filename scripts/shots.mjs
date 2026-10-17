@@ -279,15 +279,23 @@ for (const [i, s] of SHOTS.entries()) {
       mode: m, langId: l, setCat: c, soundOn: false, view: v }, th)));
     localStorage.setItem("chess.panelOpen", po);
   }, [s.lang, s.mode, s.cat || "general", lookOf(s.theme), s.panel || "1", s.view || "play"]);
+  // Only this harness has no engine (the 9MB file is stubbed), and the banner
+  // saying so would sit in every engine-mode picture. The real app boots one.
+  // Kept out whenever it is made, not hidden once: the engine boots up to 3 s
+  // in (quiet.js), after any one-off hide. (Through the element's style: the
+  // page's CSP refuses an injected stylesheet.)
+  await ctx.addInitScript(() => {
+    new MutationObserver(() => {
+      const f = document.getElementById("engine-fault");
+      if (f && f.style.display !== "none") f.style.setProperty("display", "none", "important");
+    }).observe(document, { childList: true, subtree: true });
+  });
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(900);
   await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
-  // Only this harness has no engine (the 9MB file is stubbed), and the banner
-  // saying so would sit in every engine-mode picture. The real app boots one.
-  await page.evaluate(() => { const f = document.getElementById("engine-fault"); if (f) f.hidden = true; });
   if (s.at) await s.at(page);
   const file = path.join(OUT, String(i + 1).padStart(2, "0") + "-" + s.name + ".png");
   await page.screenshot({ path: file });
