@@ -96,6 +96,28 @@ function frameGaps() {
   };
 }
 
+/**
+ * Until the page has drawn a full second without a frame gap over 120 ms
+ * (15 s at most). 14.0: R6 times the frames *while the games stream in*; a
+ * lighter launch let the scenario start 1.27 s after the load, and the
+ * window caught the launch's own script compile (882 ms on macOS) — the
+ * same overlap 12.0 R found with the engine boot. Starting after the page
+ * settles keeps the measurement on the sync; the threshold is unchanged.
+ */
+function settled() {
+  return new Promise((resolve) => {
+    const t0 = performance.now();
+    let last = t0, calm = t0;
+    const tick = (t) => {
+      if (t - last > 120) calm = t;
+      last = t;
+      if (t - calm >= 1000 || t - t0 > 15000) resolve(Math.round(t - t0));
+      else requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
 /** What chessboard.book holds now. */
 async function repState(now) {
   const db = await openRepDb(globalThis.indexedDB);
@@ -160,6 +182,7 @@ const SCENARIOS = {
     let first = null;
     // R6: 100 games, slowly; 已取到 k 局 polled as sync-ui.js polls it, the frames timed
     await c("lichess", async () => {
+      await settled();
       const seen = [];
       let polling = true;
       const poll = (async () => {
