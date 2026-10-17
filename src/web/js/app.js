@@ -4955,7 +4955,7 @@ import { drawSpark } from "./charts.js";
     confirmNative, saveSettings, saveGame, OppUI, invalidateEngine, maybeEngineTurn, tcTag, resetClocks,
     loadLearnState, Mistakes, loadMines, Progress, loadPuzzleState, restoreAnalysis, statsCache, renderStats,
     LibraryUI, RepUI, loadAchSeen, syncAutoFlip, gameResultToken, clearEndingFlags, adoptHeaderResult,
-    stopEditor, moveCount, Shell, switchMode,
+    stopEditor, moveCount, Shell, switchMode, appGameOver,
   });
   const {
     copyText, pgnForExport, pgnFileName, savedToast, exportText, downloadPgn, pickFromList, finishPick,

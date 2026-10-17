@@ -34,7 +34,7 @@ export function createIO(d) {
     confirmNative, saveSettings, saveGame, OppUI, invalidateEngine, maybeEngineTurn, tcTag, resetClocks,
     loadLearnState, Mistakes, loadMines, Progress, loadPuzzleState, restoreAnalysis, statsCache, renderStats,
     LibraryUI, RepUI, loadAchSeen, syncAutoFlip, gameResultToken, clearEndingFlags, adoptHeaderResult,
-    stopEditor, moveCount, Shell, switchMode,
+    stopEditor, moveCount, Shell, switchMode, appGameOver,
   } = d;
   const document = doc;
   const Host = ChessHost;
@@ -260,7 +260,9 @@ export function createIO(d) {
       text0 = games[pick];
     }
     const ask = prompt || { msg: t("dlg.importPgn"), title: t("dlg.importPgnTitle"), ok: t("dlg.import") };
-    if (sanHistory().length &&
+    // 14.0 A3: only a game still being played has anything to lose — a
+    // finished one is in 战绩, an imported one or an analysis board in its file
+    if (sanHistory().length && !appGameOver() && !store.game.imported && !store.session.analysisBoard &&
         !(await confirmNative(ask.msg, ask.title, { ok: ask.ok, cancel: t("act.cancel") }))) {
       return false;
     }
