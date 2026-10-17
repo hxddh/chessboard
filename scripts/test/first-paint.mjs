@@ -55,14 +55,14 @@ export async function run() {
     assert(bundleBytes <= BUNDLE_BUDGET,
       "bundle.js stays within the first-paint budget (" + bundleBytes + (bundleBytes <= BUNDLE_BUDGET ? " ≤ " : " > ") + BUNDLE_BUDGET + " bytes)");
     // …and the release's own, tighter line: new pages go in chunks, the bundle
-    // carries their doors. v9-0-plan §8 第 4 条 set it at 8.4.0 + 20 KB;
-    // v10-0-plan E6 moved it to 9.0.0 (923,333 bytes, e3fc6df) + 20 KB, and
-    // 11.0 moves it to 10.1.0 (942,990 bytes, da720ac) + 20 KB — the same rule,
-    // one release on: the portraits, the textures and the new pages go in
-    // chunks, the bundle carries their doors
-    const BUNDLE_BYTES_110 = 942990 + 20000;
-    assert(bundleBytes <= BUNDLE_BYTES_110,
-      "11.0: bundle.js grows at most 20 KB over 10.1.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_110 ? " ≤ " : " > ") + BUNDLE_BYTES_110 + " bytes)");
+    // carries their doors. v9-0-plan §8 第 4 条 set it at 8.4.0 + 20 KB; 10.0
+    // and 11.0 moved it one release on each time (9.0.0 923,333 bytes, 10.1.0
+    // 942,990 bytes, + 20 KB). 14.0 E turns it round: the course's paragraphs
+    // and tasks went to chunk-lessons-body.js, and the release stays at least
+    // 20 KB under 13.0.0 (962,723 bytes, 4e83c16) — room 14.0's pages spend
+    const BUNDLE_BYTES_140 = 962723 - 20000;
+    assert(bundleBytes <= BUNDLE_BYTES_140,
+      "14.0: bundle.js stays at least 20 KB under 13.0.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_140 ? " ≤ " : " > ") + BUNDLE_BYTES_140 + " bytes)");
     // …minified without renaming: a player's stack trace still names the code
     assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
       "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");

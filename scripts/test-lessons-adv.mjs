@@ -18,6 +18,11 @@
  *            tasks (the list skips it, a start waits); reading one asks for
  *            the chunk, and once it is here the words read through
  *
+ *   5 正文    14.0 E: parts 1–2 the same way — the bundle carries an
+ *            index (id, part, title, task count, first position), the
+ *            paragraphs and tasks are chunk-lessons-body.js, fetched on a
+ *            lesson's first start
+ *
  *   node scripts/test-lessons-adv.mjs
  */
 import fs from "fs";
@@ -170,6 +175,46 @@ const IDS = shell.ADV_IDS;
   lz.CHESS_LESSONS_ADV = ADV;
   assert(lz.ChessLazy.langTables("en").lessonsAdv === ADV.en && lz.ChessLazy.langTables("ja").lessonsAdv === ADV.ja,
     "分块到了：lazy-content 把 en / ja 译文表交给查表");
+}
+
+// ------------------------------------------------------------------ 5 正文
+{
+  const base = loadAppModules(["src/web/js/lessons.js"]).CHESS_LESSONS;
+  const bs = { console, Math, Date };
+  bs.globalThis = bs; bs.window = bs;
+  vm.createContext(bs);
+  vm.runInContext(compileModuleSync(path.join(ROOT, "src/web/js/trainer/lessons-body.js")), bs);
+  const ix = bs.lessonIndex(base);
+  assert(ix.length === base.length && ix.every((x, i) => x.id === base[i].id && x.title === base[i].title && x.part === base[i].part &&
+    x.n === base[i].tasks.length && x.fen0 === base[i].tasks[0].fen && x.practice === base[i].practice && !("tasks" in x) && !("text" in x)),
+    "目录：每课的 id、单元、课名、母题、步数和第一步的局面，没有课文和步");
+  const full = bs.createLessonBodies(base);
+  assert(full.ready() && full.lessons.every((L, i) => L.tasks === base[i].tasks && L.n === base[i].tasks.length),
+    "拿到的是整份课程（测试里不经打包）：一开始就齐");
+  let failedN = 0, ran = 0;
+  const lazy = bs.createLessonBodies(JSON.parse(JSON.stringify(ix)), () => { failedN++; });
+  const L3 = lazy.lessons[3];
+  assert(!lazy.ready() && L3.n === base[3].tasks.length && L3.tasks.length === 0 && L3.text.length === 0 && L3.fen0 === base[3].tasks[0].fen,
+    "分块到之前：目录、步数、第一步局面都有，课文和步是空的");
+  lazy.want(() => { ran++; });
+  await new Promise((r) => setTimeout(r, 20));
+  assert(failedN === 1 && ran === 0 && !lazy.ready(), "分块取不到：报一次失败，不开课", JSON.stringify({ failedN, ran }));
+  bs.CHESS_LESSONS_BODY = loadAppModules(["src/web/js/lessons-body-chunk.js"]).CHESS_LESSONS_BODY;
+  lazy.want(() => { ran++; });
+  await new Promise((r) => setTimeout(r, 20));
+  assert(lazy.ready() && ran === 1 && failedN === 1 && JSON.stringify(L3.tasks) === JSON.stringify(base[3].tasks) &&
+    JSON.stringify(L3.text) === JSON.stringify(base[3].text), "再开一次：分块到了就开课，课文和步来自分块");
+  const c = CHUNKS.find((x) => x.out.endsWith("chunk-lessons-body.js"));
+  assert(!!c && c.entry === "src/web/js/lessons-body-chunk.js" && c.global === bs.BODY_CHUNK.global && c.out.endsWith(bs.BODY_CHUNK.file),
+    "bundle.mjs 的分块表里有 chunk-lessons-body.js，名字与外壳加载的一致");
+  const bundle = path.join(ROOT, "src/web/js/bundle.js"), chunk = path.join(ROOT, path.join("src/web/js", bs.BODY_CHUNK.file));
+  if (fs.existsSync(bundle) && fs.existsSync(chunk)) {
+    const b = fs.readFileSync(bundle, "utf8"), k = fs.readFileSync(chunk, "utf8");
+    const prompts = base.map((L) => L.tasks[L.tasks.length - 1].prompt).filter((w) => w && w.length > 12);
+    const leaked = prompts.filter((w) => b.includes(w));
+    assert(!leaked.length && prompts.length > 50, "主包里没有课的步（" + prompts.length + " 课的最后一步）", leaked.slice(0, 3).join(" / "));
+    assert(base.every((L) => b.includes(L.title)) && prompts.every((w) => k.includes(w)), "课名在主包，步在 " + bs.BODY_CHUNK.file);
+  }
 }
 
 if (failed) { console.error(failed + " failure(s)"); process.exit(1); }
