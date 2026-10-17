@@ -403,7 +403,7 @@
       "pz.smart.review": "まず復習：あと {0} 問",
       "pz.smart.weak": "「{0}」が最もミスの多い分野",
       "pz.smart.motif": "「{0}」は繰り返し間違えているテーマです —— 一問どうぞ",
-      "pz.line": "続き", "pz.lineStart": "出題図",
+      "pz.drillAt": "この変化 {0}/{1} 手", "pz.line": "続き", "pz.lineStart": "出題図",
       "pz.smart.explore": "まだ手つかずの「{0}」へ",
       "pz.smart.rated": "パズルレーティングに合った問題（{0}）", "pz.ratingOf": "難易度 {0}", "rec.rating": "パズルレーティング", "rating.prov": "{0}（判定中）", "rating.provTag": "判定中", "pz.curveSoon": "あと {0} 問で推移", "tip.ratingProv": "まだ判定中：結果が増えると落ち着きます", "aria.trendRating": "パズルレーティングの推移", "tip.trendRating": "直近 60 回の初回解答後のパズルレーティング",
       "rec.due": "復習の期限 {0} · 明日 {1}",

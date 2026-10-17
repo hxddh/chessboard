@@ -1572,6 +1572,24 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   await ctx.close();
 }
 
+// --- 14.0 A3: 背开局 has its own panel — no puzzle rating, the line and how far
+{
+  const { ctx, page } = await open({ v: 1, idv: 2, cat: "op", opSide: "w", solved: {}, missed: {} });
+  const look = () => page.evaluate(() => ({
+    drill: document.getElementById("sec-puzzle").classList.contains("is-drill"),
+    hero: !!document.getElementById("pz-hero").offsetParent, review: !!document.getElementById("pz-review").offsetParent,
+    line: document.getElementById("pz-drill").hidden ? null : document.getElementById("pz-drill").textContent }));
+  const op = await look();
+  assert(op.drill && !op.hero && !op.review && /^这条线 0\/\d+ 着$/.test(op.line || ""),
+    "14.0 A3: 背开局 —— 不挂谜题等级分和复习，写着这条线背到第几着", JSON.stringify(op));
+  await page.evaluate(() => { const st = JSON.parse(localStorage.getItem("chess.puzzles")); st.cat = "m1"; localStorage.setItem("chess.puzzles", JSON.stringify(st)); });
+  await page.reload();
+  await page.waitForTimeout(1000);
+  const m1 = await look();
+  assert(!m1.drill && m1.hero && m1.line == null, "14.0 A3: 回到谜题 —— 等级分卡片回来，没有这一行", JSON.stringify(m1));
+  await ctx.close();
+}
+
 // --- 14.0 A3: a lesson left half way comes back at its step ----------------
 {
   const lx = vm.createContext({});

@@ -403,7 +403,7 @@
       "pz.smart.review": "Review first: {0} still owed",
       "pz.smart.weak": "\u201c{0}\u201d is where you miss most",
       "pz.smart.motif": "You keep missing {0}s — here is one",
-      "pz.line": "Then", "pz.lineStart": "Start",
+      "pz.drillAt": "This line: {0}/{1} moves", "pz.line": "Then", "pz.lineStart": "Start",
       "pz.smart.explore": "Trying \u201c{0}\u201d \u2014 barely touched yet",
       "pz.smart.rated": "A puzzle at your level ({0})", "pz.ratingOf": "Difficulty {0}", "rec.rating": "Puzzle rating", "rating.prov": "{0} (provisional)", "rating.provTag": "provisional", "pz.curveSoon": "{0} more to draw a curve", "tip.ratingProv": "Still provisional: a few more results and it settles", "aria.trendRating": "Puzzle rating trend", "tip.trendRating": "Your puzzle rating after each of the last 60 first attempts",
       "rec.due": "Reviews due {0} · tomorrow {1}",

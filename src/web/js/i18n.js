@@ -434,7 +434,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "pz.smart.review": "先清复习：还欠 {0} 题",
       "pz.smart.weak": "「{0}」是你错得最多的一类",
       "pz.smart.motif": "「{0}」是你反复错的母题 —— 来一道",
-      "pz.line": "接下来", "pz.lineStart": "题面",
+      "pz.drillAt": "这条线 {0}/{1} 着", "pz.line": "接下来", "pz.lineStart": "题面",
       "pz.smart.explore": "去还没怎么练过的「{0}」看看",
       "pz.smart.rated": "一道和你谜题等级分相当的题（{0}）", "pz.ratingOf": "难度 {0}", "rec.rating": "谜题等级分", "rating.prov": "{0}（定级中）", "rating.provTag": "定级中", "pz.curveSoon": "{0} 题后出曲线", "tip.ratingProv": "还在定级：结果再多一些，分数就会稳定下来", "aria.trendRating": "谜题等级分走势", "tip.trendRating": "最近 60 次首答后的谜题等级分",
       "rec.due": "复习到期 {0} · 明天 {1}",

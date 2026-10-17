@@ -748,6 +748,25 @@ export function createPuzzlesUI(d) {
   }
 
   /**
+   * 14.0 A3: 背开局 is not a puzzle — no rating card, review or kinds beside
+   * it (they are the puzzles'), and the line it is learning: the moves made
+   * so far, how far into it (the moves to come stay hidden: they are the drill).
+   */
+  function paintDrill(sec) {
+    const pz = store.session.puzzle, line = pz && !pz.run && Array.isArray(pz.p.line) ? pz.p.line : null;
+    const drill = !!pz && !pz.run && (isOpeningCat(pz.cat) || pz.cat === "repdue");
+    sec.classList.toggle("is-drill", drill);
+    const el = document.getElementById("pz-drill");
+    if (!el) return;
+    el.hidden = !(drill && line);
+    if (el.hidden) return;
+    const played = pz.g.history().slice(0, line.length);
+    const moves = played.map((san, i) => (i % 2 ? "" : (i / 2 + 1) + ". ") + san).join(" ");
+    const text = tdot(tf("pz.drillAt", [Math.min(played.length, line.length), line.length]), moves);
+    if (el.textContent !== text) el.textContent = text;
+  }
+
+  /**
    * 已解 N / M for what is being practised: inside a kind (9.0 S3) that
    * kind's count, built-in and bank together — the built-in book's 1,386
    * beside a kind of 53k was two different "all" on one screen (10.0 M0).
@@ -821,6 +840,7 @@ export function createPuzzlesUI(d) {
         : tf("pz.solvedCount", solvedOf());
     }
     syncOpSideSeg(store.session.puzzle.cat);
+    paintDrill(sec);
     const task = document.getElementById("puzzle-task");
     if (task) {
       // 「第 N 题」 is the chip's job now (7.3 B4) — the card carries the goal,
