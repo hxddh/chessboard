@@ -42,8 +42,11 @@ export function createExplorerLazy(d) {
     render();
   }
   key.addEventListener("click", () => toggle());
-  // the library page's door: the board, with the panel open on it
-  doc.getElementById("lib-explorer").addEventListener("click", () => { d.toBoard(); toggle(true); });
+  // the library page's door: the board, with the panel open on it — at the
+  // start of a game already over or imported (14.0 A1: it opened on that
+  // game's last move, where the library has 「没有对局」); a live game keeps
+  // its place
+  doc.getElementById("lib-explorer").addEventListener("click", () => { d.toBoard(); if (d.toStart) d.toStart(); toggle(true); });
   // the position (game) and the mode (session); the panel's own state renders itself
   store.subscribe("game", render);
   store.subscribe("session", render);

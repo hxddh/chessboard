@@ -4912,7 +4912,7 @@ import { drawSpark } from "./charts.js";
       theme: (id) => goTheme(id), endgame: (id) => LessonsUI.startEndgame(id), libGame: (e) => loadLibraryEntry(e) } });
   // v8-0-plan C3: 开局浏览器 — the key, the panel's state; the panel itself is a chunk
   createExplorerLazy({ store, t, tf, tdot, viewGame, movePath, startClockIfIdle, saveSettings, library: LibraryUI, repertoire: RepUI, saved: Persist.read("settings").value,
-    toBoard: () => { Shell.go("play"); setSideTab("play"); } });
+    toBoard: () => { Shell.go("play"); setSideTab("play"); }, toStart: () => { if (sanHistory().length && (appGameOver() || store.game.imported)) setViewIndex(0); } });
   /**
    * Put a mode on the board: the mode segment's handler until v8-0-plan A1,
    * now the rail's (shell.js) and the new-game dialog's. It stops the engine,

@@ -215,6 +215,30 @@ const waitRows = async (page, pred, ms = 3000) => {
   await ctx.close();
 }
 
+// --- 3b. 14.0 A1: from the library, an imported game opens at its start ------
+// The door opened on the game's last move, where the library has nothing
+// (「没有对局」); a game already over or imported starts from move 0, so the
+// panel has the library's first moves.
+{
+  const ctx = await context({ view: "library" });
+  await ctx.addInitScript(() => {
+    if (sessionStorage.getItem("seeded2")) return;
+    sessionStorage.setItem("seeded2", "1");
+    localStorage.setItem("chess.save", JSON.stringify({ v: 1, imported: true, savedAt: Date.now(),
+      pgn: '[White "A"]\n[Black "B"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 1-0\n' }));
+  });
+  const { page, errs } = await open(ctx);
+  await page.click('#rail button[data-view="library"]').catch(() => {});
+  await page.waitForTimeout(200);
+  await page.click("#lib-explorer");
+  const r = await waitRows(page, (x) => x.length >= 2);
+  const pos = (await page.textContent("#replay-pos")).trim();
+  assert(/^0 \//.test(pos) && r.some((x) => x.san === "e4") && !/没有对局/.test(await note(page)),
+    "14.0 A1：从棋谱库打开浏览器，导入的那局回到开头，列出库里的首着（" + pos + "）", JSON.stringify(r.map((x) => x.san)));
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
 // --- 4. 英文与日文：文字、读法、没有截断 -----------------------------------------
 for (const [lang, key, label, row] of [
   ["en", "Explorer", /^6 games$/, "e4 · Book: 4 games, White wins 50%, draws 25%, Black wins 25%"],
