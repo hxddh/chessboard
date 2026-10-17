@@ -1918,8 +1918,12 @@ await scenario("Maia对手", async () => {
     const moves = [["e2", "e4"], ["d2", "d4"], ["g1", "f3"]];
     for (let i = 0; i < moves.length; i++) {
       const g = await savedGame(page);
-      const mv = moves[i];
-      if (!g.moves({ verbose: true }).some((m) => m.from === mv[0] && m.to === mv[1])) break;
+      // the Stockfish rung's reply is drawn at random: after 2…Bb4+ the
+      // planned 3.Nf3 is illegal, so any legal move (not a promotion) stands in
+      const legal = g.moves({ verbose: true }).filter((m) => !m.promotion);
+      const mv = legal.some((m) => m.from === moves[i][0] && m.to === moves[i][1]) ? moves[i]
+        : legal.length ? [legal[0].from, legal[0].to] : null;
+      if (!mv) break;
       await clickMove(page, mv[0], mv[1]);
       n = await until(() => plies(page).then((p) => (p >= 2 * (i + 1) ? p : 0)), 20000, 100);
       if (!n) break;
