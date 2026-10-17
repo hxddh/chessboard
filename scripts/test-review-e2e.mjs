@@ -1760,6 +1760,52 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await ctxA.close();
 }
 
+// --- 14.0 B：认输时还领先 —— 总结说的是认输 ------------------------------------
+// The Opera game's first 20 plies, filed 0-1: White (you) resigned at +12.5.
+// The summary leads with that, not with the game's largest swing.
+{
+  const ctxR = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
+  await ctxR.addInitScript(() => {
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "ai", difficulty: "learner", personaId: "principled",
+      humanColor: "w", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", view: "play" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    window.__clip = "";
+    window.zero = {
+      invoke: () => Promise.resolve(true), on: () => () => {}, off: () => {},
+      platform: { supports: () => Promise.resolve(false) },
+      clipboard: { readText: () => Promise.resolve(window.__clip), writeText: () => Promise.resolve(true) },
+    };
+  });
+  const pg = await ctxR.newPage();
+  const errsR = [];
+  pg.on("pageerror", (e) => errsR.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(900);
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  const pgn = '[Event "Opera"]\n[White "A"]\n[Black "B"]\n[Result "0-1"]\n\n' +
+    OPERA.slice(0, 20).map((x, i) => (i % 2 ? "" : (i / 2 + 1) + ". ") + x).join(" ") + " 0-1\n";
+  await pg.evaluate((x) => { window.__clip = x; }, pgn);
+  if (await pg.evaluate(() => !!document.getElementById("more-row").hidden)) { await pg.click("#more-tools"); await settle(pg); }
+  await pg.click("#pgn-paste");
+  await pg.waitForTimeout(900);
+  if (await pg.isVisible("#confirm-modal.show").catch(() => false)) { await pg.click("#confirm-ok"); await pg.waitForTimeout(700); }
+  await pg.evaluate(() => {
+    const E = window.__chess.engine;
+    E.init = () => Promise.resolve(); E.retry = () => {}; E.isReady = () => true;
+    const b = document.querySelector("#engine-fault .toast-action");
+    if (b) b.click();
+  });
+  await settle(pg);
+  await analyseOpera(pg);
+  const s = await pg.evaluate(() => { const e = document.getElementById("rv-summary"); return e && !e.hidden ? e.textContent : null; });
+  assert(!!s && /^莉娜 · 你认输时胜率还有 \d+% —— 这盘本来还能下下去。$/.test(s), "14.0 B：领先时认输的那局，总结说的是认输（「" + s + "」）");
+  // and the key moments lead with yours: you are White here
+  const first = await pg.evaluate(() => { const c = document.querySelector("#rv-km .km-card .km-what"); return c ? c.textContent : ""; });
+  assert(/^白方/.test(first), "14.0 B：关键时刻的第一张卡是你（白方）的", first);
+  assert(errsR.length === 0, "14.0 B：没有页面异常 — " + errsR.join(" / "));
+  await ctxR.close();
+}
+
 // --- 9.0 M2：人机对局的一句话总结用对手的口吻 ----------------------------------
 // The Opera game, pasted while the mode is 人机 against 莉娜 (练习 · 重原则)
 // with you on Black: the summary is hers, about your largest fall in win

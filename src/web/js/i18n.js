@@ -694,7 +694,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "rv.sum.drop": "{0}：这盘最要紧的是第 {1} 步——你的胜率从 {2}% 掉到 {3}%。",
       "rv.sum.clean": "{0}：这盘你没有哪一步让胜率明显下滑。",
       "rv.sum.side": "全盘的转折是 {0}：{1}胜率从 {2}% 掉到 {3}%。",
-      "rv.sum.calm": "全盘没有哪一步让胜率明显下滑。",
+      "rv.sum.resignAhead": "你认输时胜率还有 {0}% —— 这盘本来还能下下去。", "rv.sum.reversed": "你曾有 {0}% 的胜率（第 {1} 回合），这盘赢棋被逆转了。", "rv.sum.flagDrawn": "超时输在一个差不多均势的局面（胜率 {0}%）—— 时间比局面先用完了。", "rv.sum.calm": "全盘没有哪一步让胜率明显下滑。",
       "rv.full": "完整报告",
       "curve.best": "应走 {0}",
       "go.ratingProv": "对局等级分 {0}",
