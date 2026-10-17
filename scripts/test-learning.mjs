@@ -78,8 +78,12 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
   // may move a rating by at most the pick band's half-width.
   const firstMiss = R.rate1v1(R.newRating(), { r: 1100, rd: 200, vol: 0.06 }, 0).player;
   const firstHit = R.rate1v1(R.newRating(), { r: 1900, rd: 200, vol: 0.06 }, 1).player;
-  assert(1500 - firstMiss.r <= 150 && firstMiss.r < 1500, "first miss on an easy puzzle moves a new player at most 150 (" + (firstMiss.r - 1500).toFixed(0) + ")");
-  assert(firstHit.r - 1500 <= 150 && firstHit.r > 1500, "…and a first solve of a hard one at most +150 (" + (firstHit.r - 1500).toFixed(0) + ")");
+  // 14.0 A2: while provisional the step is ±40 (R.PROV_STEP_CAP), not 150
+  assert(R.PROV_STEP_CAP === 40 && Math.round(1500 - firstMiss.r) === 40, "14.0 A2: first miss on an easy puzzle moves a provisional player exactly 40 (" + (firstMiss.r - 1500).toFixed(0) + ")");
+  assert(Math.round(firstHit.r - 1500) === 40, "…and a first solve of a hard one +40 (" + (firstHit.r - 1500).toFixed(0) + ")");
+  const nearSettled = R.rate1v1({ r: 1500, rd: 105, vol: 0.06 }, { r: 1900, rd: 200, vol: 0.06 }, 1).player;
+  assert(!R.isProvisional({ r: 1500, rd: 105 }) && nearSettled.r - 1500 > 40 && nearSettled.r - 1500 <= R.STEP_CAP,
+    "…a settled rating keeps the 150 line (" + (nearSettled.r - 1500).toFixed(0) + ")");
   assert(firstMiss.rd < 350 && R.isProvisional(firstMiss), "the capped answer still narrows rd, and the rating stays provisional (" + firstMiss.rd.toFixed(0) + ")");
   const settled = R.rate1v1({ r: 1500, rd: 60, vol: 0.06 }, { r: 1500, rd: 80, vol: 0.01 }, 1).player;
   const settledRaw = R.update({ r: 1500, rd: 60, vol: 0.06 }, [{ r: 1500, rd: 80, score: 1 }]);

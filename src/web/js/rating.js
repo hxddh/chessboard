@@ -140,6 +140,14 @@ function update(player, results, opt) {
  * a settled rating (rd ≲ 150) never moves this far and never meets the cap.
  */
 const STEP_CAP = 150;
+/**
+ * 14.0 A2: while the rating is provisional, one answer moves it 40 at most.
+ * 150 still let a newcomer's first few answers swing it by hundreds (the
+ * walkthrough: 1500 → 1775 in a handful of puzzles) — a number that jumps
+ * like that reads as noise, not as a measure. The deviation shrinks as
+ * before; only the step is held, until the rating is settled.
+ */
+const PROV_STEP_CAP = 40;
 
 /**
  * One answer to one puzzle, rated as a game: both sides move, the puzzle
@@ -154,7 +162,8 @@ const STEP_CAP = 150;
 function rate1v1(player, puzzle, score) {
   const next = update(player, [{ r: puzzle.r, rd: puzzle.rd, score }]);
   const step = next.r - player.r;
-  if (Math.abs(step) > STEP_CAP) next.r = player.r + Math.sign(step) * STEP_CAP;
+  const cap = isProvisional(player) ? PROV_STEP_CAP : STEP_CAP;
+  if (Math.abs(step) > cap) next.r = player.r + Math.sign(step) * cap;
   return {
     player: next,
     puzzle: update(puzzle, [{ r: player.r, rd: player.rd, score: 1 - score }],
@@ -230,4 +239,4 @@ function isProvisional(rating) {
   return !rating || !Number.isFinite(rating.rd) || rating.rd > PROVISIONAL_RD;
 }
 
-export const ChessRating = { DEFAULT, PUZZLE, STEP_CAP, IDLE_C2, PROVISIONAL_RD, newRating, update, rate1v1, expectedScore, pickRange, decayIdle, isProvisional };
+export const ChessRating = { DEFAULT, PUZZLE, STEP_CAP, PROV_STEP_CAP, IDLE_C2, PROVISIONAL_RD, newRating, update, rate1v1, expectedScore, pickRange, decayIdle, isProvisional };
