@@ -125,15 +125,19 @@ export function createAnalysis(d) {
     store.session.analyzing = true;
     store.session.analyzeAbort = false;
     store.session.analyzeProgress = "0/" + fens.length;
+    store.session.analyzeMarks = null;
     setAnalyzeUI();
     // v8-0-plan B2: the pass itself — every position at the budget, then the
     // moves that matter again, deeper — is review-pass.js, so the measurement
     // of its reproducibility runs this very code
+    // 14.0 B: two positions at a time where there is a second engine to run
+    // one on (engine.js passWidth) — 20 moves in about half the time, the same numbers
     const p = await ChessReviewPass.runPass({ fens, sans: h, budget: perMove, lines: store.ui.multipv, evalScalar,
+      width: ChessEngine.passWidth ? ChessEngine.passWidth() : 1,
       // v8-1-plan F4: a pass is background work, below a hint or 持续分析
-      analyze: (fen, b, o) => ChessEngine.analyze(fen, b, Object.assign({ bg: true }, o)),
+      analyze: (fen, b, o) => ChessEngine.analyze(fen, b, Object.assign({ bg: true, wide: true }, o)),
       halt: () => (game.pgn() !== sig ? "gone" : store.session.analyzeAbort ? "abort" : null),
-      progress: (d, n) => { store.session.analyzeProgress = d + "/" + n; setAnalyzeUI(); } });
+      progress: (d, n, sofar) => { store.session.analyzeProgress = d + "/" + n; setAnalyzeUI(); markSoFar(fens, sofar); } });
     const { scalars, pvs, bests, linesAt, depths } = p;
     if (p.halted === "gone") { store.session.analyzing = false; store.session.analyzeProgress = ""; setAnalyzeUI(); return; }
     if (p.halted) {
@@ -225,6 +229,23 @@ export function createAnalysis(d) {
     // long enough that people go and do something else. A toast behind another
     // window is a message that was never delivered.
     if (!store.ui.appForeground) Host.notify({ title: t("ntf.analysisDone"), body: done });
+  }
+
+  /**
+   * 14.0 B: the marks of the moves measured so far, while the pass runs — the
+   * move list and the board show them as they come in rather than all at the
+   * end. The deepening can still change a mark; the finished analysis
+   * replaces these. Repainted only when a mark appears, not per search.
+   */
+  function markSoFar(fens, p) {
+    if (!p || !p.scalars) return;
+    const tags = p.scalars.slice(1).map((b, i) => {
+      const a = p.scalars[i];
+      return a == null || b == null ? null : Review.classifyByWinPct(Review.winPctDrop(a, b, fens[i].split(" ")[1] === "w" ? "w" : "b"));
+    });
+    const was = store.session.analyzeMarks;
+    store.session.analyzeMarks = { tags };
+    if (!was || was.tags.join() !== tags.join()) sync();
   }
 
   /**

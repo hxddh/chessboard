@@ -311,6 +311,8 @@
           </div>
         </div>
         <div class="lesson-task pz-group" id="puzzle-task"></div>
+        <!-- 14.0 A3: 背开局's line — how far, and the moves made (trainer/puzzles.js paintDrill) -->
+        <p class="hint num pz-drill" id="pz-drill" hidden></p>
         <div class="pz-fb" id="puzzle-feedback" role="status" aria-live="polite" hidden>
           <span class="pz-fb-ic" id="puzzle-fb-ic" aria-hidden="true"></span>
           <div class="pz-fb-txt">
@@ -498,7 +500,11 @@
             </div>
           </div>
           <p class="hint xp-note" id="xp-note"></p>
+          <!-- 14.0 A3: nothing here — the last position on this line that has games, one click away -->
+          <button type="button" class="tool-txt xp-back" id="xp-back" hidden></button>
           <ol class="xp-list" id="xp-list" tabindex="-1" aria-labelledby="xp-h"></ol>
+          <!-- 14.0 A3: what the bar's three colours are -->
+          <p class="xp-legend" aria-hidden="true"><span class="xp-key xp-w"></span><span data-i18n="xp.legW">白胜</span><span class="xp-key xp-d"></span><span data-i18n="xp.legD">和</span><span class="xp-key xp-b"></span><span data-i18n="xp.legB">黑胜</span></p>
           <!-- v8-1-plan T3: your own book — which side's the 「我的」 marks and the
                row toggles are about, and the moves up to the board's position added
                to it (explorer/ui.js; repertoire-ui.js edit) -->
@@ -778,6 +784,8 @@
             </div>
             <div class="close-row split">
               <button type="button" class="act-btn" id="lib-import" data-i18n="lib.import">导入到库</button>
+              <!-- 14.0 A3: a PGN copied from a site or a chat, without saving a file first -->
+              <button type="button" class="act-btn" id="lib-paste" data-i18n="lib.paste">粘贴 PGN</button>
               <!-- v8-0-plan C2: the games from Lichess / Chess.com in one step
                    instead of five (prefs-ui.js loads the dialog, sync-ui.js, a chunk) -->
               <button type="button" class="act-btn" id="lib-sync" data-i18n="lib.sync">从网站同步</button>
@@ -801,6 +809,7 @@
                  status lines, so its coming and going moves nothing above. -->
             <div class="lib-claim" id="lib-claim" hidden>
               <p class="hint" id="lib-claim-text"></p>
+              <span class="lib-claim-names" id="lib-claim-names"></span>
               <button type="button" class="act-btn primary" id="lib-claim-yes" data-i18n="lib.claimYes">是我</button>
               <button type="button" class="act-btn" id="lib-claim-no" data-i18n="lib.claimNo">不是</button>
             </div>

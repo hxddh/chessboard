@@ -96,6 +96,7 @@ function boot(cfg = {}) {
   };
   ctx.globalThis = ctx;
   ctx.window = ctx;
+  if (cfg.cores) ctx.navigator = { hardwareConcurrency: cfg.cores };
 
   ctx.Worker = class {
     constructor() {
@@ -500,6 +501,40 @@ const gosOf = (w) => w.cmds.filter((c) => /^(go|stop|ucinewgame|position)\b/.tes
     "…and the search falls back to the first worker", JSON.stringify(r));
   const c = E.analyze(FEN3, 100, { bg: true }); await clock.advance(500); await c;
   assert(state.workers.length === 2, "…which the rest of the pass keeps using, no second try per search");
+}
+
+// 14.0 B: a wide pass borrows the lanes — a search on each, one on the
+// shared worker — and gives them back once the review is done with them
+{
+  const { E } = boot({});
+  assert(E.passWidth() === 1, "14.0 B: one core, one search at a time");
+  assert(boot({ cores: 2 }).E.passWidth() === 2 && boot({ cores: 4 }).E.passWidth() === 3 && boot({ cores: 16 }).E.passWidth() === 3,
+    "…two cores two, four or more three");
+}
+{
+  const { E, clock, state } = boot({ goDelay: 400, cores: 8 });
+  const p = E.init(); await clock.advance(1); await p;
+  const res = [];
+  const xs = [FEN, FEN2, FEN3].map((f) => E.analyze(f, 100, { bg: true, wide: true }).then((x) => res.push(x)));
+  await clock.advance(50);
+  assert(state.workers.length === 3 && state.workers[0].searching && state.workers.slice(1).every((w) => w.cmds.some((c) => /^go nodes/.test(c))),
+    "…three searches at once: the shared worker and two lanes (" + state.workers.length + " workers)");
+  await clock.advance(1000); await Promise.all(xs);
+  assert(res.length === 3 && res.every((r) => r && r.cp === 30 && r.nodes === E.nodesFor(100)), "…three whole results");
+  assert(E.getOptions().bgWorker === false && state.workers.slice(1).every((w) => w.alive), "…the setting stays off; the lanes wait for the rest of the pass");
+  await clock.advance(31000);
+  assert(state.workers.slice(1).every((w) => !w.alive), "…and are closed once no pass has used them for 30 s");
+  const x4 = E.analyze(FEN, 100, { bg: true }); await clock.advance(500); await x4;
+  assert(state.workers.length === 3, "…a pass that is not wide does not boot one again");
+}
+{
+  // a lane that does not boot: the wide pass carries on, on the shared worker alone
+  const { E, clock, state } = boot({ goDelay: 100, deafInitFrom: 1, cores: 8 });
+  const p = E.init(); await clock.advance(1); await p;
+  let r = null;
+  const b = E.analyze(FEN2, 100, { bg: true, wide: true }).then((x) => { r = x; });
+  await clock.advance(31000); await b;
+  assert(r && r.cp === 30 && E.passWidth() === 1, "…a lane that does not boot: the search falls back, and the pass narrows to one");
 }
 
 // v8-0-plan §5: the generated engine-src.js header named Stockfish 18 after

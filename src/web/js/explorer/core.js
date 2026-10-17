@@ -141,22 +141,33 @@ export function indexGames(list, maxPly) {
  */
 export function librarySource(getList, db, onChange) {
   let memo = { list: null, n: 0, idx: null };
-  let asked = null, answer = null, plain = !db;
-  const same = (a, key, list) => a && a.key === key && a.list === list && a.n === list.length;
+  let plain = !db;
+  // 14.0 A3: an answer per position, not only the last one — the panel now
+  // also asks about the positions before the board's (the way back to games),
+  // and with one slot the two questions evicted each other's answers for ever
+  let answers = new Map(), forList = null, forN = 0;
+  const asked = new Set();
+  const ANSWERS_KEPT = 200;
   function hitsAt(key, fen) {
     const list = getList() || [];
     if (plain || !fen) {
       if (memo.list !== list || memo.n !== list.length) memo = { list, n: list.length, idx: indexGames(list) };
       return tally((memo.idx.get(key) || []).map(([gi, ply]) => ({ san: String(list[gi].sans).split(" ")[ply], result: list[gi].result })));
     }
-    if (same(answer, key, list)) return answer.rows;
-    if (!same(asked, key, list)) {
-      const q = (asked = { key, list, n: list.length });
+    if (forList !== list || forN !== list.length) { answers = new Map(); asked.clear(); forList = list; forN = list.length; }
+    if (answers.has(key)) return answers.get(key);
+    if (!asked.has(key)) {
+      asked.add(key);
+      const gen = answers;
       Promise.resolve(db.gamesWithPosition(fen)).catch(() => null).then((r) => {
-        if (asked !== q) return;
+        if (gen !== answers) return;
+        asked.delete(key);
         if (!r) plain = true;
         // the board's results, the way `tally` counts them
-        else answer = Object.assign({}, q, { rows: sortRows((r.moves || []).map((m) => ({ san: m.san, n: m.n, w: m.white, d: m.draws, b: m.black }))) });
+        else {
+          answers.set(key, sortRows((r.moves || []).map((m) => ({ san: m.san, n: m.n, w: m.white, d: m.draws, b: m.black }))));
+          if (answers.size > ANSWERS_KEPT) answers.delete(answers.keys().next().value);
+        }
         if (onChange) onChange();
       });
     }
@@ -165,8 +176,8 @@ export function librarySource(getList, db, onChange) {
   return {
     /** @returns {Array<{san,n,w,d,b}>|null} null: the database has not answered yet */
     movesAt: (key, fen) => hitsAt(key, fen),
-    /** forget the database's last answer: its index grew under the same list */
-    refresh: () => { asked = answer = null; },
+    /** forget the database's answers: its index grew under the same list */
+    refresh: () => { answers = new Map(); asked.clear(); },
     /** how many games the source holds — the empty state says so */
     size: () => (getList() || []).length,
   };

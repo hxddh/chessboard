@@ -13,15 +13,23 @@
  * @module game-end
  */
 import { ChessEngine } from "./engine.js";
+import { tdot } from "./tdot.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
  */
 export function createGameEnd(d) {
   const {
-    store, t, tf, sideName, game, el, setText, avail, sanHistory, analysisFor,
+    store, t, tf, sideName, game, el, setText, avail, sanHistory, analysisFor, stripPeople, appEl, bottomSide,
     appGameOver, resultFromFile, gameResultToken, timeoutIsDraw, autoDrawReason, isLive, kingSquare, onMainline,
   } = d;
+
+  /** The bottom strip's name in a loaded two-player game, "" otherwise (the wide layout keeps that strip). */
+  function coveredName() {
+    if (store.session.mode !== "pvp" || !stripPeople || appEl.classList.contains("pv-wide")) return "";
+    const p = stripPeople()[bottomSide()];
+    return p && p.name !== t("vs.p1") && p.name !== t("vs.p2") ? p.name : "";
+  }
 
   /**
    * How the live game ended, or null while it is still going (7.7 §4).
@@ -88,7 +96,9 @@ export function createGameEnd(d) {
     // being off-screen with it — Codex on #82. On the board since A5, the
     // card is on screen whenever the board is.)
     setText(el("go-result"), result);
-    setText(el("go-reason"), end.reason);
+    // the bar stands where the bottom player's strip was: a loaded game's
+    // name for that chair stays on the bar, before the reason (14.0 A1)
+    setText(el("go-reason"), tdot(coveredName(), end.reason));
     // the persona's line has no room in the bar: it is the bar's tooltip
     const say = el("go-say");
     card.title = say && !say.hidden ? say.textContent : "";

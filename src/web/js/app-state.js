@@ -114,6 +114,8 @@ export function initialState() {
       /** set by the stop button; the analysis loop bails at the next position */
       analyzeAbort: false,
       analyzeProgress: "",
+      // 14.0 B: the marks of the plies a running pass has already measured
+      analyzeMarks: null,
       /** engine hint arrow {from,to}; cleared whenever the game mutates */
       hintMove: null,
       hintPending: false,
@@ -122,6 +124,8 @@ export function initialState() {
       personaId: "off",
       /** learn-mode runtime; null unless mode === 'learn' */
       learn: null,
+      /** 14.0 E: runs started or stopped — a lesson waiting on its chunk opens only if none came after it */
+      learnRuns: 0,
       /** puzzle-mode runtime; null unless mode === 'puzzle' */
       puzzle: null,
       /** 7.8 §3: 再试一次 — one move to find, on top of the replay; see startRetry */

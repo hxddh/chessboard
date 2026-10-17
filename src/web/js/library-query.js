@@ -245,18 +245,8 @@ function gamesWithPosition(games, fenOrKey, pkOf) {
   return out;
 }
 
-/**
- * v8-0-plan C1: who "you" are, from the games themselves.
- *
- * The name on the most games, when it is on at least half of them and on
- * more than any other name — an archive downloaded from one account has its
- * owner in every game, and a file of other people's games has nobody who
- * qualifies, which is the answer "do not guess" (library.js sideOf) wants.
- * Case-insensitive, like the claim itself; the spelling returned is the one
- * seen most.
- * @returns {{name: string, n: number, of: number}|null}
- */
-function inferName(games) {
+/** Every player name on the imported games, most games first, and how many games were read. */
+function nameCounts(games) {
   const count = new Map();
   let of = 0;
   for (const g of games || []) {
@@ -274,11 +264,36 @@ function inferName(games) {
       row.spell.set(name, (row.spell.get(name) || 0) + 1);
     }
   }
-  const rows = [...count.values()].sort((a, b) => b.n - a.n);
+  const spelt = (row) => [...row.spell.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  return { rows: [...count.values()].sort((a, b) => b.n - a.n).map((row) => ({ name: spelt(row), n: row.n })), of };
+}
+
+/**
+ * v8-0-plan C1: who "you" are, from the games themselves.
+ *
+ * The name on the most games, when it is on at least half of them and on
+ * more than any other name — an archive downloaded from one account has its
+ * owner in every game, and a file of other people's games has nobody who
+ * qualifies, which is the answer "do not guess" (library.js sideOf) wants.
+ * Case-insensitive, like the claim itself; the spelling returned is the one
+ * seen most.
+ * @returns {{name: string, n: number, of: number}|null}
+ */
+function inferName(games) {
+  const { rows, of } = nameCounts(games);
   const best = rows[0];
   if (!best || best.n < 2 || best.n * 2 < of || (rows[1] && rows[1].n === best.n)) return null;
-  const name = [...best.spell.entries()].sort((a, b) => b[1] - a[1])[0][0];
-  return { name, n: best.n, of };
+  return { name: best.name, n: best.n, of };
+}
+
+/**
+ * 14.0 A3: when no one name is clearly yours (inferName is null), the
+ * `k` names on most games, to pick from — two games of yours against two
+ * different people, and nothing was offered.
+ */
+function topNames(games, k) {
+  const { rows, of } = nameCounts(games);
+  return { names: rows.slice(0, k || 3), of };
 }
 
 /**
@@ -380,5 +395,5 @@ const PGN_FIELDS = ["id", "white", "black", "date", "event", "site", "round", "r
 export const LibraryQuery = {
   SHARDS, TC_CLASSES, PGN_FIELDS,
   positionKey, hashKey, keysOfFens, keysOfGame, tcClass, dateKey, query, gamesWithPosition,
-  inferName, shardOf, entryPgn, ecoOfFens, siteOf,
+  inferName, topNames, shardOf, entryPgn, ecoOfFens, siteOf,
 };

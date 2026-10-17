@@ -1849,6 +1849,36 @@ if (hasTab && REAL.length) {
   delete held["/js/chunk-lessons-adv.js"];
 }
 
+// --- 14.0 A1: 「已解 x/N」 is the category's, and N does not move -----------
+// It counted the whole book — the mined set, your mistakes, your repertoire —
+// so the same category read 1386, 1391 and 15523 on three launches. With
+// and without three of your own mistakes in the book, 一步杀 is the same N,
+// and that N is 一步杀's.
+{
+  const progOf = async (mines) => {
+    const c = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+    await c.addInitScript((ms) => {
+      localStorage.setItem("chess.settings", JSON.stringify({ mode: "puzzle", langId: "zh-CN", sideTab: "play", soundOn: false, appearance: "dark", boardId: "wood" }));
+      localStorage.setItem("chess.panelOpen", "1");
+      localStorage.setItem("chess.puzzles", JSON.stringify({ v: 1, idv: 2, cat: "m1", solved: {}, missed: {} }));
+      if (ms.length) localStorage.setItem("chess.mines", JSON.stringify({ v: 1, list: ms }));
+    }, mines);
+    const pg = await c.newPage();
+    pg.on("pageerror", (e) => errs.push(e.message));
+    await pg.goto(`http://127.0.0.1:${PORT}/`);
+    await pg.waitForTimeout(1500);
+    const r = await pg.evaluate(() => ({ prog: (document.getElementById("puzzle-progress") || {}).textContent || "",
+      m1: window.__chess && window.__chess.puzzlesInCat ? window.__chess.puzzlesInCat("m1").length : null }));
+    await c.close();
+    return r;
+  };
+  const mine = (i) => ({ id: "mine-a1-" + i, cat: "mine", fen: "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1", solution: ["a1a8"], name: "x" });
+  const a = await progOf([]), b = await progOf([mine(1), mine(2), mine(3)]);
+  const n = (r) => Number((/\/(\d+)/.exec(r.prog) || [])[1]);
+  assert(n(a) > 0 && n(a) === n(b) && (a.m1 == null || n(a) === a.m1),
+    "14.0 A1:「已解 x/N」数的是这一类（一步杀）的题，多了自己的错题也不变", JSON.stringify({ a, b }));
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();

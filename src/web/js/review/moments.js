@@ -27,7 +27,7 @@
 export function createMoments(d) {
   const {
     doc, store, t, tf, tdot, sideName, analysisFor, sanHistory, startFen, boardMoveNo, setViewIndex, writeSan,
-    inModal, Retry, Grade, oppName,
+    inModal, Retry, Grade, oppName, Review, result,
   } = d;
   const document = doc;
 
@@ -45,13 +45,22 @@ export function createMoments(d) {
     return store.session._km;
   }
 
-  /** The moments of the analysed game, in the order they were played. */
+  /** Your side, in a game against the engine; null where nobody at the board is "you". */
+  const you = () => (store.session.mode === "ai" ? store.session.humanColor : null);
+  /**
+   * The moments of the analysed game, in the order they were played — 14.0
+   * B: in a game of yours, yours first, then the opponent's (the review is
+   * about what you can change; it led with whichever came first).
+   */
   function momentsOf(a) {
     const firstMover = startFen() ? (startFen().split(" ")[1] === "b" ? "b" : "w") : "w";
     const graded = a.v === 2 && Array.isArray(a.grades) ? a.grades : null;
     const m = Grade.keyMoments({ sans: sanHistory(), scalars: a.scalars, bests: a.bests, seconds: a.seconds || [] },
       graded, firstMover, boardMoveNo);
-    return m.w.concat(m.b).sort((x, y) => x.ply - y.ply);
+    const me = you(), byPly = (x, y) => x.ply - y.ply;
+    if (!me) return m.w.concat(m.b).sort(byPly);
+    const other = me === "w" ? "b" : "w";
+    return m[me].slice().sort(byPly).concat(m[other].slice().sort(byPly));
   }
 
   /** The mark a moment carries: its glyph where it has one, else its tag. */
@@ -96,7 +105,8 @@ export function createMoments(d) {
     if (!list.length) { box.dataset.key = ""; return; }
     const m = list[at];
     const ex = whyOpen ? Retry.mistakeFacts(m.ply) : null;
-    const canRetry = !!(Retry.retryFacts(m.ply) || {}).better;
+    // 14.0 B: 再试一次 is for your own moves — the opponent's are not yours to replay
+    const canRetry = (!you() || m.side === you()) && !!(Retry.retryFacts(m.ply) || {}).better;
     // 7.6: rebuilt only when what it shows changes — the step keys are
     // written once in the page and never rebuilt, so they can be pressed
     // again and again while the card under them turns
@@ -190,6 +200,24 @@ export function createMoments(d) {
    * the card steps through: the largest fall in win chance is the game's
    * turning point, and a game without one says so.
    */
+  /**
+   * 14.0 B: how a game of yours ended, when that is the story — resigned
+   * with the game still in hand (≥ 70%), a won game (≥ 85% at some point)
+   * lost, or the clock run out in a level position. Null otherwise.
+   */
+  function endingNote(a) {
+    const me = store.session.humanColor, sc = a.scalars || [];
+    if (!Review || !result) return null;
+    const winOf = (x) => { const w = x == null ? null : Review.winPct(x); return w == null ? null : me === "w" ? w : 100 - w; };
+    const token = result(), lost = token === (me === "w" ? "0-1" : "1-0");
+    const last = winOf(sc[sc.length - 1]);
+    if (lost && store.game.resigned === me && last != null && last >= 70) return tf("rv.sum.resignAhead", [Math.round(last)]);
+    if (lost && store.game.flagFall === me && last != null && last >= 40 && last <= 60) return tf("rv.sum.flagDrawn", [Math.round(last)]);
+    if (!lost) return null;
+    let peak = null;
+    sc.forEach((x, i) => { const w = winOf(x); if (w != null && (!peak || w > peak.w)) peak = { w, i }; });
+    return peak && peak.w >= 85 ? tf("rv.sum.reversed", [Math.round(peak.w), boardMoveNo(Math.max(0, peak.i - 1))]) : null;
+  }
   function summaryText(a, list) {
     const ai = store.session.mode === "ai";
     const you = store.session.humanColor;
@@ -198,6 +226,8 @@ export function createMoments(d) {
     const pct = (x) => Math.round(x);
     if (ai) {
       const who = oppName ? oppName() : "";
+      const ending = endingNote(a);
+      if (ending) return tdot(who, ending);
       if (!m) return tf("rv.sum.clean", [who]);
       return m.before >= 50 && m.after < 50
         ? tf("rv.sum.turn", [who, m.moveNo, pct(m.before)])

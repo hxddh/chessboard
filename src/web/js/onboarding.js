@@ -15,8 +15,13 @@
  * leaves the player on the board against the default rung (休闲, not the
  * 1700 中级 it was through 9.0), so this can never trap anyone.
  *
+ * 14.0 A3: a question closed unanswered — 以后再说, or the app quit over it
+ * — is asked again at the next launch, three launches at most
+ * (`store.ui.ob`, kept in the settings); 以后再说 lands on 今天.
+ *
  * Moved out of app.js with T1, which grew it past the file's line budget,
- * and a chunk (chunk-onboarding.js): it runs once, on a fresh install.
+ * and a chunk (chunk-onboarding.js): it runs on a fresh install, and again
+ * until answered.
  * @module onboarding
  */
 
@@ -29,10 +34,13 @@ export const PLACE_BASE = { knows: 900, often: 1400 };
 export function createOnboarding(d) {
   const {
     t, store, pickFromList, startLearn, startPlacement, setPanelOpen, panelCoversBoard,
-    saveSettings, maybeEngineTurn,
+    saveSettings, maybeEngineTurn, goHome,
   } = d;
 
   async function run() {
+    // counted before it is answered: quitting over the question is a launch it was asked in
+    store.ui.ob = { n: ((store.ui.ob && store.ui.ob.n) || 0) + 1, done: false };
+    saveSettings();
     // 5.1: the first door is marked as the one to take, and the way out says
     // where it leads (audit, work package E)
     const choice = await pickFromList(t("ob.title"), [
@@ -49,6 +57,7 @@ export function createOnboarding(d) {
     } else if (choice !== 1 && choice !== 2) {
       store.session.mode = "ai";
     }
+    store.ui.ob.done = choice === 0 || choice === 1 || choice === 2;
     // …but not where the panel is a full-height sheet over the board: ending
     // the onboarding by covering the thing it just set up is not a welcome
     // (7.3 §1)
@@ -56,7 +65,7 @@ export function createOnboarding(d) {
     saveSettings();
     store.commit("session", "sync");
     if (choice === 1 || choice === 2) startPlacement(choice === 1 ? PLACE_BASE.knows : PLACE_BASE.often);
-    else if (choice !== 0) maybeEngineTurn();
+    else if (choice !== 0) { maybeEngineTurn(); if (goHome) goHome(); }
   }
 
   return { run };

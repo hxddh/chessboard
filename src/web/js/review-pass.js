@@ -49,7 +49,8 @@ function sansOf(fen, ucis, max) {
  * @param {(fen: string, budget: number, opts: object) => Promise<object|null>} o.analyze
  * @param {(e: object|null) => number|null} o.evalScalar engine result → White-view scalar
  * @param {() => ("abort"|"gone"|null)} [o.halt] asked before every search
- * @param {(done: number, total: number) => void} [o.progress]
+ * @param {number} [o.width] searches in flight at once (14.0 B; default 1)
+ * @param {(done: number, total: number, p: object) => void} [o.progress] `p` the arrays so far
  * @returns {Promise<object>} the arrays below, plus `halted` ("abort" / "gone"
  *   with `at` = the position it stopped before) when the pass was cut short,
  *   or `deepCut: true` when Stop came during the deepening — the pass is whole
@@ -96,14 +97,30 @@ async function runPass(o) {
   };
   const stop = () => (o.halt ? o.halt() : null);
 
+  // 14.0 B: `width` searches in flight at once (engine.js passWidth: the
+  // second engine beside the shared one). Each search is a pure function of
+  // its position, so the order they come back in changes no number; the
+  // first runner to meet a stop ends the pool, the others finish the search
+  // they are in.
+  const width = Math.max(1, o.width || 1);
+  async function pool(list, fn) {
+    let next = 0, out = null;
+    const runner = async () => {
+      while (out == null && next < list.length) { const r = await fn(list[next++]); if (r && out == null) out = r; }
+    };
+    await Promise.all(Array.from({ length: Math.min(width, list.length) || 1 }, runner));
+    return out;
+  }
+
   // --- 1. quick scan ------------------------------------------------------
   // Repetition count per position as the replay walks forward, so the
   // terminal test can tell fivefold (art. 9.6, the game is over) from
   // threefold (art. 9.2, a player may claim and the game otherwise goes on).
+  // Walked first, in order, because the count depends on what came before.
   const repSeen = new Map();
+  const todo = [];
+  const done = new Array(n).fill(false);
   for (let i = 0; i < n; i++) {
-    const why = stop();
-    if (why) return Object.assign(p, { halted: why, at: i });
     const probe = new Chess(fens[i]);
     const repKey = Fide.positionKey(fens[i], probe);
     const reps = (repSeen.get(repKey) || 0) + 1;
@@ -115,14 +132,30 @@ async function runPass(o) {
     // it — the accuracy figure included. Same rule as naturalGameOver().
     if (probe.in_checkmate()) { p.scalars[i] = probe.turn() === "w" ? -10000 : 10000; p.terminal[i] = true; }
     else if (Fide.positionFinished(probe, reps)) { p.scalars[i] = 0; p.terminal[i] = true; }
-    else {
-      const e = await search(i, budget, quickMpv);
-      const late = stop();
-      if (late === "gone") return Object.assign(p, { halted: late, at: i });
-      take(i, e);
-    }
-    if (o.progress) o.progress(i + 1, n);
+    else todo.push(i);
   }
+  const firstMissing = () => { const k = todo.find((i) => !done[i]); return k == null ? n : k; };
+  const stopAt = (why) => {
+    // what was kept is the prefix measured without a gap — a search that
+    // came back past the stop is dropped, so a partial curve has no holes
+    const at = firstMissing();
+    for (let i = at; i < n; i++) { p.scalars[i] = null; p.bests[i] = null; p.pvs[i] = null; p.linesAt[i] = null; p.depths[i] = null; p.seconds[i] = null; }
+    return Object.assign(p, { halted: why, at });
+  };
+  if (!todo.length) { const why = stop(); if (why) return Object.assign(p, { halted: why, at: 0 }); }
+  const quick = { done: n - todo.length };
+  const halted = await pool(todo, async (i) => {
+    const why = stop();
+    if (why) return why;
+    const e = await search(i, budget, quickMpv);
+    const late = stop();
+    if (late === "gone") return late;
+    take(i, e);
+    done[i] = true;
+    if (o.progress) o.progress(++quick.done, n, p);
+    return null;
+  });
+  if (halted) return stopAt(halted);
 
   // --- 2. deepening -------------------------------------------------------
   const count = { done: n, total: n };
@@ -130,24 +163,25 @@ async function runPass(o) {
     const targets = Grade.deepTargets(p, Chess);
     if (!targets.length) break;
     count.total += targets.length;
-    for (const i of targets) {
+    const cut = await pool(targets, async (i) => {
       // a Stop here is not a halt: every position already has its quick
       // numbers, so the pass is whole and the caller grades and files it;
       // `deepCut` only says the deepening was cut (review of PR #87)
       const why = stop();
-      if (why === "gone") return Object.assign(p, { halted: why, at: n });
-      if (why) return Object.assign(p, { deepCut: true });
+      if (why) return why;
       const e = await search(i, budget * Grade.DEEP_FACTOR, deepMpv);
       // a search Stop cancelled is cut short, not deeper: keep the quick
       // numbers and do not count the position as deepened (confirmed)
       const late = stop();
-      if (late === "gone") return Object.assign(p, { halted: late, at: n });
-      if (late) return Object.assign(p, { deepCut: true });
+      if (late) return late;
       // a failed deep search keeps the quick numbers rather than a hole
       if (o.evalScalar(e) != null) take(i, e);
       p.deep[i] = true;
-      if (o.progress) o.progress(++count.done, count.total);
-    }
+      if (o.progress) o.progress(++count.done, count.total, p);
+      return null;
+    });
+    if (cut === "gone") return Object.assign(p, { halted: cut, at: n });
+    if (cut) return Object.assign(p, { deepCut: true });
   }
   return p;
 }

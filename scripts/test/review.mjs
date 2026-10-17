@@ -44,6 +44,27 @@ export async function run() {
     const epPinned = new Chess("8/8/8/K2pP2q/8/8/8/7k w - d6 0 1");
     assert(F.positionKey(epPinned.fen(), epPinned).endsWith(" -"),
       "ep right that would expose the king is normalised away");
+    // 14.0 A3: the board is read first (no pawn beside the pushed one: no
+    // move generation); the key must be the move generation's, everywhere.
+    // Random games with every double step, both colours, edge files, pins
+    {
+      const full = (g) => { const h = g.fen().split(" ").slice(0, 4); if (h[3] !== "-" && !g.moves({ verbose: true }).some((m) => m.flags.includes("e"))) h[3] = "-"; return h.join(" "); };
+      let seed = 7, checked = 0, withEp = 0, bad = null;
+      const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+      for (let game = 0; game < 120 && !bad; game++) {
+        const g = new Chess();
+        for (let ply = 0; ply < 60 && !g.game_over(); ply++) {
+          const ms = g.moves({ verbose: true });
+          const pawnPushes = ms.filter((m) => m.flags.includes("b") || m.flags.includes("e"));
+          const m = pawnPushes.length && rnd() < 0.5 ? pawnPushes[Math.floor(rnd() * pawnPushes.length)] : ms[Math.floor(rnd() * ms.length)];
+          g.move(m);
+          checked++;
+          if (g.fen().split(" ")[3] !== "-") withEp++;
+          if (F.positionKey(g.fen(), g) !== full(g) || F.positionKey(g.fen(), null, Chess) !== full(g)) { bad = g.fen(); break; }
+        }
+      }
+      assert(!bad && withEp > 200, "14.0 A3: the ep check from the board gives the move generation's key (" + checked + " positions, " + withEp + " with an ep square)", bad);
+    }
 
     const boardOf = (fen) => new Chess(fen).board();
     const mat = (fen, color) => F.hasMatingMaterial(boardOf(fen), color);

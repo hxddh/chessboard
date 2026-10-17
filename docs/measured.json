@@ -592,7 +592,7 @@
   },
   "coachCoverage": {
     "what": "复盘里 ? / ?? 的一句说明说出了战术母题的比例（explain.js，按 app.js mistakeFacts() 的调用方式）",
-    "script": "scripts/test-coach.mjs --record=before|after --audit=docs/coach-audit-8.0.md",
+    "script": "scripts/test-coach.mjs --record=before|after|v14 --audit=docs/coach-audit-14.0.md",
     "movetimeMs": 200,
     "oracleMs": 1500,
     "corpora": {
@@ -769,6 +769,110 @@
         "claims": 63,
         "wrongClaims": 1,
         "wrongClaimsPct": 1.6
+      }
+    },
+    "v14": {
+      "corpus": {
+        "mistakes": 99,
+        "explained": 37,
+        "explainedPct": 37.4,
+        "reasoned": 53,
+        "reasonedPct": 53.5,
+        "blunders": 45,
+        "blundersExplained": 35,
+        "blundersExplainedPct": 77.8,
+        "blundersMotifOrMate": 36,
+        "blundersMotifOrMatePct": 80,
+        "byKey": {
+          "ex.loss": 9,
+          "ex.better": 43,
+          "ex.betterWins": 6,
+          "ex.threatHanging": 7,
+          "ex.betterHanging": 14,
+          "ex.allowsMate": 1,
+          "ex.hangingCheap": 2,
+          "ex.hanging": 9,
+          "ex.threatCheap": 2,
+          "ex.betterCheap": 1,
+          "ex.motifLoss": 1,
+          "ex.betterMotif": 1
+        },
+        "byMotif": {
+          "hanging": 35,
+          "fork": 2
+        }
+      },
+      "low": {
+        "mistakes": 112,
+        "explained": 30,
+        "explainedPct": 26.8,
+        "reasoned": 69,
+        "reasonedPct": 61.6,
+        "blunders": 38,
+        "blundersExplained": 14,
+        "blundersExplainedPct": 36.8,
+        "blundersMotifOrMate": 14,
+        "blundersMotifOrMatePct": 36.8,
+        "byKey": {
+          "ex.better": 42,
+          "ex.betterWins": 23,
+          "ex.threatCheap": 3,
+          "ex.hangingCheap": 3,
+          "ex.betterCheap": 8,
+          "ex.forkHits": 1,
+          "ex.loss": 16,
+          "ex.motifLoss": 4,
+          "ex.betterMotif": 1,
+          "ex.betterHanging": 8,
+          "ex.threatHanging": 2
+        },
+        "byMotif": {
+          "hanging": 24,
+          "fork": 3,
+          "discoveredAttack": 2,
+          "desperado": 1
+        }
+      },
+      "all": {
+        "mistakes": 211,
+        "explained": 67,
+        "explainedPct": 31.8,
+        "reasoned": 122,
+        "reasonedPct": 57.8,
+        "blunders": 83,
+        "blundersExplained": 49,
+        "blundersExplainedPct": 59,
+        "blundersMotifOrMate": 50,
+        "blundersMotifOrMatePct": 60.2,
+        "byKey": {
+          "ex.loss": 25,
+          "ex.better": 85,
+          "ex.betterWins": 29,
+          "ex.threatHanging": 9,
+          "ex.betterHanging": 22,
+          "ex.allowsMate": 1,
+          "ex.hangingCheap": 5,
+          "ex.hanging": 9,
+          "ex.threatCheap": 5,
+          "ex.betterCheap": 9,
+          "ex.motifLoss": 5,
+          "ex.betterMotif": 2,
+          "ex.forkHits": 1
+        },
+        "byMotif": {
+          "hanging": 59,
+          "fork": 5,
+          "discoveredAttack": 2,
+          "desperado": 1
+        }
+      },
+      "audit": {
+        "n": 100,
+        "wrong": 1,
+        "wrongPct": 1,
+        "claims": 73,
+        "wrongClaims": 1,
+        "wrongClaimsPct": 1.4
       }
     }
   },

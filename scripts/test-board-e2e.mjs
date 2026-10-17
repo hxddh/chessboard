@@ -1801,6 +1801,57 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     await ctx.close();
   }
 
+  // (a2) 14.0 A3: the question closed unanswered (以后再说) lands on 今天 and is
+  // asked again at the next launch; answered, it is not asked again
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1200);
+    const asked = () => page.evaluate(() => !!document.querySelector("#pick-modal.show") && document.querySelectorAll("#pick-list .pick-item").length === 3);
+    const first = await asked();
+    await page.click("#pick-cancel");
+    await page.waitForTimeout(500);
+    const view1 = await page.evaluate(() => document.getElementById("app").getAttribute("data-view"));
+    await page.reload();
+    await page.waitForTimeout(1500);
+    const again = await asked();
+    await page.evaluate(() => document.querySelectorAll("#pick-list .pick-item")[0].click());
+    await page.waitForTimeout(800);
+    await page.reload();
+    await page.waitForTimeout(1500);
+    const third = await asked();
+    assert(first && view1 === "home" && again && !third,
+      "14.0 A3 首次的问题：「以后再说」落在今天，下次启动再问；答了就不再问", JSON.stringify({ first, view1, again, third }));
+    assert(errs.length === 0, `14.0 A3 首次的问题:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+
+  // (a3) 14.0 A3: a placement the app was closed in comes back where it was
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1200);
+    await page.evaluate(() => document.querySelectorAll("#pick-list .pick-item")[1].click());
+    await page.waitForTimeout(1200);
+    const head = () => page.evaluate(() => (document.getElementById("pz-run-head") || {}).textContent || "");
+    for (let i = 0; i < 2; i++) { await page.keyboard.press("h"); await page.waitForTimeout(1300); }
+    const before = await head();
+    await page.reload();
+    await page.waitForTimeout(2000);
+    const after = await head();
+    const pick = await page.evaluate(() => !!document.querySelector("#pick-modal.show"));
+    assert(/第 3 题，共 6 题/.test(before) && /定级 · 第 3 题，共 6 题/.test(after) && !pick,
+      "14.0 A3 定级做到第 3 题时关掉，重开还在第 3 题", JSON.stringify({ before, after, pick }));
+    assert(errs.length === 0, `14.0 A3 定级续上:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+
   // (b) first launch, 「会走子」 (v10-0-plan T1): six placement puzzles whose
   // aim follows the answers; the estimate becomes the puzzle rating and picks
   // the opponent; 去今天 → 今天's first thing is a game against them — three
@@ -1830,6 +1881,10 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     const today = await page.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
       title: document.getElementById("today-hero-title").textContent }));
     assert(today.view === "home" && today.title === "来一盘", "T1 「去今天」:今天的第一件事是和配好的对手下一盘", JSON.stringify(today));
+    // 14.0 A1: the placement set a rating, it answered no puzzle of the day —
+    // 题 read 1/5 here while 已解 said 0
+    const ring = await page.evaluate(() => (document.querySelector('#today-rings .today-ring[data-k="puzzle"] b') || {}).textContent);
+    assert(ring === "0/5", "14.0 A1 定级之后:今天的「题」还是 0/5,和「已解 0」一致", ring);
     await page.click("#today-go");
     await page.waitForTimeout(600);
     const play = await page.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),

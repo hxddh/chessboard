@@ -442,6 +442,8 @@ export function createPuzzleModes(d) {
     const p = Runs.pickNext(run, runPool(), runRating);
     if (!p) { run.over = true; run.why = "spent"; finishRun(); return; }
     Runs.served(run, p);
+    // 14.0 A3: a placement is kept as it goes — quit half way, the next launch picks it up
+    if (run.kind === "place") { store.session.puzzleState.placeRun = Object.assign({}, run, { timer: 0 }); savePuzzleState(); }
     wantRunBands(run);
     seatPuzzle(run.kind, run.used.length - 1, p, run);
   }
@@ -497,6 +499,7 @@ export function createPuzzleModes(d) {
     if (!run || run.filed) return;
     run.over = true;
     run.filed = true;
+    if (run.kind === "place") delete store.session.puzzleState.placeRun;
     stopClock(run);
     const pz = store.session.puzzle;
     if (pz && pz.run === run) pz.done = true;
@@ -517,13 +520,27 @@ export function createPuzzleModes(d) {
     const r = Math.round(run.est);
     st.rating = { r, rd: Runs.PLACE_RD, vol: ChessRating.DEFAULT.vol };
     st.ratedAt = now;
-    st.rhist = (Array.isArray(st.rhist) ? st.rhist : []).concat([{ t: now, r }]).slice(-60);
+    // `place`: a rating set by the assessment, not one puzzle answered — 今天's
+    // 题 ring counts answers, and read 1/5 after it while 已解 said 0 (14.0 A1)
+    st.rhist = (Array.isArray(st.rhist) ? st.rhist : []).concat([{ t: now, r, place: true }]).slice(-60);
     st.placed = { r, at: now };
     run.opp = onPlaced ? onPlaced(r) : "";
   }
   /** v10-0-plan T1: the first run of all, from the first-run question. */
   function startPlacement(base) {
     startRun("place", Runs.newRun("place", Date.now(), Date.now(), base));
+  }
+  /**
+   * 14.0 A3: a placement the app was closed in, where it was — the puzzle on
+   * the board when it closed is served again (the answer to it was not in).
+   * @returns {boolean} there was one
+   */
+  function resumePlacement() {
+    const kept = store.session.puzzleState.placeRun;
+    if (!kept || kept.kind !== "place" || !Array.isArray(kept.used) || kept.over) return false;
+    const run = Object.assign({}, kept, { used: kept.used.slice(0, -1), timer: 0 });
+    startRun("place", run);
+    return true;
   }
 
   /** Stop the run in progress (leaving the mode, 结束, another run). */
@@ -806,5 +823,5 @@ export function createPuzzleModes(d) {
     };
   }
 
-  return { lcPool, themeList, startTheme, groupList, groupCount, startGroup, goGroup, nearestIdx, rateThemes, runSolved, runMissed, runAnswer, endRun, parkRun, unparkRun, render, wire, closeThemes, startRun, finishRun, startPlacement, goTheme };
+  return { lcPool, themeList, startTheme, groupList, groupCount, startGroup, goGroup, nearestIdx, rateThemes, runSolved, runMissed, runAnswer, endRun, parkRun, unparkRun, render, wire, closeThemes, startRun, finishRun, startPlacement, resumePlacement, goTheme };
 }

@@ -441,8 +441,17 @@ const PLACEMENT = STUDY.split(" ")[0];
     toast: ((document.querySelector(".toast.show") || {}).textContent || "").trim(),
   }));
 
+  // 14.0 A3: a game still being played is the one thing it asks about
+  const sqAt = (sq) => page.evaluate((s) => {
+    const r = document.getElementById("board").getBoundingClientRect();
+    const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, sq);
+  for (const sq of ["e2", "e4"]) { const p = await sqAt(sq); await page.mouse.click(p.x, p.y); await page.waitForTimeout(150); }
+  await page.waitForTimeout(300);
   await clip('[Event "T"]\n[White "A"]\n[Black "B"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0\n');
   await paste();
+  assert(await answerIfAsked(), "14.0 A3: 盘上是一局正在下的棋 —— 粘贴前先问「导入将替换当前对局」");
   const one = await seen();
   assert(one.plies === 6 && !one.picker, `一局的棋谱直接进来了(${one.plies} 着)`);
 
@@ -459,7 +468,9 @@ const PLACEMENT = STUDY.split(" ")[0];
     `…三行都在,而且写着谁对谁、什么结果(${JSON.stringify(rows.map((r) => r.slice(0, 18)))})`);
   await page.click("#pick-modal .pick-list button");
   await page.waitForTimeout(600);
-  assert(await answerIfAsked(), "选中一局之后,它先问「导入将替换当前对局」");
+  // 14.0 A3: what it replaces is the game pasted a moment ago — it is still in
+  // its file, nothing is lost, so it no longer asks (it asked every time)
+  assert(!(await answerIfAsked()), "14.0 A3: 换掉的是刚导入的那局 —— 不再问「导入将替换当前对局」");
   const picked = await seen();
   assert(picked.plies === 7, `…答应了才换,而且换成的正是选的那一局(7 着,实际 ${picked.plies})`);
   const last = await page.evaluate(() => {

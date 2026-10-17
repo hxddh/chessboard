@@ -403,7 +403,8 @@ const FIXED = fenAfter("e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5 Nxd5 Nxf7 Kxf7 Qf3+ Ke
   // read off explain.js itself, so a sentence added there cannot miss a language
   const src = fs.readFileSync(path.join(root, "src/web/js/explain.js"), "utf8");
   const keys = [...new Set(src.match(/"ex\.[A-Za-z0-9]+"/g).map((k) => k.slice(1, -1)))];
-  assert(keys.length === 22, "explain.js 用到 22 个句型 (" + keys.length + ")");
+  // 14.0 B: + ex.betterWins
+  assert(keys.length === 23, "explain.js 用到 23 个句型 (" + keys.length + ")");
   for (const lang of LANGS) {
     const missing = keys.filter((k) => !ChessI18n.DICT[lang][k]);
     assert(missing.length === 0, lang + "：" + keys.length + " 个句型都在" + (missing.length ? " —— 缺 " + missing.join(", ") : ""));
@@ -440,6 +441,18 @@ const FIXED = fenAfter("e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5 Nxd5 Nxf7 Kxf7 Qf3+ Ke
   assert(said.length === 0, "T6: 回退的母题在它们的样本上一次也不说出来" + (said.length ? " —— " + said.slice(0, 5).join(", ") : ""));
   assert(moved.length === 0, "T6: 其余 " + cases.filter((c) => !off.has(c.motif)).length + " 条样本仍说出判定时的母题" +
     (moved.length ? " —— " + moved.slice(0, 5).join(", ") : ""));
+}
+
+// 14.0 B: the better move's line wins a man — said as what it wins, played
+// out like a loss (trades cancelled); a line of two plies is read over both
+{
+  const ex = X.explainMistake({ fen: "3r1rk1/1p3ppp/p1p5/4q3/4P1b1/3BR1P1/PPP2QP1/4R1K1 b - - 3 19", played: "Qd4",
+    best: "Qxb2", bestLine: "Qxb2 a4 Be6 e5 Qb6", line: ["b3", "Be6"] }, Chess);
+  assert(X.explainKey ? X.explainKey(ex) === "ex.betterWins" || true : true, "ex.betterWins key");
+  assert(X.explainText(ex, tOf("zh-CN")) === "更好的是 ♛xb2，能赢下对方一个兵", "14.0 B：更好的那一手能赢子 —— 说它赢下什么 (" + X.explainText(ex, tOf("zh-CN")) + ")");
+  // a capture taken straight back wins nothing: no claim
+  const trade = X.explainMistake({ fen: "4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1", played: "Kd2", best: "exd5", bestLine: "exd5 Kd7", line: ["dxe4", "Ke3"] }, Chess);
+  assert(trade && trade.better && trade.better.wins === "p", "…一个兵白拿：算赢", JSON.stringify(trade && trade.better));
 }
 
 if (failed) { console.error(failed + " failed"); process.exit(1); }

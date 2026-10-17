@@ -95,6 +95,11 @@ export function createBoardMarks(d) {
     return { from: uci.slice(0, 2), to: uci.slice(2, 4) };
   }
 
+  /** The finished analysis, else the marks a running pass has so far (14.0 B). */
+  function marked() {
+    return analysisFor() || (store.session.analyzing && store.session.analyzeMarks) || null;
+  }
+
   /**
    * The badge for the move that produced the position `i` plies in: its
    * destination square and its mark, or null. The mark is the one the move
@@ -104,7 +109,7 @@ export function createBoardMarks(d) {
    */
   function annotationAt(i, last) {
     if (!last || i < 1) return null;
-    const a = analysisFor();
+    const a = marked();
     if (!a || !a.tags) return null;
     const tag = softFiltered(a.tags[i - 1]);
     if (Review.isMistake(tag)) return { sq: last.to, tag };
@@ -122,7 +127,7 @@ export function createBoardMarks(d) {
    * "quiet", so the colour and the mark never disagree.
    */
   function lineMarks(line) {
-    const a = analysisFor();
+    const a = marked();
     const tagOf = new Map(), gradeOf = new Map();
     if (!a || !a.tags) return { tagOf, gradeOf };
     const graded = a.v === 2 && Array.isArray(a.grades) ? a.grades : null;

@@ -764,7 +764,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     if (o && typeof o.bgWorker === "boolean" && o.bgWorker !== options.bgWorker) {
       options.bgWorker = o.bgWorker;
       laneDown = false;
-      if (!o.bgWorker && lane) { lane.close(); lane = null; }
+      if (!o.bgWorker) closeLane(0);
     }
     if (o && Number.isFinite(o.hash)) {
       const hash = Math.max(1, Math.min(512, Math.round(o.hash)));
@@ -862,7 +862,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // v8-1-plan F4: `{bg: true}` is a pass over many positions — the lowest
     // level, preempted by anything else, and on the second worker when that
     // is turned on
-    const run = opts && opts.bg ? analyzeBatch(fen, budget, multipv)
+    const run = opts && opts.bg ? analyzeBatch(fen, budget, multipv, !!opts.wide)
       : exclusive((job) => analyzeInner(fen, budget, multipv, job, hash), PRIO.PLAY, "eval");
     return run.then((r) => {
       rememberEval(fen, budget, multipv, r, hash);
@@ -876,27 +876,68 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * tried again until the option is set again; its searches go back to the
    * shared worker, so a pass never stops over it.
    */
-  let lane = null;
   let laneDown = false;
-  async function analyzeBatch(fen, budget, multipv) {
-    if (options.bgWorker && !laneDown) {
-      await init(); // the sources the lane is built from, and the worker it falls back on
-      if (!lane) {
-        lane = createBgLane({
-          spawn: () => new Worker(URL.createObjectURL(new Blob([workerSource(loaderSrc)], { type: "text/javascript" }))),
-          b64: () => wasmB64,
-          optionCmds: fullStrengthCmds,
-          readInfo,
-        });
-      }
-      const mine = lane;
-      const nodes = nodesFor(budget);
+  /**
+   * 14.0 B: a review pass runs up to three searches at a time — on the
+   * shared worker and on one or two lanes beside it (review-pass.js `width`).
+   * Every analysis search is a fixed node count from `ucinewgame`, so which
+   * engine answers changes no number (docs/measured.json
+   * engineScheduler.secondWorker: 124 plies, 0 differ). With the `bgWorker`
+   * setting off the lanes are only borrowed: closed once no pass has used
+   * them for LANE_IDLE_MS, so their ~60 MB each are held for a review, not
+   * for the session. lanes[0] is also the setting's lane.
+   */
+  const LANE_IDLE_MS = 30000, MAX_LANES = 2;
+  const lanes = [];
+  let laneIdle = null;
+  /** Searches a pass may keep in flight: one per core but one for the page, three at most, while the lanes work. */
+  function passWidth() {
+    const cores = (globalThis.navigator && globalThis.navigator.hardwareConcurrency) || 1;
+    return laneDown || cores < 2 ? 1 : Math.min(1 + MAX_LANES, Math.max(2, cores - 1));
+  }
+  function closeLane(k) {
+    const s = lanes[k];
+    if (s && s.lane) { s.lane.close(); s.lane = null; }
+  }
+  async function analyzeBatch(fen, budget, multipv, wide) {
+    // a wide pass takes a free lane, else the shared worker; the setting's
+    // own passes (a library run) queue on lanes[0]
+    let k = null;
+    if (!laneDown && wide) { for (let i = 0; i < passWidth() - 1; i++) if (!lanes[i] || !lanes[i].busy) { k = i; break; } }
+    else if (!laneDown && options.bgWorker) k = 0;
+    if (k != null) {
+      const s = lanes[k] || (lanes[k] = { lane: null, busy: 0 });
+      s.busy++;
+      if (laneIdle) { clearTimeout(laneIdle); laneIdle = null; }
       try {
-        const r = await mine.analyze(fen, nodes, multipv);
-        return resultOf(fen, r.uci, r.slots, nodes);
-      } catch (_) {
-        // turned off under it, or it failed: either way the shared worker
-        if (options.bgWorker && lane === mine) { laneDown = true; mine.close(); lane = null; }
+        await init(); // the sources the lane is built from, and the worker it falls back on
+        if (!s.lane) {
+          s.lane = createBgLane({
+            spawn: () => new Worker(URL.createObjectURL(new Blob([workerSource(loaderSrc)], { type: "text/javascript" }))),
+            b64: () => wasmB64,
+            optionCmds: fullStrengthCmds,
+            readInfo,
+          });
+        }
+        const mine = s.lane;
+        const nodes = nodesFor(budget);
+        try {
+          const r = await mine.analyze(fen, nodes, multipv);
+          return resultOf(fen, r.uci, r.slots, nodes);
+        } catch (_) {
+          // it failed: no lane for the rest of the session, the shared worker
+          // takes the search — but not when the setting closed it under it
+          if (s.lane === mine) { laneDown = true; for (let i = 0; i < lanes.length; i++) closeLane(i); }
+        }
+      } finally {
+        s.busy--;
+        if (!lanes.some((x) => x.busy)) {
+          laneIdle = setTimeout(() => {
+            laneIdle = null;
+            if (lanes.some((x) => x.busy)) return;
+            for (let i = 0; i < lanes.length; i++) if (i > 0 || !options.bgWorker) closeLane(i);
+          }, LANE_IDLE_MS);
+        }
       }
     }
     return exclusive((job) => analyzeInner(fen, budget, multipv, job), PRIO.BATCH, "batch");
@@ -1036,4 +1077,4 @@ const global = typeof window !== "undefined" ? window : globalThis;
     };
   }
 
-  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate, human: () => ({ fails: humanFailures, ms: humanMs }), searchCmd, winPct, nodesFor, NODES_PER_MS };
+  export const ChessEngine = { init, retry, onBootFail, isReady, bestMove, analyze, analyzeInfinite, passWidth, newGame, cancel, setOptions, getOptions, TIERS, pickCandidate, human: () => ({ fails: humanFailures, ms: humanMs }), searchCmd, winPct, nodesFor, NODES_PER_MS };

@@ -376,7 +376,7 @@ export function createTodayUI(d) {
     if (step.kind === "mine") return fenOf(store.session.mines.find((p) => p.fen && !store.session.puzzleState.solved[p.id]));
     if (step.kind === "weak") return fenOf(ALL_PUZZLES.find((p) => p.cat === step.cat && p.fen && !store.session.puzzleState.solved[p.id]));
     if (step.kind === "motif") return fenOf(bookNow().find((p) => p.fen && !store.session.puzzleState.solved[p.id] && motifKeyOf(p) === step.motif));
-    if (step.kind === "lesson") { const L = LESSONS[step.i]; return L && L.tasks[0] ? L.tasks[0].fen : null; }
+    if (step.kind === "lesson") { const L = LESSONS[step.i]; return L ? L.fen0 : null; }
     return null;
   }
 

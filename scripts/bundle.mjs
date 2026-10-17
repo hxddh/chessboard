@@ -29,6 +29,7 @@ import fs from "fs";
 import path from "path";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
+import vm from "vm";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const ENTRY = path.join(root, "src/web/js/app.js");
@@ -130,6 +131,8 @@ export const CHUNKS = [
   // v8-2-plan T2: 看 N 步后 / 盲走收官, their questions and their words (trainer/visual.js)
   { entry: "src/web/js/trainer/visual-modes.js", out: "src/web/js/chunk-visual.js", global: "CHESS_VISUAL", min: 5000 },
   // v8-2-plan T1: the advanced course part 3 — 24 lessons, three languages (trainer/lessons-adv.js)
+  // 14.0 E: the paragraphs and tasks of the course's parts 1–2 (trainer/lessons-body.js)
+  { entry: "src/web/js/lessons-body-chunk.js", out: "src/web/js/chunk-lessons-body.js", global: "CHESS_LESSONS_BODY", min: 60000 },
   { entry: "src/web/js/lessons-adv-chunk.js", out: "src/web/js/chunk-lessons-adv.js", global: "CHESS_LESSONS_ADV", min: 20000 },
   // v8-2-plan V1: the packaged self-test's checks and the automation build's scenarios (app.js, CHESS_SELFTEST=1 only)
   { entry: "src/web/js/selftest-run.js", out: "src/web/js/chunk-selftest.js", global: "CHESS_SELFTEST_RUN", min: 5000 },
@@ -145,8 +148,10 @@ export const CHUNKS = [
  */
 // 12.0: the same line as the per-release rule in test-chess.mjs (10.1.0's
 // 942,990 bytes + 20 KB) — it sat 2 KB over 11.0, so the first lines of 12.0
-// crossed it while the release's own budget had room
-export const BUNDLE_BUDGET = 962990;
+// crossed it while the release's own budget had room. 14.0 E took the
+// course's bodies out (chunk-lessons-body.js, −83 KB) and the line back down
+// 20 KB (docs/v14-0-plan.md §3)
+export const BUNDLE_BUDGET = 942990;
 
 /**
  * v8-1-plan F2 (option a): whitespace and syntax, never identifiers. A stack
@@ -212,6 +217,32 @@ function versionDefine() {
   } catch (_) { return { __CHESS_VERSION__: JSON.stringify("") }; }
 }
 
+/**
+ * 14.0 E: the first paint's lessons.js is an index of it (trainer/lessons-body.js
+ * lessonIndex) — the paragraphs and tasks are chunk-lessons-body.js. Only
+ * trainer/lessons.js's import is swapped; the chunk's own import reads the
+ * real file, and so do the tests (compileModuleSync builds without this).
+ */
+function lessonsIndexPlugin() {
+  const lessons = path.join(root, "src/web/js/lessons.js");
+  return {
+    name: "lessons-index",
+    setup(b) {
+      b.onResolve({ filter: /\/lessons\.js$/ }, (a) => {
+        if (path.resolve(a.resolveDir, a.path) !== lessons || !a.importer.endsWith(path.join("trainer", "lessons.js"))) return null;
+        return { path: lessons, namespace: "lessons-index" };
+      });
+      b.onLoad({ filter: /.*/, namespace: "lessons-index" }, () => {
+        const ctx = vm.createContext({});
+        vm.runInContext(compileModuleSync(lessons), ctx);
+        vm.runInContext(compileModuleSync(path.join(root, "src/web/js/trainer/lessons-body.js")), ctx);
+        const { CHESS_LESSONS, lessonIndex } = ctx;
+        return { contents: "export const CHESS_LESSONS = " + JSON.stringify(lessonIndex(CHESS_LESSONS)) + ";", loader: "js", watchFiles: [lessons] };
+      });
+    },
+  };
+}
+
 export async function build({ write = true, minify = true } = {}) {
   const esbuild = await loadEsbuild();
   // Until 8.0 this was `minify: false`: a desktop app loading from disk, and
@@ -222,6 +253,7 @@ export async function build({ write = true, minify = true } = {}) {
   const r = await esbuild.build({
     entryPoints: [ENTRY],
     bundle: true,
+    plugins: [lessonsIndexPlugin()],
     format: "iife",
     define: versionDefine(),
     target: ["chrome100", "safari15"],

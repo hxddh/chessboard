@@ -34,7 +34,7 @@ export function createIO(d) {
     confirmNative, saveSettings, saveGame, OppUI, invalidateEngine, maybeEngineTurn, tcTag, resetClocks,
     loadLearnState, Mistakes, loadMines, Progress, loadPuzzleState, restoreAnalysis, statsCache, renderStats,
     LibraryUI, RepUI, loadAchSeen, syncAutoFlip, gameResultToken, clearEndingFlags, adoptHeaderResult,
-    stopEditor, moveCount, Shell, switchMode,
+    stopEditor, moveCount, Shell, switchMode, appGameOver,
   } = d;
   const document = doc;
   const Host = ChessHost;
@@ -260,7 +260,9 @@ export function createIO(d) {
       text0 = games[pick];
     }
     const ask = prompt || { msg: t("dlg.importPgn"), title: t("dlg.importPgnTitle"), ok: t("dlg.import") };
-    if (sanHistory().length &&
+    // 14.0 A3: only a game still being played has anything to lose — a
+    // finished one is in 战绩, an imported one or an analysis board in its file
+    if (sanHistory().length && !appGameOver() && !store.game.imported && !store.session.analysisBoard &&
         !(await confirmNative(ask.msg, ask.title, { ok: ask.ok, cancel: t("act.cancel") }))) {
       return false;
     }
@@ -326,7 +328,11 @@ export function createIO(d) {
     restoreAnalysis();
     resetClocks(); syncAutoFlip();
     // a trainer draws its own board and a page covers it: the game opens in play, on the board (Codex on #86)
-    if (store.session.mode === "learn" || store.session.mode === "puzzle") switchMode(store.ui.playMode === "pvp" ? "pvp" : "ai");
+    // 分析一局 is nobody's game against the engine: on the two-player board,
+    // as 空白棋盘 is, its strips name the file's players (or 玩家 1 / 2) — in
+    // an engine game a header-less paste read 「尼可 1397 · 你赢了」 (14.0 A1)
+    if (asAnalysis) switchMode("pvp");
+    else if (store.session.mode === "learn" || store.session.mode === "puzzle") switchMode(store.ui.playMode === "pvp" ? "pvp" : "ai");
     // after the switch, which clears it: 分析一局 from a trainer (⌘K) is still
     // an analysis, not a game the engine replies in (Codex on #113). The
     // switch has already asked for the engine's move, and that ask does not

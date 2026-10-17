@@ -67,7 +67,7 @@ export function createPalette(d) {
     for (const s of ["course", "puzzle", "endgame", "classic"]) add("go", tdot(t("nav.train"), t("train." + s)), () => run.train(s));
     for (const c of d.SETTING_CATS) add("go", tdot(t("nav.settings"), t("set." + c)), () => run.settings(c));
     d.LESSONS.forEach((L, i) => {
-      if (!L.tasks || !L.tasks.length) return;
+      if (!L.n) return;
       const tx = d.lessonText(L);
       add("lesson", tf("today.lessonN", [i + 1, tx.title]), () => run.lesson(i), tx.part);
     });

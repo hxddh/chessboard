@@ -114,9 +114,16 @@ export function createEvalGraph(d) {
     // would run off the window's edge (600 wide: 「12.5」 cut to 「2.5」) it
     // goes the way the inset gauge's number goes, to the curve and the
     // screen reader
-    const room = wrap ? wrap.getBoundingClientRect().left - edge : 0;
-    row.classList.toggle("is-inset", room < 24);
-    row.classList.toggle("is-tight", room >= 24 && room < 56);
+    const wr = wrap ? wrap.getBoundingClientRect() : null;
+    const room = wr ? wr.left - edge : 0;
+    // 14.0 A1: the rail beside the board is an edge too — measured from the
+    // window's, the number ran under it (「+5.6」 read 「.6」 at 1440×900).
+    // Only a rail level with the board: the portrait one is a bar below it
+    const rail = document.getElementById("rail");
+    const rr = rail && rail.offsetParent && wr ? rail.getBoundingClientRect() : null;
+    const railRoom = rr && rr.top < wr.bottom && rr.bottom > wr.top && rr.right <= wr.left ? wr.left - rr.right : Infinity;
+    row.classList.toggle("is-inset", room < 24 || railRoom < 18);
+    row.classList.toggle("is-tight", room >= 24 && railRoom >= 18 && Math.min(room, railRoom) < 56);
     const cp = a.scalars[store.game.viewIndex];
     const frac = Review.evalBar(cp);
     // the curve is a slider for the keyboard: ← / → (the global replay keys)

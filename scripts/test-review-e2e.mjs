@@ -188,12 +188,18 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
     const f = r(document.getElementById("eval-bar-fill"));
     const wrap = r(document.getElementById("board-wrap"));
     return { bt: board.top, bh: board.height, gt: g.top, gh: g.height, gl: g.left, gr: g.right,
-      wl: wrap.left, ft: f.top, fb: f.bottom, fh: f.height };
+      wl: wrap.left, ft: f.top, fb: f.bottom, fh: f.height,
+      inset: document.getElementById("eval-bar-row").classList.contains("is-inset"),
+      railR: (() => { const x = document.getElementById("rail"); return x && x.offsetParent ? r(x).right : 0; })() };
   });
   const a = await geo();
   assert(Math.abs(a.gh - a.bh) <= 1 && Math.abs(a.gt - a.bt) <= 1,
     "the gauge is exactly as tall as the board and level with it (" + a.gh + " vs " + a.bh + ")");
-  assert(a.gr <= a.wl, "…standing to the left of the frame, not on the squares (" + a.gr + " ≤ " + a.wl + ")");
+  // 14.0 A1: beside the frame where there is room left of it, else on the
+  // frame's own edge — never under the rail (at 1400 wide the frame is 6px
+  // from it, and the gauge used to sit half under it)
+  assert(a.inset ? a.gl >= a.wl : a.gr <= a.wl, "…standing to the left of the frame, or on its edge, not on the squares (" + JSON.stringify({ gl: a.gl, gr: a.gr, wl: a.wl, inset: a.inset }) + ")");
+  assert(a.gl >= a.railR, "…and clear of the rail (" + a.gl + " ≥ " + a.railR + ")");
   assert(Math.abs(a.fb - (a.gt + a.gh)) <= 1 && a.fh > a.gh / 2,
     "White ahead: the white fill rises from the bottom, White's side (" + Math.round(a.fh) + " of " + Math.round(a.gh) + ")");
   await page.evaluate(() => document.querySelector('[data-orient="b"]').click());
@@ -1171,7 +1177,9 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     window.__chess.engine.analyze = async (fen, movetime) => {
       const turn = fen.split(" ")[1];
       // the second pass (精析) is slow on purpose: it is the pass in flight
-      if (movetime >= 400) await new Promise((r) => setTimeout(r, 200));
+      // (600 ms a search: a pass runs three at once (14.0 B), and it must
+      // outlast the 400 + 600 ms below)
+      if (movetime >= 400) await new Promise((r) => setTimeout(r, 600));
       const start = fen.startsWith("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w");
       return { cp: turn === "w" ? 25 : -25, mate: null, turn, best: start ? "e2e4" : null,
         pv: start ? ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4"] : [] };
@@ -1754,6 +1762,52 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await ctxA.close();
 }
 
+// --- 14.0 B：认输时还领先 —— 总结说的是认输 ------------------------------------
+// The Opera game's first 20 plies, filed 0-1: White (you) resigned at +12.5.
+// The summary leads with that, not with the game's largest swing.
+{
+  const ctxR = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
+  await ctxR.addInitScript(() => {
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "ai", difficulty: "learner", personaId: "principled",
+      humanColor: "w", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", view: "play" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    window.__clip = "";
+    window.zero = {
+      invoke: () => Promise.resolve(true), on: () => () => {}, off: () => {},
+      platform: { supports: () => Promise.resolve(false) },
+      clipboard: { readText: () => Promise.resolve(window.__clip), writeText: () => Promise.resolve(true) },
+    };
+  });
+  const pg = await ctxR.newPage();
+  const errsR = [];
+  pg.on("pageerror", (e) => errsR.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(900);
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  const pgn = '[Event "Opera"]\n[White "A"]\n[Black "B"]\n[Result "0-1"]\n\n' +
+    OPERA.slice(0, 20).map((x, i) => (i % 2 ? "" : (i / 2 + 1) + ". ") + x).join(" ") + " 0-1\n";
+  await pg.evaluate((x) => { window.__clip = x; }, pgn);
+  if (await pg.evaluate(() => !!document.getElementById("more-row").hidden)) { await pg.click("#more-tools"); await settle(pg); }
+  await pg.click("#pgn-paste");
+  await pg.waitForTimeout(900);
+  if (await pg.isVisible("#confirm-modal.show").catch(() => false)) { await pg.click("#confirm-ok"); await pg.waitForTimeout(700); }
+  await pg.evaluate(() => {
+    const E = window.__chess.engine;
+    E.init = () => Promise.resolve(); E.retry = () => {}; E.isReady = () => true;
+    const b = document.querySelector("#engine-fault .toast-action");
+    if (b) b.click();
+  });
+  await settle(pg);
+  await analyseOpera(pg);
+  const s = await pg.evaluate(() => { const e = document.getElementById("rv-summary"); return e && !e.hidden ? e.textContent : null; });
+  assert(!!s && /^莉娜 · 你认输时胜率还有 \d+% —— 这盘本来还能下下去。$/.test(s), "14.0 B：领先时认输的那局，总结说的是认输（「" + s + "」）");
+  // and the key moments lead with yours: you are White here
+  const first = await pg.evaluate(() => { const c = document.querySelector("#rv-km .km-card .km-what"); return c ? c.textContent : ""; });
+  assert(/^白方/.test(first), "14.0 B：关键时刻的第一张卡是你（白方）的", first);
+  assert(errsR.length === 0, "14.0 B：没有页面异常 — " + errsR.join(" / "));
+  await ctxR.close();
+}
+
 // --- 9.0 M2：人机对局的一句话总结用对手的口吻 ----------------------------------
 // The Opera game, pasted while the mode is 人机 against 莉娜 (练习 · 重原则)
 // with you on Black: the summary is hers, about your largest fall in win
@@ -1852,8 +1906,9 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.fill("#an-text", "https://lichess.org/q7ZvsdUFab12");
   await pg.click("#an-go");
   assert(/设置 · 数据/.test(await note()) && await pg.isVisible("#an-net"), "A1：Lichess 链接、没开联网 —— 说要开哪个开关，带去设置的按钮", await note());
-  // PGN: on the board, analysed, the report up — in one click; an engine game
-  // still, but the engine does not play on in it, and it is not filed
+  // PGN: on the board, analysed, the report up — in one click; on the
+  // two-player board (14.0 A1), so the engine does not play on in it, and it
+  // is not filed
   await pg.fill("#an-text", pgn);
   await pg.click("#an-go");
   await pg.waitForFunction(() => !document.getElementById("report-card").hidden, null, { timeout: 20000 }).catch(() => {});
@@ -1867,6 +1922,24 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   // a pasted game has no "you": the board's humanColor (w here) is not a side
   // of it, so none of its mistakes become drills (Codex on #113)
   assert(a1.mines === 0, "A1：粘贴的对局不知道哪一方是你 —— 不把它的失误收进「我的错题」", JSON.stringify(a1));
+  // 14.0 A1: the strips name the file's players, not the last opponent and 你
+  const names = () => pg.evaluate(() => ({ w: document.getElementById("white-role").textContent, b: document.getElementById("black-role").textContent,
+    result: document.getElementById("go-result").textContent }));
+  const n1 = await names();
+  assert(n1.w === "Morphy" && n1.b === "Allies", "14.0 A1：粘贴的对局，两条名牌是文件里的白方、黑方", JSON.stringify(n1));
+  // …and the result bar, which stands in the bottom strip's place, keeps that
+  // strip's name (it hid 「Li Ming」 under 「1–0 白方胜」)
+  const reason = await pg.evaluate(() => { const c = document.getElementById("go-card"); return c && !c.hidden ? document.getElementById("go-reason").textContent : null; });
+  assert(reason != null && /^Morphy · /.test(reason), "14.0 A1：结果条盖住的那一方的名字留在结果条上", reason);
+  // …and a paste with no headers at all is 玩家 1 / 玩家 2, White won — not 「尼可 · 你赢了」
+  await pg.click('#rail button[data-view="home"]');
+  await pg.click("#today-analyse");
+  await pg.fill("#an-text", "1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0");
+  await pg.click("#an-go");
+  await pg.waitForTimeout(700);
+  if (await pg.isVisible("#confirm-modal.show").catch(() => false)) { await pg.click("#confirm-ok"); await pg.waitForTimeout(700); }
+  const n2 = await names();
+  assert(n2.w === "玩家 1" && n2.b === "玩家 2" && n2.result === "白方胜", "14.0 A1：没有头的 PGN —— 玩家 1 / 玩家 2、「白方胜」，不是上一个对手和「你赢了」", JSON.stringify(n2));
   // the same link with the network on: the native side is asked for that one game
   // (the settings are read at launch: the switch is turned on, and the page opened again)
   await pg.evaluate(() => { localStorage.setItem("chess.sync", JSON.stringify({ v: 1, on: true, site: "lichess", user: "" })); });
@@ -1922,7 +1995,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.waitForTimeout(1200);
   const tr = await pg.evaluate(() => ({ plies: document.querySelectorAll(".move-list .mlmove").length,
     mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode, analysis: window.__chess.analysisBoard(), best: window.__best }));
-  assert(tr.plies === 11 && tr.mode === "ai" && tr.analysis && tr.best === 0, "A1：从谜题里 ⌘K「分析一局」—— 回到棋盘、仍是分析（引擎不接着走，至少三条线）", JSON.stringify(tr));
+  assert(tr.plies === 11 && tr.mode === "pvp" && tr.analysis && tr.best === 0, "A1：从谜题里 ⌘K「分析一局」—— 回到棋盘、仍是分析（双人棋盘，引擎不接着走）", JSON.stringify(tr));
   assert(errsA.length === 0, "A1：没有页面异常 — " + errsA.join(" / "));
   await ctxA.close();
 }
@@ -2221,7 +2294,17 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(kept.classicMode === "guess" && kept.trainSeg === "classic",
     "S3：名局的「猜着」开关与训练的分段存进设置，重新载入之后还在（" + JSON.stringify({ c: kept.classicMode, s: kept.trainSeg }) + "）");
 
-  // P3-5: a library game opened mid-guess and 取消 — the run goes on
+  // P3-5: a library game opened mid-guess and 取消 — the run goes on.
+  // 14.0 A3: the question is asked only over a game still being played, and
+  // the classics above left a finished one on the board: put a live one there
+  await ctxM.addInitScript(() => {
+    if (sessionStorage.getItem("live") !== "1") return;
+    sessionStorage.setItem("live", "2");
+    localStorage.setItem("chess.save", JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }));
+  });
+  await pg.evaluate(() => sessionStorage.setItem("live", "1"));
+  await pg.reload();
+  await pg.waitForTimeout(1200);
   await pg.click('.rail-btn[data-view="train"]');   // 9.0 S3: 训练, left on 名局
   await pg.waitForTimeout(500);
   await toGuessList(pg);

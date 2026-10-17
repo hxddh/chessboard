@@ -30,9 +30,27 @@
    * caller already has one; otherwise pass ChessCtor as `ChessCtor` to let the
    * key build its own. With neither, a present ep square is kept as-is.
    */
+  /**
+   * Could any pawn take on `ep` at all? Only one standing beside the pawn
+   * that just went two squares. chess.js writes the square after every double
+   * step, and the legal-move check below cost a whole move generation per
+   * position — 14.0 A3: the opening book's index (eco-lookup.js) asked it for
+   * every ply of 195 lines, a 670 ms task at launch. Read off the board first.
+   */
+  function epPossible(placement, ep) {
+    const f = ep.charCodeAt(0) - 97, epRank = Number(ep[1]);
+    if (!(f >= 0 && f < 8) || (epRank !== 3 && epRank !== 6)) return true; // not a square this knows: ask the moves
+    // the taker stands on rank 4 (Black takes a White pawn) or 5 (White takes a Black one)
+    const rank = epRank === 3 ? 4 : 5, taker = epRank === 3 ? "p" : "P";
+    const row = String(placement).split("/")[8 - rank] || "";
+    const files = [];
+    for (const c of row) { if (/\d/.test(c)) for (let i = 0; i < Number(c); i++) files.push(""); else files.push(c); }
+    return files[f - 1] === taker || files[f + 1] === taker;
+  }
   function positionKey(fen, game, ChessCtor) {
     const parts = String(fen).split(" ");
     const head = parts.slice(0, 4);
+    if (head[3] && head[3] !== "-" && !epPossible(head[0], head[3])) head[3] = "-";
     if (head[3] && head[3] !== "-") {
       const g = game || (ChessCtor ? new ChessCtor(fen) : null);
       // pin-aware by construction: an ep capture that would expose the king is

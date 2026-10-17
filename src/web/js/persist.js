@@ -842,7 +842,11 @@ export function createPersist(host, onWriteFailure) {
     achievements: (v) => (v && Array.isArray(v.seen) ? v : null),
     slots: (v) => (v && Array.isArray(v.slots) ? v : null),
     library: (v) => (v && v.v === 1 && Array.isArray(v.names) ? v : null),
-    repertoire: (v) => (v && v.v === 1 && (Array.isArray(v.w) || Array.isArray(v.b)) ? v : null),
+    // 14.0: since v8-1-plan T3 the lines live in IndexedDB and the header the
+    // chunk writes (rep-page.js head) is {v, n, sig, gen, ln} — no w / b at
+    // all. Requiring them quarantined every launch's header, with the red
+    // 「有一份记录读不出来（repertoire）」 each time. Lines, when there, are arrays.
+    repertoire: (v) => (v && v.v === 1 && (v.w == null || Array.isArray(v.w)) && (v.b == null || Array.isArray(v.b)) ? v : null),
     analyses: (v) => (v && v.v === 1 && Array.isArray(v.list) ? v : null),
     sync: (v) => (v && v.v === 1 ? v : null),
   };

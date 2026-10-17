@@ -3605,10 +3605,12 @@
         radial-gradient(closest-side, var(--card) 90%, transparent 91%),
         conic-gradient(var(--muted) calc(var(--p) * 1%), var(--line) 0);
     }
+    /* 14.0 A1: the face is opaque — it was --btn-ghost, 6–7% alpha, and the
+       brand ring under it filled the medal: a solid disc, its icon lost */
     .ach-item.got .ach-ic {
       color: var(--brand);
       background:
-        radial-gradient(closest-side, var(--btn-ghost) 90%, transparent 91%),
+        radial-gradient(closest-side, color-mix(in srgb, var(--brand) 12%, var(--card)) 90%, transparent 91%),
         conic-gradient(var(--brand) 100%, var(--brand) 0);
     }
     .ach-nm {
@@ -3706,6 +3708,12 @@
        names truncate onto `title` as before; where even that track is capped
        (a phone), a value wraps inside it rather than being cut. */
     #lib-diag .stat-v { white-space: normal; }
+    /* 14.0 A1: the library card's count row says two things on its value side
+       (「已分析 0 局 · 待分析 2 局」, 150px) — the fixed track ran it 25px past
+       the card. Here the value takes its own width and the row wraps under
+       the name when the card is too narrow for both. */
+    #lib-body > .stat-row { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: 8px; }
+    #lib-body > .stat-row > .stat-v { margin-left: auto; }
     .stats-body .hint { margin: 4px 0 0; }
 
     /* game history: same row shape in the sidebar preview and the full list */
@@ -3799,6 +3807,10 @@
 }
 .lib-claim { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
 .lib-claim .hint { flex: 1 1 16rem; margin: 0; }
+.lib-claim-names { display: contents; }
+/* 14.0 A3: drilling an opening, the puzzles' rating, review and kinds step aside */
+#sec-puzzle.is-drill #pz-hero, #sec-puzzle.is-drill #pz-review, #sec-puzzle.is-drill #pz-about { display: none; }
+.pz-drill { margin: 4px 0 0; }
 
 /* v8-0-plan §5: the sheet was a 380px card with the list capped at 52vh
    inside it. Twelve rows of sentences wrapped to two and three lines there,
@@ -4828,6 +4840,11 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .xp-w { background: var(--side-white); color: var(--side-black); }
 .xp-d { background: var(--muted); color: var(--bg); }
 .xp-b { background: var(--side-black); color: var(--side-white); }
+/* 14.0 A3: the bar's key, under the rows */
+.xp-legend { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin: 4px 0 0; font-size: 0.75rem; line-height: var(--lh-tight); color: var(--muted); }
+.xp-key { width: 8px; height: 8px; border-radius: var(--radius-sm); box-shadow: 0 0 0 1px var(--line); }
+.xp-key + span { margin-right: 8px; }
+.xp-back[hidden] { display: none; }
 /* v8-1-plan T3: 「我的」 is your own repertoire's move — filled where 「书」
    (the built-in book) is outlined, so the two never read as one mark. The
    toggle beside a row (a sibling: a button in a button is not a button)

@@ -145,8 +145,9 @@ export const F4_RENDERS = [
   // app.js 「上一盘」, trainer/puzzles.js's solved card, repertoire-ui.js drills)
   ["lib.label", (t, tf, tdot, diff) => tdot(t("hist.win"), "rival" || t("lib.unknownFoe"), !"w" && "me"),
     "胜 · rival", "Win · rival", "勝ち · rival"],
-  ["lib.labelNoSide", (t, tf, tdot, diff) => tdot(t("hist.draw"), "" || t("lib.unknownFoe"), !"" && "hxddh"),
-    "和 · 对手不详 · hxddh", "Draw · unknown opponent · hxddh", "引分 · 対戦相手不明 · hxddh"],
+  // 14.0 A1: a game not claimed names both players, White first
+  ["lib.labelNoSide", (t, tf, tdot, diff) => tdot("1/2-1/2", tf("lib.pair", ["hxddh", "rival"])),
+    "1/2-1/2 · hxddh 对 rival", "1/2-1/2 · hxddh – rival", "1/2-1/2 · hxddh 対 rival"],
   ["idle.last", (t, tf, tdot, diff) => tdot(tdot(t("hist.win"), t("diff.normal"), t("hist.black")), tf("hist.todayAt", ["09:41"])),
     "胜 · 中级 · 执黑 · 今天 09:41", "Win · Intermediate · as Black · today 09:41", "勝ち · 中級 · 黒番 · 今日 09:41"],
   ["pz.fb.sub", (t, tf, tdot, diff) => tdot(t("pz.doneMate"), "#12", ""),

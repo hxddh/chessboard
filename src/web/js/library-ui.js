@@ -780,13 +780,17 @@ export function createLibraryUI(d) {
     return null;
   }
 
-  /** "2026.09.01 · rival" — the row's headline, localised at render time. */
+  /**
+   * "胜 · rival" — the row's headline, localised at render time. A game not
+   * yet claimed as yours names both players, White first (14.0 A1: it used
+   * to read "1-0 · Black · White").
+   */
   function libraryLabel(g) {
     const res = g.outcome ? t(g.outcome === "win" ? "hist.win" : g.outcome === "loss" ? "hist.loss" : "hist.draw")
       : (g.result || "*");
-    const me = g.side === "b" ? g.black : g.white;
+    if (!g.side) return tdot(res, tf("lib.pair", [g.white || "?", g.black || "?"]));
     const foe = g.side === "b" ? g.white : g.black;
-    return tdot(res, foe || t("lib.unknownFoe"), !g.side && me);
+    return tdot(res, foe || t("lib.unknownFoe"));
   }
 
   /**
@@ -1013,6 +1017,16 @@ export function createLibraryUI(d) {
     if (!charts) libDbReady.then(() => { if (charts) renderDiagnosis(); });
   }
   function closeDiagnosis() { Dlg.close(doc.getElementById("lib-modal")); }
+
+  // 14.0 A3: 粘贴 PGN — the clipboard's games into the library, as a file's go
+  const pasteBtn = doc.getElementById("lib-paste");
+  if (pasteBtn) {
+    pasteBtn.onclick = async () => {
+      let text = "";
+      try { text = await Host.readClipboard(); } catch (_) { toast(t("msg.clipboard.readFailed"), "fault"); return; }
+      importPgnToLibrary(text, t("mm.clipboard"));
+    };
+  }
 
   return {
     LIB_MIN_GAMES, fillOpenings,

@@ -24,6 +24,7 @@ import { createEndgames } from "./endgames.js";
 import { ChessReview } from "../review.js";
 import { ChessReviewGrade } from "../review-grade.js";
 import { createAdvLessons } from "./lessons-adv.js";
+import { createLessonBodies } from "./lessons-body.js";
 import { createMoreClassics } from "./classics-more.js";
 import { tdot } from "../tdot.js";
 
@@ -43,7 +44,10 @@ export function createLessonsUI(d) {
   // v8-2-plan T1: the advanced part 3 follows as placeholders over its chunk;
   // one asked for before the chunk is here opens when it arrives
   const Adv = createAdvLessons((i) => { if (i >= 0 && store.session.mode === "learn") startLesson(i); else sync(); }, () => toast(t("learn.advFailed"), "fix"));
-  const LESSONS = (CHESS_LESSONS || []).concat(Adv.stubs);
+  // 14.0 E: parts 1–2 are an index in the bundle, their bodies a chunk
+  // fetched when a lesson is first opened (lessons-body.js)
+  const Body = createLessonBodies(CHESS_LESSONS || [], () => toast(t("learn.advFailed"), "fix"));
+  const LESSONS = Body.lessons.concat(Adv.stubs);
 
   function loadLearnState() {
     return Persist.read("learn").value || { v: 1, done: {}, last: 0 };
@@ -59,7 +63,7 @@ export function createLessonsUI(d) {
   function startLearn() {
     startLesson(Math.max(0, Math.min(store.session.learnState.last || 0, LESSONS.length - 1)));
   }
-  function stopLearn() { if (store.session.learn) store.session.lastLearnToken = ++store.session.learn.token; store.session.learn = null; store.session.study = null; }
+  function stopLearn() { store.session.learnRuns++; if (store.session.learn) store.session.lastLearnToken = ++store.session.learn.token; store.session.learn = null; store.session.study = null; }
   /**
    * A new run's first token: past the run being left (or the last one
    * stopped), so an engine reply still in flight for it can never match —
@@ -164,6 +168,7 @@ export function createLessonsUI(d) {
   // the first start; a run is `learn.gs`, so until then there is none to draw
   const Gs = { m: null };
   function startGuess(ci) {
+    store.session.learnRuns++;
     store.session.learnState.cl = ci;
     if (Gs.m) { Gs.m.start(ci); return; }
     loadChunk("chunk-guess.js", "createGuess").then((create) => {
@@ -215,14 +220,21 @@ export function createLessonsUI(d) {
     // an advanced lesson before its chunk: opened when it arrives; meanwhile,
     // and if it never does (lessons-adv.js), the nearest lesson before it
     // stands in, so 学习 is not a blank page — the bookmark stays (M2 review)
-    if (!LESSONS[i].tasks.length) { Adv.want(i); if (!store.session.learn) startLesson((CHESS_LESSONS || []).length - 1, true); return; }
-    store.session.learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !stand && !store.session.learnState.done[LESSONS[i].id] };
+    if (!LESSONS[i].n) { Adv.want(i); if (!store.session.learn) startLesson(Body.lessons.length - 1, true); return; }
+    // 14.0 E: parts 1–2's bodies are a chunk too — the first lesson opened
+    // waits for it, unless another run starts meanwhile (an endgame, a classic)
+    const my = ++store.session.learnRuns;
+    if (!Body.ready()) { Body.want(() => { if (my === store.session.learnRuns && store.session.mode === "learn") { startLesson(i, stand); sync(); } }); return; }
+    // 14.0 A3: the step it was left at, when it is this lesson's (a relaunch, or the lesson opened again)
+    const at = store.session.learnState.at, ti0 = at && at.id === LESSONS[i].id && at.ti < LESSONS[i].tasks.length ? at.ti : 0;
+    store.session.learn = { li: i, ti: ti0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !stand && !ti0 && !store.session.learnState.done[LESSONS[i].id] };
     startLearnTask();
   }
 
   /** v8-1-plan T2: open endgame `id` of the camp (learn mode must be on) */
   function startEndgame(id) {
     if (!Endgames.lesson(id)) return;
+    store.session.learnRuns++;
     // 9.0 S3: 残局 picks up at the one last opened
     Endgames.state().last = id;
     saveLearnState();
@@ -647,6 +659,8 @@ export function createLessonsUI(d) {
       Audio2.playMove("b");
       toast(t("lm.nextSubtask"), "fix");
       store.session.learn.ti++;
+      // 14.0 A3: the course's step is kept, so a relaunch comes back to it (not the endgame camp's)
+      if (!L.eg && !store.session.learn.gs) { store.session.learnState.at = { id: L.id, ti: store.session.learn.ti }; saveLearnState(); }
       // startLearnTask resets the per-task cursors, but it runs 900ms later —
       // and the board and prompt are redrawn now. A tap task followed by
       // another tap task would spend that gap reading step[3] of a 1-step task.
@@ -659,6 +673,8 @@ export function createLessonsUI(d) {
     }
     store.session.learn.done = true;
     Audio2.playWin();
+    const at = store.session.learnState.at;
+    if (at && at.id === L.id) { delete store.session.learnState.at; saveLearnState(); } // finished: opened again, it starts at its first step
     if (L.eg) {
       // T2: the camp keeps its own record; a try that used undo or the hint
       // counts as reached, and comes back for review
@@ -845,7 +861,7 @@ export function createLessonsUI(d) {
     const head = document.getElementById("lesson-list-h");
     const headText = seg === "classic" ? tf("train.allClassics", [More.total()])
       : seg === "endgame" ? tf("train.allEndgames", [Endgames.total() || 90])
-      : tf("train.allLessons", [LESSONS.filter((x) => x.tasks.length).length]);
+      : tf("train.allLessons", [LESSONS.filter((x) => x.n).length]);
     if (head && head.textContent !== headText) head.textContent = headText;
     if (list) {
       list.replaceChildren();
@@ -909,7 +925,7 @@ export function createLessonsUI(d) {
   function unitCounts() {
     const units = new Map();
     for (const x of LESSONS) {
-      if (!x.tasks.length) continue;
+      if (!x.n) continue;
       const part = lessonText(x).part;
       const u = units.get(part) || { n: 0, done: 0 };
       u.n++;
@@ -923,7 +939,7 @@ export function createLessonsUI(d) {
   function courseRows(list, units, li, other, only) {
     let lastPart = null;
     LESSONS.forEach((x, i) => {
-      if (!x.tasks.length) return; // T1: an advanced lesson, its chunk still on the way
+      if (!x.n) return; // T1: an advanced lesson, its chunk still on the way
       const xl = lessonText(x);
       if (only && xl.part !== only) return;
       if (xl.part !== lastPart) {

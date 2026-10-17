@@ -54,6 +54,7 @@ import { createPuzzleMine } from "./puzzle-mine.js";
 import { createPuzzleModes, isThemeCat, THEME_CAT, isGroupCat, GROUP_CAT, groupOfCat } from "./puzzle-modes.js";
 import { createPuzzleOpenings } from "./puzzle-openings.js";
 import { createPuzzleRating } from "./puzzle-rating.js";
+import { createPuzzleHint } from "./puzzle-hint.js";
 import { createVisual } from "./visual.js";
 import { tdot } from "../tdot.js";
 
@@ -168,6 +169,8 @@ export function createPuzzlesUI(d) {
   }
 
   function startPuzzles() {
+    // 14.0 A3: a placement closed half way comes back first
+    if (!store.session.run && Modes.resumePlacement()) return;
     // v8-0-plan B1: a theme resumes as a theme (its bands load first)
     if (isThemeCat(store.session.puzzleState.cat)) { Modes.startTheme(store.session.puzzleState.cat.slice(THEME_CAT.length)); return; }
     // 9.0 S3: …and a group as a group
@@ -216,7 +219,7 @@ export function createPuzzlesUI(d) {
       lastMove: store.session.puzzle.last,
       checkSquare: g.in_check() ? kingSquare(g, g.turn()) : null,
       mated: g.in_checkmate(),
-      hintMove: store.session.puzzle.helpArrow,
+      hintMove: store.session.puzzle.helpArrow, shapes: Hint.shapes(store.session.puzzle),
       blind: !!store.session.puzzle.hidden, // 盲走 (v8-2-plan T2): the men are withheld
       stars: [],
       cursor: cursorSquare(),
@@ -284,7 +287,7 @@ export function createPuzzlesUI(d) {
     const mv = g.move({ from, to, promotion });
     if (!mv) return;
     store.game.selection = null;
-    store.session.puzzle.helpArrow = null;
+    store.session.puzzle.helpArrow = store.session.puzzle.helpPiece = null;
     store.session.puzzle.last = { from: mv.from, to: mv.to };
     // v8-0-plan A5: where the solver's move landed, for its ✓ / ✗
     Object.assign(store.session.puzzle, { mark: null, solverTo: mv.to });
@@ -479,39 +482,12 @@ export function createPuzzlesUI(d) {
   }
 
   /** Arrow for the correct move at the current stage. */
-  function showPuzzleAnswer() {
-    if (!store.session.puzzle || store.session.puzzle.done) return;
-    if (store.session.puzzle.run) { Modes.runAnswer(); return; }
-    const g = store.session.puzzle.g;
-    if (g.turn() !== puzzleHumanSide() || g.game_over()) return;
-    let from = null, to = null;
-    // on the stored line the stored move is always valid here
-    const stored = SCRIPTED_CATS[store.session.puzzle.p.cat]
-      ? puzzleScript(store.session.puzzle.p)[store.session.puzzle.stage]
-      : store.session.puzzle.p.solution[store.session.puzzle.stage * 2];
-    if (stored) {
-      const probe = new Chess(g.fen());
-      const mv = probe.move(stored);
-      if (mv) { from = mv.from; to = mv.to; }
-    }
-    if (!from) {
-      // off the stored line — search for any move that still forces mate
-      const remaining = (PUZZLE_MOVES[store.session.puzzle.p.cat] || 1) - store.session.puzzle.stage;
-      for (const m of g.moves({ verbose: true })) {
-        g.move(m);
-        const ok = g.in_checkmate() ||
-          (remaining > 1 && !g.game_over() && blackForcedLost(g, remaining - 1));
-        g.undo();
-        if (ok) { from = m.from; to = m.to; break; }
-      }
-    }
-    if (from) {
-      store.session.puzzle.helpArrow = { from, to };
-      store.session.puzzle.usedAnswer = true;
-      markMissed(store.session.puzzle.p.id); // relying on the answer counts as a miss
-      store.commit("session", "sync");
-    }
-  }
+  // 14.0 A2: 提示, then 答案 (puzzle-hint.js)
+  const Hint = createPuzzleHint({ store, t, toast, markMissed, puzzleHumanSide: () => puzzleHumanSide(), runAnswer: () => Modes.runAnswer(),
+    stored: (pz) => (SCRIPTED_CATS[pz.p.cat] ? puzzleScript(pz.p)[pz.stage] : pz.p.solution[pz.stage * 2]),
+    movesLeft: (pz) => (PUZZLE_MOVES[pz.p.cat] || 1) - pz.stage });
+  function showPuzzleAnswer() { Hint.show(); }
+  const hintLevel = () => Hint.level(store.session.puzzle);
 
   /** A right move's ✓, on the square the solver's move landed on (v8-0-plan A5). */
   function markRight() {
@@ -527,12 +503,14 @@ export function createPuzzlesUI(d) {
     if (store.session.puzzle.run) { Modes.runSolved(); return; } // v8-0-plan B1
     // an opening drill is credited to the line the board is on (7.6)
     const sp = opCurrent(store.session.puzzle);
-    // a clean first-try solve retires the puzzle from review; a shaky one keeps it
-    if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) clearMissed(sp.id);
+    // a clean first-try solve retires the puzzle from review; a shaky one keeps it.
+    // 14.0 A2: the piece shown (提示) is a solve, half its gain kept; the answer is no solve
+    const pz = store.session.puzzle, unaided = pz.misses === 0 && !pz.usedAnswer && !pz.usedHint;
+    if (unaided) clearMissed(sp.id);
     // a due card is graded on its own schedule, not solved into the tally (v8-1-plan T3)
-    if (sp.card) gradeCard(store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer);
-    else if (!store.session.puzzleState.solved[sp.id]) {
-      if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer) ratePuzzleOnce(sp.id, 1);
+    if (sp.card) gradeCard(unaided);
+    else if (!store.session.puzzleState.solved[sp.id] && !pz.usedAnswer) {
+      if (pz.misses === 0) ratePuzzleOnce(sp.id, 1, pz.usedHint);
       store.session.puzzleState.solved[sp.id] = true;
       // a clean first solve counts into the lifetime tally; a solve after
       // misses already counted those misses — counting the solve too would
@@ -561,9 +539,9 @@ export function createPuzzlesUI(d) {
     if (store.session.puzzle.p.cat === "mine") store.session.puzzle.lineAt = 0;
     // the run of clean first-try solves this sitting, and the card that says
     // so — the tick, the verb, the puzzle's name (7.7 §4; was a toast)
-    const clean = store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer;
+    const clean = unaided;
     store.session.pzStreak = clean ? store.session.pzStreak + 1 : 0;
-    store.session.puzzle.fb = { ok: true, head: clean ? t("pz.fb.best") : verb,
+    store.session.puzzle.fb = { ok: true, head: clean ? t("pz.fb.best") : pz.usedAnswer ? t("pz.fb.answered") : verb,
       sub: tdot(clean ? verb : "", puzzleName(sp), why) };
     sync();
   }
@@ -754,9 +732,10 @@ export function createPuzzlesUI(d) {
       startPuzzleAt("review", store.session.puzzle.idx % list.length);
       return;
     }
-    // 9.0 S3: a kind or a theme serves near the rating, as it started
+    // 9.0 S3: a kind or a theme serves near the rating, as it started; 14.0
+    // A2: and so does a built-in rated category (it went in list order)
     const pc = store.session.puzzle.cat;
-    if (isGroupCat(pc) || isThemeCat(pc)) {
+    if (isGroupCat(pc) || isThemeCat(pc) || (Book.isRatedCat(pc) && pc !== "mine")) {
       const near = Modes.nearestIdx(list, store.session.puzzle.idx);
       if (near >= 0) { startPuzzleAt(pc, near); return; }
     }
@@ -766,6 +745,25 @@ export function createPuzzlesUI(d) {
       if (!store.session.puzzleState.solved[list[i].id]) { startPuzzleAt(store.session.puzzle.cat, i); return; }
     }
     startPuzzleAt(store.session.puzzle.cat, store.session.puzzle.idx + 1);
+  }
+
+  /**
+   * 14.0 A3: 背开局 is not a puzzle — no rating card, review or kinds beside
+   * it (they are the puzzles'), and the line it is learning: the moves made
+   * so far, how far into it (the moves to come stay hidden: they are the drill).
+   */
+  function paintDrill(sec) {
+    const pz = store.session.puzzle, line = pz && !pz.run && Array.isArray(pz.p.line) ? pz.p.line : null;
+    const drill = !!pz && !pz.run && (isOpeningCat(pz.cat) || pz.cat === "repdue");
+    sec.classList.toggle("is-drill", drill);
+    const el = document.getElementById("pz-drill");
+    if (!el) return;
+    el.hidden = !(drill && line);
+    if (el.hidden) return;
+    const played = pz.g.history().slice(0, line.length);
+    const moves = played.map((san, i) => (i % 2 ? "" : (i / 2 + 1) + ". ") + san).join(" ");
+    const text = tdot(tf("pz.drillAt", [Math.min(played.length, line.length), line.length]), moves);
+    if (el.textContent !== text) el.textContent = text;
   }
 
   /**
@@ -779,7 +777,9 @@ export function createPuzzlesUI(d) {
       const g = cat.slice(GROUP_CAT.length);
       return [Modes.groupList(g).filter((p) => solved[p.id]).length, Modes.groupCount(g)];
     }
-    return [bookNow().filter((p) => solved[p.id]).length, bookNow().length];
+    // 14.0 A1: the category's own — the whole book moved with mines and repertoire
+    const list = puzzlesInCat(cat);
+    return [list.filter((p) => solved[p.id]).length, list.length];
   }
   function syncPuzzleUI() {
     paintPuzzlePanel();
@@ -840,6 +840,7 @@ export function createPuzzlesUI(d) {
         : tf("pz.solvedCount", solvedOf());
     }
     syncOpSideSeg(store.session.puzzle.cat);
+    paintDrill(sec);
     const task = document.getElementById("puzzle-task");
     if (task) {
       // 「第 N 题」 is the chip's job now (7.3 B4) — the card carries the goal,
@@ -992,6 +993,6 @@ export function createPuzzlesUI(d) {
     saveProgress, bookNow, loadPuzzleState, savePuzzleState, Srs, Picker,
     owedNow, ratingLabel, ratingTip, practiceLeft, puzzlesInCat, puzzleRatingOf,
     startPuzzleAt, startPuzzles, stopPuzzles, puzzleModel, puzzleHumanSide, puzzleClick,
-    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, closeThemes: () => Modes.closeThemes(), Vis, startPlacement, goTheme,
+    showPuzzleAnswer, hintLevel, leaveTrainer, nextPuzzle, syncPuzzleUI, closeThemes: () => Modes.closeThemes(), Vis, startPlacement, goTheme,
   };
 }

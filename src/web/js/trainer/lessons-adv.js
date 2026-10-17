@@ -72,6 +72,8 @@ export function createAdvLessons(onReady, onFail) {
     get title() { const L = src(id); return L ? L.title : ""; },
     get text() { const L = src(id); return L ? L.text : []; },
     get tasks() { const L = src(id); return L ? L.tasks : []; },
+    get n() { const L = src(id); return L ? L.tasks.length : 0; },
+    get fen0() { const L = src(id); return L && L.tasks[0] ? L.tasks[0].fen : null; },
   });
   /** open course lesson `i` once the chunk is here; -1 forgets one asked for */
   const want = (i) => {

@@ -825,25 +825,42 @@ async function bootLibrary(d) {
    */
   function renderClaim() {
     const box = doc.getElementById("lib-claim");
-    claim = claimAsked || store.session.libNames.length ? null : LibraryQuery.inferName(store.session.library);
+    const open = !claimAsked && !store.session.libNames.length;
+    claim = open ? LibraryQuery.inferName(store.session.library) : null;
+    // 14.0 A3: no one name is clearly yours — the three on most games, to pick from
+    const pick = open && !claim ? LibraryQuery.topNames(store.session.library, 3) : null;
+    if (pick && pick.names.length) claim = { pick: pick.names, of: pick.of };
     if (!box) return;
     box.hidden = !claim;
     const text = doc.getElementById("lib-claim-text");
-    if (claim && text) text.textContent = tf("lib.claimAsk", [claim.name, claim.n, claim.of]);
+    if (claim && text) text.textContent = claim.pick ? tf("lib.claimPick", [claim.of]) : tf("lib.claimAsk", [claim.name, claim.n, claim.of]);
+    const yes = doc.getElementById("lib-claim-yes"), names = doc.getElementById("lib-claim-names");
+    if (yes) yes.hidden = !!(claim && claim.pick);
+    if (names) {
+      names.replaceChildren(...((claim && claim.pick) || []).map((r) => {
+        const b = doc.createElement("button");
+        b.type = "button";
+        b.className = "act-btn";
+        b.dataset.name = r.name;
+        b.textContent = tf("lib.claimChip", [r.name, r.n]);
+        b.onclick = () => answerClaim(true, r.name);
+        return b;
+      }));
+    }
   }
-  function answerClaim(yes) {
-    const c = claim;
+  function answerClaim(yes, picked) {
+    const name = picked || (claim && claim.name);
     claimAsked = true;
-    if (yes && c) {
-      store.session.libNames = [c.name];
+    if (yes && name) {
+      store.session.libNames = [name];
       const input = doc.getElementById("lib-names");
-      if (input) input.value = c.name;
+      if (input) input.value = name;
       d.reclaimLibrary();
     }
     save();
     renderClaim();
     d.renderLibrary();
-    if (yes && c) toast(tf("lib.claimDone", [c.name, store.session.library.filter((g) => g.side).length]));
+    if (yes && name) toast(tf("lib.claimDone", [name, store.session.library.filter((g) => g.side).length]));
   }
 
   // --- v8-1-plan T5: the diagnosis's source row, and the clock of old games --

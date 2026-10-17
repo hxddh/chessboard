@@ -55,7 +55,7 @@ export function createTodayPage(d) {
     const lesson = Object.values(ls.done || {}).filter(at).length
       + Object.values((ls.eg && ls.eg.done) || {}).filter(at).length;
     const st = store.session.puzzleState || {};
-    const puzzle = (Array.isArray(st.rhist) ? st.rhist : []).filter((h) => Number(h.t) >= from).length;
+    const puzzle = (Array.isArray(st.rhist) ? st.rhist : []).filter((h) => Number(h.t) >= from && !h.place).length;
     const game = loadStats().games.filter((g) => Number(g.t) >= from).length;
     return { lesson, puzzle, game };
   }
@@ -133,9 +133,9 @@ export function createTodayPage(d) {
     const L = LESSONS[li];
     if (L) {
       const lt = lessonText(L);
-      const unit = LESSONS.filter((x) => x.tasks.length && lessonText(x).part === lt.part);
+      const unit = LESSONS.filter((x) => x.n && lessonText(x).part === lt.part);
       const done = unit.filter((x) => ls.done && ls.done[x.id]).length;
-      fillCard(card("course"), L.tasks[0] && L.tasks[0].fen, tdot(t("train.course"), lt.part),
+      fillCard(card("course"), L.fen0, tdot(t("train.course"), lt.part),
         tf("today.lessonN", [li + 1, lt.title]), done, unit.length);
     }
     // 残局: the camp is a chunk — asked for here, drawn when it is in

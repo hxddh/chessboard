@@ -43,6 +43,7 @@ import { layoutProbe } from "./lib/layout-probe.mjs";
 import { playOpera, analyseOpera } from "./lib/opera-fixture.mjs";
 import { loadAppModules } from "./lib/app-module.mjs";
 import { settle } from "./lib/settle.mjs";
+import { decodePng } from "./lib/icon-files.mjs";
 
 /** v11-0-plan U3: the kinds, runs, themes and list are under 更多练法 */
 async function openPzMore(page) { await page.evaluate(() => { const f = document.getElementById("pz-more"); if (f) f.open = true; }); }
@@ -5532,6 +5533,9 @@ if (scenario()) {
         return { layout: document.getElementById("app").classList.contains("pv-wide") ? "wide" : "two",
           wt: w.top, wb: w.bottom, bt: b.top, bb: b.bottom, bl: b.left,
           num: (() => { const n = box(document.getElementById("eval-bar-text")); return { l: n.left, w: n.width, r: n.right }; })(),
+          // the rail beside the board (portrait's is a bar below it)
+          railR: (() => { const x = document.getElementById("rail"); const q = x && x.offsetParent ? box(x) : null;
+            return q && q.top < w.bottom && q.bottom > w.top ? q.right : 0; })(),
           on: others.filter((e) => hit(b, box(e))).map((e) => e.id || e.className),
           inset: document.getElementById("eval-bar-row").classList.contains("is-inset"),
           scroll: side.scrollWidth - side.clientWidth, past,
@@ -5541,8 +5545,9 @@ if (scenario()) {
       assert(Math.abs(r.bt - r.wt) <= 1 && Math.abs(r.bb - r.wb) <= 1,
         `A4：${tag} 评估条与棋盘外框上下对齐（框 ${Math.round(r.wt)}–${Math.round(r.wb)}，条 ${Math.round(r.bt)}–${Math.round(r.bb)}）`);
       assert(r.bl >= 0 && r.on.length === 0, `A4：${tag} 评估条不压导航栏、信息栏、面板（${r.on.join(", ") || "无"}）`);
-      assert(r.num.w <= 1 || (r.num.l >= 0 && r.num.r <= vp.width),
-        `A4：${tag} 评估条的分数要么整个在窗口里，要么交给曲线和读屏（${Math.round(r.num.l)}–${Math.round(r.num.r)}）`);
+      // 14.0 A1: in the window and clear of the rail — 「+5.6」 read 「.6」 under it
+      assert(r.num.w <= 1 || (r.num.l >= r.railR && r.num.r <= vp.width),
+        `A4：${tag} 评估条的分数要么整个露在导航栏右边，要么交给曲线和读屏（${Math.round(r.num.l)}–${Math.round(r.num.r)}，导航栏到 ${Math.round(r.railR)}）`);
       assert(r.report && r.km && r.scroll <= 0 && r.past.length === 0,
         `A4：${tag} 体检报告与关键时刻都在，面板里没有越界、没有横向滚动（${r.scroll}px${r.past.length ? "，越界 " + r.past.join(", ") : ""}）`);
     }
@@ -6107,6 +6112,57 @@ if (scenario()) {
         tag + ": ⌘K —— 每行一样高、类别都在列表里，不出卡片 (" + JSON.stringify({ out: p.out, rows }) + ")");
       await ctx.close();
     }
+  }
+}
+
+// --- 14.0 A1: the library card's count row stays in its card ---------------
+// 「已分析 0 局 · 待分析 2 局」 ran 25px past the card at 1440×900: the row's
+// value side had the panel rows' fixed 114px track. Two games not yet
+// claimed, none analysed: the row's longest shape, in three languages.
+if (scenario()) {
+  const games = [0, 1].map((i) => ({ id: "a1-" + i, t: Date.now() - i * 864e5, white: "alice" + i, black: "bob" + i, date: "", event: "",
+    result: "1-0", plies: 8, sans: "e4 e5 Nf3 Nc6 Bc4 Bc5 c3 Nf6", fen: "", side: null }));
+  for (const [w, h] of [[1440, 900], [1024, 768], [600, 900]]) {
+    for (const lang of LANGS) {
+      const tag = "14.0 A1 棋谱库计数 " + w + "x" + h + "/" + lang;
+      const { ctx, page, errs } = await open(lang, "ai", "library", "wood", { width: w, height: h });
+      await page.evaluate(seedLibrary, { v: 1, names: [], games });
+      await page.reload();
+      await page.waitForTimeout(1200);
+      const r = await page.evaluate(() => {
+        const body = document.getElementById("lib-body");
+        const card = body && body.closest(".side-sec, .rec-block, section") || body;
+        const edge = card.getBoundingClientRect().right;
+        const parts = [...body.querySelectorAll(".stat-row > *")];
+        return { n: parts.length, text: body.textContent.trim(),
+          past: parts.filter((e) => e.getBoundingClientRect().right > edge + 0.5 || e.scrollWidth > e.clientWidth + 1)
+            .map((e) => e.textContent + "@" + Math.round(e.getBoundingClientRect().right) + ">" + Math.round(edge)) };
+      });
+      assert(r.n === 2 && /2/.test(r.text) && r.past.length === 0, tag + ": 计数一行都在卡片里，没有字被截 (" + JSON.stringify(r) + ")");
+      assert(errs.length === 0, tag + ": 没有页面异常 " + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
+
+// --- 14.0 A1: an earned medal shows its icon --------------------------------
+// The earned medal's face was --btn-ghost, 6–7% alpha: the brand ring showed
+// through it and the medal was a solid disc with its icon lost. Its face, a
+// little in from the ring and clear of the icon, is not the ring's colour —
+// in every theme, since each has its own ghost.
+if (scenario()) {
+  for (const theme of ["wood", "night", "day", "notebook"]) {
+    const { ctx, page, errs } = await open("zh-CN", "ai", "record", theme);
+    await page.evaluate(() => { const it = document.querySelector(".ach-item"); if (it) it.classList.add("got"); });
+    await settle(page);
+    const ic = page.locator(".ach-item.got .ach-ic").first();
+    const png = decodePng(await ic.screenshot());
+    const px = (x, y) => { const i = (y * png.w + x) * 4; return [png.rgba[i], png.rgba[i + 1], png.rgba[i + 2]]; };
+    const mid = Math.floor(png.h / 2), ring = px(1, mid), face = px(Math.round(png.w * 0.2), mid);
+    const dist = Math.hypot(ring[0] - face[0], ring[1] - face[1], ring[2] - face[2]);
+    assert(dist > 60, `14.0 A1 已得的勋章（${theme}）：勋章面不是外圈的颜色，图标看得见（外圈 ${ring}，面 ${face}，差 ${Math.round(dist)}）`);
+    assert(errs.length === 0, `14.0 A1 勋章（${theme}）：没有页面异常 ` + errs.join(" / "));
+    await ctx.close();
   }
 }
 
