@@ -15,7 +15,6 @@ import { ChessIcons } from "./icons.js";
 import { setPortrait } from "./portraits.js";
 import { createIdleCard } from "./idle-card.js";
 import { ChessLazy } from "./lazy-content.js";
-import { ChessMaterial } from "./material.js";
 import { ChessLearning } from "./learning.js";
 import { ChessPreview } from "./preview.js";
 import { TimeControl } from "./time-control.js";
@@ -54,6 +53,8 @@ import { createRetry } from "./review/retry.js";
 import { createMomentsLazy } from "./review/moments-lazy.js";
 import { createExplorerLazy } from "./explorer/lazy.js";
 import { createGameEnd } from "./game-end.js";
+import { createSaveSlots } from "./save-slots.js";
+import { createMaterialStrip } from "./material-strip.js";
 import { createGameController } from "./game-controller.js";
 import { createIO } from "./io.js";
 import { createPersist } from "./persist.js";
@@ -1894,6 +1895,8 @@ import { drawSpark } from "./charts.js";
     onEnding: (end, show) => { OppUI.syncOffer(!!end); if (show) OppUI.paintCard(end); }, bottomSide: () => (BoardView.screenCell("a1").row ? "w" : "b"),
   });
   const { gameEnding, renderGameOverCard, resultBadges } = GameEnd;
+  // 14.0 E: the captured pieces beside the names are material-strip.js
+  const { render: renderMaterial } = createMaterialStrip({ doc: document, store, viewGame, verboseHistory, baseGame });
 
   // --- stats (AI-mode finished games) ---
   /**
@@ -3903,197 +3906,9 @@ import { drawSpark } from "./charts.js";
     loadFenAsGame(new Chess(raw).fen(), t("msg.fen.loaded"));
   }
 
-  // --- named save slots -------------------------------------------------
-  // The autosave holds exactly one game, so studying a second position meant
-  // losing the first. Slots are explicit, user-named storage on top of it.
-  const SLOT_COUNT = 5;
-
-  function loadSlots() {
-    const s = Persist.read("slots").value;
-    return s || { v: 1, slots: new Array(SLOT_COUNT).fill(null) };
-  }
-  function saveSlots(s) {
-    Persist.setJson("slots", s);
-  }
-
-  /**
-   * A slot's one-line description, localised *at render time*.
-   *
-   * Slots store the mode and difficulty ids rather than a finished label, so a
-   * game saved in Chinese still reads as English after a language switch.
-   */
-  /**
-   * A slot in two lines, the same shape the game-history rows use: what kind
-   * of game it is on the first, how long and when on the second.
-   *
-   * All four facts used to share the second line — 「Engine · Unrated · 3
-   * moves · 8/2/2026, 8:59:30 AM」 — and in English it did not fit: 249px of
-   * text into 228, so the two filled slots stood 71px and 87px against the
-   * three empty ones' 55. Five identical things in three heights, in a dialog
-   * whose whole job is to let you compare them.
-   *
-   * The timestamp is short-form too. A bare toLocaleString() carries seconds
-   * in English; the history dialog next door shows a clock to the minute, and
-   * a save does not need the second it was written.
-   */
-  function slotWhat(slot) {
-    if (!slot) return "";
-    if (!slot.mode) return "";
-    return tdot(t(slot.mode === "ai" ? "mode.ai" : "mode.pvp"), slot.mode === "ai" && diffName(slot.diff));
-  }
-  function slotWhen(slot) {
-    if (!slot) return t("slots.empty");
-    const P = ChessPgn;
-    const s = P ? P.summary(slot.pgn) : null;
-    const when = slot.savedAt
-      ? I18n.fmtDate(slot.savedAt, { dateStyle: "short", timeStyle: "short" })
-      : "";
-    const moves = s && s.plies ? moveCount(Math.ceil(s.plies / 2)) : "";
-    return [moves, when].filter(Boolean).join(" · ");
-  }
-
   /** "1 move" / "12 moves" — a count needs its own plural form in English. */
   function moveCount(n) {
     return tf(n === 1 ? "mm.moveCount.one" : "mm.moveCount.other", [n]);
-  }
-
-  function renderSlots() {
-    const list = document.getElementById("slots-list");
-    if (!list) return;
-    const st = loadSlots();
-    list.replaceChildren();
-    for (let i = 0; i < SLOT_COUNT; i++) {
-      const slot = st.slots[i];
-      const row = document.createElement("div");
-      // the same row the history list is built from, by class rather than by
-      // two inline styles restating it — `style.cssText` is a blind spot the
-      // stylesheet's guards cannot reach, which is where 2.1.2's off-scale
-      // values were found hiding in the markup
-      row.className = "pick-row";
-      const load = document.createElement("button");
-      load.type = "button";
-      load.className = "pick-item";
-      load.dataset.load = String(i);
-      load.disabled = !slot;
-      load.textContent = tdot(tf("slots.slotN", [i + 1]), slotWhat(slot));
-      const sub = document.createElement("span");
-      sub.className = "pick-sub";
-      sub.textContent = slotWhen(slot);
-      load.appendChild(sub);
-      const save = document.createElement("button");
-      save.type = "button";
-      save.className = "tool-btn";
-      save.dataset.save = String(i);
-      save.textContent = t("slots.save");
-      row.append(load, save);
-      if (slot) {
-        const del = document.createElement("button");
-        del.type = "button";
-        del.className = "tool-btn";
-        del.dataset.del = String(i);
-        del.textContent = t("slots.delete");
-        row.appendChild(del);
-      }
-      list.appendChild(row);
-    }
-  }
-
-  function openSlots() {
-    renderSlots();
-    Dlg.open(document.getElementById("slots-modal"));
-  }
-  function closeSlots() {
-    Dlg.close(document.getElementById("slots-modal"));
-  }
-
-  function saveToSlot(i) {
-    // a set-up position with no moves yet is exactly the thing worth parking
-    // in a slot, so "nothing to save" means neither moves nor a custom start
-    if (!sanHistory().length && !startFen()) { toast(t("slots.nothing")); return; }
-    const st = loadSlots();
-    st.slots[i] = {
-      pgn: pgnForExport(),
-      savedAt: Date.now(),
-      mode: store.session.mode,
-      diff: store.session.difficulty,
-    };
-    saveSlots(st);
-    renderSlots();
-    toast(tf("slots.savedN", [i + 1]));
-  }
-
-  async function loadFromSlot(i) {
-    const st = loadSlots();
-    const slot = st.slots[i];
-    if (!slot) return;
-    closeSlots();
-    const ok = await importPgnText(slot.pgn, tf("slots.slotN", [i + 1]),
-      { msg: t("dlg.loadSlot"), title: t("dlg.loadSlotTitle"), ok: t("dlg.loadSlotOk") });
-    if (ok) toast(tf("slots.loadedN", [i + 1]));
-  }
-
-  function deleteSlot(i) {
-    const st = loadSlots();
-    st.slots[i] = null;
-    saveSlots(st);
-    renderSlots();
-    toast(tf("slots.deletedN", [i + 1]));
-  }
-
-  /**
-   * Captured pieces beside each name, and a `+N` on whoever is ahead.
-   *
-   * Follows the replay cursor rather than the live game: scrubbing back to
-   * "where did it go wrong" and seeing the material as it stood at that move
-   * is most of the point. In the puzzle and lesson modes the pieces on the
-   * board are a constructed exercise, not a game's remains, so it stays empty.
-   */
-  function renderMaterial() {
-    const Mat = ChessMaterial;
-    const wEl = document.getElementById("taken-w");
-    const bEl = document.getElementById("taken-b");
-    if (!wEl || !bEl) return;
-    const off = store.session.mode === "learn" || store.session.mode === "puzzle" || !!store.session.editor;
-    if (!Mat || off) { wEl.replaceChildren(); bEl.replaceChildren(); delete wEl.dataset.sig; return; }
-    const shown = viewGame();
-    const promos = verboseHistory().slice(0, store.game.viewIndex)
-      .filter((m) => m.promotion).map((m) => ({ color: m.color, promotion: m.promotion }));
-    const s = Mat.summary(baseGame().board(), shown.board(), promos);
-    const svgs = CHESS_PIECE_SVGS || {};
-    // Built as nodes rather than concatenated markup. The pieces are vendored
-    // SVG text and the lead is a number, so nothing here was ever hostile —
-    // but "build a string and hand it to the parser" is a habit, and the two
-    // places it mattered (the move list, the history rows) learned it here.
-    const strip = (parent, list, color, lead) => {
-      const kids = [];
-      let prevType = null;
-      for (const tp of list) {
-        const svg = svgs[color + tp];
-        if (!svg) continue;
-        const span = document.createElement("span");
-        // grouped by kind (7.7 §2): two pawns overlap like a pile, a knight
-        // after them starts a new pile — see .taken-p.new-kind
-        span.className = "taken-p" + (prevType && prevType !== tp ? " new-kind" : "");
-        prevType = tp;
-        // the sprite set is our own file, not input — parsed once per piece
-        span.insertAdjacentHTML("afterbegin", svg);
-        kids.push(span);
-      }
-      if (lead > 0) {
-        const d = document.createElement("span");
-        d.className = "taken-diff";
-        d.textContent = "+" + lead;
-        kids.push(d);
-      }
-      parent.replaceChildren(...kids);
-    };
-    // White's row shows the black pieces White has taken. Rebuilt only when
-    // the tally changed: this hears every game and session commit.
-    const sig = s.w.join("") + "|" + s.b.join("") + "|" + s.diff;
-    if (wEl.dataset.sig === sig) return;
-    wEl.dataset.sig = sig;
-    strip(wEl, s.w, "b", s.diff);
-    strip(bEl, s.b, "w", -s.diff);
   }
 
   /** The panel's two tabs are shell.js's since v8-0-plan A1 — one door. */
@@ -5076,22 +4891,9 @@ import { drawSpark } from "./charts.js";
     fenModal.onclick = (ev) => { if (ev.target === fenModal) closeFenModal(); };
   }
 
-  const slotsModal = document.getElementById("slots-modal");
-  if (slotsModal) {
-    document.getElementById("slots-open").onclick = () => {
-      if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
-      openSlots();
-    };
-    document.getElementById("slots-close").onclick = closeSlots;
-    document.getElementById("slots-list").onclick = (ev) => {
-      const b = ev.target.closest("button");
-      if (!b) return;
-      if (b.dataset.save != null) saveToSlot(Number(b.dataset.save));
-      else if (b.dataset.del != null) deleteSlot(Number(b.dataset.del));
-      else if (b.dataset.load != null) loadFromSlot(Number(b.dataset.load));
-    };
-    slotsModal.onclick = (ev) => { if (ev.target === slotsModal) closeSlots(); };
-  }
+  // 14.0 E: the save slots and their dialog are save-slots.js
+  const Slots = createSaveSlots({ doc: document, store, Persist, t, tf, toast, Dlg, I18n, diffName, moveCount, sanHistory, startFen,
+    pgnForExport: () => pgnForExport(), importPgnText: (text, label, prompt) => importPgnText(text, label, prompt) });
 
   {
     // v8-0-plan C1: 「全部 N 局」 opens the library on its 本机 games — the
@@ -5262,7 +5064,7 @@ import { drawSpark } from "./charts.js";
    */
   function wireDialogs() {
     Dlg.register(promoModal, () => finishPromotion(null));
-    Dlg.register(document.getElementById("slots-modal"), closeSlots);
+    Dlg.register(document.getElementById("slots-modal"), Slots.close);
     Dlg.register(document.getElementById("lib-modal"), closeDiagnosis);
     Dlg.register(document.getElementById("lib-list-modal"), closeLibList);
     Dlg.register(document.getElementById("theme-modal"), () => PuzzlesUI.closeThemes());

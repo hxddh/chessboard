@@ -53,7 +53,7 @@ export async function run() {
   // 9.0 had put down its history (M1), and it may only go down — lower it in
   // the PR that moves code out.
   {
-    const APP_JS_LINE_CEILING = 5387; // 10.0: 5,744 → 5722; 13.0 E: → 5387 (app-state.js, about-ui.js)
+    const APP_JS_LINE_CEILING = 5189; // 10.0: 5,744 → 5722; 13.0 E: → 5387 (app-state.js, about-ui.js); 14.0 E: → 5189 (save-slots.js, material-strip.js)
     const lines = (WEB_MODULES.get("app.js").match(/\n/g) || []).length;
     assert(lines <= APP_JS_LINE_CEILING,
       "app.js only shrinks: " + lines + " lines (ceiling " + APP_JS_LINE_CEILING + "; move code out rather than in)");
