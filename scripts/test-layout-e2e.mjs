@@ -6114,6 +6114,36 @@ if (scenario()) {
   }
 }
 
+// --- 14.0 A1: the library card's count row stays in its card ---------------
+// 「已分析 0 局 · 待分析 2 局」 ran 25px past the card at 1440×900: the row's
+// value side had the panel rows' fixed 114px track. Two games not yet
+// claimed, none analysed: the row's longest shape, in three languages.
+if (scenario()) {
+  const games = [0, 1].map((i) => ({ id: "a1-" + i, t: Date.now() - i * 864e5, white: "alice" + i, black: "bob" + i, date: "", event: "",
+    result: "1-0", plies: 8, sans: "e4 e5 Nf3 Nc6 Bc4 Bc5 c3 Nf6", fen: "", side: null }));
+  for (const [w, h] of [[1440, 900], [1024, 768], [600, 900]]) {
+    for (const lang of LANGS) {
+      const tag = "14.0 A1 棋谱库计数 " + w + "x" + h + "/" + lang;
+      const { ctx, page, errs } = await open(lang, "ai", "library", "wood", { width: w, height: h });
+      await page.evaluate(seedLibrary, { v: 1, names: [], games });
+      await page.reload();
+      await page.waitForTimeout(1200);
+      const r = await page.evaluate(() => {
+        const body = document.getElementById("lib-body");
+        const card = body && body.closest(".side-sec, .rec-block, section") || body;
+        const edge = card.getBoundingClientRect().right;
+        const parts = [...body.querySelectorAll(".stat-row > *")];
+        return { n: parts.length, text: body.textContent.trim(),
+          past: parts.filter((e) => e.getBoundingClientRect().right > edge + 0.5 || e.scrollWidth > e.clientWidth + 1)
+            .map((e) => e.textContent + "@" + Math.round(e.getBoundingClientRect().right) + ">" + Math.round(edge)) };
+      });
+      assert(r.n === 2 && /2/.test(r.text) && r.past.length === 0, tag + ": 计数一行都在卡片里，没有字被截 (" + JSON.stringify(r) + ")");
+      assert(errs.length === 0, tag + ": 没有页面异常 " + errs.join(" / "));
+      await ctx.close();
+    }
+  }
+}
+
 const { shard, total } = scenario.done();
 console.log(`shard ${shard.index}/${shard.count}: ${Math.ceil((total - shard.index + 1) / shard.count)} of ${total} scenarios`);
 await browser.close();

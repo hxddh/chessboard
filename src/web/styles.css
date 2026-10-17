@@ -3706,6 +3706,12 @@
        names truncate onto `title` as before; where even that track is capped
        (a phone), a value wraps inside it rather than being cut. */
     #lib-diag .stat-v { white-space: normal; }
+    /* 14.0 A1: the library card's count row says two things on its value side
+       (「已分析 0 局 · 待分析 2 局」, 150px) — the fixed track ran it 25px past
+       the card. Here the value takes its own width and the row wraps under
+       the name when the card is too narrow for both. */
+    #lib-body > .stat-row { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: 8px; }
+    #lib-body > .stat-row > .stat-v { margin-left: auto; }
     .stats-body .hint { margin: 4px 0 0; }
 
     /* game history: same row shape in the sidebar preview and the full list */
