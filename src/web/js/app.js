@@ -1215,7 +1215,7 @@ import { drawSpark } from "./charts.js";
       if (typeof s.showSoftMark === "boolean") store.ui.showSoftMark = s.showSoftMark;
       if (typeof s.engineArrows === "boolean") store.ui.engineArrows = s.engineArrows;
       if (typeof s.humanLine === "boolean") store.ui.humanLine = s.humanLine;
-      if (typeof s.blindfold === "boolean") store.ui.blindfold = s.blindfold;
+      if (typeof s.blindfold === "boolean") store.ui.blindfold = s.blindfold; if (s.ob && typeof s.ob === "object") store.ui.ob = { n: Number(s.ob.n) || 0, done: s.ob.done === true }; // 14.0 A3: the first-run question
       if ([16, 32, 64, 128].includes(s.hash)) store.ui.hash = s.hash;
       if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
       store.ui.bgWorker = s.bgWorker === true; // v8-1-plan F4: a second engine for passes, off unless set (§8.7)
@@ -1251,7 +1251,7 @@ import { drawSpark } from "./charts.js";
         textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
         // v8-0-plan A3: the look
         appearance: store.ui.appearance, boardId: store.ui.boardId, boardFrame: store.ui.boardFrame,
-        soundSet: store.ui.soundSet, explorer: store.ui.explorer }));
+        soundSet: store.ui.soundSet, explorer: store.ui.explorer, ob: store.ui.ob }));
     } catch (_) {}
   }
   function saveGame() {
@@ -3684,7 +3684,7 @@ import { drawSpark } from "./charts.js";
   // v10-0-plan T1: the first-run question and its placement (onboarding.js, chunk-onboarding.js)
   const runOnboarding = () => loadChunk("chunk-onboarding.js", "createOnboarding").then((create) => create({
     t, store, startLearn, setPanelOpen, panelCoversBoard, saveSettings, maybeEngineTurn,
-    pickFromList: (...a) => pickFromList(...a), startPlacement,
+    pickFromList: (...a) => pickFromList(...a), startPlacement, goHome: () => Shell.go("home"),
   }).run(), () => {});
 
   // --- position editor + FEN loading ---
@@ -5383,5 +5383,5 @@ import { drawSpark } from "./charts.js";
       maybeEngineTurn(); // resumed save may leave the engine on move
     }, 0));
   }
-  if (firstRun) runOnboarding();
+  if (firstRun || (store.ui.ob && !store.ui.ob.done && store.ui.ob.n < 3)) runOnboarding(); // 14.0 A3: asked again, three launches at most, until answered
 
