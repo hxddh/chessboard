@@ -1830,6 +1830,10 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     const today = await page.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
       title: document.getElementById("today-hero-title").textContent }));
     assert(today.view === "home" && today.title === "来一盘", "T1 「去今天」:今天的第一件事是和配好的对手下一盘", JSON.stringify(today));
+    // 14.0 A1: the placement set a rating, it answered no puzzle of the day —
+    // 题 read 1/5 here while 已解 said 0
+    const ring = await page.evaluate(() => (document.querySelector('#today-rings .today-ring[data-k="puzzle"] b') || {}).textContent);
+    assert(ring === "0/5", "14.0 A1 定级之后:今天的「题」还是 0/5,和「已解 0」一致", ring);
     await page.click("#today-go");
     await page.waitForTimeout(600);
     const play = await page.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),

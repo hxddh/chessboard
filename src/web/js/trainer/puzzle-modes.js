@@ -517,7 +517,9 @@ export function createPuzzleModes(d) {
     const r = Math.round(run.est);
     st.rating = { r, rd: Runs.PLACE_RD, vol: ChessRating.DEFAULT.vol };
     st.ratedAt = now;
-    st.rhist = (Array.isArray(st.rhist) ? st.rhist : []).concat([{ t: now, r }]).slice(-60);
+    // `place`: a rating set by the assessment, not one puzzle answered — 今天's
+    // 题 ring counts answers, and read 1/5 after it while 已解 said 0 (14.0 A1)
+    st.rhist = (Array.isArray(st.rhist) ? st.rhist : []).concat([{ t: now, r, place: true }]).slice(-60);
     st.placed = { r, at: now };
     run.opp = onPlaced ? onPlaced(r) : "";
   }

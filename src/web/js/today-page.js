@@ -55,7 +55,7 @@ export function createTodayPage(d) {
     const lesson = Object.values(ls.done || {}).filter(at).length
       + Object.values((ls.eg && ls.eg.done) || {}).filter(at).length;
     const st = store.session.puzzleState || {};
-    const puzzle = (Array.isArray(st.rhist) ? st.rhist : []).filter((h) => Number(h.t) >= from).length;
+    const puzzle = (Array.isArray(st.rhist) ? st.rhist : []).filter((h) => Number(h.t) >= from && !h.place).length;
     const game = loadStats().games.filter((g) => Number(g.t) >= from).length;
     return { lesson, puzzle, game };
   }
