@@ -146,6 +146,11 @@ const ids = (q) => Q.query(all, q, pkOf).map((g) => g.event || g.id).join(",");
   assert(Q.inferName([mk("me", "x")]) === null, "one game is not evidence");
   assert(Q.inferName([mk("me", "x"), mk("me", "y"), mk("p", "q"), mk("r", "s"), mk("t", "u")]) === null, "fewer than half is not enough");
   assert(Q.inferName([mk("me", "x"), mk("me", "y"), { src: "local", white: "", black: "" }]).of === 2, "本机 games do not vote");
+  // 14.0 A3: no clear owner — the three names on most games, to pick from
+  const top = Q.topNames([mk("Wang Lei", "Li Ming"), mk("li ming", "Zhang"), mk("Zhao", "Wang Lei"), { src: "local", white: "x", black: "y" }], 3);
+  assert(top.of === 3 && top.names.length === 3 && top.names[0].n === 2 && top.names[1].n === 2 && top.names[2].n === 1 &&
+    ["Wang Lei", "Li Ming"].includes(top.names[0].name), "topNames: the names on most games first, case folded, 本机 not voting", JSON.stringify(top));
+  assert(Q.topNames([], 3).names.length === 0, "topNames: no games, no names");
 }
 
 // --- 5. the whole-library PGN: export, import, the same games ---------------

@@ -792,7 +792,7 @@
       "lib.tc.classical": "Classical", "lib.tc.daily": "Daily", "lib.byPos": "Position",
       "lib.posHint": "Only games that pass through the position on the board", "lib.posStat": "{0:game reaches|games reach} this position. Played next: {1}", "lib.more": "Show {0} more",
       "lib.exportPgn": "Export PGN", "lib.claimAsk": "“{0}” plays in {1} of these {2} games. Is that you? Once claimed, those games count as yours and later imports will not ask again.",
-      "lib.claimYes": "That’s me", "lib.claimNo": "No", "lib.claimDone": "Claimed “{0}”: {1:game counts|games count} as yours",
+      "lib.claimPick": "The names on most of these {0:game|games}. Which one is you? Once claimed, those games count as yours.", "lib.claimChip": "{0} ({1:game|games})", "lib.paste": "Paste PGN", "lib.claimYes": "That’s me", "lib.claimNo": "No", "lib.claimDone": "Claimed “{0}”: {1:game counts|games count} as yours",
       "lib.unreadable": "The library can't be read right now: this device's browser storage will not open. Your games are still in the save file on this device; for now you can look, and importing and analysis wait for the next launch.", "lib.saveFailed": "Some library games could not be saved ({0}). Export a copy before restarting.", "lib.recovered": "The library was missing from the browser storage; {0:game was|games were} recovered from the save file on this device.",
       "lib.loading": "Loading the library ({0:game|games})…",
       "lib.rowAcc": "{0}% accuracy", "lib.rowBad": "{0:mistake|mistakes}",

@@ -2292,6 +2292,31 @@ function tenThousand() {
   await ctx.close();
 }
 
+// --- 14.0 A3: no one name is clearly yours — pick from three; 粘贴 PGN ------------
+{
+  const ctx = await c1Context({});
+  await ctx.addInitScript((pgn) => {
+    window.zero = Object.assign(window.zero || {}, { clipboard: { readText: () => Promise.resolve(pgn), writeText: () => Promise.resolve(true) } });
+  }, '[White "Ann"]\n[Black "Bo"]\n[Result "1-0"]\n\n1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0\n\n[White "Cy"]\n[Black "Di"]\n[Result "0-1"]\n\n1. f3 e5 2. g4 Qh4# 0-1\n');
+  const { page, errs } = await open(ctx);
+  await c1Ready(page);
+  await page.click("#lib-paste");
+  await page.waitForFunction(() => !document.getElementById("lib-claim").hidden, null, { timeout: 10000 }).catch(() => {});
+  const offer = await page.evaluate(() => ({ shown: !document.getElementById("lib-claim").hidden,
+    text: document.getElementById("lib-claim-text").textContent, yes: !document.getElementById("lib-claim-yes").hidden,
+    chips: [...document.querySelectorAll("#lib-claim-names button")].map((b) => b.dataset.name) }));
+  assert(offer.shown && !offer.yes && offer.chips.length === 3 && /哪个是你/.test(offer.text),
+    "14.0 A3 粘贴两局、没有一个名字明显是你：列出出现最多的三个名字让你点", JSON.stringify(offer));
+  await page.click('#lib-claim-names button[data-name="' + offer.chips[0] + '"]');
+  await page.waitForTimeout(300);
+  const lib = await libOf(page);
+  const after = await page.evaluate(() => ({ names: document.getElementById("lib-names").value, hidden: document.getElementById("lib-claim").hidden }));
+  assert(lib.games.length === 2 && after.names === offer.chips[0] && after.hidden && lib.games.filter((g) => g.side).length === 1,
+    "14.0 A3 点一个名字：认领它，那一局算你的，提示收起", JSON.stringify({ n: lib.games.length, after, sides: lib.games.map((g) => g.side) }));
+  assert(errs.length === 0, "14.0 A3 认领与粘贴：没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
 // --- C1.7 认领名字: the name on most games, offered once ---------------------------
 {
   const ctx = await c1Context({});
