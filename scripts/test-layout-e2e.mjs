@@ -4027,8 +4027,10 @@ if (scenario()) {
     for (const sq of ["e2", "e4"]) await mv(page, sq);
     // under ten seconds the running clock shows tenths
     let tenths = false;
-    for (let i = 0; i < 80 && !tenths; i++) {
-      await page.waitForTimeout(50); // the clock running down, not the page settling (E3)
+    // the clock runs forty times fast, so its last ten seconds are 250 ms of
+    // real time: sampled every 15 ms, a stall of one round trip cannot skip them
+    for (let i = 0; i < 300 && !tenths; i++) {
+      await page.waitForTimeout(15); // the clock running down, not the page settling (E3)
       tenths = await page.evaluate(() => /^0:0\d\.\d$/.test(document.getElementById("clock-b").textContent.trim()));
     }
     assert(tenths, "超时前最后十秒,钟显示到 0.1 秒");
