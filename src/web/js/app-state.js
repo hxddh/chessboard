@@ -114,6 +114,8 @@ export function initialState() {
       /** set by the stop button; the analysis loop bails at the next position */
       analyzeAbort: false,
       analyzeProgress: "",
+      // 14.0 B: the marks of the plies a running pass has already measured
+      analyzeMarks: null,
       /** engine hint arrow {from,to}; cleared whenever the game mutates */
       hintMove: null,
       hintPending: false,

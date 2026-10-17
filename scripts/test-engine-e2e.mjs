@@ -454,6 +454,47 @@ assert(broken.movesNew === 0 && broken.workersNew === broken.workersRetry + 1 &&
   await ctx.close();
 }
 
+// 14.0 B: 分析 on the real engine, three searches at a time (engine.js
+// passWidth) against one at a time. A 21-ply game with four marked moves: the
+// same answer to every search, in well under the time, and the first mark
+// on the move list long before the pass is over.
+{
+  const PGN = "1. e4 e5 2. Qh5 Nc6 3. Bc4 g6 4. Qf3 Nf6 5. Ne2 Nd4 6. Nxd4 exd4 7. e5 Qe7 8. Qe2 Ng4 9. f4 d6 10. exd6 Qxe2+ 11. Bxe2 *";
+  const pass = async (width) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript((pgn) => {
+      localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", soundOn: false, view: "play", humanLine: false }));
+      localStorage.setItem("chess.save", JSON.stringify({ v: 1, savedAt: Date.now(), pgn }));
+    }, PGN);
+    const page = await ctx.newPage();
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(5000);
+    await page.evaluate((w) => {
+      const E = window.__chess.engine, an = E.analyze.bind(E);
+      if (w) E.passWidth = () => w;
+      window.__res = {}; window.__mark = null;
+      E.analyze = async (fen, b, o) => { const r = await an(fen, b, o); if (o && o.bg) window.__res[fen + "|" + b] = r && [r.cp, r.mate, r.best, (r.pv || []).join(" ")]; return r; };
+      new MutationObserver(() => { if (window.__mark == null && document.querySelector("#move-list .mvtag")) window.__mark = performance.now(); })
+        .observe(document.body, { subtree: true, childList: true });
+      window.__t0 = performance.now();
+      document.getElementById("an-run").click();
+    }, width);
+    await page.waitForFunction(() => /停止/.test(document.getElementById("an-run").textContent), null, { timeout: 5000 }).catch(() => {});
+    await page.waitForFunction(() => !/停止/.test(document.getElementById("an-run").textContent), null, { timeout: 120000, polling: 50 });
+    const r = await page.evaluate(() => ({ ms: Math.round(performance.now() - window.__t0), res: window.__res, width: window.__chess.engine.passWidth(),
+      mark: window.__mark == null ? null : Math.round(window.__mark - window.__t0), marks: document.querySelectorAll("#move-list .mvtag").length }));
+    await ctx.close();
+    return r;
+  };
+  const narrow = await pass(1), wide = await pass(0);
+  const flat = (x) => JSON.stringify(Object.keys(x.res).sort().map((k) => [k, x.res[k]]));
+  const n = Object.keys(wide.res).length;
+  assert(wide.width >= 2 && n >= 21 && flat(wide) === flat(narrow) && wide.ms < narrow.ms * 0.8,
+    "14.0 B 分析同时算 " + wide.width + " 个局面：" + n + " 次搜索结果逐个相同，" + narrow.ms + " → " + wide.ms + " ms");
+  assert(wide.marks >= 1 && wide.mark != null && wide.mark < wide.ms * 0.7,
+    "…已经算到的着法先标出来：第一个标记 " + wide.mark + " ms，整趟 " + wide.ms + " ms（共 " + wide.marks + " 个）");
+}
+
 if (shipped.plies < 2) {
   console.error(control.plies >= 2
     ? "诊断:去掉 CSP 之后引擎能应 —— 是 index.html 的 CSP 挡住了它"

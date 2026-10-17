@@ -1177,7 +1177,9 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     window.__chess.engine.analyze = async (fen, movetime) => {
       const turn = fen.split(" ")[1];
       // the second pass (精析) is slow on purpose: it is the pass in flight
-      if (movetime >= 400) await new Promise((r) => setTimeout(r, 200));
+      // (600 ms a search: since 14.0 B three run at once, and the pass must
+      // outlast the 400 + 600 ms below)
+      if (movetime >= 400) await new Promise((r) => setTimeout(r, 600));
       const start = fen.startsWith("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w");
       return { cp: turn === "w" ? 25 : -25, mate: null, turn, best: start ? "e2e4" : null,
         pv: start ? ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4"] : [] };

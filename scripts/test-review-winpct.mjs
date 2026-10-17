@@ -420,6 +420,23 @@ assert(R.summarizeWinPct([], [], "w") === null, "empty → null");
     "…the search Stop cancelled is not counted as deepened, and its quick number stands (" + stopAt + ")");
   const gCut = G.gradeMoves(deepCut, Chess);
   assert(gCut.length === sans.length && gCut.every((x) => typeof x === "string"), "…and every move still gets a grade (" + gCut.join(" ") + ")");
+  // 14.0 B: two searches in flight — answers coming back out of order change nothing
+  let inFlight = 0, most = 0;
+  const slow = async (fen, b, o) => {
+    inFlight++; most = Math.max(most, inFlight);
+    await new Promise((ok) => setTimeout(ok, (fens.indexOf(fen) * 7) % 5));
+    inFlight--;
+    return analyze(fen, b, o);
+  };
+  const wide = await P.runPass({ fens, sans, budget: 200, lines: 1, analyze: slow, evalScalar, width: 2 });
+  assert(JSON.stringify(wide) === JSON.stringify(a) && most === 2,
+    "14.0 B: width 2 keeps two searches in flight and gives the same pass as one at a time (most " + most + ")");
+  calls.length = 0;
+  const wideCut = await P.runPass({ fens, sans, budget: 200, lines: 1, evalScalar, width: 2,
+    analyze: (fen, b, o) => { calls.push(fen); return slow(fen, b, o); }, halt: () => (calls.length >= 3 ? "abort" : null) });
+  const kept = wideCut.scalars.map((x) => x != null);
+  assert(wideCut.halted === "abort" && kept.slice(0, wideCut.at).every(Boolean) && !kept.slice(wideCut.at).some(Boolean),
+    "…a stop keeps a prefix without holes, and says where it ends (" + wideCut.at + ", " + kept.map(Number).join("") + ")");
 }
 
 // --- v8-2-plan T3: 名局猜着 grades on the review's scale ---------------------
