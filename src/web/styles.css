@@ -3605,10 +3605,12 @@
         radial-gradient(closest-side, var(--card) 90%, transparent 91%),
         conic-gradient(var(--muted) calc(var(--p) * 1%), var(--line) 0);
     }
+    /* 14.0 A1: the face is opaque — it was --btn-ghost, 6–7% alpha, and the
+       brand ring under it filled the medal: a solid disc, its icon lost */
     .ach-item.got .ach-ic {
       color: var(--brand);
       background:
-        radial-gradient(closest-side, var(--btn-ghost) 90%, transparent 91%),
+        radial-gradient(closest-side, color-mix(in srgb, var(--brand) 12%, var(--card)) 90%, transparent 91%),
         conic-gradient(var(--brand) 100%, var(--brand) 0);
     }
     .ach-nm {

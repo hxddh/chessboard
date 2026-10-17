@@ -43,6 +43,7 @@ import { layoutProbe } from "./lib/layout-probe.mjs";
 import { playOpera, analyseOpera } from "./lib/opera-fixture.mjs";
 import { loadAppModules } from "./lib/app-module.mjs";
 import { settle } from "./lib/settle.mjs";
+import { decodePng } from "./lib/icon-files.mjs";
 
 /** v11-0-plan U3: the kinds, runs, themes and list are under 更多练法 */
 async function openPzMore(page) { await page.evaluate(() => { const f = document.getElementById("pz-more"); if (f) f.open = true; }); }
@@ -6141,6 +6142,27 @@ if (scenario()) {
       assert(errs.length === 0, tag + ": 没有页面异常 " + errs.join(" / "));
       await ctx.close();
     }
+  }
+}
+
+// --- 14.0 A1: an earned medal shows its icon --------------------------------
+// The earned medal's face was --btn-ghost, 6–7% alpha: the brand ring showed
+// through it and the medal was a solid disc with its icon lost. Its face, a
+// little in from the ring and clear of the icon, is not the ring's colour —
+// in every theme, since each has its own ghost.
+if (scenario()) {
+  for (const theme of ["wood", "night", "day", "notebook"]) {
+    const { ctx, page, errs } = await open("zh-CN", "ai", "record", theme);
+    await page.evaluate(() => { const it = document.querySelector(".ach-item"); if (it) it.classList.add("got"); });
+    await settle(page);
+    const ic = page.locator(".ach-item.got .ach-ic").first();
+    const png = decodePng(await ic.screenshot());
+    const px = (x, y) => { const i = (y * png.w + x) * 4; return [png.rgba[i], png.rgba[i + 1], png.rgba[i + 2]]; };
+    const mid = Math.floor(png.h / 2), ring = px(1, mid), face = px(Math.round(png.w * 0.2), mid);
+    const dist = Math.hypot(ring[0] - face[0], ring[1] - face[1], ring[2] - face[2]);
+    assert(dist > 60, `14.0 A1 已得的勋章（${theme}）：勋章面不是外圈的颜色，图标看得见（外圈 ${ring}，面 ${face}，差 ${Math.round(dist)}）`);
+    assert(errs.length === 0, `14.0 A1 勋章（${theme}）：没有页面异常 ` + errs.join(" / "));
+    await ctx.close();
   }
 }
 
