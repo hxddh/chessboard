@@ -326,7 +326,11 @@ export function createIO(d) {
     restoreAnalysis();
     resetClocks(); syncAutoFlip();
     // a trainer draws its own board and a page covers it: the game opens in play, on the board (Codex on #86)
-    if (store.session.mode === "learn" || store.session.mode === "puzzle") switchMode(store.ui.playMode === "pvp" ? "pvp" : "ai");
+    // 分析一局 is nobody's game against the engine: on the two-player board,
+    // as 空白棋盘 is, its strips name the file's players (or 玩家 1 / 2) — in
+    // an engine game a header-less paste read 「尼可 1397 · 你赢了」 (14.0 A1)
+    if (asAnalysis) switchMode("pvp");
+    else if (store.session.mode === "learn" || store.session.mode === "puzzle") switchMode(store.ui.playMode === "pvp" ? "pvp" : "ai");
     // after the switch, which clears it: 分析一局 from a trainer (⌘K) is still
     // an analysis, not a game the engine replies in (Codex on #113). The
     // switch has already asked for the engine's move, and that ask does not

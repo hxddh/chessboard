@@ -1852,8 +1852,9 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.fill("#an-text", "https://lichess.org/q7ZvsdUFab12");
   await pg.click("#an-go");
   assert(/设置 · 数据/.test(await note()) && await pg.isVisible("#an-net"), "A1：Lichess 链接、没开联网 —— 说要开哪个开关，带去设置的按钮", await note());
-  // PGN: on the board, analysed, the report up — in one click; an engine game
-  // still, but the engine does not play on in it, and it is not filed
+  // PGN: on the board, analysed, the report up — in one click; on the
+  // two-player board (14.0 A1), so the engine does not play on in it, and it
+  // is not filed
   await pg.fill("#an-text", pgn);
   await pg.click("#an-go");
   await pg.waitForFunction(() => !document.getElementById("report-card").hidden, null, { timeout: 20000 }).catch(() => {});
@@ -1867,6 +1868,20 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   // a pasted game has no "you": the board's humanColor (w here) is not a side
   // of it, so none of its mistakes become drills (Codex on #113)
   assert(a1.mines === 0, "A1：粘贴的对局不知道哪一方是你 —— 不把它的失误收进「我的错题」", JSON.stringify(a1));
+  // 14.0 A1: the strips name the file's players, not the last opponent and 你
+  const names = () => pg.evaluate(() => ({ w: document.getElementById("white-role").textContent, b: document.getElementById("black-role").textContent,
+    result: document.getElementById("go-result").textContent }));
+  const n1 = await names();
+  assert(n1.w === "Morphy" && n1.b === "Allies", "14.0 A1：粘贴的对局，两条名牌是文件里的白方、黑方", JSON.stringify(n1));
+  // …and a paste with no headers at all is 玩家 1 / 玩家 2, White won — not 「尼可 · 你赢了」
+  await pg.click('#rail button[data-view="home"]');
+  await pg.click("#today-analyse");
+  await pg.fill("#an-text", "1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0");
+  await pg.click("#an-go");
+  await pg.waitForTimeout(700);
+  if (await pg.isVisible("#confirm-modal.show").catch(() => false)) { await pg.click("#confirm-ok"); await pg.waitForTimeout(700); }
+  const n2 = await names();
+  assert(n2.w === "玩家 1" && n2.b === "玩家 2" && n2.result === "白方胜", "14.0 A1：没有头的 PGN —— 玩家 1 / 玩家 2、「白方胜」，不是上一个对手和「你赢了」", JSON.stringify(n2));
   // the same link with the network on: the native side is asked for that one game
   // (the settings are read at launch: the switch is turned on, and the page opened again)
   await pg.evaluate(() => { localStorage.setItem("chess.sync", JSON.stringify({ v: 1, on: true, site: "lichess", user: "" })); });
@@ -1922,7 +1937,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.waitForTimeout(1200);
   const tr = await pg.evaluate(() => ({ plies: document.querySelectorAll(".move-list .mlmove").length,
     mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode, analysis: window.__chess.analysisBoard(), best: window.__best }));
-  assert(tr.plies === 11 && tr.mode === "ai" && tr.analysis && tr.best === 0, "A1：从谜题里 ⌘K「分析一局」—— 回到棋盘、仍是分析（引擎不接着走，至少三条线）", JSON.stringify(tr));
+  assert(tr.plies === 11 && tr.mode === "pvp" && tr.analysis && tr.best === 0, "A1：从谜题里 ⌘K「分析一局」—— 回到棋盘、仍是分析（双人棋盘，引擎不接着走）", JSON.stringify(tr));
   assert(errsA.length === 0, "A1：没有页面异常 — " + errsA.join(" / "));
   await ctxA.close();
 }
