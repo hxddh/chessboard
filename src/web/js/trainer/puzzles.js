@@ -779,9 +779,7 @@ export function createPuzzlesUI(d) {
       const g = cat.slice(GROUP_CAT.length);
       return [Modes.groupList(g).filter((p) => solved[p.id]).length, Modes.groupCount(g)];
     }
-    // 14.0 A1: the category's own puzzles — it counted the whole book, whose
-    // size moves with the mined set, your mistakes and your repertoire
-    // (1386 → 1391 → 15523 across three launches, in the same category)
+    // 14.0 A1: the category's own — the whole book moved with mines and repertoire
     const list = puzzlesInCat(cat);
     return [list.filter((p) => solved[p.id]).length, list.length];
   }
