@@ -1794,7 +1794,7 @@ import { drawSpark } from "./charts.js";
     saveProgress, bookNow, loadPuzzleState, savePuzzleState, Srs, Picker,
     owedNow, ratingLabel, ratingTip, practiceLeft, puzzlesInCat,
     startPuzzleAt, startPuzzles, stopPuzzles, puzzleModel, puzzleHumanSide, puzzleClick,
-    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, startPlacement, goTheme,
+    showPuzzleAnswer, leaveTrainer, nextPuzzle, syncPuzzleUI, startPlacement, goTheme, hintLevel,
   } = PuzzlesUI;
 
   /**
@@ -3256,11 +3256,11 @@ import { drawSpark } from "./charts.js";
       hintBtn.disabled = false;
       // the label is its own span beside the icon (7.7 §7), and it is written
       // only when it changes: this runs on every commit, under the pointer
-      setText(el("btn-hint-label"), store.session.mode === "puzzle" ? t("chrome.answer")
+      setText(el("btn-hint-label"), store.session.mode === "puzzle" ? t(hintLevel() === "hint" ? "chrome.hint" : "chrome.answer")
         : busy ? t("chrome.thinking") : t("chrome.hint"));
       // on the puzzle page this is the only 「答案」 (the panel's copy went in
       // 7.4), so its tooltip says what it does there, not "engine hint"
-      hintBtn.title = t(store.session.mode === "puzzle" ? "tip.puzzle.answer" : "tip.hint");
+      hintBtn.title = t(store.session.mode === "puzzle" ? (hintLevel() === "hint" ? "tip.puzzle.hint" : "tip.puzzle.answer") : "tip.hint");
       hintBtn.classList.toggle("busy", busy);
     }
 

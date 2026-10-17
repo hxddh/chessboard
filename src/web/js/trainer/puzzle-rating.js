@@ -76,7 +76,8 @@ export function createPuzzleRating(d) {
   }
   /** @returns {number|null} null for the categories that are not on the scale */
   function puzzleRatingOf(p) { return isRatedCat(p.cat) ? Math.round(puzzleRating(p).r) : null; }
-  function ratePuzzleOnce(id, score) {
+  /** `half`: a solve with the piece shown (14.0 A2) — rated as solved, half the gain kept */
+  function ratePuzzleOnce(id, score, half) {
     const pz = store.session.puzzle;
     if (!pz || pz.p.id !== id || pz.rated || pz.run) return; // a run is not rated (trainer/runs.js)
     if (!isRatedCat(pz.p.cat)) return; // 背谱不是战术水平（7.3 B1）
@@ -90,6 +91,7 @@ export function createPuzzleRating(d) {
     const st = store.session.puzzleState;
     const before = Math.round(playerRating().r);
     const r = ChessRating.rate1v1(playerRating(), puzzleRating(pz.p), score);
+    if (half) r.player = Object.assign({}, r.player, { r: playerRating().r + (r.player.r - playerRating().r) / 2 });
     // v8-0-plan B1: each theme the puzzle belongs to has its own rating
     Modes.rateThemes(pz.p, score, puzzleRating(pz.p));
     // what the answer did to the rating, for the feedback card (7.7 §4)

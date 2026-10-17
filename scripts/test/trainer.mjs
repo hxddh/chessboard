@@ -313,7 +313,9 @@ export async function run() {
     assert(/function puzzleHumanSide\(\)/.test(appSrc) &&
       /function puzzleClick\(sq\) \{[\s\S]{0,200}g\.turn\(\) !== puzzleHumanSide\(\)/.test(appSrc) &&
       /piece\.color === puzzleHumanSide\(\)/.test(appSrc) &&
-      /function showPuzzleAnswer\(\) \{[\s\S]{0,200}g\.turn\(\) !== puzzleHumanSide\(\)/.test(appSrc),
+      // 14.0 A2: the answer is the hint module's second level (puzzle-hint.js)
+      /function showPuzzleAnswer\(\) \{ Hint\.show\(\); \}/.test(appSrc) &&
+      /function show\(\) \{[\s\S]{0,200}pz\.g\.turn\(\) !== puzzleHumanSide\(\)/.test(appSrc),
       "clicks, selection and the answer arrow all read the solver's chair from the puzzle");
     // 接实战 keeps the chair — retired from the register in 7.2 and replaced by
     // a behavioural test (scripts/test-library-e2e.mjs 第 10 组: 「接实战」把刚

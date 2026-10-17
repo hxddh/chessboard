@@ -1507,6 +1507,71 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   realEngine = false;
 }
 
+// --- 14.0 A2: 提示 then 答案; 下一题 near your rating ------------------------
+// The key used to show the answer at once and count the puzzle wrong. Now the
+// first press rings the piece (the puzzle still counts, at half the gain),
+// the second is the answer (a miss), and a puzzle played out after the answer
+// is not marked solved.
+{
+  const { ctx, page } = await open({ v: 1, idv: 2, cat: "m1", solved: {}, missed: {} });
+  const h = helpers(page);
+  const label = () => h.text("#btn-hint-label");
+  const state = () => page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles") || "{}"));
+  const mateMove = async () => {
+    const fen = await page.evaluate(() => window.__chess.puzzle());
+    const g = new Chess(fen);
+    const m = g.moves({ verbose: true }).find((x) => { g.move(x); const y = g.in_checkmate(); g.undo(); return y; });
+    h.view.flipped = fen.split(" ")[1] === "b";
+    return m;
+  };
+  assert((await label()) === "提示", "14.0 A2: 谜题里这个键先叫「提示」", await label());
+  await page.keyboard.press("h");
+  await page.waitForTimeout(300);
+  const toast1 = await h.text("#toast");
+  let st = await state();
+  assert((await label()) === "答案" && /提示/.test(toast1) && !Object.keys(st.missed || {}).length,
+    "14.0 A2: 按一次 —— 圈出要动的子，说「提示」，不算错；键变成「答案」", JSON.stringify({ l: await label(), toast1, missed: st.missed }));
+  let m = await mateMove();
+  await h.move(m.from, m.to);
+  let fb = await h.feedback();
+  st = await state();
+  const solved1 = Object.keys(st.solved || {}).length;
+  const gain = st.rating ? Math.round(st.rating.r - 1500) : null;
+  assert(/解出/.test(fb) && !/最佳/.test(fb) && solved1 === 1 && gain > 0 && gain < 40,
+    "14.0 A2: 用了提示走对 —— 算解出，涨分少于不用提示（+" + gain + "），不报「最佳着」", JSON.stringify({ fb, solved1, gain }));
+  await page.click("#puzzle-next");
+  await page.waitForTimeout(600);
+  await page.keyboard.press("h");
+  await page.waitForTimeout(200);
+  await page.keyboard.press("h");
+  await page.waitForTimeout(300);
+  st = await state();
+  const missedN = Object.keys(st.missed || {}).length;
+  m = await mateMove();
+  await h.move(m.from, m.to);
+  fb = await h.feedback();
+  st = await state();
+  assert(missedN === 1 && /看过答案/.test(fb) && Object.keys(st.solved || {}).length === solved1,
+    "14.0 A2: 按两次是答案 —— 算错，走完也不标「解出」", JSON.stringify({ missedN, fb, solved: Object.keys(st.solved || {}).length }));
+  await ctx.close();
+}
+// 下一题: the nearest unsolved to the rating, not the list's next — in 战术,
+// whose 572 puzzles run 1100–1900 (一步杀's are all easy)
+{
+  const { ctx, page } = await open({ v: 1, idv: 2, cat: "tac", solved: {}, missed: {}, rating: { r: 1300, rd: 60, vol: 0.06 }, rhist: [{ t: Date.now(), r: 1300 }] });
+  const h = helpers(page);
+  const seen = [];
+  for (let i = 0; i < 3; i++) {
+    await page.click("#puzzle-next");
+    await page.waitForTimeout(500);
+    const task = (await h.text("#puzzle-task")) || "";
+    const m = /难度 (\d+)/.exec(task);
+    seen.push(m ? Number(m[1]) : null);
+  }
+  assert(seen.every((r) => r != null && Math.abs(r - 1300) <= 150), "14.0 A2:「下一题」连着三题都离你的等级分（1300）不超过 150", seen.join(", "));
+  await ctx.close();
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();
