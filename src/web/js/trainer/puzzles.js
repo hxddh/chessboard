@@ -169,6 +169,8 @@ export function createPuzzlesUI(d) {
   }
 
   function startPuzzles() {
+    // 14.0 A3: a placement closed half way comes back first
+    if (!store.session.run && Modes.resumePlacement()) return;
     // v8-0-plan B1: a theme resumes as a theme (its bands load first)
     if (isThemeCat(store.session.puzzleState.cat)) { Modes.startTheme(store.session.puzzleState.cat.slice(THEME_CAT.length)); return; }
     // 9.0 S3: …and a group as a group

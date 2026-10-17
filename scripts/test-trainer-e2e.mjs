@@ -1572,6 +1572,20 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   await ctx.close();
 }
 
+// --- 14.0 A3: a lesson left half way comes back at its step ----------------
+{
+  const lx = vm.createContext({});
+  vm.runInContext(compileModuleSync(path.join(path.dirname(ENTRY), "lessons.js")), lx);
+  const li = lx.CHESS_LESSONS.findIndex((L) => L.tasks.length >= 3);
+  const L = lx.CHESS_LESSONS[li];
+  const { ctx, page } = await open(null, { mode: "learn", extra: { "chess.learn": JSON.stringify({ v: 1, done: {}, last: li, at: { id: L.id, ti: 2 } }) } });
+  await page.waitForTimeout(800);
+  const dots = await page.evaluate(() => [...document.querySelectorAll("#lesson-dots .lesson-dot")].map((d) => d.className.replace("lesson-dot", "").trim() || "-"));
+  assert(dots.length === L.tasks.length && dots[2] === "current" && dots[0] === "done",
+    "14.0 A3: 课做到第 3 步时关掉，重开回到第 3 步", JSON.stringify({ li, dots }));
+  await ctx.close();
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();

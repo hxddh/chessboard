@@ -1829,6 +1829,29 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     await ctx.close();
   }
 
+  // (a3) 14.0 A3: a placement the app was closed in comes back where it was
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1200);
+    await page.evaluate(() => document.querySelectorAll("#pick-list .pick-item")[1].click());
+    await page.waitForTimeout(1200);
+    const head = () => page.evaluate(() => (document.getElementById("pz-run-head") || {}).textContent || "");
+    for (let i = 0; i < 2; i++) { await page.keyboard.press("h"); await page.waitForTimeout(1300); }
+    const before = await head();
+    await page.reload();
+    await page.waitForTimeout(2000);
+    const after = await head();
+    const pick = await page.evaluate(() => !!document.querySelector("#pick-modal.show"));
+    assert(/第 3 题，共 6 题/.test(before) && /定级 · 第 3 题，共 6 题/.test(after) && !pick,
+      "14.0 A3 定级做到第 3 题时关掉，重开还在第 3 题", JSON.stringify({ before, after, pick }));
+    assert(errs.length === 0, `14.0 A3 定级续上:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
+
   // (b) first launch, 「会走子」 (v10-0-plan T1): six placement puzzles whose
   // aim follows the answers; the estimate becomes the puzzle rating and picks
   // the opponent; 去今天 → 今天's first thing is a game against them — three

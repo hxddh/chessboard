@@ -225,7 +225,9 @@ export function createLessonsUI(d) {
     // waits for it, unless another run starts meanwhile (an endgame, a classic)
     const my = ++store.session.learnRuns;
     if (!Body.ready()) { Body.want(() => { if (my === store.session.learnRuns && store.session.mode === "learn") { startLesson(i, stand); sync(); } }); return; }
-    store.session.learn = { li: i, ti: 0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !stand && !store.session.learnState.done[LESSONS[i].id] };
+    // 14.0 A3: the step it was left at, when it is this lesson's (a relaunch, or the lesson opened again)
+    const at = store.session.learnState.at, ti0 = at && at.id === LESSONS[i].id && at.ti < LESSONS[i].tasks.length ? at.ti : 0;
+    store.session.learn = { li: i, ti: ti0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !stand && !ti0 && !store.session.learnState.done[LESSONS[i].id] };
     startLearnTask();
   }
 
@@ -657,6 +659,8 @@ export function createLessonsUI(d) {
       Audio2.playMove("b");
       toast(t("lm.nextSubtask"), "fix");
       store.session.learn.ti++;
+      // 14.0 A3: the course's step is kept, so a relaunch comes back to it (not the endgame camp's)
+      if (!L.eg && !store.session.learn.gs) { store.session.learnState.at = { id: L.id, ti: store.session.learn.ti }; saveLearnState(); }
       // startLearnTask resets the per-task cursors, but it runs 900ms later —
       // and the board and prompt are redrawn now. A tap task followed by
       // another tap task would spend that gap reading step[3] of a 1-step task.
@@ -669,6 +673,8 @@ export function createLessonsUI(d) {
     }
     store.session.learn.done = true;
     Audio2.playWin();
+    const at = store.session.learnState.at;
+    if (at && at.id === L.id) { delete store.session.learnState.at; saveLearnState(); } // finished: opened again, it starts at its first step
     if (L.eg) {
       // T2: the camp keeps its own record; a try that used undo or the hint
       // counts as reached, and comes back for review
