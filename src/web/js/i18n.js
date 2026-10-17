@@ -151,7 +151,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "ex.forkHits": "漏看了 {0} {1}，同时攻击{2}和{3}",
       "ex.loss": "对方 {0} 之后丢{1}",
       "ex.betterMotif": "更好的是 {0}（{1}）",
-      "ex.better": "更好的是 {0}",
+      "ex.better": "更好的是 {0}", "ex.betterWins": "更好的是 {0}，能赢下对方一个{1}",
       "ex.mate1Motif": "有 {0} 一步杀没走（{1}）",
       "ex.mateNMotif": "有 {0} 起的 {1} 步杀没走（{2}）",
       "ex.threatMate": "没防住对方 {0} 一步杀的威胁",

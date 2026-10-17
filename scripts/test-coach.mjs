@@ -265,6 +265,9 @@ function summary(set) {
     mistakes: rs.length,
     explained: rs.filter(motifSaid).length,
     explainedPct: pct(rs.filter(motifSaid).length, rs.length),
+    // 14.0 B: a concrete reason — a motif, a mate, or what is lost or won — rather than only 「更好的是 X」
+    reasoned: rs.filter((r) => r.key && r.key !== "ex.better").length,
+    reasonedPct: pct(rs.filter((r) => r.key && r.key !== "ex.better").length, rs.length),
     blunders: bl.length,
     blundersExplained: bl.filter(motifSaid).length,
     blundersExplainedPct: pct(bl.filter(motifSaid).length, bl.length),
@@ -276,7 +279,7 @@ function summary(set) {
 }
 const res = { corpus: summary("corpus"), low: summary("low"), all: summary(null) };
 for (const [k, v] of Object.entries(res)) {
-  console.log(`\n[${k}] ?/?? ${v.mistakes} 手，说出母题的 ${v.explained}（${v.explainedPct}%）；` +
+  console.log(`\n[${k}] ?/?? ${v.mistakes} 手，说出母题的 ${v.explained}（${v.explainedPct}%），说出具体原因的 ${v.reasoned}（${v.reasonedPct}%）；` +
     `?? ${v.blunders} 手，说出母题的 ${v.blundersExplained}（${v.blundersExplainedPct}%），母题或杀 ${v.blundersMotifOrMate}（${v.blundersMotifOrMatePct}%）`);
   console.log("   句型 " + JSON.stringify(v.byKey));
   console.log("   母题 " + JSON.stringify(v.byMotif));
@@ -374,7 +377,7 @@ const rec = arg("--record");
 if (rec) {
   const prev = readMeasured().coachCoverage || {};
   prev.what = "复盘里 ? / ?? 的一句说明说出了战术母题的比例（explain.js，按 app.js mistakeFacts() 的调用方式）";
-  prev.script = "scripts/test-coach.mjs --record=before|after --audit=docs/coach-audit-8.0.md";
+  prev.script = "scripts/test-coach.mjs --record=before|after|v14 --audit=docs/coach-audit-14.0.md";
   prev.movetimeMs = MS;
   prev.oracleMs = DEEP_MS;
   prev.corpora = { corpus: "scripts/fixtures/corpus.mjs（28 局）", low: "scripts/fixtures/coach-games.mjs（低档引擎对局）" };

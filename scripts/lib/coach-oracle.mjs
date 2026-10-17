@@ -248,6 +248,14 @@ export function oracle(r, d, Chess) {
         [ex.better.san].concat(d.best ? d.best.pv : []), side, 0);
       break;
     }
+    case "ex.betterWins": {
+      // 14.0 B: the better line, as the deep search plays it, nets what is named
+      const net = netAlong(walk(Chess, r.fen, [ex.better.san].concat(d.best ? d.best.pv : [])), side);
+      const need = VALUE[ex.better.wins] >= 3 ? 2 : 1;
+      ok = betterOk() && net >= need;
+      why.push(net >= need ? `深搜线上净得 ${net}` : `深搜线上净得 ${net}，撑不起「赢${ex.better.wins}」`);
+      break;
+    }
     default: why.push("未知句型"); ok = false;
   }
   return { verdict: ok ? "ok" : "wrong", reason: why.join("；") };

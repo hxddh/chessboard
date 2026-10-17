@@ -121,7 +121,7 @@
       "ex.forkHits": "Missed {0} ({1}), hitting the {2} and the {3}",
       "ex.loss": "After {0} the {1} is lost",
       "ex.betterMotif": "Better was {0} ({1})",
-      "ex.better": "Better was {0}",
+      "ex.better": "Better was {0}", "ex.betterWins": "Better was {0}, winning a {1}",
       "ex.mate1Motif": "Missed mate in one: {0} ({1})",
       "ex.mateNMotif": "Missed mate in {1} starting with {0} ({2})",
       "ex.threatMate": "Ignored the threat of mate: {0}",

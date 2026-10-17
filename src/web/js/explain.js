@@ -106,10 +106,10 @@ function mateAlong(g, sans) {
  * of `side`'s men taken on the way — or null when the line is shorter than
  * that or does not play on this board.
  */
-function along(Chess, fen, sans, side) {
+function along(Chess, fen, sans, side, plies) {
   // the whole window or nothing: 「♞xc2+ ♔d1」 alone says 「丢兵」 about a
   // move that wins a rook one ply later
-  const n = LOSS_PLIES;
+  const n = plies || LOSS_PLIES;
   if (sans.length < n) return null;
   const g = new Chess(fen);
   const mine = [], theirs = [];
@@ -212,8 +212,14 @@ export function explainMistake(x, Chess) {
     const lm = said(lineMotif(x.fen, bLine, Chess));
     const mate = mateAlong(new Chess(x.fen), bLine);
     const mm = mate ? said({ motif: mateMotif(x.fen, bLine, Chess) }) : null;
+    // 14.0 B: what the better line wins, played out the way a loss is (trades
+    // cancelled) — over four plies, or two where the line is that short: the
+    // reply is still in, so a man taken back is never counted as won
+    const them = side === "w" ? "b" : "w", startThem = balance(new Chess(x.fen), them);
+    const won = along(Chess, x.fen, bLine, them, bLine.length >= LOSS_PLIES ? LOSS_PLIES : 2);
     out.better = { san: b.san, motif: lm ? lm.motif : null, piece: (lm && lm.piece) || null,
-      by: (lm && lm.by) || null, free: !!(lm && lm.free), mate, mateMotif: mm ? mm.motif : null };
+      by: (lm && lm.by) || null, free: !!(lm && lm.free), mate, mateMotif: mm ? mm.motif : null,
+      wins: won && startThem - won.bal >= 1 && won.top ? won.top : null };
   }
 
   // --- 4: a threat the mistake ignored (v8-0-plan B3 §4) ------------------
@@ -271,6 +277,7 @@ function pick(ex) {
   if (r && l) return ["ex.loss", [san(r.san, them), { piece: l.piece }]];
   if (b && b.motif === "hanging") return took(b, "ex.betterHanging", "ex.betterCheap", me);
   if (b && b.motif) return ["ex.betterMotif", [san(b.san, me), { motif: b.motif }]];
+  if (b && b.wins) return ["ex.betterWins", [san(b.san, me), { piece: b.wins }]];
   if (b) return ["ex.better", [san(b.san, me)]];
   return null;
 }
