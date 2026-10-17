@@ -48,6 +48,7 @@ import { createBoardMarks } from "./review/board-marks.js";
 import { createEvalGraph } from "./review/eval-graph.js";
 import { createLines } from "./review/lines.js";
 import { createHumanLineLazy } from "./human-lazy.js";
+import { BOOT_QUIET_MS } from "./quiet.js";
 import { createReviewPanel } from "./review/panel.js";
 import { createRetry } from "./review/retry.js";
 import { createMomentsLazy } from "./review/moments-lazy.js";
@@ -5376,12 +5377,11 @@ import { drawSpark } from "./charts.js";
     }, 0));
   }
   if (store.session.mode === "ai" && ChessEngine) {
-    // after the first paint, not before it: the engine sources are 9.7 MB of
-    // text and the board does not need them to appear (v6-plan Q1.3)
+    // after the first paint (v6-plan Q1.3); 14.0 A3: at once only on move, else after the launch's quiet (quiet.js)
     requestAnimationFrame(() => setTimeout(() => {
       bootEngine();
       maybeEngineTurn(); // resumed save may leave the engine on move
-    }, 0));
+    }, !appGameOver() && game.turn() !== store.session.humanColor ? 0 : BOOT_QUIET_MS));
   }
   if (firstRun || (store.ui.ob && !store.ui.ob.done && store.ui.ob.n < 3)) runOnboarding(); // 14.0 A3: asked again, three launches at most, until answered
 

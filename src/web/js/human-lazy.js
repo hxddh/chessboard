@@ -4,6 +4,8 @@
  * @module human-lazy
  */
 import { loadChunk } from "./chunk.js";
+// 14.0 A3: a Maia net is a long task: the line waits for the launch's quiet
+import { quietLeft } from "./quiet.js";
 
 let made = null;
 /** @returns {Promise<{load: Function, policy: Function, BANDS: number[]}>} */
@@ -24,12 +26,17 @@ export function humanEngine() {
  * @returns {{sync: () => void}}
  */
 export function createHumanLineLazy(d) {
-  const state = { real: null, asked: false };
+  const state = { real: null, asked: false, later: false };
   function sync() {
     if (state.real) { state.real.sync(); return; }
     const box = d.doc.getElementById("human-line");
     if (box) box.hidden = true;
     if (state.asked || d.store.ui.humanLine === false || !(d.store.session.analysisBoard || d.analysisFor())) return;
+    // a launch onto a reviewed game: the line comes once the launch is quiet
+    if (quietLeft() > 0) {
+      if (!state.later) { state.later = true; setTimeout(() => { state.later = false; sync(); }, quietLeft()); }
+      return;
+    }
     state.asked = true;
     loadChunk("chunk-human.js", "CHESS_HUMAN").then((m) => {
       state.real = m.createHumanLine(Object.assign({ engine: humanEngine }, d));

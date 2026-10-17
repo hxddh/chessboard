@@ -245,11 +245,34 @@ import { OPENING_VARIATIONS_ZH } from "./openings-variation-zh.js";
    * @param {{eco: string, name: string}} entry from lookupPosition / openingForGame
    * @param {"zh-CN"|"en"|"ja"} lang
    */
+  /**
+   * 14.0 A3: the book id for one entry, indexing only the book's lines under
+   * its ECO code (a handful) — the whole index replayed all 195 lines on the
+   * first name asked for, a long task at launch.
+   */
+  const idsByEco = new Map();
+  function bookIdOf(entry) {
+    if (BOOK_ID_BY_ENTRY) return BOOK_ID_BY_ENTRY[entry.eco + "|" + entry.name];
+    if (!table()) return undefined;
+    let ids = idsByEco.get(entry.eco);
+    if (!ids) {
+      ids = {};
+      for (const [eco, id, moves] of CHESS_OPENINGS) {
+        if (eco !== entry.eco) continue;
+        const hit = openingForGame(moves.split(" "));
+        if (!hit || hit.eco !== eco) continue;
+        const k = hit.eco + "|" + hit.name;
+        if (!ids[k]) ids[k] = id;
+      }
+      idsByEco.set(entry.eco, ids);
+    }
+    return ids[entry.eco + "|" + entry.name];
+  }
+
   function localName(entry, lang) {
     if (!entry) return null;
     if (lang === "en") return entry.name;
-    const book = bookIdByEntry();
-    const id = book && book[entry.eco + "|" + entry.name];
+    const id = bookIdOf(entry);
     const tbl = LOCAL[lang] && LOCAL[lang]();
     return (id && tbl && tbl[id]) || familyName(entry.name, lang) || entry.name;
   }

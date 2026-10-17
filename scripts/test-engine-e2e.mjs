@@ -416,6 +416,44 @@ assert(broken.workersRetry === broken.workersLater + 1 && !!broken.noticeRetry,
   "坏引擎：点「重试」只再启动一次，失败后提示仍在(workers " + broken.workersRetry + ")");
 assert(broken.movesNew === 0 && broken.workersNew === broken.workersRetry + 1 && !!broken.noticeNew && !broken.toastsNew,
   "坏引擎：点「新局」顺带重试一次，失败后仍是那条提示、不另弹 toast(workers " + broken.workersRetry + " → " + broken.workersNew + ", toasts " + broken.toastsNew + ")");
+// 14.0 A3: a launch back into a Maia game, on your move. The engine's 9.7 MB
+// and a Maia net were fetched at once and parsed as long tasks (375 and 504
+// ms at the walkthrough's relaunch); now neither is asked for in the launch's
+// first 2.5 s (page time, from navigation), there is no task over 200 ms in
+// them, and the engine is still there a few seconds later, before the player
+// could want it.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    window.__long = [];
+    try { new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__long.push([Math.round(e.startTime), Math.round(e.duration)]); }).observe({ type: "longtask", buffered: true }); } catch (_) { /* no longtask API (WebKit) */ }
+    // what was asked for, and when: the loaders add a <script>
+    window.__heavy = [];
+    const ap = Node.prototype.appendChild;
+    Node.prototype.appendChild = function (el) {
+      if (el && el.src && /engine-src|maia-|chunk-human/.test(el.src)) window.__heavy.push([el.src.split("/").pop(), Math.round(performance.now())]);
+      return ap.call(this, el);
+    };
+    if (sessionStorage.getItem("quiet")) return;
+    sessionStorage.setItem("quiet", "1");
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "ai", difficulty: "easy", humanColor: "w", langId: "zh-CN", soundOn: false, view: "play" }));
+    localStorage.setItem("chess.save", JSON.stringify({ v: 1, savedAt: Date.now(), pgn: "1. e4 e5 *\n" }));
+  });
+  const page = await ctx.newPage();
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(6000);
+  const r = await page.evaluate(() => ({ heavy: window.__heavy, long: window.__long,
+    fcp: Math.round((performance.getEntriesByName("first-contentful-paint")[0] || {}).startTime || 0) }));
+  const early = r.heavy.filter(([, t]) => t < 2500);
+  // after the first paint: the bundle's own evaluation comes before it (~170–210 ms here) and is the first paint's
+  const long = r.long.filter(([t, d]) => t >= r.fcp && t < 2500 && d > 200);
+  const later = r.heavy.some(([u]) => u === "engine-src.js");
+  assert(!early.length && !long.length && later,
+    "14.0 A3 冷启动回到 Maia 对局、轮到你：头 2.5 秒不取引擎和 Maia，首帧之后没有 > 200 ms 的长任务；之后引擎照样预载 " +
+    JSON.stringify({ early, long, all: r.long, fcp: r.fcp, heavy: r.heavy }));
+  await ctx.close();
+}
+
 if (shipped.plies < 2) {
   console.error(control.plies >= 2
     ? "诊断:去掉 CSP 之后引擎能应 —— 是 index.html 的 CSP 挡住了它"
