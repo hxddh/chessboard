@@ -5532,6 +5532,9 @@ if (scenario()) {
         return { layout: document.getElementById("app").classList.contains("pv-wide") ? "wide" : "two",
           wt: w.top, wb: w.bottom, bt: b.top, bb: b.bottom, bl: b.left,
           num: (() => { const n = box(document.getElementById("eval-bar-text")); return { l: n.left, w: n.width, r: n.right }; })(),
+          // the rail beside the board (portrait's is a bar below it)
+          railR: (() => { const x = document.getElementById("rail"); const q = x && x.offsetParent ? box(x) : null;
+            return q && q.top < w.bottom && q.bottom > w.top ? q.right : 0; })(),
           on: others.filter((e) => hit(b, box(e))).map((e) => e.id || e.className),
           inset: document.getElementById("eval-bar-row").classList.contains("is-inset"),
           scroll: side.scrollWidth - side.clientWidth, past,
@@ -5541,8 +5544,9 @@ if (scenario()) {
       assert(Math.abs(r.bt - r.wt) <= 1 && Math.abs(r.bb - r.wb) <= 1,
         `A4：${tag} 评估条与棋盘外框上下对齐（框 ${Math.round(r.wt)}–${Math.round(r.wb)}，条 ${Math.round(r.bt)}–${Math.round(r.bb)}）`);
       assert(r.bl >= 0 && r.on.length === 0, `A4：${tag} 评估条不压导航栏、信息栏、面板（${r.on.join(", ") || "无"}）`);
-      assert(r.num.w <= 1 || (r.num.l >= 0 && r.num.r <= vp.width),
-        `A4：${tag} 评估条的分数要么整个在窗口里，要么交给曲线和读屏（${Math.round(r.num.l)}–${Math.round(r.num.r)}）`);
+      // 14.0 A1: in the window and clear of the rail — 「+5.6」 read 「.6」 under it
+      assert(r.num.w <= 1 || (r.num.l >= r.railR && r.num.r <= vp.width),
+        `A4：${tag} 评估条的分数要么整个露在导航栏右边，要么交给曲线和读屏（${Math.round(r.num.l)}–${Math.round(r.num.r)}，导航栏到 ${Math.round(r.railR)}）`);
       assert(r.report && r.km && r.scroll <= 0 && r.past.length === 0,
         `A4：${tag} 体检报告与关键时刻都在，面板里没有越界、没有横向滚动（${r.scroll}px${r.past.length ? "，越界 " + r.past.join(", ") : ""}）`);
     }
