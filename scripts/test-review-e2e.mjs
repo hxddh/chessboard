@@ -188,12 +188,18 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
     const f = r(document.getElementById("eval-bar-fill"));
     const wrap = r(document.getElementById("board-wrap"));
     return { bt: board.top, bh: board.height, gt: g.top, gh: g.height, gl: g.left, gr: g.right,
-      wl: wrap.left, ft: f.top, fb: f.bottom, fh: f.height };
+      wl: wrap.left, ft: f.top, fb: f.bottom, fh: f.height,
+      inset: document.getElementById("eval-bar-row").classList.contains("is-inset"),
+      railR: (() => { const x = document.getElementById("rail"); return x && x.offsetParent ? r(x).right : 0; })() };
   });
   const a = await geo();
   assert(Math.abs(a.gh - a.bh) <= 1 && Math.abs(a.gt - a.bt) <= 1,
     "the gauge is exactly as tall as the board and level with it (" + a.gh + " vs " + a.bh + ")");
-  assert(a.gr <= a.wl, "…standing to the left of the frame, not on the squares (" + a.gr + " ≤ " + a.wl + ")");
+  // 14.0 A1: beside the frame where there is room left of it, else on the
+  // frame's own edge — never under the rail (at 1400 wide the frame is 6px
+  // from it, and the gauge used to sit half under it)
+  assert(a.inset ? a.gl >= a.wl : a.gr <= a.wl, "…standing to the left of the frame, or on its edge, not on the squares (" + JSON.stringify({ gl: a.gl, gr: a.gr, wl: a.wl, inset: a.inset }) + ")");
+  assert(a.gl >= a.railR, "…and clear of the rail (" + a.gl + " ≥ " + a.railR + ")");
   assert(Math.abs(a.fb - (a.gt + a.gh)) <= 1 && a.fh > a.gh / 2,
     "White ahead: the white fill rises from the bottom, White's side (" + Math.round(a.fh) + " of " + Math.round(a.gh) + ")");
   await page.evaluate(() => document.querySelector('[data-orient="b"]').click());
@@ -1873,6 +1879,10 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     result: document.getElementById("go-result").textContent }));
   const n1 = await names();
   assert(n1.w === "Morphy" && n1.b === "Allies", "14.0 A1：粘贴的对局，两条名牌是文件里的白方、黑方", JSON.stringify(n1));
+  // …and the result bar, which stands in the bottom strip's place, keeps that
+  // strip's name (it hid 「Li Ming」 under 「1–0 白方胜」)
+  const reason = await pg.evaluate(() => { const c = document.getElementById("go-card"); return c && !c.hidden ? document.getElementById("go-reason").textContent : null; });
+  assert(reason != null && /^Morphy · /.test(reason), "14.0 A1：结果条盖住的那一方的名字留在结果条上", reason);
   // …and a paste with no headers at all is 玩家 1 / 玩家 2, White won — not 「尼可 · 你赢了」
   await pg.click('#rail button[data-view="home"]');
   await pg.click("#today-analyse");

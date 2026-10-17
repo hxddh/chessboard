@@ -1888,9 +1888,9 @@ import { drawSpark } from "./charts.js";
   // v8-0-plan F4 (M4): how the game ended and the result card live in
   // game-end.js
   const GameEnd = createGameEnd({
-    store, t, tf, sideName, game, el, setText, avail, toast, sanHistory, analysisFor, Icons,
+    store, t, tf, sideName, game, el, setText, avail, toast, sanHistory, analysisFor, Icons, stripPeople, appEl,
     appGameOver, resultFromFile: () => resultFromFile(), gameResultToken: () => gameResultToken(), timeoutIsDraw, autoDrawReason, isLive, kingSquare, onMainline,
-    onEnding: (end, show) => { OppUI.syncOffer(!!end); if (show) OppUI.paintCard(end); },
+    onEnding: (end, show) => { OppUI.syncOffer(!!end); if (show) OppUI.paintCard(end); }, bottomSide: () => (BoardView.screenCell("a1").row ? "w" : "b"),
   });
   const { gameEnding, renderGameOverCard, resultBadges } = GameEnd;
 
