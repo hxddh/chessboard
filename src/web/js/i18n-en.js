@@ -68,7 +68,7 @@
       "aria.lessonDotsOf": "Lesson progress {0}/{1}",
       "tip.reviewOpen": "Review: analysis and report",
       // v8-0-plan C3: the opening explorer
-      "act.explorer": "Explorer", "xp.title": "Opening explorer", "xp.master": "Masters",
+      "act.explorer": "Explorer", "xp.title": "Opening explorer", "xp.master": "Lichess 2200+", "xp.legW": "White wins", "xp.legD": "Draw", "xp.legB": "Black wins", "xp.back": "Back to after {0} ({1:game|games})", "xp.backStart": "Back to the start ({0:game|games})",
       "xp.book": "Book", "xp.row": "{0}: {1:game|games}, White wins {2}%, draws {3}%, Black wins {4}%",
       "xp.libEmpty": "Your library is empty", "xp.none": "No games",
       "xp.mine": "Mine", "xp.addPath": "Add to repertoire", "xp.mineToggle": "{0} \u00b7 my repertoire ({1})",

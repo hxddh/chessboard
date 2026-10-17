@@ -98,7 +98,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "aria.lessonDotsOf": "本课进度 {0}/{1}",
       "tip.reviewOpen": "复盘：分析与报告",
       // v8-0-plan C3: 开局浏览器
-      "act.explorer": "开局", "xp.title": "开局浏览器", "xp.master": "大师",
+      "act.explorer": "开局", "xp.title": "开局浏览器", "xp.master": "高分棋手", "xp.legW": "白胜", "xp.legD": "和", "xp.legB": "黑胜", "xp.back": "回到 {0} 之后（{1} 局）", "xp.backStart": "回到开局（{0} 局）",
       "xp.book": "书", "xp.row": "{0}：{1} 局，白胜 {2}%，和 {3}%，黑胜 {4}%",
       "xp.libEmpty": "棋谱库是空的", "xp.none": "没有对局",
       "xp.mine": "我的", "xp.addPath": "加进开局书", "xp.mineToggle": "{0} · 我的开局书（{1}）",

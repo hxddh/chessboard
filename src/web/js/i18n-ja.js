@@ -68,7 +68,7 @@
       "aria.lessonDotsOf": "レッスンの進み具合 {0}/{1}",
       "tip.reviewOpen": "振り返り：解析とレポート",
       // v8-0-plan C3: 定跡エクスプローラー
-      "act.explorer": "定跡", "xp.title": "定跡エクスプローラー", "xp.master": "強豪",
+      "act.explorer": "定跡", "xp.title": "定跡エクスプローラー", "xp.master": "強豪 2200+", "xp.legW": "白勝ち", "xp.legD": "引き分け", "xp.legB": "黒勝ち", "xp.back": "{0} の後に戻る（{1} 局）", "xp.backStart": "初期局面に戻る（{0} 局）",
       "xp.book": "定跡", "xp.row": "{0}：{1} 局、白勝ち {2}%、引き分け {3}%、黒勝ち {4}%",
       "xp.libEmpty": "棋譜ライブラリは空です", "xp.none": "対局なし",
       "xp.mine": "自分", "xp.addPath": "定跡書に追加", "xp.mineToggle": "{0} · 自分の定跡書（{1}）",

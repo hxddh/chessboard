@@ -239,6 +239,34 @@ const waitRows = async (page, pred, ms = 3000) => {
   await ctx.close();
 }
 
+// --- 3c. 14.0 A3: nothing here — back to the last position with games -------
+// Deep in a line the library never reached, the panel said only 「没有对局」.
+// Now it offers the last position on this line that has games, by its move,
+// and one click puts the board there; the bar's colours have a key, and the
+// master tree is named for what it is.
+{
+  const ctx = await context({ explorer: { open: true, src: "lib" } });
+  await ctx.addInitScript(() => {
+    if (sessionStorage.getItem("seeded3")) return;
+    sessionStorage.setItem("seeded3", "1");
+    localStorage.setItem("chess.save", JSON.stringify({ v: 1, savedAt: Date.now(), pgn: "1. e4 e5 2. Nf3 Nc6 3. a3 a6 4. h3 h6 *\n" }));
+  });
+  const { page, errs } = await open(ctx);
+  await page.waitForFunction(() => !document.getElementById("xp-back").hidden, null, { timeout: 8000 }).catch(() => {});
+  const b = await page.evaluate(() => ({ hidden: document.getElementById("xp-back").hidden, text: document.getElementById("xp-back").textContent,
+    note: document.getElementById("xp-note").textContent, legend: document.querySelector(".xp-legend").textContent,
+    master: document.querySelector('#xp-src button[data-src="master"]').textContent }));
+  assert(!b.hidden && b.text === "回到 2… Nc6 之后（1 局）" && /没有对局/.test(b.note),
+    "14.0 A3：这个局面没有对局 —— 给出这条线上最后一个有对局的局面（2… Nc6，1 局）", JSON.stringify(b));
+  assert(b.legend === "白胜和黑胜" && b.master === "高分棋手", "14.0 A3：三色条有图例；「大师」改叫「高分棋手」", JSON.stringify(b));
+  await page.click("#xp-back");
+  const r = await waitRows(page, (x) => x.length > 0);
+  const pos = (await page.textContent("#replay-pos")).trim();
+  assert(/^4 \//.test(pos) && r.some((x) => x.san === "Bb5" && x.n === "1"), "14.0 A3：点它 —— 棋盘回到那一步，列出那里的着法（Bb5 1 局）", pos + " " + JSON.stringify(r.map((x) => x.san + ":" + x.n)));
+  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
+  await ctx.close();
+}
+
 // --- 4. 英文与日文：文字、读法、没有截断 -----------------------------------------
 for (const [lang, key, label, row] of [
   ["en", "Explorer", /^6 games$/, "e4 · Book: 4 games, White wins 50%, draws 25%, Black wins 25%"],

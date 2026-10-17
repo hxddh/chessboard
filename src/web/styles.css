@@ -4837,6 +4837,11 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .xp-w { background: var(--side-white); color: var(--side-black); }
 .xp-d { background: var(--muted); color: var(--bg); }
 .xp-b { background: var(--side-black); color: var(--side-white); }
+/* 14.0 A3: the bar's key, under the rows */
+.xp-legend { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin: 4px 0 0; font-size: 0.75rem; line-height: var(--lh-tight); color: var(--muted); }
+.xp-key { width: 8px; height: 8px; border-radius: var(--radius-sm); box-shadow: 0 0 0 1px var(--line); }
+.xp-key + span { margin-right: 8px; }
+.xp-back[hidden] { display: none; }
 /* v8-1-plan T3: 「我的」 is your own repertoire's move — filled where 「书」
    (the built-in book) is outlined, so the two never read as one mark. The
    toggle beside a row (a sibling: a button in a button is not a button)

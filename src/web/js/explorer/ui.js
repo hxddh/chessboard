@@ -54,6 +54,7 @@ export function createExplorerUI(d, bookLines) {
 
   const list = doc.getElementById("xp-list");
   const note = doc.getElementById("xp-note");
+  const back = doc.getElementById("xp-back");
   const seg = doc.getElementById("xp-src");
   // v8-1-plan T3: 我的开局书 — which side's book, and 「加进开局书」
   const rep = d.repertoire || null;
@@ -96,6 +97,36 @@ export function createExplorerUI(d, bookLines) {
     // a position reached at an unusual depth may sit in another bucket that is already here
     const str = tables[b][h] || tables.map((tb) => tb && tb[h]).find(Boolean);
     return { rows: X.decodeRows(str) };
+  }
+
+  /** The rows the chosen source has for `pos`: an array, or null while it is still being asked. */
+  function rowsFor(src, pos) {
+    const key = ChessFide.positionKey(pos.fen(), pos);
+    if (src !== "master") return lib.movesAt(key, pos.fen());
+    const m = masterRows(key, plyOf(pos));
+    return m.wait ? null : m.rows || [];
+  }
+  /**
+   * 14.0 A3: the last position before the cursor, on this line, that has
+   * games — {k, n}, or null (none, or one still being asked: the next render
+   * asks again). Opened deep in a game the panel said only 「没有对局」.
+   */
+  function lastWithGames(src) {
+    for (let k = store.game.viewIndex - 1; k >= 0; k--) {
+      const r = rowsFor(src, d.gameAt(k));
+      if (r == null) return null;
+      const n = r.reduce((s, x) => s + x.n, 0);
+      if (n) return { k, n };
+    }
+    return null;
+  }
+  /** 「12. Nf3」 / 「12… Nf6」: the move that led to ply `k` of the line on the board. */
+  function moveLabel(k) {
+    const san = d.viewGame().history()[k - 1] || "";
+    const start = d.gameAt(0).fen().split(" ");
+    const first = start[1] === "b" ? 1 : 0, no = Number(start[5]) || 1;
+    const i = k - 1 + first;
+    return (no + Math.floor(i / 2)) + (i % 2 ? "… " : ". ") + san;
   }
 
   function row(r) {
@@ -192,10 +223,18 @@ export function createExplorerUI(d, bookLines) {
       }
     }
     const rows = X.rowsAt(out, pos, book.get(key), mineAt(key));
-    const sig = [src, key, msg, repSide(), rows.map((r) => [r.san, r.n, r.w, r.d, r.b, r.book, r.mine].join()).join(";")].join("|");
+    const fb = msg === t("xp.none") && store.game.viewIndex > 0 ? lastWithGames(src) : null;
+    const sig = [src, key, msg, repSide(), fb ? fb.k + ":" + fb.n : "", rows.map((r) => [r.san, r.n, r.w, r.d, r.b, r.book, r.mine].join()).join(";")].join("|");
     if (sig === shownSig) return;
     shownSig = sig;
     if (note.textContent !== msg) note.textContent = msg;
+    if (back) {
+      back.hidden = !fb;
+      if (fb) {
+        back.textContent = fb.k ? tf("xp.back", [moveLabel(fb.k), fb.n]) : tf("xp.backStart", [fb.n]);
+        back.onclick = () => d.setViewIndex(fb.k);
+      }
+    }
     const at = list.contains(doc.activeElement) ? doc.activeElement : null;
     const togSan = at && at.classList.contains("xp-tog") ? at.dataset.san : null;
     list.replaceChildren(...rows.map(row));
