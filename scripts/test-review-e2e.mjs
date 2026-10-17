@@ -2246,7 +2246,17 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(kept.classicMode === "guess" && kept.trainSeg === "classic",
     "S3：名局的「猜着」开关与训练的分段存进设置，重新载入之后还在（" + JSON.stringify({ c: kept.classicMode, s: kept.trainSeg }) + "）");
 
-  // P3-5: a library game opened mid-guess and 取消 — the run goes on
+  // P3-5: a library game opened mid-guess and 取消 — the run goes on.
+  // 14.0 A3: the question is asked only over a game still being played, and
+  // the classics above left a finished one on the board: put a live one there
+  await ctxM.addInitScript(() => {
+    if (sessionStorage.getItem("live") !== "1") return;
+    sessionStorage.setItem("live", "2");
+    localStorage.setItem("chess.save", JSON.stringify({ v: 1, pgn: "1. d4 d5 2. c4 *" }));
+  });
+  await pg.evaluate(() => sessionStorage.setItem("live", "1"));
+  await pg.reload();
+  await pg.waitForTimeout(1200);
   await pg.click('.rail-btn[data-view="train"]');   // 9.0 S3: 训练, left on 名局
   await pg.waitForTimeout(500);
   await toGuessList(pg);
