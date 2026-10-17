@@ -796,7 +796,7 @@
       "lib.loading": "ライブラリを読み込んでいます（{0} 局）…",
       "lib.rowAcc": "精度 {0}%", "lib.rowBad": "失着 {0} 手",
       "lib.rowPending": "未解析", "lib.rowUnplayable": "着手を再現できません",
-      "lib.unknownFoe": "対戦相手不明", "lib.loaded": "ライブラリから読み込みました · {0}",
+      "lib.unknownFoe": "対戦相手不明", "lib.pair": "{0} 対 {1}", "lib.loaded": "ライブラリから読み込みました · {0}",
       "lib.minedDone": "{0} 局を解析し、ミス帳に {1} 問を加えました",
       "lib.busy": "エンジンが動いています。この解析が終わってから取り込んでください",
       "lib.unplayable": "{0} 局は着手を再現できず、飛ばしました（棋譜そのものの問題で、解析の失敗ではありません）",

@@ -797,7 +797,7 @@
       "lib.loading": "Loading the library ({0:game|games})…",
       "lib.rowAcc": "{0}% accuracy", "lib.rowBad": "{0:mistake|mistakes}",
       "lib.rowPending": "not analysed yet", "lib.rowUnplayable": "moves do not replay",
-      "lib.unknownFoe": "unknown opponent", "lib.loaded": "Opened from the library \u00B7 {0}",
+      "lib.unknownFoe": "unknown opponent", "lib.pair": "{0} – {1}", "lib.loaded": "Opened from the library \u00B7 {0}",
       "lib.minedDone": "{0:game|games} analysed, {1:drill|drills} added to your mistakes",
       "lib.unplayable": "{0:game|games} could not be replayed and were skipped \u2014 the PGN itself does not hold up",
       "lib.deepen": "Look deeper", "tip.libDeepen": "Analyse this game again, more carefully than the first quick scan, and correct the drills it produced",

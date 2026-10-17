@@ -2302,6 +2302,13 @@ function tenThousand() {
   const offer = await page.evaluate(() => ({ shown: !document.getElementById("lib-claim").hidden,
     text: document.getElementById("lib-claim-text").textContent }));
   assert(offer.shown && /「hxddh」出现在这 4 局里的 3 局中/.test(offer.text), `C1 导入之后，按最常出现的名字问一次(${offer.text})`);
+  // 14.0 A1: before a game is claimed its row names both players, White first
+  // (red before: "1/2-1/2 · bob · alice", Black first, as if alice were you)
+  await page.evaluate(() => window.__chess.libDb().openList());
+  await page.waitForTimeout(300);
+  const unclaimed = await page.evaluate(() => [...document.querySelectorAll("#lib-list .hist-row")].map((r) => r.textContent).find((x) => /alice|bob/.test(x)) || "");
+  assert(/1\/2-1\/2 · alice 对 bob/.test(unclaimed), `14.0 A1 没认领的对局：先写白方再写黑方(${unclaimed})`);
+  await page.click("#lib-list-close");
   await page.click("#lib-claim-yes");
   await page.waitForTimeout(300);
   const after = await page.evaluate(() => ({ names: document.getElementById("lib-names").value, hidden: document.getElementById("lib-claim").hidden,

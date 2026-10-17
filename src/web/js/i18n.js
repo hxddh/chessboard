@@ -829,7 +829,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "lib.loading": "正在读取棋谱库（{0} 局）……",
       "lib.rowAcc": "精准度 {0}%", "lib.rowBad": "{0} 处失误",
       "lib.rowPending": "还没分析", "lib.rowUnplayable": "着法重放不出来",
-      "lib.unknownFoe": "对手不详", "lib.loaded": "已从棋谱库载入 · {0}",
+      "lib.unknownFoe": "对手不详", "lib.pair": "{0} 对 {1}", "lib.loaded": "已从棋谱库载入 · {0}",
       "lib.minedDone": "分析了 {0} 局，收进错题 {1} 道",
       "lib.unplayable": "{0} 局的着法重放不出来，跳过了（棋谱本身有问题，不是分析失败）",
       "lib.deepen": "再深一遍", "tip.libDeepen": "把这一局重新仔细分析一遍（原先只是快速扫描），并据此修正它挖出来的错题",

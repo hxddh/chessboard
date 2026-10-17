@@ -780,13 +780,17 @@ export function createLibraryUI(d) {
     return null;
   }
 
-  /** "2026.09.01 · rival" — the row's headline, localised at render time. */
+  /**
+   * "胜 · rival" — the row's headline, localised at render time. A game not
+   * yet claimed as yours names both players, White first (14.0 A1: it used
+   * to read "1-0 · Black · White").
+   */
   function libraryLabel(g) {
     const res = g.outcome ? t(g.outcome === "win" ? "hist.win" : g.outcome === "loss" ? "hist.loss" : "hist.draw")
       : (g.result || "*");
-    const me = g.side === "b" ? g.black : g.white;
+    if (!g.side) return tdot(res, tf("lib.pair", [g.white || "?", g.black || "?"]));
     const foe = g.side === "b" ? g.white : g.black;
-    return tdot(res, foe || t("lib.unknownFoe"), !g.side && me);
+    return tdot(res, foe || t("lib.unknownFoe"));
   }
 
   /**
