@@ -1082,5 +1082,24 @@ for (const how of ["restore", "clear"]) {
   assert(r.state === "corrupt", "…and a v1 record is not one (" + r.state + ")");
 }
 
+// 14.0: the repertoire's header as the chunk writes it (rep-page.js head) —
+// no lines in it, they are in IndexedDB — reads back; it was quarantined at
+// every launch, with the red notice each time
+{
+  const h = withStore();
+  const P = createPersist(h, () => {});
+  P.load();
+  const head = { v: 1, n: 12, sig: "a1b2", gen: 3, ln: 24 };
+  P.setJson("repertoire", head);
+  let r = P.read("repertoire");
+  assert(r.state === "ok" && r.value.ln === 24, "14.0: the repertoire header without lines reads back (" + r.state + ")");
+  P.setJson("repertoire", { v: 1, w: [{ id: "x", sans: "e4" }], b: [] });
+  r = P.read("repertoire");
+  assert(r.state === "ok" && r.value.w.length === 1, "…and one carrying its lines still does");
+  P.setJson("repertoire", { v: 1, w: "e4 e5" });
+  r = P.read("repertoire");
+  assert(r.state === "corrupt", "…while lines that are not a list are not this record (" + r.state + ")");
+}
+
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
 console.log("all passed");

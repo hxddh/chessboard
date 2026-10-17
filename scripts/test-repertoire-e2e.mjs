@@ -192,6 +192,10 @@ async function playRow(page, san) {
   await ready(page);
   const again = await records(page);
   assert(JSON.stringify(again) === JSON.stringify(recs), "重启后按局面的记录与卡片原样读回");
+  // 14.0: the header the chunk wrote (no w / b: the lines are in IndexedDB) is read
+  // as it is — it was quarantined at every launch, with the red notice each time
+  const q = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.quarantine") || "[]").filter((e) => e.name === "repertoire").length);
+  assert(q === 0, "14.0：重启时开局书的头照常读出，不进隔离区、不报「有一份记录读不出来」", q);
   await ctx.close();
 }
 
@@ -788,7 +792,9 @@ let big = null;
   assert(h && !h.w && (await lines450()).length === 450, "导入 450 条：库里 450 条，头上只说 ln");
   const good = JSON.stringify(h);
   // the header becomes unreadable (a truncated write): persist.js quarantines it
-  await page.evaluate((g) => localStorage.setItem("chess.repertoire", g.slice(0, 200)), good);
+  // (cut in half: the header is shorter than the 200 characters this cut at,
+  // and passed whole only because a header without w / b was refused — 14.0)
+  await page.evaluate((g) => localStorage.setItem("chess.repertoire", g.slice(0, Math.floor(g.length / 2))), good);
   await page.reload();
   await ready(page);
   h = await waitFor(page, header, (x) => x && x.ln === 450, 5000);
