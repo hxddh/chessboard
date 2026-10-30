@@ -416,8 +416,9 @@ export async function run() {
       assert(/r\.kind !== "win"[\s\S]{0,400}fxAt\(_fx\.badge, durMs\("--dur-slow"\), now\)/.test(bj),
         "11.0 M: a won game's king glows in on --dur-slow, with the result badges");
       assert(/\.go-card \{[^}]*animation: result-in var\(--dur-slow\) var\(--ease\);/.test(stripped) &&
-        /\.page:not\(\[hidden\]\) \{ animation: pane-in var\(--dur-base\) var\(--ease\); \}/.test(stripped),
-        "11.0 M: the result card rises in and the pages cross-fade, on the duration tokens");
+        /\.page:not\(\[hidden\]\) \{ animation: page-in var\(--dur-slow\) var\(--ease\); \}/.test(stripped) &&
+        /@keyframes page-in \{\s*from \{ opacity: 0; transform: translateY\(4px\); \}/.test(stripped),
+        "11.0 M: the result card rises in, and (16.0 M) a page fades in rising 4px, on the duration tokens");
       assert(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?animation-duration: \.01ms !important;/.test(stripped),
         "11.0 M: …and every keyframe stops under reduced motion");
     }

@@ -1813,6 +1813,25 @@
     /* v8-3-plan T1 (M2 评审 P2-1): a set of 看 N 步 / 盲走 is being made —
        its band, the engine, the first question's searches — so its button
        stands dimmed until the set starts; an attribute, not a rebuild */
+    /* 16.0 M: one block behind the chosen segment, which travels to the
+       next one (seg-thumb.js writes where); the button gives up its own
+       raised fill while the block is there. Behind the labels: the row is
+       its own stacking context and the block sits at -1 in it. */
+    .theme-row.has-thumb {
+      position: relative; isolation: isolate;
+      --thumb-x: 0px; --thumb-y: 0px; --thumb-w: 0px; --thumb-h: 0px; /* seg-thumb.js writes these on the row */
+    }
+    .theme-row.has-thumb::before {
+      content: ""; position: absolute; left: 0; top: 0; z-index: -1; pointer-events: none;
+      width: var(--thumb-w); height: var(--thumb-h);
+      transform: translate(var(--thumb-x), var(--thumb-y));
+      background: var(--seg-on); box-shadow: var(--elev-1), 0 0 0 .5px var(--btn-edge);
+      border-radius: var(--radius-inset);
+    }
+    .theme-row.thumb-live::before {
+      transition: transform var(--dur-base) var(--ease), width var(--dur-base) var(--ease), height var(--dur-base) var(--ease);
+    }
+    .theme-row.has-thumb > button.active { background: transparent; box-shadow: none; }
     .theme-row button[aria-busy="true"], .act-btn[aria-busy="true"] { opacity: 0.55; cursor: progress; }
 
     /* sound switch */
@@ -4499,7 +4518,14 @@ span[data-icon] { display: inline-grid; place-items: center; }
   scrollbar-width: thin;
 }
 .page[hidden] { display: none; }
-.page:not([hidden]) { animation: pane-in var(--dur-base) var(--ease); }
+/* 16.0 M: a page arrives — it fades in and rises the last 4px, over
+   --dur-slow (a page is the biggest thing that moves); stopped under reduce
+   motion by the blanket rule, like every keyframe */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.page:not([hidden]) { animation: page-in var(--dur-slow) var(--ease); }
 #app.page-on .chrome, #app.page-on .side, #app.page-on .scrim { visibility: hidden; }
 .page-inner {
   max-width: 1120px; margin: 0 auto;
