@@ -1754,8 +1754,15 @@
     .setting-k.has-info::after { content: " ⓘ"; }
     /* the dialog is 512px inside: the extra clocks and the four styles each
        take one row, on the same grid as the clock row above them */
-    #newgame-modal #clock-seg-more { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-    #newgame-modal #persona-seg { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    @media (min-width: 600px) {
+      #newgame-modal #clock-seg-more { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+      #newgame-modal #persona-seg { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+    /* a phone-width dialog: the label column and the faces shrink, the rows stay six */
+    @media (max-width: 599px) {
+      .op-grid.full { grid-template-columns: 48px repeat(8, minmax(0, 28px)); gap: 8px 4px; }
+      .op-grid.full .op-card, .op-grid.full .op-av.portrait { width: 28px; height: 28px; }
+    }
     .ng-custom { margin: 4px 0 8px; }
     .ng-custom-sum { cursor: pointer; font-size: 0.875rem; color: var(--muted); padding: 4px 0; }
     /* the custom clock's two numbers, beside their units */
