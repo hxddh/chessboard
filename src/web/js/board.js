@@ -680,44 +680,47 @@ import { easeFromCss } from "./motion.js";
     // pixels and antialias into soft seams at some board sizes
     const edge = (i) => Math.round(i * step);
     const cellRect = (sr, sc) => [edge(sc), edge(sr), edge(sc + 1) - edge(sc), edge(sr + 1) - edge(sr)];
-    // squares
-    for (let sr = 0; sr < 8; sr++) {
-      for (let sc = 0; sc < 8; sc++) {
-        ctx.fillStyle = (sr + sc) % 2 === 0 ? P.light : P.dark;
-        ctx.fillRect(...cellRect(sr, sc));
-      }
-    }
-    // v8-0-plan A3: the material over the colour — paper's fibre and ink
-    // wash, marble's veins. One pattern per square colour, anchored to the
-    // board, so the grain runs on across the squares rather than restarting
-    // in each; scaled with the square so it is the same material at any size.
-    // 16.0 V: wood and the flat boards have a grain too, and the setting
-    // can take every texture off (m.texture false: flat colour, as 15.x drew
-    // wood, green and blue); a tile not made yet is made when the thread is
-    // idle and the board drawn again then
+    // squares — v8-0-plan A3: with the material in them, paper's fibre and
+    // ink wash, marble's veins. One pattern per square colour, anchored to
+    // the board, so the grain runs on across the squares rather than
+    // restarting in each; scaled with the square so it is the same material
+    // at any size. 16.0 V: wood and the flat boards have a grain too, and
+    // the setting can take every texture off (m.texture false: flat colour,
+    // as 15.x drew wood, green and blue); a tile not made yet is made when
+    // the thread is idle and the board drawn again then — unless the men are
+    // still decoding, whose own redraw picks the tiles up. And one fill per
+    // square: the colour is baked into the tile, not filled and then
+    // overlaid (two passes, and two fills of every square per frame).
     const tex = m.texture === false ? "none" : P.texture;
-    // (while the men are still decoding, their own redraw will pick the
-    // tiles up: no second one for the texture — the first load's count)
     const later = () => { if (!_pending) draw(); };
     const tiles = [textureTile(tex, false, later), textureTile(tex, true, later)];
+    let pats = null;
     if (tiles[0] && tiles[1]) {
-      // made once per texture and board size, not once per animation frame
+      // made once per texture, theme and board size, not once per frame
       const pk = tex + "@" + w;
       if (!_patterns || _patterns.key !== pk) {
-        _patterns = { key: pk, pats: tiles.map((tl) => {
-          const pat = ctx.createPattern(tl, "repeat");
+        _patterns = { key: pk, pats: tiles.map((tl, i) => {
+          let base = tl;
+          try {
+            base = document.createElement("canvas");
+            base.width = tl.width; base.height = tl.height;
+            const g = base.getContext("2d");
+            g.fillStyle = i ? P.dark : P.light;
+            g.fillRect(0, 0, base.width, base.height);
+            g.drawImage(tl, 0, 0);
+          } catch (_) { return null; }
+          const pat = ctx.createPattern(base, "repeat");
           try { if (pat && pat.setTransform && typeof DOMMatrix !== "undefined") pat.setTransform(new DOMMatrix().scale(step / 96)); } catch (_) { /* native size */ }
           return pat;
         }) };
       }
-      const pats = _patterns.pats;
-      for (let sr = 0; sr < 8; sr++) {
-        for (let sc = 0; sc < 8; sc++) {
-          const pat = pats[(sr + sc) % 2];
-          if (!pat) continue;
-          ctx.fillStyle = pat;
-          ctx.fillRect(...cellRect(sr, sc));
-        }
+      if (_patterns.pats[0] && _patterns.pats[1]) pats = _patterns.pats;
+    }
+    for (let sr = 0; sr < 8; sr++) {
+      for (let sc = 0; sc < 8; sc++) {
+        const dark = (sr + sc) % 2;
+        ctx.fillStyle = pats ? pats[dark] : dark ? P.dark : P.light;
+        ctx.fillRect(...cellRect(sr, sc));
       }
     }
     // last-move tint
