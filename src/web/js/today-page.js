@@ -19,7 +19,7 @@
  * a repaint on every commit writes only what changed.
  * @module today-page
  */
-import { paintMini } from "./mini-board.js";
+import { paintMini, measureMinis } from "./mini-board.js";
 import { ChessProgressMetrics as Metrics } from "./progress-metrics.js";
 import { ChessProgress } from "./progress.js";
 
@@ -222,6 +222,7 @@ export function createTodayPage(d) {
   }
 
   function render() {
+    measureMinis(doc.querySelectorAll(".mini-board"));
     const now = Date.now();
     renderHead(now);
     renderProgress(now);

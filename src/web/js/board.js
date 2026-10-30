@@ -414,9 +414,20 @@ import { easeFromCss } from "./motion.js";
    * in-board promotion picker draws with the same art as the board, not the
    * Unicode glyphs it used to. A data: URL of the SVG the sprites decode.
    */
+  // 15.0 P: one URL per set, man and size — the Today page's four small
+  // boards asked for 128 of them at launch, each a fresh encode of the SVG,
+  // for 12 distinct men
+  const _srcs = new Map();
   function pieceSrc(key, px) {
-    const svgs = PIECE_SETS[_set]() || CBURNETT_PIECE_SVGS;
-    return svgs && svgs[key] ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(refined(_set, svgs[key], px)) : "";
+    const k = _set + "|" + key + "|" + px;
+    let src = _srcs.get(k);
+    if (src == null) {
+      const svgs = PIECE_SETS[_set]() || CBURNETT_PIECE_SVGS;
+      src = svgs && svgs[key] ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(refined(_set, svgs[key], px)) : "";
+      // a set still loading answers "" — not kept, so it is asked again once it is in
+      if (src) _srcs.set(k, src);
+    }
+    return src;
   }
 
   /** Where `sq` is drawn right now: screen column and row, 0–7 from top left. */

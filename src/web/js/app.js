@@ -5108,7 +5108,8 @@ import { drawSpark } from "./charts.js";
   const savedPanel = Persist.get("panelOpen");
   setPanelOpen(savedPanel === "1");
   Shell.restore();
-  const resumed = tryLoadSave();
+  // 15.0 P: the save comes back without a render of its own; applyLanguage() below syncs every slice once
+  const resumed = (() => { store.game._batch++; try { return tryLoadSave(); } finally { store.game._batch--; } })();
   if (resumed) toast(t("msg.save.restored"));
   // 7.6 §1c: …and the analysis it had, which used to die with the session
   if (resumed) restoreAnalysis();
@@ -5129,11 +5130,7 @@ import { drawSpark } from "./charts.js";
   if (store.session.mode === "learn") startLearn();
   if (store.session.mode === "puzzle") startPuzzles();
   BoardView.resizeCanvas();
-  renderStats();
-  renderAchievements();
-  renderRecordEntry();
-  applyLanguage();
-  sync();
+  applyLanguage(); // 15.0 P: it renders the stats, badges and record entry and syncs; the boot did all four again
   saveSettings();
   if (!resumed) saveGame();
   // Every reader has run by now — including the lazy ones: loadStats() is
