@@ -696,7 +696,10 @@ import { easeFromCss } from "./motion.js";
     // wood, green and blue); a tile not made yet is made when the thread is
     // idle and the board drawn again then
     const tex = m.texture === false ? "none" : P.texture;
-    const tiles = [textureTile(tex, false, draw), textureTile(tex, true, draw)];
+    // (while the men are still decoding, their own redraw will pick the
+    // tiles up: no second one for the texture — the first load's count)
+    const later = () => { if (!_pending) draw(); };
+    const tiles = [textureTile(tex, false, later), textureTile(tex, true, later)];
     if (tiles[0] && tiles[1]) {
       // made once per texture and board size, not once per animation frame
       const pk = tex + "@" + w;
