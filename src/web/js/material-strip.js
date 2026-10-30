@@ -2,6 +2,7 @@
  * 吃子条：两边名字旁边被吃掉的子，和领先一方的 +N。
  *
  * 14.0 E: moved out of app.js, body unchanged.
+ * 16.0 V: drawn in the board's own set (pieceSrc), not always the 7.x one.
  * @module material-strip
  */
 import { ChessMaterial } from "./material.js";
@@ -11,7 +12,7 @@ import { CHESS_PIECE_SVGS } from "./pieces.js";
  * @param {object} d everything this module borrows from app.js
  */
 export function createMaterialStrip(d) {
-  const { doc, store, viewGame, verboseHistory, baseGame } = d;
+  const { doc, store, viewGame, verboseHistory, baseGame, pieceSrc } = d;
 
   /**
    * Captured pieces beside each name, and a `+N` on whoever is ahead.
@@ -32,6 +33,10 @@ export function createMaterialStrip(d) {
       .filter((m) => m.promotion).map((m) => ({ color: m.color, promotion: m.promotion }));
     const s = ChessMaterial.summary(baseGame().board(), shown.board(), promos);
     const svgs = CHESS_PIECE_SVGS || {};
+    // 16.0 V: the board's set when it is in; the 7.x drawing (in the bundle)
+    // only while a chunked set is still on its way
+    const src = (key) => (pieceSrc ? pieceSrc(key, 20) : "");
+    const set = src("wp") ? store.ui.pieceSet : "";
     // Built as nodes rather than concatenated markup. The pieces are vendored
     // SVG text and the lead is a number, so nothing here was ever hostile —
     // but "build a string and hand it to the parser" is a habit, and the two
@@ -40,15 +45,22 @@ export function createMaterialStrip(d) {
       const kids = [];
       let prevType = null;
       for (const tp of list) {
-        const svg = svgs[color + tp];
-        if (!svg) continue;
+        const url = set && src(color + tp), svg = svgs[color + tp];
+        if (!url && !svg) continue;
         const span = doc.createElement("span");
         // grouped by kind (7.7 §2): two pawns overlap like a pile, a knight
         // after them starts a new pile — see .taken-p.new-kind
         span.className = "taken-p" + (prevType && prevType !== tp ? " new-kind" : "");
         prevType = tp;
-        // the sprite set is our own file, not input — parsed once per piece
-        span.insertAdjacentHTML("afterbegin", svg);
+        if (url) {
+          const img = doc.createElement("img");
+          img.alt = "";
+          img.src = url;
+          span.append(img);
+        } else {
+          // the sprite set is our own file, not input — parsed once per piece
+          span.insertAdjacentHTML("afterbegin", svg);
+        }
         kids.push(span);
       }
       if (lead > 0) {
@@ -61,7 +73,7 @@ export function createMaterialStrip(d) {
     };
     // White's row shows the black pieces White has taken. Rebuilt only when
     // the tally changed: this hears every game and session commit.
-    const sig = s.w.join("") + "|" + s.b.join("") + "|" + s.diff;
+    const sig = s.w.join("") + "|" + s.b.join("") + "|" + s.diff + "|" + set;
     if (wEl.dataset.sig === sig) return;
     wEl.dataset.sig = sig;
     strip(wEl, s.w, "b", s.diff);

@@ -421,7 +421,7 @@
       "side.clock": "Clock", "side.sound": "Sound",
       "look.appearance": "Appearance", "look.system": "System", "look.light": "Light", "look.dark": "Dark", "tip.look.appearance": "A light or a dark interface; System follows the system's dark mode", "look.board": "Board", "look.frame": "Frame", "frame.flat": "Flat", "frame.frame": "Wooden frame", "tip.look.frame": "Flat: coordinates inside the squares. Wooden frame: coordinates printed on the frame",
       "side.textSize": "Text size", "text.s": "Small", "text.m": "Standard", "text.l": "Large", "tip.textSize": "Text size across the whole interface",
-      "side.pieces": "Piece set", "pieces.cburnett": "Standard", "pieces.merida": "Merida", "pieces.chessnut": "Chessnut", "pieces.fantasy": "Fantasy", "pieces.celtic": "Celtic", "pieces.spatial": "Spatial", "pieces.classic": "Classic",
+      "side.pieces": "Piece set", "pieces.cburnett": "Burnett", "pieces.merida": "Merida", "pieces.chessnut": "Chessnut", "pieces.fantasy": "Fantasy", "pieces.celtic": "Celtic", "pieces.spatial": "Spatial", "pieces.classic": "Classic",
       "side.coach": "Blunder alerts", "side.autoflip": "Auto-flip", "side.language": "Language",
       "side.orientation": "Board orientation",
       "side.moves": "Moves", "side.stats": "Stats", "side.ach": "Achievements",

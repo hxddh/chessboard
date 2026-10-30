@@ -421,7 +421,7 @@
       "side.clock": "時計", "side.sound": "サウンド",
       "look.appearance": "外観", "look.system": "システム", "look.light": "ライト", "look.dark": "ダーク", "tip.look.appearance": "ライトかダークか。「システム」はシステムのダークモードに合わせて切り替わる", "look.board": "盤", "look.frame": "枠", "frame.flat": "フラット", "frame.frame": "木枠", "tip.look.frame": "フラット：座標はマスの中。木枠：座標は枠に印字",
       "side.textSize": "文字サイズ", "text.s": "小さめ", "text.m": "標準", "text.l": "大きめ", "tip.textSize": "インターフェース全体の文字の大きさ",
-      "side.pieces": "駒のデザイン", "pieces.cburnett": "標準", "pieces.merida": "メリダ", "pieces.chessnut": "チェスナット", "pieces.fantasy": "ファンタジー", "pieces.celtic": "ケルト", "pieces.spatial": "スペーシャル", "pieces.classic": "クラシック",
+      "side.pieces": "駒のデザイン", "pieces.cburnett": "バーネット", "pieces.merida": "メリダ", "pieces.chessnut": "チェスナット", "pieces.fantasy": "ファンタジー", "pieces.celtic": "ケルト", "pieces.spatial": "スペーシャル", "pieces.classic": "クラシック",
       "side.coach": "悪手の警告", "side.autoflip": "自動反転", "side.language": "言語",
       "side.orientation": "盤の向き",
       "side.moves": "棋譜", "side.stats": "成績", "side.ach": "実績",

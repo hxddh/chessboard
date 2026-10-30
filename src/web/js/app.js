@@ -880,7 +880,7 @@ import { drawSpark } from "./charts.js";
       store.ui.bgWorker = s.bgWorker === true; // v8-1-plan F4: a second engine for passes, off unless set (§8.7)
       if (["s", "m", "l"].includes(s.textSize)) store.ui.textSize = s.textSize;
       // v8-0-plan A3: the look's four fields
-      Object.assign(store.ui, readLook(s));
+      Object.assign(store.ui, readLook(s), s.pieceSetPicked === true ? { pieceSetPicked: true } : null);
       if (typeof s.flipped === "boolean") store.game.flipped = s.flipped;
       if (["ai", "pvp", "learn", "puzzle"].includes(s.mode)) store.session.mode = s.mode;
       // DIFF_IDS, not a second copy of it — this list was written out by hand
@@ -907,7 +907,7 @@ import { drawSpark } from "./charts.js";
     try {
       Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, haptics: store.ui.haptics, langId: store.ui.langId, setCat: store.ui.setCat, liveOn: store.session.liveOn, trainSeg: store.ui.trainSeg, classicMode: store.ui.classicMode, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
         volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, humanLine: store.ui.humanLine, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv, bgWorker: store.ui.bgWorker === true,
-        textSize: store.ui.textSize, pieceSet: store.ui.pieceSet,
+        textSize: store.ui.textSize, pieceSet: store.ui.pieceSet, pieceSetPicked: store.ui.pieceSetPicked === true || undefined, // 16.0 V: look.js readLook
         // v8-0-plan A3: the look
         appearance: store.ui.appearance, boardId: store.ui.boardId, boardFrame: store.ui.boardFrame,
         soundSet: store.ui.soundSet, explorer: store.ui.explorer, ob: store.ui.ob }));
@@ -1554,7 +1554,7 @@ import { drawSpark } from "./charts.js";
   });
   const { gameEnding, renderGameOverCard, resultBadges } = GameEnd;
   // 14.0 E: the captured pieces beside the names are material-strip.js
-  const { render: renderMaterial } = createMaterialStrip({ doc: document, store, viewGame, verboseHistory, baseGame });
+  const { render: renderMaterial } = createMaterialStrip({ doc: document, store, viewGame, verboseHistory, baseGame, pieceSrc: (k, px) => BoardView.pieceSrc(k, px) });
 
   // --- stats (AI-mode finished games) ---
   /**

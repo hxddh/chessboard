@@ -37,15 +37,17 @@ export const BOARD_IDS = BOARDS.map((b) => b.id);
 export const FRAMES = ["flat", "frame"];
 
 /**
- * The piece sets, in picker order. `cburnett` is the default and lives in the
- * bundle with `classic` (pieces.js); the rest are chunks
- * (lazy-content.js PIECE_CHUNKS). Every one is licence-cleared in its own
- * module's header and credited in the About panel.
+ * The piece sets, in picker order. 16.0 V: Merida is the default — shaded,
+ * where cburnett is a line drawing — and like every set but `classic`
+ * (pieces.js, in the bundle for the move list's figurines) it is a chunk
+ * (lazy-content.js PIECE_CHUNKS); chunk-boot.js fetches the chosen one before
+ * the first frame. Every one is licence-cleared in its own module's header
+ * and credited in the About panel.
  */
-export const PIECE_SET_IDS = ["cburnett", "merida", "chessnut", "fantasy", "celtic", "spatial", "classic"];
+export const PIECE_SET_IDS = ["merida", "cburnett", "chessnut", "fantasy", "celtic", "spatial", "classic"];
 
 /** What a first run gets. */
-export const LOOK_DEFAULT = Object.freeze({ appearance: "system", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" });
+export const LOOK_DEFAULT = Object.freeze({ appearance: "system", boardId: "wood", boardFrame: "flat", pieceSet: "merida" });
 
 const has = (list, v) => typeof v === "string" && list.includes(v);
 
@@ -58,7 +60,10 @@ const has = (list, v) => typeof v === "string" && list.includes(v);
 export function readLook(s) {
   const out = Object.assign({}, LOOK_DEFAULT);
   if (!s || typeof s !== "object") return out;
-  if (has(PIECE_SET_IDS, s.pieceSet)) out.pieceSet = s.pieceSet;
+  // 16.0 V: up to 15.x every save wrote the default out as "cburnett", so a
+  // cburnett nobody picked (no pieceSetPicked) is the old default, and gets
+  // the new one; a pick (pieceSetPicked, 16.0 V on) keeps it
+  if (has(PIECE_SET_IDS, s.pieceSet) && (s.pieceSet !== "cburnett" || s.pieceSetPicked === true)) out.pieceSet = s.pieceSet;
   if (has(APPEARANCES, s.appearance)) out.appearance = s.appearance;
   if (has(BOARD_IDS, s.boardId)) out.boardId = s.boardId;
   if (has(FRAMES, s.boardFrame)) out.boardFrame = s.boardFrame;

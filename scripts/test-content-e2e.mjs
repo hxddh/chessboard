@@ -1372,9 +1372,10 @@ if (hasTab && REAL.length) {
 {
   const han = /[一-鿿]/;
   for (const [lang, mode, want] of [
-    ["en", "puzzle", ["chunk-lang-en.js", "chunk-mined.js"]],
-    ["ja", "pvp", ["chunk-lang-en.js", "chunk-lang-ja.js"]],
-    ["zh-CN", "pvp", []],
+    // 16.0 V: and the default set's pieces, Merida, in every case
+    ["en", "puzzle", ["chunk-lang-en.js", "chunk-mined.js", "chunk-merida.js"]],
+    ["ja", "pvp", ["chunk-lang-en.js", "chunk-lang-ja.js", "chunk-merida.js"]],
+    ["zh-CN", "pvp", ["chunk-merida.js"]],
   ]) {
     const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
     await c.addInitScript(([l, m]) => {

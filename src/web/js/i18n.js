@@ -452,7 +452,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "side.clock": "棋钟", "side.sound": "音效",
       "look.appearance": "外观", "look.system": "跟随系统", "look.light": "浅色", "look.dark": "深色", "tip.look.appearance": "界面用浅色还是深色；跟随系统时随系统的深色模式切换", "look.board": "棋盘", "look.frame": "边框", "frame.flat": "平盘", "frame.frame": "木框", "tip.look.frame": "平盘：坐标写在格子里；木框：木质边框，坐标印在框上",
       "side.textSize": "字号", "text.s": "小", "text.m": "标准", "text.l": "大", "tip.textSize": "整个界面的文字大小",
-      "side.pieces": "棋子样式", "pieces.cburnett": "标准", "pieces.merida": "梅里达", "pieces.chessnut": "栗子", "pieces.fantasy": "奇幻", "pieces.celtic": "凯尔特", "pieces.spatial": "立体", "pieces.classic": "经典",
+      "side.pieces": "棋子样式", "pieces.cburnett": "伯内特", "pieces.merida": "梅里达", "pieces.chessnut": "栗子", "pieces.fantasy": "奇幻", "pieces.celtic": "凯尔特", "pieces.spatial": "立体", "pieces.classic": "经典",
       "side.coach": "失着提醒", "side.autoflip": "自动翻转", "side.language": "语言",
       "side.orientation": "棋盘方向",
       "side.moves": "棋谱", "side.stats": "统计", "side.ach": "成就",

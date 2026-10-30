@@ -22,7 +22,6 @@
  * @module board
  */
 import { CHESS_PIECE_SVGS } from "./pieces.js";
-import { CBURNETT_PIECE_SVGS } from "./pieces-cburnett.js";
 import { loadChunk } from "./chunk.js";
 import { PIECE_CHUNKS } from "./lazy-content.js";
 import { textureTile, parseInk, inkSprite } from "./board-skin.js";
@@ -257,18 +256,18 @@ import { easeFromCss } from "./motion.js";
    * when wanted; chunk-boot.js has already put it there when the saved
    * settings name it, so a Merida player's first frame is still Merida.
    *
-   * v8-0-plan A3: seven sets. `cburnett` is now Colin Burnett's original
-   * drawing (pieces-cburnett.js), the default; the heavier 7.x redrawing it
-   * replaces stays as `classic` (pieces.js, still the move list's figurines).
-   * Both are in the bundle; every other set is a chunk (PIECE_CHUNKS), read
-   * off the window the same way Merida always was.
+   * v8-0-plan A3: seven sets. `cburnett` is Colin Burnett's original
+   * drawing (pieces-cburnett.js); the heavier 7.x redrawing it replaced stays
+   * as `classic` (pieces.js, still the move list's figurines, so it is the one
+   * set in the bundle). 16.0 V: Merida is the default; it and every other set
+   * is a chunk (PIECE_CHUNKS), read off the window the same way Merida
+   * always was, and fetched before the first frame by chunk-boot.js.
    */
   const PIECE_SETS = {
-    cburnett: () => CBURNETT_PIECE_SVGS,
     classic: () => CHESS_PIECE_SVGS,
   };
   for (const id of Object.keys(PIECE_CHUNKS)) PIECE_SETS[id] = () => globalThis[PIECE_CHUNKS[id].global] || null;
-  let _set = "cburnett";
+  let _set = "merida"; // 16.0 V: look.js LOOK_DEFAULT; settings replace it before the first draw
   /** the set whose twelve images are decoding right now, or null */
   let _pending = null;
   /**
@@ -422,7 +421,7 @@ import { easeFromCss } from "./motion.js";
     const k = _set + "|" + key + "|" + px;
     let src = _srcs.get(k);
     if (src == null) {
-      const svgs = PIECE_SETS[_set]() || CBURNETT_PIECE_SVGS;
+      const svgs = PIECE_SETS[_set]();
       src = svgs && svgs[key] ? "data:image/svg+xml;charset=utf-8," + encodeURIComponent(refined(_set, svgs[key], px)) : "";
       // a set still loading answers "" — not kept, so it is asked again once it is in
       if (src) _srcs.set(k, src);

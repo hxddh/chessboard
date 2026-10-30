@@ -447,7 +447,9 @@ const state = (page) => page.evaluate(() => {
 // (#today-go); 下一步建议's "to a board view" is the three 继续 cards, each
 // into 训练 at its segment.
 {
-  const { ctx, page, errs } = await open({ view: "home" });
+  // 16.0 V: on Burnett's set, the one whose pen the 12.0 S check below reads
+  // (Merida, the default since, draws its own weights)
+  const { ctx, page, errs } = await open({ view: "home", pieceSet: "cburnett", pieceSetPicked: true });
   // 残局's card waits for the camp's chunk
   await page.waitForFunction(() => { const c = document.querySelector('#today-cont .today-c[data-seg="endgame"]'); return !!c && !c.hidden; },
     null, { timeout: 8000 }).catch(() => {});
