@@ -1275,7 +1275,7 @@ if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "record");
   const fresh = await page.evaluate(() => {
     const card = document.getElementById("record-empty");
-    const tiles = [...document.querySelectorAll(".ach-item")].filter((e) => e.offsetParent);
+    const tiles = [...document.querySelectorAll(".ach-item")].filter((e) => e.offsetParent && !e.closest("details:not([open])"));
     return { shown: !!card && !card.hidden, buttons: card ? card.querySelectorAll("button").length : -1,
              text: card ? card.textContent.trim() : "",
              tiles: tiles.length, medals: tiles.filter((e) => e.querySelector(".ach-ic svg")).length,
