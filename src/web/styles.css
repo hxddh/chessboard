@@ -4003,7 +4003,9 @@ span[data-icon] { display: inline-grid; place-items: center; }
   padding: 0 2px; font-size: 1rem;
 }
 /* 10.1 F4: 12, like every other Chinese word in the interface — 11 is
-   left to coordinates, the move list's ?! and the numbers on charts */
+   left to coordinates, the move list's ?! and the numbers on charts.
+   (16.0 U tried 13: with five tools on the row, 开局 / 复制 / 导出 / 收起
+   and their English and Japanese no longer fit their cells — it stays 12) */
 .side-wide .tool-lbl {
   display: block; max-width: 100%;
   font-size: 0.75rem; font-weight: 400; line-height: var(--lh-tight);
@@ -4371,7 +4373,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .pz-tile[hidden] { display: none; }
 .pz-tile-name { font-size: 0.875rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pz-tile-n { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
-.pz-tile:focus-visible, .pz-review:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pz-tile:focus-visible, .pz-review:focus-visible { outline-offset: 2px; } /* 16.0 U: the ring is :focus-visible's, these only place it */
 .pz-modes-row .act-btn.active { background: var(--accent-soft); }
 .pz-modes-row .act-btn[aria-busy="true"] { opacity: 0.6; }
 #pz-themes-row .tool-txt { margin-left: -12px; } /* 10.1 L4: its words under the text above */
@@ -4463,7 +4465,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   background: var(--accent-soft);
   color: var(--accent);
 }
-.rail-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rail-btn:focus-visible { outline-offset: -2px; }
 /* 偏好 is not a view: it stands apart at the foot of the column */
 .rail-end { margin-top: auto; }
 
@@ -4633,7 +4635,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 16px; align-items: center;
 }
 .today-c:hover { background: color-mix(in srgb, var(--card) 88%, var(--text)); }
-.today-c:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.today-c:focus-visible { outline-offset: 2px; }
 .today-c-txt { display: grid; gap: 4px; min-width: 0; }
 /* names wrap rather than lose their end (Paul Morphy – Duke of Brunswick…):
    the three cards stretch to one height in their grid */
@@ -4732,7 +4734,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .set-cat:hover { background: var(--btn-ghost); }
 .set-cat[aria-selected="true"] { background: var(--accent-soft); }
 .set-cat[aria-selected="true"] .set-cat-ic { color: var(--accent); }
-.set-cat:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.set-cat:focus-visible { outline-offset: -2px; }
 .set-pane { display: grid; gap: 24px; }
 .set-pane[hidden] { display: none; }
 .set-pane:not([hidden]) { animation: pane-in var(--dur-base) var(--ease); }
