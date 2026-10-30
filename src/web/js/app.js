@@ -4754,7 +4754,7 @@ import { drawSpark } from "./charts.js";
   loadSettings();
   document.documentElement.setAttribute("data-text", store.ui.textSize);
   SettingsUI.applyLook();
-  if (I18n) { I18n.setLang(store.ui.langId); I18n.apply(document); }
+  if (I18n) { I18n.setLang(store.ui.langId); I18n.apply(document); document.documentElement.setAttribute("lang", store.ui.langId); document.title = t("app.title"); }
   // v8-0-plan F5: chunk-boot.js loaded the saved language ahead of this
   // script. Should its guess have missed (a profile restored since, storage
   // it could not read), fetch the language now and repaint in it on arrival.
@@ -4764,10 +4764,8 @@ import { drawSpark } from "./charts.js";
   const savedPanel = Persist.get("panelOpen");
   setPanelOpen(savedPanel === "1");
   Shell.restore();
-  // 15.0 P: the launch is two tasks, not one. The first builds the app and
-  // puts the saved view on screen; the save, the clocks and the first full
-  // render are the second, so neither half holds the main thread past a
-  // frame budget (it was one 140 ms task at 1× CPU)
+  // 15.0 P: the launch is two tasks — build the app and put the saved view up;
+  // then the save, the clocks and the first full render (one 140 ms task at 1×)
   function bootRest() {
     // 15.0 P: the save comes back without a render of its own; applyLanguage() below syncs every slice once
     const resumed = (() => { store.game._batch++; try { return tryLoadSave(); } finally { store.game._batch--; } })();
@@ -4845,5 +4843,7 @@ import { drawSpark } from "./charts.js";
     }
     if (firstRun || (store.ui.ob && !store.ui.ob.done && store.ui.ob.n < 3)) runOnboarding(); // 14.0 A3: asked again, three launches at most, until answered
   }
-  setTimeout(bootRest, 0);
+  // …except into a lesson or a puzzle, whose first frame is the trainer's own
+  // card and count (test-content-e2e F5: WebKit paints between the two tasks)
+  if (store.session.mode === "learn" || store.session.mode === "puzzle") bootRest(); else setTimeout(bootRest, 0);
 
