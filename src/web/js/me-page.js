@@ -108,6 +108,8 @@ export function createMePage(d) {
     if (!el) return;
     const res = evalAch();
     const got = res.filter((r) => r.unlocked).length;
+    const was = document.getElementById("ach-all");
+    const wasOpen = !!(was && was.open);
     el.replaceChildren();
     const head = document.getElementById("ach-count");
     if (head) head.textContent = got + "/" + res.length;
@@ -134,9 +136,20 @@ export function createMePage(d) {
     }
     // 12.0 F: one grid of medals — earned ones first, then the rest by how
     // close they are — each the badge's own icon (lit when earned, faint with
-    // its progress drawn round it when not), the name under it. Fifteen
-    // tiles fit three short rows, so nothing is folded away any more.
-    renderAchRows(unlocked.concat(locked), res, el);
+    // its progress drawn round it when not), the name under it. 15.0 S3: the
+    // page shows the one that is next; the fifteen fold under 「全部 15 枚」
+    const grid = () => { const g = document.createElement("div"); g.className = "ach-grid"; return g; };
+    if (next) { const one = grid(); renderAchRows([next], res, one); el.appendChild(one); }
+    const all = document.createElement("details");
+    all.className = "ach-all"; all.id = "ach-all";
+    all.open = wasOpen || !next;
+    const sum = document.createElement("summary");
+    sum.className = "setting-summary";
+    sum.textContent = tf("ach.all", [res.length]);
+    const g = grid();
+    renderAchRows(unlocked.concat(locked), res, g);
+    all.append(sum, g);
+    el.appendChild(all);
   }
 
   /**

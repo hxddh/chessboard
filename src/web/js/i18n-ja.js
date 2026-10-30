@@ -441,7 +441,7 @@
       "act.analyze": "振り返る", "act.deep": "精密な振り返り", "act.stopAt": "中止 {0}", "act.retryHere": "ここから続ける",
       "act.live": "エンジン常時表示", "tip.live": "盤上の局面をエンジンが読み続け、振り返りのカーソルに追従します", "set.humanLine": "人の指し手", "tip.humanLine": "エンジン候補の下に、同じレーティングの人がこの局面でよく指す手を表示", "hl.head": "{0} の人：", "hl.rare": "この対局の {0}：めったに指されない", "hl.common": "同じレベルの人の {1}% もこう指します：{0} 帯でよくあるミス、練習の価値あり。", "an.depthN": "深さ {0}", "curve.atScore": "{0} 手目 {1}", "an.winPct": "勝率 {0}%", "an.line": "第 {0} 候補",
       "msg.premove.set": "先行入力 {0}", "msg.premove.dropped": "先行入力は無効になりました",
-      "act.pgnCopy": "コピー", "act.copyPgn": "PGN をコピー", "act.export": "書き出す", "act.paste": "貼り付け", "act.open": "開く",
+      "act.pgnCopy": "コピー", "act.copyPgn": "PGN をコピー", "act.lessonInfo": "この課の説明", "ach.all": "全 {0} 個", "act.export": "書き出す", "act.paste": "貼り付け", "act.open": "開く",
       "act.fen": "FEN", "act.loadFen": "FEN 読込", "act.editor": "編集",
       "act.offerDraw": "引分提案", "act.claimDraw": "引分宣言", "act.resign": "投了",
       "act.clearSave": "保存を消去", "act.reset": "リセット", "act.clear": "消去",

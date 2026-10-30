@@ -1279,12 +1279,13 @@ if (scenario()) {
     return { shown: !!card && !card.hidden, buttons: card ? card.querySelectorAll("button").length : -1,
              text: card ? card.textContent.trim() : "",
              tiles: tiles.length, medals: tiles.filter((e) => e.querySelector(".ach-ic svg")).length,
-             fold: !!document.getElementById("ach-more") };
+             fold: !!document.getElementById("ach-all") && !document.getElementById("ach-all").open };
   });
   assert(fresh.shown && fresh.text.length > 0, "全新安装打开记录页,先看到一句话说这一页会记什么(" + fresh.text + ")");
   assert(fresh.buttons === 0, "……那张卡片上没有训练的入口(今天、训练已经有了)(" + fresh.buttons + ")");
-  // 12.0 F: fifteen medals in a grid, each its own icon — no fold, no padlocks
-  assert(fresh.tiles === 15 && fresh.medals === 15 && !fresh.fold, "12.0 F:十五枚成就都是带自己图标的勋章,一屏看完,不再折叠(" + JSON.stringify(fresh) + ")");
+  // 12.0 F: medals, each its own icon, no padlocks; 15.0 S3: the page shows
+  // the next one, and the fifteen fold under it
+  assert(fresh.tiles === 1 && fresh.medals === 1 && fresh.fold, "15.0 S3:成就页只露离下一枚最近的那一个(带自己的图标),全部 15 枚收在下面(" + JSON.stringify(fresh) + ")");
   await ctx.close();
 }
 
@@ -1698,10 +1699,11 @@ if (scenario()) {
 if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "record");
+    await page.evaluate(() => { const d = document.getElementById("ach-all"); if (d) d.open = true; }); // 15.0 S3: all fifteen
     const r = await page.evaluate(() => {
-      const body = document.getElementById("ach-body");
+      const body = document.querySelector("#ach-all > .ach-grid");
       const br = body.getBoundingClientRect();
-      const full = [...body.querySelectorAll(".ach-next, .ach-group")].map((e) => {
+      const full = [...document.querySelectorAll("#ach-body .ach-next")].map((e) => {
         const b = e.getBoundingClientRect();
         return { c: e.className, spans: Math.round(b.width) >= Math.round(br.width) - 1 };
       });

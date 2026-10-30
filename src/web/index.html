@@ -253,6 +253,8 @@
              dots — one per task, the finished ones filled, the current one
              ringed. A finished lesson is a full row, not only a toast. -->
         <ol class="lesson-dots" id="lesson-dots"></ol>
+        <!-- 15.0 S3: the lesson's words fold once read; this opens them again -->
+        <button type="button" class="tool-txt lesson-info" id="lesson-info" aria-controls="lesson-text" aria-expanded="true" data-i18n="act.lessonInfo" hidden>说明</button>
         <div class="lesson-text" id="lesson-text"></div>
         <div class="lesson-task" id="lesson-task"></div>
         <div class="lesson-controls fit-row fit-fill">
@@ -569,7 +571,7 @@
               <!-- Focusable and a slider: the pointer already scrubs it, and the
                    global ← / → / Home / End replay keys move it once it has focus,
                    so the keyboard gets the same time machine (5.1, work package D). -->
-              <canvas id="eval-curve" tabindex="0" role="slider" aria-label="局势曲线" data-i18n-aria="aria.evalCurve"></canvas>
+              <canvas id="eval-curve" tabindex="0" role="slider" aria-label="局势曲线" data-i18n-aria="aria.evalCurve" aria-describedby="analysis-legend" title="复盘后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误" data-i18n-title="hint.analysis"></canvas>
             </div>
             <div class="curve-x num" id="curve-x" aria-hidden="true"></div>
           </div>
@@ -658,7 +660,8 @@
           <button type="button" class="act-btn" id="fen-copy" data-i18n="act.fen" title="复制当前局面 FEN" data-i18n-title="tip.fen.copy">FEN</button>
           <button type="button" class="act-btn" id="fen-load-open" title="从 FEN 载入局面" data-i18n-title="tip.fen.load" data-i18n="act.loadFen">载入 FEN</button>
         </div>
-        <p class="hint" id="analysis-legend" data-i18n="hint.analysis" hidden>复盘后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误</p>
+        <!-- 15.0 S3: the legend is the curve's tooltip and its description, not a line of its own -->
+        <p class="sr-only" id="analysis-legend" data-i18n="hint.analysis" hidden>复盘后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误</p>
       </section>
 
       </div><!-- /pane-play -->

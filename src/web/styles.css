@@ -2128,6 +2128,8 @@
       position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
       overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
     }
+    .tool-txt.lesson-info { margin: 0 0 8px; padding: 0; }
+    .lesson-text[hidden] { display: none; }
     .lesson-text p {
       margin: 0 0 8px;
       font-size: 0.875rem; color: var(--muted); line-height: var(--lh-prose);
@@ -3295,13 +3297,6 @@
 
     /* Achievement grouping (1.24): a wall of padlocks says "you have nothing";
        a group header plus the nearest one says "start here". */
-    /* The suggestion and the two group headings are children of the same grid
-       as the badges, so each of them was taking one cell of a two-column row
-       and leaving the other half empty — the panel opened on a bordered card
-       beside a blank, then "还差一点 15" beside another blank. They are not
-       badges; they are the rows the badges are filed under, and a row spans
-       its table. */
-    .ach-next { grid-column: 1 / -1; }
     /* 9.0 V1: a line of the card, not a box inside it */
     .ach-next {
       margin-bottom: 8px; padding: 0;
@@ -3553,9 +3548,13 @@
        and let rows grow to different heights; a tile has neither problem:
        the tiles of a row line up, the name sits under its medal on at most
        two lines, and a CJK name never breaks inside a word (keep-all). */
-    .ach-body {
+    .ach-grid {
       display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px;
     }
+    /* 15.0 S3: the next medal on the page, all fifteen in the fold under it */
+    .ach-all { margin-top: 8px; }
+    .ach-all > summary { font-size: 0.875rem; color: var(--muted); }
+    .ach-all > .ach-grid { margin-top: 8px; }
     .ach-item {
       display: grid; grid-template-rows: 48px auto auto; justify-items: center; align-content: start;
       row-gap: 4px; padding: 8px 4px;

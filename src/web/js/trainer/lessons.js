@@ -729,6 +729,8 @@ export function createLessonsUI(d) {
     if (!sec) return;
     sec.hidden = store.session.mode !== "learn";
     // the task with the panel shut is trainer/train-bar.js's (15.0 S3)
+    const info = document.getElementById("lesson-info");
+    if (info && !store.session.learn) { info.hidden = true; document.getElementById("lesson-text").hidden = false; } // a classic being read
     if (store.session.mode !== "learn" || !store.session.learn) return;
     const L = curLesson();
     const doneCount = LESSONS.filter((x) => store.session.learnState.done[x.id]).length;
@@ -771,6 +773,12 @@ export function createLessonsUI(d) {
         textEl.appendChild(lessonParagraph(p));
       }
     }
+    // 15.0 S3: the lesson's words are read once — past its first task, or in
+    // a lesson finished before, they fold behind 说明, which opens them again
+    const lr = store.session.learn;
+    const read = !gs && (lr.ti > 0 || !!lr.done || (!eg && !!store.session.learnState.done[L.id]));
+    if (textEl) textEl.hidden = read && lr.infoOpen !== L.id;
+    if (info) { info.hidden = !read; info.setAttribute("aria-expanded", String(!(textEl && textEl.hidden))); }
     const task = document.getElementById("lesson-task");
     if (task) task.textContent = learnTaskText();
     const demoBtn = document.getElementById("lesson-demo");
@@ -957,6 +965,10 @@ export function createLessonsUI(d) {
 
   /** The lesson panel's controls — wired from app.js's boot as before (v8-0-plan F4). */
   function wireLessonPanel() {
+    document.getElementById("lesson-info").onclick = () => {
+      const lr = store.session.learn;
+      if (lr) { const id = curLesson().id; lr.infoOpen = lr.infoOpen === id ? null : id; store.commit("session", "sync"); }
+    };
     document.getElementById("lesson-restart").onclick = () => {
       if (store.session.learn) { startLearnTask(); toast(t("lm.restarted")); }
     };

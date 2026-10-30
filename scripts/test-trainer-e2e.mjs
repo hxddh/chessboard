@@ -1601,6 +1601,14 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   const dots = await page.evaluate(() => [...document.querySelectorAll("#lesson-dots .lesson-dot")].map((d) => d.className.replace("lesson-dot", "").trim() || "-"));
   assert(dots.length === L.tasks.length && dots[2] === "current" && dots[0] === "done",
     "14.0 A3: 课做到第 3 步时关掉，重开回到第 3 步", JSON.stringify({ li, dots }));
+  // 15.0 S3: past the first task the lesson's words are folded; 说明 opens them
+  const fold = () => page.evaluate(() => ({ text: !document.getElementById("lesson-text").hidden,
+    info: !document.getElementById("lesson-info").hidden, exp: document.getElementById("lesson-info").getAttribute("aria-expanded") }));
+  const f0 = await fold();
+  await page.click("#lesson-info");
+  await page.waitForTimeout(200);
+  const f1 = await fold();
+  assert(!f0.text && f0.info && f0.exp === "false" && f1.text && f1.exp === "true", "15.0 S3: 第 3 步时课文收起，点「说明」再打开", JSON.stringify([f0, f1]));
   await ctx.close();
 }
 
