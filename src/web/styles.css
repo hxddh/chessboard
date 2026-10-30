@@ -1034,6 +1034,14 @@
            changes width drags its neighbour along. 80px clears the widest of
            the six labels in the three languages, measured: Thinking at 78. */
     .ps-tools .tool-btn { height: var(--ctl-h-sm); min-width: 80px; }
+    /* 16.0: 80px was measured before the button had its icon. With it, the
+       hint's widest labels are 思考中 92px, ヒント 93, Thinking 107 (measured
+       in Chromium, 14px, the icon included): a relabel to "thinking" while
+       the engine answered widened the slot and pushed 悔棋 12px sideways —
+       the very move this rule exists to stop (WebKit caught it in CI). The
+       floor is the widest label of the language on screen. */
+    .ps-tools #btn-hint { min-width: 96px; }
+    html:lang(en) .ps-tools #btn-hint { min-width: 112px; }
     .ps-tools .slot-empty,
     .replay-bar .slot-empty { visibility: hidden; }
     .tool-btn:hover { background: var(--btn-lift-hover); }
