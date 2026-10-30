@@ -1576,7 +1576,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 
   // the fade: one pane drawn, fading in over --dur-base; none under reduced
   // motion. 9.0 S5: the side tabs are gone, so it is the settings page that
-  // comes in (pane-in, like every .page), showing one category at a time.
+  // comes in (like every .page), showing one category at a time. 16.0 M: a
+  // page fades in rising 4px (page-in), over --dur-slow
   for (const reduced of [false, true]) {
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN", reducedMotion: reduced ? "reduce" : "no-preference" });
     await ctx.addInitScript(() => {
@@ -1592,13 +1593,13 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       document.getElementById("cat-sound").click();
       const shown = [...document.querySelectorAll("#page-settings .set-pane")].filter((p) => !p.hidden).map((p) => p.id);
       const cs = getComputedStyle(document.getElementById("page-settings"));
-      const base = getComputedStyle(document.documentElement).getPropertyValue("--dur-base").trim();
+      const base = getComputedStyle(document.documentElement).getPropertyValue("--dur-slow").trim();
       const ms = (v) => (/ms$/.test(v) ? parseFloat(v) : parseFloat(v) * 1000);
       return { shown, name: cs.animationName, dur: cs.animationDuration, base, same: ms(cs.animationDuration) === ms(base), durMs: ms(cs.animationDuration) };
     });
     if (!reduced) {
-      assert(r.shown.length === 1 && r.shown[0] === "set-sound" && r.name === "pane-in" && r.same,
-        `打开设置页:只画选中的那一类(${r.shown.join(",")}),页面用 pane-in 淡入,时长就是 --dur-base(${r.dur} / ${r.base})`);
+      assert(r.shown.length === 1 && r.shown[0] === "set-sound" && r.name === "page-in" && r.same,
+        `打开设置页:只画选中的那一类(${r.shown.join(",")}),页面用 page-in 淡入上移,时长就是 --dur-slow(${r.dur} / ${r.base})`);
     } else {
       assert(r.shown.length === 1 && r.durMs <= 1,
         `减少动态效果:设置页出现不淡入(${r.dur})`);
