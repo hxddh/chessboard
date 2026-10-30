@@ -1679,8 +1679,8 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
     await page.waitForTimeout(300);
     const first = await read();
     assert(first.attrs === attrs && first.frame === "flat", `A3 ${tag}:打开是 ${attrs}、平盘(实际 ${first.attrs}、${first.frame})`);
-    assert(first.saved === saved && first.frameSaved === "flat" && first.pieceSet === (old && old.pieceSet || "cburnett"),
-      `A3 ${tag}:写回的设置是 ${saved}/flat/${(old && old.pieceSet) || "cburnett"}(实际 ${first.saved}/${first.frameSaved}/${first.pieceSet})`);
+    assert(first.saved === saved && first.frameSaved === "flat" && first.pieceSet === (old && old.pieceSet || "merida"),
+      `A3 ${tag}:写回的设置是 ${saved}/flat/${(old && old.pieceSet) || "merida"}(实际 ${first.saved}/${first.frameSaved}/${first.pieceSet})`);
     await page.reload();
     await page.waitForTimeout(900);
     const second = await read();

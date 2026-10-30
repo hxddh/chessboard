@@ -1341,7 +1341,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const ctxA = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
   await ctxA.addInitScript(() => {
     localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", soundOn: false,
-      appearance: "dark", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett", view: "play" }));
+      appearance: "dark", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett", pieceSetPicked: true, view: "play" }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const pg = await ctxA.newPage();

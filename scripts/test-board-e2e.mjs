@@ -322,7 +322,11 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
   await ctx.addInitScript(() => {
     localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood" }));
+      // 16.0 V: Burnett's set — the masks below (SAME, the light / dark
+      // split) were measured on its flat black and white, not Merida's
+      // shading — on flat squares (READ_BOARD tells a man from the square by
+      // colour; the grain would arrive mid-test, once the thread is idle)
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", pieceSet: "cburnett", pieceSetPicked: true, boardTexture: false }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -649,7 +653,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
     await ctx.addInitScript(([s, f]) => {
       localStorage.setItem("chess.settings", JSON.stringify({
-        mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", pieceSet: s, flipped: f, autoFlipPvp: false }));
+        mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", pieceSet: s, pieceSetPicked: true, flipped: f, autoFlipPvp: false }));
       localStorage.setItem("chess.panelOpen", "1");
     }, [set, flip]);
     const page = await ctx.newPage();
@@ -1277,9 +1281,10 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   // 它要是又回到首屏里,上面那个数字会慢慢爬回去而没人知道为什么。
   // v8-0-plan F5 起 index.html 先跑 chunk-boot.js(几百字节,只负责替已存
   // 的语言写 script 标签);中文用户它什么都不写。挖掘题在首屏之后才取。
-  const early = t.res.filter((r) => /^chunk-/.test(r.name) && r.at < t.painted && r.name !== "chunk-boot.js");
+  // 16.0 V: except the default pieces, Merida, which the first frame draws
+  const early = t.res.filter((r) => /^chunk-/.test(r.name) && r.at < t.painted && r.name !== "chunk-boot.js" && r.name !== "chunk-merida.js");
   assert(early.length === 0,
-    `……而且首屏前除 chunk-boot.js 外一个 chunk 都没取(取了:${early.map((r) => r.name).join(", ")})`);
+    `……而且首屏前除 chunk-boot.js 与默认棋子 chunk-merida.js 外一个 chunk 都没取(取了:${early.map((r) => r.name).join(", ")})`);
   // 「可交互」得是真的:这时候点下去,棋真的能走
   await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const c = await page.evaluate(() => {
@@ -1331,20 +1336,21 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   assert(r.image === 1, `首次加载:棋子图解码完只重画了一次(${r.image} 次)`);
   // 12 张图各画一次时这里是 17;留出启动本身那几次 sync()
   assert(r.full > 0 && r.full < 12, `首次加载:整盘重画 ${r.full} 次 < 12(每张图一次的时候是 17)`);
-  // 换成 Merida:按需取 chunk-merida.js,解码完再一次画
-  // v8-0-plan A3: no piece chunk is fetched at startup — not even for the
-  // picker's previews, which wait until their row is on screen
+  // 换成伯内特:按需取 chunk-pieces-cburnett.js,解码完再一次画
+  // v8-0-plan A3: no other piece chunk is fetched at startup — not even for
+  // the picker's previews, which wait until their row is on screen. 16.0 V:
+  // the one there is the default's, Merida, which chunk-boot.js asks for
   const early = await page.evaluate(() => performance.getEntriesByType("resource")
     .filter((e) => /chunk-(merida|pieces-\w+)\.js$/.test(e.name)).map((e) => e.name.split("/").pop()));
-  assert(early.length === 0, `启动时不取任何棋子分块(取了:${early.join(", ") || "无"})`);
-  await page.evaluate(() => { const b = document.querySelector('[data-piece-set="merida"]'); if (b) b.click(); });
+  assert(early.join() === "chunk-merida.js", `启动时只取默认那一套(梅里达)的分块(取了:${early.join(", ") || "无"})`);
+  await page.evaluate(() => { const b = document.querySelector('[data-piece-set="cburnett"]'); if (b) b.click(); });
   await page.waitForFunction(() => window.__chess.board().imageRedraws >= 2, null, { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(800);
   const m = await page.evaluate(() => ({
     image: window.__chess.board().imageRedraws,
-    fetched: performance.getEntriesByType("resource").some((e) => /chunk-merida\.js$/.test(e.name)),
+    fetched: performance.getEntriesByType("resource").some((e) => /chunk-pieces-cburnett\.js$/.test(e.name)),
   }));
-  assert(m.fetched && m.image === 2, `换 Merida:取了 chunk-merida.js,解码完只多画一次(共 ${m.image} 次)`);
+  assert(m.fetched && m.image === 2, `换伯内特:取了 chunk-pieces-cburnett.js,解码完只多画一次(共 ${m.image} 次)`);
   // …and the same for a set that is new with A3
   await page.evaluate(() => { const b = document.querySelector('[data-piece-set="fantasy"]'); if (b) b.click(); });
   await page.waitForFunction(() => window.__chess.board().imageRedraws >= 3, null, { timeout: 15000 }).catch(() => {});
@@ -1379,16 +1385,61 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));
-  await page.route(/chunk-merida\.js/, async (route) => { await new Promise((r) => setTimeout(r, 5000)); await route.continue(); });
+  // 16.0 V: the default is Merida now, so the slow chunk is cburnett's
+  await page.route(/chunk-pieces-cburnett\.js/, async (route) => { await new Promise((r) => setTimeout(r, 5000)); await route.continue(); });
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await settle(page);
-  await page.evaluate(() => document.querySelector('[data-piece-set="merida"]').click());
-  await page.waitForTimeout(1800);   // the standard set's decode ends, Merida still loading
   await page.evaluate(() => document.querySelector('[data-piece-set="cburnett"]').click());
+  await page.waitForTimeout(1800);   // the default set's decode ends, cburnett still loading
+  await page.evaluate(() => document.querySelector('[data-piece-set="merida"]').click());
   await page.waitForFunction(() => window.__chess.board().imageRedraws >= 1, null, { timeout: 4000 }).catch(() => {});
   const n = await page.evaluate(() => window.__chess.board().imageRedraws);
-  assert(n >= 1, `标准→梅里达(还在取)→标准:标准棋子图照样装上(重画 ${n} 次)`);
+  assert(n >= 1, `梅里达→伯内特(还在取)→梅里达:默认棋子图照样装上(重画 ${n} 次)`);
   assert(errs.length === 0, `棋子图来回切:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
+// --- 16.0 V:棋盘纹理——木纹默认开,首帧先画纯色,空闲时补上;关掉回到纯色 ----------
+// 木纹两张贴图要算约 50 ms,木是默认棋盘:放在首帧里算,就是首帧最长的一段。
+// 所以首帧画纯色,线程空下来再算、再画一次。关掉开关时与 15.x 逐像素相同
+// (格子就是 --sq-light 那一个颜色)。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "light", boardId: "wood", view: "play" }));
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1500);
+  // e4, empty, a light square from White's side: its spread of colours, and how far its mean is from --sq-light
+  const sample = () => page.evaluate(() => {
+    const c = document.getElementById("board"), g = c.getContext("2d"), step = c.width / 8;
+    const d = g.getImageData(Math.round(4 * step + step * 0.1), Math.round(4 * step + step * 0.1), Math.round(step * 0.8), Math.round(step * 0.8)).data;
+    const want = getComputedStyle(document.documentElement).getPropertyValue("--sq-light").trim();
+    const hex = [1, 3, 5].map((i) => parseInt(want.slice(i, i + 2), 16));
+    let lo = 999, hi = 0, off = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const v = d[i] + d[i + 1] + d[i + 2];
+      lo = Math.min(lo, v); hi = Math.max(hi, v);
+      off = Math.max(off, Math.abs(d[i] - hex[0]), Math.abs(d[i + 1] - hex[1]), Math.abs(d[i + 2] - hex[2])); n++;
+    }
+    return { spread: hi - lo, off };
+  });
+  const on = await sample();
+  assert(on.spread >= 12, `16.0 V 木棋盘默认有木纹:空的浅格里颜色有起伏(亮度跨度 ${on.spread})`);
+  await page.evaluate(() => { document.querySelector('.rail-btn[data-view="settings"]').click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { document.getElementById("cat-board").click(); document.getElementById("opt-texture").click(); });
+  await page.evaluate(() => document.querySelector('.rail-btn[data-view="play"]').click());
+  await page.waitForTimeout(500);
+  const off = await sample();
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}").boardTexture);
+  assert(off.spread === 0 && off.off <= 1 && saved === false,
+    `16.0 V 关掉纹理:格子是纯色 --sq-light,与 15.x 相同(跨度 ${off.spread},偏差 ${off.off}),设置里记下 ${saved}`);
+  assert(errs.length === 0, `16.0 V 棋盘纹理:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
   await ctx.close();
 }
 
@@ -1525,7 +1576,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 
   // the fade: one pane drawn, fading in over --dur-base; none under reduced
   // motion. 9.0 S5: the side tabs are gone, so it is the settings page that
-  // comes in (pane-in, like every .page), showing one category at a time.
+  // comes in (like every .page), showing one category at a time. 16.0 M: a
+  // page fades in rising 4px (page-in), over --dur-slow
   for (const reduced of [false, true]) {
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN", reducedMotion: reduced ? "reduce" : "no-preference" });
     await ctx.addInitScript(() => {
@@ -1541,13 +1593,13 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       document.getElementById("cat-sound").click();
       const shown = [...document.querySelectorAll("#page-settings .set-pane")].filter((p) => !p.hidden).map((p) => p.id);
       const cs = getComputedStyle(document.getElementById("page-settings"));
-      const base = getComputedStyle(document.documentElement).getPropertyValue("--dur-base").trim();
+      const base = getComputedStyle(document.documentElement).getPropertyValue("--dur-slow").trim();
       const ms = (v) => (/ms$/.test(v) ? parseFloat(v) : parseFloat(v) * 1000);
       return { shown, name: cs.animationName, dur: cs.animationDuration, base, same: ms(cs.animationDuration) === ms(base), durMs: ms(cs.animationDuration) };
     });
     if (!reduced) {
-      assert(r.shown.length === 1 && r.shown[0] === "set-sound" && r.name === "pane-in" && r.same,
-        `打开设置页:只画选中的那一类(${r.shown.join(",")}),页面用 pane-in 淡入,时长就是 --dur-base(${r.dur} / ${r.base})`);
+      assert(r.shown.length === 1 && r.shown[0] === "set-sound" && r.name === "page-in" && r.same,
+        `打开设置页:只画选中的那一类(${r.shown.join(",")}),页面用 page-in 淡入上移,时长就是 --dur-slow(${r.dur} / ${r.base})`);
     } else {
       assert(r.shown.length === 1 && r.durMs <= 1,
         `减少动态效果:设置页出现不淡入(${r.dur})`);
@@ -2098,7 +2150,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   //     the original cburnett, 79. The floor sits between them.
   const KING_GAP_FLOOR = 70;
   const kingGap = async (set) => {
-    const { ctx, page } = await open({ mode: "pvp", langId: "zh-CN", appearance: "light", boardId: "wood", boardFrame: "flat", pieceSet: set },
+    const { ctx, page } = await open({ mode: "pvp", langId: "zh-CN", appearance: "light", boardId: "wood", boardFrame: "flat", pieceSet: set, pieceSetPicked: true },
       { width: 1440, height: 900 });
     await page.waitForTimeout(600);
     const r = await page.evaluate(() => {
@@ -2120,10 +2172,14 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     await ctx.close();
     return r;
   };
+  // 16.0 V: still measured on Burnett's drawing, the one the floor was set
+  // between. Merida, the default since, scores 55 here — its black men carry
+  // white highlight lines, which a mean of the ink counts as grey; whether it
+  // reads black is for the eye (v16-0-plan §10), not this line
   const now = await kingGap("cburnett");
   const was = await kingGap("classic");
   assert(now.dpr === 1 && now.white - now.black >= KING_GAP_FLOOR,
-    `A3 1× 默认棋子:黑王与白王的墨色亮度差 ${(now.white - now.black).toFixed(0)} ≥ ${KING_GAP_FLOOR}(黑 ${now.black.toFixed(0)},白 ${now.white.toFixed(0)})`);
+    `A3 1× 伯内特棋子:黑王与白王的墨色亮度差 ${(now.white - now.black).toFixed(0)} ≥ ${KING_GAP_FLOOR}(黑 ${now.black.toFixed(0)},白 ${now.white.toFixed(0)})`);
   assert(was.white - was.black < KING_GAP_FLOOR,
     `A3 1× 7.x 的重绘版(「经典」)是这条线要拦的:差 ${(was.white - was.black).toFixed(0)} < ${KING_GAP_FLOOR}`);
 
@@ -2411,7 +2467,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   });
   const counts = {};
   for (const reduce of [false, true]) {
-    const { ctx, page, errs } = await openA5({ mode: "pvp" }, { reduce });
+    // 16.0 V: on Burnett's set — foot() finds the pawn by its pure white
+    // body, which Merida's shaded one does not have
+    const { ctx, page, errs } = await openA5({ mode: "pvp", pieceSet: "cburnett", pieceSetPicked: true }, { reduce });
     const down = await foot(page);
     const dotBefore = await paintAt(page, "e4", false, "centre");
     await page.evaluate(() => { window.__paints = 0; const real = HTMLCanvasElement.prototype.getContext;

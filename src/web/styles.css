@@ -421,12 +421,16 @@
       --btn-lift: var(--btn);
       --btn-lift-hover: var(--btn-hover);
       --btn-edge: var(--line-strong);
-      --control-shadow: 0 1px 1px rgba(0,0,0,.08);
+      /* 16.0 K: three levels and no others. Flat is no shadow (an edge or a
+         fill says where it is); --elev-1 lifts a control or the chosen
+         segment a pixel; --elev-2 is everything that floats (below). A ring
+         (spread only, no blur) is an edge, not a level. */
+      --elev-1: 0 1px 2px rgba(0,0,0,.14);
       --seg-tray: var(--control-ghost);
       --seg-on: var(--control-hover);
       /* 10.1 S2: one shadow for everything that floats — a dialog, a menu,
          the toast — a contact edge, a near shadow and a far one */
-      --shadow-pop: 0 0 0 1px rgba(0,0,0,.08), 0 6px 16px rgba(0,0,0,.16), 0 22px 56px rgba(0,0,0,.24);
+      --elev-2: 0 0 0 1px rgba(0,0,0,.08), 0 6px 16px rgba(0,0,0,.16), 0 22px 56px rgba(0,0,0,.24);
       /* 9.0 V1 (设计语言 v2, design/v9-m0/v9.css): the second hairline (a
          secondary button's edge, a field), the third ink (disabled, a
          placeholder, a move number), the one tint the accent is allowed to
@@ -505,8 +509,9 @@
          undoes 缺陷 17 (men sitting on flat colour with no contact at all);
          half keeps the contact at the base and loses the smudge. */
       --piece-shadow: rgba(38,20,4,.13);
-      /* v8-0-plan A3: flat colour; paper and marble name a texture here */
-      --board-texture: none;
+      /* v8-0-plan A3: paper and marble name a texture here; 16.0 V: wood
+         its grain, green and blue a fine matte tooth (board-skin.js) */
+      --board-texture: wood;
       --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #e0b07a, #c9965c 45%, #b8864e);
@@ -564,7 +569,7 @@
          at ΔL* 28 rather than Lichess's 35 (see the ceilings above). Marks
          in yellow and a dark olive, the way green boards mark a move. */
       --piece-shadow: rgba(10,26,4,.15);
-      --board-texture: none;
+      --board-texture: grain;
       --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #1a2e28, #15241f 50%, #101c18);
@@ -600,7 +605,7 @@
          last move on a blue board is a tint of the board — to a yellow-green
          and an orange hint. */
       --piece-shadow: rgba(30,44,54,.10);
-      --board-texture: none;
+      --board-texture: grain;
       --piece-ink: none;
 
       --board-frame: linear-gradient(180deg, #fffcf5, #f7f2e6);
@@ -805,6 +810,12 @@
       --radius-sm: 8px;
       --radius-md: 12px;
       --radius-lg: 16px;
+      /* 16.0 K: the rest of the corners are named, not typed — the inside of
+         a 2px tray (concentric with --radius-sm), a capsule, and the board's
+         own slight round when it has no frame */
+      --radius-inset: calc(var(--radius-sm) - 2px);
+      --radius-full: 999px;
+      --radius-board: 3px;
       /* the value track of a `label → value` row — measured, see .stat-row */
       --stat-v-w: 7.125rem;
       /* Three line-heights, and no fourth. 1.12 collapsed font-size to seven
@@ -975,8 +986,8 @@
                     the strong hairline, ink
          ghost      .tool-ic / .tool-txt / .go-close — no box until the
                     pointer is on it
-         danger     .act-btn.danger / .tool-btn.danger — the danger colour
-                    and its hairline, no fill until the pointer is on it
+         danger     .act-btn.danger / .tool-btn.danger — the secondary box
+                    in the danger colour; filled only in the confirm (16.0 K)
        × --ctl-h 36 / --ctl-h-sm 32, one line each (white-space: nowrap; a
        row that cannot hold its labels steps its columns down — fit-row.js —
        it does not break them), 14/600. The icon button is the ghost's square
@@ -986,7 +997,7 @@
       appearance: none; border: 0; border-radius: var(--radius-sm);
       background: var(--btn-lift); color: var(--text);
       border: 1px solid var(--btn-edge);
-      box-shadow: var(--control-shadow);
+      box-shadow: var(--elev-1);
       font: inherit; cursor: pointer;
       white-space: nowrap;
       transition: background var(--dur-quick) var(--ease), transform var(--dur-quick) var(--ease), opacity var(--dur-quick) var(--ease);
@@ -1023,6 +1034,14 @@
            changes width drags its neighbour along. 80px clears the widest of
            the six labels in the three languages, measured: Thinking at 78. */
     .ps-tools .tool-btn { height: var(--ctl-h-sm); min-width: 80px; }
+    /* 16.0: 80px was measured before the button had its icon. With it, the
+       hint's widest labels are 思考中 92px, ヒント 93, Thinking 107 (measured
+       in Chromium, 14px, the icon included): a relabel to "thinking" while
+       the engine answered widened the slot and pushed 悔棋 12px sideways —
+       the very move this rule exists to stop (WebKit caught it in CI). The
+       floor is the widest label of the language on screen. */
+    .ps-tools #btn-hint { min-width: 96px; }
+    html:lang(en) .ps-tools #btn-hint { min-width: 112px; }
     .ps-tools .slot-empty,
     .replay-bar .slot-empty { visibility: hidden; }
     .tool-btn:hover { background: var(--btn-lift-hover); }
@@ -1159,9 +1178,9 @@
        (边框 → 木框), unchanged; keyed as "not the frame" so that the page
        before app.js has set data-frame is already the default. */
     html:not([data-frame="frame"]) #app { --wood-pad: 0px; }
-    html:not([data-frame="frame"]) #board-wrap { background: none; box-shadow: none; border-radius: 3px; }
+    html:not([data-frame="frame"]) #board-wrap { background: none; box-shadow: none; border-radius: var(--radius-board); }
     html:not([data-frame="frame"]) #board,
-    html:not([data-frame="frame"]) #board-wrap::after { border-radius: 3px; }
+    html:not([data-frame="frame"]) #board-wrap::after { border-radius: var(--radius-board); }
     html:not([data-frame="frame"]) #app .eval-gauge.is-inset { left: 2px; width: 8px; }
 
     canvas {
@@ -1180,7 +1199,7 @@
       position: absolute;
       inset: var(--wood-pad);
       pointer-events: none;
-      box-shadow: inset 0 0 0 1px var(--board-edge, rgba(0,0,0,.22));
+      box-shadow: inset 0 0 0 1px var(--board-edge);
     }
     /* The grab / grabbing cursors are set inline from the board's pointer
        handlers (app.js), because whether a square is grabbable depends on the
@@ -1333,7 +1352,7 @@
     }
     .taken-p + .taken-p { margin-left: -10px; }
     .taken-p.new-kind { margin-left: 2px; }
-    .taken-p svg { width: 100%; height: 100%; display: block; }
+    .taken-p svg, .taken-p img { width: 100%; height: 100%; display: block; }
     .taken-diff {
       font-family: var(--font-num); font-variant-numeric: tabular-nums;
       font-size: 0.75rem; font-weight: 400; color: var(--muted);
@@ -1624,12 +1643,12 @@
     .theme-row button {
       border: 0; background: transparent; color: var(--muted);
       font-weight: 400;
-      border-radius: calc(var(--radius-sm) - 2px);
+      border-radius: var(--radius-inset);
     }
     .act-btn {
       border: 1px solid var(--btn-edge);
       background: var(--btn-lift); color: var(--text);
-      box-shadow: var(--control-shadow);
+      box-shadow: var(--elev-1);
       border-radius: var(--radius-sm);
     }
     .theme-row button:hover { color: var(--text); background: var(--btn-ghost); }
@@ -1680,7 +1699,7 @@
     .look-grid button { flex-direction: column; gap: 4px; padding: 8px 4px; }
     .look-swatch {
       display: block; width: 40px; height: 40px; overflow: hidden;
-      border-radius: 3px; box-shadow: 0 0 0 1px var(--card-border);
+      border-radius: var(--radius-sm); box-shadow: 0 0 0 1px var(--card-border);
     }
     .look-board { display: block; width: 100%; height: 100%; }
     /* 10.0 M0: the set as it stands on the board — the white king on the
@@ -1688,7 +1707,7 @@
        board swatch's height; the squares give way before the segment does */
     .look-kings {
       display: flex; width: 80px; max-width: 100%; overflow: hidden;
-      border-radius: 3px; box-shadow: 0 0 0 1px var(--card-border);
+      border-radius: var(--radius-sm); box-shadow: 0 0 0 1px var(--card-border);
     }
     .look-king {
       display: block; flex: 0 1 40px; min-width: 0; aspect-ratio: 1;
@@ -1719,7 +1738,7 @@
       color: var(--text);
       border-color: var(--accent-line);
       background: var(--seg-on);
-      box-shadow: 0 1px 2px rgba(0,0,0,.18);
+      box-shadow: var(--elev-1);
     }
     .op-av {
       flex: none; width: 32px; height: 32px; border-radius: var(--radius-sm);
@@ -1764,7 +1783,12 @@
       .op-grid.full .op-card, .op-grid.full .op-av.portrait { width: 28px; height: 28px; }
     }
     .ng-custom { margin: 4px 0 8px; }
-    .ng-custom-sum { cursor: pointer; font-size: 0.875rem; color: var(--muted); padding: 4px 0; }
+    /* 16.0 K: a fold's summary is a control and stands --ctl-h-sm high, a
+   line of 14px type centred in it (it was 29 / 21px, a thin target) */
+.ng-custom-sum, .ach-all > summary {
+  cursor: pointer; font-size: 0.875rem; color: var(--muted); line-height: var(--lh-body);
+  padding: calc((var(--ctl-h-sm) - 0.875rem * var(--lh-body)) / 2) 0;
+}
     /* the custom clock's two numbers, beside their units */
     .clock-custom { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; }
     .clock-field { display: inline-flex; align-items: center; gap: 8px; font-size: 0.8125rem; color: var(--muted); }
@@ -1791,12 +1815,31 @@
     .theme-row button.active {
       color: var(--text);
       background: var(--seg-on);
-      box-shadow: 0 1px 2px rgba(0,0,0,.18), 0 0 0 .5px var(--btn-edge);
+      box-shadow: var(--elev-1), 0 0 0 .5px var(--btn-edge);
       font-weight: 400;
     }
     /* v8-3-plan T1 (M2 评审 P2-1): a set of 看 N 步 / 盲走 is being made —
        its band, the engine, the first question's searches — so its button
        stands dimmed until the set starts; an attribute, not a rebuild */
+    /* 16.0 M: one block behind the chosen segment, which travels to the
+       next one (seg-thumb.js writes where); the button gives up its own
+       raised fill while the block is there. Behind the labels: the row is
+       its own stacking context and the block sits at -1 in it. */
+    .theme-row.has-thumb {
+      position: relative; isolation: isolate;
+      --thumb-x: 0px; --thumb-y: 0px; --thumb-w: 0px; --thumb-h: 0px; /* seg-thumb.js writes these on the row */
+    }
+    .theme-row.has-thumb::before {
+      content: ""; position: absolute; left: 0; top: 0; z-index: -1; pointer-events: none;
+      width: var(--thumb-w); height: var(--thumb-h);
+      transform: translate(var(--thumb-x), var(--thumb-y));
+      background: var(--seg-on); box-shadow: var(--elev-1), 0 0 0 .5px var(--btn-edge);
+      border-radius: var(--radius-inset);
+    }
+    .theme-row.thumb-live::before {
+      transition: transform var(--dur-base) var(--ease), width var(--dur-base) var(--ease), height var(--dur-base) var(--ease);
+    }
+    .theme-row.has-thumb > button.active { background: transparent; box-shadow: none; }
     .theme-row button[aria-busy="true"], .act-btn[aria-busy="true"] { opacity: 0.55; cursor: progress; }
 
     /* sound switch */
@@ -1804,7 +1847,7 @@
       position: relative;
       width: 36px; height: 20px;
       appearance: none; border: 0; padding: 0;
-      border-radius: 999px;
+      border-radius: var(--radius-full);
       background: color-mix(in srgb, var(--text) 18%, transparent);
       cursor: pointer;
       transition: background var(--dur-base) var(--ease);
@@ -1926,33 +1969,28 @@
        icons about 200px apart, no edge to say where one could be pressed,
        and a disabled key told apart only by a lighter grey. Lichess keeps
        the same four keys in the same place as one bar in four cells.
-       So: one outlined container (still no fill — the weight is the
-       outline, not a slab), four equal cells of --ctl-h split by hairlines,
-       a fill under the pointer and a deeper one while pressed. A disabled
+       So: four equal cells of --ctl-h, a fill under the pointer and a
+       deeper one while pressed. 16.0 K: no box and no hairlines between
+       them any more — a group of quiet buttons, the panel's lightest thing
+       instead of its heaviest (7.9's outline was the one bordered bar left). A disabled
        cell fades its glyph, not its hairline, and answers no hover. */
     .replay-bar {
       /* Four equal columns, always — not flex items sharing whatever is
          available. See renderReplayBar(): under `flex: 1` two visible keys
          took 97px each while five took 37px. A transport row whose keys
          resize by a factor of three as you use it is not one control. */
-      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0;
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
       margin-top: 8px;
-      border: 1px solid var(--card-border);
-      border-radius: var(--radius-sm);
       background: transparent;
     }
     .replay-bar button {
       appearance: none; border: 0; background: transparent;
       color: var(--muted);
       font: inherit; font-size: 1rem; line-height: var(--lh-tight);
-      height: var(--ctl-h); padding: 0; border-radius: 0;
+      height: var(--ctl-h); padding: 0; border-radius: var(--radius-sm);
       cursor: pointer;
       transition: background var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease);
     }
-    .replay-bar button + button { border-left: 1px solid var(--card-border); }
-    /* the container's corner, less its own 1px border */
-    .replay-bar button:first-child { border-radius: calc(var(--radius-sm) - 1px) 0 0 calc(var(--radius-sm) - 1px); }
-    .replay-bar button:last-child { border-radius: 0 calc(var(--radius-sm) - 1px) calc(var(--radius-sm) - 1px) 0; }
     .replay-bar button:hover:not(:disabled) {
       background: var(--btn-ghost);
       color: var(--text);
@@ -2067,7 +2105,11 @@
        occupies its width and still names an action it will not perform, which
        is the thing P3 set out to remove ("任一时刻可见的禁用控件数为 0"). */
     .act-btn:disabled { display: none; }
-    .act-btn.danger { color: var(--danger); background: transparent; border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+    /* 16.0 K: danger is a secondary button in the danger colour — the same
+       outline as its neighbours, red only in its words (on no fill: the
+       raised one took the red under 4.5 : 1 on 木 and 夜). It fills only at the
+       question that cannot be taken back (#confirm-modal below). */
+    .act-btn.danger { color: var(--danger); background: transparent; box-shadow: none; }
     .act-btn.danger:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
 
     /* grouped action links */
@@ -2289,11 +2331,11 @@
       background: var(--panel);
       color: var(--text);
       border: 1px solid var(--line-strong);
-      padding: 8px 16px; border-radius: 999px; font-size: 0.875rem; font-weight: 400;
+      padding: 8px 16px; border-radius: var(--radius-full); font-size: 0.875rem; font-weight: 400;
       /* 9.0 V3: one strip high (40px) at most, with an action in it — on a
          wide window it lies over the top strip, ending where the board begins */
       line-height: var(--lh-tight);
-      box-shadow: var(--shadow-pop);
+      box-shadow: var(--elev-2);
       opacity: 0; pointer-events: none;
       transition: opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
     }
@@ -2305,7 +2347,7 @@
       color: inherit; font: inherit; font-size: 0.8125rem; line-height: var(--lh-tight);
       width: 20px; height: 20px; flex: none;
       display: grid; place-items: center;
-      border-radius: 999px; cursor: pointer; opacity: 0.75;
+      border-radius: var(--radius-full); cursor: pointer; opacity: 0.75;
       transition: opacity var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
     }
     .toast-close:hover { opacity: 1; background: var(--btn-ghost); }
@@ -2368,7 +2410,7 @@
       border-radius: var(--radius-md);
       padding: 8px 16px; font-size: 0.875rem; font-weight: 400;
       line-height: var(--lh-body);
-      box-shadow: var(--shadow-pop);
+      box-shadow: var(--elev-2);
     }
 
     /* 9.0 V3: with the top bar gone the board starts 40px down, so a
@@ -2408,7 +2450,7 @@
          (v9.css: .panel .card { background: var(--bg) }) */
       --card: var(--bg);
       --btn: var(--bg);
-      box-shadow: var(--shadow-pop);
+      box-shadow: var(--elev-2);
       animation: modal-in .22s var(--ease);
       /* 7.6 §3c: no dialog is taller than the window. 「看诊断」 on 24 games
          measured a 1025px card in a 900px window, with no max-height and
@@ -2530,7 +2572,7 @@
       display: inline-block; margin-left: 8px; padding: 0 8px;
       font-size: 0.75rem; font-weight: 400; line-height: var(--lh-body);
       color: var(--muted); background: var(--btn-ghost);
-      border-radius: 999px; vertical-align: 1px;
+      border-radius: var(--radius-full); vertical-align: 1px;
     }
 
     .text-input {
@@ -2618,7 +2660,7 @@
         padding: 12px 24px 16px;
         border-left: 0; border-top: 1px solid var(--panel-border);
         transform: translateY(100%);
-        box-shadow: 0 -12px 40px rgba(0,0,0,.22);
+        box-shadow: var(--elev-2);
       }
       #app.panel-open .side { transform: translateY(0); }
       #app.panel-open .stage {
@@ -2657,7 +2699,7 @@
     @media (max-width: 820px) {
       /* lying over the board, the panel is lifted off it (beside it, at
          821 and up, it is the page's own surface and casts nothing) */
-      .side { box-shadow: -12px 0 40px rgba(0,0,0,.28); }
+      .side { box-shadow: var(--elev-2); }
       #app.panel-open .stage { padding-right: var(--stage-pad); }
       #app.panel-open #board-wrap {
         --free-w: calc(var(--pv-w) - 2 * var(--stage-pad));
@@ -2762,7 +2804,7 @@
         border-left: 0; border-top: 1px solid var(--panel-border);
         border-radius: var(--radius-lg) var(--radius-lg) 0 0;
         transform: translateY(100%);
-        box-shadow: 0 -12px 40px rgba(0,0,0,.28);
+        box-shadow: var(--elev-2);
       }
       #app.panel-open .side { transform: translateY(0); }
       /* 9.0 M3: three stops — shut, half (the reserve: the board and the
@@ -3108,7 +3150,7 @@
       padding: 4px;
       background: var(--panel); border: 1px solid var(--panel-border);
       border-radius: var(--radius-md);
-      box-shadow: var(--shadow-pop);
+      box-shadow: var(--elev-2);
     }
     .move-menu button {
       appearance: none; border: 0; background: transparent;
@@ -3360,7 +3402,7 @@
     }
     .eval-bar {
       position: absolute; inset: 0; overflow: hidden;
-      border-radius: 3px;
+      border-radius: var(--radius-board);
       background: var(--side-black);
       /* the interface's own hairline: on the three dark shells the black end
          of the gauge is the colour of the page, and only its edge says where
@@ -3583,8 +3625,7 @@
     }
     /* 15.0 S3: the next medal on the page, all fifteen in the fold under it */
     .ach-all { margin-top: 8px; }
-    .ach-all > summary { font-size: 0.875rem; color: var(--muted); }
-    .ach-all > .ach-grid { margin-top: 8px; }
+        .ach-all > .ach-grid { margin-top: 8px; }
     .ach-item {
       display: grid; grid-template-rows: 48px auto auto; justify-items: center; align-content: start;
       row-gap: 4px; padding: 8px 4px;
@@ -3970,7 +4011,9 @@ span[data-icon] { display: inline-grid; place-items: center; }
   padding: 0 2px; font-size: 1rem;
 }
 /* 10.1 F4: 12, like every other Chinese word in the interface — 11 is
-   left to coordinates, the move list's ?! and the numbers on charts */
+   left to coordinates, the move list's ?! and the numbers on charts.
+   (16.0 U tried 13: with five tools on the row, 开局 / 复制 / 导出 / 收起
+   and their English and Japanese no longer fit their cells — it stays 12) */
 .side-wide .tool-lbl {
   display: block; max-width: 100%;
   font-size: 0.75rem; font-weight: 400; line-height: var(--lh-tight);
@@ -3994,11 +4037,11 @@ span[data-icon] { display: inline-grid; place-items: center; }
    filled accent means "the thing to press here", and 认输 is not that.
    9.0 V1: the fourth kind, the same everywhere — the danger colour and its
    hairline, filled only faintly under the pointer */
-.tool-btn.danger {
-  background: transparent; color: var(--danger); font-weight: 400;
-  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
-}
+.tool-btn.danger { color: var(--danger); font-weight: 400; background: transparent; box-shadow: none; }
 .tool-btn.danger:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+/* 16.0 K: the confirm's answer to 认输 or a deletion — the one place red fills */
+#confirm-ok.danger { background: var(--danger); color: var(--on-danger); border-color: transparent; }
+#confirm-ok.danger:hover { background: color-mix(in srgb, var(--danger) 88%, var(--text)); }
 
 /* ------------------------------------------------------------------
    The result (7.7, v7-7-plan §4). 9.0 M1: a bar in the bottom strip's
@@ -4260,7 +4303,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   position: absolute; z-index: 30; top: calc(100% + 4px); right: 0;
   display: grid; padding: 4px; min-width: 128px;
   border: 1px solid var(--card-border); border-radius: var(--radius-md);
-  background: var(--card); box-shadow: var(--shadow-pop);
+  background: var(--card); box-shadow: var(--elev-2);
 }
 /* 15.0 S2 — 今天's three side doors under one ⋯ by the greeting */
 .today-more { align-self: start; }
@@ -4291,7 +4334,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .pz-hero-v { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; }
 .prov-tag {
   font-size: 0.75rem; font-weight: 400; line-height: var(--lh-tight); color: var(--muted);
-  padding: 2px 8px; border-radius: 999px; border: 1px solid var(--card-edge);
+  padding: 2px 8px; border-radius: var(--radius-full); border: 1px solid var(--card-edge);
 }
 .pz-hero-more { flex-basis: 100%; font-size: 0.875rem; font-weight: 400; color: var(--muted); }
 .pz-rating-soon { font-size: 0.75rem; color: var(--muted); align-self: center; }
@@ -4338,7 +4381,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .pz-tile[hidden] { display: none; }
 .pz-tile-name { font-size: 0.875rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pz-tile-n { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
-.pz-tile:focus-visible, .pz-review:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pz-tile:focus-visible, .pz-review:focus-visible { outline-offset: 2px; } /* 16.0 U: the ring is :focus-visible's, these only place it */
 .pz-modes-row .act-btn.active { background: var(--accent-soft); }
 .pz-modes-row .act-btn[aria-busy="true"] { opacity: 0.6; }
 #pz-themes-row .tool-txt { margin-left: -12px; } /* 10.1 L4: its words under the text above */
@@ -4430,7 +4473,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   background: var(--accent-soft);
   color: var(--accent);
 }
-.rail-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rail-btn:focus-visible { outline-offset: -2px; }
 /* 偏好 is not a view: it stands apart at the foot of the column */
 .rail-end { margin-top: auto; }
 
@@ -4485,7 +4528,14 @@ span[data-icon] { display: inline-grid; place-items: center; }
   scrollbar-width: thin;
 }
 .page[hidden] { display: none; }
-.page:not([hidden]) { animation: pane-in var(--dur-base) var(--ease); }
+/* 16.0 M: a page arrives — it fades in and rises the last 4px, over
+   --dur-slow (a page is the biggest thing that moves); stopped under reduce
+   motion by the blanket rule, like every keyframe */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.page:not([hidden]) { animation: page-in var(--dur-slow) var(--ease); }
 #app.page-on .chrome, #app.page-on .side, #app.page-on .scrim { visibility: hidden; }
 .page-inner {
   max-width: 1120px; margin: 0 auto;
@@ -4593,7 +4643,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
   display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 16px; align-items: center;
 }
 .today-c:hover { background: color-mix(in srgb, var(--card) 88%, var(--text)); }
-.today-c:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.today-c:focus-visible { outline-offset: 2px; }
 .today-c-txt { display: grid; gap: 4px; min-width: 0; }
 /* names wrap rather than lose their end (Paul Morphy – Duke of Brunswick…):
    the three cards stretch to one height in their grid */
@@ -4628,15 +4678,16 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .today-bar.fresh > i { visibility: hidden; }
 /* the static board of a card (mini-board.js): the board's own colours */
 .mini-board {
-  display: grid; grid-template-columns: repeat(8, 1fr); aspect-ratio: 1;
+  /* 16.0 V: rows fixed too — an empty rank is as tall as one with pieces */
+  display: grid; grid-template: repeat(8, minmax(0, 1fr)) / repeat(8, minmax(0, 1fr)); aspect-ratio: 1;
   border-radius: var(--radius-sm); overflow: hidden; box-shadow: inset 0 0 0 1px var(--board-edge);
 }
 .today-hero-board { width: 240px; }
-.mini-sq { position: relative; display: block; }
+.mini-sq { position: relative; display: block; min-width: 0; min-height: 0; }
 .mini-sq.l { background: var(--sq-light); }
 .mini-sq.d { background: var(--sq-dark); }
 .mini-sq.last::before { content: ""; position: absolute; inset: 0; background: var(--sq-last); }
-.mini-sq img { position: relative; display: block; width: 100%; height: 100%; }
+.mini-sq img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
 @media (max-width: 900px) {
   .today-row, .today-cont { grid-template-columns: minmax(0, 1fr); }
   .today-hero { grid-template-columns: 128px minmax(0, 1fr); gap: 16px; }
@@ -4691,7 +4742,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .set-cat:hover { background: var(--btn-ghost); }
 .set-cat[aria-selected="true"] { background: var(--accent-soft); }
 .set-cat[aria-selected="true"] .set-cat-ic { color: var(--accent); }
-.set-cat:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.set-cat:focus-visible { outline-offset: -2px; }
 .set-pane { display: grid; gap: 24px; }
 .set-pane[hidden] { display: none; }
 .set-pane:not([hidden]) { animation: pane-in var(--dur-base) var(--ease); }

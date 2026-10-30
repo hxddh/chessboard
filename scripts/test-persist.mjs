@@ -1019,21 +1019,21 @@ for (const how of ["restore", "clear"]) {
 {
   const cases = [
     // [stored, want look, want data-theme when the system is light / dark]
-    [null, { appearance: "system", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "day", "wood"],
-    [{ mode: "ai" }, { appearance: "system", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "day", "wood"],
-    [{ appearance: "dark", boardId: "wood" }, { appearance: "dark", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "wood", "wood"],
-    [{ appearance: "dark", boardId: "green" }, { appearance: "dark", boardId: "green", boardFrame: "flat", pieceSet: "cburnett" }, "night", "night"],
-    [{ appearance: "light", boardId: "wood" }, { appearance: "light", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "day", "day"],
-    [{ appearance: "light", boardId: "blue" }, { appearance: "light", boardId: "blue", boardFrame: "flat", pieceSet: "cburnett" }, "notebook", "notebook"],
-    [{ appearance: "system", boardId: "green" }, { appearance: "system", boardId: "green", boardFrame: "flat", pieceSet: "cburnett" }, "notebook", "night"],
+    [null, { appearance: "system", boardId: "wood", boardFrame: "flat", pieceSet: "merida" }, "day", "wood"],
+    [{ mode: "ai" }, { appearance: "system", boardId: "wood", boardFrame: "flat", pieceSet: "merida" }, "day", "wood"],
+    [{ appearance: "dark", boardId: "wood" }, { appearance: "dark", boardId: "wood", boardFrame: "flat", pieceSet: "merida" }, "wood", "wood"],
+    [{ appearance: "dark", boardId: "green" }, { appearance: "dark", boardId: "green", boardFrame: "flat", pieceSet: "merida" }, "night", "night"],
+    [{ appearance: "light", boardId: "wood" }, { appearance: "light", boardId: "wood", boardFrame: "flat", pieceSet: "merida" }, "day", "day"],
+    [{ appearance: "light", boardId: "blue" }, { appearance: "light", boardId: "blue", boardFrame: "flat", pieceSet: "merida" }, "notebook", "notebook"],
+    [{ appearance: "system", boardId: "green" }, { appearance: "system", boardId: "green", boardFrame: "flat", pieceSet: "merida" }, "notebook", "night"],
     [{ appearance: "light", pieceSet: "merida" }, { appearance: "light", boardId: "wood", boardFrame: "flat", pieceSet: "merida" }, "day", "day"],
     // garbage falls back field by field
-    [{ appearance: "toString", pieceSet: "nope" }, { appearance: "system", boardId: "wood", boardFrame: "flat", pieceSet: "cburnett" }, "day", "wood"],
+    [{ appearance: "toString", pieceSet: "nope" }, { appearance: "system", boardId: "wood", boardFrame: "flat", pieceSet: "merida" }, "day", "wood"],
     [{ appearance: "light", boardId: "marble", boardFrame: "frame", pieceSet: "fantasy" },
       { appearance: "light", boardId: "marble", boardFrame: "frame", pieceSet: "fantasy" }, "day", "day"],
     [{ appearance: "dark", boardId: "paper", boardFrame: "sideways", pieceSet: "classic" },
       { appearance: "dark", boardId: "paper", boardFrame: "flat", pieceSet: "classic" }, "wood", "wood"],
-    [{ appearance: "sepia", boardId: "blue" }, { appearance: "system", boardId: "blue", boardFrame: "flat", pieceSet: "cburnett" }, "notebook", "night"],
+    [{ appearance: "sepia", boardId: "blue" }, { appearance: "system", boardId: "blue", boardFrame: "flat", pieceSet: "merida" }, "notebook", "night"],
   ];
   for (const [stored, want, lightShell, darkShell] of cases) {
     const got = readLook(stored);
@@ -1047,8 +1047,14 @@ for (const how of ["restore", "clear"]) {
     "…which follows the system, on the flat board");
   // what the stored record can say is what the pickers offer
   for (const id of PIECE_SET_IDS) {
-    assert(readLook({ appearance: "system", pieceSet: id }).pieceSet === id, "piece set " + id + " survives a save");
+    assert(readLook({ appearance: "system", pieceSet: id, pieceSetPicked: true }).pieceSet === id, "piece set " + id + " survives a save");
   }
+  // 16.0 V: Merida is the default, and a 15.x save's "cburnett" was the old
+  // default written out, not a choice — unless 16.0 saw it picked
+  assert(LOOK_DEFAULT.pieceSet === "merida", "16.0 V: the default set is Merida");
+  assert(readLook({ pieceSet: "cburnett" }).pieceSet === "merida" && readLook({ pieceSet: "cburnett", pieceSetPicked: true }).pieceSet === "cburnett"
+    && readLook({ pieceSet: "fantasy" }).pieceSet === "fantasy",
+    "16.0 V: an unpicked cburnett (the 15.x default) becomes Merida; a picked one, or any other set, stays");
   for (const id of BOARD_IDS) {
     assert(readLook({ appearance: "system", boardId: id }).boardId === id, "board " + id + " survives a save");
   }

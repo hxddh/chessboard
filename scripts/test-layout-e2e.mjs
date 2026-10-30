@@ -4009,12 +4009,13 @@ if (scenario()) {
         document.body.appendChild(probe);
         const danger = getComputedStyle(probe).color;
         probe.remove();
-        return { fg: getComputedStyle(ok).color, danger, cls: ok.className };
+        return { bg: getComputedStyle(ok).backgroundColor, danger, cls: ok.className, resign: document.getElementById("btn-resign").className };
       });
-      // 9.0 V1: danger is the fourth button kind — the danger colour and its
-      // hairline, not a red slab (and never the accent)
-      assert(btn.fg === btn.danger && /danger/.test(btn.cls),
-        "认输确认框的确认按钮是危险按钮，字取自 --danger(" + btn.fg + " vs " + btn.danger + ")");
+      // 9.0 V1: danger is the fourth button kind, never the accent. 16.0 K:
+      // 认输 in the panel is the same secondary button as 提和; red fills
+      // only here, at the question
+      assert(btn.bg === btn.danger && /danger/.test(btn.cls) && !/danger/.test(btn.resign),
+        "认输在面板里是次按钮，确认框的确认键才填红(" + JSON.stringify(btn) + ")");
       await page.click("#confirm-ok");
     }, /白方胜|黑方胜/, /认输/],
     ["和棋", async (page) => {
@@ -4734,17 +4735,19 @@ if (scenario()) {
       // §1c — four equal cells of one bar, 36px, reached in order by Tab
       const bar = await page.evaluate(() => {
         const seg = document.getElementById("replay-seg");
-        const cs = getComputedStyle(seg);
+        const cs = getComputedStyle(seg), b0 = seg.querySelector("button");
         return {
-          radius: parseFloat(cs.borderTopLeftRadius), border: cs.borderTopStyle,
+          radius: b0 ? parseFloat(getComputedStyle(b0).borderTopLeftRadius) : 0, border: cs.borderTopStyle,
           cells: [...seg.querySelectorAll("button")].map((b) => {
             const r = b.getBoundingClientRect();
             return { id: b.id, w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10, off: b.disabled };
           }),
         };
       });
-      assert(bar.cells.length === 4 && bar.border === "solid" && bar.radius > 0,
-        at + "§1c 翻棋谱是一条带圆角外框的按钮栏（" + bar.cells.length + " 格，" + bar.border + "，r=" + bar.radius + "）");
+      // 16.0 K: no outline round the four any more — a group of quiet
+      // buttons, each with its own rounded corner
+      assert(bar.cells.length === 4 && bar.border === "none" && bar.radius > 0,
+        at + "§1c 翻棋谱是一组四个静默按钮，没有外框（" + bar.cells.length + " 格，" + bar.border + "，r=" + bar.radius + "）");
       const cw = bar.cells.map((c) => c.w), ch = bar.cells.map((c) => c.h);
       assert(Math.max(...cw) - Math.min(...cw) <= 1 && ch.every((h) => h === 36),
         at + "§1c 四格同宽同高 36px（宽 " + cw.join("/") + "，高 " + ch.join("/") + "）");

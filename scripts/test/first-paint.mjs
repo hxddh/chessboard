@@ -93,24 +93,27 @@ export async function run() {
       loadModule(lctx, "src/web/js/lazy-content.js");
       const plan = (settings, nav) => lctx.bootPlan(settings == null ? null : JSON.stringify(settings), nav).join(" ");
       const cases = [
-        [{ langId: "zh-CN", mode: "ai" }, null, ""],
-        [{ langId: "en" }, null, "chunk-lang-en.js"],
+        [{ langId: "zh-CN", mode: "ai" }, null, "chunk-merida.js"],
+        [{ langId: "en" }, null, "chunk-lang-en.js chunk-merida.js"],
         // Japanese reads English as its bridge, so it takes both, English first
-        [{ langId: "ja" }, null, "chunk-lang-en.js chunk-lang-ja.js"],
+        [{ langId: "ja" }, null, "chunk-lang-en.js chunk-lang-ja.js chunk-merida.js"],
         // settings without a language are the Chinese default, whatever the OS says
-        [{ mode: "ai" }, { languages: ["en-US"] }, ""],
+        [{ mode: "ai" }, { languages: ["en-US"] }, "chunk-merida.js"],
         // no settings at all is a first run: the system locale decides
-        [null, { languages: ["ja-JP", "en"] }, "chunk-lang-en.js chunk-lang-ja.js"],
-        [null, { languages: ["zh-TW"] }, ""],
+        [null, { languages: ["ja-JP", "en"] }, "chunk-lang-en.js chunk-lang-ja.js chunk-merida.js"],
+        [null, { languages: ["zh-TW"] }, "chunk-merida.js"],
         [{ langId: "en", mode: "puzzle", pieceSet: "merida" }, null, "chunk-lang-en.js chunk-mined.js chunk-merida.js"],
         // v8-0-plan A3: every set outside the bundle is fetched ahead of the
-        // bundle for the player who chose it; the two inside it need nothing
+        // bundle for the player who chose it; the one inside it needs nothing.
+        // 16.0 V: and the default, Merida, for everyone else — a 15.x save's
+        // unpicked cburnett included (look.js readLook)
         [{ pieceSet: "fantasy" }, null, "chunk-pieces-fantasy.js"],
         [{ pieceSet: "chessnut" }, null, "chunk-pieces-chessnut.js"],
-        [{ pieceSet: "cburnett" }, null, ""],
+        [{ pieceSet: "cburnett" }, null, "chunk-merida.js"],
+        [{ pieceSet: "cburnett", pieceSetPicked: true }, null, "chunk-pieces-cburnett.js"],
         [{ pieceSet: "classic" }, null, ""],
-        [{ pieceSet: "toString" }, null, ""],
-        [{ langId: "xx" }, null, ""],
+        [{ pieceSet: "toString" }, null, "chunk-merida.js"],
+        [{ langId: "xx" }, null, "chunk-merida.js"],
       ];
       for (const [settings, nav, want] of cases) {
         const got = plan(settings, nav);
@@ -136,7 +139,7 @@ export async function run() {
         const LICENCE = /\b(GPLv[23]\+?|GPL|Apache (License )?2\.0|MIT|CC BY(-SA)? 4\.0)\b/;
         const AUTHOR = { cburnett: "Burnett", classic: "Cburnett", merida: "Armando Hernandez Marroquin",
           chessnut: "Alexis Luengas", fantasy: "Maurizio Monge", celtic: "Maurizio Monge", spatial: "Maurizio Monge" };
-        assert(ids.length >= 7 && ids[0] === "cburnett", "seven sets, the default first (" + ids.join(", ") + ")");
+        assert(ids.length >= 7 && ids[0] === "merida", "seven sets, the default first (" + ids.join(", ") + ")");
         for (const id of ids) {
           const file = id === "classic" ? "pieces.js" : "pieces-" + id + ".js";
           const src = fs.existsSync(path.join(root, "src/web/js", file)) ? fs.readFileSync(path.join(root, "src/web/js", file), "utf8") : "";
@@ -147,7 +150,7 @@ export async function run() {
           const name = id === "classic" ? null : AUTHOR[id];
           if (name) assert(credits.every((c) => c.includes(name)), "the About panel credits " + name + " in all three languages");
           // in the bundle, or a chunk that is built
-          const inBundle = id === "cburnett" || id === "classic";
+          const inBundle = id === "classic"; // 16.0 V: cburnett left the bundle
           assert(inBundle || (lctx.PIECE_CHUNKS[id] && CHUNKS.some((c) => c.entry === "src/web/js/" + file && path.basename(c.out) === lctx.PIECE_CHUNKS[id].file)),
             "piece set " + id + " is " + (inBundle ? "in the bundle" : "its own chunk, built from " + file));
         }

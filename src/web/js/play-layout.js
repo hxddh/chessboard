@@ -45,6 +45,7 @@
  */
 import { reconcile } from "./keyed.js";
 import { watchFitRows } from "./fit-row.js";
+import { watchSegThumbs } from "./seg-thumb.js";
 
 /** The play view's width from which the wide layout is considered (A2). */
 export const WIDE_MIN = 1280;
@@ -317,6 +318,7 @@ export function watchPlayLayout(d) {
   // 9.0 V1: a label is one line everywhere (white-space: nowrap), so the
   // action rows on the pages and in 偏好设置 step their columns down too
   for (const el of document.querySelectorAll(".page")) watchFitRows(el, { wide: false });
+  watchSegThumbs(document); // 16.0 M: the chosen segment slides
   if (d.list) { watchColumns(d.list); keepCurrentInView(d.list); }
   if (d.list && d.strip) watchStrip(d.list, d.strip);
   if (d.opening && d.infoOpening) watchOpening(d.opening, d.infoOpening);

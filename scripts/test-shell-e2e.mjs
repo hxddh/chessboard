@@ -447,7 +447,9 @@ const state = (page) => page.evaluate(() => {
 // (#today-go); 下一步建议's "to a board view" is the three 继续 cards, each
 // into 训练 at its segment.
 {
-  const { ctx, page, errs } = await open({ view: "home" });
+  // 16.0 V: on Burnett's set, the one whose pen the 12.0 S check below reads
+  // (Merida, the default since, draws its own weights)
+  const { ctx, page, errs } = await open({ view: "home", pieceSet: "cburnett", pieceSetPicked: true });
   // 残局's card waits for the camp's chunk
   await page.waitForFunction(() => { const c = document.querySelector('#today-cont .today-c[data-seg="endgame"]'); return !!c && !c.hidden; },
     null, { timeout: 8000 }).catch(() => {});
@@ -459,6 +461,9 @@ const state = (page) => page.evaluate(() => {
       head: txt("home-h"), date: txt("today-date"), hero: txt("today-hero-title"), go: txt("today-go"),
       newGame: vis(document.getElementById("today-more")) ? txt("today-new") : "", // 15.0 S2: behind ⋯
       heroBoard: document.querySelectorAll("#today-hero-board .mini-sq").length,
+      // 16.0 V: the 8 × 8 is square — an empty rank is as tall as a full one
+      cells: [...document.querySelectorAll("#today-hero-board .mini-sq, #today-cont .today-c .mini-sq")]
+        .map((q) => q.getBoundingClientRect()).filter((r) => r.width > 0),
       // 12.0 S: the pen follows the square — a card's 14 px squares get about
       // a pixel of outline, the hero's bigger ones a finer pen (1.2 from 37 px)
       pens: [document.querySelector("#today-cont .today-c .mini-sq img"), document.querySelector("#today-hero-board .mini-sq img")]
@@ -471,6 +476,12 @@ const state = (page) => page.evaluate(() => {
       ratings: [txt("today-r-game"), txt("today-r-pz")],
     };
   });
+  {
+    const off = today.cells.filter((r) => Math.abs(r.width - r.height) > 0.5);
+    assert(today.cells.length >= 64 && !off.length,
+      "16.0 V: 小棋盘 64 格等宽等高(误差 ≤ 0.5 px;" + off.length + " 格不是方的:" + JSON.stringify(off.slice(0, 3)) + ")");
+    delete today.cells;
+  }
   assert(!!today.head && !!today.date && !!today.hero && !!today.go && today.heroBoard === 64 && today.newGame === "新对局",
     "S1: 今天页有问候、日期,主卡是一句话 + 一块小棋盘 + 按钮,旁边是「新对局」(" + JSON.stringify(today) + ")");
   // v11-0-plan U1: the rings say what is left; no sentence repeats them

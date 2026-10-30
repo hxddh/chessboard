@@ -173,7 +173,7 @@ export function mount(container, deps) {
     if (b.dataset.appearance && b.dataset.appearance !== look.appearance) patch = { appearance: b.dataset.appearance };
     else if (b.dataset.boardId && b.dataset.boardId !== look.boardId) patch = { boardId: b.dataset.boardId };
     else if (b.dataset.frame && b.dataset.frame !== look.boardFrame) patch = { boardFrame: b.dataset.frame };
-    else if (b.dataset.pieceSet && b.dataset.pieceSet !== look.pieceSet) patch = { pieceSet: b.dataset.pieceSet };
+    else if (b.dataset.pieceSet && b.dataset.pieceSet !== look.pieceSet) patch = { pieceSet: b.dataset.pieceSet, pieceSetPicked: true };
     if (patch) deps.setLook(patch);
   };
   for (const g of groups) g.addEventListener("click", onPick);

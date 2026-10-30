@@ -145,8 +145,9 @@ export async function run() {
       const bar = /\.replay-bar\s*\{([^}]*)\}/.exec(stripped);
       assert(!!bar, ".replay-bar is styled");
       assert(/background:\s*transparent/.test(bar[1]), "the replay bar carries no fill");
-      assert(/\bborder:\s*1px/.test(bar[1]) && /border-radius:\s*var\(--radius-/.test(bar[1]),
-        "…and is one rounded container (7.9 §1c)");
+      // 16.0 K: and no box — four quiet buttons, not an outlined bar
+      assert(!/\bborder:/.test(bar[1]) && /gap:\s*4px/.test(bar[1]),
+        "…and is a group of quiet buttons, not an outlined container (16.0 K)");
       assert(/repeat\(4,\s*minmax\(0,\s*1fr\)\)/.test(bar[1]), "…of four equal cells");
       const cell = /\.replay-bar button\s*\{([^}]*)\}/.exec(stripped);
       assert(cell && /transition:[^;]*var\(--dur-quick\) var\(--ease\)/.test(cell[1]),
@@ -415,8 +416,9 @@ export async function run() {
       assert(/r\.kind !== "win"[\s\S]{0,400}fxAt\(_fx\.badge, durMs\("--dur-slow"\), now\)/.test(bj),
         "11.0 M: a won game's king glows in on --dur-slow, with the result badges");
       assert(/\.go-card \{[^}]*animation: result-in var\(--dur-slow\) var\(--ease\);/.test(stripped) &&
-        /\.page:not\(\[hidden\]\) \{ animation: pane-in var\(--dur-base\) var\(--ease\); \}/.test(stripped),
-        "11.0 M: the result card rises in and the pages cross-fade, on the duration tokens");
+        /\.page:not\(\[hidden\]\) \{ animation: page-in var\(--dur-slow\) var\(--ease\); \}/.test(stripped) &&
+        /@keyframes page-in \{\s*from \{ opacity: 0; transform: translateY\(4px\); \}/.test(stripped),
+        "11.0 M: the result card rises in, and (16.0 M) a page fades in rising 4px, on the duration tokens");
       assert(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?animation-duration: \.01ms !important;/.test(stripped),
         "11.0 M: …and every keyframe stops under reduced motion");
     }
@@ -468,11 +470,11 @@ export async function run() {
       assert(tray && /background:\s*var\(--seg-tray\)/.test(tray[1]) && !/box-shadow/.test(tray[1]),
         "the segment's tray is recessed: a tint, no hairline (10.1 C1)");
       const on = /\n    \.theme-row button\.active \{([^}]*)\}/.exec(stripped);
-      assert(on && /background:\s*var\(--seg-on\)/.test(on[1]) && /box-shadow:\s*0 1px 2px/.test(on[1]) && !/--accent/.test(on[1]),
+      assert(on && /background:\s*var\(--seg-on\)/.test(on[1]) && /box-shadow:\s*var\(--elev-1\)/.test(on[1]) && !/--accent/.test(on[1]),
         "…and the chosen segment is raised out of it, not outlined in the accent");
       const act = /\n    \.act-btn \{([^}]*)\}/.exec(stripped);
       assert(act && /border:\s*1px solid var\(--btn-edge\)/.test(act[1]) && /background:\s*var\(--btn-lift\)/.test(act[1]) &&
-        /box-shadow:\s*var\(--control-shadow\)/.test(act[1]),
+        /box-shadow:\s*var\(--elev-1\)/.test(act[1]),
         "…and an action is the secondary button — lifted, an ink hairline, a one-pixel shadow (10.1 C)");
       // 10.1 (Codex on #115): the macOS floor (11.0) may have no color-mix();
       // a custom property holding one is invalid there and the control that
@@ -685,12 +687,29 @@ export async function run() {
     // radius: the tokens exist; use them
     // 0 is a decision, not a stray value: the board is square-cornered on
     // purpose (concentric radii — see styles.css)
-    const OK_RADIUS = /^(0|var\(--radius-(sm|md|lg)\)|999px|50%|3px|var\(--radius-sm\) var\(--radius-sm\) 0 0|calc\()/;
+    // 16.0 K: three steps (8 / 12 / 16), a circle, and three named others —
+    // the inside of a tray, a capsule, the board's own — and nothing typed:
+    // each corner of a value is one of these or 0
+    const RADIUS_PART = /^(0|50%|var\(--radius-(sm|md|lg|inset|full|board)\))$/;
     const badRadius = [...stripped.matchAll(/border-radius:\s*([^;{}]+);/g)]
       .map((m) => m[1].trim())
-      .filter((v) => !OK_RADIUS.test(v));
+      .filter((v) => !v.split(/\s+(?![^(]*\))/).every((x) => RADIUS_PART.test(x)));
     assert(badRadius.length === 0,
       "radii come from the tokens" + (badRadius.length ? " — raw: " + [...new Set(badRadius)].join(", ") : ""));
+    // 16.0 K: three levels — flat (none), --elev-1, --elev-2 — and the
+    // board's own; anything else drawn with box-shadow is a ring (spread
+    // only: no offset, no blur), which is an edge, not a level
+    {
+      const RING = /^(inset )?0 0 0 [\d.]+px [^,]+$/;
+      const LEVEL = /^(none|var\(--elev-[12]\)|var\(--board-shadow\))$/;
+      const badShadow = [...stripped.matchAll(/box-shadow:\s*([^;{}]+);/g)]
+        .map((m) => m[1].trim())
+        .filter((v) => !v.split(/,\s*(?![^(]*\))/).every((x) => LEVEL.test(x.trim()) || RING.test(x.trim())));
+      assert(badShadow.length === 0,
+        "shadows are a level or a ring (16.0 K)" + (badShadow.length ? " — raw: " + [...new Set(badShadow)].join(" | ") : ""));
+      const defs = [...stripped.matchAll(/--elev-(\d+):/g)].map((m) => m[1]);
+      assert(JSON.stringify([...new Set(defs)].sort()) === '["1","2"]', "…and the levels are two tokens, declared (" + defs.join(",") + ")");
+    }
 
     // colour: the danger red used to be one salmon that ignored all four themes
     // scoped past the theme blocks: that is where the literal belongs, once
