@@ -99,13 +99,13 @@
     {
       "name": "Node.js（CI 与 package.json engines）",
       "kind": "runtime",
-      "current": "24（setup-node node-version: 24；engines >=24）",
+      "current": "26（setup-node node-version: 26；engines >=26）",
       "pinnedIn": [".github/workflows/*.yml", "package.json engines"],
-      "latest": "v24.21.0 LTS Krypton（2026-09-07）；Current v26.10.0（2026-09-21，尚未进入 LTS）",
+      "latest": "v26.13.0 LTS Lithium（2026-10-28）",
       "source": ["https://nodejs.org/dist/index.json"],
-      "checkedAt": "2026-09-29",
-      "recommendation": "not-needed",
-      "note": "24 仍是 LTS。26 进入 LTS 之后（按惯例 10 月下旬）再评估；import-puzzles 依赖 Node 的 zstd，跨大版本要重跑导入核对。"
+      "checkedAt": "2026-10-30",
+      "recommendation": "done-15.0",
+      "note": "v15-0-plan E：26 于 10-28 进入 LTS，CI 与 engines 一起换到 26（test-deps 要求两处一致）。import-puzzles 依赖 Node 的 zstd：在 26.13.0 上跑 test-learning 的导入用例（.zst、.csv、排除表、截断、坏数据）全过，test:static 全过。"
     },
     {
       "name": "actions/checkout",
