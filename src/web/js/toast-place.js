@@ -71,9 +71,9 @@ export function placeToastAt(el, appEl) {
     el.style.left = Math.round(b.right - a.left + room - EDGE - half) + "px";
     return;
   }
-  let top = Math.max(0, Math.min(GAP, b.top - a.top - h));
-  if (a.bottom - under >= h + LOW + GAP && !onSheet(a.height - LOW - h)) top = a.height - LOW - h;
-  else if (b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP && !onSheet(b.bottom - a.top + GAP) && !barUp()) top = b.bottom - a.top + GAP;
+  const top = a.bottom - under >= h + LOW + GAP && !onSheet(a.height - LOW - h) ? a.height - LOW - h
+    : b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP && !onSheet(b.bottom - a.top + GAP) && !barUp() ? b.bottom - a.top + GAP
+    : Math.max(0, Math.min(GAP, b.top - a.top - h));
   el.style.top = Math.round(top) + "px";
   el.style.left = Math.round(w.left - a.left + w.width / 2) + "px";
 }

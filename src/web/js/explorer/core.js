@@ -218,7 +218,7 @@ export function bucketFor(buckets, ply) {
  * the ECO name on a transposition; opening-tree.js's `childrenAt` answers the
  * same question per move order, and scripts/test-explorer.mjs holds the two
  * to agreeing on every book prefix.
- * @param {Array} lines openings.js rows: [eco, id, "san …", idea?]
+ * @param {Array} lines openings.js rows: [eco, id, "san …"]
  * @returns {Map<string, Set<string>>}
  */
 export function bookIndex(lines) {

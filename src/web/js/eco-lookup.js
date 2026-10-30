@@ -28,8 +28,6 @@ import { loadChunk, chunkReady } from "./chunk.js";
 import { ChessFide } from "./fide.js";
 import { ChessTree } from "./game-tree.js";
 import { CHESS_OPENINGS, CHESS_OPENING_NAMES } from "./openings.js";
-import { OPENING_FAMILIES_ZH } from "./openings-family-zh.js";
-import { OPENING_VARIATIONS_ZH } from "./openings-variation-zh.js";
 
   /** The table's key for the position `chess` is at. */
   function positionKey(chess) {
@@ -45,9 +43,13 @@ import { OPENING_VARIATIONS_ZH } from "./openings-variation-zh.js";
   const ECO_GLOBAL = "ECO_BY_KEY";
   const table = () => (typeof window !== "undefined" ? window[ECO_GLOBAL] : globalThis[ECO_GLOBAL]) || null;
   /** Fetch the table if it is not here yet. @returns {Promise<void>} */
-  function ready() { return loadChunk("chunk-eco.js", ECO_GLOBAL).then(() => undefined); }
+  // 15.0 P: the Chinese family and variation names come with it (chunk-opnames-zh.js)
+  const NAMES_GLOBAL = "OPENING_VARIATIONS_ZH";
+  function ready() {
+    return Promise.all([loadChunk("chunk-eco.js", ECO_GLOBAL), loadChunk("chunk-opnames-zh.js", NAMES_GLOBAL)]).then(() => undefined);
+  }
   /** Is the table here? Callers render without it and re-render on ready(). */
-  function loaded() { return chunkReady(ECO_GLOBAL); }
+  function loaded() { return chunkReady(ECO_GLOBAL) && chunkReady(NAMES_GLOBAL); }
   // One shared wait, so a caller that redraws on every move does not stack a
   // callback per move on the one load. The latch lives here rather than beside
   // the caller: app.js keeps its state in the store and nothing else (see the
@@ -192,14 +194,14 @@ import { OPENING_VARIATIONS_ZH } from "./openings-variation-zh.js";
   // current language's chunk is there before anything names an opening.
   const onWindow = (name) => () => globalThis[name] || null;
   const LOCAL = { "zh-CN": () => CHESS_OPENING_NAMES, ja: onWindow("CHESS_OPENINGS_JA"), en: onWindow("CHESS_OPENINGS_EN") };
-  // Family names are small (149 per language, a few KB) and ship in the main
-  // bundle, not the eco chunk: library-ui names games from their PGN
-  // `Opening` header, which needs no table at all.
-  // (the Japanese ones are in chunk-lang-ja.js since v8-0-plan F5)
-  const FAMILY = { "zh-CN": () => OPENING_FAMILIES_ZH, ja: onWindow("OPENING_FAMILIES_JA") };
+  // Family names: the Japanese ones are in chunk-lang-ja.js (v8-0-plan F5);
+  // 15.0 P: the Chinese ones in chunk-opnames-zh.js, which ready() fetches
+  // with the table. Until then a name stays lichess's English, and a caller
+  // that names games from a PGN header asks for them (library-ui libEcoName).
+  const FAMILY = { "zh-CN": onWindow("OPENING_FAMILIES_ZH"), ja: onWindow("OPENING_FAMILIES_JA") };
   // 7.8 (v7-8-plan §6): the most frequent variation names too, one
   // comma-separated segment at a time, keyed by lichess's English segment
-  const VARIATION = { "zh-CN": () => OPENING_VARIATIONS_ZH, ja: onWindow("OPENING_VARIATIONS_JA") };
+  const VARIATION = { "zh-CN": onWindow("OPENING_VARIATIONS_ZH"), ja: onWindow("OPENING_VARIATIONS_JA") };
   const LIST_SEP = { "zh-CN": "，", ja: "、" };
 
   /**

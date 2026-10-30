@@ -33,7 +33,7 @@ import { createSettingsUI } from "./settings-ui.js";
 import { createTrainerContent } from "./trainer/content.js";
 import { createLessonsUI } from "./trainer/lessons.js";
 import { createTrainBar } from "./trainer/train-bar.js";
-import { placeToastAt } from "./toast-place.js";
+import { createNotices, TOAST_MS } from "./notices.js";
 import { createPuzzlesUI } from "./trainer/puzzles.js";
 import { createTodayUI } from "./trainer/today.js";
 import { createMePage } from "./me-page.js";
@@ -131,6 +131,12 @@ import { drawSpark } from "./charts.js";
    */
   const sideName = (s) => t(s === "w" ? "side.white" : "side.black");
   const otherSideName = (s) => t(s === "w" ? "side.black" : "side.white");
+
+  // the banners for what stays broken, the three tiers of toast and the
+  // in-page confirm (notices.js); made before storage is read, whose write
+  // failure is its first caller
+  const { showStorageFault, showCorruptFault, showAppFault, showEngineFault, dismissToast, toast, confirmNative, finishConfirm } =
+    createNotices({ doc: document, t, tf, Icons, Host, Dlg, store: () => store, appEl: () => appEl, saveGame: () => saveGame(), retryEngine: () => retryEngine() });
 
   /**
    * Stored state, behind one door. See persist.js.
@@ -854,303 +860,6 @@ import { drawSpark } from "./charts.js";
   }
 
   function draw() { BoardView.draw(); }
-
-  // --- toast + promise-based in-app confirm ---
-  /**
-   * A storage failure is permanent for the session, so its notice is too.
-   *
-   * It keeps a banner of its own even now that toasts have a fault tier
-   * (P2.6). The tier is right for "the engine did not start" — bad, dismissible,
-   * over. This one is different in kind: every later autosave will fail too, so
-   * the statement "nothing you do is being kept" stays true for the rest of the
-   * session, and a notice the user has clicked away would be a lie by the time
-   * they close the app. The toast fires as well, once, because a banner that
-   * appears silently at the top of the screen is easy not to notice.
-   */
-  function showStorageFault() {
-    let el = document.getElementById("storage-fault");
-    if (!el) {
-      el = document.createElement("div");
-      el.id = "storage-fault";
-      el.className = "storage-fault";
-      el.setAttribute("role", "alert");
-      document.body.appendChild(el);
-    }
-    el.textContent = t("msg.storage.failed");
-    el.hidden = false;
-  }
-
-  /**
-   * 6.0: a value that could not be read is not a new install. The banner
-   * says which record was set aside, and that the copy is kept (v6-plan D2).
-   */
-  function showCorruptFault(names) {
-    // its own element: a write failure later in the session must not paint
-    // over the one message that says where the old data went
-    let el = document.getElementById("profile-fault");
-    if (!el) {
-      el = document.createElement("div");
-      el.id = "profile-fault";
-      el.className = "storage-fault";
-      el.setAttribute("role", "alert");
-      document.body.appendChild(el);
-    }
-    el.textContent = tf("msg.storage.corrupt", [names.join(", ")]);
-    el.hidden = false;
-  }
-
-  /**
-   * 5.1: an uncaught exception used to be silence — the handler died, the
-   * button did nothing, and nothing anywhere said so. Every such error now
-   * lands here: the banner says the app hit a fault and that the game was
-   * saved, and offers the diagnostic text for copying. Same banner family as
-   * the storage fault, because it is the same kind of statement: something
-   * about this session is broken and stays broken until a restart.
-   */
-  function showAppFault(err) {
-    const detail = err && (err.stack || err.message) ? String(err.stack || err.message) : String(err);
-    try { saveGame(); } catch (_) { /* the save may be what failed */ }
-    let el = document.getElementById("app-fault");
-    if (!el) {
-      el = document.createElement("div");
-      el.id = "app-fault";
-      el.className = "storage-fault app-fault";
-      el.setAttribute("role", "alert");
-      document.body.appendChild(el);
-    }
-    el.replaceChildren();
-    const text = document.createElement("span");
-    text.textContent = t("msg.fault.happened");
-    const copy = document.createElement("button");
-    copy.type = "button";
-    copy.className = "toast-action";
-    copy.textContent = t("msg.fault.copy");
-    copy.onclick = () => Host.writeClipboard(detail.slice(0, 4000)).then(() => toast(t("msg.fault.copied")), () => toast(t("msg.copy.failed"), "fault"));
-    const close = document.createElement("button");
-    close.type = "button";
-    close.className = "toast-action";
-    close.textContent = t("act.close");
-    close.onclick = () => { el.hidden = true; };
-    el.append(text, copy, close);
-    el.hidden = false;
-  }
-  /**
-   * 7.4: the engine did not start. Until then a boot failure was silent:
-   * init() rejected, the worker was torn down, and the pill sat on
-   * 「引擎思考中…」 for good (v7-4-plan §1). Same banner family as the fault
-   * above, because it is the same kind of statement — a feature is gone until
-   * something changes — with a way forward added: 重试.
-   */
-  function showEngineFault(err) {
-    const detail = [
-      "engine boot failed: " + (err && (err.stack || err.message) ? String(err.stack || err.message) : String(err)),
-      "version: " + (typeof __CHESS_VERSION__ === "string" ? __CHESS_VERSION__ : "?"),
-      "WebAssembly: " + (typeof WebAssembly === "object" ? "yes" : "no"),
-      "userAgent: " + navigator.userAgent,
-      "time: " + new Date().toISOString(),
-    ].join("\n");
-    let el = document.getElementById("engine-fault");
-    if (!el) {
-      el = document.createElement("div");
-      el.id = "engine-fault";
-      el.className = "storage-fault app-fault";
-      el.setAttribute("role", "alert");
-      document.body.appendChild(el);
-    }
-    el.replaceChildren();
-    const text = document.createElement("span");
-    text.textContent = text.title = t("msg.engine.bootFailed");
-    const retry = document.createElement("button");
-    retry.type = "button";
-    retry.className = "toast-action";
-    retry.textContent = t("act.retry");
-    retry.onclick = () => retryEngine();
-    const copy = document.createElement("button");
-    copy.type = "button";
-    copy.className = "toast-action";
-    copy.textContent = t("msg.fault.copy");
-    copy.onclick = () => Host.writeClipboard(detail.slice(0, 4000)).then(() => toast(t("msg.fault.copied")), () => toast(t("msg.copy.failed"), "fault"));
-    const close = document.createElement("button");
-    close.type = "button";
-    close.className = "toast-action";
-    close.textContent = t("act.close");
-    close.onclick = () => { el.hidden = true; };
-    el.append(text, retry, copy, close);
-    el.hidden = false;
-  }
-  window.addEventListener("error", (ev) => { if (ev && ev.error) showAppFault(ev.error); });
-  window.addEventListener("unhandledrejection", (ev) => { showAppFault(ev && ev.reason); });
-
-  /**
-   * Three tiers, because 110 toasts were saying three different kinds of thing
-   * in one voice.
-   *
-   * "已复制 PGN", "你违背了开局原则" and "引擎启动失败" shared a background, a
-   * size and a 2.2-second life. The first is a receipt you may ignore; the
-   * second is the app correcting you, which is the whole point of the teaching
-   * modes and deserves to be read; the third means a feature is gone until you
-   * restart, and 2.2 seconds later there was no evidence it had ever happened.
-   * 缺陷 20.
-   *
-   *   ok      a receipt — it happened, carry on. Short.
-   *   fix     the app is correcting you. Longer, because it is a sentence with
-   *           something to learn in it, and accented so it does not read as
-   *           another receipt.
-   *   fault   something is broken. Does NOT dismiss itself: a fault that
-   *           disappears is a fault nobody was told about. It gets a close
-   *           button instead, which is also what makes it safe to keep.
-   *
-   * @param {string} msg
-   * @param {"ok"|"fix"|"fault"} [tier]
-   */
-  const TOAST_MS = { ok: 2200, fix: 4200, fault: 0, ach: 6500 }; // ach: an unlocked badge, with its picture (v8-0-plan A5)
-
-  const placeToast = (node) => placeToastAt(node, appEl); // where a toast stands (toast-place.js)
-  // a fault toast stays up, and the board it is placed against can move
-  window.addEventListener("resize", () => {
-    const el = document.getElementById("toast");
-    if (el && el.classList.contains("show")) placeToast(el);
-  });
-  function dismissToast() {
-    const el = document.getElementById("toast");
-    if (!el) return false;
-    if (!el.classList.contains("show")) return false;
-    el.classList.remove("show"); el.style.pointerEvents = "";
-    if (store.ui.toastTimer) { clearTimeout(store.ui.toastTimer); store.ui.toastTimer = null; }
-    return true;
-  }
-
-  /**
-   * @param {string} msg
-   * @param {string} [tier]
-   * @param {{label: string, onClick: () => void}} [action] a way forward, for
-   *   the faults where naming the problem is not enough — see the engine's
-   *   failure to move, which otherwise leaves the game stopped on its turn
-   *   with nothing but destructive exits offered.
-   */
-  function toast(msg, tier, action) {
-    const el = document.getElementById("toast");
-    if (!el) return;
-    const kind = TOAST_MS[tier] === undefined ? "ok" : tier;
-    const ms = TOAST_MS[kind];
-    // The live region has to be told how loudly to speak *before* the text
-    // lands in it. Until 2.1.1 it was told nothing at all: no role, no
-    // aria-live, on the element that carries all 110 of this app's messages —
-    // including 「引擎启动失败」. The board beside it has had a live region
-    // since the keyboard move work, and the storage banner sets role=alert
-    // explicitly; only the tier in between was silent.
-    el.setAttribute("role", ms ? "status" : "alert");
-    el.setAttribute("aria-live", ms ? "polite" : "assertive");
-    el.replaceChildren();
-    const text = document.createElement("span");
-    text.textContent = msg;
-    el.append(...(action && action.icon ? [Icons.icon(action.icon, "toast-ic")] : []), text);
-    // A fault does not leave on its own, which is right — a fault that
-    // disappears is a fault nobody was told about. What was wrong is the way
-    // out: the docblock above says it "gets a close button", and it never had
-    // one. It had a click handler on a div that is not focusable, so the only
-    // exit was a mouse landing somewhere the pointer shape was the only hint
-    // about — and Esc, which closes every other transient thing in this app,
-    // did nothing. Meanwhile it sits over the board's back rank.
-    if (!ms || (action && action.label)) {   // M3 评审 P2-2: an ordinary toast may carry a way back (撤销)
-      // The way forward comes before the way out: a fault the app knows how to
-      // retry should offer that, not just a ✕.
-      if (action && action.label) {
-        const act = document.createElement("button");
-        act.type = "button";
-        act.className = "toast-action";
-        act.textContent = action.label;
-        act.onclick = () => { dismissToast(); action.onClick(); };
-        el.appendChild(act);
-      }
-      const close = document.createElement("button");
-      close.type = "button";
-      close.className = "toast-close";
-      close.appendChild(Icons.icon("x"));
-      close.setAttribute("aria-label", t("act.close"));
-      close.onclick = dismissToast;
-      el.appendChild(close);
-    }
-    el.classList.remove("t-ok", "t-fix", "t-fault", "t-ach");
-    el.classList.add("t-" + kind);
-    placeToast(el);
-    el.classList.add("show");
-    if (store.ui.toastTimer) clearTimeout(store.ui.toastTimer);
-    store.ui.toastTimer = null;
-    if (ms) store.ui.toastTimer = setTimeout(() => { el.classList.remove("show"); el.style.pointerEvents = ""; }, action && action.label ? 4 * ms : ms);
-    el.onclick = ms ? null : dismissToast;
-    el.style.cursor = ms ? "" : "pointer"; el.style.pointerEvents = ms && action && action.label ? "auto" : "";
-  }
-
-  /**
-   * In-app confirm. Resolves true (ok) / false (cancel), and "alt" when the
-   * optional third button (buttons.alt) was offered and chosen.
-   *
-   * `buttons.danger` sends the question to the platform's own alert instead,
-   * when this build has one. Three questions carry it — 清除全部存档,
-   * 清除统计与历史, 重置课程进度 — and they are the three whose answer cannot
-   * be taken back: no undo, no autosave behind them, nothing to restore from.
-   * Everything else stays in the page, because a system alert for 「提和?」
-   * would be the platform shouting about an ordinary move.
-   *
-   * A build with no such dialog falls through to the same box as before. The
-   * fallback is not an error path — every platform feature here is optional
-   * by construction, and `Host.showMessage` answering null is how it says so.
-   */
-  async function confirmNative(message, title, buttons) {
-    const okLabel = (buttons && buttons.ok) || t("act.ok");
-    const cancelLabel = (buttons && buttons.cancel) || t("act.cancel");
-    const altLabel = buttons && buttons.alt;
-    if (buttons && buttons.danger) {
-      const answer = await Host.showMessage({
-        style: "critical",
-        title: title || t("aria.confirm"),
-        message: title || t("aria.confirm"),
-        informativeText: message,
-        primaryButton: okLabel,
-        secondaryButton: cancelLabel,
-        tertiaryButton: altLabel || undefined,
-      });
-      if (answer === "primary") return true;
-      if (answer === "tertiary") return altLabel ? "alt" : false;
-      if (answer === "secondary") return false;
-      // null: no native dialog on this build — ask in the page instead
-    }
-    const modal = document.getElementById("confirm-modal");
-    const titleEl = document.getElementById("confirm-title");
-    const msgEl = document.getElementById("confirm-message");
-    const okBtn = document.getElementById("confirm-ok");
-    const cancelBtn = document.getElementById("confirm-cancel");
-    const altBtn = document.getElementById("confirm-alt");
-    if (!modal || !okBtn || !cancelBtn) {
-      try { return Promise.resolve(!!window.confirm(message)); }
-      catch (_) { return Promise.resolve(true); }
-    }
-    if (titleEl) titleEl.textContent = title || t("aria.confirm");
-    if (msgEl) msgEl.textContent = message;
-    okBtn.textContent = okLabel;
-    cancelBtn.textContent = cancelLabel;
-    // 7.7 (v7-7-plan §4): an answer that cannot be taken back is red, not
-    // the accent. The accent fill is this UI's word for "the thing to press
-    // here"; on 认输 and on the deletions it was saying the opposite of what
-    // the question means. The native alert has its own critical style; this
-    // is the in-page box saying the same.
-    const destructive = !!(buttons && (buttons.destructive || buttons.danger));
-    okBtn.classList.toggle("danger", destructive);
-    okBtn.classList.toggle("primary", !destructive);
-    if (altBtn) {
-      altBtn.hidden = !altLabel;
-      if (altLabel) altBtn.textContent = altLabel;
-      altBtn.classList.toggle("danger", destructive);
-    }
-    Dlg.open(modal, okBtn);
-    return new Promise((resolve) => { store.ui.confirmResolver = resolve; });
-  }
-  function finishConfirm(val) {
-    const modal = document.getElementById("confirm-modal");
-    Dlg.close(modal);
-    if (store.ui.confirmResolver) { store.ui.confirmResolver(val); store.ui.confirmResolver = null; }
-  }
 
   // --- settings + autosave ---
   function loadSettings() {
@@ -5055,79 +4764,86 @@ import { drawSpark } from "./charts.js";
   const savedPanel = Persist.get("panelOpen");
   setPanelOpen(savedPanel === "1");
   Shell.restore();
-  // 15.0 P: the save comes back without a render of its own; applyLanguage() below syncs every slice once
-  const resumed = (() => { store.game._batch++; try { return tryLoadSave(); } finally { store.game._batch--; } })();
-  if (resumed) toast(t("msg.save.restored"));
-  // 7.6 §1c: …and the analysis it had, which used to die with the session
-  if (resumed) restoreAnalysis();
-  // a resumed finished game must not be re-counted on the next live move
-  // A restored game that is already over was filed when it ended; marking it
-  // recorded stops the launch path filing it a second time. The id is unknown
-  // here (it is in the stats file, not the save), and a sentinel is enough:
-  // all this flag decides is "do not record again".
-  if (resumed && naturalGameOver()) store.game.recordedId = RESTORED_AND_FILED;
-  // …and the same for the three app-level endings, which naturalGameOver()
-  // does not see: a resigned game is not over by its moves.
-  if (resumed && (store.game.resigned || store.game.drawAgreed || store.game.drawClaimed)) {
-    store.game.recordedId = RESTORED_AND_FILED;
+  // 15.0 P: the launch is two tasks, not one. The first builds the app and
+  // puts the saved view on screen; the save, the clocks and the first full
+  // render are the second, so neither half holds the main thread past a
+  // frame budget (it was one 140 ms task at 1× CPU)
+  function bootRest() {
+    // 15.0 P: the save comes back without a render of its own; applyLanguage() below syncs every slice once
+    const resumed = (() => { store.game._batch++; try { return tryLoadSave(); } finally { store.game._batch--; } })();
+    if (resumed) toast(t("msg.save.restored"));
+    // 7.6 §1c: …and the analysis it had, which used to die with the session
+    if (resumed) restoreAnalysis();
+    // a resumed finished game must not be re-counted on the next live move
+    // A restored game that is already over was filed when it ended; marking it
+    // recorded stops the launch path filing it a second time. The id is unknown
+    // here (it is in the stats file, not the save), and a sentinel is enough:
+    // all this flag decides is "do not record again".
+    if (resumed && naturalGameOver()) store.game.recordedId = RESTORED_AND_FILED;
+    // …and the same for the three app-level endings, which naturalGameOver()
+    // does not see: a resigned game is not over by its moves.
+    if (resumed && (store.game.resigned || store.game.drawAgreed || store.game.drawClaimed)) {
+      store.game.recordedId = RESTORED_AND_FILED;
+    }
+    // clock preset chosen but no saved clock state → fresh clocks
+    if (store.game.timeControl !== "off" && !store.game.clock) resetClocks();
+    syncAutoFlip(); // a resumed pvp game must face whoever is on move
+    if (store.session.mode === "learn") startLearn();
+    if (store.session.mode === "puzzle") startPuzzles();
+    BoardView.resizeCanvas();
+    applyLanguage(); // 15.0 P: it renders the stats, badges and record entry and syncs; the boot did all four again
+    saveSettings();
+    if (!resumed) saveGame();
+    // Every reader has run by now — including the lazy ones: loadStats() is
+    // cached and first runs inside renderStats() above, so a check placed
+    // right after tryLoadSave() ran before the stats record had been read and
+    // a corrupt one was quarantined after the banner had already decided there
+    // was nothing to say. A record that failed to parse is reported once, here,
+    // instead of passing for a fresh install (v6-plan D2).
+    if (Persist.corruptKeys().length) showCorruptFault(Persist.corruptKeys());
+    // 6.0 (v6-plan Q1.1): the native file knows more than the cache when the
+    // cache is empty or older — then the file wins and the page starts again on
+    // it. This is the one moment an async read may change what the app stands
+    // on, and it announces itself.
+    Persist.recover().then((r) => {
+      // 6.1: the file is there and unreadable (damaged, or zero-length after an
+      // interrupted write). The cache is what the app is running on and stays
+      // that way, but the user hears it once — before 6.1 this was silent.
+      if (r === "corrupt") { toast(t("msg.profile.fileBad"), "fault"); return; }
+      if (r !== "restored") return;
+      // persist.js has frozen every further write (6.1): from here to the
+      // reload nothing the page does can overwrite what was just restored.
+      toast(t("msg.profile.restored"), "fault");
+      setTimeout(() => location.reload(), 1200);
+    }).catch(() => {});
+    // every boot, including the lazy ones a hint or a library pass makes
+    // without going through bootEngine(), reports a failure here (7.4)
+    if (ChessEngine && ChessEngine.onBootFail) ChessEngine.onBootFail(engineBootFailed);
+    // 7.5: the packaged app's self-test (CHESS_SELFTEST=1, see main.zig). The
+    // page as shipped starts Stockfish and asks it for a move, then (7.6) round
+    // trips the native save file, loads the eco chunk and leaves a marker for
+    // the second launch; the platform build pipelines read the report before
+    // they package. v8-2-plan V1: the checks, and the automation build's
+    // scenarios, are chunk-selftest.js (selftest-run.js)
+    Host.selftestMode().then((on) => on && loadChunk("chunk-selftest.js", "CHESS_SELFTEST_RUN").then((m) => m.runSelftest(on, {
+      Host, Persist, Chess, ChessEngine, ChessEco, ChessLazy, Audio2, loadChunk, importPgnToLibrary, atBoot: SELFTEST_BOOT,
+      useLang: (id) => { store.ui.langId = I18n.setLang(id); saveSettings(); }, langId: () => store.ui.langId,
+    }), (err) => Host.selftestReport({ ok: false, err: "chunk-selftest.js: " + err })));
+    // v8-0-plan F5: the mined puzzles, after the first paint for the same
+    // reason as the engine below; the counts and the badges repaint with them
+    if (!MINED_ORDINAL.size) {
+      requestAnimationFrame(() => setTimeout(() => {
+        ChessLazy.ensureMined().then(onMinedArrived).catch(() => {});
+      }, 0));
+    }
+    if (store.session.mode === "ai" && ChessEngine) {
+      // after the first paint (v6-plan Q1.3); 14.0 A3: at once only on move, else after the launch's quiet (quiet.js)
+      requestAnimationFrame(() => setTimeout(() => {
+        bootEngine();
+        maybeEngineTurn(); // resumed save may leave the engine on move
+      }, !appGameOver() && game.turn() !== store.session.humanColor ? 0 : BOOT_QUIET_MS));
+    }
+    if (firstRun || (store.ui.ob && !store.ui.ob.done && store.ui.ob.n < 3)) runOnboarding(); // 14.0 A3: asked again, three launches at most, until answered
   }
-  // clock preset chosen but no saved clock state → fresh clocks
-  if (store.game.timeControl !== "off" && !store.game.clock) resetClocks();
-  syncAutoFlip(); // a resumed pvp game must face whoever is on move
-  if (store.session.mode === "learn") startLearn();
-  if (store.session.mode === "puzzle") startPuzzles();
-  BoardView.resizeCanvas();
-  applyLanguage(); // 15.0 P: it renders the stats, badges and record entry and syncs; the boot did all four again
-  saveSettings();
-  if (!resumed) saveGame();
-  // Every reader has run by now — including the lazy ones: loadStats() is
-  // cached and first runs inside renderStats() above, so a check placed
-  // right after tryLoadSave() ran before the stats record had been read and
-  // a corrupt one was quarantined after the banner had already decided there
-  // was nothing to say. A record that failed to parse is reported once, here,
-  // instead of passing for a fresh install (v6-plan D2).
-  if (Persist.corruptKeys().length) showCorruptFault(Persist.corruptKeys());
-  // 6.0 (v6-plan Q1.1): the native file knows more than the cache when the
-  // cache is empty or older — then the file wins and the page starts again on
-  // it. This is the one moment an async read may change what the app stands
-  // on, and it announces itself.
-  Persist.recover().then((r) => {
-    // 6.1: the file is there and unreadable (damaged, or zero-length after an
-    // interrupted write). The cache is what the app is running on and stays
-    // that way, but the user hears it once — before 6.1 this was silent.
-    if (r === "corrupt") { toast(t("msg.profile.fileBad"), "fault"); return; }
-    if (r !== "restored") return;
-    // persist.js has frozen every further write (6.1): from here to the
-    // reload nothing the page does can overwrite what was just restored.
-    toast(t("msg.profile.restored"), "fault");
-    setTimeout(() => location.reload(), 1200);
-  }).catch(() => {});
-  // every boot, including the lazy ones a hint or a library pass makes
-  // without going through bootEngine(), reports a failure here (7.4)
-  if (ChessEngine && ChessEngine.onBootFail) ChessEngine.onBootFail(engineBootFailed);
-  // 7.5: the packaged app's self-test (CHESS_SELFTEST=1, see main.zig). The
-  // page as shipped starts Stockfish and asks it for a move, then (7.6) round
-  // trips the native save file, loads the eco chunk and leaves a marker for
-  // the second launch; the platform build pipelines read the report before
-  // they package. v8-2-plan V1: the checks, and the automation build's
-  // scenarios, are chunk-selftest.js (selftest-run.js)
-  Host.selftestMode().then((on) => on && loadChunk("chunk-selftest.js", "CHESS_SELFTEST_RUN").then((m) => m.runSelftest(on, {
-    Host, Persist, Chess, ChessEngine, ChessEco, ChessLazy, Audio2, loadChunk, importPgnToLibrary, atBoot: SELFTEST_BOOT,
-    useLang: (id) => { store.ui.langId = I18n.setLang(id); saveSettings(); }, langId: () => store.ui.langId,
-  }), (err) => Host.selftestReport({ ok: false, err: "chunk-selftest.js: " + err })));
-  // v8-0-plan F5: the mined puzzles, after the first paint for the same
-  // reason as the engine below; the counts and the badges repaint with them
-  if (!MINED_ORDINAL.size) {
-    requestAnimationFrame(() => setTimeout(() => {
-      ChessLazy.ensureMined().then(onMinedArrived).catch(() => {});
-    }, 0));
-  }
-  if (store.session.mode === "ai" && ChessEngine) {
-    // after the first paint (v6-plan Q1.3); 14.0 A3: at once only on move, else after the launch's quiet (quiet.js)
-    requestAnimationFrame(() => setTimeout(() => {
-      bootEngine();
-      maybeEngineTurn(); // resumed save may leave the engine on move
-    }, !appGameOver() && game.turn() !== store.session.humanColor ? 0 : BOOT_QUIET_MS));
-  }
-  if (firstRun || (store.ui.ob && !store.ui.ob.done && store.ui.ob.n < 3)) runOnboarding(); // 14.0 A3: asked again, three launches at most, until answered
+  setTimeout(bootRest, 0);
 

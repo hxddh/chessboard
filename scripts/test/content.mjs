@@ -351,6 +351,7 @@ export async function run() {
   {
     loadModule(ctx, "src/web/js/puzzles.js");
     loadModule(ctx, "src/web/js/openings.js");
+    loadModule(ctx, "src/web/js/openings-ideas-zh.js"); // 15.0 P: the ideas' own chunk
     const pz = ctx.CHESS_PUZZLES;
     const op = ctx.CHESS_OPENINGS;
     const opNames = new Set(op.map((o) => o[1]));
@@ -406,8 +407,10 @@ export async function run() {
     bad = 0;
     const ideaEn = ctx["CHESS_OPENING_IDEAS_" + sfx(lang)] || {};
     const drilled = op.filter((o) => o[2].split(" ").length >= 6);
-    const ideaOf = new Map(drilled.map((o) => [o[1], o[3]]));
-    for (const [, name, , idea] of drilled) {
+    const zhIdea = ctx.CHESS_OPENING_IDEAS_ZH_CN || {};
+    const ideaOf = new Map(drilled.map((o) => [o[1], zhIdea[o[1]]]));
+    for (const [, name] of drilled) {
+      const idea = zhIdea[name];
       if (!idea) { fail("drilled opening has no idea line:", name); continue; }
       if (!ideaEn[name]) { fail("opening idea has no " + lang + " text:", name); continue; }
       if (untranslated(lang, ideaEn[name], ideaOf.get(name))) fail("opening idea not translated (" + lang + "):", name);

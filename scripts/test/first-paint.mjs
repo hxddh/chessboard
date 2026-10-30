@@ -60,9 +60,12 @@ export async function run() {
     // 942,990 bytes, + 20 KB). 14.0 E turns it round: the course's paragraphs
     // and tasks went to chunk-lessons-body.js, and the release stays at least
     // 20 KB under 13.0.0 (962,723 bytes, 4e83c16) — room 14.0's pages spend
-    const BUNDLE_BYTES_140 = 962723 - 20000;
-    assert(bundleBytes <= BUNDLE_BYTES_140,
-      "14.0: bundle.js stays at least 20 KB under 13.0.0 (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_140 ? " ≤ " : " > ") + BUNDLE_BYTES_140 + " bytes)");
+    // 15.0 P: v15-0-plan §3's line, 860,000 bytes (14.0.0 shipped 888,759):
+    // the classic set's figurines rounded, the Chinese opening ideas and the
+    // family / variation names in chunks of their own
+    const BUNDLE_BYTES_150 = 860000;
+    assert(bundleBytes <= BUNDLE_BYTES_150,
+      "15.0: bundle.js stays within v15-0-plan's 860,000 bytes (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_150 ? " ≤ " : " > ") + BUNDLE_BYTES_150 + " bytes)");
     // …minified without renaming: a player's stack trace still names the code
     assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
       "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");
