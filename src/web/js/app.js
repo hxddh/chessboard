@@ -2237,7 +2237,6 @@ import { drawSpark } from "./charts.js";
     sync();
   }
 
-
   function renderHistory() {
     store.session.histCache = historyGames();
     const body = document.getElementById("hist-body");
@@ -3239,8 +3238,7 @@ import { drawSpark } from "./charts.js";
     // one way on — the panel's 新局 was the same action a second time
     const end = !modal && over && isLive() ? gameEnding() : null;
     const again = !!end && store.session.goDismissed !== end.sig && !store.game.imported;
-    avail(el("btn-new"), !modal && (h.length > 0 || !!startFen()) && !again);
-
+    avail(el("btn-new"), !modal && (h.length > 0 || !!startFen()) && !again && !(isLive() && h.length > 0 && !over)); // 15.0 S2: not mid-game (N, menu, ⌘K)
 
     // Hint is the one control that stays put while it is busy: it is in the
     // chrome, under the pointer, and it says what it is doing.
@@ -3269,6 +3267,7 @@ import { drawSpark } from "./charts.js";
     }
 
     const live = !modal && isLive() && h.length > 0 && !over;
+    if (el("tool-row")) el("tool-row").classList.toggle("live", live); // 15.0 S2: mid-game the file tools fold into ⋯
     avail(el("btn-resign"), live);
     avail(el("btn-offerdraw"), live && !store.session.drawOfferPending);
     // Claim: it exists exactly when a rule says it may be claimed. It used to
@@ -3320,7 +3319,8 @@ import { drawSpark } from "./charts.js";
    * also where imported games are read) always show it.
    */
   function reviewOptional() {
-    return store.session.mode === "ai" && !store.session.editor && sanHistory().length > 0 &&
+    // 15.0 S2: a two-player game being played is a game too, not a review (an imported one is a record)
+    return (store.session.mode === "ai" || (store.session.mode === "pvp" && !store.game.imported && !store.session.analysisBoard)) && !store.session.editor && sanHistory().length > 0 &&
       isLive() && !appGameOver() && !store.session.analyzing && !analysisFor() && !store.session.liveOn;
   }
 

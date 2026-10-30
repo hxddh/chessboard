@@ -787,7 +787,7 @@ async function solveCurrent(page, h) {
   const mate = tiles.find((x) => x.g === "mate");
   // v10-0-plan T2: 我的错题 is there with no drills, saying how it fills
   assert(tiles.map((x) => x.g).join() === "mate,tactic,endgame,defense,opening,mine" && !tiles.find((x) => x.g === "mine").hidden &&
-    tiles.find((x) => x.g === "mine").n === "分析一局就有",
+    tiles.find((x) => x.g === "mine").n === "复盘一局就有",
     "m: 六块按类做题，没有错题时「我的错题」也在、写着怎么攒", JSON.stringify(tiles.map((x) => x.g + (x.hidden ? "(隐)" : ""))));
   assert(mate && mate.n === mateN + " 题" && mate.on, "m: 杀棋这一块数的是内置 + 题库两本书（" + localMate.length + " + 题库），存着的一步杀落在这一块上", JSON.stringify(mate));
   await openPzMore(page); await page.click('#pz-groups button[data-group="mate"]');

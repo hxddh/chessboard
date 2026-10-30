@@ -884,6 +884,7 @@ export function createPuzzlesUI(d) {
     }
     const next = document.getElementById("puzzle-next");
     if (next) next.classList.toggle("primary", store.session.puzzle.done && !canPlayOn);
+    if (document.getElementById("puzzle-smart")) document.getElementById("puzzle-smart").classList.toggle("primary", !store.session.puzzle); // 15.0 S2: the puzzle's own step is the fill
     // 9.0 S3: a kind holds thousands of puzzles — the list is drawn only
     // while its fold is open (opening it syncs), not on every sync
     const listEl = document.getElementById("puzzle-list");

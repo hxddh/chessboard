@@ -2582,9 +2582,9 @@ if (scenario()) {
 // app's four modes.
 if (scenario()) {
   const expect = {
-    ai:     { has: ["新局", "悔棋", "翻转棋盘"], hasnt: ["下一题", "看答案", "重做当前这题"] },
-    learn:  { has: ["重做当前这题", "悔棋", "本课提示"], hasnt: ["新局", "翻转棋盘", "下一题"] },
-    puzzle: { has: ["下一题", "看答案", "重做当前这题"], hasnt: ["新局", "悔棋", "翻转棋盘"] },
+    ai:     { has: ["新对局", "悔棋", "翻转棋盘"], hasnt: ["下一题", "看答案", "重来这一题"] },
+    learn:  { has: ["重来这一题", "悔棋", "本课提示"], hasnt: ["新对局", "翻转棋盘", "下一题"] },
+    puzzle: { has: ["下一题", "看答案", "重来这一题"], hasnt: ["新对局", "悔棋", "翻转棋盘"] },
   };
   for (const mode of Object.keys(expect)) {
     const { ctx, page } = await open("zh-CN", mode, "play");
@@ -3105,7 +3105,8 @@ if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en",
   // 数量本身不是这一节要断言的东西:没有棋谱时 PGN/导出/分析/精析 是「不渲染」
   // 而不是「置灰」(见 .act-btn:disabled)，所以 0 手时对局页只剩四个。这条只是
   // 确认下面几条真的量到了东西。
-  assert(shape.n >= 3, `${lang}/${tab}: 面板里数得到动作按钮(${shape.n} 个:${JSON.stringify(shape.kinds)})`);
+  // 15.0 S2: a game being played shows 提和 and 认输 only (新对局 is N / the menu, the review waits behind its key)
+  assert(shape.n >= 2, `${lang}/${tab}: 面板里数得到动作按钮(${shape.n} 个:${JSON.stringify(shape.kinds)})`);
   assert(shape.borderless.length === 0,
     `${lang}/${tab}: 没有一个动作是无边框的文本链接(${JSON.stringify(shape.borderless)})`);
   assert(shape.sizes.length === 1, `${lang}/${tab}: 所有动作一个字号(${shape.sizes.join(" ")})`);
@@ -4685,7 +4686,8 @@ if (scenario()) {
             return { id: r.id || r.parentElement.id, n: kids.length, spread: Math.max(...ws) - Math.min(...ws), cols,
                      filled: Math.max(...kids.map((b) => b.getBoundingClientRect().right)) - rr.right };
           }));
-        const want = state === "live" ? ["review-actions", "game-actions"] : ["review-actions", "game-actions", "more-row"];
+        // 15.0 S2: while a game is played the review waits behind its key, in a two-player game too
+        const want = state === "live" ? ["game-actions"] : ["review-actions", "game-actions", "more-row"];
         assert(want.every((id) => groups.some((g) => g.id === id)),
           st + "§1b 这几组都在（" + groups.map((g) => g.id + ":" + g.n + "×" + g.cols + "列").join(", ") + "）");
         for (const g of groups) {

@@ -471,8 +471,8 @@ const state = (page) => page.evaluate(() => {
       ratings: [txt("today-r-game"), txt("today-r-pz")],
     };
   });
-  assert(!!today.head && !!today.date && !!today.hero && !!today.go && today.heroBoard === 64 && today.newGame === "下一盘",
-    "S1: 今天页有问候、日期,主卡是一句话 + 一块小棋盘 + 按钮,旁边是「下一盘」(" + JSON.stringify(today) + ")");
+  assert(!!today.head && !!today.date && !!today.hero && !!today.go && today.heroBoard === 64 && today.newGame === "新对局",
+    "S1: 今天页有问候、日期,主卡是一句话 + 一块小棋盘 + 按钮,旁边是「新对局」(" + JSON.stringify(today) + ")");
   // v11-0-plan U1: the rings say what is left; no sentence repeats them
   assert(today.pens[0] >= 2 && today.pens[1] >= 1.2 && today.pens[1] < today.pens[0], "12.0 S: 小棋盘的棋子描边随格子变粗：卡片的小格比主卡的大格粗（卡片 " + today.pens[0] + "、主卡 " + today.pens[1] + "）");
   assert(today.rings.join() === "lesson:0/1,puzzle:0/5,game:0/1" && !today.note,

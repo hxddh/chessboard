@@ -14,7 +14,9 @@
  * v9-0-plan S6 changed two more on purpose: the puzzle rating's name
  * (谜题等级分 / パズルレーティング) and its provisional mark (「1500?」 →
  * 「1500（定级中）」), and 「部分着法按快速扫描评级」's last word. S3 deleted the
- * 复习·N tab label with the category row it sat in.
+ * 复习·N tab label with the category row it sat in. v15-0-plan S1 renamed
+ * the review on purpose — 分析 / 持续分析 → 复盘 / 实时引擎 (Analyse → Review,
+ * 解析・検討 → 振り返り) — and with it the rows that quote those words.
  *
  * Row: [id, (t, tf, tdot, diff) => text, zh-CN, en, ja]
  */
@@ -38,9 +40,9 @@ export const F4_RENDERS = [
   ["stats.accLine", (t, tf, tdot, diff) => tf("stats.accLine", [81, 77]),
     "81% · 最近 77%", "81% · last 77%", "81% · 最新 77%"],
   ["stats.hint.acc", (t, tf, tdot, diff) => tdot(tf("stats.gamesN", [12]), t("stats.hint"), t("stats.accFrom")),
-    "共 12 局 · 人机完局自动记录 · 精准度来自「分析」", "12 games · engine games recorded automatically · accuracy comes from Analyse", "計 12 局 · エンジン対局は自動で記録されます · 正確度は「解析」から記録されます"],
+    "共 12 局 · 人机完局自动记录 · 精准度来自「复盘」", "12 games · engine games recorded automatically · accuracy comes from Review", "計 12 局 · エンジン対局は自動で記録されます · 正確度は「振り返る」から記録されます"],
   ["stats.hint.noAcc", (t, tf, tdot, diff) => tdot(tf("stats.gamesN", [1]), t("stats.hint"), t("stats.accHow")),
-    "共 1 局 · 人机完局自动记录 · 完局后点「分析」可记录精准度", "1 game · engine games recorded automatically · run Analyse after a game to record accuracy", "計 1 局 · エンジン対局は自動で記録されます · 対局後に「解析」を押すと正確度が記録されます"],
+    "共 1 局 · 人机完局自动记录 · 完局后点「复盘」可记录精准度", "1 game · engine games recorded automatically · run Review after a game to record accuracy", "計 1 局 · エンジン対局は自動で記録されます · 対局後に「振り返る」を押すと正確度が記録されます"],
   ["hist.todayAt", (t, tf, tdot, diff) => tf("hist.todayAt", ["09:41"]),
     "今天 09:41", "today 09:41", "今日 09:41"],
   ["hist.yesterdayAt", (t, tf, tdot, diff) => tf("hist.yesterdayAt", ["23:05"]),
@@ -56,7 +58,7 @@ export const F4_RENDERS = [
   ["pz.chip", (t, tf, tdot, diff) => tdot(tf("pz.nth", [3]), t("pz.cat.tac")),
     "第 3 题 · 战术", "Puzzle 3 · Tactics", "第 3 問 · 戦術"],
   ["st.replayAt", (t, tf, tdot, diff) => tf("st.replayAt", [4, 31]),
-    "复盘 4/31", "Replay 4/31", "検討 4/31"],
+    "复盘 4/31", "Review 4/31", "振り返り 4/31"],
   ["st.check", (t, tf, tdot, diff) => tdot(t("turn.white"), t("turn.check")),
     "白方走子 · 将军！", "White to move · Check!", "白番 · チェック！"],
   ["st.checkQuiet", (t, tf, tdot, diff) => tdot(tdot(t("turn.black"), t("turn.check")), tf("st.quietMoves", [41])),
@@ -84,9 +86,9 @@ export const F4_RENDERS = [
   ["msg.import.doneN", (t, tf, tdot, diff) => tf("msg.import.doneN", [tf("mm.moveCount.other", [23])]),
     "已导入 23 回合", "Imported 23 moves", "読み込みました 23 手"],
   ["msg.analysis.kept", (t, tf, tdot, diff) => tf("msg.analysis.kept", [17]),
-    "已停止分析 · 保留前 17 步结果", "Analysis stopped · kept the first 17 plies", "解析を中止しました · 最初の 17 手分を残しました"],
+    "已停止复盘 · 保留前 17 步结果", "Review stopped · kept the first 17 plies", "振り返りを中止しました · 最初の 17 手分を残しました"],
   ["msg.analysis.doneBad", (t, tf, tdot, diff) => tdot(tf("msg.analysis.doneBad", [3]), tf("msg.mined", [2]), "", "", t("msg.analysis.deepStopped")),
-    "分析完成 · 3 处失着 · 收进 2 道错题 · 加深已停止，部分着法只做了快速评估", "Analysis complete · 3 flagged · 2 mistakes banked as drills · deeper check stopped, some moves graded on the quick scan", "解析完了 · 3 個の悪手 · 失着 2 件をドリルに収録 · 深掘りは中止、一部の手はクイックスキャンで評価"],
+    "复盘完成 · 3 处失着 · 收进 2 道错题 · 加深已停止，部分着法只做了快速评估", "Review complete · 3 flagged · 2 mistakes banked as drills · deeper check stopped, some moves graded on the quick scan", "振り返り完了 · 3 個の悪手 · 失着 2 件をドリルに収録 · 深掘りは中止、一部の手はクイックスキャンで評価"],
   ["lm.doneNext", (t, tf, tdot, diff) => tf("lm.doneThen", [t("lm.tapNext")]),
     "完成！点「下一课」继续", "Done! Tap “Next lesson” to continue", "できました！ 「次のレッスン」で進みましょう"],
   ["lm.doneEg", (t, tf, tdot, diff) => tf("lm.doneThen", [t("eg.allDone")]),
@@ -122,7 +124,7 @@ export const F4_RENDERS = [
   ["an.winPct", (t, tf, tdot, diff) => tf("an.winPct", [53]),
     "胜率 53%", "Win 53%", "勝率 53%"],
   ["an.live", (t, tf, tdot, diff) => tdot(t("act.live"), tf("an.depthN", [18])),
-    "持续分析 · 深度 18", "Live analysis · Depth 18", "常時解析 · 深さ 18"],
+    "实时引擎 · 深度 18", "Live engine · Depth 18", "エンジン常時表示 · 深さ 18"],
   ["an.pv", (t, tf, tdot, diff) => tdot(t("an.pv"), tf("an.depthN", [22])),
     "引擎 · 深度 22", "Engine · Depth 22", "エンジン · 深さ 22"],
   ["act.stopAt", (t, tf, tdot, diff) => tf("act.stopAt", ["12/40"]),
@@ -140,7 +142,7 @@ export const F4_RENDERS = [
   ["rep.export", (t, tf, tdot, diff) => tdot(t("rep.title"), t("color.black")),
     "我的开局书 · 执黑", "My repertoire · Black", "自分の定跡書 · 黒"],
   ["lib.analysedQueued", (t, tf, tdot, diff) => tdot(tf("lib.analysed", [5]), tf("lib.queued", [2])),
-    "已分析 5 局 · 待分析 2 局", "5 analysed · 2 queued", "解析済み 5 局 · 解析待ち 2 局"],
+    "已复盘 5 局 · 待复盘 2 局", "5 reviewed · 2 queued", "振り返り済み 5 局 · 振り返り待ち 2 局"],
   // M3 评审: the four sites F4's guard did not see (library-ui.js libraryLabel,
   // app.js 「上一盘」, trainer/puzzles.js's solved card, repertoire-ui.js drills)
   ["lib.label", (t, tf, tdot, diff) => tdot(t("hist.win"), "rival" || t("lib.unknownFoe"), !"w" && "me"),

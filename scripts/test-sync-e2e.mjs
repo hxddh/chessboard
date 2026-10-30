@@ -429,13 +429,15 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
 // board's first click alone is a 0.6–1.6 s long task here) has seconds of
 // margin, not hundreds of milliseconds.
 {
-  // a 48-ply game in progress (two players), White to move: the move list overflows
-  const moves = "e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7 Re1 b5 Bb3 d6 c3 O-O h3 Nb8 d4 Nbd7 Nbd2 Bb7 Bc2 Re8 Nf1 Bf8 Ng3 g6 a4 c5 d5 c4 Bg5 h6 Be3 Nc5 Qd2 h5 Bg5 Be7 Ra3 Kg7 Rea1 Rh8 Qe2 Qc7 Bd2 Rab8".split(" ");
+  // an 88-ply game in progress (two players), White to move: the move list overflows
+  // (15.0 S2: 48 plies did not, once a game being played kept its review behind the key)
+  const moves = ("e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7 Re1 b5 Bb3 d6 c3 O-O h3 Nb8 d4 Nbd7 Nbd2 Bb7 Bc2 Re8 Nf1 Bf8 Ng3 g6 a4 c5 d5 c4 Bg5 h6 Be3 Nc5 Qd2 h5 Bg5 Be7 Ra3 Kg7 Rea1 Rh8 Qe2 Qc7 Bd2 Rab8 " +
+    "Bc1 Rhf8 Qd3 Nb3 Bd1 Qc6 Bf4 Nd4 Be3 Nb3 Qb1 Rh8 Be2 Rbd8 Ng5 Rde8 Nf3 Qb6 Qe1 Ng4 Rc1 Rd8 Bd3 Bf6 Bb1 Nc5 Ra2 Nd7 Bg5 Rde8 Rc2 Qc5 Qe3 Qc8 Ra3 Nf8 Bh4 Qa8 Qd4 Bc8").split(" ");
   const pgn = '[Event "n1"]\n[Result "*"]\n\n' + moves.map((m, i) => (i % 2 ? m : (i / 2 + 1) + ". " + m)).join(" ") + " *";
   const { ctx, page, errs } = await open({ mode: "pvp", seedSync: { v: 1, on: true }, seedSave: { v: 1, pgn, savedAt: Date.now() } });
   const plies = () => page.evaluate(() => document.querySelectorAll("#move-list .mlmove:not(.mlgap)").length);
   const before = await plies();
-  assert(before === 48, "N1: 一盘 48 步的对局摆在棋盘上（" + before + "）");
+  assert(before === 88, "N1: 一盘 88 步的对局摆在棋盘上（" + before + "）");
   const at = (s) => page.evaluate((n) => {
     const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
     const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
@@ -614,7 +616,7 @@ for (const lang of ["en", "ja"]) {
   assert(cut.length === 0, lang + ": 按钮和标签的字没有被截断（" + cut.join(" / ") + "）");
   // …and T4's words are there, in this language
   const t4 = await page.evaluate(() => ({ limit: document.getElementById("sync-max-k").textContent, an: document.getElementById("sync-analyse-k").textContent }));
-  const want = lang === "en" ? ["New games since last time, at most", "Analyse the games after syncing"] : ["前回以降の新しい対局（最大）", "同期したら解析を始める"];
+  const want = lang === "en" ? ["New games since last time, at most", "Review the games after syncing"] : ["前回以降の新しい対局（最大）", "同期したら振り返りを始める"];
   assert(t4.limit === want[0] && t4.an === want[1], lang + ": T4 的两个选项说的是这种语言（" + JSON.stringify(t4) + "）");
   assert(errs.length === 0, lang + ": 没有页面异常 " + errs.join(" / "));
   await ctx.close();
