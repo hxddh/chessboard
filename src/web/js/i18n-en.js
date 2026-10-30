@@ -441,7 +441,7 @@
       "act.analyze": "Review", "act.deep": "Deep review", "act.stopAt": "Stop {0}", "act.retryHere": "Play on from here",
       "act.live": "Live engine", "tip.live": "Keep the engine on the position on the board, following the replay cursor", "set.humanLine": "Human moves", "tip.humanLine": "Under the engine lines: the moves players of your rating most often play here", "hl.head": "{0} players:", "hl.rare": "Game: {0}, rarely played", "hl.common": "{1}% of players at your level play this too: a common {0} mistake, worth drilling.", "an.depthN": "Depth {0}", "curve.atScore": "Ply {0} {1}", "an.winPct": "Win {0}%", "an.line": "Line {0}",
       "msg.premove.set": "Premove {0}", "msg.premove.dropped": "Premove no longer legal",
-      "act.pgnCopy": "Copy", "act.copyPgn": "Copy PGN", "act.lessonInfo": "About this lesson", "ach.all": "All {0} badges", "act.export": "Export", "act.paste": "Paste", "act.open": "Open",
+      "act.pgnCopy": "Copy", "act.copyPgn": "Copy PGN", "act.lessonInfo": "About this lesson", "ach.all": "All {0} badges", "ng.tier.0": "Novice", "ng.tier.1": "Beginner", "ng.tier.2": "Improving", "ng.tier.3": "Intermediate", "ng.tier.4": "Advanced", "ng.tier.5": "Strongest", "act.export": "Export", "act.paste": "Paste", "act.open": "Open",
       "act.fen": "FEN", "act.loadFen": "Load FEN", "act.editor": "Edit",
       "act.offerDraw": "Offer draw", "act.claimDraw": "Claim draw", "act.resign": "Resign",
       "act.clearSave": "Clear save", "act.reset": "Reset", "act.clear": "Clear",

@@ -46,7 +46,16 @@ export function createOpponentsUI(d) {
     // the fold widens the grid to the whole ladder (paint)
     const fold = el("ng-custom");
     if (fold) fold.addEventListener("toggle", () => paint());
+    let tier = -1;
     for (const p of Opponents.PERSONAS) {
+      // 15.0 F: the whole ladder is six rows by strength, a label at the head of each
+      const k = tierOf(p);
+      if (k !== tier) {
+        tier = k;
+        const lab = doc.createElement("span");
+        lab.className = "op-tier"; lab.dataset.tier = String(k); lab.hidden = true;
+        grid.appendChild(lab);
+      }
       const b = doc.createElement("button");
       b.type = "button";
       b.className = "op-card";
@@ -95,6 +104,9 @@ export function createOpponentsUI(d) {
   }
 
   function styleName(style) { return t("persona." + (style || "off")); }
+  /** 新手 · 入门 · 进阶 · 中级 · 高级 · 最强, by the rung's measured rating */
+  const TIERS = [700, 1000, 1300, 1700, 2100];
+  function tierOf(p) { const r = Opponents.ratingOf(p.level) || 0; const k = TIERS.findIndex((x) => r < x); return k < 0 ? TIERS.length : k; }
 
   function paint() {
     const grid = el("op-grid");
@@ -116,7 +128,10 @@ export function createOpponentsUI(d) {
     const at = Math.max(0, on ? all.indexOf(on) : all.findIndex((p) => p.level === pick.difficulty));
     const from = full ? 0 : Math.max(0, Math.min(all.length - SHOWN, at - 3));
     const shown = full ? all.length : SHOWN;
+    // 15.0 F: open, the ladder is faces in six rows; the one picked is named under it
+    if (grid.classList.contains("full") !== full) grid.classList.toggle("full", full);
     for (const b of grid.children) {
+      if (b.dataset.tier) { b.hidden = !full; setText(b, t("ng.tier." + b.dataset.tier)); continue; }
       const p = Opponents.personaById(b.dataset.op);
       if (!p) continue;
       const k = all.indexOf(p);
@@ -130,7 +145,11 @@ export function createOpponentsUI(d) {
       setText(b.querySelector(".op-style"), p.style === "off" ? diffName(p.level) : styleName(p.style));
       const tip = L()[p.id].hello;
       if (b.title !== tip) b.title = tip;
+      const said = tdot(nameOf(p), String(Opponents.ratingOf(p.level)), p.style === "off" ? diffName(p.level) : styleName(p.style));
+      if (b.getAttribute("aria-label") !== said) b.setAttribute("aria-label", said);
     }
+    const pickEl = el("op-pick");
+    if (pickEl) { pickEl.hidden = !full || !on; if (full && on) setText(pickEl, on ? grid.querySelector('[data-op="' + on.id + '"]').getAttribute("aria-label") : ""); }
     const r = d.rating();
     setText(el("op-you"), r ? tf("ng.yourRating", [fmtRating(r)]) : t("ng.noRating"));
   }

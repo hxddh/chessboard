@@ -1192,6 +1192,17 @@ if (scenario()) for (const theme of ["wood", "night", "day", "notebook"]) {
     await page.click('#train-seg button[data-seg="' + seg + '"]'); await page.waitForTimeout(600);
     low.push(...(await measure("#pane-play *")).map((l) => "train." + seg + ":" + l));
   }
+  // 15.0 F: the move numbers — they were the faint ink, about 3:1
+  await page.click('.rail-btn[data-view="play"]'); await settle(page);
+  for (const sq of ["e2", "e4"]) {
+    const pt = await page.evaluate((q) => { const r = document.getElementById("board").getBoundingClientRect(), z = r.width / 8;
+      return { x: r.left + (q.charCodeAt(0) - 97 + 0.5) * z, y: r.top + (8 - Number(q[1]) + 0.5) * z }; }, sq);
+    await page.mouse.click(pt.x, pt.y); await page.waitForTimeout(150);
+  }
+  await settle(page);
+  const nums = await page.evaluate(() => document.querySelectorAll("#move-list .mlnum").length);
+  low.push(...(await measure("#move-list *")).map((l) => "moves:" + l));
+  assert(nums > 0, theme + ": 15.0 F: the move list has a number to measure (" + nums + ")");
   for (const l of low.slice(0, 6)) console.error("  low contrast in " + theme + ": " + l);
   assert(low.length === 0,
     theme + ":界面文字都达到 WCAG AA" + (low.length ? " —— " + low.length + " 处:" + low.slice(0, 3).join(", ") : ""));

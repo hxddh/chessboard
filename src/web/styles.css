@@ -1735,6 +1735,27 @@
     /* 10.1 S1: the chosen card is raised (lighter on the dark themes), and the
        muted ink on it fell to 4.2:1 on 夜 — a chosen row's lines read in full ink */
     .op-card.active .op-style { color: inherit; }
+    /* 15.0 F: 更多选项 open, the whole ladder — six rows by strength, each a
+       label and the faces in it; the one picked is named on the line under */
+    .op-grid.full { grid-template-columns: 64px repeat(8, 32px); gap: 8px; align-items: center; }
+    .op-tier { grid-column: 1; font-size: 0.75rem; color: var(--muted); }
+    .op-grid.full .op-card {
+      width: 32px; height: 32px; min-height: 0; padding: 0; justify-content: center;
+      border-radius: 50%; background: none; box-shadow: none;
+    }
+    .op-grid.full .op-txt { display: none; }
+    .op-grid.full .op-av.portrait { width: 32px; height: 32px; }
+    .op-grid.full .op-card.active { border-color: transparent; box-shadow: 0 0 0 2px var(--accent); }
+    .op-grid.full .op-card:hover .op-av { box-shadow: 0 0 0 2px var(--accent-line); }
+    .op-pick:not([hidden]) { display: block; margin-top: 8px; font-size: 0.875rem; color: var(--text); }
+    .op-grid.full ~ #op-you { display: none; }
+    #ng-custom-body { display: flex; flex-direction: column; gap: 12px; }
+    .setting-k.has-info { cursor: help; }
+    .setting-k.has-info::after { content: " ⓘ"; }
+    /* the dialog is 512px inside: the extra clocks and the four styles each
+       take one row, on the same grid as the clock row above them */
+    #newgame-modal #clock-seg-more { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    #newgame-modal #persona-seg { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     .ng-custom { margin: 4px 0 8px; }
     .ng-custom-sum { cursor: pointer; font-size: 0.875rem; color: var(--muted); padding: 4px 0; }
     /* the custom clock's two numbers, beside their units */
@@ -2963,7 +2984,9 @@
        40px, not 36: 「100.」 at 15px is 29px of figures plus the 8px gap. */
     .mlnum {
       width: 40px; flex: none; text-align: right;
-      font-size: 0.875rem; color: var(--faint);
+      /* 15.0 F: the muted ink, not the faint one — a number read for its own
+         sake meets 4.5:1 in every theme (it was 3:1) */
+      font-size: 0.875rem; color: var(--muted);
       font-variant-numeric: tabular-nums;
       padding: 4px 8px 0 0; height: var(--row-h-sm);
       display: flex; align-items: center; justify-content: flex-end;
@@ -4180,7 +4203,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 #stats-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 13a4 4 0 1 0 0 8a4 4 0 1 0 0-8ZM10 24h8M11.5 24c0 4.5-1 8.5-3.5 12h12c-2.5-3.5-3.5-7.5-3.5-12M7 40h14M28 40V31M34 40V25M40 40V17M26 40h16'/%3E%3C/svg%3E"); }
 #lib-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 40h14M12 36h10M13 36l1-13h6l1 13M12 23h10M12 23v-6h2.5v3h2v-3h1v3h2v-3h2.5v6M30 40V14M35 40V18M38 18l5 22M28 40h16'/%3E%3C/svg%3E"); }
 #rep-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M24 19v23M24 19c-3-2-7-3-14-3v23c7 0 11 1 14 3c3-2 7-3 14-3V16c-7 0-11 1-14 3ZM24 6v6M21 9h6'/%3E%3C/svg%3E"); }
-#hist-body { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 6v6M13 9h6M10 23c0-4.5 2.7-8 6-8s6 3.5 6 8M10 23h12M11 23l-1 13h12l-1-13M8 40h16M36 21a7 7 0 1 0 0 14a7 7 0 1 0 0-14ZM36 24.5V28l2.5 2'/%3E%3C/svg%3E"); }
+#hist-body, #today-games-empty { --empty-ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 6v6M13 9h6M10 23c0-4.5 2.7-8 6-8s6 3.5 6 8M10 23h12M11 23l-1 13h12l-1-13M8 40h16M36 21a7 7 0 1 0 0 14a7 7 0 1 0 0-14ZM36 24.5V28l2.5 2'/%3E%3C/svg%3E"); }
 
 /* ------------------------------------------------------------------
    One empty state on the record page (7.9 §4a). 7.8.0 had three on one
@@ -4242,7 +4265,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .tool-row.live > #explorer-open, .tool-row.live > #pgn-copy, .tool-row.live > #pgn-download { display: none; }
 /* 9.0 S3 — 训练's switch over the panel, and 名局's read / guess */
 .train-seg { margin: 12px 0 4px; }
-.classic-mode { margin-top: 12px; }
+.classic-mode { margin: 12px 0; } /* 15.0 F: a step under the switch too, as under every segment */
 /* 9.0 S3 — the picker under the puzzle (v9.css .train__hero / .tiles /
    .modes): the rating with its curve and 为你出一题 in one card, the review
    queue as a row, the six kinds as tiles, the runs as two labelled rows.
@@ -4520,7 +4543,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .today-row > .today-block { margin-bottom: 0; }
 .today-block > .side-h, .today-block > .side-h-row { margin: 0 0 8px; }
 .today-meta { margin: 0; font-size: 0.75rem; line-height: var(--lh-body); color: var(--muted); }
-.today-hero { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 24px; align-items: start; }
+.today-hero { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 24px; align-items: center; } /* 15.0 F: the words beside the board sit in its middle */
 .today-hero-text { display: grid; gap: 8px; align-content: start; min-width: 0; }
 .today-hero-text > .side-h { margin: 0; }
 .today-hero-title { margin: 0; font-size: 1.125rem; font-weight: 600; line-height: var(--lh-tight); }
