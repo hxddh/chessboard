@@ -11,29 +11,27 @@
 | macOS（Apple Silicon） | **Chessboard-macOS-arm64.zip** | 解压得到 `Chessboard.app`，把它拖进「应用程序」（或 `mv Chessboard.app ~/Applications/`）再打开；首次右键「打开」过 Gatekeeper |
 | Windows（x64） | **Chessboard-Windows-x64.zip** | 解压后双击 `Chessboard\bin\chessboard.exe`，从哪个目录启动都可以；解压到 `Program Files` 这类写不进去的文件夹也能打开。需 WebView2 运行时（Win10/11 一般预装） |
 
-## 15.0.0 改了什么
+## 16.0.0 改了什么
 
-**同样的事，少几个按钮、少几句话，叫法只有一种。** 14.0 修好了走查里的毛病；15.0 不加功能，把每一屏收拾干净：一屏一个主按钮，下棋时只露下棋用得着的，同一件事处处一个名字，收起面板也知道下一步做什么，启动和首屏再快一截。
+**做工：每一样东西都精致，并且是一个样子。** 15.0 做完了减法；16.0 不加功能，回头看剩下的每一样够不够精致——棋子、棋盘、按钮的圆角与阴影、动效、焦点环——并把唯一一处真毛病修掉。
 
-**叫法只有一种。** 三种语言一起改，一共 80 条：引擎把下完的棋过一遍叫「复盘」，更细的那一遍是「精细复盘」，棋盘上实时的线叫「实时引擎」；开一盘新棋处处叫「新对局」，结束后叫「再来一盘」；同一个局面从头来叫「重来」，从这一手再试叫「再试一次」。「分析」「精析」「下一盘」「重做」这些说法不再出现（一条测试守着）。
+**棋子换成 Merida。** 默认棋子从线描的 cburnett 换成有明暗的 Merida。它不进首屏包，启动时在第一帧之前取来，所以第一眼就是它；原来的那套改名「伯内特」，设置里一点就换回去，之后一直保留。从 15.x 升上来、没自己选过棋子的，也换成 Merida。吃子条里的小棋子跟着棋盘那一套走。
 
-**一屏一个主按钮。** 每个画面最多一个实心按钮：今天是「今天的训练」，棋谱是「导入」。今天页右上的三个按钮（复盘一局、为你出一题、新对局）收进一个 ⋯。下棋时面板只剩四个步进、提和、认输、复盘和 ⋯：「新对局」在对局中不出现（N 和 ⌘K 照旧），复制 PGN、导出 PGN、开局浏览器进 ⋯。双人对局下着时也不露复盘那一组。被收起的入口 ⌘K 都找得到。课名只在棋盘上方说一次。
+**棋盘有了木纹。** 木棋盘有一层很淡的木纹，绿、蓝两种棋盘是极细的磨砂，纸和大理石照旧。都是在画布上现算的，不加载图片；第一帧先画纯色，空下来再补上纹理，所以启动不变慢。设置 → 棋盘 →「棋盘纹理」可关，关掉就是 15.x 那样的纯色格子。
 
-**收起面板也有下一步。** 上课、做题、残局、名局猜着时把面板收起，棋盘下方是一条和对局结束时一个样子的结果条：这一步要做什么、走得对不对，以及一个实心的下一步（下一课、下一题；走错了还没解开时是「看提示」）。原来棋盘上方那行小字没了，上课时的棋盘和下棋一样大。提示在窗口有空的时候放在棋盘右下角，不再压着棋盘上下的那两条。
+**一套零件。** 圆角只剩 8 / 12 / 16 三档和圆形，阴影只剩「控件」「浮层」两级，其余写法都起了名字，样式表里一处不许手写（静态测试守着）。按钮高度只有 32 / 36 两种。危险按钮是普通按钮的样子、红色的字，只有确认框里那一个键填红：下棋时「认输」和「提和」是同一种按钮，点下去问你时才是红的。翻棋谱的四个键去掉了外框和竖线，成一组安静的按钮。
 
-**少几句话。** 课文第一次展开，走过第一步就收起，留一个「说明」；复盘图例改成曲线的悬停提示；成就页只露离下一枚最近的那一个，15 枚收在下面。
+**动起来。** 分段控件（语言、外观、执子……）选中的那一块会滑到新选的那一格；切换页面时淡入并上移 4 px。「减少动态效果」打开时这些都不动。
 
-**构图。** 新对局对话框：「更多选项」打开时 21 位对手按强度排成六行头像（新手、入门、进阶、中级、高级、最强），选中的那位写在下面；900 高的窗口全部展开不用滚动。开局前的对手卡在执子或棋钟不是默认时写出「执黑 · 10」。今天页「接下来」的字在小棋盘旁居中，没有对局时用和别处一样的空状态。回合编号的对比度到 4.5 : 1 以上。
+**修好的。** 今天页主卡的小棋盘，空着的四行被压扁了（有子的行 45 px、空的行 30 px），现在八行一样高，有测试量着。四处键盘焦点环用的是纯强调色，在浅色主题上只有 2.75 : 1，改成和全应用同一个焦点环。
 
-**更快。** 首屏包 888,759 → 859,640 字节：开局的中文「思路」、中文开局家族与变例名移到用的时候才取的文件，走子列表那套棋子图精简了写法（看起来一样）。启动拆成两段：首帧之后最长的一段，今天页 142 → 87 ms、下棋 116 → 59 ms。
+**首屏包** 859,640 → 853,207 字节（伯内特那套也搬进了按需加载的分块）。
 
-**工程。** CI 换到 Node 26；`app.js` 5,186 → 4,849 行（提示与确认框、训练条各自成文件）。
+**存档**：读 15.0 的档案，格式没变。
 
-**存档**：读 14.0 的档案，格式没变。
+计划、依据与落地记录见 [docs/v16-0-plan.md](docs/v16-0-plan.md)；更早各版「改了什么」在 [docs/CHANGELOG.md](docs/CHANGELOG.md)。
 
-计划、依据与落地记录见 [docs/v15-0-plan.md](docs/v15-0-plan.md)；更早各版「改了什么」在 [docs/CHANGELOG.md](docs/CHANGELOG.md)。
-
-## 怎么玩（v15.0）
+## 怎么玩（v16.0）
 
 ### 今天
 
@@ -158,10 +156,9 @@ src/web/
   index.html · styles.css          # 样式按 docs/design-constraints.md 的设计语言 v2
   fonts/                           # Inter(OFL)Latin 可变子集 + 许可全文
   js/chess.js      # 规则（vendored chess.js 0.13.4, BSD-2-Clause）
-  js/pieces-cburnett.js # 默认棋子:Colin Burnett 原版 cburnett（GPLv2+,见下）,随主包
   js/pieces.js     # 「经典」棋子:cburnett 的 Wikimedia 重绘版（多重许可,见下）;棋谱里的小棋子图形也取自它
-  js/pieces-merida.js · pieces-chessnut.js · pieces-fantasy.js · pieces-celtic.js · pieces-spatial.js
-                   # 其余五套棋子,各自一个按需加载的分块(许可见下；设置 → 棋盘 → 棋子)
+  js/pieces-merida.js · pieces-cburnett.js · pieces-chessnut.js · pieces-fantasy.js · pieces-celtic.js · pieces-spatial.js
+                   # 其余六套棋子,各自一个按需加载的分块(默认的 Merida 在首帧前取来;许可见下；设置 → 棋盘 → 棋子)
   js/look.js       # 外观 × 棋盘 × 边框 × 棋子四个维度(纯函数)
   js/today-page.js # 「今天」页;主卡在 js/trainer/today.js,小棋盘在 js/mini-board.js
   js/me-page.js    # 「我的」页
@@ -206,9 +203,9 @@ third_party/maia/        # Maia 1100–1900 的 lc0 权重（GPLv3）
 GPLv3（见 LICENSE）。vendored chess.js 保留其 BSD-2-Clause 版权头；vendored Stockfish.js
 为 GPLv3（`third_party/stockfish/COPYING.txt`）；Maia 的权重为 GPLv3（`third_party/maia/LICENSE`，安装包里是 `licenses/maia-LICENSE.txt`）；界面的 Latin 字体 Inter 为 SIL Open Font License 1.1（`src/web/fonts/Inter-OFL.txt`，安装包里是 `licenses/Inter-OFL.txt`）；棋子矢量图形共七套，逐套核过许可，应用内「关于」面板列的是同样的作者与许可：
 
-- **cburnett（默认，`js/pieces-cburnett.js`）**：作者 Colin M.L. Burnett，原样取自 lichess-org/lila 的 `public/piece/cburnett`，该仓库 COPYING.md 列其许可为 GPLv2+，本应用按 GPLv3 使用。
+- **伯内特 / cburnett（`js/pieces-cburnett.js`）**：作者 Colin M.L. Burnett，原样取自 lichess-org/lila 的 `public/piece/cburnett`，该仓库 COPYING.md 列其许可为 GPLv2+，本应用按 GPLv3 使用。
 - **经典（`js/pieces.js`）**：同一套设计的 Wikimedia Commons 重绘版（作者 Cburnett / Rfc1394，经 cm-chessboard 整理）。原作以 GFDL / BSD / **GPL** / CC BY-SA 3.0 多重许可发布；本仓库按其中的 GPL 一项使用，与本应用的 GPLv3 相容（CC BY-SA 3.0 单独一项并不与 GPLv3 相容，4.0 才加入单向相容，所以写清楚取的是哪一项）。
-- **Merida（`js/pieces-merida.js`）**：作者 Armando Hernandez Marroquin，原样取自 lila 的 `public/piece/merida`，COPYING.md 列为 GPLv2+。
+- **Merida（默认，`js/pieces-merida.js`）**：作者 Armando Hernandez Marroquin，原样取自 lila 的 `public/piece/merida`，COPYING.md 列为 GPLv2+。
 - **Chessnut（`js/pieces-chessnut.js`）**：作者 Alexis Luengas，原样取自 lila 的 `public/piece/chessnut`；COPYING.md 列为 Apache 2.0，作者自己的仓库（LexLuengas/chessnut-pieces 的 LICENSE.txt）是同一份 Apache 2.0 全文。Apache 2.0 与 GPLv3 相容。
 - **Fantasy / Celtic / Spatial（`js/pieces-fantasy.js` · `js/pieces-celtic.js` · `js/pieces-spatial.js`）**：作者 Maurizio Monge，原样取自 lila 的 `public/piece/{fantasy,celtic,spatial}`；COPYING.md 列为 MIT，作者仓库（maurimo/chess-art）的 LICENSE 是 MIT 全文，README 要求注明作者 —— 「关于」面板写了。MIT 与 GPLv3 相容。
 
