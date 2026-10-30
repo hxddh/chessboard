@@ -229,6 +229,7 @@ import { drawSpark } from "./charts.js";
   const store = createStore(initialState());
   /** sparring personality — persona.js IDS (in the opponents chunk); "off" is plain engine play */
   const PERSONA_IDS = ["off", "greedy", "principled", "attacker"];
+  const FOLDED = ["explorer-open", "pgn-copy", "pgn-download"]; // 15.0 S2: the file tools mid-game live in ⋯
   store.ui.langId = I18n.getLang();
 
   Audio2.init(() => store.ui.soundOn);
@@ -240,12 +241,9 @@ import { drawSpark } from "./charts.js";
   // moves as it goes. The model is rebuilt on EVERY draw(), and draw() runs on
   // every animation frame and every pointermove of a drag — so the cost of a
   // repaint grew with the length of the game. Measured before this cache:
-  //
   //     0 plies 1.28ms · 40 plies 5.35ms · 80 plies 10.4ms · 120 plies 19.3ms
-  //
   // Past ~110 plies a single repaint no longer fit in a 60fps frame, and
-  // dragging a piece in a long game visibly dragged. Not a regression — it had
-  // always been this way, which is why it was never reported as one.
+  // dragging a piece in a long game visibly dragged.
   //
   // So the histories are cached, and every mutation of `game` goes through one
   // of the five doors below. A raw game.move() elsewhere would leave the caches
@@ -3268,6 +3266,7 @@ import { drawSpark } from "./charts.js";
 
     const live = !modal && isLive() && h.length > 0 && !over;
     if (el("tool-row")) el("tool-row").classList.toggle("live", live); // 15.0 S2: mid-game the file tools fold into ⋯
+    for (const id of FOLDED) { const m = el("more-" + id); if (m) m.hidden = !live; } // …where they stand as words
     avail(el("btn-resign"), live);
     avail(el("btn-offerdraw"), live && !store.session.drawOfferPending);
     // Claim: it exists exactly when a rule says it may be claimed. It used to
@@ -4197,6 +4196,7 @@ import { drawSpark } from "./charts.js";
   document.getElementById("toggle-panel").onclick = togglePanel;
   // 7.9 §1b equal action cells; v8-0-plan A2 the play view stretches with its window
   watchPlayLayout({ app: appEl, view: appEl.querySelector(".stage"), side: el("side"), grip: el("sheet-grip"), close: () => setPanelOpen(false), list: el("move-list"), strip: el("move-strip"), opening: el("opening-line"), infoOpening: el("info-opening") });
+  for (const id of FOLDED) { const m = el("more-" + id); if (m) m.onclick = () => el(id).click(); } // 15.0 S2: ⋯'s copies of the file tools
   const moreBtn = document.getElementById("more-tools");
   if (moreBtn) {
     moreBtn.onclick = () => {

@@ -1349,6 +1349,8 @@
     /* 9.0 V3: a lesson with no sparring partner names itself on that line —
        a label, not a player: no side's colour on its disc */
     .pstrip.is-label .ps-av { background: var(--card); color: var(--muted); }
+    /* 15.0 S2: with the panel open its head names the lesson; the strip does not say it again */
+    #app.panel-open .pstrip.is-label .ps-who, #app.panel-open .pstrip.is-label .ps-av { visibility: hidden; }
 
     /* captured pieces, grouped by kind: a second pawn tucks under the first
        the way a pile of taken men sits beside a real board */
@@ -4237,6 +4239,14 @@ span[data-icon] { display: inline-grid; place-items: center; }
   border: 1px solid var(--card-border); border-radius: var(--radius-md);
   background: var(--card); box-shadow: var(--shadow-pop);
 }
+/* 15.0 S2 — 今天's three side doors under one ⋯ by the greeting */
+.today-more { align-self: start; }
+.today-more .an-more-menu { min-width: 160px; }
+.today-more .an-more-menu .act-btn { justify-content: flex-start; text-align: left; }
+/* 15.0 S2 — a game being played: copy, export and the explorer wait in ⋯
+   (app.js renderGameActions sets .live); the 复盘 key stays, it is the
+   review's way in */
+.tool-row.live > #explorer-open, .tool-row.live > #pgn-copy, .tool-row.live > #pgn-download { display: none; }
 /* 9.0 S3 — 训练's switch over the panel, and 名局's read / guess */
 .train-seg { margin: 12px 0 4px; }
 .classic-mode { margin-top: 12px; }
@@ -4501,8 +4511,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .today-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
 .today-head .page-h { margin: 0; }
 .today-brand { margin: 0 0 8px; font-size: 0.875rem; }
-.today-head-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; flex: none; }
-.today-head-acts > .act-btn, .today-acts > .act-btn { flex: none; width: auto; min-width: 128px; padding: 0 16px; }
+.today-acts > .act-btn { flex: none; width: auto; min-width: 128px; padding: 0 16px; }
 .today-date { margin: 4px 0 0; font-size: 0.875rem; color: var(--muted); }
 .today-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px; align-items: stretch; margin-bottom: 24px; }
 .today-card {

@@ -45,6 +45,14 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(0, r));
 const PORT = server.address().port;
 
+// 15.0 S2: mid-game the file tools and 新对局 leave the surface — ⋯ holds the
+// first as words, N is the second; this goes whichever way the screen offers
+async function surface(page, id) {
+  if (await page.isVisible("#" + id)) return page.click("#" + id);
+  if (id === "btn-new") return page.keyboard.press("n");
+  if (await page.evaluate(() => document.getElementById("more-row").hidden)) await page.click("#more-tools");
+  return page.click("#more-" + id);
+}
 let failed = 0;
 const assert = (cond, msg) => {
   if (cond) console.log("ok:", msg);
@@ -1605,7 +1613,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
 
   // a game in progress: one step, the warning in the dialog, no second box
   await tap("e2"); await tap("e4"); await settle(page);
-  await page.click("#btn-new"); await settle(page);
+  await surface(page, "btn-new"); await settle(page);
   let s = await state();
   assert(s.open && !s.confirm, `「新局」打开新对局对话框,不再先弹确认框(对话框 ${s.open} / 确认框 ${s.confirm})`);
   assert(s.warn, "……对局进行中,对话框顶上写着「会结束当前这盘」");
@@ -1624,7 +1632,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     `Esc 关掉:这盘还在(${s.plies} 着),执子没变(${s.settings.humanColor}),控件仍在对话框里`);
 
   // Tab stays in the dialog and walks it top to bottom
-  await page.click("#btn-new"); await settle(page);
+  await surface(page, "btn-new"); await settle(page);
   const order = await page.evaluate(() => {
     const m = document.getElementById("newgame-modal");
     return [...m.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent).map((b) => b.id || b.dataset.mode || (b.dataset.seg && "seg" + b.dataset.seg) || b.dataset.op || b.dataset.diff || b.dataset.persona || b.dataset.color || b.dataset.tc);
@@ -1783,7 +1791,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       assert(s.open && s.focus === focus, `§5 ${mode} …点它打开新对局对话框,焦点在 ${focus}(${JSON.stringify(s)})`);
       await page.keyboard.press("Escape"); await settle(page);
     }
-    // …and it goes once the game has begun: 本局's 新局 takes over
+    // …and it goes once the game has begun; 15.0 S2: mid-game 新对局 is N and
+    // ⌘K, not a button beside 提和 / 认输
     const tap = async (sq) => {
       const p = await page.evaluate((q) => {
         const r = document.getElementById("board").getBoundingClientRect(), z = r.width / 8;
@@ -1796,7 +1805,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       idle: !!(document.getElementById("idle-new") || {}).offsetParent,
       btnNew: !!document.getElementById("btn-new").offsetParent,
     }));
-    assert(!after.idle && after.btnNew, `§5 ${mode} 走了一步之后:它让位给「本局」里的新局(${JSON.stringify(after)})`);
+    assert(!after.idle && !after.btnNew, `§5 ${mode} 走了一步之后:它收起,对局中也没有新对局按钮(${JSON.stringify(after)})`);
     assert(errs.length === 0, `§5 ${mode}:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
     await ctx.close();
   }
@@ -1909,6 +1918,8 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     await page.waitForTimeout(900);
     await page.click('.rail-btn[data-view="home"]'); await settle(page);
     let clicks = 0;
+    // 15.0 S2: 新对局 is behind 今天's ⋯ now — two clicks, still no dialog
+    await page.click("#today-more summary"); clicks++;
     await page.click("#today-new"); clicks++;
     await page.waitForTimeout(700);
     const r = await page.evaluate(() => ({
@@ -1917,11 +1928,12 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode,
       opp: document.getElementById("idle-name").textContent.trim(),
     }));
-    assert(clicks === 1 && r.view === "play" && !r.dialog && r.mode === "ai" && r.opp === "莉娜",
-      "11.0 U2:今天 →「下一盘」一次点击就在棋盘上，对手是上次的莉娜，中间没有对话框", JSON.stringify(r));
+    assert(clicks === 2 && r.view === "play" && !r.dialog && r.mode === "ai" && r.opp === "莉娜",
+      "11.0 U2:今天 → ⋯ →「新对局」就在棋盘上，对手是上次的莉娜，中间没有对话框", JSON.stringify(r));
     // and a puzzle that suits you: one click from 今天 as well (it was 训练 →
     // 谜题 → 为你出一题 for anyone whose last segment was not the puzzles)
     await page.click('.rail-btn[data-view="home"]'); await settle(page);
+    await page.click("#today-more summary");
     await page.click("#today-puzzle");
     await page.waitForTimeout(900);
     const pz = await page.evaluate(() => ({
@@ -1930,7 +1942,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       task: (document.getElementById("puzzle-task").textContent || "").trim(),
     }));
     assert(pz.view === "train" && pz.mode === "puzzle" && !!pz.task,
-      "11.0 U2:今天 →「为你出一题」一次点击就是一道题", JSON.stringify(pz));
+      "11.0 U2:今天 → ⋯ →「为你出一题」就是一道题", JSON.stringify(pz));
     assert(errs.length === 0, `11.0 U2:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
     await ctx.close();
   }

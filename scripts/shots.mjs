@@ -257,7 +257,7 @@ const SHOTS = [
   { name: "palette-1440-wood-ja", vp: WIDE, lang: "ja", theme: "wood", mode: "ai", view: "home",
     at: async (page) => { await page.keyboard.press("Control+k"); await page.waitForTimeout(600); await page.keyboard.type("終盤"); await page.waitForTimeout(300); } },
   { name: "analyse-1024-night-en", vp: MID, lang: "en", theme: "night", mode: "ai", view: "home",
-    at: async (page) => { await page.click("#today-analyse"); await page.fill("#an-text", "https://lichess.org/q7ZvsdUF"); await page.click("#an-go"); await page.waitForTimeout(300); } },
+    at: async (page) => { await page.evaluate(() => { document.getElementById("today-more").open = true; }); await page.click("#today-analyse"); await page.fill("#an-text", "https://lichess.org/q7ZvsdUF"); await page.click("#an-go"); await page.waitForTimeout(300); } },
 ];
 
 /** A shell's name (data-theme) as the look that gives it (look.js shellFor). */

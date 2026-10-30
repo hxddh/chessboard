@@ -51,6 +51,14 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(0, r));
 const PORT = server.address().port;
 
+// 15.0 S2: mid-game the file tools and 新对局 leave the surface — ⋯ holds the
+// first as words, N is the second; this goes whichever way the screen offers
+async function surface(page, id) {
+  if (await page.isVisible("#" + id)) return page.click("#" + id);
+  if (id === "btn-new") return page.keyboard.press("n");
+  if (await page.evaluate(() => document.getElementById("more-row").hidden)) await page.click("#more-tools");
+  return page.click("#more-" + id);
+}
 let failed = 0;
 
 /**
@@ -601,7 +609,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await settle(pg);
 
   // export: everything above is in the file, and the result token once
-  await pg.click("#pgn-copy");
+  await surface(pg, "pgn-copy");
   await settle(pg);
   const out = await pg.evaluate(() => window.__clip);
   const body = out.split("\n\n").pop() || "";
@@ -1910,7 +1918,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     OPERA.map((x, i) => (i % 2 ? "" : (i / 2 + 1) + ". ") + x).join(" ") + " 1-0\n";
   const note = () => pg.evaluate(() => { const n = document.getElementById("an-note"); return n.hidden ? "" : n.textContent; });
   // a Chess.com link: no single-game export — the dialog says what to do instead
-  await pg.click("#today-analyse");
+  await pg.evaluate(() => { document.getElementById("today-more").open = true; }); await pg.click("#today-analyse");
   await pg.fill("#an-text", "https://www.chess.com/game/live/123456789");
   await pg.click("#an-go");
   assert(/分享/.test(await note()), "A1：Chess.com 链接 —— 说明去「分享」里复制 PGN", await note());
@@ -1945,7 +1953,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(reason != null && /^Morphy · /.test(reason), "14.0 A1：结果条盖住的那一方的名字留在结果条上", reason);
   // …and a paste with no headers at all is 玩家 1 / 玩家 2, White won — not 「尼可 · 你赢了」
   await pg.click('#rail button[data-view="home"]');
-  await pg.click("#today-analyse");
+  await pg.evaluate(() => { document.getElementById("today-more").open = true; }); await pg.click("#today-analyse");
   await pg.fill("#an-text", "1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0");
   await pg.click("#an-go");
   await pg.waitForTimeout(700);
@@ -1971,7 +1979,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     "A1：开了联网，Lichess 链接取的是那一局（只送 8 位编号）", JSON.stringify(asked));
   // the blank analysis board: a game on the board is asked about first
   await pg.click('#rail button[data-view="home"]');
-  await pg.click("#today-analyse");
+  await pg.evaluate(() => { document.getElementById("today-more").open = true; }); await pg.click("#today-analyse");
   await pg.click("#an-board");
   await settle(pg);
   const asks = await pg.isVisible("#confirm-modal.show").catch(() => false);

@@ -69,6 +69,14 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(0, r));
 const PORT = server.address().port;
 
+// 15.0 S2: mid-game the file tools and 新对局 leave the surface — ⋯ holds the
+// first as words, N is the second; this goes whichever way the screen offers
+async function surface(page, id) {
+  if (await page.isVisible("#" + id)) return page.click("#" + id);
+  if (id === "btn-new") return page.keyboard.press("n");
+  if (await page.evaluate(() => document.getElementById("more-row").hidden)) await page.click("#more-tools");
+  return page.click("#more-" + id);
+}
 let failed = 0;
 const assert = (cond, msg) => {
   if (cond) console.log("ok:", msg);
@@ -2377,6 +2385,15 @@ if (scenario()) {
   });
   assert(vs.label && vs.shown && !vs.active, "lesson 1 has no sparring partner, so the opponent's strip is the lesson's label (" + JSON.stringify(vs) + ")");
   assert(!!vs.name && vs.name === vs.title, "…and it reads the lesson's title (" + vs.name + " / " + vs.title + ")");
+  // 15.0 S2: said once — with the panel open its head has the title, and the
+  // strip's label steps back; closed, the strip is where the title is
+  const said = async () => page.evaluate(() => ({ open: document.getElementById("app").classList.contains("panel-open"),
+    strip: getComputedStyle(document.querySelector("#strip-b .ps-who")).visibility === "visible" }));
+  const a = await said();
+  await page.keyboard.press("p");
+  await settle(page);
+  const b = await said();
+  assert(a.open !== b.open && [a, b].every((x) => x.strip === !x.open), "15.0 S2: the lesson's title is on the strip only while the panel is closed (" + JSON.stringify([a, b]) + ")");
   await ctx.close();
 }
 
@@ -4053,7 +4070,7 @@ if (scenario()) {
       "✕ puts the card away, and 分析 in the review row is the one filled button again (" + s.primaries.join(", ") + ")");
     // Codex on #82: the ✕ was remembered by (plies, FEN, result), so the same
     // mate in the next game came up already dismissed
-    await page.click("#btn-new");
+    await surface(page, "btn-new");
     await settle(page);
     await page.click("#ng-start");   // v7-8-plan §4: a finished game — no warning, just 开始
     await settle(page);
@@ -6094,7 +6111,7 @@ if (scenario()) {
           .map((e) => e.id || e.className || e.textContent.slice(0, 12));
         return { out, sideways: m.scrollWidth - m.clientWidth, inView: r.left >= 0 && r.right <= innerWidth + 0.5 };
       }, sel);
-      await page.click("#today-analyse");
+      await page.evaluate(() => { document.getElementById("today-more").open = true; }); await page.click("#today-analyse");
       await page.fill("#an-text", "https://lichess.org/q7ZvsdUF");
       await page.click("#an-go");
       await settle(page);

@@ -49,6 +49,14 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(0, r));
 const PORT = server.address().port;
 
+// 15.0 S2: mid-game the file tools and 新对局 leave the surface — ⋯ holds the
+// first as words, N is the second; this goes whichever way the screen offers
+async function surface(page, id) {
+  if (await page.isVisible("#" + id)) return page.click("#" + id);
+  if (id === "btn-new") return page.keyboard.press("n");
+  if (await page.evaluate(() => document.getElementById("more-row").hidden)) await page.click("#more-tools");
+  return page.click("#more-" + id);
+}
 let failed = 0;
 const assert = (cond, msg) => {
   if (cond) console.log("ok:", msg);
@@ -186,7 +194,7 @@ const PLACEMENT = STUDY.split(" ")[0];
   await page.click("#slots-close");
 
   // wipe the board, then read the slot back
-  await page.click("#btn-new");
+  await surface(page, "btn-new");
   await page.click("#ng-start");   // v7-8-plan §4: the new-game dialog, one step
   await page.waitForTimeout(300);
   await page.click("#slots-open");
@@ -278,7 +286,7 @@ const PLACEMENT = STUDY.split(" ")[0];
     await page.waitForTimeout(400);
     let downloaded = null;
     page.on("download", (d) => { downloaded = d.suggestedFilename(); });
-    await page.click("#pgn-download");
+    await surface(page, "pgn-download");
     await page.waitForTimeout(900);
     const said = await page.evaluate(() => document.getElementById("toast").textContent.trim());
     const wrote = await page.evaluate(() => window.__wrote || []);
@@ -545,7 +553,7 @@ const PLACEMENT = STUDY.split(" ")[0];
   await page.waitForTimeout(400);
   const PLAYED = "e4 e5 Nf3 Nc6 Bc4 Bc5 O-O Nf6 Nxe5 Nxe5";
 
-  await page.click("#pgn-copy");
+  await surface(page, "pgn-copy");
   await page.waitForTimeout(500);
   if (await page.evaluate(() => !!document.getElementById("more-row").hidden)) {
     await page.click("#more-tools");
@@ -787,7 +795,7 @@ const PLACEMENT = STUDY.split(" ")[0];
     await page.waitForTimeout(700);
     if (await page.isVisible("#confirm-modal.show").catch(() => false)) { await page.click("#confirm-ok"); await page.waitForTimeout(600); }
     await moreOpen(page);
-    await page.click("#pgn-copy");
+    await surface(page, "pgn-copy");
     await page.waitForTimeout(300);
     const out = await page.evaluate(() => window.__writes[window.__writes.length - 1] || "");
     const body = out.split("\n\n").pop() || "";

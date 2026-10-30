@@ -472,7 +472,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "act.analyze": "复盘", "act.deep": "精细复盘", "act.stopAt": "停止 {0}", "act.retryHere": "从这里续下",
       "act.live": "实时引擎", "tip.live": "引擎跟着棋盘上的局面实时给出变化，随复盘游标走", "set.humanLine": "人会怎么走", "tip.humanLine": "引擎栏下面，同等级分的人在这个局面最常走的几步", "hl.head": "{0} 分的人：", "hl.rare": "本局 {0} 少有人走", "hl.common": "同水平的人 {1}% 也会这么走：{0} 分段的常见错误，值得练。", "an.depthN": "深度 {0}", "curve.atScore": "第 {0} 着 {1}", "an.winPct": "胜率 {0}%", "an.line": "第 {0} 线",
       "msg.premove.set": "已预走 {0}", "msg.premove.dropped": "预走已失效",
-      "act.pgnCopy": "复制", "act.export": "导出", "act.paste": "粘贴", "act.open": "打开",
+      "act.pgnCopy": "复制", "act.copyPgn": "复制 PGN", "act.export": "导出", "act.paste": "粘贴", "act.open": "打开",
       "act.fen": "FEN", "act.loadFen": "载入 FEN", "act.editor": "编辑",
       "act.offerDraw": "提和", "act.claimDraw": "判和", "act.resign": "认输",
       "act.clearSave": "清除存档", "act.reset": "重置", "act.clear": "清零",

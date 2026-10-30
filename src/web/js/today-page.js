@@ -232,6 +232,14 @@ export function createTodayPage(d) {
   }
 
   function wire() {
+    // 15.0 S2: the three side doors are a ⋯ menu; it shuts on a choice, a
+    // click elsewhere, or Escape, as a menu does
+    const more = $("today-more");
+    if (more) {
+      more.addEventListener("click", (ev) => { if (ev.target.closest(".an-more-menu button")) more.open = false; });
+      doc.addEventListener("pointerdown", (ev) => { if (more.open && !more.contains(ev.target)) more.open = false; });
+      more.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && more.open) { more.open = false; more.querySelector("summary").focus(); } });
+    }
     const nw = $("today-new");
     // v11-0-plan U2: straight into the game (game-controller.js playNext)
     if (nw) nw.onclick = () => playNext();

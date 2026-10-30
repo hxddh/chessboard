@@ -1886,7 +1886,7 @@ await scenario("人会怎么走", async () => {
   assert(!!fast && Date.now() - t0 < 3000, "人会怎么走：连按六步，最后一个局面 3 秒内有答案（" + (Date.now() - t0) + "ms）");
   // the analysis board: under 持续分析's lines
   await page.click('#rail button[data-view="home"]');
-  await page.click("#today-analyse");
+  await page.evaluate(() => { document.getElementById("today-more").open = true; }); await page.click("#today-analyse");
   await page.click("#an-board");
   await page.waitForTimeout(600);
   if (await page.isVisible("#confirm-modal.show").catch(() => false)) { await page.click("#confirm-ok"); await page.waitForTimeout(600); }

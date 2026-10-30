@@ -40,6 +40,14 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(0, r));
 const PORT = server.address().port;
 
+// 15.0 S2: mid-game the file tools and 新对局 leave the surface — ⋯ holds the
+// first as words, N is the second; this goes whichever way the screen offers
+async function surface(page, id) {
+  if (await page.isVisible("#" + id)) return page.click("#" + id);
+  if (id === "btn-new") return page.keyboard.press("n");
+  if (await page.evaluate(() => document.getElementById("more-row").hidden)) await page.click("#more-tools");
+  return page.click("#more-" + id);
+}
 let failed = 0;
 const assert = (cond, msg, extra) => {
   if (cond) console.log("ok  ", msg);
@@ -108,7 +116,7 @@ const waitRows = async (page, pred, ms = 3000) => {
   const { page, errs } = await open(ctx);
   assert(await page.isHidden("#explorer"), "默认不开");
   assert(!served.some((p) => p.includes("chunk-explorer")), "没打开之前，不取 chunk-explorer.js（主包只带一个开关）");
-  await page.click("#explorer-open");
+  await surface(page, "explorer-open");
   assert(await page.getAttribute("#explorer-open", "aria-pressed") === "true", "「开局」键 aria-pressed 跟着变");
   let r = await waitRows(page, (x) => x.length >= 2);
   assert(await page.isVisible("#explorer"), "按「开局」，面板出来");
@@ -353,7 +361,7 @@ for (const [lang, key, label, row] of [
   });
   const { page, errs } = await open(ctx);
   await page.waitForTimeout(600);
-  await page.click("#explorer-open");
+  await surface(page, "explorer-open");
   let r = await waitRows(page, (x) => x.some((y) => y.san === "e4" && y.n === "5"), 5000);
   const e4 = r.find((x) => x.san === "e4");
   assert(e4 && e4.n === "5", "起始局面 e4 5 局：导入的 4 局加 1 局本机对局（从 C1 的索引来）", JSON.stringify(r));
