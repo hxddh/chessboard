@@ -718,7 +718,7 @@ await scenario("分析中锁棋谱", async () => {
   const k = await page.evaluate(() => window.__toasts.length);
   await clickMove(page, "e4", "e2");
   const refused = await until(() => page.evaluate((i) =>
-    window.__toasts.slice(i).find((s) => /分析进行中/.test(s)) || null, k), 2000, 100);
+    window.__toasts.slice(i).find((s) => /复盘进行中/.test(s)) || null, k), 2000, 100);
   const mid = await state();
   await until(async () => !(await busy()), 90000);
   const after = await state();
@@ -727,7 +727,7 @@ await scenario("分析中锁棋谱", async () => {
   assert(during.save === true && menu.open && menu.note && menu.del,
     "分析中锁棋谱：精析进行中「存为变着」「编辑注释」「删除分支」都不可点", JSON.stringify({ during, menu }));
   assert(!!refused && mid.plies === 13, "分析中锁棋谱：精析进行中在棋盘上走子被拒，并说明原因", JSON.stringify({ refused, mid }));
-  assert(after.save === false && after.plies === 13 && toasts.some((s) => /^分析完成/.test(s)) &&
+  assert(after.save === false && after.plies === 13 && toasts.some((s) => /^复盘完成/.test(s)) &&
     !toasts.some((s) => /已存为变着/.test(s)),
     "分析中锁棋谱：精析照常跑完，之后「存为变着」又能点了", JSON.stringify({ after, toasts }));
   assert(!errs.length, "分析中锁棋谱：页面没有报错", errs.join(" / "));
@@ -833,7 +833,7 @@ await scenario("再深一遍", async () => {
     return g && g.an.budget === 400 ? x : null;
   }, 60000, 300);
   const done = await until(() => page.evaluate((i) =>
-    window.__toasts.slice(i).find((s) => /深分析完/.test(s)) || null, k), 3000, 100);
+    window.__toasts.slice(i).find((s) => /精细复盘完/.test(s)) || null, k), 3000, 100);
   const g1 = l1 && l1.games.find((e) => e.id === trap0.id);
   assert(!!g1 && g1.an.scalars.every((x) => x != null) && g1.an.scalars.length === g1.plies + 1 && !!done,
     "再深一遍：" + ((Date.now() - t0) / 1000).toFixed(1) + " 秒按 400ms 重析完那一局，没有空洞，并报告结果", done);
@@ -1886,7 +1886,7 @@ await scenario("人会怎么走", async () => {
   assert(!!fast && Date.now() - t0 < 3000, "人会怎么走：连按六步，最后一个局面 3 秒内有答案（" + (Date.now() - t0) + "ms）");
   // the analysis board: under 持续分析's lines
   await page.click('#rail button[data-view="home"]');
-  await page.click("#today-analyse");
+  await page.evaluate(() => { document.getElementById("today-more").open = true; }); await page.click("#today-analyse");
   await page.click("#an-board");
   await page.waitForTimeout(600);
   if (await page.isVisible("#confirm-modal.show").catch(() => false)) { await page.click("#confirm-ok"); await page.waitForTimeout(600); }

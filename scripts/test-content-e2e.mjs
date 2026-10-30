@@ -807,7 +807,7 @@ if (hasTab && REAL.length) {
     });
     await pg.waitForTimeout(200);
     const said = await pg.evaluate(() => document.getElementById("toast").textContent);
-    assert(!empty.hidden && empty.n === "分析一局就有" && !empty.active && empty.same && /自动加进来/.test(said),
+    assert(!empty.hidden && empty.n === "复盘一局就有" && !empty.active && empty.same && /自动加进来/.test(said),
       "T2: 没有错题时「我的错题」也在，写着怎么攒；点它说明来历，不换题", JSON.stringify(empty) + " " + said);
     await ctx2.close();
   }

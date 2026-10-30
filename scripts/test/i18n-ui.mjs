@@ -244,6 +244,32 @@ export async function run() {
       assert(changed.length === 0, "8.2 F4: the " + F4_RENDERS.length + " converted sentences read exactly as before in zh-CN, en and ja");
     }
 
+    // --- v15-0-plan S1: one name per action, in all three languages ---
+    // The review was 复盘, 分析, 精析 and 持续分析 (Review / Analyse / Live
+    // analysis, 振り返り / 解析 / 検討): one word for looking back over a
+    // game, one for the engine on the board. A new game had five labels and
+    // "again" six; each now has the names the plan gives it.
+    {
+      const old = { "zh-CN": /分析|精析|下一盘|重做|新局(?!面)/, en: /[Aa]naly[sz]/, ja: /解析|検討|新規/ };
+      const stray = [];
+      for (const id of ["zh-CN", "en", "ja"]) {
+        for (const [k, v] of Object.entries(I.DICT[id])) if (old[id].test(v)) stray.push(id + " " + k + ": " + v.slice(0, 40));
+      }
+      for (const x of stray) console.error("  old word: " + x);
+      assert(stray.length === 0, "15.0 S1: no 分析 / 精析 / 下一盘 / 重做 / 新局, Analyse, 解析 / 検討 / 新規 left in the dictionaries (" + stray.length + ")");
+      const names = {
+        "chrome.new": ["新对局", "New game", "新しい対局"], "keys.new": ["新对局", "New game", "新しい対局"], "today.newGame": ["新对局", "New game", "新しい対局"],
+        "go.again": ["再来一盘", "Play again", "もう一局"],
+        "act.restart": ["重来", "Restart", "やり直す"], "act.puzzleRetry": ["重来", "Restart", "やり直す"],
+        "rv.retry": ["再试一次", "Try again", "もう一度"],
+        "act.analyze": ["复盘", "Review", "振り返る"], "act.deep": ["精细复盘", "Deep review", "精密な振り返り"], "act.live": ["实时引擎", "Live engine", "エンジン常時表示"],
+      };
+      const off = [];
+      ["zh-CN", "en", "ja"].forEach((id, li) => { for (const [k, want] of Object.entries(names)) if (I.DICT[id][k] !== want[li]) off.push(id + " " + k + ": " + I.DICT[id][k]); });
+      for (const x of off) console.error("  name: " + x);
+      assert(off.length === 0, "15.0 S1: new game, play again, restart, try again, review, deep review and live engine have one name each (" + off.length + ")");
+    }
+
     // --- v8-3-plan T4: English counts that can be 1 take tf's {n:one|other} ---
     // Each key renders its count with 1 and with 2 (the other values fixed).
     // Chinese and Japanese do not inflect: their entries keep bare {n}, so they
@@ -258,7 +284,7 @@ export async function run() {
         ["dlg.retryHere", (n) => [5, n], "Resume from move 5; what follows (1 move) stays as a variation. Continue?", "Resume from move 5; what follows (2 moves) stays as a variation. Continue?"],
         ["aria.cal", (n) => [18, n], "Played or solved on 1 day in the last 18 weeks", "Played or solved on 2 days in the last 18 weeks"],
         ["me.m.clockV", (n) => [n, n, "4%"], "1 blunder in 1 move on a low clock · 4% otherwise", "2 blunders in 2 moves on a low clock · 4% otherwise"],
-        ["msg.analysis.kept", (n) => [n], "Analysis stopped · kept the first 1 ply", "Analysis stopped · kept the first 2 plies"],
+        ["msg.analysis.kept", (n) => [n], "Review stopped · kept the first 1 ply", "Review stopped · kept the first 2 plies"],
         ["rep.removeAsk", (n) => ["e4", "White", n, 1], "Take e4 out of your repertoire (White)? 1 line through it will be cut short, 1 of them removed entirely. You can undo this afterwards.",
           "Take e4 out of your repertoire (White)? 2 lines through it will be cut short, 1 of them removed entirely. You can undo this afterwards."],
         ["lib.addedNone", (n) => [n], "Nothing added: the file's 1 game was already in the library", "Nothing added: the file's 2 games were already in the library"],

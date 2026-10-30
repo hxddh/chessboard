@@ -787,7 +787,7 @@ async function solveCurrent(page, h) {
   const mate = tiles.find((x) => x.g === "mate");
   // v10-0-plan T2: 我的错题 is there with no drills, saying how it fills
   assert(tiles.map((x) => x.g).join() === "mate,tactic,endgame,defense,opening,mine" && !tiles.find((x) => x.g === "mine").hidden &&
-    tiles.find((x) => x.g === "mine").n === "分析一局就有",
+    tiles.find((x) => x.g === "mine").n === "复盘一局就有",
     "m: 六块按类做题，没有错题时「我的错题」也在、写着怎么攒", JSON.stringify(tiles.map((x) => x.g + (x.hidden ? "(隐)" : ""))));
   assert(mate && mate.n === mateN + " 题" && mate.on, "m: 杀棋这一块数的是内置 + 题库两本书（" + localMate.length + " + 题库），存着的一步杀落在这一块上", JSON.stringify(mate));
   await openPzMore(page); await page.click('#pz-groups button[data-group="mate"]');
@@ -1601,6 +1601,46 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   const dots = await page.evaluate(() => [...document.querySelectorAll("#lesson-dots .lesson-dot")].map((d) => d.className.replace("lesson-dot", "").trim() || "-"));
   assert(dots.length === L.tasks.length && dots[2] === "current" && dots[0] === "done",
     "14.0 A3: 课做到第 3 步时关掉，重开回到第 3 步", JSON.stringify({ li, dots }));
+  // 15.0 S3: past the first task the lesson's words are folded; 说明 opens them
+  const fold = () => page.evaluate(() => ({ text: !document.getElementById("lesson-text").hidden,
+    info: !document.getElementById("lesson-info").hidden, exp: document.getElementById("lesson-info").getAttribute("aria-expanded") }));
+  const f0 = await fold();
+  await page.click("#lesson-info");
+  await page.waitForTimeout(200);
+  const f1 = await fold();
+  assert(!f0.text && f0.info && f0.exp === "false" && f1.text && f1.exp === "true", "15.0 S3: 第 3 步时课文收起，点「说明」再打开", JSON.stringify([f0, f1]));
+  await ctx.close();
+}
+
+// --- 15.0 S3: the panel shut, a puzzle still has its next step -------------------
+// The verdict and 下一题 used to live only in the panel; shut it and a solved
+// puzzle left the board saying nothing. The bar under the board says what to
+// do, then what happened, and holds the one next step.
+{
+  const { ctx, page } = await open(null);
+  const h = helpers(page);
+  await page.click("#toggle-panel");
+  await page.waitForTimeout(400);
+  const bar = () => page.evaluate(() => {
+    const b = document.getElementById("tr-bar"), n = document.getElementById("tr-next");
+    return { shown: getComputedStyle(b).display !== "none" && b.getBoundingClientRect().height > 0,
+      head: document.getElementById("tr-head").textContent.trim(), won: b.classList.contains("won"),
+      next: n.hidden ? "" : n.textContent.trim(), fill: n.classList.contains("primary"),
+      panel: document.getElementById("app").classList.contains("panel-open") };
+  });
+  const before = await bar();
+  assert(before.shown && !before.panel && !!before.head && !before.next, "15.0 S3: 面板收起，棋盘下方的条说这道题要做什么，还没有下一步", JSON.stringify(before));
+  const occ0 = await h.occupied();
+  const solved = await solveCurrent(page, h);
+  await page.waitForTimeout(600);
+  const after = await bar();
+  const label = (await h.text("#puzzle-next")).trim();
+  assert(solved && after.shown && after.won && after.next === label && after.fill,
+    "15.0 S3: 解出来以后，条上打勾，下一步是实心的「" + label + "」", JSON.stringify(after));
+  await page.click("#tr-next");
+  await page.waitForTimeout(900);
+  const again = await bar();
+  assert((await h.occupied()) !== occ0 && !again.won && !again.next && !!again.head, "15.0 S3: 点它就是下一题，条回到这道题要做什么", JSON.stringify(again));
   await ctx.close();
 }
 

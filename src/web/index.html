@@ -66,9 +66,6 @@
     </header>
 
     <div class="scrim" id="scrim"></div>
-    <!-- 7.6 §3f: the lesson task, over the board, for when the panel that
-         holds the task card is not beside it (styles.css .task-strip) -->
-    <div class="task-strip" id="task-strip"><span id="task-strip-text"></span></div>
     <div class="stage">
       <div id="board-wrap">
         <!-- 7.7 (v7-7-plan §2): the two sides, on the two edges of the board
@@ -178,6 +175,17 @@
           </div>
           <button type="button" class="go-close" id="go-close" aria-label="关闭" data-i18n-aria="act.close" title="关闭" data-i18n-title="act.close"><span data-icon="x" aria-hidden="true"></span></button>
         </section>
+        <!-- 15.0 S3: a lesson or a puzzle with the panel shut — the task or
+             the verdict, and the one next step, in the bottom strip's place
+             (trainer/train-bar.js; the stylesheet decides when it shows) -->
+        <section class="tr-bar" id="tr-bar" aria-labelledby="tr-head">
+          <span class="go-mark num" id="tr-mark" aria-hidden="true" hidden></span>
+          <div class="go-txt" aria-live="polite">
+            <p class="go-result" id="tr-head"></p>
+            <p class="go-sub" id="tr-sub" hidden></p>
+          </div>
+          <div class="go-acts"><button type="button" class="act-btn primary" id="tr-next" hidden></button></div>
+        </section>
       </div>
     </div>
     <!-- The spine used to live here: whose move, the clocks, the last move and
@@ -245,10 +253,12 @@
              dots — one per task, the finished ones filled, the current one
              ringed. A finished lesson is a full row, not only a toast. -->
         <ol class="lesson-dots" id="lesson-dots"></ol>
+        <!-- 15.0 S3: the lesson's words fold once read; this opens them again -->
+        <button type="button" class="tool-txt lesson-info" id="lesson-info" aria-controls="lesson-text" aria-expanded="true" data-i18n="act.lessonInfo" hidden>说明</button>
         <div class="lesson-text" id="lesson-text"></div>
         <div class="lesson-task" id="lesson-task"></div>
         <div class="lesson-controls fit-row fit-fill">
-          <button type="button" class="tool-btn" id="lesson-restart" title="重做本课任务 (R)" data-i18n-title="tip.lesson.restart" data-i18n="act.restart">重来</button>
+          <button type="button" class="tool-btn" id="lesson-restart" title="重来本课任务 （R）" data-i18n-title="tip.lesson.restart" data-i18n="act.restart">重来</button>
           <button type="button" class="tool-btn" id="lesson-demo" title="重看本任务的走法演示" data-i18n-title="tip.lesson.demo" data-i18n="act.demo">演示</button>
           <button type="button" class="tool-btn" id="lesson-practice" data-i18n="act.practice" title="用同一母题的题目接着练" data-i18n-title="tip.lesson.practice">接着练</button>
           <button type="button" class="tool-btn" id="lesson-next" data-i18n="act.next" title="进入下一课" data-i18n-title="tip.lesson.next">下一课</button>
@@ -325,7 +335,7 @@
         <div class="pv-line num" id="puzzle-line" hidden></div>
         <p class="hint" id="puzzle-idea" hidden></p>
         <div class="lesson-controls fit-row fit-fill">
-          <button type="button" class="tool-btn" id="puzzle-retry" title="重新开始本题 (R)" data-i18n-title="tip.puzzle.retry" data-i18n="act.puzzleRetry">重做</button>
+          <button type="button" class="tool-btn" id="puzzle-retry" title="重新开始本题 (R)" data-i18n-title="tip.puzzle.retry" data-i18n="act.puzzleRetry">重来</button>
           <button type="button" class="tool-btn" id="puzzle-next" title="下一道未解的题 (N)" data-i18n-title="tip.puzzle.next" data-i18n="act.puzzleNext">下一题</button>
           <button type="button" class="tool-btn" id="puzzle-playon" hidden title="从这个开局局面接着与引擎对弈" data-i18n-title="tip.playOn" data-i18n="act.playOn">接实战</button>
           <button type="button" class="tool-btn" id="puzzle-source" hidden title="打开这道题挖出来的那一局，停在那一手" data-i18n-title="tip.drillSource" data-i18n="act.drillSource">看那局棋</button>
@@ -530,12 +540,12 @@
         <div class="act-group" id="review-actions">
           <span class="act-k" data-i18n="act.groupReview">复盘</span>
           <div class="link-row fit-row">
-            <button type="button" class="act-btn" id="an-run" data-i18n="act.analyze" title="快速过一遍每一步，标出失着" data-i18n-title="tip.analysis.run">分析</button>
+            <button type="button" class="act-btn" id="an-run" data-i18n="act.analyze" title="快速过一遍每一步，标出失着" data-i18n-title="tip.analysis.run">复盘</button>
             <!-- 9.0 S2: one 分析; 精析 is in its menu, 持续分析 a setting (高级) -->
             <details class="an-more" id="an-more">
-              <summary class="tool-ic" title="更多分析" data-i18n-title="act.moreAnalysis" aria-label="更多分析" data-i18n-aria="act.moreAnalysis"><span data-icon="ellipsis" aria-hidden="true"></span></summary>
+              <summary class="tool-ic" title="更多复盘选项" data-i18n-title="act.moreAnalysis" aria-label="更多复盘选项" data-i18n-aria="act.moreAnalysis"><span data-icon="ellipsis" aria-hidden="true"></span></summary>
               <div class="an-more-menu">
-                <button type="button" class="act-btn" id="an-deep" title="仔细评估每一步，更准但更慢" data-i18n-title="tip.analysis.deep" data-i18n="act.deep">精析</button>
+                <button type="button" class="act-btn" id="an-deep" title="仔细评估每一步，更准但更慢" data-i18n-title="tip.analysis.deep" data-i18n="act.deep">精细复盘</button>
               </div>
             </details>
           </div>
@@ -561,7 +571,7 @@
               <!-- Focusable and a slider: the pointer already scrubs it, and the
                    global ← / → / Home / End replay keys move it once it has focus,
                    so the keyboard gets the same time machine (5.1, work package D). -->
-              <canvas id="eval-curve" tabindex="0" role="slider" aria-label="局势曲线" data-i18n-aria="aria.evalCurve"></canvas>
+              <canvas id="eval-curve" tabindex="0" role="slider" aria-label="局势曲线" data-i18n-aria="aria.evalCurve" aria-describedby="analysis-legend" title="复盘后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误" data-i18n-title="hint.analysis"></canvas>
             </div>
             <div class="curve-x num" id="curve-x" aria-hidden="true"></div>
           </div>
@@ -620,7 +630,7 @@
                  the board — this UI's word for "the thing to press here" spent
                  on the one action you never want mid-game. It is a way for this
                  game to end, so it stands with the other three. -->
-            <button type="button" class="act-btn" id="btn-new" title="新局 (N)" data-i18n-title="tip.newGame" data-i18n="chrome.new">新局</button>
+            <button type="button" class="act-btn" id="btn-new" title="新对局 （N）" data-i18n-title="tip.newGame" data-i18n="chrome.new">新对局</button>
             <button type="button" class="act-btn danger" id="btn-resign" title="认输并结束本局" data-i18n-title="tip.resign" data-i18n="act.resign">认输</button>
           </div>
         </div>
@@ -630,7 +640,7 @@
              tell three of the five apart. The accessible name is the same
              word as the label, so what is read is what is shown. -->
         <div class="tool-row" id="tool-row" role="toolbar" aria-label="棋谱与局面" data-i18n-aria="act.groupFile">
-          <button type="button" class="tool-ic" id="review-open" aria-pressed="false" title="复盘：分析与报告" data-i18n-title="tip.reviewOpen" aria-label="复盘" data-i18n-aria="act.groupReview"><span data-icon="chart-line" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.groupReview">复盘</span></button>
+          <button type="button" class="tool-ic" id="review-open" aria-pressed="false" title="复盘：曲线与报告" data-i18n-title="tip.reviewOpen" aria-label="复盘" data-i18n-aria="act.groupReview"><span data-icon="chart-line" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.groupReview">复盘</span></button>
           <button type="button" class="tool-ic" id="explorer-open" aria-pressed="false" aria-controls="explorer" title="开局浏览器" data-i18n-title="xp.title" aria-label="开局" data-i18n-aria="act.explorer"><span data-icon="chart-column" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.explorer">开局</span></button>
           <button type="button" class="tool-ic" id="pgn-copy" aria-label="复制" data-i18n-aria="act.pgnCopy" title="复制 PGN(含标准对局标签)" data-i18n-title="tip.pgn.copy"><span data-icon="clipboard-copy" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.pgnCopy">复制</span></button>
           <button type="button" class="tool-ic" id="pgn-download" aria-label="导出" data-i18n-aria="act.export" title="导出 PGN 文件" data-i18n-title="tip.pgn.export"><span data-icon="download" aria-hidden="true"></span><span class="tool-lbl" data-i18n="act.export">导出</span></button>
@@ -638,6 +648,10 @@
         </div>
         <div class="link-row fit-row" id="more-row" hidden>
           <!-- 9.0 S2: five places on the row; the rest are here -->
+          <!-- 15.0 S2: mid-game the file tools leave the tool row; here they are words -->
+          <button type="button" class="act-btn" id="more-pgn-copy" data-i18n="act.copyPgn" hidden>复制 PGN</button>
+          <button type="button" class="act-btn" id="more-pgn-download" data-i18n="pal.exportPgn" hidden>导出 PGN</button>
+          <button type="button" class="act-btn" id="more-explorer-open" data-i18n="xp.title" hidden>开局浏览器</button>
           <button type="button" class="act-btn" id="slots-open" title="存档槽:保存或读取多局棋" data-i18n-title="tip.slots" data-i18n="act.slots">存档槽</button>
           <button type="button" class="act-btn" id="editor-open" title="摆出任意局面再开始对局" data-i18n-title="tip.editor.open" data-i18n="act.editorLong">编辑局面</button>
           <button type="button" class="act-btn" id="report-export" title="把复盘结论存成一张图" data-i18n-title="tip.reportExport" data-i18n="act.reportExport">导出复盘图</button>
@@ -646,7 +660,8 @@
           <button type="button" class="act-btn" id="fen-copy" data-i18n="act.fen" title="复制当前局面 FEN" data-i18n-title="tip.fen.copy">FEN</button>
           <button type="button" class="act-btn" id="fen-load-open" title="从 FEN 载入局面" data-i18n-title="tip.fen.load" data-i18n="act.loadFen">载入 FEN</button>
         </div>
-        <p class="hint" id="analysis-legend" data-i18n="hint.analysis" hidden>分析后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误</p>
+        <!-- 15.0 S3: the legend is the curve's tooltip and its description, not a line of its own -->
+        <p class="sr-only" id="analysis-legend" data-i18n="hint.analysis" hidden>复盘后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误</p>
       </section>
 
       </div><!-- /pane-play -->
@@ -669,13 +684,19 @@
             <h1 class="page-h" id="home-h"></h1>
             <p class="today-date" id="today-date"></p>
           </div>
-          <span class="today-head-acts">
-            <!-- v10-0-plan A1: a game from elsewhere, straight to its review (analyse-entry.js) -->
-            <button type="button" class="act-btn" id="today-analyse" data-i18n="an.open">分析一局</button>
-            <!-- v11-0-plan U2: a puzzle that suits you, one click from the first page -->
-            <button type="button" class="act-btn" id="today-puzzle" data-i18n="pz.smart">为你出一题</button>
-            <button type="button" class="act-btn" id="today-new" data-i18n="today.newGame">下一盘</button>
-          </span>
+          <!-- 15.0 S2: one filled button on this page, 接下来's — these three
+               are a ⋯ away (and ⌘K, and the rail), not three more buttons
+               as loud as it beside the greeting -->
+          <details class="an-more today-more" id="today-more">
+            <summary class="tool-ic" title="更多" data-i18n-title="act.more" aria-label="更多" data-i18n-aria="act.more"><span data-icon="ellipsis" aria-hidden="true"></span></summary>
+            <div class="an-more-menu">
+              <!-- v10-0-plan A1: a game from elsewhere, straight to its review (analyse-entry.js) -->
+              <button type="button" class="act-btn" id="today-analyse" data-i18n="an.open">复盘一局</button>
+              <!-- v11-0-plan U2: a puzzle that suits you -->
+              <button type="button" class="act-btn" id="today-puzzle" data-i18n="pz.smart">为你出一题</button>
+              <button type="button" class="act-btn" id="today-new" data-i18n="today.newGame">新对局</button>
+            </div>
+          </details>
         </header>
         <div class="today-row">
           <section class="today-card today-hero" aria-labelledby="today-hero-h">
@@ -725,7 +746,7 @@
             </div>
             <div class="today-card today-games-card">
               <ul class="today-games" id="today-games"></ul>
-              <p class="today-meta" id="today-games-empty" data-i18n="today.noGames" hidden>还没有下完的对局。</p>
+              <p class="hint empty-note" id="today-games-empty" data-i18n="today.noGames" hidden>还没有下完的对局。</p>
             </div>
           </section>
           <section class="today-block" aria-labelledby="today-ratings-h">
@@ -789,7 +810,7 @@
               <!-- v8-0-plan C2: the games from Lichess / Chess.com in one step
                    instead of five (prefs-ui.js loads the dialog, sync-ui.js, a chunk) -->
               <button type="button" class="act-btn" id="lib-sync" data-i18n="lib.sync">从网站同步</button>
-              <button type="button" class="act-btn" id="lib-analyse-one" data-i18n="an.open">分析一局</button>
+              <button type="button" class="act-btn" id="lib-analyse-one" data-i18n="an.open">复盘一局</button>
               <span class="btn-pair">
                 <!-- label is 「全部 N 局」, filled by renderLibrary() in the
                      interface language, so the markup carries no text -->
@@ -1042,7 +1063,7 @@
               <div class="setting-list">
                 <div class="setting-row stack">
                   <span class="setting-k" data-i18n="side.hash">引擎内存</span>
-                  <div class="theme-row" id="hash-seg" role="group" aria-label="引擎内存" data-i18n-aria="side.hash" title="引擎可用的内存（MB）：大一些，长时间分析更顺" data-i18n-title="tip.hash">
+                  <div class="theme-row" id="hash-seg" role="group" aria-label="引擎内存" data-i18n-aria="side.hash" title="引擎可用的内存（MB）：大一些，引擎算得久时更顺" data-i18n-title="tip.hash">
                     <button type="button" data-hash="16">16</button>
                     <button type="button" data-hash="32" class="active">32</button>
                     <button type="button" data-hash="64">64</button>
@@ -1050,8 +1071,8 @@
                   </div>
                 </div>
                 <div class="setting-row stack">
-                  <span class="setting-k" data-i18n="side.multipv">分析线数</span>
-                  <div class="theme-row" id="multipv-seg" role="group" aria-label="分析线数" data-i18n-aria="side.multipv" title="复盘与持续分析同时给出几条变化" data-i18n-title="tip.multipv">
+                  <span class="setting-k" data-i18n="side.multipv">引擎线数</span>
+                  <div class="theme-row" id="multipv-seg" role="group" aria-label="引擎线数" data-i18n-aria="side.multipv" title="复盘与实时引擎同时给出几条变化" data-i18n-title="tip.multipv">
                     <button type="button" data-multipv="1" class="active">1</button>
                     <button type="button" data-multipv="2">2</button>
                     <button type="button" data-multipv="3">3</button>
@@ -1061,11 +1082,11 @@
               </div>
             </section>
             <section class="set-sec">
-              <h2 class="side-h" data-i18n="set.review">复盘与分析</h2>
+              <h2 class="side-h" data-i18n="set.review">复盘与引擎</h2>
               <div class="setting-list">
                 <div class="setting-row">
-                  <span class="setting-k" data-i18n="act.live">持续分析</span>
-                  <button type="button" class="switch" id="opt-live" aria-pressed="false" title="引擎持续分析棋盘上的局面，跟随复盘游标" data-i18n-title="tip.live">
+                  <span class="setting-k" data-i18n="act.live">实时引擎</span>
+                  <button type="button" class="switch" id="opt-live" aria-pressed="false" title="引擎跟着棋盘上的局面实时给出变化，随复盘游标走" data-i18n-title="tip.live">
                     <span class="switch-knob"></span>
                   </button>
                 </div>
@@ -1077,7 +1098,7 @@
                 </div>
                 <div class="setting-row">
                   <span class="setting-k" data-i18n="side.engineArrows">显示引擎箭头</span>
-                  <button type="button" class="switch" id="opt-engine-arrows" aria-pressed="true" title="持续分析与复盘时，把引擎前三条线的第一步画成棋盘上的箭头" data-i18n-title="tip.engineArrows">
+                  <button type="button" class="switch" id="opt-engine-arrows" aria-pressed="true" title="实时引擎与复盘时，把引擎前三条线的第一步画成棋盘上的箭头" data-i18n-title="tip.engineArrows">
                     <span class="switch-knob"></span>
                   </button>
                 </div>
@@ -1140,7 +1161,7 @@
               <h2 class="side-h" data-i18n="side.trend">进步</h2>
               <span class="side-h-meta num" id="trend-streak" hidden></span>
             </div>
-            <canvas id="trend-acc" hidden aria-label="准确率走势" data-i18n-aria="aria.trendAcc" title="最近分析过的对局的准确率,按时间排列" data-i18n-title="tip.trendAcc"></canvas>
+            <canvas id="trend-acc" hidden aria-label="准确率走势" data-i18n-aria="aria.trendAcc" title="最近复盘过的对局的准确率，按时间排列" data-i18n-title="tip.trendAcc"></canvas>
             <div class="stats-body" id="trend-body" hidden></div>
           </section>
           <!-- v8-0-plan B5: what the record adds up to — the engine-game
@@ -1339,7 +1360,7 @@
         <div class="pick-list" id="lib-list"></div>
         <button type="button" class="act-btn" id="lib-more" hidden></button>
         <p class="hint" id="lib-list-count" hidden></p>
-        <p class="hint" data-i18n="lib.listHint">点一局载入棋盘 —— 分析结果一起带过去，引擎不会重跑一遍。</p>
+        <p class="hint" data-i18n="lib.listHint">点一局载入棋盘 —— 复盘结果一起带过去，引擎不会重跑一遍。</p>
         <div class="close-row split">
           <span class="btn-pair">
             <button type="button" class="act-btn" id="lib-export" data-i18n="lib.exportPgn">导出 PGN</button>
@@ -1390,19 +1411,19 @@
     <!-- v10-0-plan A1: 分析一局 — a PGN or a Lichess link, a file, or a blank analysis board -->
     <div class="modal-bg" id="analyse-modal" role="dialog" aria-labelledby="an-title">
       <div class="modal an-modal">
-        <h3 id="an-title" data-i18n="an.open">分析一局</h3>
+        <h3 id="an-title" data-i18n="an.open">复盘一局</h3>
         <textarea id="an-text" class="text-input an-text" rows="5" spellcheck="false" aria-describedby="an-note"
                   placeholder="粘贴 PGN，或 Lichess 对局链接" data-i18n-placeholder="an.placeholder"></textarea>
         <p class="hint" id="an-note" role="status" aria-live="polite" hidden></p>
         <div class="close-row split">
           <span class="btn-pair">
             <button type="button" class="act-btn" id="an-file" data-i18n="an.file">打开文件…</button>
-            <button type="button" class="act-btn" id="an-board" data-i18n="an.board">空白分析棋盘</button>
+            <button type="button" class="act-btn" id="an-board" data-i18n="an.board">空白棋盘</button>
             <button type="button" class="act-btn" id="an-net" hidden data-i18n="an.toSettings">去设置 · 数据</button>
           </span>
           <span class="btn-pair">
             <button type="button" class="tool-btn" id="an-cancel" data-i18n="act.cancel">取消</button>
-            <button type="button" class="tool-btn primary" id="an-go" data-i18n="act.analyze">分析</button>
+            <button type="button" class="tool-btn primary" id="an-go" data-i18n="act.analyze">复盘</button>
           </span>
         </div>
       </div>
@@ -1515,6 +1536,7 @@
             <!-- 9.0 S2: eight cards — the opponents around the one picked;
                  all 21 while 更多选项 is open -->
             <div class="op-grid" id="op-grid" role="group" aria-label="对手是谁" data-i18n-aria="ng.opponent"></div>
+            <span class="op-pick" id="op-pick" hidden></span>
             <span class="setting-note" id="op-you"></span>
           </div>
           <div class="setting-row stack" id="row-color">
@@ -1553,14 +1575,15 @@
                 </div>
               </div>
               <div class="setting-row stack" id="row-persona">
-                <span class="setting-k" data-i18n="side.persona">陪练风格</span>
-                <div class="theme-row wrap" id="persona-seg" role="group" aria-label="陪练风格" data-i18n-aria="side.persona">
+                <!-- 15.0 F: what a style does is the label's ⓘ, not a line under the row -->
+                <span class="setting-k has-info" data-i18n="side.persona" title="风格会让它偏离最优着法（最多约半个子），但不会送掉已经算到的杀" data-i18n-title="side.personaNote">陪练风格</span>
+                <div class="theme-row wrap" id="persona-seg" role="group" aria-label="陪练风格" data-i18n-aria="side.persona" aria-describedby="persona-note">
                   <button type="button" data-persona="off" class="active" title="不加风格,引擎按难度正常发挥" data-i18n-title="tip.persona.off" data-i18n="persona.off">标准</button>
                   <button type="button" data-persona="greedy" title="见子就吃,会主动踩进你的捉双和牵制" data-i18n-title="tip.persona.greedy" data-i18n="persona.greedy">贪吃子</button>
                   <button type="button" data-persona="principled" title="按开局三原则出子:抢中心、快出轻子、尽早易位" data-i18n-title="tip.persona.principled" data-i18n="persona.principled">重原则</button>
                   <button type="button" data-persona="attacker" title="子力一直往你的王那边压,练防守用" data-i18n-title="tip.persona.attacker" data-i18n="persona.attacker">爱进攻</button>
                 </div>
-                <span class="setting-note" data-i18n="side.personaNote">风格叠加在难度之上 —— 换风格不改变棋力,只改变它偏爱哪种着法</span>
+                <span class="sr-only" id="persona-note" data-i18n="side.personaNote">风格会让它偏离最优着法（最多约半个子），但不会送掉已经算到的杀</span>
               </div>
             </div>
           </details>

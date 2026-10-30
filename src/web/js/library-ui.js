@@ -712,6 +712,8 @@ export function createLibraryUI(d) {
   /** `openingForGame`'s name for a stored entry, in the interface language. */
   function libEcoName(eco, name) {
     if (!eco) return "";
+    // 15.0 P: the Chinese family names arrive with the ECO table; redraw then
+    if (!ChessEco.loaded()) ChessEco.whenReady(() => renderLibrary());
     return ChessEco.localName({ eco, name: name || "" }, store.ui.langId) || name || "";
   }
 

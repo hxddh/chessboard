@@ -51,6 +51,14 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(0, r));
 const PORT = server.address().port;
 
+// 15.0 S2: mid-game the file tools and 新对局 leave the surface — ⋯ holds the
+// first as words, N is the second; this goes whichever way the screen offers
+async function surface(page, id) {
+  if (await page.isVisible("#" + id)) return page.click("#" + id);
+  if (id === "btn-new") return page.keyboard.press("n");
+  if (await page.evaluate(() => document.getElementById("more-row").hidden)) await page.click("#more-tools");
+  return page.click("#more-" + id);
+}
 let failed = 0;
 
 /**
@@ -326,8 +334,8 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
     assert(fine.length >= 1 && !r.notes.some((n) => /最佳 \d+/.test(n)),
       "最佳 · 优秀 · 良好 · 谱着 are rows in the table, one column per side (" + fine.map((x) => x.k + " " + x.v.join("/")).join(" | ") + ")");
     // a seven-move game: the sample caveat is one line, said once
-    const short = r.notes.filter((n) => /只分析了/.test(n));
-    assert(short.length === 1, "「只分析了 N 着」 is one footnote, not one per side (" + short.length + ")");
+    const short = r.notes.filter((n) => /只复盘了/.test(n));
+    assert(short.length === 1, "「只复盘了 N 着」 is one footnote, not one per side (" + short.length + ")");
   }
   // switch 存疑标注 on: the ?! row joins, in place
   const on = await page.evaluate(() => {
@@ -601,7 +609,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await settle(pg);
 
   // export: everything above is in the file, and the result token once
-  await pg.click("#pgn-copy");
+  await surface(pg, "pgn-copy");
   await settle(pg);
   const out = await pg.evaluate(() => window.__clip);
   const body = out.split("\n\n").pop() || "";
@@ -671,8 +679,13 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
 
   for (const s of ["e2", "e4", "e7", "e5", "g1", "f3", "b8", "c6"]) await sq(s);
   await settle(pg);
+  // 15.0 S2: a two-player game being played keeps the review behind its key, as an engine game does
+  const gate = await pg.evaluate(() => ({ group: document.getElementById("review-actions").hidden, key: !!document.getElementById("review-open").offsetParent }));
+  assert(gate.group && gate.key, "15.0 S2：双人对局下着时，复盘这一组收在工具行的「复盘」键后面", JSON.stringify(gate));
+  await pg.evaluate(() => document.getElementById("review-open").click());
+  await settle(pg);
   assert(!(await pg.evaluate(() => document.getElementById("review-actions").hidden)),
-    "有棋可复盘了,这一组才出现");
+    "有棋可复盘了,按「复盘」键这一组就出现");
 
   // 设置里把线数调到 3。走界面而不是塞 localStorage:验收说的是「MultiPV 3
   // 时」,那就得先证明那颗按钮真的把 3 送到了引擎。
@@ -1139,34 +1152,41 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     };
   });
 
-  // --- (a) 持续分析开着，连点「新局」10 次，每次都生效 -------------------
+  // --- (a) 实时引擎开着，连按「认输」10 次，每次都问到、按钮一像素不挪 ---------
+  // (15.0 S2: a game being played has no 新对局 in the panel; 认输 is the
+  // panel's button under the refreshing lines now, and its question is the
+  // confirm dialog, cancelled each time so the game goes on)
   await tap("e2"); await tap("e4");
   await pgH.waitForTimeout(250);
   await setLive(pgH, true);
   await pgH.waitForTimeout(300);
   const liveRows = await pgH.evaluate(() => document.querySelectorAll("#live-line .pv-row").length);
-  assert(liveRows === 3, "持续分析开着，multipv=3 的三条线都在 (" + liveRows + ")");
+  assert(liveRows === 3, "实时引擎开着，multipv=3 的三条线都在 (" + liveRows + ")");
   let worst = 0, took = 0, lost = [];
+  const p0 = await plies();
   for (let n = 0; n < 10; n++) {
-    if (!(await plies())) { await tap("e2"); await tap("e4"); }
     await pgH.waitForTimeout(350);
-    const r = await heldClick(pgH, "#btn-new", { hold: 450 });
+    const r = await heldClick(pgH, "#btn-resign", { hold: 450 });
     worst = Math.max(worst, r.drift);
     let asked = false;
     for (let i = 0; i < 10 && !asked; i++) {
       await pgH.waitForTimeout(60);
-      asked = await pgH.isVisible("#newgame-modal.show").catch(() => false);
+      asked = await pgH.isVisible("#confirm-modal.show").catch(() => false);
     }
     if (asked) {
-      await pgH.click("#ng-start");
+      await pgH.click("#confirm-cancel");
       await pgH.waitForTimeout(300);
     }
-    if (asked && r.clicked && !r.replaced && !r.mutated && r.drift === 0 && (await plies()) === 0) took++;
+    if (asked && r.clicked && !r.replaced && !r.mutated && r.drift === 0 && (await plies()) === p0) took++;
     else lost.push(n + ": " + JSON.stringify({ asked, drift: r.drift, replaced: r.replaced, mutated: r.mutated, clicked: r.clicked }));
   }
-  console.log("  持续分析 multipv=3 时按住「新局」：最大位移 " + worst + "px");
-  assert(worst === 0, "持续分析每拍都在刷新，「新局」按住期间一像素都没挪 (最多 " + worst + "px)");
-  assert(took === 10, "连点「新局」10 次，10 次都生效了 (" + took + "/10)" + (lost.length ? " — " + lost.join(" | ") : ""));
+  console.log("  实时引擎 multipv=3 时按住「认输」：最大位移 " + worst + "px");
+  assert(worst === 0, "实时引擎每拍都在刷新，「认输」按住期间一像素都没挪 (最多 " + worst + "px)");
+  assert(took === 10, "连按「认输」10 次，10 次都问到了，取消后棋局照旧 (" + took + "/10)" + (lost.length ? " — " + lost.join(" | ") : ""));
+  await pgH.keyboard.press("n");
+  await pgH.waitForTimeout(300);
+  await pgH.click("#ng-start");
+  await pgH.waitForTimeout(300);
 
   // --- (b) 分析进行中，按住引擎线上的一着 --------------------------------
   // 先有一份分析，开局那一手带一条五着的主变；再开一遍精析，让它慢慢跑。
@@ -1301,8 +1321,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(!!stopped.an && stopped.an.acc && typeof stopped.an.acc === "object"
     && Array.isArray(stopped.an.grades) && stopped.an.grades.length === 7 && stopped.an.grades.every((x) => typeof x === "string"),
     "加深时停止：准确率与分级都在", JSON.stringify(stopped.an && { acc: stopped.an.acc, grades: stopped.an.grades }));
-  assert(!/保留前/.test(stopped.toast) && /分析完成/.test(stopped.toast) && /加深/.test(stopped.toast),
-    "加深时停止：提示说分析完成、加深被停，不说「保留前 N 步」 (" + stopped.toast + ")");
+  assert(!/保留前/.test(stopped.toast) && /复盘完成/.test(stopped.toast) && /加深/.test(stopped.toast),
+    "加深时停止：提示说复盘完成、加深被停，不说「保留前 N 步」 (" + stopped.toast + ")");
   assert(errsS.length === 0, "加深时停止：没有页面异常 — " + errsS.join(" / "));
   await ctxS.close();
 }
@@ -1898,7 +1918,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     OPERA.map((x, i) => (i % 2 ? "" : (i / 2 + 1) + ". ") + x).join(" ") + " 1-0\n";
   const note = () => pg.evaluate(() => { const n = document.getElementById("an-note"); return n.hidden ? "" : n.textContent; });
   // a Chess.com link: no single-game export — the dialog says what to do instead
-  await pg.click("#today-analyse");
+  await pg.evaluate(() => { document.getElementById("today-more").open = true; }); await pg.click("#today-analyse");
   await pg.fill("#an-text", "https://www.chess.com/game/live/123456789");
   await pg.click("#an-go");
   assert(/分享/.test(await note()), "A1：Chess.com 链接 —— 说明去「分享」里复制 PGN", await note());
@@ -1933,7 +1953,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(reason != null && /^Morphy · /.test(reason), "14.0 A1：结果条盖住的那一方的名字留在结果条上", reason);
   // …and a paste with no headers at all is 玩家 1 / 玩家 2, White won — not 「尼可 · 你赢了」
   await pg.click('#rail button[data-view="home"]');
-  await pg.click("#today-analyse");
+  await pg.evaluate(() => { document.getElementById("today-more").open = true; }); await pg.click("#today-analyse");
   await pg.fill("#an-text", "1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0");
   await pg.click("#an-go");
   await pg.waitForTimeout(700);
@@ -1959,7 +1979,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     "A1：开了联网，Lichess 链接取的是那一局（只送 8 位编号）", JSON.stringify(asked));
   // the blank analysis board: a game on the board is asked about first
   await pg.click('#rail button[data-view="home"]');
-  await pg.click("#today-analyse");
+  await pg.evaluate(() => { document.getElementById("today-more").open = true; }); await pg.click("#today-analyse");
   await pg.click("#an-board");
   await settle(pg);
   const asks = await pg.isVisible("#confirm-modal.show").catch(() => false);
@@ -1967,8 +1987,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const b = await pg.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
     plies: document.querySelectorAll(".move-list .mlmove").length, mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode,
     toast: document.getElementById("toast").textContent }));
-  assert(b.view === "play" && b.plies === 0 && b.mode === "pvp" && /分析棋盘/.test(b.toast),
-    "A1：空白分析棋盘 —— 回到开局局面、双方都由你走，说明它不计入战绩", JSON.stringify(b));
+  assert(b.view === "play" && b.plies === 0 && b.mode === "pvp" && /空白棋盘/.test(b.toast),
+    "A1：空白棋盘 —— 回到开局局面、双方都由你走，说明它不计入战绩", JSON.stringify(b));
   // from a trainer (⌘K while a puzzle is up), back to an ai board: the switch
   // used to clear the analysis flag, and the engine answered in the imported
   // game (Codex on #113, #114). Eleven plies: Black to move, the engine's side.
@@ -1982,7 +2002,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.evaluate(() => { window.__best = 0; window.__chess.engine.bestMove = () => { window.__best++; return Promise.resolve("d8d7"); }; });
   await pg.keyboard.press("Control+k");
   await pg.waitForSelector("#palette-modal.show", { timeout: 4000 });
-  await pg.fill("#palette-input", "分析一局");
+  await pg.fill("#palette-input", "复盘一局");
   await pg.keyboard.press("Enter");
   await pg.waitForSelector("#analyse-modal.show", { timeout: 4000 });
   const pgn11 = '[Event "Opera"]\n[White "Morphy"]\n[Black "Allies"]\n[Result "*"]\n\n' +

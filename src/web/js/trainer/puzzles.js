@@ -843,9 +843,9 @@ export function createPuzzlesUI(d) {
     paintDrill(sec);
     const task = document.getElementById("puzzle-task");
     if (task) {
-      // 「第 N 题」 is the chip's job now (7.3 B4) — the card carries the goal,
-      // the detail and, where there is one, the puzzle's rating
-      // a run's puzzle is done when answered either way, and its card says how
+      // the goal, the detail and the rating (「第 N 题」 is the chip's, 7.3 B4);
+      // the goal alone is the trainers' bar's (15.0 S3: the strip has the rating)
+      task.dataset.goal = puzzleGoalText();
       task.textContent = store.session.puzzle.done && !store.session.puzzle.run
         ? t("pz.solvedNext")
         : tdot(puzzleGoalText(), puzzleRatingOf(store.session.puzzle.p) != null && tf("pz.ratingOf", [puzzleRatingOf(store.session.puzzle.p)]));
@@ -884,6 +884,7 @@ export function createPuzzlesUI(d) {
     }
     const next = document.getElementById("puzzle-next");
     if (next) next.classList.toggle("primary", store.session.puzzle.done && !canPlayOn);
+    if (document.getElementById("puzzle-smart")) document.getElementById("puzzle-smart").classList.toggle("primary", !store.session.puzzle); // 15.0 S2: the puzzle's own step is the fill
     // 9.0 S3: a kind holds thousands of puzzles — the list is drawn only
     // while its fold is open (opening it syncs), not on every sync
     const listEl = document.getElementById("puzzle-list");

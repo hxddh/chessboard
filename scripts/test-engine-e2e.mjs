@@ -446,10 +446,11 @@ assert(broken.movesNew === 0 && broken.workersNew === broken.workersRetry + 1 &&
     fcp: Math.round((performance.getEntriesByName("first-contentful-paint")[0] || {}).startTime || 0) }));
   const early = r.heavy.filter(([, t]) => t < 2500);
   // after the first paint: the bundle's own evaluation comes before it (~170–210 ms here) and is the first paint's
-  const long = r.long.filter(([t, d]) => t >= r.fcp && t < 2500 && d > 200);
+  // 15.0 P: the launch is two tasks now (app.js bootRest), and the line is 150 ms
+  const long = r.long.filter(([t, d]) => t >= r.fcp && t < 2500 && d > 150);
   const later = r.heavy.some(([u]) => u === "engine-src.js");
   assert(!early.length && !long.length && later,
-    "14.0 A3 冷启动回到 Maia 对局、轮到你：头 2.5 秒不取引擎和 Maia，首帧之后没有 > 200 ms 的长任务；之后引擎照样预载 " +
+    "14.0 A3 冷启动回到 Maia 对局、轮到你：头 2.5 秒不取引擎和 Maia，首帧之后没有 > 150 ms 的长任务；之后引擎照样预载 " +
     JSON.stringify({ early, long, all: r.long, fcp: r.fcp, heavy: r.heavy }));
   await ctx.close();
 }

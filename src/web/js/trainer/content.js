@@ -14,6 +14,7 @@
  */
 import { Chess } from "../chess.js";
 import { ChessLazy } from "../lazy-content.js";
+import { loadChunk } from "../chunk.js";
 import { motifOf, puzzleMotifKey } from "../motif.js";
 import { CHESS_OPENING_NAMES } from "../openings.js";
 import { CHESS_PUZZLES, HAND_MOTIF_KEY } from "../puzzles.js";
@@ -202,7 +203,11 @@ export function createTrainerContent(d) {
   /** …and the sentence explaining what the line is trying to do. */
   function openingIdea(id) {
     for (const tbl of contentTables("ideas")) if (tbl[id]) return tbl[id];
-    return "";
+    // 15.0 P: the Chinese source is a chunk of its own, asked for the first
+    // time a drill wants a line's idea; the card fills in when it arrives
+    const zh = globalThis.CHESS_OPENING_IDEAS_ZH_CN;
+    if (!zh) { loadChunk("chunk-ideas-zh.js", "CHESS_OPENING_IDEAS_ZH_CN").then(() => store.commit("session", "sync"), () => {}); return ""; }
+    return zh[id] || "";
   }
 
   /** mined id → its number within its category; trainer/puzzles.js fills it

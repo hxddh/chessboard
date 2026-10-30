@@ -273,7 +273,7 @@ async function openFilters(page) {
     await page.click("#lib-diagnose");
     await page.waitForTimeout(300);
     const text = await page.textContent("#lib-diag");
-    assert(/25 局已分析的棋/.test(text), "诊断先说自己是从多少局里读出来的", text.slice(0, 80));
+    assert(/25 局已复盘的棋/.test(text), "诊断先说自己是从多少局里读出来的", text.slice(0, 80));
     assert(/12 胜 13 负 0 和/.test(text), "战绩", text.slice(0, 200));
     assert(/62%/.test(text), "精准度是每局的平均");
     assert(/该练的是残局/.test(text), "指出该练哪一段", text);
@@ -449,7 +449,7 @@ async function openFilters(page) {
   const plan = await page.textContent("#daily-plan");
   assert(/捉双/.test(plan),
     "题库战绩一片空白时，弱项从他自己的棋里读出来 —— 「捉双」", plan);
-  assert(/还没分析的 5 局/.test(plan),
+  assert(/还没复盘的 5 局/.test(plan),
     "导进来没分析的五局，本身就是今天该干的一件事", plan);
   assert(!/下一盘|下一局/.test(plan),
     "今天在别处下过棋，就不该再劝他去下一盘", plan);
@@ -681,7 +681,7 @@ async function openFilters(page) {
   await page.waitForTimeout(200);
 
   const body = await libText(page);
-  assert(/可以再深一遍/.test(body), "记录页说得出还有几局是快扫出来的", body);
+  assert(/可以再精细复盘一遍/.test(body), "记录页说得出还有几局是快扫出来的", body);
 
   // 深一趟的说法：黑方第 0 手才是 ??（而且正解换成 Rc8），第 2 手根本不是
   await page.evaluate((fens) => {
@@ -1230,7 +1230,7 @@ async function openFilters(page) {
     const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
     const { page, errs } = await open(ctx);
     const label = (await page.textContent("#lib-analyse")).trim();
-    assert(label === "分析剩下的 500 局（约 2.2 小时）", "满载的库，按钮上照实写出要跑多久", label);
+    assert(label === "复盘剩下的 500 局（约 2.2 小时）", "满载的库，按钮上照实写出要跑多久", label);
     assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
     await ctx.close();
   }
@@ -1260,7 +1260,7 @@ async function openFilters(page) {
   });
   const { page, errs } = await open(ctx);
   const label0 = (await page.textContent("#lib-analyse")).trim();
-  assert(label0 === "分析剩下的 6 局（约 1 分钟）", "六局待分析，按钮写着预计时长（不到一分钟也说 1 分钟）", label0);
+  assert(label0 === "复盘剩下的 6 局（约 1 分钟）", "六局待分析，按钮写着预计时长（不到一分钟也说 1 分钟）", label0);
   await stub(page);
   await page.click("#lib-analyse");
   let done = [];
@@ -1283,7 +1283,7 @@ async function openFilters(page) {
   const left = mid.filter((g) => !g.an && !g.unplayable).length;
   assert(left === 6 - kept.length && left > 0, "没分析完的仍在队列里（" + left + " 局），没有被丢掉，也没有被标成摆不出来", String(left));
   const label1 = (await page.textContent("#lib-analyse")).trim();
-  assert(label1.startsWith("分析剩下的 " + left + " 局"), "按钮说的是剩下的局数", label1);
+  assert(label1.startsWith("复盘剩下的 " + left + " 局"), "按钮说的是剩下的局数", label1);
   await stub(page);
   await page.click("#lib-analyse");
   for (let i = 0; i < 150; i++) {
@@ -2428,20 +2428,20 @@ let t5Export = "";
     on: [...document.querySelectorAll("#diag-src-seg button")].filter((b) => b.classList.contains("active")).map((b) => b.dataset.dsrc + ":" + b.getAttribute("aria-pressed")),
     text: document.getElementById("lib-diag").innerText.replace(/\s+/g, " ") }));
   const imp = await read();
-  assert(imp.on.join() === "import:true" && /还差 19 局才够给诊断（已分析 1\/20）/.test(imp.text) && !/逐手分析/.test(imp.text),
+  assert(imp.on.join() === "import:true" && /还差 19 局才够给诊断（已复盘 1\/20）/.test(imp.text) && !/逐手复盘/.test(imp.text),
     `T5 诊断默认读「导入的」：还差 19 局(${imp.on}；${imp.text.slice(0, 60)})`);
   // by keyboard: Tab to 本机, Enter
   await page.focus('#diag-src-seg [data-dsrc="local"]');
   await page.keyboard.press("Enter");
   await page.waitForTimeout(300);
   const loc = await read();
-  assert(loc.on.join() === "local:true" && /20 局已分析的棋/.test(loc.text) && /10 胜 10 负 0 和/.test(loc.text) && /平均精准度 59\.5%/.test(loc.text) &&
-    /只看还存着逐手分析的 0 局/.test(loc.text),
+  assert(loc.on.join() === "local:true" && /20 局已复盘的棋/.test(loc.text) && /10 胜 10 负 0 和/.test(loc.text) && /平均精准度 59\.5%/.test(loc.text) &&
+    /只看还存着逐手复盘结果的 0 局/.test(loc.text),
     `T5 选「本机」(键盘)：20 局、10 胜 10 负、平均精准度 59.5%，并说明逐手数据只有几局(${loc.text.slice(0, 120)})`);
   await page.click('#diag-src-seg [data-dsrc="all"]');
   await page.waitForTimeout(300);
   const all = await read();
-  assert(all.on.join() === "all:true" && /21 局已分析的棋/.test(all.text) && /11 胜 10 负 0 和/.test(all.text) && /平均精准度 60\.5%/.test(all.text),
+  assert(all.on.join() === "all:true" && /21 局已复盘的棋/.test(all.text) && /11 胜 10 负 0 和/.test(all.text) && /平均精准度 60\.5%/.test(all.text),
     `T5 选「全部」：21 局、11 胜 10 负、平均精准度 60.5%((1190 + 81.2) / 21)(${all.text.slice(0, 120)})`);
   // an opening row read from 本机 opens the list on the 本机 games of that opening
   // (7.x's rule, now for 本机 too: the row's count is the games its pick

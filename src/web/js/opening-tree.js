@@ -1,7 +1,7 @@
 /**
  * The opening book as one tree.
  *
- * openings.js is a flat list of lines, `[eco, id, "e4 e5 Nf3 …", idea?]`,
+ * openings.js is a flat list of lines, `[eco, id, "e4 e5 Nf3 …"]`,
  * matched by SAN prefix. That shape is right for naming a position ("deepest
  * prefix wins") and wrong for two things Q3.4 wants: an opponent who, at a
  * branch point, plays *one of* the book's continuations rather than the one
@@ -26,7 +26,7 @@ function node(san) {
 
 /**
  * Build the tree.
- * @param {Array} lines openings.js rows: [eco, id, sanSequence, idea?]
+ * @param {Array} lines openings.js rows: [eco, id, sanSequence]
  * @returns {object} the root (san: null)
  */
 function buildTree(lines) {
@@ -40,7 +40,7 @@ function buildTree(lines) {
       cur = cur.children[san];
       cur.count++;
     }
-    cur.lines.push({ eco: row[0], id: row[1], sans, idea: row[3] });
+    cur.lines.push({ eco: row[0], id: row[1], sans });
   }
   return root;
 }
@@ -88,7 +88,7 @@ function weightedPick(tree, sans, rng) {
  * The lines that end where the book ends — where 接实战 can start.
  * A line that is a prefix of a longer one (e.g. "Nf3" under "Nf3 d5") is not
  * a leaf: play on from it and the book still has a say.
- * @returns {Array<{eco:string, id:string, sans:string[], idea?:string}>}
+ * @returns {Array<{eco:string, id:string, sans:string[]}>}
  */
 function leafLines(tree) {
   const out = [];

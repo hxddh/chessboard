@@ -521,7 +521,7 @@ SET = "wood";
 for (SET of ["wood", "classic"]) {
   const a = await open({ mode: "pvp" });
   await a.move("e2", "e4"); await a.heard();
-  await a.page.click("#btn-new");
+  await a.page.keyboard.press("n"); // 15.0 S2: the panel has no 新对局 while a game is played
   await a.page.waitForTimeout(200);
   await a.page.click("#ng-start");   // v7-8-plan §4: the new-game dialog
   const heard = await a.heard(500);

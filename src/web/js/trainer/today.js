@@ -12,7 +12,7 @@
  * @module trainer/today
  */
 import { tdot } from "../tdot.js";
-import { paintMini } from "../mini-board.js";
+import { paintMini, measureMinis } from "../mini-board.js";
 import { ChessFocus as Focus } from "../focus.js";
 
 /**
@@ -417,6 +417,7 @@ export function createTodayUI(d) {
     // the card is drawn only where it is seen: a game commit lands on every
     // move, and the live game's last move is a walk of its history (perf-e2e)
     if (store.ui.view !== "home") return;
+    measureMinis(document.querySelectorAll(".mini-board"));
     renderFocus();
     const live = !store.session.todayPlanFirst ? liveGame() : null;
     const run = store.session.daily;

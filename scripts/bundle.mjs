@@ -122,6 +122,10 @@ export const CHUNKS = [
   ...lichessChunks(path.join(root, "src/web/js/lichess")),
   // v8-0-plan C3: the opening explorer's panel (explorer/lazy.js), then the master tree's buckets
   { entry: "src/web/js/explorer/ui.js", out: "src/web/js/chunk-explorer.js", global: "createExplorerUI", min: 5000 },
+  // 15.0 P: the Chinese opening family / variation names, fetched with chunk-eco.js (eco-lookup.js)
+  { entry: "src/web/js/opnames-zh-chunk.js", out: "src/web/js/chunk-opnames-zh.js", global: "OPENING_VARIATIONS_ZH", min: 8000 },
+  // 15.0 P: the Chinese opening ideas, shown only under an opening drill (trainer/content.js)
+  { entry: "src/web/js/openings-ideas-zh.js", out: "src/web/js/chunk-ideas-zh.js", global: "CHESS_OPENING_IDEAS_ZH_CN", min: 10000 },
   // v8-1-plan T2: the endgame camp's ninety positions and their words (trainer/endgames.js)
   { entry: "src/web/js/endgames.js", out: "src/web/js/chunk-endgames.js", global: "CHESS_ENDGAMES", min: 20000 },
   // v8-2-plan T3: 名局猜着's runner — judging the guesses, its board and card (trainer/lessons.js)

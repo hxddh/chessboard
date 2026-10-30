@@ -19,7 +19,7 @@
  * a repaint on every commit writes only what changed.
  * @module today-page
  */
-import { paintMini } from "./mini-board.js";
+import { paintMini, measureMinis } from "./mini-board.js";
 import { ChessProgressMetrics as Metrics } from "./progress-metrics.js";
 import { ChessProgress } from "./progress.js";
 
@@ -222,6 +222,7 @@ export function createTodayPage(d) {
   }
 
   function render() {
+    measureMinis(doc.querySelectorAll(".mini-board"));
     const now = Date.now();
     renderHead(now);
     renderProgress(now);
@@ -231,6 +232,14 @@ export function createTodayPage(d) {
   }
 
   function wire() {
+    // 15.0 S2: the three side doors are a ⋯ menu; it shuts on a choice, a
+    // click elsewhere, or Escape, as a menu does
+    const more = $("today-more");
+    if (more) {
+      more.addEventListener("click", (ev) => { if (ev.target.closest(".an-more-menu button")) more.open = false; });
+      doc.addEventListener("pointerdown", (ev) => { if (more.open && !more.contains(ev.target)) more.open = false; });
+      more.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && more.open) { more.open = false; more.querySelector("summary").focus(); } });
+    }
     const nw = $("today-new");
     // v11-0-plan U2: straight into the game (game-controller.js playNext)
     if (nw) nw.onclick = () => playNext();

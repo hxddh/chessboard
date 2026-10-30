@@ -457,7 +457,7 @@ const state = (page) => page.evaluate(() => {
     const txt = (id) => { const e = document.getElementById(id); return e ? e.textContent.trim() : ""; };
     return {
       head: txt("home-h"), date: txt("today-date"), hero: txt("today-hero-title"), go: txt("today-go"),
-      newGame: vis(document.getElementById("today-new")) ? txt("today-new") : "",
+      newGame: vis(document.getElementById("today-more")) ? txt("today-new") : "", // 15.0 S2: behind ⋯
       heroBoard: document.querySelectorAll("#today-hero-board .mini-sq").length,
       // 12.0 S: the pen follows the square — a card's 14 px squares get about
       // a pixel of outline, the hero's bigger ones a finer pen (1.2 from 37 px)
@@ -471,8 +471,8 @@ const state = (page) => page.evaluate(() => {
       ratings: [txt("today-r-game"), txt("today-r-pz")],
     };
   });
-  assert(!!today.head && !!today.date && !!today.hero && !!today.go && today.heroBoard === 64 && today.newGame === "下一盘",
-    "S1: 今天页有问候、日期,主卡是一句话 + 一块小棋盘 + 按钮,旁边是「下一盘」(" + JSON.stringify(today) + ")");
+  assert(!!today.head && !!today.date && !!today.hero && !!today.go && today.heroBoard === 64 && today.newGame === "新对局",
+    "S1: 今天页有问候、日期,主卡是一句话 + 一块小棋盘 + 按钮,旁边是「新对局」(" + JSON.stringify(today) + ")");
   // v11-0-plan U1: the rings say what is left; no sentence repeats them
   assert(today.pens[0] >= 2 && today.pens[1] >= 1.2 && today.pens[1] < today.pens[0], "12.0 S: 小棋盘的棋子描边随格子变粗：卡片的小格比主卡的大格粗（卡片 " + today.pens[0] + "、主卡 " + today.pens[1] + "）");
   assert(today.rings.join() === "lesson:0/1,puzzle:0/5,game:0/1" && !today.note,
@@ -484,7 +484,7 @@ const state = (page) => page.evaluate(() => {
   assert((await state(page)).view === "home", "A1: 上次停在今天,打开还是今天");
   // 下一盘, with no game on the board, starts one — 11.0 U2: at once, with the
   // last opponent, not through the new-game dialog
-  await page.click("#today-new");
+  await page.evaluate(() => { document.getElementById("today-more").open = true; }); await page.click("#today-new");
   await page.waitForTimeout(400);
   const after = await page.evaluate(() => ({
     view: document.getElementById("app").getAttribute("data-view"),
@@ -1095,6 +1095,7 @@ for (const v of ["home", "library", "me", "settings"]) {
   await page.click('#rail button[data-view="home"]');
   await page.waitForTimeout(300);
   // 9.0 S1: was 继续上次's button; 下一盘 is the card that opens the dialog now
+  await page.evaluate(() => { document.getElementById("today-more").open = true; }); // 15.0 S2: behind ⋯
   await page.focus("#today-new");
   await page.keyboard.press("Enter");
   await page.waitForTimeout(600);
@@ -1351,6 +1352,62 @@ for (const v of ["home", "library", "me", "settings"]) {
   await page.waitForTimeout(200);
   assert(none && shut && !(await pal()).open, "A3：找不到时说没有；⌘K 和 Esc 都能关上");
   assert(errs.length === 0, "A3：没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 15.0 S2: one filled button per screen; mid-game the panel holds the game -
+// v15-0-plan S2: each screen spends its fill once; a two-player game in
+// progress shows the move list, the four steps, 提和 / 认输, the 复盘 key and
+// ⋯ — nothing else; and what left the surface is still one ⌘K away.
+{
+  const { ctx, page, errs } = await open({ mode: "pvp" });
+  const fills = () => page.evaluate(() => {
+    const vis = (e) => { for (let x = e; x; x = x.parentElement) { if (x.hidden || getComputedStyle(x).display === "none" || getComputedStyle(x).visibility === "hidden") return false; if (x.tagName === "DETAILS" && !x.open && x !== e.parentElement && !e.matches("summary")) return false; } return e.getClientRects().length > 0; };
+    return [...document.querySelectorAll(".primary")].filter(vis).map((e) => e.id || e.textContent.trim().slice(0, 8));
+  });
+  const go = (v) => page.evaluate((v) => document.querySelector('#rail button[data-view="' + v + '"]').click(), v);
+  const seen = {};
+  for (const v of ["home", "play", "library", "me", "settings"]) { await go(v); await page.waitForTimeout(500); seen[v] = await fills(); }
+  for (const sg of ["course", "puzzle", "endgame", "classic"]) {
+    await go("train");
+    await page.evaluate((sg) => { const b = document.querySelector('#train-seg button[data-seg="' + sg + '"]'); if (b) b.click(); }, sg);
+    await page.waitForTimeout(900);
+    seen["train." + sg] = await fills();
+  }
+  assert(Object.values(seen).every((f) => f.length <= 1), "15.0 S2：每个画面最多一个实心按钮(" + JSON.stringify(seen) + ")");
+  await go("play");
+  await page.evaluate(() => { const b = document.getElementById("btn-new"); if (b && !b.disabled) b.click(); });
+  await page.click("#ng-start", { timeout: 1500 }).catch(() => {});
+  await page.waitForTimeout(300);
+  const sq = async (s) => { const c = await page.evaluate((s) => { const r = document.getElementById("board").getBoundingClientRect(); return { x: r.left + (s.charCodeAt(0) - 97 + 0.5) * r.width / 8, y: r.top + (8 - +s[1] + 0.5) * r.height / 8 }; }, s); await page.mouse.click(c.x, c.y); };
+  for (const s of ["e2", "e4", "e7", "e5"]) await sq(s);
+  await page.waitForTimeout(500);
+  const panel = await page.evaluate(() => {
+    const vis = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== "hidden";
+    return [...document.querySelectorAll("#side button, #side summary")].filter(vis).filter((b) => !b.closest("#move-list")).map((b) => b.id || b.closest("[id]").id);
+  });
+  assert(panel.join() === "rep-start,rep-prev,rep-next,rep-end,btn-offerdraw,btn-resign,review-open,more-tools",
+    "15.0 S2：对局中面板只有四个步进、提和、认输、复盘和 ⋯(" + panel.join() + ")");
+  // …the file tools are in ⋯, as words
+  await page.click("#more-tools");
+  await page.waitForTimeout(200);
+  const folded = await page.evaluate(() => ["more-pgn-copy", "more-pgn-download", "more-explorer-open"].map((id) => document.getElementById(id).getClientRects().length > 0));
+  await page.click("#more-tools");
+  assert(folded.every(Boolean), "15.0 S2：对局中「复制 PGN / 导出 PGN / 开局浏览器」在 ⋯ 里(" + folded + ")");
+  // the side doors left the surface, not the app: ⌘K finds each
+  const key = process.platform === "darwin" ? "Meta+k" : "Control+k";
+  const found = {};
+  for (const q of ["新对局", "复盘一局", "谜题", "导出 PGN"]) {
+    await page.keyboard.press(key);
+    await page.waitForTimeout(250);
+    await page.keyboard.type(q);
+    await page.waitForTimeout(150);
+    found[q] = await page.evaluate(() => [...document.querySelectorAll("#palette-list [role=option]")].slice(0, 6).map((r) => r.textContent.trim().slice(0, 16)));
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(200);
+  }
+  assert(Object.entries(found).every(([q, rows]) => rows.some((r) => r.includes(q))), "15.0 S2：收起来的入口 ⌘K 都找得到(" + JSON.stringify(found) + ")");
+  assert(errs.length === 0, "15.0 S2：没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
 

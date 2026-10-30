@@ -37,7 +37,7 @@ const MIN_PLIES = 4;
 /**
  * The lines of one system, own moves consistent.
  * @param {object} sys one of SYSTEMS
- * @param {Array} rows openings.js CHESS_OPENINGS ([eco, id, moves, idea?])
+ * @param {Array} rows openings.js CHESS_OPENINGS ([eco, id, moves])
  * @returns {string[]} SAN lines, space-joined
  */
 export function linesFor(sys, rows) {

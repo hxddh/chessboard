@@ -69,6 +69,14 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(0, r));
 const PORT = server.address().port;
 
+// 15.0 S2: mid-game the file tools and 新对局 leave the surface — ⋯ holds the
+// first as words, N is the second; this goes whichever way the screen offers
+async function surface(page, id) {
+  if (await page.isVisible("#" + id)) return page.click("#" + id);
+  if (id === "btn-new") return page.keyboard.press("n");
+  if (await page.evaluate(() => document.getElementById("more-row").hidden)) await page.click("#more-tools");
+  return page.click("#more-" + id);
+}
 let failed = 0;
 const assert = (cond, msg) => {
   if (cond) console.log("ok:", msg);
@@ -918,7 +926,7 @@ if (scenario()) for (const lang of LANGS) {
     const readClipped = (where) => page.evaluate((w) => {
       const out = [];
       for (const e of document.querySelectorAll("button, .setting-k, .side-h, .act-k, .vs-role")) {
-        if (!e.offsetParent) continue;
+        if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
         if (e.id === "status" || e.closest("#status")) continue;   // ellipsizes on purpose
         if (e.classList.contains("switch")) continue;              // a knob, not a label
         // 9.0 S5: 语言 / 外观 have a card heading, so their row labels are
@@ -975,7 +983,7 @@ if (scenario()) for (const tab of ["play", "settings"]) {
       const side = document.getElementById("side");
       const edge = side.getBoundingClientRect().right;
       for (const e of side.querySelectorAll("*")) {
-        if (!e.offsetParent) continue;
+        if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
         const r = e.getBoundingClientRect();
         if (r.width === 0) continue;
         if (r.right > edge + 1) {
@@ -988,7 +996,7 @@ if (scenario()) for (const tab of ["play", "settings"]) {
     const pg = document.getElementById("page-settings");
     const pageEdge = Math.min(pg.getBoundingClientRect().right, document.documentElement.clientWidth);
     for (const e of pg.querySelectorAll(".set-pane:not([hidden]) *")) {
-      if (!e.offsetParent) continue;
+      if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
       const r = e.getBoundingClientRect();
       if (r.width === 0) continue;
       const card = e.closest(".set-sec");
@@ -1154,7 +1162,7 @@ if (scenario()) for (const theme of ["wood", "night", "day", "notebook"]) {
       return [255, 255, 255]; };
     const out = [];
     for (const e of document.querySelectorAll(sel)) {
-      if (!e.offsetParent) continue;
+      if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
       if (![...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
       const cs = getComputedStyle(e);
       const fg = rgba(cs.color); if (fg[3] < 242) continue;
@@ -1184,6 +1192,17 @@ if (scenario()) for (const theme of ["wood", "night", "day", "notebook"]) {
     await page.click('#train-seg button[data-seg="' + seg + '"]'); await page.waitForTimeout(600);
     low.push(...(await measure("#pane-play *")).map((l) => "train." + seg + ":" + l));
   }
+  // 15.0 F: the move numbers — they were the faint ink, about 3:1
+  await page.click('.rail-btn[data-view="play"]'); await settle(page);
+  for (const sq of ["e2", "e4"]) {
+    const pt = await page.evaluate((q) => { const r = document.getElementById("board").getBoundingClientRect(), z = r.width / 8;
+      return { x: r.left + (q.charCodeAt(0) - 97 + 0.5) * z, y: r.top + (8 - Number(q[1]) + 0.5) * z }; }, sq);
+    await page.mouse.click(pt.x, pt.y); await page.waitForTimeout(150);
+  }
+  await settle(page);
+  const nums = await page.evaluate(() => document.querySelectorAll("#move-list .mlnum").length);
+  low.push(...(await measure("#move-list *")).map((l) => "moves:" + l));
+  assert(nums > 0, theme + ": 15.0 F: the move list has a number to measure (" + nums + ")");
   for (const l of low.slice(0, 6)) console.error("  low contrast in " + theme + ": " + l);
   assert(low.length === 0,
     theme + ":界面文字都达到 WCAG AA" + (low.length ? " —— " + low.length + " 处:" + low.slice(0, 3).join(", ") : ""));
@@ -1267,16 +1286,17 @@ if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "record");
   const fresh = await page.evaluate(() => {
     const card = document.getElementById("record-empty");
-    const tiles = [...document.querySelectorAll(".ach-item")].filter((e) => e.offsetParent);
+    const tiles = [...document.querySelectorAll(".ach-item")].filter((e) => e.offsetParent && !e.closest("details:not([open])"));
     return { shown: !!card && !card.hidden, buttons: card ? card.querySelectorAll("button").length : -1,
              text: card ? card.textContent.trim() : "",
              tiles: tiles.length, medals: tiles.filter((e) => e.querySelector(".ach-ic svg")).length,
-             fold: !!document.getElementById("ach-more") };
+             fold: !!document.getElementById("ach-all") && !document.getElementById("ach-all").open };
   });
   assert(fresh.shown && fresh.text.length > 0, "全新安装打开记录页,先看到一句话说这一页会记什么(" + fresh.text + ")");
   assert(fresh.buttons === 0, "……那张卡片上没有训练的入口(今天、训练已经有了)(" + fresh.buttons + ")");
-  // 12.0 F: fifteen medals in a grid, each its own icon — no fold, no padlocks
-  assert(fresh.tiles === 15 && fresh.medals === 15 && !fresh.fold, "12.0 F:十五枚成就都是带自己图标的勋章,一屏看完,不再折叠(" + JSON.stringify(fresh) + ")");
+  // 12.0 F: medals, each its own icon, no padlocks; 15.0 S3: the page shows
+  // the next one, and the fifteen fold under it
+  assert(fresh.tiles === 1 && fresh.medals === 1 && fresh.fold, "15.0 S3:成就页只露离下一枚最近的那一个(带自己的图标),全部 15 枚收在下面(" + JSON.stringify(fresh) + ")");
   await ctx.close();
 }
 
@@ -1314,7 +1334,7 @@ if (scenario()) {
     let bottom = side.top;
     for (const e of document.querySelectorAll("#side *")) {
       if (e.childElementCount && !/^(BUTTON|SUMMARY|CANVAS|svg)$/.test(e.tagName)) continue;
-      if (!e.offsetParent) continue;
+      if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
       const q = e.getBoundingClientRect();
       if (q.height <= 0 || q.width <= 0) continue;
       bottom = Math.max(bottom, Math.min(q.bottom, side.bottom));
@@ -1690,10 +1710,11 @@ if (scenario()) {
 if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "ai", "record");
+    await page.evaluate(() => { const d = document.getElementById("ach-all"); if (d) d.open = true; }); // 15.0 S3: all fifteen
     const r = await page.evaluate(() => {
-      const body = document.getElementById("ach-body");
+      const body = document.querySelector("#ach-all > .ach-grid");
       const br = body.getBoundingClientRect();
-      const full = [...body.querySelectorAll(".ach-next, .ach-group")].map((e) => {
+      const full = [...document.querySelectorAll("#ach-body .ach-next")].map((e) => {
         const b = e.getBoundingClientRect();
         return { c: e.className, spans: Math.round(b.width) >= Math.round(br.width) - 1 };
       });
@@ -2377,6 +2398,10 @@ if (scenario()) {
   });
   assert(vs.label && vs.shown && !vs.active, "lesson 1 has no sparring partner, so the opponent's strip is the lesson's label (" + JSON.stringify(vs) + ")");
   assert(!!vs.name && vs.name === vs.title, "…and it reads the lesson's title (" + vs.name + " / " + vs.title + ")");
+  // 15.0 S2: said once — the strip names the lesson; the panel's head is
+  // there for a screen reader, not drawn a second time
+  const head = await page.evaluate(() => { const r = document.getElementById("lesson-title").getBoundingClientRect(); return { w: r.width, h: r.height }; });
+  assert(head.w <= 1 && head.h <= 1, "15.0 S2: the lesson's title is drawn once, on the strip (" + JSON.stringify(head) + ")");
   await ctx.close();
 }
 
@@ -2582,9 +2607,9 @@ if (scenario()) {
 // app's four modes.
 if (scenario()) {
   const expect = {
-    ai:     { has: ["新局", "悔棋", "翻转棋盘"], hasnt: ["下一题", "看答案", "重做当前这题"] },
-    learn:  { has: ["重做当前这题", "悔棋", "本课提示"], hasnt: ["新局", "翻转棋盘", "下一题"] },
-    puzzle: { has: ["下一题", "看答案", "重做当前这题"], hasnt: ["新局", "悔棋", "翻转棋盘"] },
+    ai:     { has: ["新对局", "悔棋", "翻转棋盘"], hasnt: ["下一题", "看答案", "重来这一题"] },
+    learn:  { has: ["重来这一题", "悔棋", "本课提示"], hasnt: ["新对局", "翻转棋盘", "下一题"] },
+    puzzle: { has: ["下一题", "看答案", "重来这一题"], hasnt: ["新对局", "悔棋", "翻转棋盘"] },
   };
   for (const mode of Object.keys(expect)) {
     const { ctx, page } = await open("zh-CN", mode, "play");
@@ -3105,7 +3130,8 @@ if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en",
   // 数量本身不是这一节要断言的东西:没有棋谱时 PGN/导出/分析/精析 是「不渲染」
   // 而不是「置灰」(见 .act-btn:disabled)，所以 0 手时对局页只剩四个。这条只是
   // 确认下面几条真的量到了东西。
-  assert(shape.n >= 3, `${lang}/${tab}: 面板里数得到动作按钮(${shape.n} 个:${JSON.stringify(shape.kinds)})`);
+  // 15.0 S2: a game being played shows 提和 and 认输 only (新对局 is N / the menu, the review waits behind its key)
+  assert(shape.n >= 2, `${lang}/${tab}: 面板里数得到动作按钮(${shape.n} 个:${JSON.stringify(shape.kinds)})`);
   assert(shape.borderless.length === 0,
     `${lang}/${tab}: 没有一个动作是无边框的文本链接(${JSON.stringify(shape.borderless)})`);
   assert(shape.sizes.length === 1, `${lang}/${tab}: 所有动作一个字号(${shape.sizes.join(" ")})`);
@@ -3724,23 +3750,25 @@ if (scenario()) {
     (hits.length ? " —— " + hits.slice(0, 8).join("；") + `（共 ${hits.length} 处）` : ""));
 }
 
-// --- 5d. 教学的任务在棋盘上方看得见，和面板开合无关（7.6 §3f）------------------
+// --- 5d. 教学的任务看得见，和面板开合无关（7.6 §3f；15.0 S3 挪到棋盘下方）-----
 // 7.5 走查：540×900 选「新手」进来，面板是收起的 —— 而「点击 e4」这句只写在
-// 面板里的任务卡上，棋盘上什么也没说。
+// 面板里的任务卡上，棋盘上什么也没说。7.6 在棋盘上方加了一行小字；15.0 S3
+// 把它做成棋盘下方的结果条（和对局结束的结果条一个样子），做完有下一步。
 if (scenario()) {
   const measure = (page) => page.evaluate(() => {
-    const strip = document.getElementById("task-strip");
+    const bar = document.getElementById("tr-bar");
+    const head = document.getElementById("tr-head");
     const task = document.getElementById("lesson-task");
-    const chrome = document.querySelector(".chrome").getBoundingClientRect();
+    const board = document.getElementById("board").getBoundingClientRect();
     const wrap = document.getElementById("board-wrap").getBoundingClientRect();
-    const s = strip ? strip.getBoundingClientRect() : null;
+    const s = bar ? bar.getBoundingClientRect() : null;
     return {
-      shown: !!s && getComputedStyle(strip).display !== "none" && s.height > 0,
-      text: strip ? strip.textContent.trim() : "",
+      shown: !!s && getComputedStyle(bar).display !== "none" && s.height > 0,
+      text: head ? head.textContent.trim() : "",
       task: task ? task.textContent.trim() : "",
       top: s ? s.top : 0, bottom: s ? s.bottom : 0,
-      chromeBottom: chrome.bottom, boardTop: wrap.top, board: Math.round(wrap.width),
-      clipped: strip && strip.firstElementChild ? strip.firstElementChild.scrollHeight > strip.firstElementChild.clientHeight + 1 : false,
+      boardBottom: board.bottom, innerH: innerHeight, board: Math.round(wrap.width),
+      clipped: head ? head.scrollHeight > head.clientHeight + 1 : false,
     };
   });
   for (const lang of LANGS) {
@@ -3748,36 +3776,35 @@ if (scenario()) {
       const tag = lang + " " + vp.width + "×" + vp.height;
       const { ctx, page, errs } = await open(lang, "learn", "play", "wood", vp, "0");
       // (the first lesson may open on its watch-first demo; the card and the
-      // strip then both say so, which is the same claim)
+      // bar then both say so, which is the same claim)
       const shut = await measure(page);
-      assert(shut.shown, tag + " 面板收起：棋盘上方有任务条");
+      assert(shut.shown, tag + " 面板收起：棋盘下方有任务条");
       assert(shut.text && shut.text === shut.task, tag + " 任务条说的就是任务卡上那句（「" + shut.text + "」）");
-      assert(shut.top >= shut.chromeBottom - 0.5 && shut.bottom <= shut.boardTop + 0.5,
-        tag + " 任务条在顶栏之下、棋盘之上，不压着第 8 横排（" +
-        [shut.chromeBottom, shut.top, shut.bottom, shut.boardTop].map(Math.round).join(" / ") + "）");
+      assert(shut.top >= shut.boardBottom - 0.5 && shut.bottom <= shut.innerH + 0.5,
+        tag + " 任务条在棋盘之下，不压着第 1 横排（" + [shut.boardBottom, shut.top, shut.bottom].map(Math.round).join(" / ") + "）");
       assert(!shut.clipped, tag + " 两行之内说得完");
       await page.click("#toggle-panel");
       await settle(page);
       const up = await measure(page);
       if (vp.width <= 820) {
-        // the panel is over or under the board here, not beside it: the strip
+        // the panel is over or under the board here, not beside it: the bar
         // stays, and so does the board's size
         assert(up.shown, tag + " 面板打开：任务条仍在");
         assert(up.board === shut.board, tag + " 开合面板，棋盘不变大小（" + shut.board + " → " + up.board + "）");
       } else {
-        assert(!up.shown, tag + " 宽窗面板打开：任务就在旁边的面板里，棋盘上方不再重复");
+        assert(!up.shown, tag + " 宽窗面板打开：任务就在旁边的面板里，棋盘下方不再重复");
       }
       assert(errs.length === 0, tag + " 没有 JS 异常", errs.join(" / "));
       await ctx.close();
     }
   }
-  // …and the board of a portrait window keeps every pixel it had: the strip's
-  // height comes out of the sheet's reserve (540×900: 528px either way)
-  {
-    const a = await open("zh-CN", "learn", "play", "wood", { width: 540, height: 900 }, "0");
-    const b = await open("zh-CN", "pvp", "play", "wood", { width: 540, height: 900 }, "0");
+  // …and the board keeps every pixel it had: the bar is in the bottom
+  // strip's place, so a lesson's board is a game's board (540×900, 1400×900)
+  for (const vp of [{ width: 540, height: 900 }, { width: 1400, height: 900 }]) {
+    const a = await open("zh-CN", "learn", "play", "wood", vp, "0");
+    const b = await open("zh-CN", "pvp", "play", "wood", vp, "0");
     const la = await measure(a.page), lb = await measure(b.page);
-    assert(la.board === lb.board, "540×900：教学里的棋盘和双人模式一样大（" + la.board + " / " + lb.board + "）");
+    assert(la.board === lb.board, vp.width + "×" + vp.height + "：教学里的棋盘和双人模式一样大（" + la.board + " / " + lb.board + "）");
     await a.ctx.close(); await b.ctx.close();
   }
 }
@@ -4052,7 +4079,7 @@ if (scenario()) {
       "✕ puts the card away, and 分析 in the review row is the one filled button again (" + s.primaries.join(", ") + ")");
     // Codex on #82: the ✕ was remembered by (plies, FEN, result), so the same
     // mate in the next game came up already dismissed
-    await page.click("#btn-new");
+    await surface(page, "btn-new");
     await settle(page);
     await page.click("#ng-start");   // v7-8-plan §4: a finished game — no warning, just 开始
     await settle(page);
@@ -4685,7 +4712,8 @@ if (scenario()) {
             return { id: r.id || r.parentElement.id, n: kids.length, spread: Math.max(...ws) - Math.min(...ws), cols,
                      filled: Math.max(...kids.map((b) => b.getBoundingClientRect().right)) - rr.right };
           }));
-        const want = state === "live" ? ["review-actions", "game-actions"] : ["review-actions", "game-actions", "more-row"];
+        // 15.0 S2: while a game is played the review waits behind its key, in a two-player game too
+        const want = state === "live" ? ["game-actions"] : ["review-actions", "game-actions", "more-row"];
         assert(want.every((id) => groups.some((g) => g.id === id)),
           st + "§1b 这几组都在（" + groups.map((g) => g.id + ":" + g.n + "×" + g.cols + "列").join(", ") + "）");
         for (const g of groups) {
@@ -5748,7 +5776,7 @@ if (scenario()) {
         const sec = document.getElementById("sec-learn"), box = sec.getBoundingClientRect();
         const out = [];
         for (const e of sec.querySelectorAll("button, .lesson-title, .lesson-task, .lesson-part, #lesson-text p")) {
-          if (!e.offsetParent) continue;
+          if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
           if (e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > box.right + 1) out.push(e.textContent.trim().slice(0, 18));
         }
         const row = sec.querySelector(".lesson-controls");
@@ -5806,11 +5834,11 @@ if (scenario()) {
     const sec = document.getElementById("sec-learn"), box = sec.getBoundingClientRect();
     const out = [];
     for (const e of sec.querySelectorAll("button, .lesson-title, .lesson-task, #gs-panel p")) {
-      if (!e.offsetParent) continue;
+      if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
       if (e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > box.right + 1) out.push(e.textContent.trim().slice(0, 18));
     }
-    const strip = document.getElementById("task-strip-text");
-    if (strip && strip.offsetParent && strip.scrollWidth > strip.clientWidth + 1) out.push("strip:" + strip.textContent.slice(0, 18));
+    const strip = document.getElementById("tr-head");
+    if (strip && strip.offsetParent && strip.scrollHeight > strip.clientHeight + 1) out.push("bar:" + strip.textContent.slice(0, 18));
     const bs = [...document.querySelectorAll("#gs-panel .lesson-controls button")].filter((b) => !b.hidden && b.offsetParent);
     const tops = new Set(bs.map((b) => Math.round(b.getBoundingClientRect().top)));
     return { cut: out, n: bs.length, rows: tops.size,
@@ -6055,11 +6083,11 @@ if (scenario()) {
         const sec = document.getElementById("sec-learn"), box = sec.getBoundingClientRect();
         const out = [];
         for (const e of sec.querySelectorAll("button, .lesson-title, .lesson-task, .lesson-part, #lesson-text p")) {
-          if (!e.offsetParent) continue;
+          if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
           if (e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > box.right + 1) out.push(e.textContent.trim().slice(0, 18));
         }
-        const strip = document.getElementById("task-strip-text");
-        if (strip && strip.offsetParent && strip.scrollWidth > strip.clientWidth + 1) out.push("task strip: " + strip.textContent.slice(0, 18));
+        const strip = document.getElementById("tr-head");
+        if (strip && strip.offsetParent && strip.scrollHeight > strip.clientHeight + 1) out.push("task bar: " + strip.textContent.slice(0, 18));
         const row = sec.querySelector(".lesson-controls");
         const bs = [...row.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent);
         return { cut: out, title: document.getElementById("lesson-title").textContent, n: bs.length,
@@ -6092,7 +6120,7 @@ if (scenario()) {
           .map((e) => e.id || e.className || e.textContent.slice(0, 12));
         return { out, sideways: m.scrollWidth - m.clientWidth, inView: r.left >= 0 && r.right <= innerWidth + 0.5 };
       }, sel);
-      await page.click("#today-analyse");
+      await page.evaluate(() => { document.getElementById("today-more").open = true; }); await page.click("#today-analyse");
       await page.fill("#an-text", "https://lichess.org/q7ZvsdUF");
       await page.click("#an-go");
       await settle(page);
