@@ -843,9 +843,9 @@ export function createPuzzlesUI(d) {
     paintDrill(sec);
     const task = document.getElementById("puzzle-task");
     if (task) {
-      // 「第 N 题」 is the chip's job now (7.3 B4) — the card carries the goal,
-      // the detail and, where there is one, the puzzle's rating
-      // a run's puzzle is done when answered either way, and its card says how
+      // the goal, the detail and the rating (「第 N 题」 is the chip's, 7.3 B4);
+      // the goal alone is the trainers' bar's (15.0 S3: the strip has the rating)
+      task.dataset.goal = puzzleGoalText();
       task.textContent = store.session.puzzle.done && !store.session.puzzle.run
         ? t("pz.solvedNext")
         : tdot(puzzleGoalText(), puzzleRatingOf(store.session.puzzle.p) != null && tf("pz.ratingOf", [puzzleRatingOf(store.session.puzzle.p)]));

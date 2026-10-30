@@ -257,7 +257,7 @@ const occ = (page, sq) => page.evaluate((q) => {
         const scope = document.querySelector(s);
         const box = scope.getBoundingClientRect();
         for (const e of scope.querySelectorAll("button, .side-h, .stat-k, .stat-v, .lesson-title, .lesson-task, .lesson-part, #lesson-text p")) {
-          if (!e.offsetParent) continue;
+          if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
           // 9.0 S3: the 教学 heading is for a screen reader only (sr-only:
           // a 1px box by design) — the switch over the panel names the segment
           if (e.classList.contains("sr-only")) continue;
@@ -277,7 +277,7 @@ const occ = (page, sq) => page.evaluate((q) => {
       const pendSrc = await page.evaluate(() => [...document.querySelectorAll("#lesson-text p")].map((p) => p.textContent).join(" "));
       assert(pendCut.length === 0 && /残局库|tablebase|テーブルベース/.test(pendSrc), tag + "：第二部的卡片（出处一行最长的那张）没有被裁掉的字",
         pendCut.join(", ") + " | " + pendSrc.slice(-60));
-      const strip = await page.evaluate(() => { const e = document.getElementById("task-strip-text"); return e && e.offsetParent ? { t: e.textContent, over: e.scrollWidth > e.clientWidth + 1 } : null; });
+      const strip = await page.evaluate(() => { const e = document.getElementById("tr-head"); return e && e.offsetParent ? { t: e.textContent, over: e.scrollHeight > e.clientHeight + 1 } : null; });
       assert(!strip || !strip.over || strip.t.length > 0, tag + "：任务条有字", JSON.stringify(strip));
       await page.click('#rail button[data-view="me"]').catch(() => {});
       await until(() => page.evaluate(() => !document.getElementById("sec-endgame").hidden), 6000);

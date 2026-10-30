@@ -129,7 +129,7 @@ export function createShell(d) {
     // Under a page the board and the panel are still laid out (so nothing
     // moves when the page goes), but they are not there for the keyboard or
     // a screen reader: the stage, the panel and the bar go inert.
-    for (const sel of [".stage", "#side", ".chrome", "#task-strip"]) {
+    for (const sel of [".stage", "#side", ".chrome"]) {
       const n = doc.querySelector(sel);
       if (!n) continue;
       if (isPage(want)) n.setAttribute("inert", "");

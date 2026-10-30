@@ -32,6 +32,8 @@ import { createRepertoireUI } from "./repertoire-ui.js";
 import { createSettingsUI } from "./settings-ui.js";
 import { createTrainerContent } from "./trainer/content.js";
 import { createLessonsUI } from "./trainer/lessons.js";
+import { createTrainBar } from "./trainer/train-bar.js";
+import { placeToastAt } from "./toast-place.js";
 import { createPuzzlesUI } from "./trainer/puzzles.js";
 import { createTodayUI } from "./trainer/today.js";
 import { createMePage } from "./me-page.js";
@@ -1003,59 +1005,7 @@ import { drawSpark } from "./charts.js";
    */
   const TOAST_MS = { ok: 2200, fix: 4200, fault: 0, ach: 6500 }; // ach: an unlocked badge, with its picture (v8-0-plan A5)
 
-  /**
-   * Where a toast stands: never on the board (7.7 §1d).
-   *
-   * It stood 24px above the bottom of the window, centred on the window, and
-   * in every landscape window the board runs to within 6px of that edge — so
-   * 「本局结束 —— 点『分析』看这盘的回顾」 and 「分析完成」 sat on e1 and f1,
-   * over the very position they were talking about, and a fault toast stayed
-   * there until dismissed. It was also centred on the window, which is not
-   * the board's middle whenever the panel is open beside it.
-   *
-   * Now it is centred on the board, no wider than it, and stands where the
-   * board is not:
-   *   - its old place, 24px off the bottom, wherever that is clear of the
-   *     board — the portrait windows, where it lies over the sheet's reserve
-   *     as it always did;
-   *   - otherwise the strip above the board: the chrome's row down to the
-   *     first rank, 55px in the landscape layout, which a one-line toast
-   *     clears with room either side. It covers the middle of the chrome for
-   *     its two seconds, which is the price of not covering the position;
-   *   - a message that wraps past that strip goes under the squares if there
-   *     is room there, and only a window with neither lets it overlap, at the
-   *     top, as little as it can.
-   */
-  // 9.0 M1: the result bar holds the bottom strip's place — not under a toast
-  const barUp = () => { const c = document.getElementById("go-card"); return !!c && !c.hidden && !appEl.classList.contains("pv-wide"); };
-  function placeToast(el) {
-    const board = document.getElementById("board");
-    const wrap = document.getElementById("board-wrap");
-    if (!el || !board || !wrap || !appEl) return;
-    const a = appEl.getBoundingClientRect();
-    const b = board.getBoundingClientRect();
-    const w = wrap.getBoundingClientRect();
-    if (!b.width) return; // not laid out (a hidden window): keep the stylesheet's place
-    el.style.maxWidth = Math.round(Math.max(200, Math.min(560, w.width - 16))) + "px";
-    const h = el.offsetHeight;
-    const GAP = 4, LOW = 24;
-    // 7.8 §1d: nor on the drawer. In a portrait window the panel is a sheet
-    // from the bottom, and the bottom place put 「成就解锁 · 首胜」 over the
-    // result card's second button. A place that would cross the sheet is not
-    // taken; the strip above the board is what is left.
-    const sideEl = document.getElementById("side");
-    const s = sideEl ? sideEl.getBoundingClientRect() : null;
-    const cx = w.left + w.width / 2, half = el.offsetWidth / 2;
-    const onSheet = (y) => !!s && s.width > 0 && a.top + y < s.bottom && a.top + y + h > s.top &&
-      cx - half < s.right && cx + half > s.left;
-    // 9.0 V3: the top bar's row is gone on a wide window — over the top
-    // strip, then, ending where the board begins
-    let top = Math.max(0, Math.min(GAP, b.top - a.top - h));
-    if (a.bottom - w.bottom >= h + LOW + GAP && !onSheet(a.height - LOW - h)) top = a.height - LOW - h;
-    else if (b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP && !onSheet(b.bottom - a.top + GAP) && !barUp()) top = b.bottom - a.top + GAP;
-    el.style.top = Math.round(top) + "px";
-    el.style.left = Math.round(w.left - a.left + w.width / 2) + "px";
-  }
+  const placeToast = (node) => placeToastAt(node, appEl); // where a toast stands (toast-place.js)
   // a fault toast stays up, and the board it is placed against can move
   window.addEventListener("resize", () => {
     const el = document.getElementById("toast");
@@ -1766,8 +1716,9 @@ import { drawSpark } from "./charts.js";
   const {
     LESSONS, loadLearnState, saveLearnState, startLearn, stopLearn, syncStudyUI,
     curTask, startLesson, startLearnTask, learnModel, learnClick, learnEngineReply, learnUndo,
-    learnHint, syncLearnUI,
+    learnHint, syncLearnUI, learnTaskText,
   } = LessonsUI;
+  const TrainBar = createTrainBar({ doc: document, store, appEl, setIcon, learnTaskText }); // 15.0 S3: the panel shut, still a next step
 
   // v8-0-plan F4: 谜题 — the tactics trainer, the opening drills, the personal
   // book and the puzzle rating (trainer/puzzles.js). RepUI, the library and
@@ -3353,10 +3304,8 @@ import { drawSpark } from "./charts.js";
     const wants = card ? (unanalysed && !engineDown ? "go-analyse" : "go-again")
       : over && unanalysed ? "an-run" : null;
     for (const b of document.querySelectorAll(".act-btn.primary")) {
-      // 7.9 §4a: the record page's empty library spends its own fill, on a
-      // tab of its own (library-ui.js renderLibrary) — not this function's;
-      // nor is 为你出一题, the puzzle picker's one fill (9.0 S3)
-      if (b.id !== wants && !b.closest(".page, .pz-hero")) b.classList.remove("primary");
+      // not this function's: the pages' fills (7.9 §4a), 为你出一题 (9.0 S3), the trainers' bar (15.0 S3)
+      if (b.id !== wants && !b.closest(".page, .pz-hero, #tr-bar")) b.classList.remove("primary");
     }
     if (wants) {
       const b = el(wants);
@@ -3396,18 +3345,15 @@ import { drawSpark } from "./charts.js";
     store.subscribe("session", syncStudyUI);
     store.subscribe("game", syncStudyUI);
     store.subscribe("session", syncPuzzleUI);
+    store.subscribe("session", TrainBar.sync); // after both trainers: it reads their buttons
     store.subscribe("session", syncEditorUI);
     store.subscribe("session", syncDailyUI);
     store.subscribe("game", syncDailyUI);
     store.subscribe("session", syncSettingsUI);
     store.subscribe("session", Shell.onSession); store.subscribe("game", Shell.onGame);
 
-    // …and the two views that were living inside syncSettingsUI while reading
-    // the *game*. The captured-piece strip follows the replay cursor — it shows
-    // the material as it stood at the move you are looking at, not as it stands
-    // now — so it belongs to the game slice, and filing it under settings is
-    // exactly the mis-slotting that makes narrowing a call site dangerous:
-    // commit("game") would have moved the board and left the strip behind.
+    // the captured-piece strip follows the replay cursor (the material as it
+    // stood at the move looked at), so it hears the game slice, not settings'
     for (const slice of ["game", "session"]) store.subscribe(slice, renderMaterial);
     const IdleCard = createIdleCard({ store, t, tf, tdot, setText, sanHistory, loadStats, historyLabel, historyWhen, recommendation,
       strip: (lv, st) => OppUI.strip(lv, st), paintHello: () => OppUI.paintHello(), portrait: setPortrait });
@@ -4197,6 +4143,7 @@ import { drawSpark } from "./charts.js";
   // 7.9 §1b equal action cells; v8-0-plan A2 the play view stretches with its window
   watchPlayLayout({ app: appEl, view: appEl.querySelector(".stage"), side: el("side"), grip: el("sheet-grip"), close: () => setPanelOpen(false), list: el("move-list"), strip: el("move-strip"), opening: el("opening-line"), infoOpening: el("info-opening") });
   for (const id of FOLDED) { const m = el("more-" + id); if (m) m.onclick = () => el(id).click(); } // 15.0 S2: ⋯'s copies of the file tools
+  TrainBar.wire();
   const moreBtn = document.getElementById("more-tools");
   if (moreBtn) {
     moreBtn.onclick = () => {

@@ -33,7 +33,7 @@ import { tdot } from "../tdot.js";
  */
 export function createLessonsUI(d) {
   const {
-    Audio2, BoardView, PROMO_NAMES, Persist, adoptHeaderResult, animateReply, appEl,
+    Audio2, BoardView, PROMO_NAMES, Persist, adoptHeaderResult, animateReply,
     checkNewAchievements, choosePromotion, clearPreview, clearSelection, contentField, cursorSquare,
     draw, el, gameLoadPgn, invalidateEngine, kingSquare, lessonText, moveSound, practiceLeft,
     resetClocks, sanHistory, selectSquare, setSideTab, store, sync, t, taskText, tf, toast,
@@ -728,12 +728,7 @@ export function createLessonsUI(d) {
     const sec = document.getElementById("sec-learn");
     if (!sec) return;
     sec.hidden = store.session.mode !== "learn";
-    // the strip over the board (7.6 §3f): a lesson task, not a classic being
-    // read — the stylesheet decides where it shows, this only says there is one
-    const hasTask = store.session.mode === "learn" && !!store.session.learn;
-    appEl.classList.toggle("has-task", hasTask);
-    const strip = document.getElementById("task-strip-text");
-    if (strip) strip.textContent = hasTask ? learnTaskText() : "";
+    // the task with the panel shut is trainer/train-bar.js's (15.0 S3)
     if (store.session.mode !== "learn" || !store.session.learn) return;
     const L = curLesson();
     const doneCount = LESSONS.filter((x) => store.session.learnState.done[x.id]).length;
@@ -1039,6 +1034,6 @@ export function createLessonsUI(d) {
     wireLessonPanel,
     LESSONS, loadLearnState, saveLearnState, startLearn, stopLearn, syncStudyUI,
     curTask, startLesson, startLearnTask, learnModel, learnClick, learnEngineReply, learnUndo,
-    learnHint, syncLearnUI, Endgames, startEndgame, learnSeg, openSeg, CLASSICS, classicText, classicsTotal: More.total,
+    learnHint, syncLearnUI, learnTaskText, Endgames, startEndgame, learnSeg, openSeg, CLASSICS, classicText, classicsTotal: More.total,
   };
 }

@@ -926,7 +926,7 @@ if (scenario()) for (const lang of LANGS) {
     const readClipped = (where) => page.evaluate((w) => {
       const out = [];
       for (const e of document.querySelectorAll("button, .setting-k, .side-h, .act-k, .vs-role")) {
-        if (!e.offsetParent) continue;
+        if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
         if (e.id === "status" || e.closest("#status")) continue;   // ellipsizes on purpose
         if (e.classList.contains("switch")) continue;              // a knob, not a label
         // 9.0 S5: 语言 / 外观 have a card heading, so their row labels are
@@ -983,7 +983,7 @@ if (scenario()) for (const tab of ["play", "settings"]) {
       const side = document.getElementById("side");
       const edge = side.getBoundingClientRect().right;
       for (const e of side.querySelectorAll("*")) {
-        if (!e.offsetParent) continue;
+        if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
         const r = e.getBoundingClientRect();
         if (r.width === 0) continue;
         if (r.right > edge + 1) {
@@ -996,7 +996,7 @@ if (scenario()) for (const tab of ["play", "settings"]) {
     const pg = document.getElementById("page-settings");
     const pageEdge = Math.min(pg.getBoundingClientRect().right, document.documentElement.clientWidth);
     for (const e of pg.querySelectorAll(".set-pane:not([hidden]) *")) {
-      if (!e.offsetParent) continue;
+      if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
       const r = e.getBoundingClientRect();
       if (r.width === 0) continue;
       const card = e.closest(".set-sec");
@@ -1162,7 +1162,7 @@ if (scenario()) for (const theme of ["wood", "night", "day", "notebook"]) {
       return [255, 255, 255]; };
     const out = [];
     for (const e of document.querySelectorAll(sel)) {
-      if (!e.offsetParent) continue;
+      if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
       if (![...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
       const cs = getComputedStyle(e);
       const fg = rgba(cs.color); if (fg[3] < 242) continue;
@@ -1322,7 +1322,7 @@ if (scenario()) {
     let bottom = side.top;
     for (const e of document.querySelectorAll("#side *")) {
       if (e.childElementCount && !/^(BUTTON|SUMMARY|CANVAS|svg)$/.test(e.tagName)) continue;
-      if (!e.offsetParent) continue;
+      if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
       const q = e.getBoundingClientRect();
       if (q.height <= 0 || q.width <= 0) continue;
       bottom = Math.max(bottom, Math.min(q.bottom, side.bottom));
@@ -2385,15 +2385,10 @@ if (scenario()) {
   });
   assert(vs.label && vs.shown && !vs.active, "lesson 1 has no sparring partner, so the opponent's strip is the lesson's label (" + JSON.stringify(vs) + ")");
   assert(!!vs.name && vs.name === vs.title, "…and it reads the lesson's title (" + vs.name + " / " + vs.title + ")");
-  // 15.0 S2: said once — with the panel open its head has the title, and the
-  // strip's label steps back; closed, the strip is where the title is
-  const said = async () => page.evaluate(() => ({ open: document.getElementById("app").classList.contains("panel-open"),
-    strip: getComputedStyle(document.querySelector("#strip-b .ps-who")).visibility === "visible" }));
-  const a = await said();
-  await page.keyboard.press("p");
-  await settle(page);
-  const b = await said();
-  assert(a.open !== b.open && [a, b].every((x) => x.strip === !x.open), "15.0 S2: the lesson's title is on the strip only while the panel is closed (" + JSON.stringify([a, b]) + ")");
+  // 15.0 S2: said once — the strip names the lesson; the panel's head is
+  // there for a screen reader, not drawn a second time
+  const head = await page.evaluate(() => { const r = document.getElementById("lesson-title").getBoundingClientRect(); return { w: r.width, h: r.height }; });
+  assert(head.w <= 1 && head.h <= 1, "15.0 S2: the lesson's title is drawn once, on the strip (" + JSON.stringify(head) + ")");
   await ctx.close();
 }
 
@@ -3742,23 +3737,25 @@ if (scenario()) {
     (hits.length ? " —— " + hits.slice(0, 8).join("；") + `（共 ${hits.length} 处）` : ""));
 }
 
-// --- 5d. 教学的任务在棋盘上方看得见，和面板开合无关（7.6 §3f）------------------
+// --- 5d. 教学的任务看得见，和面板开合无关（7.6 §3f；15.0 S3 挪到棋盘下方）-----
 // 7.5 走查：540×900 选「新手」进来，面板是收起的 —— 而「点击 e4」这句只写在
-// 面板里的任务卡上，棋盘上什么也没说。
+// 面板里的任务卡上，棋盘上什么也没说。7.6 在棋盘上方加了一行小字；15.0 S3
+// 把它做成棋盘下方的结果条（和对局结束的结果条一个样子），做完有下一步。
 if (scenario()) {
   const measure = (page) => page.evaluate(() => {
-    const strip = document.getElementById("task-strip");
+    const bar = document.getElementById("tr-bar");
+    const head = document.getElementById("tr-head");
     const task = document.getElementById("lesson-task");
-    const chrome = document.querySelector(".chrome").getBoundingClientRect();
+    const board = document.getElementById("board").getBoundingClientRect();
     const wrap = document.getElementById("board-wrap").getBoundingClientRect();
-    const s = strip ? strip.getBoundingClientRect() : null;
+    const s = bar ? bar.getBoundingClientRect() : null;
     return {
-      shown: !!s && getComputedStyle(strip).display !== "none" && s.height > 0,
-      text: strip ? strip.textContent.trim() : "",
+      shown: !!s && getComputedStyle(bar).display !== "none" && s.height > 0,
+      text: head ? head.textContent.trim() : "",
       task: task ? task.textContent.trim() : "",
       top: s ? s.top : 0, bottom: s ? s.bottom : 0,
-      chromeBottom: chrome.bottom, boardTop: wrap.top, board: Math.round(wrap.width),
-      clipped: strip && strip.firstElementChild ? strip.firstElementChild.scrollHeight > strip.firstElementChild.clientHeight + 1 : false,
+      boardBottom: board.bottom, innerH: innerHeight, board: Math.round(wrap.width),
+      clipped: head ? head.scrollHeight > head.clientHeight + 1 : false,
     };
   });
   for (const lang of LANGS) {
@@ -3766,36 +3763,35 @@ if (scenario()) {
       const tag = lang + " " + vp.width + "×" + vp.height;
       const { ctx, page, errs } = await open(lang, "learn", "play", "wood", vp, "0");
       // (the first lesson may open on its watch-first demo; the card and the
-      // strip then both say so, which is the same claim)
+      // bar then both say so, which is the same claim)
       const shut = await measure(page);
-      assert(shut.shown, tag + " 面板收起：棋盘上方有任务条");
+      assert(shut.shown, tag + " 面板收起：棋盘下方有任务条");
       assert(shut.text && shut.text === shut.task, tag + " 任务条说的就是任务卡上那句（「" + shut.text + "」）");
-      assert(shut.top >= shut.chromeBottom - 0.5 && shut.bottom <= shut.boardTop + 0.5,
-        tag + " 任务条在顶栏之下、棋盘之上，不压着第 8 横排（" +
-        [shut.chromeBottom, shut.top, shut.bottom, shut.boardTop].map(Math.round).join(" / ") + "）");
+      assert(shut.top >= shut.boardBottom - 0.5 && shut.bottom <= shut.innerH + 0.5,
+        tag + " 任务条在棋盘之下，不压着第 1 横排（" + [shut.boardBottom, shut.top, shut.bottom].map(Math.round).join(" / ") + "）");
       assert(!shut.clipped, tag + " 两行之内说得完");
       await page.click("#toggle-panel");
       await settle(page);
       const up = await measure(page);
       if (vp.width <= 820) {
-        // the panel is over or under the board here, not beside it: the strip
+        // the panel is over or under the board here, not beside it: the bar
         // stays, and so does the board's size
         assert(up.shown, tag + " 面板打开：任务条仍在");
         assert(up.board === shut.board, tag + " 开合面板，棋盘不变大小（" + shut.board + " → " + up.board + "）");
       } else {
-        assert(!up.shown, tag + " 宽窗面板打开：任务就在旁边的面板里，棋盘上方不再重复");
+        assert(!up.shown, tag + " 宽窗面板打开：任务就在旁边的面板里，棋盘下方不再重复");
       }
       assert(errs.length === 0, tag + " 没有 JS 异常", errs.join(" / "));
       await ctx.close();
     }
   }
-  // …and the board of a portrait window keeps every pixel it had: the strip's
-  // height comes out of the sheet's reserve (540×900: 528px either way)
-  {
-    const a = await open("zh-CN", "learn", "play", "wood", { width: 540, height: 900 }, "0");
-    const b = await open("zh-CN", "pvp", "play", "wood", { width: 540, height: 900 }, "0");
+  // …and the board keeps every pixel it had: the bar is in the bottom
+  // strip's place, so a lesson's board is a game's board (540×900, 1400×900)
+  for (const vp of [{ width: 540, height: 900 }, { width: 1400, height: 900 }]) {
+    const a = await open("zh-CN", "learn", "play", "wood", vp, "0");
+    const b = await open("zh-CN", "pvp", "play", "wood", vp, "0");
     const la = await measure(a.page), lb = await measure(b.page);
-    assert(la.board === lb.board, "540×900：教学里的棋盘和双人模式一样大（" + la.board + " / " + lb.board + "）");
+    assert(la.board === lb.board, vp.width + "×" + vp.height + "：教学里的棋盘和双人模式一样大（" + la.board + " / " + lb.board + "）");
     await a.ctx.close(); await b.ctx.close();
   }
 }
@@ -5767,7 +5763,7 @@ if (scenario()) {
         const sec = document.getElementById("sec-learn"), box = sec.getBoundingClientRect();
         const out = [];
         for (const e of sec.querySelectorAll("button, .lesson-title, .lesson-task, .lesson-part, #lesson-text p")) {
-          if (!e.offsetParent) continue;
+          if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
           if (e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > box.right + 1) out.push(e.textContent.trim().slice(0, 18));
         }
         const row = sec.querySelector(".lesson-controls");
@@ -5825,11 +5821,11 @@ if (scenario()) {
     const sec = document.getElementById("sec-learn"), box = sec.getBoundingClientRect();
     const out = [];
     for (const e of sec.querySelectorAll("button, .lesson-title, .lesson-task, #gs-panel p")) {
-      if (!e.offsetParent) continue;
+      if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
       if (e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > box.right + 1) out.push(e.textContent.trim().slice(0, 18));
     }
-    const strip = document.getElementById("task-strip-text");
-    if (strip && strip.offsetParent && strip.scrollWidth > strip.clientWidth + 1) out.push("strip:" + strip.textContent.slice(0, 18));
+    const strip = document.getElementById("tr-head");
+    if (strip && strip.offsetParent && strip.scrollHeight > strip.clientHeight + 1) out.push("bar:" + strip.textContent.slice(0, 18));
     const bs = [...document.querySelectorAll("#gs-panel .lesson-controls button")].filter((b) => !b.hidden && b.offsetParent);
     const tops = new Set(bs.map((b) => Math.round(b.getBoundingClientRect().top)));
     return { cut: out, n: bs.length, rows: tops.size,
@@ -6074,11 +6070,11 @@ if (scenario()) {
         const sec = document.getElementById("sec-learn"), box = sec.getBoundingClientRect();
         const out = [];
         for (const e of sec.querySelectorAll("button, .lesson-title, .lesson-task, .lesson-part, #lesson-text p")) {
-          if (!e.offsetParent) continue;
+          if (!e.offsetParent || e.getBoundingClientRect().width <= 1) continue; // 15.0 S2: a screen reader's line is not drawn
           if (e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > box.right + 1) out.push(e.textContent.trim().slice(0, 18));
         }
-        const strip = document.getElementById("task-strip-text");
-        if (strip && strip.offsetParent && strip.scrollWidth > strip.clientWidth + 1) out.push("task strip: " + strip.textContent.slice(0, 18));
+        const strip = document.getElementById("tr-head");
+        if (strip && strip.offsetParent && strip.scrollHeight > strip.clientHeight + 1) out.push("task bar: " + strip.textContent.slice(0, 18));
         const row = sec.querySelector(".lesson-controls");
         const bs = [...row.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent);
         return { cut: out, title: document.getElementById("lesson-title").textContent, n: bs.length,

@@ -1604,6 +1604,38 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   await ctx.close();
 }
 
+// --- 15.0 S3: the panel shut, a puzzle still has its next step -------------------
+// The verdict and 下一题 used to live only in the panel; shut it and a solved
+// puzzle left the board saying nothing. The bar under the board says what to
+// do, then what happened, and holds the one next step.
+{
+  const { ctx, page } = await open(null);
+  const h = helpers(page);
+  await page.click("#toggle-panel");
+  await page.waitForTimeout(400);
+  const bar = () => page.evaluate(() => {
+    const b = document.getElementById("tr-bar"), n = document.getElementById("tr-next");
+    return { shown: getComputedStyle(b).display !== "none" && b.getBoundingClientRect().height > 0,
+      head: document.getElementById("tr-head").textContent.trim(), won: b.classList.contains("won"),
+      next: n.hidden ? "" : n.textContent.trim(), fill: n.classList.contains("primary"),
+      panel: document.getElementById("app").classList.contains("panel-open") };
+  });
+  const before = await bar();
+  assert(before.shown && !before.panel && !!before.head && !before.next, "15.0 S3: 面板收起，棋盘下方的条说这道题要做什么，还没有下一步", JSON.stringify(before));
+  const occ0 = await h.occupied();
+  const solved = await solveCurrent(page, h);
+  await page.waitForTimeout(600);
+  const after = await bar();
+  const label = (await h.text("#puzzle-next")).trim();
+  assert(solved && after.shown && after.won && after.next === label && after.fill,
+    "15.0 S3: 解出来以后，条上打勾，下一步是实心的「" + label + "」", JSON.stringify(after));
+  await page.click("#tr-next");
+  await page.waitForTimeout(900);
+  const again = await bar();
+  assert((await h.occupied()) !== occ0 && !again.won && !again.next && !!again.head, "15.0 S3: 点它就是下一题，条回到这道题要做什么", JSON.stringify(again));
+  await ctx.close();
+}
+
 assert(errs.length === 0, "全程零 JS 异常", errs.join(" | "));
 await browser.close();
 server.close();
