@@ -56,11 +56,15 @@ export function createIdleCard(d) {
       return n;
     };
     // 15.0 F: the card is this game, not only the opponent — the side and
-    // the clock it will be played with (both changed in 新对局's dialog)
+    // the clock it will be played with, once either is not the default
+    // (white, untimed: the board already says that much)
     const tc = store.game.timeControl || "off";
-    const clock = tc === "off" ? t("clock.off") : tc.replace(/^c/, "");
-    const side = store.session.colorRandom ? t("color.random") : t(store.session.humanColor === "b" ? "color.black" : "color.white");
-    add("idle-v idle-game", ai ? tdot(side, clock) : clock);
+    const black = store.session.humanColor === "b" || store.session.colorRandom;
+    if (tc !== "off" || (ai && black)) {
+      const clock = tc === "off" ? t("clock.off") : tc.replace(/^c/, "");
+      const side = store.session.colorRandom ? t("color.random") : t(black ? "color.black" : "color.white");
+      add("idle-v idle-game", ai ? tdot(side, clock) : clock);
+    }
     const games = d.loadStats().games || [];
     if (ai) {
       // your record against this rung, when there is one
