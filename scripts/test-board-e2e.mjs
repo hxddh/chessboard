@@ -323,8 +323,10 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.addInitScript(() => {
     localStorage.setItem("chess.settings", JSON.stringify({
       // 16.0 V: Burnett's set — the masks below (SAME, the light / dark
-      // split) were measured on its flat black and white, not Merida's shading
-      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", pieceSet: "cburnett", pieceSetPicked: true }));
+      // split) were measured on its flat black and white, not Merida's
+      // shading — on flat squares (READ_BOARD tells a man from the square by
+      // colour; the grain would arrive mid-test, once the thread is idle)
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "dark", boardId: "wood", pieceSet: "cburnett", pieceSetPicked: true, boardTexture: false }));
     localStorage.setItem("chess.panelOpen", "1");
   });
   const page = await ctx.newPage();
@@ -1394,6 +1396,50 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const n = await page.evaluate(() => window.__chess.board().imageRedraws);
   assert(n >= 1, `梅里达→伯内特(还在取)→梅里达:默认棋子图照样装上(重画 ${n} 次)`);
   assert(errs.length === 0, `棋子图来回切:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
+// --- 16.0 V:棋盘纹理——木纹默认开,首帧先画纯色,空闲时补上;关掉回到纯色 ----------
+// 木纹两张贴图要算约 50 ms,木是默认棋盘:放在首帧里算,就是首帧最长的一段。
+// 所以首帧画纯色,线程空下来再算、再画一次。关掉开关时与 15.x 逐像素相同
+// (格子就是 --sq-light 那一个颜色)。
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "light", boardId: "wood", view: "play" }));
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1500);
+  // e4, empty, a light square from White's side: its spread of colours, and how far its mean is from --sq-light
+  const sample = () => page.evaluate(() => {
+    const c = document.getElementById("board"), g = c.getContext("2d"), step = c.width / 8;
+    const d = g.getImageData(Math.round(4 * step + step * 0.1), Math.round(4 * step + step * 0.1), Math.round(step * 0.8), Math.round(step * 0.8)).data;
+    const want = getComputedStyle(document.documentElement).getPropertyValue("--sq-light").trim();
+    const hex = [1, 3, 5].map((i) => parseInt(want.slice(i, i + 2), 16));
+    let lo = 999, hi = 0, off = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const v = d[i] + d[i + 1] + d[i + 2];
+      lo = Math.min(lo, v); hi = Math.max(hi, v);
+      off = Math.max(off, Math.abs(d[i] - hex[0]), Math.abs(d[i + 1] - hex[1]), Math.abs(d[i + 2] - hex[2])); n++;
+    }
+    return { spread: hi - lo, off };
+  });
+  const on = await sample();
+  assert(on.spread >= 12, `16.0 V 木棋盘默认有木纹:空的浅格里颜色有起伏(亮度跨度 ${on.spread})`);
+  await page.evaluate(() => { document.querySelector('.rail-btn[data-view="settings"]').click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { document.getElementById("cat-board").click(); document.getElementById("opt-texture").click(); });
+  await page.evaluate(() => document.querySelector('.rail-btn[data-view="play"]').click());
+  await page.waitForTimeout(500);
+  const off = await sample();
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}").boardTexture);
+  assert(off.spread === 0 && off.off <= 1 && saved === false,
+    `16.0 V 关掉纹理:格子是纯色 --sq-light,与 15.x 相同(跨度 ${off.spread},偏差 ${off.off}),设置里记下 ${saved}`);
+  assert(errs.length === 0, `16.0 V 棋盘纹理:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
   await ctx.close();
 }
 

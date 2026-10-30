@@ -691,10 +691,15 @@ import { easeFromCss } from "./motion.js";
     // wash, marble's veins. One pattern per square colour, anchored to the
     // board, so the grain runs on across the squares rather than restarting
     // in each; scaled with the square so it is the same material at any size.
-    const tiles = [textureTile(P.texture, false), textureTile(P.texture, true)];
+    // 16.0 V: wood and the flat boards have a grain too, and the setting
+    // can take every texture off (m.texture false: flat colour, as 15.x drew
+    // wood, green and blue); a tile not made yet is made when the thread is
+    // idle and the board drawn again then
+    const tex = m.texture === false ? "none" : P.texture;
+    const tiles = [textureTile(tex, false, draw), textureTile(tex, true, draw)];
     if (tiles[0] && tiles[1]) {
       // made once per texture and board size, not once per animation frame
-      const pk = P.texture + "@" + w;
+      const pk = tex + "@" + w;
       if (!_patterns || _patterns.key !== pk) {
         _patterns = { key: pk, pats: tiles.map((tl) => {
           const pat = ctx.createPattern(tl, "repeat");

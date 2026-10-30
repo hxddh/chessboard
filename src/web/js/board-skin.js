@@ -93,6 +93,35 @@ const RECIPES = {
       return s > 0 ? [120, 100, 70, Math.min(0.06, s * 0.16)] : [255, 255, 250, Math.min(0.08, -s * 0.2)];
     };
   },
+  /**
+   * 16.0 V: wood — grain running along the board (stretched noise, so the
+   * fibres are long across and close together down), slow bands where the
+   * growth rings cross the cut, and a fine pore. Darker lines on both square
+   * colours, a little sheen between them; the dark squares a touch stronger,
+   * as a darker wood shows its figure more.
+   */
+  wood(dark) {
+    const fibre = fbm(3, 3, dark ? 113 : 127, 10);
+    const ring = fbm(2, 2, dark ? 131 : 137, 3);
+    const pore = fbm(1, 96, dark ? 139 : 149, 4);
+    const k = dark ? 1.1 : 1;
+    return (x, y) => {
+      const band = Math.sin((y * 6 + ring(x, y) * 3) * Math.PI * 2);
+      const f = (fibre(x, y) - 0.5) * 1.6 + band * 0.18 + (pore(x, y) - 0.5) * 0.35;
+      return f > 0 ? [70, 40, 15, Math.min(0.075, f * 0.09 * k)] : [255, 245, 225, Math.min(0.05, -f * 0.07 * k)];
+    };
+  },
+  /**
+   * 16.0 V: grain — the flat boards' (green, blue) faint tooth, a printed
+   * board's matte surface rather than a material of its own.
+   */
+  grain(dark) {
+    const tooth = fbm(1, 128, dark ? 151 : 157);
+    return (x, y) => {
+      const t = tooth(x, y) - 0.5;
+      return t > 0 ? [0, 0, 0, Math.min(0.035, t * 0.09)] : [255, 255, 255, Math.min(0.035, -t * 0.09)];
+    };
+  },
   /** Marble: turbulent veins across a softly clouded ground. */
   marble(dark) {
     const turb = fbm(5, 4, dark ? 53 : 67);
@@ -113,16 +142,34 @@ export const TEXTURES = Object.keys(RECIPES);
 
 const _tiles = new Map();
 
+const _queued = new Set();
+
 /**
  * The overlay tile for a texture on a light or a dark square, as a canvas, or
  * null for "none", an unknown name, or no DOM (the static tests).
+ *
+ * 16.0 V: with `later`, a tile not made yet is not made now: it is queued for
+ * when the main thread is idle, `later` is called once it is there, and this
+ * answers null — the board draws flat colour until then. The wood tile pair
+ * takes ~50 ms to compute, and wood is the default board: made inside the
+ * first draw it was the first frame's single longest step.
  * @param {string} name   a --board-texture value
  * @param {boolean} dark  the dark squares' variant
+ * @param {Function} [later] called when a queued tile is ready
  */
-export function textureTile(name, dark) {
+export function textureTile(name, dark, later) {
   if (!Object.prototype.hasOwnProperty.call(RECIPES, name)) return null;
   const key = name + (dark ? ":d" : ":l");
   if (_tiles.has(key)) return _tiles.get(key);
+  if (later) {
+    if (!_queued.has(key)) {
+      _queued.add(key);
+      const make = () => { textureTile(name, dark); _queued.delete(key); later(); };
+      if (typeof requestIdleCallback === "function") requestIdleCallback(make, { timeout: 500 });
+      else setTimeout(make, 50);
+    }
+    return null;
+  }
   let tile = null;
   try {
     tile = document.createElement("canvas");
