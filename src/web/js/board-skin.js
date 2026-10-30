@@ -162,9 +162,10 @@ export function textureTile(name, dark, later) {
   const key = name + (dark ? ":d" : ":l");
   if (_tiles.has(key)) return _tiles.get(key);
   if (later) {
-    if (!_queued.has(key)) {
-      _queued.add(key);
-      const make = () => { textureTile(name, dark); _queued.delete(key); later(); };
+    // both square colours in one go: one idle task, one redraw for the pair
+    if (!_queued.has(name)) {
+      _queued.add(name);
+      const make = () => { textureTile(name, false); textureTile(name, true); _queued.delete(name); later(); };
       if (typeof requestIdleCallback === "function") requestIdleCallback(make, { timeout: 500 });
       else setTimeout(make, 50);
     }
