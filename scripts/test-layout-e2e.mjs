@@ -6199,6 +6199,34 @@ if (scenario()) {
   }
 }
 
+// --- 17.0 P: a row of buttons is as many columns as it shows ---------------
+// From 15.0 a game in progress shows two buttons under 本局 (提和, 认输), and
+// fit-row.js laid any row of under four in three columns — two buttons a third
+// of the row each and a column of nothing at the end. Every row of buttons on
+// one line, on every screen that has them, reaches its own right edge.
+if (scenario()) {
+  const rowsFilled = (page) => page.evaluate(() => [...document.querySelectorAll(".fit-row")].filter((r) => r.getClientRects().length).map((r) => {
+    const kids = [...r.children].filter((b) => !b.hidden && getComputedStyle(b).display !== "none" && b.getClientRects().length);
+    if (kids.length < 2) return null;
+    const rects = kids.map((b) => b.getBoundingClientRect()), box = r.getBoundingClientRect();
+    if (new Set(rects.map((x) => Math.round(x.top))).size > 1) return null; // more than one line: the column rules decide
+    const pad = parseFloat(getComputedStyle(r).paddingRight) || 0;
+    const gap = Math.round(box.right - pad - Math.max(...rects.map((x) => x.right)));
+    return gap > 1 ? (r.id || r.className) + " " + kids.length + " 个按钮,右边空 " + gap + "px" : null;
+  }).filter(Boolean));
+  const { ctx, page, errs } = await open("zh-CN", "pvp", "play");
+  for (const sq of ["e2", "e4", "e7", "e5"]) await mv(page, sq);
+  const bad = await rowsFilled(page);
+  for (const seg of ["course", "puzzle", "endgame", "classic"]) {
+    await page.evaluate((s) => { document.querySelector('.rail-btn[data-view="train"]').click(); const b = document.querySelector('#train-seg button[data-seg="' + s + '"]'); if (b) b.click(); }, seg);
+    await settle(page);
+    bad.push(...(await rowsFilled(page)).map((x) => seg + ":" + x));
+  }
+  assert(bad.length === 0, "17.0 P 一行按钮铺满整行,没有空出来的列(" + bad.join("; ") + ")");
+  assert(errs.length === 0, "17.0 P:没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
 const { shard, total } = scenario.done();
 console.log(`shard ${shard.index}/${shard.count}: ${Math.ceil((total - shard.index + 1) / shard.count)} of ${total} scenarios`);
 await browser.close();
