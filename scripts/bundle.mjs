@@ -97,6 +97,7 @@ export const CHUNKS = [
   // v8-0-plan A3: the further piece sets, one chunk each (lazy-content.js PIECE_CHUNKS)
   // 16.0 V: cburnett left the bundle when Merida became the default
   { entry: "src/web/js/pieces-cburnett.js", out: "src/web/js/chunk-pieces-cburnett.js", global: "CBURNETT_PIECE_SVGS", min: 7000 },
+  { entry: "src/web/js/pieces.js", out: "src/web/js/chunk-pieces-classic.js", global: "CHESS_PIECE_SVGS", min: 10000 },
   { entry: "src/web/js/pieces-chessnut.js", out: "src/web/js/chunk-pieces-chessnut.js", global: "CHESSNUT_PIECE_SVGS", min: 25000 },
   { entry: "src/web/js/pieces-fantasy.js", out: "src/web/js/chunk-pieces-fantasy.js", global: "FANTASY_PIECE_SVGS", min: 60000 },
   { entry: "src/web/js/pieces-celtic.js", out: "src/web/js/chunk-pieces-celtic.js", global: "CELTIC_PIECE_SVGS", min: 25000 },

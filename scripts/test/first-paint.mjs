@@ -111,7 +111,7 @@ export async function run() {
         [{ pieceSet: "chessnut" }, null, "chunk-pieces-chessnut.js"],
         [{ pieceSet: "cburnett" }, null, "chunk-merida.js"],
         [{ pieceSet: "cburnett", pieceSetPicked: true }, null, "chunk-pieces-cburnett.js"],
-        [{ pieceSet: "classic" }, null, ""],
+        [{ pieceSet: "classic" }, null, "chunk-pieces-classic.js"], // 17.0 F: out of the bundle too
         [{ pieceSet: "toString" }, null, "chunk-merida.js"],
         [{ langId: "xx" }, null, "chunk-merida.js"],
       ];
@@ -150,7 +150,7 @@ export async function run() {
           const name = id === "classic" ? null : AUTHOR[id];
           if (name) assert(credits.every((c) => c.includes(name)), "the About panel credits " + name + " in all three languages");
           // in the bundle, or a chunk that is built
-          const inBundle = id === "classic"; // 16.0 V: cburnett left the bundle
+          const inBundle = false; // 16.0 V: cburnett left the bundle; 17.0 F: classic too
           assert(inBundle || (lctx.PIECE_CHUNKS[id] && CHUNKS.some((c) => c.entry === "src/web/js/" + file && path.basename(c.out) === lctx.PIECE_CHUNKS[id].file)),
             "piece set " + id + " is " + (inBundle ? "in the bundle" : "its own chunk, built from " + file));
         }

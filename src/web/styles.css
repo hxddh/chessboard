@@ -3041,8 +3041,7 @@
        sprites keep a margin inside their 40-unit box, so a piece has to be
        drawn larger than the cap height to look as tall as one. */
     /* 7.8 §1e: the figure is exactly a capital high and stands on the
-       baseline. The SVG's box is cropped to the figure (figurineSvg() in
-       app.js), so the box's height is the figure's; `1cap` is the capital
+       baseline. The SVG's box is cropped to the figure (figurines.js), so the box's height is the figure's; `1cap` is the capital
        height of the font this line is set in, and an inline-block with no
        text sits its bottom edge on the baseline. 0.7em is for an engine
        without the `cap` unit. */
@@ -3051,10 +3050,6 @@
       vertical-align: baseline;
     }
     .mlfig svg { height: 100%; width: auto; display: block; overflow: visible; fill: currentColor; }
-    /* the board's 1.5-unit line is a hairline at a capital's height */
-    .mlfig svg * { stroke-width: 2.4; }
-    /* figurineSvg() measures each figure once in one of these, off screen */
-    .fig-probe { position: absolute; visibility: hidden; width: 40px; height: 40px; }
     .mlmove {
       appearance: none; border: 0; background: transparent;
       /* --text, not --fg: there has never been a --fg token in any of the four

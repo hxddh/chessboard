@@ -21,7 +21,6 @@
  *     the kings' squares (v8-0-plan A5)
  * @module board
  */
-import { CHESS_PIECE_SVGS } from "./pieces.js";
 import { loadChunk } from "./chunk.js";
 import { PIECE_CHUNKS } from "./lazy-content.js";
 import { parseInk, inkSprite } from "./board-skin.js";
@@ -254,14 +253,12 @@ import { easeFromCss } from "./motion.js";
    *
    * v8-0-plan A3: seven sets. `cburnett` is Colin Burnett's original
    * drawing (pieces-cburnett.js); the heavier 7.x redrawing it replaced stays
-   * as `classic` (pieces.js, still the move list's figurines, so it is the one
-   * set in the bundle). 16.0 V: Merida is the default; it and every other set
-   * is a chunk (PIECE_CHUNKS), read off the window the same way Merida
+   * as `classic` (pieces.js). 16.0 V: Merida is the default; 17.0 F: every
+   * set is a chunk (PIECE_CHUNKS) — classic too, once the move list's
+   * figurines came from figurines.js — read off the window the same way Merida
    * always was, and fetched before the first frame by chunk-boot.js.
    */
-  const PIECE_SETS = {
-    classic: () => CHESS_PIECE_SVGS,
-  };
+  const PIECE_SETS = {};
   for (const id of Object.keys(PIECE_CHUNKS)) PIECE_SETS[id] = () => globalThis[PIECE_CHUNKS[id].global] || null;
   let _set = "merida"; // 16.0 V: look.js LOOK_DEFAULT; settings replace it before the first draw
   /** the set whose twelve images are decoding right now, or null */

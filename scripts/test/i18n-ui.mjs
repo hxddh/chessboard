@@ -985,7 +985,9 @@ export async function run() {
       assert(/node\.setAttribute\("aria-label", san\)/.test(appSrc),
         "…and the full SAN stays as the accessible name");
       const ws = srcOf("writeSan");
-      assert(/SAN_PIECE\[san\[0\]\]/.test(ws), "only the leading piece letter becomes a piece");
+      // 17.0 F: figurines.js answers only for K Q R B N, so a pawn move's
+      // file letter and castling's O stay text
+      assert(/figurineSvg\(san\[0\]\)/.test(ws), "only the leading piece letter becomes a piece");
       assert(/san\.slice\(1\)/.test(ws), "…the rest of the move is text");
       const cssM2 = fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8");
       const num = /\.mlnum \{([^}]*)\}/.exec(cssM2);

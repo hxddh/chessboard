@@ -21,7 +21,7 @@ import { TimeControl } from "./time-control.js";
 import { createOpponentsLazy } from "./opponents-lazy.js";
 import { ChessPgn } from "./pgn.js";
 import { ChessPgnParser } from "./pgn-parser.js";
-import { CHESS_PIECE_SVGS } from "./pieces.js";
+import { figurineSvg } from "./figurines.js";
 import { createA11y } from "./a11y.js";
 import { createNativeCommands } from "./native-commands.js";
 import { createLibraryUI } from "./library-ui.js";
@@ -2792,49 +2792,16 @@ import { drawSpark } from "./charts.js";
    * untouched, and a promotion's `=Q` keeps its letter because that Q is the
    * piece you *chose*, which is worth reading as a word.
    */
-  const SAN_PIECE = { K: "k", Q: "q", R: "r", B: "b", N: "n" };
 
   /**
-   * 7.8 §1e: the board's piece as a figurine — one colour, the text's, and
-   * cropped to the figure.
-   *
-   * The sprites were dropped in as they are drawn on the board: white filled
-   * white and black filled black, in a 40-unit box with a margin, so ♞xd5 was
-   * a smudge about six tenths of the letters' height, sitting high. Now the
-   * box is cut to the figure itself (measured once per piece: getBBox, plus
-   * half the stroke), so the stylesheet can make the figure exactly a capital
-   * high on the baseline; and the colours become the text's — white moves an
-   * outline (the white fill is let through), black moves solid (the white
-   * detail lines are let through too, which reads as a cut in the shape).
+   * 7.8 §1e: a piece letter as a figurine, a capital high in the text's
+   * colour. 17.0 F: Merida's silhouettes (figurines.js), the same shape for
+   * both sides — it was the 7.x drawing cut here at runtime, White hollow.
    */
-  const FIGURINES = {};
-  function figurineSvg(key) {
-    if (FIGURINES[key]) return FIGURINES[key];
-    const svgs = CHESS_PIECE_SVGS || {};
-    if (!svgs[key]) return null;
-    let svg = svgs[key].replace(/"#000000"/gi, "\"currentColor\"").replace(/"#FFFFFF"/gi, "\"none\"");
-    try {
-      const probe = document.createElement("span");
-      probe.className = "fig-probe";
-      probe.insertAdjacentHTML("afterbegin", svg);
-      document.body.appendChild(probe);
-      const bb = probe.firstElementChild.getBBox();
-      probe.remove();
-      if (bb && bb.height > 0) {
-        const pad = 0.75; // half of the sprites' 1.5-unit stroke
-        const box = [bb.x - pad, bb.y - pad, bb.width + 2 * pad, bb.height + 2 * pad].map((v) => Math.round(v * 100) / 100).join(" ");
-        svg = svg.replace(/viewBox="[^"]*"/, "viewBox=\"" + box + "\"");
-      }
-    } catch (_) { /* no layout here: keep the sprite's own box */ }
-    FIGURINES[key] = svg;
-    return svg;
-  }
-
   function writeSan(node, san, color) {
     node.setAttribute("aria-label", san);
     node.title = san;
-    const type = SAN_PIECE[san[0]];
-    const svg = type && figurineSvg(color + type);
+    const svg = figurineSvg(san[0]);
     if (!svg) { node.textContent = san; return; }
     const fig = document.createElement("span");
     fig.className = "mlfig " + (color === "w" ? "fig-w" : "fig-b");

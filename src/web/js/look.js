@@ -38,8 +38,8 @@ export const FRAMES = ["flat", "frame"];
 
 /**
  * The piece sets, in picker order. 16.0 V: Merida is the default — shaded,
- * where cburnett is a line drawing — and like every set but `classic`
- * (pieces.js, in the bundle for the move list's figurines) it is a chunk
+ * where cburnett is a line drawing — and like every set (17.0 F: classic,
+ * pieces.js, too; the move list's figurines are figurines.js) it is a chunk
  * (lazy-content.js PIECE_CHUNKS); chunk-boot.js fetches the chosen one before
  * the first frame. Every one is licence-cleared in its own module's header
  * and credited in the About panel.

@@ -156,7 +156,8 @@ src/web/
   index.html · styles.css          # 样式按 docs/design-constraints.md 的设计语言 v2
   fonts/                           # Inter(OFL)Latin 可变子集 + 许可全文
   js/chess.js      # 规则（vendored chess.js 0.13.4, BSD-2-Clause）
-  js/pieces.js     # 「经典」棋子:cburnett 的 Wikimedia 重绘版（多重许可,见下）;棋谱里的小棋子图形也取自它
+  js/pieces.js     # 「经典」棋子:cburnett 的 Wikimedia 重绘版（多重许可,见下）,按需加载的分块
+  js/figurines.js  # 棋谱里的小棋子:Merida 的剪影,白黑同形（GPLv2+,同 Merida）
   js/pieces-merida.js · pieces-cburnett.js · pieces-chessnut.js · pieces-fantasy.js · pieces-celtic.js · pieces-spatial.js
                    # 其余六套棋子,各自一个按需加载的分块(默认的 Merida 在首帧前取来;许可见下；设置 → 棋盘 → 棋子)
   js/look.js       # 外观 × 棋盘 × 边框 × 棋子四个维度(纯函数)
