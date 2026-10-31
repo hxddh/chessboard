@@ -6,8 +6,8 @@
  *
  *   appearance  system | light | dark — whether the interface is light or
  *               dark; "system" follows prefers-color-scheme live (the default)
- *   board       wood | green | blue | paper | marble — the squares, their
- *               marks and any texture ([data-board] in styles.css)
+ *   board       wood | green | blue | paper | marble — the squares and their
+ *               marks ([data-board] in styles.css)
  *   frame       flat | frame — a flat board with rounded corners and the
  *               coordinates in the squares (the default), or a wooden frame
  *               with the coordinates printed on it
@@ -38,8 +38,8 @@ export const FRAMES = ["flat", "frame"];
 
 /**
  * The piece sets, in picker order. 16.0 V: Merida is the default — shaded,
- * where cburnett is a line drawing — and like every set but `classic`
- * (pieces.js, in the bundle for the move list's figurines) it is a chunk
+ * where cburnett is a line drawing — and like every set (17.0 F: classic,
+ * pieces.js, too; the move list's figurines are figurines.js) it is a chunk
  * (lazy-content.js PIECE_CHUNKS); chunk-boot.js fetches the chosen one before
  * the first frame. Every one is licence-cleared in its own module's header
  * and credited in the About panel.

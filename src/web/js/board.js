@@ -21,10 +21,9 @@
  *     the kings' squares (v8-0-plan A5)
  * @module board
  */
-import { CHESS_PIECE_SVGS } from "./pieces.js";
 import { loadChunk } from "./chunk.js";
 import { PIECE_CHUNKS } from "./lazy-content.js";
-import { textureTile, parseInk, inkSprite } from "./board-skin.js";
+import { parseInk, inkSprite } from "./board-skin.js";
 import { easeFromCss } from "./motion.js";
   const FILES = "abcdefgh";
 
@@ -90,10 +89,8 @@ import { easeFromCss } from "./motion.js";
     judgeDraw: ["--muted", "#8f8a84"],
     sideWhite: ["--side-white", "#f2f2ee"],
     sideBlack: ["--side-black", "#1d1d1b"],
-    // v8-0-plan A3: the board's material (board-skin.js) — a texture laid
-    // over the squares, and the ink and paper the paper board prints its
-    // men in. "none" is flat colour and pieces as drawn.
-    texture: ["--board-texture", "none"],
+    // v8-0-plan A3: the ink and paper the paper board prints its men in
+    // (board-skin.js); "none" is pieces as drawn
     pieceInk: ["--piece-ink", "none"],
   };
   const JUDGE_PAINT = { "?!": "judgeSoft", "?": "judgeMid", "??": "judgeBad", "!!": "judgeGood", "!": "judgeGood" };
@@ -122,9 +119,7 @@ import { easeFromCss } from "./motion.js";
    * sprites go too: on the paper board they are printed in its ink
    * (v8-0-plan A3), so a board switch can change what they look like.
    */
-  function invalidatePaint() { _paint = null; _slideMs = null; _durs = {}; _ease = null; _sprites = {}; _patterns = null; }
-  /** the texture patterns for the current board and size: {key, pats} | null */
-  let _patterns = null;
+  function invalidatePaint() { _paint = null; _slideMs = null; _durs = {}; _ease = null; _sprites = {}; }
 
   /**
    * How long a piece takes to slide, read from the same --dur-base the panel
@@ -258,14 +253,12 @@ import { easeFromCss } from "./motion.js";
    *
    * v8-0-plan A3: seven sets. `cburnett` is Colin Burnett's original
    * drawing (pieces-cburnett.js); the heavier 7.x redrawing it replaced stays
-   * as `classic` (pieces.js, still the move list's figurines, so it is the one
-   * set in the bundle). 16.0 V: Merida is the default; it and every other set
-   * is a chunk (PIECE_CHUNKS), read off the window the same way Merida
+   * as `classic` (pieces.js). 16.0 V: Merida is the default; 17.0 F: every
+   * set is a chunk (PIECE_CHUNKS) — classic too, once the move list's
+   * figurines came from figurines.js — read off the window the same way Merida
    * always was, and fetched before the first frame by chunk-boot.js.
    */
-  const PIECE_SETS = {
-    classic: () => CHESS_PIECE_SVGS,
-  };
+  const PIECE_SETS = {};
   for (const id of Object.keys(PIECE_CHUNKS)) PIECE_SETS[id] = () => globalThis[PIECE_CHUNKS[id].global] || null;
   let _set = "merida"; // 16.0 V: look.js LOOK_DEFAULT; settings replace it before the first draw
   /** the set whose twelve images are decoding right now, or null */
@@ -680,46 +673,10 @@ import { easeFromCss } from "./motion.js";
     // pixels and antialias into soft seams at some board sizes
     const edge = (i) => Math.round(i * step);
     const cellRect = (sr, sc) => [edge(sc), edge(sr), edge(sc + 1) - edge(sc), edge(sr + 1) - edge(sr)];
-    // squares — v8-0-plan A3: with the material in them, paper's fibre and
-    // ink wash, marble's veins. One pattern per square colour, anchored to
-    // the board, so the grain runs on across the squares rather than
-    // restarting in each; scaled with the square so it is the same material
-    // at any size. 16.0 V: wood and the flat boards have a grain too, and
-    // the setting can take every texture off (m.texture false: flat colour,
-    // as 15.x drew wood, green and blue); a tile not made yet is made when
-    // the thread is idle and the board drawn again then — unless the men are
-    // still decoding, whose own redraw picks the tiles up. And one fill per
-    // square: the colour is baked into the tile, not filled and then
-    // overlaid (two passes, and two fills of every square per frame).
-    const tex = m.texture === false ? "none" : P.texture;
-    const later = () => { if (!_pending) draw(); };
-    const tiles = [textureTile(tex, false, later), textureTile(tex, true, later)];
-    let pats = null;
-    if (tiles[0] && tiles[1]) {
-      // made once per texture, theme and board size, not once per frame
-      const pk = tex + "@" + w;
-      if (!_patterns || _patterns.key !== pk) {
-        _patterns = { key: pk, pats: tiles.map((tl, i) => {
-          let base = tl;
-          try {
-            base = document.createElement("canvas");
-            base.width = tl.width; base.height = tl.height;
-            const g = base.getContext("2d");
-            g.fillStyle = i ? P.dark : P.light;
-            g.fillRect(0, 0, base.width, base.height);
-            g.drawImage(tl, 0, 0);
-          } catch (_) { return null; }
-          const pat = ctx.createPattern(base, "repeat");
-          try { if (pat && pat.setTransform && typeof DOMMatrix !== "undefined") pat.setTransform(new DOMMatrix().scale(step / 96)); } catch (_) { /* native size */ }
-          return pat;
-        }) };
-      }
-      if (_patterns.pats[0] && _patterns.pats[1]) pats = _patterns.pats;
-    }
+    // squares — two flat colours (17.0 T: the textures over them are gone)
     for (let sr = 0; sr < 8; sr++) {
       for (let sc = 0; sc < 8; sc++) {
-        const dark = (sr + sc) % 2;
-        ctx.fillStyle = pats ? pats[dark] : dark ? P.dark : P.light;
+        ctx.fillStyle = (sr + sc) % 2 === 0 ? P.light : P.dark;
         ctx.fillRect(...cellRect(sr, sc));
       }
     }

@@ -485,8 +485,9 @@
        boards, each one its own thing — 7.x had four palettes and three
        boards, 日's squares sitting ΔE00 6.4 from 木's on the dark square and
        2.8 on the light one. The closest two dark squares here are 10 apart
-       (docs/measured.json boardLook), and paper and marble carry a texture
-       besides (--board-texture, drawn by js/board-skin.js).
+       (docs/measured.json boardLook). 17.0 T: every board is two flat
+       colours — the textures laid over them (wood's grain, paper's fibre,
+       marble's veins) are gone.
 
        Every mark on every board is held to two ceilings, over the light
        square AND the dark one (scripts/lib/mark-colour.mjs, test-chess):
@@ -509,9 +510,6 @@
          undoes 缺陷 17 (men sitting on flat colour with no contact at all);
          half keeps the contact at the base and loses the smudge. */
       --piece-shadow: rgba(38,20,4,.13);
-      /* v8-0-plan A3: paper and marble name a texture here; 16.0 V: wood
-         its grain, green and blue a fine matte tooth (board-skin.js) */
-      --board-texture: wood;
       --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #e0b07a, #c9965c 45%, #b8864e);
@@ -569,7 +567,6 @@
          at ΔL* 28 rather than Lichess's 35 (see the ceilings above). Marks
          in yellow and a dark olive, the way green boards mark a move. */
       --piece-shadow: rgba(10,26,4,.15);
-      --board-texture: grain;
       --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #1a2e28, #15241f 50%, #101c18);
@@ -605,7 +602,6 @@
          last move on a blue board is a tint of the board — to a yellow-green
          and an orange hint. */
       --piece-shadow: rgba(30,44,54,.10);
-      --board-texture: grain;
       --piece-ink: none;
 
       --board-frame: linear-gradient(180deg, #fffcf5, #f7f2e6);
@@ -636,14 +632,12 @@
       --board-shadow: 0 8px 24px rgba(40,50,70,.15), inset 0 0 0 1px #d8d0c0;
     }
     [data-board="paper"] {
-      /* 纸墨: the diagram page. Cream paper with its fibre, dark squares a
-         grey ink wash laid on it (board-skin.js draws both), and the men in
-         ink: their white is the paper's, their black the ink's (--piece-ink,
+      /* 纸墨: the diagram page. Cream paper, dark squares a grey ink wash
+         (flat as of 17.0 T), and the men in ink (board-skin.js): their white is the paper's, their black the ink's (--piece-ink,
          "ink paper"). The lowest-contrast board here (ΔL* 19), which is what
          a printed diagram is — and so the marks are quiet too, an indigo
          last move and a vermilion check, the two colours a printer has. */
       --piece-shadow: rgba(40,34,20,.08);
-      --board-texture: paper;
       --piece-ink: #1d2230 #f6f1e4;
 
       --board-frame: linear-gradient(145deg, #efe6d2, #e3d7bd 50%, #d8caac);
@@ -674,11 +668,10 @@
       --engine-arrow-alt: rgba(20, 140, 90, var(--mark-soft));
     }
     [data-board="marble"] {
-      /* White Carrara and a grey bardiglio, veined (board-skin.js). Neutral
+      /* White Carrara and a grey bardiglio (flat as of 17.0 T). Neutral
          where every other board has a hue, which is what sets it apart from
          blue (ΔE00 10.8 on the dark square) at a similar lightness. */
       --piece-shadow: rgba(20,20,24,.12);
-      --board-texture: marble;
       --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #d9d6d0, #bfbcb6 50%, #a9a6a0);
@@ -3048,8 +3041,7 @@
        sprites keep a margin inside their 40-unit box, so a piece has to be
        drawn larger than the cap height to look as tall as one. */
     /* 7.8 §1e: the figure is exactly a capital high and stands on the
-       baseline. The SVG's box is cropped to the figure (figurineSvg() in
-       app.js), so the box's height is the figure's; `1cap` is the capital
+       baseline. The SVG's box is cropped to the figure (figurines.js), so the box's height is the figure's; `1cap` is the capital
        height of the font this line is set in, and an inline-block with no
        text sits its bottom edge on the baseline. 0.7em is for an engine
        without the `cap` unit. */
@@ -3058,10 +3050,6 @@
       vertical-align: baseline;
     }
     .mlfig svg { height: 100%; width: auto; display: block; overflow: visible; fill: currentColor; }
-    /* the board's 1.5-unit line is a hairline at a capital's height */
-    .mlfig svg * { stroke-width: 2.4; }
-    /* figurineSvg() measures each figure once in one of these, off screen */
-    .fig-probe { position: absolute; visibility: hidden; width: 40px; height: 40px; }
     .mlmove {
       appearance: none; border: 0; background: transparent;
       /* --text, not --fg: there has never been a --fg token in any of the four

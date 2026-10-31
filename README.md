@@ -60,7 +60,7 @@
 
 ### 设置
 
-齿轮、⌘, / Ctrl+, 或菜单「设置…」，一处管全部。**通用**：语言（中文 / English / 日本語，1433 个界面键三语齐备）、外观（跟随系统 / 浅色 / 深色）、字号。**棋盘**：五种棋盘、边框、七套棋子、坐标、方向、盲棋。**声音**：音效、音量、音色（木质 / 经典）、触感反馈（macOS 触控板）。**对局**：失着提醒、自动翻转。**数据**：从网站同步、学习数据与全部数据的导入导出、清除。**高级**：引擎内存、引擎线数、实时引擎、人会怎么走、引擎箭头、存疑标注。
+齿轮、⌘, / Ctrl+, 或菜单「设置…」，一处管全部。**通用**：语言（中文 / English / 日本語，1431 个界面键三语齐备）、外观（跟随系统 / 浅色 / 深色）、字号。**棋盘**：五种棋盘、边框、七套棋子、坐标、方向、盲棋。**声音**：音效、音量、音色（木质 / 经典）、触感反馈（macOS 触控板）。**对局**：失着提醒、自动翻转。**数据**：从网站同步、学习数据与全部数据的导入导出、清除。**高级**：引擎内存、引擎线数、实时引擎、人会怎么走、引擎箭头、存疑标注。
 
 **⌘K**（Ctrl+K）命令面板：找课、残局、谜题主题、棋谱或一个动作。**?**（⌘/ / Ctrl+/）随时打开完整的快捷键表；任何对话框打开时，棋局的字母快捷键全部让路，Esc 一定关得掉。macOS 上关窗只是收起，⌘Q 退出；Windows 关窗就是退出。
 
@@ -156,7 +156,8 @@ src/web/
   index.html · styles.css          # 样式按 docs/design-constraints.md 的设计语言 v2
   fonts/                           # Inter(OFL)Latin 可变子集 + 许可全文
   js/chess.js      # 规则（vendored chess.js 0.13.4, BSD-2-Clause）
-  js/pieces.js     # 「经典」棋子:cburnett 的 Wikimedia 重绘版（多重许可,见下）;棋谱里的小棋子图形也取自它
+  js/pieces.js     # 「经典」棋子:cburnett 的 Wikimedia 重绘版（多重许可,见下）,按需加载的分块
+  js/figurines.js  # 棋谱里的小棋子:Merida 的剪影,白黑同形（GPLv2+,同 Merida）
   js/pieces-merida.js · pieces-cburnett.js · pieces-chessnut.js · pieces-fantasy.js · pieces-celtic.js · pieces-spatial.js
                    # 其余六套棋子,各自一个按需加载的分块(默认的 Merida 在首帧前取来;许可见下；设置 → 棋盘 → 棋子)
   js/look.js       # 外观 × 棋盘 × 边框 × 棋子四个维度(纯函数)
@@ -176,7 +177,7 @@ src/web/
                    #   各一个按需加载的分块(js/lichess/band-NNNN.js → chunk-lc-NNNN.js)
   js/fide.js       # FIDE 和棋算术:重复计数 / 6.9 将杀子力判定 / 局面是否已终局(纯函数,单测覆盖)
   js/pgn.js        # PGN 文本工具:多局切分 / 标签 / 摘要 / 起始局面(纯函数,单测覆盖)
-  js/i18n.js       # 界面文案字典 zh-CN / en / ja 各 1433 条(单测校验键完整、无漏译、
+  js/i18n.js       # 界面文案字典 zh-CN / en / ja 各 1431 条(单测校验键完整、无漏译、
                    #   tooltip 与 aria-label 全接线;句子一律整句模板 tf(),不拼碎片)
   js/lessons-en.js # 教学课文英文全译 96 课(仅文案;局面与解法仍只来自 lessons.js)
   js/library*.js   # 棋谱库:模型(library.js)、查询与索引、IndexedDB、列表页与本机棋局

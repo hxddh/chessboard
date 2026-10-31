@@ -16,7 +16,7 @@
  *   deps.pieceSvgs(id)     Promise of a set's twelve SVGs (board.js setSvgs)
  *
  * Each board and each set shows itself: a 4×4 corner of the board, drawn with
- * the board's own colours and texture, and the set's two kings side by side —
+ * the board's own colours, and the set's two kings side by side —
  * the pair that tells sets apart, and the pair that told the 7.x drawing
  * apart badly. The previews of the sets that are chunks are fetched when the
  * row first scrolls into view, not at startup.
@@ -26,7 +26,6 @@
  * @module appearance-ui
  */
 import { APPEARANCES, BOARD_IDS, FRAMES, PIECE_SET_IDS } from "./look.js";
-import { textureTile } from "./board-skin.js";
 
 /** The labels, by value: the i18n keys the rows are built from. */
 const LABELS = {
@@ -37,7 +36,7 @@ const LABELS = {
 /**
  * Paint a 4×4 preview of the board whose palette `el` carries (it has the
  * board's data-board attribute, so the board's custom properties resolve on
- * it), with the board's texture over the squares.
+ * it): its two square colours.
  */
 function readStyle(el) {
   try { return getComputedStyle(el); } catch (_) { return null; }
@@ -47,7 +46,6 @@ function paintBoardPreview(cv, el) {
   if (!cs) return;
   const light = cs.getPropertyValue("--sq-light").trim();
   const dark = cs.getPropertyValue("--sq-dark").trim();
-  const texture = cs.getPropertyValue("--board-texture").trim();
   const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
   const px = Math.round(cv.clientWidth * dpr) || Math.round(40 * dpr);
   cv.width = px; cv.height = px;
@@ -55,18 +53,12 @@ function paintBoardPreview(cv, el) {
   if (!pen) return;
   const n = 4, step = px / n;
   const edge = (i) => Math.round(i * step);
-  const tiles = [textureTile(texture, false), textureTile(texture, true)];
   for (let r = 0; r < n; r++) {
     for (let c = 0; c < n; c++) {
       const box = [edge(c), edge(r), edge(c + 1) - edge(c), edge(r + 1) - edge(r)];
       const d = (r + c) % 2;
       pen.fillStyle = d ? dark : light;
       pen.fillRect(...box);
-      if (tiles[d]) {
-        const pat = pen.createPattern(tiles[d], "repeat");
-        try { if (pat && pat.setTransform && typeof DOMMatrix !== "undefined") pat.setTransform(new DOMMatrix().scale(step / 96)); } catch (_) { /* native size */ }
-        if (pat) { pen.fillStyle = pat; pen.fillRect(...box); }
-      }
     }
   }
 }
@@ -195,9 +187,9 @@ export function mount(container, deps) {
   }
   /**
    * Draw the board previews — by the caller, once the row is on screen and
-   * has a size. Not at mount: paper and marble build their textures in code,
-   * and the settings page this lives on is closed at launch and in most
-   * sessions (Codex on #86).
+   * has a size. Not at mount: the settings page this lives on is closed at
+   * launch and in most sessions (Codex on #86; it was paper's and marble's
+   * textures then, built in code — gone with 17.0 T; the deferral stays).
    */
   function repaint() { for (const [cv, sw] of previews) paintBoardPreview(cv, sw); }
 

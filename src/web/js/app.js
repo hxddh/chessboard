@@ -21,7 +21,7 @@ import { TimeControl } from "./time-control.js";
 import { createOpponentsLazy } from "./opponents-lazy.js";
 import { ChessPgn } from "./pgn.js";
 import { ChessPgnParser } from "./pgn-parser.js";
-import { CHESS_PIECE_SVGS } from "./pieces.js";
+import { figurineSvg } from "./figurines.js";
 import { createA11y } from "./a11y.js";
 import { createNativeCommands } from "./native-commands.js";
 import { createLibraryUI } from "./library-ui.js";
@@ -806,7 +806,7 @@ import { drawSpark } from "./charts.js";
         selected: null, legalTargets: [],
         lastMove: p.last, checkSquare: p.check, mated: false,
         hintMove: null, stars: [], cursor: null, drag: null,
-        coords: store.ui.coordsOn, blind: store.ui.blindfold, texture: store.ui.boardTexture,
+        coords: store.ui.coordsOn, blind: store.ui.blindfold,
       };
     }
     const g = viewGame();
@@ -837,7 +837,7 @@ import { drawSpark } from "./charts.js";
       cursor: cursorSquare(),
       // the drag is part of the picture, not a thing pushed in beforehand
       drag: store.ui.dragging,
-      coords: store.ui.coordsOn, texture: store.ui.boardTexture,
+      coords: store.ui.coordsOn,
       blind: store.ui.blindfold,
     };
   });
@@ -869,7 +869,7 @@ import { drawSpark } from "./charts.js";
       if (typeof s.soundOn === "boolean") store.ui.soundOn = s.soundOn;
       if (Audio2.SOUND_SETS.includes(s.soundSet)) Audio2.setSoundSet(store.ui.soundSet = s.soundSet);
       if (Number.isFinite(s.volume)) store.ui.volume = Math.max(0, Math.min(100, Math.round(s.volume)));
-      if (typeof s.coordsOn === "boolean") store.ui.coordsOn = s.coordsOn; if (typeof s.boardTexture === "boolean") store.ui.boardTexture = s.boardTexture;
+      if (typeof s.coordsOn === "boolean") store.ui.coordsOn = s.coordsOn;
       if (typeof s.coordsIn === "boolean") store.ui.coordsInside = s.coordsIn;
       if (typeof s.showSoftMark === "boolean") store.ui.showSoftMark = s.showSoftMark;
       if (typeof s.engineArrows === "boolean") store.ui.engineArrows = s.engineArrows;
@@ -906,7 +906,7 @@ import { drawSpark } from "./charts.js";
   function saveSettings() {
     try {
       Persist.setJson("settings", ({ soundOn: store.ui.soundOn, flipped: store.game.flipped, mode: store.session.mode, difficulty: store.session.difficulty, humanColor: store.session.humanColor, colorRandom: store.session.colorRandom, timeControl: store.game.timeControl, coachOn: store.session.coachOn, autoFlipPvp: store.ui.autoFlipPvp, haptics: store.ui.haptics, langId: store.ui.langId, setCat: store.ui.setCat, liveOn: store.session.liveOn, trainSeg: store.ui.trainSeg, classicMode: store.ui.classicMode, view: store.ui.view, playMode: store.ui.playMode, personaId: store.session.personaId,
-        volume: store.ui.volume, coordsOn: store.ui.coordsOn, boardTexture: store.ui.boardTexture, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, humanLine: store.ui.humanLine, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv, bgWorker: store.ui.bgWorker === true,
+        volume: store.ui.volume, coordsOn: store.ui.coordsOn, coordsIn: store.ui.coordsInside, showSoftMark: store.ui.showSoftMark, engineArrows: store.ui.engineArrows, humanLine: store.ui.humanLine, blindfold: store.ui.blindfold, hash: store.ui.hash, multipv: store.ui.multipv, bgWorker: store.ui.bgWorker === true,
         textSize: store.ui.textSize, pieceSet: store.ui.pieceSet, pieceSetPicked: store.ui.pieceSetPicked === true || undefined, // 16.0 V: look.js readLook
         // v8-0-plan A3: the look
         appearance: store.ui.appearance, boardId: store.ui.boardId, boardFrame: store.ui.boardFrame,
@@ -2792,49 +2792,16 @@ import { drawSpark } from "./charts.js";
    * untouched, and a promotion's `=Q` keeps its letter because that Q is the
    * piece you *chose*, which is worth reading as a word.
    */
-  const SAN_PIECE = { K: "k", Q: "q", R: "r", B: "b", N: "n" };
 
   /**
-   * 7.8 §1e: the board's piece as a figurine — one colour, the text's, and
-   * cropped to the figure.
-   *
-   * The sprites were dropped in as they are drawn on the board: white filled
-   * white and black filled black, in a 40-unit box with a margin, so ♞xd5 was
-   * a smudge about six tenths of the letters' height, sitting high. Now the
-   * box is cut to the figure itself (measured once per piece: getBBox, plus
-   * half the stroke), so the stylesheet can make the figure exactly a capital
-   * high on the baseline; and the colours become the text's — white moves an
-   * outline (the white fill is let through), black moves solid (the white
-   * detail lines are let through too, which reads as a cut in the shape).
+   * 7.8 §1e: a piece letter as a figurine, a capital high in the text's
+   * colour. 17.0 F: Merida's silhouettes (figurines.js), the same shape for
+   * both sides — it was the 7.x drawing cut here at runtime, White hollow.
    */
-  const FIGURINES = {};
-  function figurineSvg(key) {
-    if (FIGURINES[key]) return FIGURINES[key];
-    const svgs = CHESS_PIECE_SVGS || {};
-    if (!svgs[key]) return null;
-    let svg = svgs[key].replace(/"#000000"/gi, "\"currentColor\"").replace(/"#FFFFFF"/gi, "\"none\"");
-    try {
-      const probe = document.createElement("span");
-      probe.className = "fig-probe";
-      probe.insertAdjacentHTML("afterbegin", svg);
-      document.body.appendChild(probe);
-      const bb = probe.firstElementChild.getBBox();
-      probe.remove();
-      if (bb && bb.height > 0) {
-        const pad = 0.75; // half of the sprites' 1.5-unit stroke
-        const box = [bb.x - pad, bb.y - pad, bb.width + 2 * pad, bb.height + 2 * pad].map((v) => Math.round(v * 100) / 100).join(" ");
-        svg = svg.replace(/viewBox="[^"]*"/, "viewBox=\"" + box + "\"");
-      }
-    } catch (_) { /* no layout here: keep the sprite's own box */ }
-    FIGURINES[key] = svg;
-    return svg;
-  }
-
   function writeSan(node, san, color) {
     node.setAttribute("aria-label", san);
     node.title = san;
-    const type = SAN_PIECE[san[0]];
-    const svg = type && figurineSvg(color + type);
+    const svg = figurineSvg(san[0]);
     if (!svg) { node.textContent = san; return; }
     const fig = document.createElement("span");
     fig.className = "mlfig " + (color === "w" ? "fig-w" : "fig-b");

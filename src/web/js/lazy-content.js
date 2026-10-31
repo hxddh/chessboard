@@ -41,14 +41,15 @@ import { readLook } from "./look.js";
   export const MINED_CHUNK = { file: "chunk-mined.js", global: "MINED_PUZZLES" };
   export const MERIDA_CHUNK = { file: "chunk-merida.js", global: "MERIDA_PIECE_SVGS" };
   /**
-   * v8-0-plan A3: every piece set but the one the bundle carries (pieces.js —
-   * the 7.x drawing the move list's figurines are cut from) is a chunk of its
-   * own, by set id. Merida keeps its M1 file name. 16.0 V: cburnett, the
+   * v8-0-plan A3: every piece set is a chunk of its own, by set id (17.0 F:
+   * pieces.js too, since the move list's figurines are figurines.js). Merida keeps its M1 file name. 16.0 V: cburnett, the
    * default until 15.x, joined them when Merida took its place.
    */
   export const PIECE_CHUNKS = {
     merida: MERIDA_CHUNK,
     cburnett: { file: "chunk-pieces-cburnett.js", global: "CBURNETT_PIECE_SVGS" },
+    // 17.0 F: the 7.x drawing left the bundle with the figurines (figurines.js)
+    classic: { file: "chunk-pieces-classic.js", global: "CHESS_PIECE_SVGS" },
     chessnut: { file: "chunk-pieces-chessnut.js", global: "CHESSNUT_PIECE_SVGS" },
     fantasy: { file: "chunk-pieces-fantasy.js", global: "FANTASY_PIECE_SVGS" },
     celtic: { file: "chunk-pieces-celtic.js", global: "CELTIC_PIECE_SVGS" },
