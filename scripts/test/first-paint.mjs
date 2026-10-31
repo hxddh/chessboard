@@ -66,6 +66,11 @@ export async function run() {
     const BUNDLE_BYTES_150 = 860000;
     assert(bundleBytes <= BUNDLE_BYTES_150,
       "15.0: bundle.js stays within v15-0-plan's 860,000 bytes (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_150 ? " ≤ " : " > ") + BUNDLE_BYTES_150 + " bytes)");
+    // 17.0 E: v17-0-plan §4 — the textures' code and the classic set went
+    // (842,636 bytes measured); the line is that and 2,364 bytes of room
+    const BUNDLE_BYTES_170 = 845000;
+    assert(bundleBytes <= BUNDLE_BYTES_170,
+      "17.0: bundle.js stays within v17-0-plan's 845,000 bytes (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_170 ? " ≤ " : " > ") + BUNDLE_BYTES_170 + " bytes)");
     // …minified without renaming: a player's stack trace still names the code
     assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
       "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");
@@ -111,7 +116,7 @@ export async function run() {
         [{ pieceSet: "chessnut" }, null, "chunk-pieces-chessnut.js"],
         [{ pieceSet: "cburnett" }, null, "chunk-merida.js"],
         [{ pieceSet: "cburnett", pieceSetPicked: true }, null, "chunk-pieces-cburnett.js"],
-        [{ pieceSet: "classic" }, null, ""],
+        [{ pieceSet: "classic" }, null, "chunk-pieces-classic.js"], // 17.0 F: out of the bundle too
         [{ pieceSet: "toString" }, null, "chunk-merida.js"],
         [{ langId: "xx" }, null, "chunk-merida.js"],
       ];
@@ -150,7 +155,7 @@ export async function run() {
           const name = id === "classic" ? null : AUTHOR[id];
           if (name) assert(credits.every((c) => c.includes(name)), "the About panel credits " + name + " in all three languages");
           // in the bundle, or a chunk that is built
-          const inBundle = id === "classic"; // 16.0 V: cburnett left the bundle
+          const inBundle = false; // 16.0 V: cburnett left the bundle; 17.0 F: classic too
           assert(inBundle || (lctx.PIECE_CHUNKS[id] && CHUNKS.some((c) => c.entry === "src/web/js/" + file && path.basename(c.out) === lctx.PIECE_CHUNKS[id].file)),
             "piece set " + id + " is " + (inBundle ? "in the bundle" : "its own chunk, built from " + file));
         }

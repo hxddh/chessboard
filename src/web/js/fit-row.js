@@ -14,7 +14,7 @@
  * widest layout and steps down, and the first one in which every visible label
  * fits on one line wins:
  *
- *   an action row (.fit-row)       3 → 2 → 1, or 4 → 2 → 1 with exactly four
+ *   an action row (.fit-row)       3 → 2 → 1 (never more than it shows), or 4 → 2 → 1 with exactly four
  *                                  shown (3 + 1 is the orphan the segment rules
  *                                  in styles.css exist to prevent); the puzzle
  *                                  type segment is one of these too
@@ -42,7 +42,9 @@ const shown = (b) => !b.hidden && getComputedStyle(b).display !== "none";
 /** The column counts a row may use, widest first. */
 function tries(row, n) {
   if (row.classList.contains("fit-fill")) return [...new Set([n, 2, 1])].filter((c) => c <= n);
-  return n === 4 ? [4, 2, 1] : [3, 2, 1];
+  // 17.0 P: never more columns than buttons — two under 本局 were laid in
+  // three, a third of the row each and a column of nothing at the end
+  return n === 4 ? [4, 2, 1] : [3, 2, 1].filter((c) => c <= n);
 }
 
 /**

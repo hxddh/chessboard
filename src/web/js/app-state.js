@@ -159,8 +159,6 @@ export function initialState() {
       /** 6.0 (v6-plan Q2.8 / Q2.6): the level, the frame labels, the men, the engine knobs */
       volume: 100,
       coordsOn: true,
-      /** 16.0 V: the board's grain (board-skin.js); off draws flat colour */
-      boardTexture: true,
       /** v7-8-plan §5: coordinates in the corner squares instead of on the frame */
       coordsInside: false,
       blindfold: false,

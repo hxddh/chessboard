@@ -987,8 +987,8 @@ for (const lang of ["en", "ja"]) {
   await ctx.close();
 }
 
-// Codex on #86: the board previews (paper and marble build their textures
-// procedurally) are drawn when the preferences window opens, not at every
+// Codex on #86: the board previews (paper and marble built their textures
+// procedurally then; flat as of 17.0 T) are drawn when the preferences window opens, not at every
 // launch for a window most sessions never open. Red before: every preview
 // canvas already held pixels at startup. 9.0 S5: the window is the settings
 // page's 棋盘 category; the previews are drawn when that category shows.

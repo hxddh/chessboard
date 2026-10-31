@@ -4459,7 +4459,8 @@ if (scenario()) {
   }
 
   // 7.8 §1e：棋谱里的兵种字形 = 字母的大写高度（±10%），与字母同一条基线；
-  // 白方空心，黑方实心，都是文字的颜色。三种语言各量一遍。
+  // 都是文字的颜色。17.0 F：Merida 的剪影，白黑同形（图形记谱的印法），
+  // 不再是白方空心、黑方实心。三种语言各量一遍。
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "pvp", "play");
     // 1.Nf3 Nc6 2.Nc3 Nf6 3.e4 d6 4.Bb5 Bd7 5.Qe2 Qc8 6.Kd1 Kd8
@@ -4480,7 +4481,7 @@ if (scenario()) {
         const g = f.querySelector("svg").getBoundingClientRect();
         const text = cs.color;
         const fills = [...f.querySelectorAll("path, circle, rect, polygon")].map((p) => getComputedStyle(p).fill);
-        return { san: btn.getAttribute("aria-label"), w: f.classList.contains("fig-w"), h: g.height, cap, dy: g.bottom - base,
+        return { san: btn.getAttribute("aria-label"), w: f.classList.contains("fig-w"), svg: f.innerHTML, h: g.height, cap, dy: g.bottom - base,
                  foreign: fills.filter((x) => x !== "none" && x !== text).length, hollow: fills.filter((x) => x === "none").length, solid: fills.filter((x) => x === text).length };
       });
     });
@@ -4488,8 +4489,9 @@ if (scenario()) {
     assert(figs.length === 10 && off.length === 0,
       `§1e ${lang}：${figs.length} 个字形都是大写高度、在基线上` + (off.length ? "（" + off.map((f) => f.san + " " + f.h.toFixed(1) + "/" + f.cap.toFixed(1) + " dy " + f.dy.toFixed(1)).join("，") + "）" : ""));
     assert(figs.every((f) => f.foreign === 0), `§1e ${lang}：字形只用文字的颜色`);
-    assert(figs.filter((f) => f.w).every((f) => f.hollow > 0) && figs.filter((f) => !f.w).every((f) => f.solid > 0 && f.w === false),
-      `§1e ${lang}：白方空心、黑方实心（白 ${figs.filter((f) => f.w).length} 个，黑 ${figs.filter((f) => !f.w).length} 个）`);
+    const same = figs.filter((f) => f.w).every((f) => figs.some((b) => !b.w && b.san[0] === f.san[0] && b.svg === f.svg));
+    assert(figs.every((f) => f.solid > 0) && same,
+      `17.0 F ${lang}：白黑同一个实心字形（白 ${figs.filter((f) => f.w).length} 个，黑 ${figs.filter((f) => !f.w).length} 个，同形 ${same}）`);
     await ctx.close();
   }
 
@@ -6197,6 +6199,34 @@ if (scenario()) {
     assert(errs.length === 0, `14.0 A1 勋章（${theme}）：没有页面异常 ` + errs.join(" / "));
     await ctx.close();
   }
+}
+
+// --- 17.0 P: a row of buttons is as many columns as it shows ---------------
+// From 15.0 a game in progress shows two buttons under 本局 (提和, 认输), and
+// fit-row.js laid any row of under four in three columns — two buttons a third
+// of the row each and a column of nothing at the end. Every row of buttons on
+// one line, on every screen that has them, reaches its own right edge.
+if (scenario()) {
+  const rowsFilled = (page) => page.evaluate(() => [...document.querySelectorAll(".fit-row")].filter((r) => r.getClientRects().length).map((r) => {
+    const kids = [...r.children].filter((b) => !b.hidden && getComputedStyle(b).display !== "none" && b.getClientRects().length);
+    if (kids.length < 2) return null;
+    const rects = kids.map((b) => b.getBoundingClientRect()), box = r.getBoundingClientRect();
+    if (new Set(rects.map((x) => Math.round(x.top))).size > 1) return null; // more than one line: the column rules decide
+    const pad = parseFloat(getComputedStyle(r).paddingRight) || 0;
+    const gap = Math.round(box.right - pad - Math.max(...rects.map((x) => x.right)));
+    return gap > 1 ? (r.id || r.className) + " " + kids.length + " 个按钮,右边空 " + gap + "px" : null;
+  }).filter(Boolean));
+  const { ctx, page, errs } = await open("zh-CN", "pvp", "play");
+  for (const sq of ["e2", "e4", "e7", "e5"]) await mv(page, sq);
+  const bad = await rowsFilled(page);
+  for (const seg of ["course", "puzzle", "endgame", "classic"]) {
+    await page.evaluate((s) => { document.querySelector('.rail-btn[data-view="train"]').click(); const b = document.querySelector('#train-seg button[data-seg="' + s + '"]'); if (b) b.click(); }, seg);
+    await settle(page);
+    bad.push(...(await rowsFilled(page)).map((x) => seg + ":" + x));
+  }
+  assert(bad.length === 0, "17.0 P 一行按钮铺满整行,没有空出来的列(" + bad.join("; ") + ")");
+  assert(errs.length === 0, "17.0 P:没有页面异常 " + errs.join(" / "));
+  await ctx.close();
 }
 
 const { shard, total } = scenario.done();

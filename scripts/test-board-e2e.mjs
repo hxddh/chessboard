@@ -160,7 +160,7 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   assert(r.plies === 3, `${theme}:着法表记到第 3 手(实际 ${r.plies})`);
 }
 // v8-0-plan A3: the five boards, on the flat board and in the frame — the
-// textures and the paper board's ink men must leave every piece countable
+// paper board's ink men must leave every piece countable
 for (const [boardId, boardFrame, appearance] of [["wood", "flat", "system"], ["green", "flat", "dark"],
   ["blue", "frame", "light"], ["paper", "flat", "light"], ["marble", "frame", "dark"]]) {
   const tag = boardId + "/" + boardFrame;
@@ -1399,48 +1399,45 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.close();
 }
 
-// --- 16.0 V:棋盘纹理——木纹默认开,首帧先画纯色,空闲时补上;关掉回到纯色 ----------
-// 木纹两张贴图要算约 50 ms,木是默认棋盘:放在首帧里算,就是首帧最长的一段。
-// 所以首帧画纯色,线程空下来再算、再画一次。关掉开关时与 15.x 逐像素相同
-// (格子就是 --sq-light 那一个颜色)。
-{
-  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
-  await ctx.addInitScript(() => {
-    localStorage.setItem("chess.settings", JSON.stringify({
-      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "light", boardId: "wood", view: "play" }));
-  });
-  const page = await ctx.newPage();
-  const errs = [];
-  page.on("pageerror", (e) => errs.push(e.message));
-  await page.goto(`http://127.0.0.1:${PORT}/`);
-  await page.waitForTimeout(1500);
-  // e4, empty, a light square from White's side: its spread of colours, and how far its mean is from --sq-light
-  const sample = () => page.evaluate(() => {
-    const c = document.getElementById("board"), g = c.getContext("2d"), step = c.width / 8;
-    const d = g.getImageData(Math.round(4 * step + step * 0.1), Math.round(4 * step + step * 0.1), Math.round(step * 0.8), Math.round(step * 0.8)).data;
-    const want = getComputedStyle(document.documentElement).getPropertyValue("--sq-light").trim();
-    const hex = [1, 3, 5].map((i) => parseInt(want.slice(i, i + 2), 16));
-    let lo = 999, hi = 0, off = 0, n = 0;
-    for (let i = 0; i < d.length; i += 4) {
-      const v = d[i] + d[i + 1] + d[i + 2];
-      lo = Math.min(lo, v); hi = Math.max(hi, v);
-      off = Math.max(off, Math.abs(d[i] - hex[0]), Math.abs(d[i + 1] - hex[1]), Math.abs(d[i + 2] - hex[2])); n++;
-    }
-    return { spread: hi - lo, off };
-  });
-  const on = await sample();
-  assert(on.spread >= 12, `16.0 V 木棋盘默认有木纹:空的浅格里颜色有起伏(亮度跨度 ${on.spread})`);
-  await page.evaluate(() => { document.querySelector('.rail-btn[data-view="settings"]').click(); });
-  await page.waitForTimeout(300);
-  await page.evaluate(() => { document.getElementById("cat-board").click(); document.getElementById("opt-texture").click(); });
-  await page.evaluate(() => document.querySelector('.rail-btn[data-view="play"]').click());
-  await page.waitForTimeout(500);
-  const off = await sample();
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}").boardTexture);
-  assert(off.spread === 0 && off.off <= 1 && saved === false,
-    `16.0 V 关掉纹理:格子是纯色 --sq-light,与 15.x 相同(跨度 ${off.spread},偏差 ${off.off}),设置里记下 ${saved}`);
-  assert(errs.length === 0, `16.0 V 棋盘纹理:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
-  await ctx.close();
+// --- 17.0 T:棋盘没有纹理——五种棋盘、深浅两套,空格就是一个颜色 --------------
+// 16.0 给每种棋盘加过纹理(木纹、磨砂、纸纹、大理石纹),17.0 按要求全部去掉。
+// 量的是一个空的浅格和一个空的深格:里面每个像素都相同,且正好是棋盘的
+// --sq-light / --sq-dark(纸棋盘的墨色棋子不是纹理,不在空格上)。
+for (const appearance of ["light", "dark"]) {
+  for (const boardId of ["wood", "green", "blue", "paper", "marble"]) {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+    await ctx.addInitScript(([a, b]) => {
+      localStorage.setItem("chess.settings", JSON.stringify({
+        mode: "pvp", langId: "zh-CN", soundOn: false, appearance: a, boardId: b, view: "play" }));
+    }, [appearance, boardId]);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const c = document.getElementById("board"), g = c.getContext("2d"), step = c.width / 8;
+      const cs = getComputedStyle(document.documentElement);
+      const hex = (v) => { const m = /^#([0-9a-f]{6})$/i.exec(v.trim()); return m ? [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16)) : null; };
+      // e4 is light and d4 dark from White's side, both empty at the start
+      const read = (col, want) => {
+        const d = g.getImageData(Math.round(col * step + step * 0.1), Math.round(4 * step + step * 0.1), Math.round(step * 0.8), Math.round(step * 0.8)).data;
+        const seen = new Set();
+        let off = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          seen.add(d[i] + "," + d[i + 1] + "," + d[i + 2]);
+          if (want) off = Math.max(off, Math.abs(d[i] - want[0]), Math.abs(d[i + 1] - want[1]), Math.abs(d[i + 2] - want[2]));
+        }
+        return { colours: seen.size, off: want ? off : -1 };
+      };
+      return { light: read(4, hex(cs.getPropertyValue("--sq-light"))), dark: read(3, hex(cs.getPropertyValue("--sq-dark"))) };
+    });
+    const tag = boardId + "/" + appearance;
+    assert(r.light.colours === 1 && r.dark.colours === 1 && r.light.off <= 1 && r.dark.off <= 1,
+      `17.0 T ${tag}:空格是纯色——浅格 ${r.light.colours} 种颜色(偏差 ${r.light.off}),深格 ${r.dark.colours} 种(偏差 ${r.dark.off})`);
+    assert(errs.length === 0, `17.0 T ${tag}:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+    await ctx.close();
+  }
 }
 
 // --- 7.6:做题时,读屏那一行念的是题板上对方的应着 ---------------------------
@@ -2216,9 +2213,9 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     st = await state();
     assert(st.attrs === "notebook/green/frame" && st.saved.startsWith("light/green/frame") && st.pressed === "浅色/绿/木框",
       `A3 选浅色、木框:${st.attrs},${st.saved},按下 ${st.pressed}`);
-    // the texture: marble's veins are on the canvas, not only in a variable.
-    // 9.0 S5: the settings page covers the board, so it is read back on the
-    // play view — the board a person sees after choosing
+    // the board chosen is the board drawn: marble's colours on the canvas,
+    // flat (17.0 T — it had veins until then). 9.0 S5: the settings page
+    // covers the board, so it is read back on the play view
     await pick('#board-pick-seg button[data-board-id="marble"]');
     await toPlay(page);
     const spread = await page.evaluate(() => {
@@ -2229,7 +2226,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
       for (let i = 0; i < d.length; i += 4) seen.add(d[i] + "," + d[i + 1] + "," + d[i + 2]);
       return seen.size;
     });
-    assert(spread > 20, `A3 大理石:空格子上有纹理(${spread} 种颜色,平涂只有 1 种)`);
+    assert(spread === 1, `A3 大理石:空格子是一种颜色,没有纹理(${spread} 种,17.0 T)`);
     await toSettings(page, "board");
     // the kings in the piece picker: fetched once the row is on screen
     await page.evaluate(() => document.getElementById("piece-pick-seg").scrollIntoView());

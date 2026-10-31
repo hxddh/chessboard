@@ -6,7 +6,6 @@
  * @module material-strip
  */
 import { ChessMaterial } from "./material.js";
-import { CHESS_PIECE_SVGS } from "./pieces.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -32,9 +31,10 @@ export function createMaterialStrip(d) {
     const promos = verboseHistory().slice(0, store.game.viewIndex)
       .filter((m) => m.promotion).map((m) => ({ color: m.color, promotion: m.promotion }));
     const s = ChessMaterial.summary(baseGame().board(), shown.board(), promos);
-    const svgs = CHESS_PIECE_SVGS || {};
-    // 16.0 V: the board's set when it is in; the 7.x drawing (in the bundle)
-    // only while a chunked set is still on its way
+    // 16.0 V: the board's set. 17.0 F: nothing while its chunk is on the way
+    // (chunk-boot.js fetches the chosen set before the first frame; a set
+    // picked later is in before a capture is) — the 7.x drawing that stood
+    // in left the bundle
     const src = (key) => (pieceSrc ? pieceSrc(key, 20) : "");
     const set = src("wp") ? store.ui.pieceSet : "";
     // Built as nodes rather than concatenated markup. The pieces are vendored
@@ -45,22 +45,17 @@ export function createMaterialStrip(d) {
       const kids = [];
       let prevType = null;
       for (const tp of list) {
-        const url = set && src(color + tp), svg = svgs[color + tp];
-        if (!url && !svg) continue;
+        const url = set && src(color + tp);
+        if (!url) continue;
         const span = doc.createElement("span");
         // grouped by kind (7.7 §2): two pawns overlap like a pile, a knight
         // after them starts a new pile — see .taken-p.new-kind
         span.className = "taken-p" + (prevType && prevType !== tp ? " new-kind" : "");
         prevType = tp;
-        if (url) {
-          const img = doc.createElement("img");
-          img.alt = "";
-          img.src = url;
-          span.append(img);
-        } else {
-          // the sprite set is our own file, not input — parsed once per piece
-          span.insertAdjacentHTML("afterbegin", svg);
-        }
+        const img = doc.createElement("img");
+        img.alt = "";
+        img.src = url;
+        span.append(img);
         kids.push(span);
       }
       if (lead > 0) {
