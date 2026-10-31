@@ -6,8 +6,8 @@
  *
  *   appearance  system | light | dark — whether the interface is light or
  *               dark; "system" follows prefers-color-scheme live (the default)
- *   board       wood | green | blue | paper | marble — the squares, their
- *               marks and any texture ([data-board] in styles.css)
+ *   board       wood | green | blue | paper | marble — the squares and their
+ *               marks ([data-board] in styles.css)
  *   frame       flat | frame — a flat board with rounded corners and the
  *               coordinates in the squares (the default), or a wooden frame
  *               with the coordinates printed on it

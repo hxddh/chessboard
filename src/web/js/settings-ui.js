@@ -61,7 +61,6 @@ export function createSettingsUI(d) {
       b.setAttribute("aria-pressed", on ? "true" : "false");
     };
     sw("opt-coords", store.ui.coordsOn);
-    sw("opt-texture", store.ui.boardTexture);
     // where they are printed only matters while they are printed at all
     const rowCoordsAt = document.getElementById("row-coords-at");
     // …and only on the wooden frame: a flat board has no frame to print on,
@@ -352,13 +351,6 @@ export function createSettingsUI(d) {
       saveSettings();
       paintSettings();
       applyTextSize();
-    };
-    // 16.0 V: the board's grain, on or off
-    document.getElementById("opt-texture").onclick = () => {
-      store.ui.boardTexture = !store.ui.boardTexture;
-      saveSettings();
-      paintSettings();
-      draw();
     };
     document.getElementById("opt-coords").onclick = () => {
       store.ui.coordsOn = !store.ui.coordsOn;
