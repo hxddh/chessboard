@@ -205,7 +205,7 @@ jobs:
         group:
           # v8-2-plan V4: split in two, as in checks.yml
           - name: board + clock
-            suites: scripts/test-board-e2e.mjs scripts/test-clock-e2e.mjs
+            suites: scripts/test-board-e2e.mjs scripts/test-clock-e2e.mjs scripts/test-movelist-e2e.mjs
             timeout: 30
           # v8-3-plan V4: split in two, as in checks.yml
           - name: sound + shell
