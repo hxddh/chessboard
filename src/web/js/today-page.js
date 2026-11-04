@@ -142,13 +142,19 @@ export function createTodayPage(d) {
       const lt = lessonText(L);
       const unit = LESSONS.filter((x) => x.n && lessonText(x).part === lt.part);
       const done = unit.filter((x) => ls.done && ls.done[x.id]).length;
-      fillCard(card("course"), L.fen0, tdot(t("train.course"), lt.part),
+      const cc = card("course");
+      if (cc) cc.dataset.li = String(li);
+      fillCard(cc, L.fen0, tdot(t("train.course"), lt.part),
         tf("today.lessonN", [li + 1, lt.title]), done, unit.length);
     }
     // 残局: the camp is a chunk — asked for here, drawn when it is in
     const eg = card("endgame");
     if (Endgames.ready()) {
-      const id = Endgames.resumeId();
+      // 18.0 R6: once the one left is done, the next not done (the camp
+      // itself reopens on the one left, 9.0 S3; a tap here moves it on)
+      const at = Endgames.resumeId();
+      const id = at && Endgames.state().done[at] ? Endgames.next(at) || at : at;
+      if (eg) eg.dataset.eg = id || "";
       const it = id && Endgames.item(id);
       const L2 = id && Endgames.lesson(id);
       if (it && L2) {
@@ -258,7 +264,12 @@ export function createTodayPage(d) {
     const cont = $("today-cont");
     if (cont) cont.onclick = (ev) => {
       const b = ev.target.closest(".today-c[data-seg]");
-      if (b) Shell.openTrain(b.dataset.seg);
+      if (!b) return;
+      // 18.0 R6: the card may look past a finished bookmark — open what it shows
+      const ls = store.session.learnState;
+      if (b.dataset.seg === "course" && b.dataset.li) ls.last = Number(b.dataset.li);
+      if (b.dataset.seg === "endgame" && b.dataset.eg) Endgames.state().last = b.dataset.eg;
+      Shell.openTrain(b.dataset.seg);
     };
   }
 
