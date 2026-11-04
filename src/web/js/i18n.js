@@ -699,7 +699,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "curve.best": "应走 {0}",
       "go.ratingProv": "对局等级分 {0}",
       "ps.score": "本局得分：{0}（胜 1、和 ½、负 0）",
-      "lm.tapOf": "{0}（点第 {1} 处，共 {2} 处）",
+      "lm.taskMark": "任务 {0}/{1}", "lm.tapOf": "{0}（点第 {1} 处，共 {2} 处）",
       "pz.mineNone": "复盘一局就有",
       "pz.mineEmpty": "这里放你自己对局里的失着（? 和 ??）。下完一局点「复盘」，你这一方的失误会自动加进来，并按间隔安排复习。",
       "daily.why.lib": "导进来还没复盘的棋",

@@ -1427,7 +1427,7 @@ import { drawSpark } from "./charts.js";
     curTask, startLesson, startLearnTask, learnModel, learnClick, learnEngineReply, learnUndo,
     learnHint, syncLearnUI, learnTaskText,
   } = LessonsUI;
-  const TrainBar = createTrainBar({ doc: document, store, appEl, setIcon, learnTaskText }); // 15.0 S3: the panel shut, still a next step
+  const TrainBar = createTrainBar({ doc: document, store, appEl, setIcon, learnTaskText, tf }); // 15.0 S3: the panel shut, still a next step
 
   // v8-0-plan F4: 谜题 — the tactics trainer, the opening drills, the personal
   // book and the puzzle rating (trainer/puzzles.js). RepUI, the library and

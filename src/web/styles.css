@@ -4849,6 +4849,9 @@ span[data-icon] { display: inline-grid; place-items: center; }
     white-space: nowrap;
   }
   .move-strip::-webkit-scrollbar { display: none; }
+  /* 18.0 R7: the strip mirrors the game's moves, so only the play view has it —
+     a lesson at 600 px showed the imported game's 15.Re1 … 19.gxh3 under its board */
+  #app:not([data-view="play"]) .move-strip { display: none; }
 }
 .ms-num {
   flex: none; padding: 0 2px 0 8px;

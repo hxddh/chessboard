@@ -214,6 +214,40 @@ for (const [w, h, want] of [[1440, 900, true], [1024, 700, true], [600, 900, fal
   await c.close();
 }
 
+// --- 18.0 R7: a lesson at 600 px shows the lesson, not the game -----------
+{
+  const c = await browser.newContext({ viewport: { width: 600, height: 900 }, locale: "zh-CN" });
+  await c.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "light", boardId: "wood", ob: { n: 1, done: true } }));
+  });
+  const pg = await c.newPage();
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(1200);
+  await pg.click("#pick-cancel", { timeout: 1000 }).catch(() => {});
+  await pg.click('.rail-btn[data-view="play"]').catch(() => {});
+  await pg.waitForTimeout(400);
+  await playOpera(pg, 12);                    // a game with moves behind the lesson
+  await settle(pg);
+  const stripPlay = await pg.evaluate(() => { const e = document.getElementById("move-strip"); return !!e && getComputedStyle(e).display !== "none"; });
+  await pg.click('.rail-btn[data-view="train"]');
+  await pg.waitForTimeout(500);
+  await pg.evaluate(() => { const b = [...document.querySelectorAll("button")].find((x) => x.offsetParent && x.textContent.trim() === "课程"); if (b) b.click(); });
+  await pg.waitForTimeout(900);
+  const r = await pg.evaluate(() => {
+    const e = document.getElementById("move-strip");
+    return { view: document.getElementById("app").getAttribute("data-view"),
+      strip: !!e && getComputedStyle(e).display !== "none" && e.textContent.trim().length > 0,
+      mark: (document.getElementById("tr-mark") || {}).textContent || "" };
+  });
+  assert(stripPlay, "R7: (the strip is there while playing at 600 px)");
+  assert(r.view === "train" && !r.strip, "R7: at 600 px the lesson's drawer has no strip of the game's moves", JSON.stringify(r));
+  assert(!/^\d+\/\d+$/.test(r.mark.trim()), "R7: the lesson's task mark is named, not a bare 「1/2」", r.mark);
+  await c.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
