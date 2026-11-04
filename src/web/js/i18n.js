@@ -124,7 +124,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "ob.newSub": "120 课互动教程从头学起：从认棋盘到计算与局面判断，每课一个任务",
       "ob.knowLabel": "会走子",
       "ob.knowSub": "做 6 道题定个级，按结果配好对手与谜题难度",
-      "ob.later": "先看看棋盘", "ob.recommended": "推荐",
+      "ob.later": "以后再说", "ob.recommended": "推荐",
       // post-game review (rv.*)
       "rv.title": "对局回顾", "rv.dot": "  ·  ",
       // "what next?" line under the statistics (rec.*)

@@ -1998,7 +1998,7 @@ for (const appearance of ["light", "dark"]) {
     assert(errs.length === 0, `11.0 U2:没有页面异常${errs.length ? " — " + errs[0] : ""}`);
     await ctx.close();
   }
-  // (b2) 「先看看棋盘」: the board, against the default rung — 休闲, not 中级
+  // (b2) 「以后再说」 (18.0 R6: it read 先看看棋盘 and landed on 今天): against the default rung — 休闲, not 中级
   {
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
     const page = await ctx.newPage();

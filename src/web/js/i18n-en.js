@@ -94,7 +94,7 @@
       "ob.newSub": "120 interactive lessons from the very start: the board first, then calculation and judging positions, one task each",
       "ob.knowLabel": "I know how the pieces move",
       "ob.knowSub": "Six puzzles to place you; the opponent and the puzzles follow from the result",
-      "ob.later": "Just show me the board", "ob.recommended": "Recommended",
+      "ob.later": "Maybe later", "ob.recommended": "Recommended",
       // post-game review (rv.*)
       "rv.title": "Game review", "rv.dot": "  ·  ",
       // "what next?" line under the statistics (rec.*)

@@ -77,7 +77,8 @@ export function createTodayPage(d) {
       const k = ring.dataset.k;
       const goal = TODAY_GOALS[k];
       const n = Math.min(c[k], goal);
-      put(ring.querySelector("b"), c[k] + "/" + goal);
+      // 18.0 R6: past the goal it reads the count alone — 「2/1」 read as a mistake
+      put(ring.querySelector("b"), c[k] > goal ? String(c[k]) : c[k] + "/" + goal);
       ring.style.setProperty("--p", String(Math.round((n / goal) * 100)));
       ring.classList.toggle("done", c[k] >= goal);
       if (c[k] < goal) done = false;
@@ -129,7 +130,13 @@ export function createTodayPage(d) {
   function renderContinue() {
     const ls = store.session.learnState || {};
     // 课程: the lesson bookmarked, with its unit's progress
-    const li = Math.max(0, Math.min(ls.last || 0, LESSONS.length - 1));
+    // 18.0 R6: …or, once that one is done, the next unfinished after it —
+    // finishing 第 1 课 left 第 1 课 on the card
+    let li = Math.max(0, Math.min(ls.last || 0, LESSONS.length - 1));
+    if (ls.done && LESSONS[li] && ls.done[LESSONS[li].id]) {
+      const next = LESSONS.findIndex((x, i) => i > li && !ls.done[x.id]);
+      if (next >= 0) li = next;
+    }
     const L = LESSONS[li];
     if (L) {
       const lt = lessonText(L);

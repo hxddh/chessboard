@@ -192,6 +192,28 @@ for (const [w, h, want] of [[1440, 900, true], [1024, 700, true], [600, 900, fal
   await c.close();
 }
 
+// --- 18.0 R6: 今天's 继续 moves on ---------------------------------------
+// 第 1 课 finished and still the bookmark: the card offers 第 2 课, not 第 1 课 again.
+{
+  const c = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
+  await c.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "ai", langId: "zh-CN", soundOn: false, appearance: "light", boardId: "wood", view: "home", ob: { n: 1, done: true } }));
+    localStorage.setItem("chess.learn", JSON.stringify({ v: 1, done: { board: true }, last: 0 }));
+  });
+  const pg = await c.newPage();
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(1200);
+  await pg.click("#pick-cancel", { timeout: 1000 }).catch(() => {});
+  await pg.click('.rail-btn[data-view="home"]').catch(() => {});
+  await pg.waitForTimeout(600);
+  const txt = await pg.evaluate(() => (document.querySelector('#today-cont .today-c[data-seg="course"]') || {}).textContent || "");
+  assert(/第 2 课/.test(txt) && !/第 1 课/.test(txt), "R6: 第 1 课 done, 今天's 继续 offers 第 2 课", txt.replace(/\s+/g, " ").slice(0, 80));
+  await c.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }

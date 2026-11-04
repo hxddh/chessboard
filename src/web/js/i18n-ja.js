@@ -94,7 +94,7 @@
       "ob.newSub": "120 課の対話式レッスンを最初から：盤の見方から読みと形勢判断まで、1 課 1 課題",
       "ob.knowLabel": "駒の動きは分かる",
       "ob.knowSub": "6 問でレベルを判定し、結果に合わせて相手とパズルの難しさを決めます",
-      "ob.later": "まず盤を見る", "ob.recommended": "おすすめ",
+      "ob.later": "あとで", "ob.recommended": "おすすめ",
       // post-game review (rv.*)
       "rv.title": "対局レビュー", "rv.dot": "  ·  ",
       // "what next?" line under the statistics (rec.*)
