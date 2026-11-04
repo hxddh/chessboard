@@ -242,6 +242,15 @@ export function createTodayPage(d) {
     renderContinue();
     renderGames();
     renderRatings();
+    // 18.0 T: a profile with no game and no rating yet has nothing for this
+    // row to show — two large cards of invitations were half of a new
+    // player's 今天; the row comes with the first game or the first puzzle
+    const row = $("today-games") && $("today-games").closest(".today-row");
+    if (row) {
+      const st = store.session.puzzleState || {};
+      row.hidden = !historyGames().length && !Metrics.gameRatingSeries(loadStats().games, 1).length &&
+        !(Array.isArray(st.rhist) && st.rhist.length);
+    }
   }
 
   function wire() {
