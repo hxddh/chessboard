@@ -514,9 +514,7 @@ export function createPuzzlesUI(d) {
       store.session.puzzleState.solved[sp.id] = true;
       // a clean first solve counts into the lifetime tally; a solve after
       // misses already counted those misses — counting the solve too would
-      // let one shaky puzzle wash its own signal out
-      // 18.0 R5: a solve the hint carried (the piece shown) is not a clean
-      // answer — the card said 对 and the tally counted it as one
+      // let one shaky puzzle wash its own signal out (18.0 R5: so would a hint's)
       if (store.session.puzzle.misses === 0 && !store.session.puzzle.usedAnswer && !store.session.puzzle.usedHint) {
         Picker.recordAnswer(store.session.puzzleState, store.session.puzzle.p.cat, false, motifKeyOf(store.session.puzzle.p));
         Progress.recordAnswer(store.session.progress, store.session.puzzle.p.cat, false, Date.now());
@@ -726,11 +724,8 @@ export function createPuzzlesUI(d) {
     if (store.session.puzzle.cat === "review") {
       // a clean re-solve shrinks the queue; graduate to m1 when it empties
       if (!list.length) {
-        // 18.0 R5: nothing due today is not the queue cleared — a puzzle
-        // solved once comes back tomorrow, and the toast said 「都清光了」
-        const left = Object.keys(store.session.puzzleState.missed || {}).length;
-        toast(left ? tf("pz.reviewTodayDone", [left]) : t("pz.reviewEmptyDone"));
-        store.session.puzzleState.cat = "m1"; savePuzzleState();
+        const left = Object.keys(store.session.puzzleState.missed || {}).length; // 18.0 R5: today ≠ cleared
+        toast(left ? tf("pz.reviewTodayDone", [left]) : t("pz.reviewEmptyDone")); store.session.puzzleState.cat = "m1"; savePuzzleState();
         startPuzzles();
         return;
       }

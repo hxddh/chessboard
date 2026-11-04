@@ -64,13 +64,7 @@ export function createEndgames(d) {
   function resumeId() {
     if (!data) return null;
     const eg = state();
-    // 18.0 R6: the last one opened while it is unfinished; once done, the
-    // next unfinished after it — 今天's 继续 offered 关键格 again after it was done
-    const at = eg.last ? data.ITEMS.findIndex((x) => x.id === eg.last) : -1;
-    if (at >= 0 && !eg.done[eg.last]) return eg.last;
-    const after = at >= 0 ? data.ITEMS.slice(at + 1).find((x) => !eg.done[x.id]) : null;
-    if (after) return after.id;
-    if (at >= 0 && data.ITEMS.every((x) => eg.done[x.id])) return eg.last;
+    if (eg.last && item(eg.last)) return eg.last;
     const open = data.ITEMS.find((x) => !eg.done[x.id]);
     return (open || data.ITEMS[0]).id;
   }
