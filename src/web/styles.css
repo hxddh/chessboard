@@ -466,7 +466,7 @@
         --seg-tray: color-mix(in srgb, var(--ink) 6%, transparent);
         --seg-on: color-mix(in srgb, var(--surface-raised) 86%, white 14%);
       }
-      .today-ring { --ring-track: color-mix(in srgb, var(--ink) 10%, var(--card)); }
+      .today-ring { --ring-track: color-mix(in srgb, var(--ink) 18%, var(--card)); }
     }
 
     /* ------------------------------------------------------------------
