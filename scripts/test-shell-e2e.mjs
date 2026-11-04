@@ -433,9 +433,11 @@ const state = (page) => page.evaluate(() => {
   const { ctx, page, errs } = await open({ view: "home" }, { width: 920, height: 800 });
   const r = await page.evaluate(() => {
     const rs = [...document.querySelectorAll("#today-rings .today-ring")].map((e) => e.getBoundingClientRect());
-    return { n: rs.length, overlap: rs.some((x, i) => i && x.left < rs[i - 1].right - 0.5), w: rs.map((x) => Math.round(x.width)) };
+    // 18.0 T: rows now, one under another — overlap is in both directions
+    const hit = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+    return { n: rs.length, overlap: rs.some((x, i) => rs.some((y, j) => j < i && hit(x, y))), w: rs.map((x) => Math.round(x.width)) };
   });
-  assert(r.n === 3 && !r.overlap, "今天：920 宽时三个进度圈不重叠（" + r.w.join("/") + "）");
+  assert(r.n === 3 && !r.overlap, "今天：920 宽时三项进度不重叠（" + r.w.join("/") + "）");
   assert(errs.length === 0, "今天 · 进度圈：没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
@@ -491,7 +493,10 @@ const state = (page) => page.evaluate(() => {
   assert(today.cont.length === 3 && today.cont.map((c) => c.split(":")[0]).join() === "course,endgame,classic"
     && today.cont.every((c) => c.split(":")[1] && c.split(":")[2] === "64") && /第 1 课/.test(today.cont[0]),
     "S1: 「继续」三张卡 课程 / 残局 / 名局,各有名字和棋盘;课程停在第 1 课(" + JSON.stringify(today.cont) + ")");
-  assert(today.gamesEmpty && today.ratings.every(Boolean), "S1: 还没有对局时说没有;两个等级分都有字(" + JSON.stringify(today.ratings) + ")");
+  // 18.0 T: …and with nothing to show the row is not drawn at all (it was two
+  // large cards of invitations); the words are still there for when it comes
+  const rowShown = await page.evaluate(() => { const r = document.getElementById("today-games").closest(".today-row"); return !!r && !r.hidden && r.offsetParent !== null; });
+  assert(!today.gamesEmpty && !rowShown && today.ratings.every(Boolean), "S1 / 18.0 T: 还没有对局、没有等级分时,不画「最近对局 / 等级分」两张空卡(" + JSON.stringify({ rowShown, ratings: today.ratings }) + ")");
   assert((await state(page)).view === "home", "A1: 上次停在今天,打开还是今天");
   // 下一盘, with no game on the board, starts one — 11.0 U2: at once, with the
   // last opponent, not through the new-game dialog

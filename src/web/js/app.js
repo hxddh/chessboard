@@ -1427,7 +1427,7 @@ import { drawSpark } from "./charts.js";
     curTask, startLesson, startLearnTask, learnModel, learnClick, learnEngineReply, learnUndo,
     learnHint, syncLearnUI, learnTaskText,
   } = LessonsUI;
-  const TrainBar = createTrainBar({ doc: document, store, appEl, setIcon, learnTaskText }); // 15.0 S3: the panel shut, still a next step
+  const TrainBar = createTrainBar({ doc: document, store, appEl, setIcon, learnTaskText, tf }); // 15.0 S3: the panel shut, still a next step
 
   // v8-0-plan F4: 谜题 — the tactics trainer, the opening drills, the personal
   // book and the puzzle rating (trainer/puzzles.js). RepUI, the library and
@@ -3843,9 +3843,17 @@ import { drawSpark } from "./charts.js";
 
   const mlEl = document.getElementById("move-list");
   if (mlEl) {
+    // 18.0 R1: a click is a commit. Moving the cursor scrolls the list to
+    // keep it in view, which slides another move under a pointer that never
+    // moved, and the browser reports that as a mouseover; through 17.0 the
+    // preview then took the board (click 13…h6, see 「预览 · 第 34 着」).
+    // After a click the hover preview waits for the hand to really move.
+    let clickAt = 0;
     mlEl.onclick = (ev) => {
       const b = ev.target.closest("button[data-node]");
       if (!b) return;
+      clickAt = ev.clientX + ev.clientY;
+      setBoardPreview(null);
       if (b.dataset.menu) { openMoveMenu(Number(b.dataset.node), b); return; }
       goToNode(Number(b.dataset.node));
     };
@@ -3859,13 +3867,19 @@ import { drawSpark } from "./charts.js";
     // reading is touching: sweep the list and the board follows; leave and
     // the committed position comes straight back. Never while dragging a
     // piece — the hand on the board outranks the hand on the list.
-    mlEl.addEventListener("mouseover", (ev) => {
+    const hoverMove = (ev) => {
       const b = ev.target.closest("button[data-node]");
-      if (!b || store.ui.dragging || store.ui.previewPinned) return;
+      if (!b || store.ui.dragging || store.ui.previewPinned || clickAt) return;
       if (b.dataset.i) previewAt(Number(b.dataset.i));
       else previewNode(Number(b.dataset.node)); // a variation move, by its node
+    };
+    mlEl.addEventListener("mousemove", (ev) => {
+      if (!clickAt || Math.abs(ev.clientX + ev.clientY - clickAt) <= 2) return;
+      clickAt = 0;
+      hoverMove(ev);
     });
-    mlEl.addEventListener("mouseleave", () => setBoardPreview(null));
+    mlEl.addEventListener("mouseover", hoverMove);
+    mlEl.addEventListener("mouseleave", () => { clickAt = 0; setBoardPreview(null); });
   }
 
   // --- the move menu: promote, delete, annotate (v6-plan Q2.1) -------------
@@ -4728,8 +4742,9 @@ import { drawSpark } from "./charts.js";
   if (!ChessLazy.langReady(store.ui.langId)) {
     ChessLazy.ensureLang(store.ui.langId).then(() => applyLanguage()).catch(() => {});
   }
+  // 18.0 R2: nothing saved means out, except where the panel is a sheet over the board
   const savedPanel = Persist.get("panelOpen");
-  setPanelOpen(savedPanel === "1");
+  setPanelOpen(savedPanel == null ? !panelCoversBoard() : savedPanel === "1");
   Shell.restore();
   // 15.0 P: the launch is two tasks — build the app and put the saved view up;
   // then the save, the clocks and the first full render (one 140 ms task at 1×)

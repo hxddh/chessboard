@@ -183,7 +183,10 @@ export function createRetry(d) {
     const box = document.getElementById("why-line");
     if (!box) return;
     const i = store.game.viewIndex - 1;
-    const ex = i >= 0 && !store.session.retry && !inModal() ? mistakeFacts(i) : null;
+    // 18.0 R4: the 关键时刻 card on this same move already says it, with its
+    // own 再试一次 — the reason and the button were on screen twice
+    const card = document.querySelector('#rv-km:not([hidden]) .km-card[data-ply="' + i + '"]');
+    const ex = i >= 0 && !store.session.retry && !inModal() && !card ? mistakeFacts(i) : null;
     // the facts themselves, not the game's signature: 分析 again or 精析
     // replaces the record for the same game, and its reason may differ (Codex, #83)
     const key = ex ? JSON.stringify([i, store.ui.langId, sanHistory()[i], ex]) : "";

@@ -466,7 +466,7 @@
         --seg-tray: color-mix(in srgb, var(--ink) 6%, transparent);
         --seg-on: color-mix(in srgb, var(--surface-raised) 86%, white 14%);
       }
-      .today-ring { --ring-track: color-mix(in srgb, var(--ink) 10%, var(--card)); }
+      .today-ring { --ring-track: color-mix(in srgb, var(--ink) 18%, var(--card)); }
     }
 
     /* ------------------------------------------------------------------
@@ -513,7 +513,7 @@
       --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #e0b07a, #c9965c 45%, #b8864e);
-      --board-shadow: 0 10px 36px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.22);
+      --board-shadow: 0 0 0 1px rgba(0,0,0,.16), 0 3px 8px rgba(0,0,0,.18), 0 22px 56px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.22);
       --coord-ink: rgba(48,28,12,.62);
       --board-edge: rgba(60,34,12,.30);
       --sq-light: #f0d9b5;
@@ -594,7 +594,7 @@
          (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
       --engine-arrow: rgba(0, 95, 225, var(--mark-mid));
       --engine-arrow-alt: rgba(0, 95, 225, var(--mark-soft));
-      --board-shadow: 0 10px 36px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
+      --board-shadow: 0 0 0 1px rgba(0,0,0,.22), 0 3px 8px rgba(0,0,0,.24), 0 22px 56px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.06);
     }
     [data-board="blue"] {
       /* 7.x 纸's blue-grey board, a step warmer and lighter (#e8ecf3 /
@@ -629,7 +629,7 @@
          (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
       --engine-arrow: rgba(255, 150, 0, var(--mark-mid));
       --engine-arrow-alt: rgba(255, 150, 0, var(--mark-soft));
-      --board-shadow: 0 8px 24px rgba(40,50,70,.15), inset 0 0 0 1px #d8d0c0;
+      --board-shadow: 0 0 0 1px rgba(40,50,70,.08), 0 3px 8px rgba(40,50,70,.08), 0 20px 48px rgba(40,50,70,.14), inset 0 0 0 1px #d8d0c0;
     }
     [data-board="paper"] {
       /* 纸墨: the diagram page. Cream paper, dark squares a grey ink wash
@@ -641,7 +641,7 @@
       --piece-ink: #1d2230 #f6f1e4;
 
       --board-frame: linear-gradient(145deg, #efe6d2, #e3d7bd 50%, #d8caac);
-      --board-shadow: 0 8px 24px rgba(60,48,20,.16), inset 0 1px 0 rgba(255,255,255,.6);
+      --board-shadow: 0 0 0 1px rgba(60,48,20,.10), 0 3px 8px rgba(60,48,20,.10), 0 20px 48px rgba(60,48,20,.16), inset 0 1px 0 rgba(255,255,255,.6);
       --coord-ink: rgba(40,36,30,.62);
       --board-edge: rgba(60,50,30,.24);
       --sq-light: #f3eee2;
@@ -675,7 +675,7 @@
       --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #d9d6d0, #bfbcb6 50%, #a9a6a0);
-      --board-shadow: 0 10px 30px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.45);
+      --board-shadow: 0 0 0 1px rgba(0,0,0,.12), 0 3px 8px rgba(0,0,0,.14), 0 22px 52px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.45);
       --coord-ink: rgba(30,30,34,.62);
       --board-edge: rgba(30,30,34,.26);
       --sq-light: #e9e7e3;
@@ -873,7 +873,15 @@
         "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC",
         "Source Han Sans SC", system-ui, sans-serif;
       --font-num: var(--font-ui);
+      /* 18.0 Y: the titles' face — a page's title, a card's, the opening's
+         name — is the system's own serif: 宋体 on macOS and iOS, 新宋体 on
+         Windows, Noto Serif CJK on most Linux and Android. Nothing is
+         shipped; a machine without one falls back to the interface face. */
+      --font-title: "Songti SC", "STSong", "Noto Serif CJK SC", "Noto Serif SC", "Source Han Serif SC",
+        "NSimSun", "SimSun", var(--font-ui);
     }
+    :root:lang(ja) { --font-title: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif CJK JP", "Noto Serif JP", var(--font-ui); }
+    :root:lang(en) { --font-title: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Songti SC", "Noto Serif CJK SC", var(--font-ui); }
     html:lang(en) {
       --lh-body: 1.45; --lh-prose: 1.6;
       --font-ui: -apple-system, "Inter Var", "PingFang SC", "Hiragino Sans GB", "Hiragino Sans",
@@ -1218,7 +1226,11 @@
          cards in it are what is raised (two surfaces, v9-0-plan V1). It was
          the raised colour at 94% under a 22px blur, and every card in it a
          4% white film on top: three levels, two of them translucent. */
-      background: var(--bg);
+      /* 18.0 L: …and 18.0 makes it the raised one after all. Page, panel and
+         rail were one colour, a hairline apart, and the screen read flat: the
+         page is the ground, the panel a step up, the cards in it (--card)
+         a step above that — three steps, the tokens 10.1 S1 already drew. */
+      background: var(--panel);
       border-left: 1px solid var(--panel-border);
       /* 7.7 (v7-7-plan §1h): the panel starts at the top of the window. It
          used to open under 50px of its own padding — the chrome's height
@@ -1292,8 +1304,10 @@
       visibility: visible;
     }
     .ps-tools ~ .ps-result, .ps-tools ~ .ps-clock { margin-left: 0; }
+    /* 18.0 P: a disc, as the portraits already are — a 32px square of the
+       side's colour read as a placeholder tile beside the name */
     .ps-av {
-      width: 32px; height: 32px; border-radius: var(--radius-sm);
+      width: 32px; height: 32px; border-radius: var(--radius-full);
       display: grid; place-items: center;
       font-size: 1rem;
       border: 1px solid var(--card-border);
@@ -1397,9 +1411,12 @@
       .ps-level { display: none; }
       .taken-p { display: none; }
     }
+    /* 18.0 Y: the opening's name heads the panel — the title face at a
+       block title's size, in the ink; it was 12px grey, the quietest line there */
     .opening-line {
       margin-top: 12px;
-      font-size: 0.75rem; color: var(--muted); line-height: var(--lh-body);
+      font-family: var(--font-title);
+      font-size: 1rem; color: var(--text); line-height: var(--lh-tight);
     }
     .opening-line[hidden] { display: none; }
     /* 7.8 §1b: blank but still taking its line, so the notation does not move */
@@ -2999,8 +3016,9 @@
        between the columns for a five-letter move. Now White's column is as
        wide as its widest move (--ml-w, measured by play-layout.js; 64px
        until it has been), Black's is as wide as its move, and the rest of
-       the row is the fourth column, where the menu handle floats. Every
-       other row is shaded, so a line can be followed across. */
+       the row is the fourth column, where the menu handle floats. 18.0 P:
+       no shading — every other row was a band, and the list read as a
+       spreadsheet; the number column and the row height carry the line. */
     .mlrow {
       position: relative;
       display: grid; grid-template-columns: 40px var(--ml-w) minmax(0, max-content) minmax(0, 1fr);
@@ -3008,7 +3026,6 @@
       padding: 0;
       border-radius: var(--radius-sm);
     }
-    .move-list > .mlrow:nth-child(even) { background: color-mix(in srgb, var(--text) 5%, transparent); }
     .mlrow > .mlmove { min-width: 0; justify-self: start; }
     /* One font for the row. The move number was SF Mono 12px and the move
        beside it the interface sans at 13px — two typefaces and two sizes in a
@@ -4533,6 +4550,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
    .page__head h1), 24 above the first card */
 .page-h {
   margin: 0 0 24px;
+  font-family: var(--font-title);
   font-size: 1.875rem; font-weight: 600; line-height: var(--lh-tight);
 }
 /* 12.0 L: cards side by side are one height, and a row is never half
@@ -4582,6 +4600,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .today-block { min-width: 0; margin-bottom: 24px; }
 /* 12.0 L: 最近对局 and 等级分 side by side end on one line — the card under
    each heading fills the block, and an empty one says so in its middle */
+.today-row[hidden] { display: none; }
 .today-row > .today-block { display: flex; flex-direction: column; }
 .today-row > .today-block > .today-card { flex: 1; }
 .today-games-card:has(> .today-games:empty) { display: flex; flex-direction: column; justify-content: center; }
@@ -4591,38 +4610,37 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .today-hero { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 24px; align-items: center; } /* 15.0 F: the words beside the board sit in its middle */
 .today-hero-text { display: grid; gap: 8px; align-content: start; min-width: 0; }
 .today-hero-text > .side-h { margin: 0; }
-.today-hero-title { margin: 0; font-size: 1.125rem; font-weight: 600; line-height: var(--lh-tight); }
+.today-hero-title { margin: 0; font-family: var(--font-title); font-size: 1.125rem; font-weight: 600; line-height: var(--lh-tight); }
 .today-hero .daily-plan { margin: 4px 0 0; }
 .today-acts { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .today-acts .tool-txt { margin-left: 0; }
 .today-progress { display: grid; gap: 16px; align-content: start; }
-/* 10.1 L2: the card is as tall as the hero beside it; the rings sit in the
+/* 10.1 L2: the card is as tall as the hero beside it; the rows sit in the
    middle of what is left instead of at its top, with the empty half below */
 .today-row > .today-progress { grid-template-rows: auto 1fr auto; }
 .today-row > .today-progress .today-rings { align-self: center; }
 .today-progress .side-h { margin: 0; }
-.today-rings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; justify-items: center; }
+/* 18.0 T: three rows, each a word, a count and a 4px bar, where 10.1 drew
+   three rings — 80px doughnuts in a card twice as wide, small numbers in
+   the middle of a lot of nothing. The bar is the ring's --p, unrolled. */
+.today-rings { display: grid; gap: 16px; align-self: stretch; }
 .today-ring {
   --p: 0;
-  /* 10.1 B: a lighter ring — 13% of the radius, on a track of the ink at
-     10%, where it was 20% on the hairline's brown, a heavy dark doughnut */
   --ring-track: var(--line);
-  /* …at most 80, never wider than its third of the card: just above the
-     900px breakpoint the card is too narrow for three (Codex on #115) */
-  width: min(80px, 100%); aspect-ratio: 1; border-radius: 50%;
-  display: grid; place-content: center; text-align: center;
-  background:
-    radial-gradient(closest-side, var(--card) 87%, transparent 88%),
-    conic-gradient(var(--text) calc(var(--p) * 1%), var(--ring-track) 0);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 8px 12px;
 }
-.today-ring.done { background: radial-gradient(closest-side, var(--card) 87%, transparent 88%), conic-gradient(var(--success) 100%, var(--ring-track) 0); }
-/* 12.0 F: the ring draws to its value rather than appearing at it — --p is
-   a registered number, so the conic gradient can be transitioned (reduced
+.today-ring::after {
+  content: ""; grid-column: 1 / -1; height: 4px; border-radius: var(--radius-full);
+  background: linear-gradient(to right, var(--text) calc(var(--p) * 1%), var(--ring-track) 0);
+}
+.today-ring.done::after { background: var(--success); }
+/* 12.0 F: the bar draws to its value rather than appearing at it — --p is
+   a registered number, so the gradient can be transitioned (reduced
    motion stops it with every other transition) */
 @property --p { syntax: "<number>"; inherits: false; initial-value: 0; }
 .today-ring { transition: --p calc(var(--dur-slow) * 2) var(--ease); }
-.today-ring b { font-size: 0.875rem; font-weight: 600; }
-.today-ring span { font-size: 0.75rem; color: var(--muted); }
+.today-ring b { grid-column: 2; grid-row: 1; font-size: 0.875rem; font-weight: 600; }
+.today-ring span { grid-column: 1; grid-row: 1; font-size: 0.875rem; color: var(--text); }
 .today-cont { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .today-c {
   appearance: none; cursor: pointer; font: inherit; color: var(--text); text-align: left;
@@ -4849,6 +4867,9 @@ span[data-icon] { display: inline-grid; place-items: center; }
     white-space: nowrap;
   }
   .move-strip::-webkit-scrollbar { display: none; }
+  /* 18.0 R7: the strip mirrors the game's moves, so only the play view has it —
+     a lesson at 600 px showed the imported game's 15.Re1 … 19.gxh3 under its board */
+  #app:not([data-view="play"]) .move-strip { display: none; }
 }
 .ms-num {
   flex: none; padding: 0 2px 0 8px;

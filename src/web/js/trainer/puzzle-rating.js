@@ -106,7 +106,7 @@ export function createPuzzleRating(d) {
     while (st.rhist.length > 60) st.rhist.shift();
   }
   /**
-   * "1523", or 「1104（定级中）」 while the rating is provisional (v8-0-plan
+   * "1523", or 「1104（暂定）」 while the rating is provisional (v8-0-plan
    * §5; v9-0-plan S6 put it in words — 「1104?」 read as a typo, and the
    * 「±180」 before that as a measurement with an error bar). The deviation
    * itself is never shown; the tooltip says what provisional means.

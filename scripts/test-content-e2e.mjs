@@ -1449,11 +1449,11 @@ if (hasTab && REAL.length) {
   await c.close();
 }
 
-// --- v8-0-plan §5: 暂定评级标「定级中」(9.0 S6 之前是「?」),开局题从常见开局开始 -------------------
+// --- v8-0-plan §5: 暂定评级标「暂定」(9.0 S6 之前是「?」),开局题从常见开局开始 -------------------
 // Red before §5: the record page printed 「1104 ±200」 for a rating two
 // answers old, and the opening list began at A01 Nimzo-Larsen (1.b3).
 {
-  for (const [rd, want, label] of [[200, "1104（定级中）", "暂定"], [60, "1104", "稳定"]]) {
+  for (const [rd, want, label] of [[200, "1104（暂定）", "暂定"], [60, "1104", "稳定"]]) {
     const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
     await c.addInitScript((d) => {
       localStorage.setItem("chess.settings", JSON.stringify({ mode: "puzzle", langId: "zh-CN", sideTab: "record", soundOn: false }));

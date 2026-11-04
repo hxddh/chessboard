@@ -169,7 +169,7 @@ export function createOpponentsUI(d) {
     return grid && on ? grid.querySelector('[data-op="' + on.id + '"]') : null;
   }
 
-  /** 「1402」, or 「1104（定级中）」 while provisional (v9-0-plan S6: not 「1104?」) */
+  /** 「1402」, or 「1104（暂定）」 while provisional (v9-0-plan S6: not 「1104?」) */
   function fmtRating(r) {
     return ChessRating.isProvisional(r) ? tf("rating.prov", [Math.round(r.r)]) : String(Math.round(r.r));
   }
@@ -222,7 +222,7 @@ export function createOpponentsUI(d) {
     const delta = now - Math.round(filed.before ? filed.before.r : ChessRating.DEFAULT.r);
     // 10.0 M0: while it is provisional a game moves it by hundreds (+305
     // for a first win), which on the result bar read as a broken number —
-    // the rating alone, marked 定级中, until it settles
+    // the rating alone, marked 暂定, until it settles
     const parts = [ChessRating.isProvisional(filed.after) ? tf("go.ratingProv", [fmtRating(filed.after)])
       : tf("go.rating", [fmtRating(filed.after), delta > 0 ? "+" + delta : delta < 0 ? "−" + -delta : "±0"])];
     if (filed.perf != null) parts.push(tf("go.perf", [filed.perf]));

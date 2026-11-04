@@ -229,6 +229,10 @@ export function createMoments(d) {
       const ending = endingNote(a);
       if (ending) return tdot(who, ending);
       if (!m) return tf("rv.sum.clean", [who]);
+      // 18.0 R4: …and when you won it back, the sentence says so — through
+      // 17.0 a won game's summary ended on 「局面就到了我这边」
+      const won = !!result && result() === (you === "w" ? "1-0" : "0-1");
+      if (won && m.before >= 50 && m.after < 50) return tf("rv.sum.turnBack", [who, m.moveNo, pct(m.before), pct(m.after)]);
       return m.before >= 50 && m.after < 50
         ? tf("rv.sum.turn", [who, m.moveNo, pct(m.before)])
         : tf("rv.sum.drop", [who, m.moveNo, pct(m.before), pct(m.after)]);

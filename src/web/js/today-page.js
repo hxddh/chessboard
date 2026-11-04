@@ -77,7 +77,8 @@ export function createTodayPage(d) {
       const k = ring.dataset.k;
       const goal = TODAY_GOALS[k];
       const n = Math.min(c[k], goal);
-      put(ring.querySelector("b"), c[k] + "/" + goal);
+      // 18.0 R6: past the goal it reads the count alone — 「2/1」 read as a mistake
+      put(ring.querySelector("b"), c[k] > goal ? String(c[k]) : c[k] + "/" + goal);
       ring.style.setProperty("--p", String(Math.round((n / goal) * 100)));
       ring.classList.toggle("done", c[k] >= goal);
       if (c[k] < goal) done = false;
@@ -129,19 +130,29 @@ export function createTodayPage(d) {
   function renderContinue() {
     const ls = store.session.learnState || {};
     // 课程: the lesson bookmarked, with its unit's progress
-    const li = Math.max(0, Math.min(ls.last || 0, LESSONS.length - 1));
+    // 18.0 R6: …or, once that one is done, the next unfinished after it —
+    // finishing 第 1 课 left 第 1 课 on the card
+    const dn = ls.done || {};
+    let li = Math.max(0, Math.min(ls.last || 0, LESSONS.length - 1));
+    const nx = dn[(LESSONS[li] || {}).id] ? LESSONS.findIndex((x, i) => i > li && !dn[x.id]) : -1;
+    if (nx > 0) li = nx;
     const L = LESSONS[li];
     if (L) {
       const lt = lessonText(L);
       const unit = LESSONS.filter((x) => x.n && lessonText(x).part === lt.part);
-      const done = unit.filter((x) => ls.done && ls.done[x.id]).length;
-      fillCard(card("course"), L.fen0, tdot(t("train.course"), lt.part),
+      const done = unit.filter((x) => dn[x.id]).length;
+      const cc = card("course");
+      if (cc) cc.dataset.li = li;
+      fillCard(cc, L.fen0, tdot(t("train.course"), lt.part),
         tf("today.lessonN", [li + 1, lt.title]), done, unit.length);
     }
     // 残局: the camp is a chunk — asked for here, drawn when it is in
     const eg = card("endgame");
     if (Endgames.ready()) {
-      const id = Endgames.resumeId();
+      // 18.0 R6: once the one left is done, the next not done (the camp
+      // itself reopens on the one left, 9.0 S3; a tap here moves it on)
+      const at = Endgames.resumeId(), id = at && Endgames.state().done[at] && Endgames.next(at) || at;
+      if (eg) eg.dataset.eg = id || "";
       const it = id && Endgames.item(id);
       const L2 = id && Endgames.lesson(id);
       if (it && L2) {
@@ -229,6 +240,11 @@ export function createTodayPage(d) {
     renderContinue();
     renderGames();
     renderRatings();
+    // 18.0 T: a profile with no game and no rating yet has nothing for this
+    // row to show — two large cards of invitations were half of a new
+    // player's 今天; the row comes with the first game or the first puzzle
+    const row = $("today-games").closest(".today-row");
+    if (row) row.hidden = !historyGames().length && !loadStats().games.length && !((store.session.puzzleState || {}).rhist || []).length;
   }
 
   function wire() {
@@ -251,7 +267,12 @@ export function createTodayPage(d) {
     const cont = $("today-cont");
     if (cont) cont.onclick = (ev) => {
       const b = ev.target.closest(".today-c[data-seg]");
-      if (b) Shell.openTrain(b.dataset.seg);
+      if (!b) return;
+      // 18.0 R6: the card may look past a finished bookmark — open what it shows
+      const k = b.dataset;
+      if (k.li) store.session.learnState.last = +k.li;
+      if (k.eg) Endgames.state().last = k.eg;
+      Shell.openTrain(k.seg);
     };
   }
 

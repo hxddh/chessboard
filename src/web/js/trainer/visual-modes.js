@@ -476,7 +476,7 @@ export function createVisualModes(d) {
   const sideW = (c) => w(c === "b" ? "black" : "white");
   /** "Black knight", 「黑马」, 「黒のナイト」 */
   const manW = (pc) => w("man", [w(pc.color === "b" ? "blackS" : "whiteS"), w(pc.type)]);
-  // v9-0-plan S6: a provisional rating says 定级中 in words, not 「1104?」
+  // v9-0-plan S6: a provisional rating says 暂定 in words, not 「1104?」
   const ratingText = (r) => (ChessRating.isProvisional(r) ? tf("rating.prov", [Math.round(r.r)]) : String(Math.round(r.r)));
 
   // worked out again only when the book grows (the mined set joining late)

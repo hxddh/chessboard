@@ -5373,7 +5373,8 @@ if (scenario()) {
   assert(Math.abs(t.blackLeft - (t.whiteLeft + t.widest + 2)) <= 1,
     "A2：白列宽 = 最宽的白方着法（黑列从 " + Math.round(t.blackLeft) + " 起，白列 " + Math.round(t.whiteLeft) + " + " + Math.round(t.widest) + " + 2）");
   const shaded = t.bg.filter((c) => c !== "rgba(0, 0, 0, 0)").length;
-  assert(t.rows >= 4 && shaded >= 1 && shaded < t.rows, "A2：隔行加底色（" + t.bg.join(" | ") + "）");
+  // 18.0 P: no zebra any more — the rows were a spreadsheet's bands
+  assert(t.rows >= 4 && shaded === 0, "A2 / 18.0 P：棋谱不再隔行加底色（" + t.bg.join(" | ") + "）");
   assert(!!t.v && t.v.rule >= 1 && t.v.style === "solid" && t.v.colour !== "rgba(0, 0, 0, 0)" && t.v.indent >= 16,
     "A2：变着缩进、挂在一条竖线上（" + JSON.stringify(t.v) + "）");
   await ctx.close();

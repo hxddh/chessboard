@@ -1011,11 +1011,16 @@ await scenario("为什么", async () => {
   await openFullReport(page);
   await page.click('.rv-moment[data-ply="16"] .rv-mo-jump');
   await page.waitForTimeout(200);
+  // 18.0 R4: said once — under the engine line, or by the 关键时刻 card
+  // when it is on this move (both at once was the walkthrough's duplicate)
   const at = await page.evaluate(() => {
     const w = document.getElementById("why-line");
-    return w && !w.hidden ? w.textContent : "";
+    const card = document.querySelector('#rv-km:not([hidden]) .km-card[data-ply="16"]');
+    return { line: w && !w.hidden ? w.textContent : "", card: card ? card.textContent : "" };
   });
-  assert(/捉双/.test(at) && /车/.test(at), "为什么：光标停在 9. a3 上，引擎线下面也是这一句", at);
+  const said = at.line || at.card;
+  assert(/捉双/.test(said) && /车/.test(said) && !(at.line && at.card),
+    "为什么：光标停在 9. a3 上，这一句说一次（引擎线下面，或关键时刻卡片）", JSON.stringify(at));
   if (process.env.FLOWS_SHOTS) await page.screenshot({ path: process.env.FLOWS_SHOTS + "/why-line.png" });
 
   // 再试一次: a3 again is wrong
@@ -1052,7 +1057,7 @@ await scenario("为什么", async () => {
   await page.waitForTimeout(200);
   const back = await page.evaluate(() => ({
     box: document.getElementById("retry-box").hidden,
-    why: !document.getElementById("why-line").hidden,
+    why: !document.getElementById("why-line").hidden || !!document.querySelector('#rv-km:not([hidden]) .km-card[data-ply="16"]'),
     sel: (document.querySelector(".move-list .mlmove.cur, .move-list .mlmove[aria-current]") || {}).dataset,
   }));
   assert(back.box && back.why, "再试一次：「回到复盘」回到 9. a3 这一手，说明还在", JSON.stringify(back));
@@ -1459,7 +1464,7 @@ await scenario("你将死引擎", async () => {
   assert(ready && after.last && after.last.r === "win" && after.last.diff === "beginner" && Number.isFinite(after.last.ra),
     "你将死引擎：记为你赢，计入人机等级分", JSON.stringify({ ready, last: after.last }));
   // 10.0 M0: a provisional rating is shown alone — no 「本局 +305」 jump
-  assert(/^对局等级分 \d+（定级中）/.test(after.rate) && !/本局/.test(after.rate), "你将死引擎：结果卡当场写着新分数（不等下一次重画），定级中不写本局的跳幅", after.rate);
+  assert(/^对局等级分 \d+（暂定）/.test(after.rate) && !/本局/.test(after.rate), "你将死引擎：结果卡当场写着新分数（不等下一次重画），暂定不写本局的跳幅", after.rate);
   // Codex #89: clearing the statistics takes the filing off the result card too
   // (9.0 S5: Ctrl+, opens the settings page; 清除统计 is in its 数据 category,
   // and the rail, not the window's ×, goes back to the board)

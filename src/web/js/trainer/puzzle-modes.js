@@ -152,7 +152,7 @@ export function createPuzzleModes(d) {
     const rec = store.session.puzzleState.themes && store.session.puzzleState.themes[id];
     return rec && rec.rating ? rec.rating : null;
   }
-  // v9-0-plan S6: a provisional rating says 定级中 in words, not 「1104?」
+  // v9-0-plan S6: a provisional rating says 暂定 in words, not 「1104?」
   const ratingText = (r) => (ChessRating.isProvisional(r) ? tf("rating.prov", [Math.round(r.r)]) : String(Math.round(r.r)));
   /**
    * The player's rating for showing: the trainer's (idle days charged) once
@@ -524,6 +524,10 @@ export function createPuzzleModes(d) {
     // 题 ring counts answers, and read 1/5 after it while 已解 said 0 (14.0 A1)
     st.rhist = (Array.isArray(st.rhist) ? st.rhist : []).concat([{ t: now, r, place: true }]).slice(-60);
     st.placed = { r, at: now };
+    // 18.0 R3: and the puzzles open near it. A fresh profile's category is
+    // 一步杀, served in list order from #1 — a player just placed at 1775
+    // met 1100-rated mates in one next. 战术 serves near the rating.
+    if (!st.cat || st.cat === "m1") st.cat = GROUP_CAT + "tactic";
     run.opp = onPlaced ? onPlaced(r) : "";
   }
   /** v10-0-plan T1: the first run of all, from the first-run question. */
@@ -595,7 +599,7 @@ export function createPuzzleModes(d) {
 
   /**
    * 12.0 F: the big rating is a figure, and "provisional" is a tag beside it,
-   * not a full-width bracket set in the figure's own size (「1500（定级中）」).
+   * not a full-width bracket set in the figure's own size (「1500（暂定）」).
    * Rebuilt only when what it says changes.
    */
   function paintRating(v, r, extra) {

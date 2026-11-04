@@ -239,8 +239,8 @@ export async function run() {
         "src/web/js/trainer/visual-modes.js", "src/web/js/trainer/puzzles.js"]
         .map((f) => [f, fs.readFileSync(path.join(root, f), "utf8")]);
       const marked = provSrc.filter(([, s]) => /(isProvisional\([^)]*\)|\.provisional|\.rd > \d+)\s*\?\s*"\?"/.test(s)).map(([f]) => f);
-      assert(marked.length === 0, "S6: a provisional rating reads 定级中 / Provisional / 判定中, not 「1500?」" + (marked.length ? " — " + marked : ""));
-      for (const [lang, want] of [["zh-CN", "定级中"], ["en", "Provisional"], ["ja", "判定中"]]) {
+      assert(marked.length === 0, "S6: a provisional rating reads 暂定 / Provisional / 暫定, not 「1500?」" + (marked.length ? " — " + marked : ""));
+      for (const [lang, want] of [["zh-CN", "暂定"], ["en", "Provisional"], ["ja", "暫定"]]) {
         assert(new RegExp(want, "i").test(ctx.ChessI18n.DICT[lang]["rating.prov"] || ""), "S6: " + lang + " calls a provisional rating " + want);
       }
       // the two ratings have one name each (M0): 对局等级分 and 谜题等级分

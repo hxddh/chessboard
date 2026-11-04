@@ -272,9 +272,9 @@ const hasMateIn = (g, n) => {
   await ctx.close();
   const fresh = await open(null);
   const hf = helpers(fresh.page);
-  // 12.0 F: the figure, and 「定级中」 as a tag beside it — not 「1500（定级中）」
-  assert(/^\d+定级中$/.test(await hf.text("#pz-rating-v") || "") && await fresh.page.evaluate(() => !!document.querySelector("#pz-rating-v .num + .prov-tag")),
-    "c: 新档案也有评级，「定级中」是数字旁的小标签（v9-0-plan S6：不是「?」；12.0 F：不再是全角括号）", await hf.text("#pz-rating-v"));
+  // 12.0 F: the figure, and 「暂定」 as a tag beside it — not 「1500（暂定）」
+  assert(/^\d+暂定$/.test(await hf.text("#pz-rating-v") || "") && await fresh.page.evaluate(() => !!document.querySelector("#pz-rating-v .num + .prov-tag")),
+    "c: 新档案也有评级，「暂定」是数字旁的小标签（v9-0-plan S6：不是「?」；12.0 F：不再是全角括号）", await hf.text("#pz-rating-v"));
   // 12.0 C: one answer is not a curve — it says how many more make one
   assert(await fresh.page.evaluate(() => document.getElementById("pz-rating-curve").hidden && /^\d 题后出曲线$/.test(document.getElementById("pz-rating-soon").textContent)),
     "12.0 C: 不到三个点时不画一条平线，写「n 题后出曲线」");

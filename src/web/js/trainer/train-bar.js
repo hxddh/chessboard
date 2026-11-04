@@ -18,7 +18,7 @@
  * @param {object} d what it borrows from app.js
  */
 export function createTrainBar(d) {
-  const { doc, store, appEl, setIcon, learnTaskText } = d;
+  const { doc, store, appEl, setIcon, learnTaskText, tf } = d;
   const $ = (id) => doc.getElementById(id);
   const put = (node, s) => { if (node && node.textContent !== s) node.textContent = s; };
   const shown = (b) => !!b && !b.hidden && !b.disabled;
@@ -31,7 +31,8 @@ export function createTrainBar(d) {
       const L = s.learn;
       const n = ($("lesson-dots") || { children: [] }).children.length;
       return {
-        mark: L.done ? "check" : n > 1 ? Math.min(L.ti + 1, n) + "/" + n : "",
+        // 18.0 R7: named — a bare 「1/2」 beside 「点第 1 处，共 3 处」 counted a different thing
+        mark: L.done ? "check" : n > 1 ? tf("lm.taskMark", [Math.min(L.ti + 1, n), n]) : "",
         ok: L.done ? true : null,
         head: learnTaskText(), sub: "",
         next: L.done ? "lesson-next" : null,
