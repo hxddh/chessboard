@@ -625,7 +625,7 @@
       "tip.grp.opening": "主な定跡を白でも黒でも定跡どおりに指す",
       "tip.grp.mine": "自分の対局の悪手 —— 今度は正しい一手を探す",
       "pz.review": "復習",
-      "pz.reviewSub": "間違えた問題を数日おいてもう一度",
+      "pz.reviewTodayDone": "今日の復習は終わり · あと {0} 問は数日後に", "pz.reviewSub": "間違えた問題はすぐにもう一度、解けたら数日後にまた",
       "pz.ways": "ほかの練習",
       "pz.challenge": "チャレンジ",
       "pz.special": "集中",

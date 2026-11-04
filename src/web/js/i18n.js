@@ -657,7 +657,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "tip.grp.opening": "照谱走主流开局，执白执黑都能练",
       "tip.grp.mine": "你自己对局里的失着，重摆一遍找对的那手",
       "pz.review": "复习",
-      "pz.reviewSub": "做错过的题，隔几天再来一次",
+      "pz.reviewTodayDone": "今天的复习做完了 · 还有 {0} 道过几天再来", "pz.reviewSub": "做错的题马上再做一次，做对了隔几天再来",
       "pz.ways": "换个练法",
       "pz.challenge": "挑战",
       "pz.special": "专项",

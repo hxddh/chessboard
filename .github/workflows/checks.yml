@@ -150,7 +150,7 @@ jobs:
           # 36732131710: board 7.2 + clock 1.1 / sound 4.4 + shell 2.5 +
           # trainer 2.1 minutes.
           - name: board + clock
-            suites: scripts/test-board-e2e.mjs scripts/test-clock-e2e.mjs scripts/test-movelist-e2e.mjs
+            suites: scripts/test-board-e2e.mjs scripts/test-clock-e2e.mjs scripts/test-walk-e2e.mjs
             timeout: 30
           # v8-3-plan V4: and "sound + shell + trainer" in two. 8.3's trainer
           # suite (T1/T2) is now half of it: locally audio 142 s + shell 104 s
@@ -244,7 +244,7 @@ jobs:
         # WebKit-only regression is still caught before anything ships. The
         # objects are the groups above, whole (an exclusion matches them
         # exactly); test-chess.mjs checks they are.
-        exclude: ${{ github.event_name == 'pull_request' && fromJSON('[{"engine":"webkit","group":{"name":"board + clock","suites":"scripts/test-board-e2e.mjs scripts/test-clock-e2e.mjs scripts/test-movelist-e2e.mjs","timeout":30}},{"engine":"webkit","group":{"name":"lessons","suites":"scripts/test-content-e2e.mjs","timeout":20}},{"engine":"webkit","group":{"name":"panel layout 1/5","suites":"scripts/test-layout-e2e.mjs","shard":"1/5","timeout":40}},{"engine":"webkit","group":{"name":"panel layout 2/5","suites":"scripts/test-layout-e2e.mjs","shard":"2/5","timeout":40}},{"engine":"webkit","group":{"name":"panel layout 3/5","suites":"scripts/test-layout-e2e.mjs","shard":"3/5","timeout":40}},{"engine":"webkit","group":{"name":"panel layout 4/5","suites":"scripts/test-layout-e2e.mjs","shard":"4/5","timeout":40}},{"engine":"webkit","group":{"name":"panel layout 5/5","suites":"scripts/test-layout-e2e.mjs","shard":"5/5","timeout":40}}]') || fromJSON('[]') }}
+        exclude: ${{ github.event_name == 'pull_request' && fromJSON('[{"engine":"webkit","group":{"name":"board + clock","suites":"scripts/test-board-e2e.mjs scripts/test-clock-e2e.mjs scripts/test-walk-e2e.mjs","timeout":30}},{"engine":"webkit","group":{"name":"lessons","suites":"scripts/test-content-e2e.mjs","timeout":20}},{"engine":"webkit","group":{"name":"panel layout 1/5","suites":"scripts/test-layout-e2e.mjs","shard":"1/5","timeout":40}},{"engine":"webkit","group":{"name":"panel layout 2/5","suites":"scripts/test-layout-e2e.mjs","shard":"2/5","timeout":40}},{"engine":"webkit","group":{"name":"panel layout 3/5","suites":"scripts/test-layout-e2e.mjs","shard":"3/5","timeout":40}},{"engine":"webkit","group":{"name":"panel layout 4/5","suites":"scripts/test-layout-e2e.mjs","shard":"4/5","timeout":40}},{"engine":"webkit","group":{"name":"panel layout 5/5","suites":"scripts/test-layout-e2e.mjs","shard":"5/5","timeout":40}}]') || fromJSON('[]') }}
         # v8-0-plan F2: the per-move cost gate reads a CDP metric, so it is
         # one Chromium job rather than a group on both engines — `include`
         # with a group no combination has adds exactly that one job

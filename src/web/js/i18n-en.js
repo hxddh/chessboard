@@ -625,7 +625,7 @@
       "tip.grp.opening": "Play the main openings by the book, as White or Black",
       "tip.grp.mine": "Blunders from your own games — find the right move this time",
       "pz.review": "Review",
-      "pz.reviewSub": "Puzzles you missed, again a few days later",
+      "pz.reviewTodayDone": "Today's review is done · {0} more come back in a few days", "pz.reviewSub": "Missed puzzles come back at once, then again days after you solve them",
       "pz.ways": "Other ways to train",
       "pz.challenge": "Challenge",
       "pz.special": "Focus",

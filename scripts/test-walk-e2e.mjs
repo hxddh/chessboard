@@ -1,5 +1,6 @@
 /**
- * Browser check for the move list under the pointer (18.0 R1).
+ * The 18.0 walkthrough's bugs, each red on 17.0.0 first (docs/v18-0-plan.md
+ * §7½). R1, the move list under the pointer:
  *
  * Clicking a move moves the replay cursor, and the list scrolls to keep it in
  * view. The scroll slides another move under a pointer that never moved, the
@@ -7,7 +8,7 @@
  * took the board: click 13…h6, see 「预览 · 第 34 着」. A click is a commit;
  * the preview may come back only once the hand really moves.
  *
- *   node scripts/test-movelist-e2e.mjs
+ *   node scripts/test-walk-e2e.mjs
  */
 import fs from "fs";
 import http from "http";
@@ -134,6 +135,60 @@ for (const [w, h, want] of [[1440, 900, true], [1024, 700, true], [600, 900, fal
   await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
   const again = await pg.evaluate(() => document.getElementById("app").classList.contains("panel-open"));
   assert(again === !want, "……and a saved choice still wins on the next launch");
+  await c.close();
+}
+
+// --- 18.0 R5: the review queue says what it does ---------------------------
+// Miss 一步杀 #1, open 复习, solve it once: it is due again tomorrow (two
+// clean solves in a row leave the queue), so 下一题 must not say 「错题都清光了」.
+{
+  const c = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
+  await c.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "puzzle", langId: "zh-CN", soundOn: false, appearance: "light", boardId: "wood", view: "train" }));
+  });
+  const pg = await c.newPage();
+  const pe = [];
+  pg.on("pageerror", (e) => pe.push(e.message));
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(1200);
+  const sq = async (q) => {
+    const xy = await pg.evaluate((q) => {
+      const r = document.getElementById("board").getBoundingClientRect();
+      const f = q.charCodeAt(0) - 97, rk = 8 - Number(q[1]);
+      return { x: r.left + (f + 0.5) * r.width / 8, y: r.top + (rk + 0.5) * r.height / 8 };
+    }, q);
+    await pg.mouse.click(xy.x, xy.y);
+    await pg.waitForTimeout(250);
+  };
+  const fen0 = await pg.evaluate(() => window.__chess.puzzle());
+  assert(fen0 === "6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1", "R5: a new profile opens on 一步杀 #1 (Ra8#)", fen0);
+  await sq("a1"); await sq("a5");                 // a miss
+  await pg.waitForTimeout(1000);
+  const sub = await pg.evaluate(() => document.querySelector("#pz-review .pz-review-sub, #pz-review small, #pz-review") .textContent);
+  assert(!/隔几天再来一次/.test(sub) && /马上再做一次/.test(sub), "R5: 复习 says a miss comes back at once, then days later", sub.replace(/\s+/g, " "));
+  await pg.click("#pz-review");
+  await pg.waitForTimeout(1200);
+  await sq("a1"); await sq("a8");                 // solved once, in 复习
+  await pg.waitForTimeout(1200);
+  const toasts = [];
+  await pg.exposeFunction("__toast", (x) => toasts.push(x));
+  await pg.evaluate(() => {
+    new MutationObserver(() => {
+      for (const e of document.querySelectorAll("[role=status], #toast")) {
+        const x = e.textContent.trim();
+        if (x && e.__said !== x) { e.__said = x; window.__toast(x); }
+      }
+    }).observe(document.body, { subtree: true, childList: true, characterData: true });
+  });
+  await pg.click("#puzzle-next");
+  await pg.waitForTimeout(1200);
+  const said = toasts.join(" | ");
+  assert(!/清光/.test(said) && /今天的复习做完了/.test(said),
+    "R5: solved once and due tomorrow, 下一题 says today's review is done — not 「错题都清光了」", said);
+  assert(pe.length === 0, "R5: no page errors — " + pe.join(" / "));
   await c.close();
 }
 
