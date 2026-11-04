@@ -1576,6 +1576,11 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       const k = await km();
       assert(k.ply === worst && ["why", "retry", "lines"].every((a) => k.acts.includes(a)),
         "A4：每个关键时刻都有「为什么」「再试一次」「看引擎线」（" + k.acts.join(", ") + "）");
+      // 18.0 R4: the card says it once — the line under the engine's moves
+      // (the same reason, a second 再试一次) stands down for the card's move
+      const twice = await pg.evaluate(() => ({ line: !document.getElementById("why-line").hidden,
+        retries: [...document.querySelectorAll("#rv-km button, #why-line button")].filter((b) => b.offsetParent && b.textContent.trim() === "再试一次").length }));
+      assert(!twice.line && twice.retries === 1, "18.0 R4：关键时刻卡片讲着的这一步，理由和「再试一次」只出现一次 " + JSON.stringify(twice));
       // v10-0-plan A2: 为什么 is open as the moment comes up — no click
       const why = (await km()).why;
       assert(/\d+%/.test(why) && why.length > 16, "A4 / A2：「为什么」默认展开，说清这一着让胜率掉了多少，再给出教练的解释（" + why + "）");

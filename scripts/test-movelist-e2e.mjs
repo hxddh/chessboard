@@ -102,6 +102,41 @@ const s2 = await state();
 assert(s2.badge !== null, "……and once the pointer really moves, sweeping the list previews again", JSON.stringify(s2));
 
 assert(errs.length === 0, "no page errors — " + errs.join(" / "));
+await ctx.close();
+
+// --- 18.0 R2: a profile that never chose opens with the panel out ----------
+// Through 17.0 the launch read 「panelOpen === "1"」, so a new profile — and
+// every profile that had never touched the ☰ — met 下棋 as a bare board with
+// no move list, no 复盘, no 新对局, the panel parked off the window's edge.
+// The sheet layouts (portrait, ≤ 900 px) still start closed: there the panel
+// lies over the board.
+for (const [w, h, want] of [[1440, 900, true], [1024, 700, true], [600, 900, false]]) {
+  const c = await browser.newContext({ viewport: { width: w, height: h }, locale: "zh-CN" });
+  await c.addInitScript(() => {
+    localStorage.setItem("chess.settings", JSON.stringify({
+      mode: "pvp", langId: "zh-CN", soundOn: false, appearance: "light", boardId: "wood" }));
+  });
+  const pg = await c.newPage();
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(900);
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  const r = await pg.evaluate(() => {
+    const side = document.getElementById("side").getBoundingClientRect();
+    return { open: document.getElementById("app").classList.contains("panel-open"),
+      inWindow: side.left >= 0 && side.right <= window.innerWidth + 0.5 };
+  });
+  assert(r.open === want && (!want || r.inWindow),
+    w + " × " + h + ", nothing saved: the panel starts " + (want ? "open, inside the window" : "closed (it is a sheet over the board)"), JSON.stringify(r));
+  // a choice once made is kept
+  await pg.evaluate((o) => localStorage.setItem("chess.panelOpen", o ? "0" : "1"), want);
+  await pg.reload();
+  await pg.waitForTimeout(900);
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  const again = await pg.evaluate(() => document.getElementById("app").classList.contains("panel-open"));
+  assert(again === !want, "……and a saved choice still wins on the next launch");
+  await c.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }

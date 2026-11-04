@@ -13,7 +13,7 @@
  * changed since; test-chess.mjs's T4 block checks the plural keys themselves.
  * v9-0-plan S6 changed two more on purpose: the puzzle rating's name
  * (谜题等级分 / パズルレーティング) and its provisional mark (「1500?」 →
- * 「1500（定级中）」), and 「部分着法按快速扫描评级」's last word. S3 deleted the
+ * 「1500（暂定）」), and 「部分着法按快速扫描评级」's last word. S3 deleted the
  * 复习·N tab label with the category row it sat in. v15-0-plan S1 renamed
  * the review on purpose — 分析 / 持续分析 → 复盘 / 实时引擎 (Analyse → Review,
  * 解析・検討 → 振り返り) — and with it the rows that quote those words.
@@ -132,7 +132,7 @@ export const F4_RENDERS = [
   ["curve.atScore", (t, tf, tdot, diff) => tf("curve.atScore", [0, "+0.3"]),
     "第 0 着 +0.3", "Ply 0 +0.3", "0 手目 +0.3"],
   ["rec.rating", (t, tf, tdot, diff) => tdot(tf("ui.pair", [t("rec.rating"), tf("rating.prov", [1500])]), tf("rec.due", [2, 1])),
-    "谜题等级分 1500（定级中） · 复习到期 2 · 明天 1", "Puzzle rating 1500 (provisional) · Reviews due 2 · tomorrow 1", "パズルレーティング 1500（判定中） · 復習の期限 2 · 明日 1"],
+    "谜题等级分 1500（暂定） · 复习到期 2 · 明天 1", "Puzzle rating 1500 (provisional) · Reviews due 2 · tomorrow 1", "パズルレーティング 1500（暫定） · 復習の期限 2 · 明日 1"],
   ["opp.level", (t, tf, tdot, diff) => tf("ui.pair", [t("diff.normal"), 1400]),
     "中级 1400", "Intermediate 1400", "中級 1400"],
   ["lib.sfPlayer", (t, tf, tdot, diff) => tf("lib.sfPlayer", [t("diff.normal")]),

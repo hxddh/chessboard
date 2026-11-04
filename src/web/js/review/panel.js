@@ -122,10 +122,10 @@ export function createReviewPanel(d) {
         }
       }
     }
-    renderWhyLine();
     renderRetry();
     renderReview();
     renderMoments();
+    renderWhyLine(); // after the moments: it stands down for the card's ply (18.0 R4)
     lockPgnEdits();
   }
 

@@ -244,7 +244,7 @@ export function createTodayUI(d) {
         !Object.keys(st.missed || {}).length && !Object.keys(st.solved || {}).length,
       weakCat: w ? w.cat : null,
       weakMotif: (Picker.weakestMotif(st, Object.keys(st.mtally || {})) || {}).motif || null,
-      lessonNext: LESSONS.findIndex((L) => !store.session.learnState.done[L.id]),
+      lessonNext: Planner.lessonFrom(LESSONS, store.session.learnState.done || {}, st.placed ? st.placed.r : null),
       opUnsolved: ALL_PUZZLES.some((p) => p.cat === "op" && !st.solved[p.id]),
       // 7.1: a game played on another site today is still a game played
       // today. Until now this read `stats` alone, so someone who imported

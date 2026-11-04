@@ -167,4 +167,23 @@ function stepDone(step, before, after) {
 /** A focus item's key in snap().focus — the counters' progress on it. */
 function focusKey(it) { return it.kind + ":" + (it.motif || it.family || ""); }
 
-export const ChessPlanner = { DOSE, MAX_STEPS, plan, snap, stepDone, focusKey };
+/**
+ * 18.0 R3: where the course picks up for a placed player. Through 17.0 the
+ * next lesson was the first unfinished one, so a player the placement had
+ * just put at 1775 was offered 「第 1 课 · 棋盘与坐标」. A placement of 1100
+ * or more says the rules are known (the course's parts 1–4, to 杀型积木);
+ * 1500 or more, the openings and mates too (to 中局思路). Below 1100, and
+ * with no placement, the course starts at the start.
+ * @param {Array<{id: string}>} lessons the course, in order
+ * @param {object} done lesson id → finished
+ * @param {number|null} placedR the placement's rating, or null
+ * @returns {number} the next lesson's index, or -1 when all are done
+ */
+function lessonFrom(lessons, done, placedR) {
+  const from = placedR >= 1500 ? "mg-plan" : placedR >= 1100 ? "ladder" : null;
+  const at = from ? Math.max(0, lessons.findIndex((L) => L.id === from)) : 0;
+  for (let i = at; i < lessons.length; i++) if (!done[lessons[i].id]) return i;
+  return lessons.findIndex((L) => !done[L.id]);
+}
+
+export const ChessPlanner = { DOSE, MAX_STEPS, plan, snap, stepDone, focusKey, lessonFrom };

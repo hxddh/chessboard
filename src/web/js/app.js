@@ -4742,8 +4742,9 @@ import { drawSpark } from "./charts.js";
   if (!ChessLazy.langReady(store.ui.langId)) {
     ChessLazy.ensureLang(store.ui.langId).then(() => applyLanguage()).catch(() => {});
   }
+  // 18.0 R2: nothing saved means out, except where the panel is a sheet over the board
   const savedPanel = Persist.get("panelOpen");
-  setPanelOpen(savedPanel === "1");
+  setPanelOpen(savedPanel == null ? !panelCoversBoard() : savedPanel === "1");
   Shell.restore();
   // 15.0 P: the launch is two tasks — build the app and put the saved view up;
   // then the save, the clocks and the first full render (one 140 ms task at 1×)

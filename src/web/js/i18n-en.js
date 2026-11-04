@@ -659,7 +659,7 @@
       "lib.filters": "Filters",
       "keys.go": "Go to: Today, Play, Train, Games, Me",
       "rv.sum.turn": "{0}: Up to move {1} you were ahead ({2}% to win); after that move the game came my way.",
-      "rv.sum.drop": "{0}: The move that mattered most was move {1} — your chance to win went from {2}% to {3}%.",
+      "rv.sum.turnBack": "{0}: move {1} took your win chance from {2}% to {3}% and the game was mine for a while — then you turned it back.", "rv.sum.drop": "{0}: The move that mattered most was move {1} — your chance to win went from {2}% to {3}%.",
       "rv.sum.clean": "{0}: None of your moves this game let your chance to win slip by much.",
       "rv.sum.side": "The turning point was {0}: {1}'s chance to win went from {2}% to {3}%.",
       "rv.sum.resignAhead": "You resigned at {0}% — this game was still yours to play.", "rv.sum.reversed": "You stood at {0}% (move {1}) and this won game turned round.", "rv.sum.flagDrawn": "Lost on time in a level position ({0}%) — the clock ran out before the game did.", "rv.sum.calm": "No move in this game let either side's chance to win slip by much.",

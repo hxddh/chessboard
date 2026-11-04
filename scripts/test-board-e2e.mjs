@@ -1934,6 +1934,9 @@ for (const appearance of ["light", "dark"]) {
     const st = await page.evaluate(() => ({ pz: JSON.parse(localStorage.getItem("chess.puzzles") || "{}"), set: JSON.parse(localStorage.getItem("chess.settings") || "{}") }));
     assert(/定级完成：谜题等级分约 400，已为你选好对手 皮普/.test(done) && st.pz.rating && st.pz.rating.r === 400 && st.pz.placed &&
       st.set.difficulty === "beginner", "T1 六题之后:谜题等级分 400 起步、对手配成皮普(新手)", done + " " + JSON.stringify(st.pz.rating) + " " + st.set.difficulty);
+    // 18.0 R3: and the puzzles open near it — 战术 serves near the rating;
+    // through 17.0 the category stayed 一步杀, served from #1 in list order
+    assert(st.pz.cat === "grp:tactic", "18.0 R3 定级之后:谜题从「战术」按等级分出，不再从一步杀 #1 起", st.pz.cat);
     await page.click("#pz-run-again");
     await page.waitForTimeout(600);
     const today = await page.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),

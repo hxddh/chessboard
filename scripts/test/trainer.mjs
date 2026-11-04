@@ -869,6 +869,16 @@ export async function run() {
       "满信号:欠账→错题→弱项,最多三项(前进与对局排在后面)");
     assert(PL.plan({ owed: 0, mineUnsolved: 0, weakCat: null, lessonNext: 3, opUnsolved: true, playedToday: false })
       .steps.map((x) => x.kind).join(",") === "lesson,game", "没欠账时:前进→对局,课程在时开局线让位");
+    // 18.0 R3: a placement says where the course picks up
+    {
+      const C = ["board", "squares", "ladder", "x", "mg-plan", "y"].map((id) => ({ id }));
+      assert(PL.lessonFrom(C, {}, null) === 0 && PL.lessonFrom(C, {}, 900) === 0,
+        "18.0 R3:没定级或定在 1100 以下，课程从第 1 课起");
+      assert(PL.lessonFrom(C, {}, 1300) === 2 && PL.lessonFrom(C, {}, 1775) === 4,
+        "18.0 R3:定在 1100 以上从「杀型积木」起，1500 以上从「中局思路」起（不再给 1775 的人推第 1 课）");
+      assert(PL.lessonFrom(C, { ladder: true }, 1300) === 3 && PL.lessonFrom(C, { "mg-plan": true, y: true }, 1775) === 0,
+        "18.0 R3:从那里往后取第一节没学的；后面都学完了，回到前面没学的");
+    }
     // T5: the repertoire's due moves come after the weakness, before the library
     const rp = PL.plan({ owed: 2, repDue: 9, libQueued: 4, lessonNext: 3, playedToday: false });
     assert(rp.steps.map((x) => x.kind).join(",") === "review,repdue,lib" && rp.steps[1].n === PL.DOSE.rep,

@@ -1459,7 +1459,7 @@ await scenario("你将死引擎", async () => {
   assert(ready && after.last && after.last.r === "win" && after.last.diff === "beginner" && Number.isFinite(after.last.ra),
     "你将死引擎：记为你赢，计入人机等级分", JSON.stringify({ ready, last: after.last }));
   // 10.0 M0: a provisional rating is shown alone — no 「本局 +305」 jump
-  assert(/^对局等级分 \d+（定级中）/.test(after.rate) && !/本局/.test(after.rate), "你将死引擎：结果卡当场写着新分数（不等下一次重画），定级中不写本局的跳幅", after.rate);
+  assert(/^对局等级分 \d+（暂定）/.test(after.rate) && !/本局/.test(after.rate), "你将死引擎：结果卡当场写着新分数（不等下一次重画），暂定不写本局的跳幅", after.rate);
   // Codex #89: clearing the statistics takes the filing off the result card too
   // (9.0 S5: Ctrl+, opens the settings page; 清除统计 is in its 数据 category,
   // and the rail, not the window's ×, goes back to the board)
