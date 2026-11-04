@@ -880,8 +880,8 @@
       --font-title: "Songti SC", "STSong", "Noto Serif CJK SC", "Noto Serif SC", "Source Han Serif SC",
         "NSimSun", "SimSun", var(--font-ui);
     }
-    html:lang(ja) { --font-title: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif CJK JP", "Noto Serif JP", var(--font-ui); }
-    html:lang(en) { --font-title: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Songti SC", "Noto Serif CJK SC", var(--font-ui); }
+    :root:lang(ja) { --font-title: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif CJK JP", "Noto Serif JP", var(--font-ui); }
+    :root:lang(en) { --font-title: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Songti SC", "Noto Serif CJK SC", var(--font-ui); }
     html:lang(en) {
       --lh-body: 1.45; --lh-prose: 1.6;
       --font-ui: -apple-system, "Inter Var", "PingFang SC", "Hiragino Sans GB", "Hiragino Sans",
@@ -1416,7 +1416,7 @@
     .opening-line {
       margin-top: 12px;
       font-family: var(--font-title);
-      font-size: 1rem; font-weight: 600; color: var(--text); line-height: var(--lh-tight);
+      font-size: 1rem; color: var(--text); line-height: var(--lh-tight);
     }
     .opening-line[hidden] { display: none; }
     /* 7.8 §1b: blank but still taking its line, so the notation does not move */
