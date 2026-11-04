@@ -63,8 +63,8 @@
 ## 规则引擎
 
 局面合法性由 vendored [chess.js](https://github.com/jhlywa/chess.js) 0.13.4（BSD-2-Clause）判定——
-不自研规则。`src/web/js/chess.js` 顶部注明了从 ESM 到经典脚本的机械转换（zero:// 方案下 WebView
-只验证过经典脚本加载）。
+不自研规则。`src/web/js/chess.js` 是上游的模块原样，只在末尾加了一个 `export`；打成经典脚本是打包器的事
+（zero:// 方案下 WebView 只加载经典脚本，文件顶部有说明）。
 
 chess.js 之上,`js/fide.js` 补齐它不做的比赛规则判定：三次重复与 50 回合是**可声明**和棋（art.
 9.2/9.3）而非自动结束,五次重复 / 75 回合才自动判和（art. 9.6）；超时是否算输由「能否将杀」而非
@@ -100,13 +100,13 @@ wasm 1.79 MB），vendored 于 `third_party/stockfish/`。zero:// 方案不能�
 
 ## 路线
 
-13.0 的计划、依据与落地记录在 [docs/v13-0-plan.md](docs/v13-0-plan.md)；更早各版的计划也在 `docs/` 里（`v6-plan.md` … `v12-0-plan.md`），逐条写着做到了什么、没做到什么。
+当前这一版的计划、依据与落地记录在 [docs/v18-0-plan.md](docs/v18-0-plan.md)；更早各版的也在 `docs/` 里（`v6-plan.md` … `v17-0-plan.md`），逐条写着做到了什么、没做到什么。
 
 接下来：
 
-- **Node 26**：10-28 进 LTS 后 CI 换到 26，`engines` 仍是 ≥ 24。
+- **19.0 · 按你的水平练**：用 Maia 出「同水平的人最常走错」的题、背开局时对手按同水平的人来应、开局浏览器多一栏「同水平的人」（18.0 计划 §11）。
 - **SDK**：上游发版就单独升（`scripts/sdk-diff.mjs`），不绑版本日期。
-- **以后**：西班牙语（评估在 10.0 计划 §3，暂不做）、Chess960、研究 / 笔记本（13.0 计划里的 S、V，这一版没做）；Maia 换到更高或更低的分段（1100 以下仍是故意抽差的 Stockfish）。
+- **以后**：西班牙语（评估在 10.0 计划 §3，暂不做）、Chess960、研究 / 笔记本：都比 19.0 那组大，用的人更少，还没排进哪一版；Maia 换到更高或更低的分段（1100 以下仍是故意抽差的 Stockfish）。
 - **跨版本还没做的**：签名与公证、msix、`.updates` 签名自动更新（都缺证书或密钥）；macOS 侧栏材质（要让 WebView 背景透明，只能在 Mac 真机上试）；木质音效的录音版（缺许可证合适的录音，`sounds/` 已留好入口）；残局训练营里 8 子的「三兵突破」超出任何残局表，只能用 Stockfish 核对；评估条的数字仍在条外（棋盘左边放不下）。
 
 真机走查的清单在 [docs/manual-check.md](docs/manual-check.md)。
@@ -117,7 +117,7 @@ wasm 1.79 MB），vendored 于 `third_party/stockfish/`。zero:// 方案不能�
 
 | 需要 | 用来做什么 | 没有会怎样 |
 |------|-----------|-----------|
-| Node 24+ | 跑 `scripts/` 下的全部检查与代码生成 | 什么都跑不了 |
+| Node 26+ | 跑 `scripts/` 下的全部检查与代码生成 | 什么都跑不了 |
 | `npm ci`（唯一依赖:esbuild） | 把 `src/web/js` 的 ES 模块打成 `js/bundle.js` | 页面加载不出来:index.html 只加载这一个脚本 |
 | Zig 0.16.0 | 编译 `src/*.zig`（`package.sh` 从 `~/.native/toolchains/zig-0.16.0` 找） | 只能改前端，编译不了 |
 | Native SDK CLI（`@native-sdk/cli`） | `native package` 打出 `.app` / `.exe` | 编译得出二进制，打不出安装包 |
@@ -131,7 +131,7 @@ cd ~/chessboard
 # 不依赖 Zig / SDK 的部分,任何平台都能跑
 npm test                           # = test:static + test:e2e,对应 CI 的 static 与 browser 两个 job(CI 另有 zig)
 npm run build                      # 打包:src/web/js 下的 ES 模块 → js/bundle.js(生成物,不进 git)
-npm run test:static                # 单测 + 清单,秒级(测试自己会按需构建)
+npm run test:static                # 单测 + 清单,并行跑,四核约 100 秒(测试自己会按需构建)
 npm run test:e2e                   # 浏览器 E2E(缺 Playwright 则逐个跳过)
 npm run test:engine                # 引擎检查:开局/战术/新手档/强度/分析/挖题/母题,分钟级,不在 npm test 里
 npm run shots                      # 全量截图(四种宽度、各主题、三语),改界面前后对照用

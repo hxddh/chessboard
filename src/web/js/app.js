@@ -3848,11 +3848,11 @@ import { drawSpark } from "./charts.js";
     // moved, and the browser reports that as a mouseover; through 17.0 the
     // preview then took the board (click 13…h6, see 「预览 · 第 34 着」).
     // After a click the hover preview waits for the hand to really move.
-    let clickAt = null;
+    let clickAt = 0;
     mlEl.onclick = (ev) => {
       const b = ev.target.closest("button[data-node]");
       if (!b) return;
-      clickAt = { x: ev.clientX, y: ev.clientY };
+      clickAt = ev.clientX + ev.clientY;
       setBoardPreview(null);
       if (b.dataset.menu) { openMoveMenu(Number(b.dataset.node), b); return; }
       goToNode(Number(b.dataset.node));
@@ -3874,12 +3874,12 @@ import { drawSpark } from "./charts.js";
       else previewNode(Number(b.dataset.node)); // a variation move, by its node
     };
     mlEl.addEventListener("mousemove", (ev) => {
-      if (!clickAt || Math.abs(ev.clientX - clickAt.x) + Math.abs(ev.clientY - clickAt.y) <= 2) return;
-      clickAt = null;
+      if (!clickAt || Math.abs(ev.clientX + ev.clientY - clickAt) <= 2) return;
+      clickAt = 0;
       hoverMove(ev);
     });
     mlEl.addEventListener("mouseover", hoverMove);
-    mlEl.addEventListener("mouseleave", () => { clickAt = null; setBoardPreview(null); });
+    mlEl.addEventListener("mouseleave", () => { clickAt = 0; setBoardPreview(null); });
   }
 
   // --- the move menu: promote, delete, annotate (v6-plan Q2.1) -------------

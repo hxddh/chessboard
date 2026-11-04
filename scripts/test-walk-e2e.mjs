@@ -102,6 +102,24 @@ await page.waitForTimeout(200);
 const s2 = await state();
 assert(s2.badge !== null, "……and once the pointer really moves, sweeping the list previews again", JSON.stringify(s2));
 
+// 18.0 P (the audit's keyboard finding): the move list is one Tab stop,
+// the arrows walk it
+const kb = await page.evaluate(() => {
+  const all = [...document.querySelectorAll("#move-list button.mlmove[data-node]:not(.mlgap)")];
+  return { n: all.length, stops: all.filter((b) => b.tabIndex === 0).length };
+});
+assert(kb.n > 20 && kb.stops === 1, "P: the move list is one Tab stop, not one per move", JSON.stringify(kb));
+const walked = await page.evaluate(() => {
+  const all = [...document.querySelectorAll("#move-list button.mlmove[data-node]:not(.mlgap)")];
+  const stop = all.find((b) => b.tabIndex === 0);
+  stop.focus();
+  const from = all.indexOf(stop);
+  stop.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
+  const now = all.indexOf(document.activeElement);
+  return { from, now, stops: all.filter((b) => b.tabIndex === 0).length };
+});
+assert(walked.now === walked.from - 1 && walked.stops === 1, "P: ← moves the focus to the move before, and the stop with it", JSON.stringify(walked));
+
 assert(errs.length === 0, "no page errors — " + errs.join(" / "));
 await ctx.close();
 

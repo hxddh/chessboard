@@ -132,18 +132,17 @@ export function createTodayPage(d) {
     // 课程: the lesson bookmarked, with its unit's progress
     // 18.0 R6: …or, once that one is done, the next unfinished after it —
     // finishing 第 1 课 left 第 1 课 on the card
+    const dn = ls.done || {};
     let li = Math.max(0, Math.min(ls.last || 0, LESSONS.length - 1));
-    if (ls.done && LESSONS[li] && ls.done[LESSONS[li].id]) {
-      const next = LESSONS.findIndex((x, i) => i > li && !ls.done[x.id]);
-      if (next >= 0) li = next;
-    }
+    const nx = dn[(LESSONS[li] || {}).id] ? LESSONS.findIndex((x, i) => i > li && !dn[x.id]) : -1;
+    if (nx > 0) li = nx;
     const L = LESSONS[li];
     if (L) {
       const lt = lessonText(L);
       const unit = LESSONS.filter((x) => x.n && lessonText(x).part === lt.part);
-      const done = unit.filter((x) => ls.done && ls.done[x.id]).length;
+      const done = unit.filter((x) => dn[x.id]).length;
       const cc = card("course");
-      if (cc) cc.dataset.li = String(li);
+      if (cc) cc.dataset.li = li;
       fillCard(cc, L.fen0, tdot(t("train.course"), lt.part),
         tf("today.lessonN", [li + 1, lt.title]), done, unit.length);
     }
@@ -152,8 +151,7 @@ export function createTodayPage(d) {
     if (Endgames.ready()) {
       // 18.0 R6: once the one left is done, the next not done (the camp
       // itself reopens on the one left, 9.0 S3; a tap here moves it on)
-      const at = Endgames.resumeId();
-      const id = at && Endgames.state().done[at] ? Endgames.next(at) || at : at;
+      const at = Endgames.resumeId(), id = at && Endgames.state().done[at] && Endgames.next(at) || at;
       if (eg) eg.dataset.eg = id || "";
       const it = id && Endgames.item(id);
       const L2 = id && Endgames.lesson(id);
@@ -245,12 +243,8 @@ export function createTodayPage(d) {
     // 18.0 T: a profile with no game and no rating yet has nothing for this
     // row to show — two large cards of invitations were half of a new
     // player's 今天; the row comes with the first game or the first puzzle
-    const row = $("today-games") && $("today-games").closest(".today-row");
-    if (row) {
-      const st = store.session.puzzleState || {};
-      row.hidden = !historyGames().length && !Metrics.gameRatingSeries(loadStats().games, 1).length &&
-        !(Array.isArray(st.rhist) && st.rhist.length);
-    }
+    const row = $("today-games").closest(".today-row");
+    if (row) row.hidden = !historyGames().length && !loadStats().games.length && !((store.session.puzzleState || {}).rhist || []).length;
   }
 
   function wire() {
@@ -275,10 +269,10 @@ export function createTodayPage(d) {
       const b = ev.target.closest(".today-c[data-seg]");
       if (!b) return;
       // 18.0 R6: the card may look past a finished bookmark — open what it shows
-      const ls = store.session.learnState;
-      if (b.dataset.seg === "course" && b.dataset.li) ls.last = Number(b.dataset.li);
-      if (b.dataset.seg === "endgame" && b.dataset.eg) Endgames.state().last = b.dataset.eg;
-      Shell.openTrain(b.dataset.seg);
+      const k = b.dataset;
+      if (k.li) store.session.learnState.last = +k.li;
+      if (k.eg) Endgames.state().last = k.eg;
+      Shell.openTrain(k.seg);
     };
   }
 

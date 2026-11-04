@@ -180,10 +180,9 @@ function focusKey(it) { return it.kind + ":" + (it.motif || it.family || ""); }
  * @returns {number} the next lesson's index, or -1 when all are done
  */
 function lessonFrom(lessons, done, placedR) {
-  const from = placedR >= 1500 ? "mg-plan" : placedR >= 1100 ? "ladder" : null;
-  const at = from ? Math.max(0, lessons.findIndex((L) => L.id === from)) : 0;
-  for (let i = at; i < lessons.length; i++) if (!done[lessons[i].id]) return i;
-  return lessons.findIndex((L) => !done[L.id]);
+  const at = Math.max(0, lessons.findIndex((L) => L.id === (placedR >= 1500 ? "mg-plan" : placedR >= 1100 ? "ladder" : 0)));
+  const i = lessons.findIndex((L, j) => j >= at && !done[L.id]);
+  return i < 0 ? lessons.findIndex((L) => !done[L.id]) : i;
 }
 
 export const ChessPlanner = { DOSE, MAX_STEPS, plan, snap, stepDone, focusKey, lessonFrom };

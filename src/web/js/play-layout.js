@@ -266,6 +266,31 @@ function watchStrip(list, strip) {
   render();
 }
 
+/**
+ * 18.0 P: the move list is one stop on the Tab key, not one per move. After
+ * twenty moves the main navigation was the 29th press away (2026-11-04
+ * audit). The current move — or the last, before any is current — holds the
+ * stop; the arrows walk the list from there, Home and End go to its ends,
+ * and Enter / Space are the button's own click.
+ */
+function rovingList(list) {
+  const all = () => [...list.querySelectorAll("button.mlmove[data-node]:not(.mlgap)")];
+  const hold = (bs, stop) => { for (const b of bs) b.tabIndex = b === stop ? 0 : -1; };
+  list.addEventListener("keydown", (ev) => {
+    const bs = all(), at = bs.indexOf(ev.target);
+    const to = at < 0 ? null : { ArrowRight: at + 1, ArrowDown: at + 2, ArrowLeft: at - 1, ArrowUp: at - 2, Home: 0, End: bs.length - 1 }[ev.key];
+    const b = to == null ? null : bs[to];
+    if (!b) return;
+    ev.preventDefault();
+    ev.stopPropagation(); // the arrows are the list's here, not the replay's
+    hold(bs, b);
+    b.focus();
+  });
+  const settle = () => { const bs = all(); hold(bs, bs.find((b) => b === document.activeElement) || list.querySelector(".mlmove.current") || bs[bs.length - 1]); };
+  new MutationObserver(settle).observe(list, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+  settle();
+}
+
 /** In the wide layout the opening's name stands in the info column. */
 function watchOpening(src, dst) {
   const copy = () => {
@@ -319,7 +344,7 @@ export function watchPlayLayout(d) {
   // action rows on the pages and in 偏好设置 step their columns down too
   for (const el of document.querySelectorAll(".page")) watchFitRows(el, { wide: false });
   watchSegThumbs(document); // 16.0 M: the chosen segment slides
-  if (d.list) { watchColumns(d.list); keepCurrentInView(d.list); }
+  if (d.list) { watchColumns(d.list); keepCurrentInView(d.list); rovingList(d.list); }
   if (d.list && d.strip) watchStrip(d.list, d.strip);
   if (d.opening && d.infoOpening) watchOpening(d.opening, d.infoOpening);
 }
