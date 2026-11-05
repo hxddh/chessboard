@@ -1698,6 +1698,8 @@ for (const appearance of ["light", "dark"]) {
     `Tab 顺序:对手(人机 / 双人) → 五张角色卡 → 全部 → … → 棋钟 → 取消 → 开始,从「开始」再 Tab 回到第一个(${order.slice(0, 8).join(",")}…${order.slice(-2).join(",")};${wrapped} / ${back})`);
   assert(!(await page.$("#op-seg")), "S2: 角色卡上面没有「入门 / 进阶 / 高手」分段了");
   // change the opponent and start: one step, the strip and the dialog's cards agree
+  // 19.0 S5: 马克斯 is past the five around 索尔 — 全部 first, as a person would
+  await page.click("#op-all"); await settle(page);
   await page.click('#ng-host #op-grid .op-card[data-op="max"]'); await settle(page);
   await page.keyboard.press("Enter"); await page.waitForTimeout(500);
   s = await state();
@@ -1721,9 +1723,9 @@ for (const appearance of ["light", "dark"]) {
   await page.click("#ng-custom > summary"); await settle(page);
   const w2 = await cardsNow();
   assert(w2 === "pip*,tomo,lina,kai,ada", `S5:选了皮普再收起,五张卡挪到梯子底,皮普亮着(${w2})`);
-  await page.click('#ng-host #op-grid .op-card[data-op="ben"]'); await settle(page);
+  await page.click('#ng-host #op-grid .op-card[data-op="kai"]'); await settle(page);
   const w3 = await cardsNow();
-  assert(w3 === "ada,remy,ben*,nico,vera", `S5:收起时选本,五张卡的窗口跟着他(${w3})`);
+  assert(w3 === "tomo,lina,kai*,ada,remy", `S5:收起时选凯,五张卡的窗口跟着他(${w3})`);
   await page.keyboard.press("Escape"); await settle(page);
   s = await state();
   assert(!s.open && s.settings.difficulty === "hard", `……Esc 不开始:设置里还是高级(${s.settings.difficulty})`);
