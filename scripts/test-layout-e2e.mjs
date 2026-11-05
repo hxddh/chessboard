@@ -2929,50 +2929,6 @@ if (scenario()) {
   }
 }
 
-// --- 4e. five save slots are five of the same thing -----------------------
-// All four facts shared the second line — 「Engine · Unrated · 3 moves ·
-// 8/2/2026, 8:59:30 AM」 — and in English that is 249px of text in 228, so the
-// two filled slots stood 71px and 87px against the three empty ones' 55. Five
-// identical things in three heights, in the dialog whose whole job is letting
-// you compare them. Now the row is the shape the history list already uses:
-// what kind of game on the first line, how long and when on the second — and
-// the dialog is the wide one, because this is the second list of sentences in
-// the app and 2.1.2 only widened the first.
-if (scenario()) {
-  for (const lang of LANGS) {
-    const { ctx, page } = await open(lang, "ai", "play");
-    await page.evaluate(() => {
-      const mk = (d) => ({ pgn: '[Event "?"]\n[Result "*"]\n\n1. d4 d5 2. c4 e6 3. Nc3 Nf6 *',
-                           savedAt: Date.now() - 1e7, mode: "ai", diff: d });
-      localStorage.setItem("chess.slots",
-        JSON.stringify({ v: 1, slots: [mk("extreme"), mk("beginner"), null, null, null] }));
-    });
-    await page.reload();
-    await page.waitForTimeout(900);
-    await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
-    await pressMore(page, "slots-open");
-    await settle(page);
-    const r = await page.evaluate(() => {
-      const rows = [...document.querySelectorAll("#slots-list > *")].filter((e) => e.offsetParent);
-      const box = document.querySelector("#slots-modal .modal");
-      return { n: rows.length,
-               wide: box.classList.contains("wide"),
-               heights: [...new Set(rows.map((e) => Math.round(e.getBoundingClientRect().height)))],
-               inline: rows.filter((e) => e.getAttribute("style")).length,
-               spill: rows.filter((e) => e.scrollHeight > e.clientHeight + 1)
-                 .map((e) => (e.textContent || "").trim().slice(0, 24)) };
-    });
-    assert(r.n === 5, lang + ": five slots (" + r.n + ")");
-    assert(r.wide, lang + ": the slot list gets the wide box, like the other list of sentences");
-    assert(r.heights.length === 1,
-      lang + ": a filled slot is the same height as an empty one (" + r.heights.join(", ") + ")");
-    assert(r.inline === 0, lang + ": the row is built from a class, not an inline style");
-    assert(r.spill.length === 0,
-      lang + ": nothing overflows a slot row" + (r.spill.length ? " — " + r.spill.join(", ") : ""));
-    await ctx.close();
-  }
-}
-
 // --- 4f. the game picker is the third list, found the same way ------------
 // A PGN file may hold a database, and the picker lists what is in it: one row
 // per game, 「N. White — Black  result」 over 「event · date · plies」. Real
@@ -3938,13 +3894,13 @@ if (scenario()) {
              // 9.0 S1: the plan left the panel for 今天 — nothing of it is in the panel
              daily: [...document.querySelectorAll("#side #today-go, #side .daily-plan, #side [id^='daily-']")].filter(vis).map((e) => e.id),
              primaries: [...document.querySelectorAll("#side .primary, .chrome .primary")].filter(vis).map((b) => b.id),
-             // 9.0 S2: the row is five fixed places; 存档槽 / 编辑局面 are under 更多
+             // 9.0 S2: the row is five fixed places; 编辑局面 is under 更多
              toolRow: [...document.querySelectorAll("#tool-row button")].map((b) => b.id),
              tertiary: ["review-open", "explorer-open", "pgn-copy", "pgn-download", "more-tools"].map((id) => {
                const b = document.getElementById(id);
                return !!b && b.classList.contains("tool-ic") && !!b.title && !!b.getAttribute("aria-label");
              }),
-             folded: ["slots-open", "editor-open", "report-export"].map((id) => {
+             folded: ["editor-open", "report-export"].map((id) => {
                const b = document.getElementById(id);
                return !!b && !!b.closest("#more-row") && !vis(b);
              }) };

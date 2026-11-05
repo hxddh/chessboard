@@ -54,7 +54,7 @@ import { createRetry } from "./review/retry.js";
 import { createMomentsLazy } from "./review/moments-lazy.js";
 import { createExplorerLazy } from "./explorer/lazy.js";
 import { createGameEnd } from "./game-end.js";
-import { createSaveSlots } from "./save-slots.js";
+import { migrateSlots } from "./save-slots.js";
 import { createMaterialStrip } from "./material-strip.js";
 import { createGameController } from "./game-controller.js";
 import { createIO } from "./io.js";
@@ -4540,9 +4540,10 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     fenModal.onclick = (ev) => { if (ev.target === fenModal) closeFenModal(); };
   }
 
-  // 14.0 E: the save slots and their dialog are save-slots.js
-  const Slots = createSaveSlots({ doc: document, store, Persist, t, tf, toast, Dlg, I18n, diffName, moveCount, sanHistory, startFen,
-    pgnForExport: () => pgnForExport(), importPgnText: (text, label, prompt) => importPgnText(text, label, prompt) });
+  // 19.0 S7: the save slots are gone; games left in them go into the library
+  // once, when it is in (save-slots.js), after the launch's quiet
+  setTimeout(() => LibraryUI.ready().then((c) => c && migrateSlots({ Persist, t, tf,
+    importPgnToLibrary: (text, label, opts) => LibraryUI.importPgnToLibrary(text, label, opts) })).catch(() => {}), 2500);
 
   {
     // v8-0-plan C1: 「全部 N 局」 opens the library on its 本机 games — the
@@ -4713,7 +4714,6 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
    */
   function wireDialogs() {
     Dlg.register(promoModal, () => finishPromotion(null));
-    Dlg.register(document.getElementById("slots-modal"), Slots.close);
     Dlg.register(document.getElementById("lib-modal"), closeDiagnosis);
     Dlg.register(document.getElementById("lib-list-modal"), closeLibList);
     Dlg.register(document.getElementById("theme-modal"), () => PuzzlesUI.closeThemes());

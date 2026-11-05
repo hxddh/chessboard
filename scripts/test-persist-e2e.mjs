@@ -170,42 +170,51 @@ const PLACEMENT = STUDY.split(" ")[0];
   await ctx.close();
 }
 
-// --- 3. a set-up position round-trips through a save slot ------------------
-// The slot writes a PGN and the loader reads one back through the ordinary
-// import path, so the same movetext-free shape has to survive both ends. It
-// used not to survive either: the slot refused to save a game with no moves,
-// and the importer called the result malformed.
+// --- 3. 19.0 S7: the save slots are gone; their games go into the library --
+// A profile from 18.0 with three slots holding games (and one holding a
+// set-up position with no moves) comes up with the three games in the
+// library, tagged 旧存档槽 n, openable onto the board; the set-up, which the
+// library cannot keep, stays in chess.slots for 导出全部数据.
 {
   const ctx = await freshContext();
+  await ctx.addInitScript(([study]) => {
+    if (sessionStorage.getItem("slotsSeeded")) return;
+    sessionStorage.setItem("slotsSeeded", "1");
+    const mk = (moves) => ({ pgn: '[Event "?"]\n[White "A"]\n[Black "B"]\n[Result "*"]\n\n' + moves + " *", savedAt: Date.now() - 1e7, mode: "pvp" });
+    localStorage.setItem("chess.slots", JSON.stringify({ v: 1, slots: [
+      mk("1. d4 d5 2. c4 e6"), null, mk("1. e4 c5 2. Nf3 d6 3. d4"), mk("1. c4 e5"),
+      { pgn: '[SetUp "1"]\n[FEN "' + study + '"]\n[Result "*"]\n\n*', savedAt: Date.now(), mode: "pvp" },
+    ] }));
+  }, [STUDY]);
   const { page, errs } = await open(ctx);
-  await page.click("#more-tools");
-  await page.click("#fen-load-open");
-  await page.fill("#fen-input", STUDY);
-  await page.click("#fen-load");
+  await page.waitForFunction(() => window.__chess.library && window.__chess.library().games.length >= 3, null, { timeout: 20000 }).catch(() => {});
+  const r = await page.evaluate(() => ({
+    events: window.__chess.library().games.map((g) => g.event).sort(),
+    slots: JSON.parse(localStorage.getItem("chess.slots") || "null"),
+    button: !!document.getElementById("slots-open"),
+  }));
+  assert(JSON.stringify(r.events) === JSON.stringify(["旧存档槽 1", "旧存档槽 3", "旧存档槽 4"]),
+    "S7: the three slot games are in the library, each tagged with its slot — " + JSON.stringify(r.events));
+  assert(r.slots && r.slots.slots.filter(Boolean).length === 1 && r.slots.slots[4] && r.slots.slots[4].pgn.includes(STUDY),
+    "S7: the slots that moved are cleared; the set-up with no moves stays in chess.slots");
+  assert(!r.button, "S7: the ⋯ menu has no 存档槽 any more");
+  // one of them opens onto the board, from the library's list
+  await page.click('#rail button[data-view="library"]').catch(() => {});
   await page.waitForTimeout(400);
-
-  await page.click("#slots-open");
-  await page.click("#slots-list button[data-save='0']");
-  await page.waitForTimeout(300);
-  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.slots") || "{}"));
-  const slot0 = stored && stored.slots && stored.slots[0];
-  assert(!!slot0, "a position with no moves yet can be parked in a slot");
-  assert(slot0 && slot0.pgn.includes(STUDY), "…and the slot holds the position itself");
-  await page.click("#slots-close");
-
-  // wipe the board, then read the slot back
-  await surface(page, "btn-new");
-  await page.click("#ng-start");   // v7-8-plan §4: the new-game dialog, one step
-  await page.waitForTimeout(300);
-  await page.click("#slots-open");
-  await page.click("#slots-list button[data-load='0']");
-  await page.waitForTimeout(400);
-  await page.click("#confirm-ok").catch(() => {});
+  await page.click("#lib-open");
+  await page.waitForSelector("#lib-list button[data-lib]", { timeout: 8000 }).catch(() => {});
+  await page.click("#lib-list button[data-lib]");
   await page.waitForTimeout(500);
-  const live = await shownFen(page);
-  assert(live.split(" ")[0] === PLACEMENT,
-    "loading the slot puts the position back on the board — shows " + live);
-  assert(errs.length === 0, "no JS exception through the slot round trip — " + errs.join(" / "));
+  await page.click("#confirm-ok").catch(() => {});
+  await page.waitForTimeout(600);
+  const rows = await page.evaluate(() => document.querySelectorAll(".mlrow").length);
+  assert(rows >= 1, "S7: a slot game opens from the library onto the board (" + rows + " rows)");
+  // a second launch does not import them twice
+  await page.reload();
+  await page.waitForTimeout(4000);
+  const n2 = await page.evaluate(() => window.__chess.library ? window.__chess.library().games.length : -1);
+  assert(n2 === 3, "S7: the next launch finds nothing left to move (" + n2 + " games)");
+  assert(errs.length === 0, "no JS exception through the slot migration — " + errs.join(" / "));
   await ctx.close();
 }
 

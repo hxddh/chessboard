@@ -3772,8 +3772,8 @@
     /* One row shape for both lists of saved games — the history and the save
        slots. The slots built theirs from two inline styles saying the same
        thing, which is a copy the stylesheet cannot see. */
-    .hist-row, .pick-row { display: flex; gap: 8px; align-items: stretch; }
-    .hist-row .pick-item, .pick-row .pick-item { flex: 1; min-width: 0; padding: 8px 12px; }
+    .hist-row { display: flex; gap: 8px; align-items: stretch; }
+    .hist-row .pick-item { flex: 1; min-width: 0; padding: 8px 12px; }
     /* 7.3 §4C: a row's second action belongs to the row.
        「再深一遍」 and 「PGN」 were `.tool-btn` — the same filled, bordered,
        body-sized control the dialog's own footer uses — sitting in the gap

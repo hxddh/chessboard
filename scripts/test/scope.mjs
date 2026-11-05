@@ -74,8 +74,6 @@ export async function run() {
     assert(/ChessPgn.*startFen/s.test(load), "the launch path can restore a movetext-free save");
     assert(/sanHistory\(\)\.length > 0 \|\| !!startFen\(\)/.test(load),
       "a custom starting position counts as something to resume");
-    assert(/!sanHistory\(\)\.length && !startFen\(\)/.test(fn("saveToSlot")),
-      "a slot accepts a set-up position with no moves yet");
     const imp = fn("importPgnText");
     assert(/ChessPgn.*startFen/s.test(imp), "importing accepts a position-only PGN");
   }
