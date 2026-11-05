@@ -36,7 +36,6 @@ import { createTrainBar } from "./trainer/train-bar.js";
 import { createNotices, TOAST_MS } from "./notices.js";
 import { createPuzzlesUI } from "./trainer/puzzles.js";
 import { createTodayUI } from "./trainer/today.js";
-import { createMePage } from "./me-page.js";
 import { createShell } from "./shell.js";
 import { createTodayPage } from "./today-page.js";
 import { createAnalyseEntry } from "./analyse-entry.js";
@@ -65,7 +64,8 @@ import { watchPlayLayout } from "./play-layout.js";
 import { createStore } from "./store.js";
 import { SELFTEST_BOOT } from "./selftest-boot.js";
 import { loadChunk } from "./chunk.js";
-import { drawSpark } from "./charts.js";
+import { drawSpark, chartTokens } from "./charts.js";
+import { ChessProgressMetrics } from "./progress-metrics.js";
 
   /**
    * The one deliberate global: the seam the browser tests reach through.
@@ -2099,10 +2099,18 @@ import { drawSpark } from "./charts.js";
   }
 
   // v8-0-plan F4/B5: the 我的 page's renderers (me-page.js)
-  const MePage = createMePage({ Icons, Progress, evalAch, libPlayedAt, loadStats, store, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n), Endgames: LessonsUI.Endgames, startEndgame: (id) => LessonsUI.startEndgame(id), Vis: PuzzlesUI.Vis });
-  function renderTrends() { MePage.renderTrends(); }
-  function renderAchievements() { MePage.renderAchievements(); }
-  function renderRecordEntry() { MePage.renderRecordEntry(); }
+  // 19.0 S3: a chunk (chunk-me.js), fetched the first time 我的 opens; until
+  // then its renderers have no page to draw on and are skipped
+  const MePage = {
+    real: null,
+    onShow: () => { if (MePage.real) { MePage.real.onShow(); return; } loadChunk("chunk-me.js", "createMePage").then((create) => {
+      const m = MePage.real = MePage.real || create({ Icons, Progress, evalAch, libPlayedAt, loadStats, store, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n), Endgames: LessonsUI.Endgames, startEndgame: (id) => LessonsUI.startEndgame(id), Vis: PuzzlesUI.Vis, Metrics: ChessProgressMetrics, tdot, chartTokens, drawSpark });
+      m.renderTrends(); m.renderAchievements(); m.renderRecordEntry(); m.onShow();
+    }, () => {}); },
+  };
+  function renderTrends() { if (MePage.real) MePage.real.renderTrends(); }
+  function renderAchievements() { if (MePage.real) MePage.real.renderAchievements(); }
+  function renderRecordEntry() { if (MePage.real) MePage.real.renderRecordEntry(); }
 
   // --- game flow ---
 

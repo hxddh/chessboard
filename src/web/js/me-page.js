@@ -16,9 +16,8 @@
  * drawing, and the rule that a block with nothing to show is not there.
  * @module me-page
  */
-import { ChessProgressMetrics as Metrics } from "./progress-metrics.js";
-import { tdot } from "./tdot.js";
-import { chartTokens, drawSpark } from "./charts.js";
+// 19.0 S3: a chunk now (chunk-me.js) — the helpers it shares with the
+// bundle come in through `d`, so the chunk carries only this page
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -26,7 +25,7 @@ import { chartTokens, drawSpark } from "./charts.js";
 export function createMePage(d) {
   const {
     Icons, Progress, evalAch, libPlayedAt, loadStats, store, t, tf,
-    Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName, Endgames, Vis,
+    Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName, Endgames, Vis, Metrics, tdot, chartTokens, drawSpark,
   } = d;
 
   /**

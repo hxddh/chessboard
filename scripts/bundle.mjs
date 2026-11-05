@@ -108,6 +108,8 @@ export const CHUNKS = [
   { entry: "src/web/js/review/moments.js", out: "src/web/js/chunk-moments.js", global: "createMoments", min: 3000 },
   // v10-0-plan T1: the first-run question and its placement — a fresh install only
   { entry: "src/web/js/onboarding.js", out: "src/web/js/chunk-onboarding.js", global: "createOnboarding", min: 500 },
+  // 19.0 S3: 我的 is never the first page — its renderers come when it opens (app.js)
+  { entry: "src/web/js/me-page.js", out: "src/web/js/chunk-me.js", global: "createMePage", min: 5000 },
   // v10-0-plan A3: the ⌘K panel, on the key's first press (palette-lazy.js)
   { entry: "src/web/js/palette.js", out: "src/web/js/chunk-palette.js", global: "createPalette", min: 2000 },
   // v8-0-plan B4: the ladder, personas, rating and styles (opponents-lazy.js)
