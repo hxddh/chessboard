@@ -26,16 +26,16 @@ const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", 
  * stop agreeing with it.
  */
 const RATING = {
-  beginner: 540, casual: 674, learner: 823, improver: 893, steady: 1055, solid: 1197, easy: 1260,
-  easyplus: 1393, normalminus: 1512, normal: 1607, normalplus: 1748, hardminus: 1909, hard: 1991,
-  hardplus: 2103, expert: 2240, expertplus: 2339, master: 2460, masterplus: 2573, strong: 2682,
-  strongplus: 2805, extreme: 2875,
+  beginner: 532, casual: 677, learner: 824, improver: 894, steady: 1056, solid: 1197, easy: 1261,
+  easyplus: 1394, normalminus: 1512, normal: 1607, normalplus: 1749, hardminus: 1909, hard: 1991,
+  hardplus: 2103, expert: 2240, expertplus: 2339, master: 2460, masterplus: 2573, strong: 2681,
+  strongplus: 2804, extreme: 2874,
 };
 const RATING_SE = {
-  beginner: 0, casual: 34, learner: 43, improver: 48, steady: 53, solid: 58, easy: 63,
-  easyplus: 69, normalminus: 76, normal: 84, normalplus: 92, hardminus: 98, hard: 102,
-  hardplus: 104, expert: 106, expertplus: 108, master: 110, masterplus: 113, strong: 115,
-  strongplus: 117, extreme: 121,
+  beginner: 0, casual: 29, learner: 40, improver: 45, steady: 51, solid: 56, easy: 62,
+  easyplus: 67, normalminus: 75, normal: 83, normalplus: 91, hardminus: 97, hard: 101,
+  hardplus: 103, expert: 105, expertplus: 107, master: 109, masterplus: 112, strong: 114,
+  strongplus: 116, extreme: 120,
 };
 
 /**
