@@ -1694,8 +1694,8 @@ for (const appearance of ["light", "dark"]) {
   // eight cards around the pick (中级 is 索尔, so 本 … 艾瑞丝) come straight after 人机 / 双人
   const cardsNow = () => page.evaluate(() => [...document.querySelectorAll("#op-grid .op-card")].filter((b) => !b.hidden)
     .map((b) => b.dataset.op + (b.classList.contains("active") && b.getAttribute("aria-pressed") === "true" ? "*" : "")).join(","));
-  assert(order[0] === "ai" && order[1] === "pvp" && order.slice(2, 10).join() === "ben,nico,vera,sol,leo,ivy,max,iris" && order[order.length - 2] === "ng-cancel" && order[order.length - 1] === "ng-start" && wrapped === "人机" && back === "ng-start",
-    `Tab 顺序:对手(人机 / 双人) → 八张角色卡 → … → 棋钟 → 取消 → 开始,从「开始」再 Tab 回到第一个(${order.slice(0, 10).join(",")}…${order.slice(-2).join(",")};${wrapped} / ${back})`);
+  assert(order[0] === "ai" && order[1] === "pvp" && order.slice(2, 8).join() === "nico,vera,sol,leo,ivy,op-all" && order[order.length - 2] === "ng-cancel" && order[order.length - 1] === "ng-start" && wrapped === "人机" && back === "ng-start",
+    `Tab 顺序:对手(人机 / 双人) → 五张角色卡 → 全部 → … → 棋钟 → 取消 → 开始,从「开始」再 Tab 回到第一个(${order.slice(0, 8).join(",")}…${order.slice(-2).join(",")};${wrapped} / ${back})`);
   assert(!(await page.$("#op-seg")), "S2: 角色卡上面没有「入门 / 进阶 / 高手」分段了");
   // change the opponent and start: one step, the strip and the dialog's cards agree
   await page.click('#ng-host #op-grid .op-card[data-op="max"]'); await settle(page);
