@@ -1039,7 +1039,22 @@ await scenario("为什么", async () => {
       why: (document.querySelector("#retry-box .rt-why") || {}).textContent || "",
     } : null;
   }), 5000);
-  assert(!!wrong && !!wrong.best && /捉双/.test(wrong.why), "再试一次：再走 a3 判错，给出引擎最佳和那一句", JSON.stringify(wrong));
+  // 19.0 T1: the first miss keeps the answer back — no best move, no arrow,
+  // and two ways on: 再想想 and 看答案; 看答案 then gives the move and its reason
+  assert(!!wrong && !wrong.best &&
+    await page.evaluate(() => !!document.getElementById("rt-show") && /再想想/.test(document.getElementById("rt-again").textContent)),
+    "19.0 T1 再试一次：再走 a3 判错，先不给答案，给「再想想」「看答案」", JSON.stringify(wrong));
+  // …and what the move allows: the engine's reply, named
+  const reply = await until(() => page.evaluate(() => { const e = document.querySelector("#retry-box .rt-reply"); return e ? e.textContent : null; }), 15000);
+  assert(!!reply && /a3 之后，对方可以走 \S+/.test(reply), "19.0 T1 再试一次：走错时说这一步之后对方能走什么（「" + reply + "」）");
+  await page.click("#rt-show");
+  await page.waitForTimeout(150);
+  const shown = await page.evaluate(() => ({
+    best: (document.querySelector("#retry-box .rt-best .why-san") || {}).title || "",
+    why: (document.querySelector("#retry-box .rt-why") || {}).textContent || "",
+  }));
+  Object.assign(wrong || {}, shown);
+  assert(!!shown.best && /捉双/.test(shown.why), "再试一次：点「看答案」才给出引擎最佳和那一句", JSON.stringify(shown));
   if (process.env.FLOWS_SHOTS) await page.screenshot({ path: process.env.FLOWS_SHOTS + "/retry-wrong.png" });
   // …and the engine's move is right
   await page.click("#rt-again");

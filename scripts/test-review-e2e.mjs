@@ -1628,8 +1628,14 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
         await pg.waitForFunction(() => { const v = document.querySelector("#retry-box .rt-verdict"); return v && /is-(right|wrong|ok)/.test(v.className); }, null, { timeout: 20000 }).catch(() => {});
         await settle(pg);
         const want = bests[bril].slice(0, 2) + bests[bril].slice(2, 4);
+        // 19.0 T1: a miss holds the arrow back until 看答案
+        const early = await pg.evaluate(() => window.__chess.board().hint);
+        if (await pg.evaluate(() => !!document.getElementById("rt-show"))) {
+          assert(!early, "19.0 T1：走错之后、看答案之前，棋盘上没有最佳着的箭头", String(early));
+          await pg.click("#rt-show"); await settle(pg);
+        }
         const hint = await pg.evaluate(() => window.__chess.board().hint);
-        assert(hint === want, "A4：妙着这个关键时刻「再试一次」走错判完之后，棋盘上画出最佳着的箭头（" + want + "）", String(hint));
+        assert(hint === want, "A4：妙着这个关键时刻「再试一次」走错、看答案之后，棋盘上画出最佳着的箭头（" + want + "）", String(hint));
         // #89 review: the brilliancy itself, found again — judged right, and
         // the panel does not go on to say 「更好的是」 the move just played
         await pg.click("#rt-again");
@@ -1704,6 +1710,10 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       await settle(pg);
       const v = await pg.evaluate(() => (document.querySelector("#retry-box .rt-verdict") || {}).className || "");
       assert(/is-wrong/.test(v), "A4：又走了一遍原来的失着，判「不对」（" + v + "）");
+      // 19.0 T1: a first miss keeps the answer back; 看答案, then on to the next
+      const held = await pg.evaluate(() => !document.getElementById("rt-next") && !!document.getElementById("rt-show"));
+      assert(held, "19.0 T1 A4：第一次走错，先不给答案、也不跳到下一个，只有「再想想」「看答案」");
+      if (held) { await pg.click("#rt-show"); await settle(pg); }
       const next = await pg.evaluate(() => { const b = document.getElementById("rt-next"); return b ? b.textContent : null; });
       assert(!!next, "A4：判完有「下一个」（" + next + "）");
       if (!next) break;

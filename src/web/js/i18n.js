@@ -185,7 +185,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "rt.right": "走对了",
       "rt.wrong": "不对",
       "rt.best": "引擎的最佳：{0}",
-      "rt.again": "再走一次",
+      "rt.think": "再想想", "rt.show": "看答案", "rt.reply": "{0} 之后，对方可以走 {1}。", "rt.again": "再走一次",
       "rt.back": "回到复盘",
       "rt.noEngine": "引擎还没就绪，判断不了这一手",
       "rv.banked": "已收进错题 · 正解 {0}",

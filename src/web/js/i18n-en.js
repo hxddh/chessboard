@@ -155,7 +155,7 @@
       "rt.right": "Correct",
       "rt.wrong": "Not this one",
       "rt.best": "Engine's best: {0}",
-      "rt.again": "Try once more",
+      "rt.think": "Think again", "rt.show": "Show the answer", "rt.reply": "After {0}, the opponent has {1}.", "rt.again": "Try once more",
       "rt.back": "Back to the review",
       "rt.noEngine": "The engine is not ready, so this move cannot be judged",
       "rv.banked": "Banked · the answer is {0}",
