@@ -135,7 +135,7 @@ const LANGS = ["zh-CN", "en", "ja"];
 
 // 9.0 S5: the settings page's categories (shell.js SETTING_CATS), one shown at
 // a time — a check that used to read the whole 设置 tab reads each of them
-const CATS = ["general", "board", "sound", "game", "data", "advanced"];
+const CATS = ["general", "board", "game", "data"];   // 19.0 S4: four
 /**
  * Show one category of the settings page, through its tab's click handler.
  * Not a pointer click: in this harness the engine is a stub, and at some
@@ -747,12 +747,8 @@ if (scenario()) {
     // cannot see happen.
     ["双人·设置·棋盘", { mode: "pvp", tab: "settings", sel: "#page-settings .set-pane:not([hidden]) button[id], #page-settings .set-cat[id]", min: 7 },
       async (page) => { await showCat(page, "board"); }],
-    ["双人·设置·声音", { mode: "pvp", tab: "settings", sel: "#page-settings .set-pane:not([hidden]) button[id]", min: 1 },
-      async (page) => { await showCat(page, "sound"); }],
-    ["双人·设置·对局", { mode: "pvp", tab: "settings", sel: "#page-settings .set-pane:not([hidden]) button[id]", min: 2 },
+    ["双人·设置·对局", { mode: "pvp", tab: "settings", sel: "#page-settings .set-pane:not([hidden]) button[id]", min: 4 },
       async (page) => { await showCat(page, "game"); }],
-    ["双人·设置·高级", { mode: "pvp", tab: "settings", sel: "#page-settings .set-pane:not([hidden]) button[id]", min: 2 },
-      async (page) => { await showCat(page, "advanced"); }],
     // 9.0 S3: 训练's own controls — the switch over the panel (the segment
     // you are on excepted, as the tab you are on is), and the puzzle picker:
     // 为你出一题, 复习, the six kinds, 换个练法, 按主题细分. Most carry no id,
@@ -873,8 +869,7 @@ if (scenario()) {
   // back to the board by the rail (was: the panel's 对局 tab)
   await page.click('.rail-btn[data-view="play"]');
   await settle(page);
-  const view = () => page.evaluate(() => [...document.querySelectorAll("#orient-seg button")]
-    .filter((b) => b.classList.contains("active")).map((b) => b.dataset.orient)[0]);
+  const view = () => page.evaluate(() => (window.__chess.flipped() ? "b" : "w"));
   const play = async (sqr) => {
     const flipped = (await view()) === "b";
     const pt = await page.evaluate(([x, fl]) => {
@@ -3201,7 +3196,7 @@ if (scenario()) {
   };
   const fire = async (page, cmd) => { await page.evaluate((c) => window.__fire(c), cmd); await page.waitForTimeout(450); };
   const orient = (page) => page.evaluate(() =>
-    [...document.querySelectorAll("#orient-seg button")].filter((b) => b.classList.contains("active")).map((b) => b.dataset.orient)[0]);
+    (window.__chess.flipped() ? "b" : "w"));
   const rows = (page) => page.evaluate(() => document.querySelectorAll(".mlrow").length);
   const confirmUp = (page) => page.evaluate(() => {
     const m = document.getElementById("confirm-modal");

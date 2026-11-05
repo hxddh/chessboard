@@ -36,7 +36,7 @@ import { createTrainBar } from "./trainer/train-bar.js";
 import { createNotices, TOAST_MS } from "./notices.js";
 import { createPuzzlesUI } from "./trainer/puzzles.js";
 import { createTodayUI } from "./trainer/today.js";
-import { createShell } from "./shell.js";
+import { createShell, SETTING_CATS } from "./shell.js";
 import { createTodayPage } from "./today-page.js";
 import { createAnalyseEntry } from "./analyse-entry.js";
 import { createPaletteLazy } from "./palette-lazy.js";
@@ -81,7 +81,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
    */
   // `shapes`: the arrows and circles the board draws now — the player's, the premove's, the engine's (7.8 §2);
   // `board`: the renderer's counters (v8-0-plan F5); `puzzle`: the FEN of the puzzle on the board (A5); `analysisBoard`: the A1 flag
-  window.__chess = { engine: ChessEngine, shapes: () => shapesToDraw(), board: () => ChessBoardView.stats(),
+  window.__chess = { engine: ChessEngine, shapes: () => shapesToDraw(), board: () => ChessBoardView.stats(), flipped: () => !!store.game.flipped,
     puzzle: () => (store.session.puzzle && store.session.puzzle.g ? store.session.puzzle.g.fen() : null), analysisBoard: () => !!store.session.analysisBoard, audio: ChessAudio };
 
   const Host = ChessHost;
@@ -869,13 +869,16 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
       if (typeof s.soundOn === "boolean") store.ui.soundOn = s.soundOn;
       if (Audio2.SOUND_SETS.includes(s.soundSet)) Audio2.setSoundSet(store.ui.soundSet = s.soundSet);
       if (Number.isFinite(s.volume)) store.ui.volume = Math.max(0, Math.min(100, Math.round(s.volume)));
+      // 19.0 S4: one control — a volume of 0 is off, and an 18.0 「off」 is a volume of 0
+      if (store.ui.soundOn === false) store.ui.volume = 0;
+      store.ui.soundOn = store.ui.volume > 0;
       if (typeof s.coordsOn === "boolean") store.ui.coordsOn = s.coordsOn;
       if (typeof s.coordsIn === "boolean") store.ui.coordsInside = s.coordsIn;
       if (typeof s.showSoftMark === "boolean") store.ui.showSoftMark = s.showSoftMark;
       if (typeof s.engineArrows === "boolean") store.ui.engineArrows = s.engineArrows;
       if (typeof s.humanLine === "boolean") store.ui.humanLine = s.humanLine;
       if (typeof s.blindfold === "boolean") store.ui.blindfold = s.blindfold; if (s.ob && typeof s.ob === "object") store.ui.ob = { n: Number(s.ob.n) || 0, done: s.ob.done === true }; // 14.0 A3: the first-run question
-      if ([16, 32, 64, 128].includes(s.hash)) store.ui.hash = s.hash;
+      // 19.0 S4: no 引擎内存 control any more — the default, whatever an old file says
       if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
       store.ui.bgWorker = s.bgWorker === true; // v8-1-plan F4: a second engine for passes, off unless set (§8.7)
       if (["s", "m", "l"].includes(s.textSize)) store.ui.textSize = s.textSize;
@@ -3823,10 +3826,6 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   document.getElementById("undo").onclick = undo;
   document.getElementById("btn-hint").onclick = () => { requestHint(); };
   document.getElementById("btn-new").onclick = () => { requestNewGame(); };
-  document.getElementById("orient-seg").onclick = (ev) => {
-    const b = ev.target.closest("button[data-orient]");
-    if (b) setFlipped(b.dataset.orient === "b");
-  };
   document.getElementById("toggle-panel").onclick = togglePanel;
   // 7.9 §1b equal action cells; v8-0-plan A2 the play view stretches with its window
   watchPlayLayout({ app: appEl, view: appEl.querySelector(".stage"), side: el("side"), grip: el("sheet-grip"), close: () => setPanelOpen(false), list: el("move-list"), strip: el("move-strip"), opening: el("opening-line"), infoOpening: el("info-opening") });
@@ -4369,7 +4368,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   AnalyseEntry.wire();
   // v10-0-plan A3: ⌘K — find a lesson, an endgame, a theme, a game or an action (palette.js, a chunk)
   const Palette = createPaletteLazy({ doc: document, t, tf, tdot, Dlg, store, LESSONS, lessonText, THEME_IDS, Endgames: LessonsUI.Endgames,
-    SETTING_CATS: ["general", "board", "sound", "game", "data", "advanced"], run: {
+    SETTING_CATS, run: {
       newGame: () => { Shell.go("play"); requestNewGame(); }, analyse: () => AnalyseEntry.open(), blank: () => document.getElementById("an-board").click(),
       paste: () => pastePgn(), editor: () => { Shell.go("play"); document.getElementById("editor-open").click(); }, fen: () => openFenModal(),
       exportPgn: () => downloadPgn(), flip: () => { Shell.go("play"); setFlipped(!store.game.flipped); }, go: (v) => Shell.go(v),

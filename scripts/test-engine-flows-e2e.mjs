@@ -295,7 +295,7 @@ async function openPgn(page, text) {
 async function setLive(page, on = true) {
   const from = await page.getAttribute("#app", "data-view");
   await page.click('#rail button[data-view="settings"]');
-  await page.click("#cat-advanced");
+  await page.click("#cat-game");
   if ((await page.getAttribute("#opt-live", "aria-pressed")) !== String(on)) await page.click("#opt-live");
   const pressed = await page.getAttribute("#opt-live", "aria-pressed");
   await page.click(`#rail button[data-view="${from}"]`);
@@ -937,7 +937,7 @@ await scenario("多主变", async () => {
   // 「显示引擎箭头」 off: no engine arrow at all
   // 9.0 S5: the switch is on the settings page (高级), not the panel's 设置 tab
   await page.click('#rail button[data-view="settings"]');
-  await page.click("#cat-advanced");
+  await page.click("#cat-game");
   await page.click("#opt-engine-arrows");
   await page.click('#rail button[data-view="play"]');
   await page.waitForTimeout(300);
@@ -1957,7 +1957,7 @@ await scenario("人会怎么走", async () => {
   assert(!!board && board.under === "live-line" && /e4 \d+%/.test(board.text), "人会怎么走：分析棋盘上在持续分析的线下面", JSON.stringify(board));
   // 设置·高级: off, and it stays off after a reload
   await page.click('#rail button[data-view="settings"]');
-  await page.click("#cat-advanced");
+  await page.click("#cat-game");
   const was = await page.getAttribute("#opt-human-line", "aria-pressed");
   await page.click("#opt-human-line");
   await page.click('#rail button[data-view="play"]');

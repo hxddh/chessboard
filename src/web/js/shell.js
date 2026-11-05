@@ -38,7 +38,9 @@ export const TRAIN_SEGS = ["course", "puzzle", "endgame", "classic"];
 /** The views that are pages over the stage, and the page each one shows. */
 const PAGES = { home: "page-home", library: "page-library", me: "page-me", settings: "page-settings" };
 /** 9.0 S5: the settings page's categories, in the list's order. */
-export const SETTING_CATS = ["general", "board", "sound", "game", "data", "advanced"];
+export const SETTING_CATS = ["general", "board", "game", "data"];
+/** 19.0 S4: the two categories folded into others, for a remembered or linked one */
+const OLD_CAT = { sound: "general", advanced: "game" };
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -216,11 +218,12 @@ export function createShell(d) {
 
   // --- 设置 -------------------------------------------------------------------
   //
-  // Six categories down the left, one shown on the right (Apple HIG's
+  // Four categories down the left (six through 18.0), one shown on the right (Apple HIG's
   // settings window; v9-0-plan S5). Which one was open is remembered, so ⌘,
   // goes back to where the player was.
   function showCat(cat) {
-    const want = SETTING_CATS.includes(cat) ? cat : "general";
+    const c0 = OLD_CAT[cat] || cat;
+    const want = SETTING_CATS.includes(c0) ? c0 : "general";
     store.ui.setCat = want;
     for (const c of SETTING_CATS) {
       const tab = doc.getElementById("cat-" + c);

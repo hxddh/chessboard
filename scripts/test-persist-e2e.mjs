@@ -218,6 +218,36 @@ const PLACEMENT = STUDY.split(" ")[0];
   await ctx.close();
 }
 
+// --- 3b. 19.0 S4: an 18.0 settings file reads into the merged controls -------
+// The sound switch is the volume now (0 = off), and coordinates are one row of
+// 关 / 盘外 / 盘内: an old 「sound off, volume 80」 opens at 0 and stays silent,
+// an old 「coordinates off」 shows 关; dragging the volume up turns it on.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    if (sessionStorage.getItem("s4Seeded")) return;
+    sessionStorage.setItem("s4Seeded", "1");
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", soundOn: false, volume: 80,
+      coordsOn: false, hash: 128, boardFrame: "frame", setCat: "sound" }));
+  });
+  const { page, errs } = await open(ctx);
+  await page.click('.rail-btn[data-view="settings"]');
+  await page.waitForTimeout(300);
+  const r = await page.evaluate(() => ({
+    cat: (document.querySelector(".set-cat[aria-selected='true']") || {}).dataset?.cat,
+    vol: document.getElementById("opt-volume").value,
+    coords: [...document.querySelectorAll("#coords-seg button.active")].map((b) => b.dataset.coords),
+  }));
+  assert(r.cat === "general" && r.vol === "0", "S4: an old 声音 category opens 通用, and an old 「off」 is a volume of 0 — " + JSON.stringify(r));
+  assert(r.coords.join() === "off", "S4: old 「coordinates off」 shows 关 — " + JSON.stringify(r));
+  await page.evaluate(() => { const v = document.getElementById("opt-volume"); v.value = "60"; v.dispatchEvent(new Event("input")); v.dispatchEvent(new Event("change")); });
+  await page.waitForTimeout(300);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}"));
+  assert(saved.soundOn === true && saved.volume === 60, "S4: dragging the volume up turns the sound on (" + saved.soundOn + " / " + saved.volume + ")");
+  assert(errs.length === 0, "no JS exception reading an 18.0 settings file — " + errs.join(" / "));
+  await ctx.close();
+}
+
 // --- 4. the ordinary game is untouched by all of this ----------------------
 {
   const ctx = await freshContext();
@@ -542,8 +572,7 @@ const PLACEMENT = STUDY.split(" ")[0];
     };
   });
   const { page, errs } = await open(ctx);
-  const view = () => page.evaluate(() => [...document.querySelectorAll("#orient-seg button")]
-    .filter((b) => b.classList.contains("active")).map((b) => b.dataset.orient)[0]);
+  const view = () => page.evaluate(() => (window.__chess.flipped() ? "b" : "w"));
   const play = async (sqr) => {
     const flipped = (await view()) === "b";
     const pt = await page.evaluate(([x, fl]) => {
@@ -613,8 +642,7 @@ const PLACEMENT = STUDY.split(" ")[0];
 {
   const ctx = await freshContext();
   const { page, errs } = await open(ctx);
-  const view = () => page.evaluate(() => [...document.querySelectorAll("#orient-seg button")]
-    .filter((b) => b.classList.contains("active")).map((b) => b.dataset.orient)[0]);
+  const view = () => page.evaluate(() => (window.__chess.flipped() ? "b" : "w"));
   const play = async (sqr) => {
     const flipped = (await view()) === "b";
     const pt = await page.evaluate(([x, fl]) => {
@@ -1683,8 +1711,8 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
         saved: s.appearance + "/" + s.boardId, frameSaved: s.boardFrame, pieceSet: s.pieceSet };
     });
     // anything that saves settings writes the look back
-    await page.evaluate(() => document.getElementById("opt-coords").click());
-    await page.evaluate(() => document.getElementById("opt-coords").click());
+    await page.evaluate(() => document.querySelector('#coords-seg button[data-coords="off"]').click());
+    await page.evaluate(() => document.querySelector('#coords-seg button[data-coords="in"]').click());
     await page.waitForTimeout(300);
     const first = await read();
     assert(first.attrs === attrs && first.frame === "flat", `A3 ${tag}:打开是 ${attrs}、平盘(实际 ${first.attrs}、${first.frame})`);
@@ -1718,7 +1746,7 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   const toAdvanced = async () => {
     await page.click('#rail button[data-view="settings"]');
     await page.waitForTimeout(200);
-    await page.click("#cat-advanced");
+    await page.click("#cat-game");
     await page.waitForTimeout(200);
   };
   await toAdvanced();

@@ -101,7 +101,7 @@ async function play(theme, line) {
     const f = sq.charCodeAt(0) - 97, rk = 8 - Number(sq[1]);
     // the app puts no "flipped" class anywhere — the orientation segment is
     // where that state is rendered, so that is what a test can read
-    const flip = !!document.querySelector('#orient-seg button[data-orient="b"].active');
+    const flip = window.__chess.flipped();
     const col = flip ? 7 - f : f, row = flip ? 7 - rk : rk;
     const sz = r.width / 8;
     return { x: r.left + (col + 0.5) * sz, y: r.top + (row + 0.5) * sz };
@@ -257,7 +257,7 @@ const READ_BOARD = () => {
   const c = document.getElementById("board");
   const g = c.getContext("2d");
   const step = c.width / 8;
-  const flip = !!document.querySelector('#orient-seg button[data-orient="b"].active');
+  const flip = window.__chess.flipped();
   const out = { __w: c.width };
   for (let sr = 0; sr < 8; sr++) for (let sc = 0; sc < 8; sc++) {
     const n = Math.round(step);
@@ -338,7 +338,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const at = (s) => page.evaluate((n) => {
     const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
     const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
-    const flip = !!document.querySelector('#orient-seg button[data-orient="b"].active');
+    const flip = window.__chess.flipped();
     const col = flip ? 7 - f : f, row = flip ? 7 - rk : rk;
     return { x: r.left + (col + 0.5) * (r.width / 8), y: r.top + (row + 0.5) * (r.height / 8) };
   }, s);
@@ -416,7 +416,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.keyboard.press("f");
   await page.waitForTimeout(700);
   const flipped = await read();
-  assert(await page.evaluate(() => !!document.querySelector('#orient-seg button[data-orient="b"].active')),
+  assert(await page.evaluate(() => window.__chess.flipped()),
     "翻转:视角切到了黑方");
   const moved = SQUARES.filter((s) => ham(flipped[s].ink, beforeFlip[s].ink) > SAME);
   assert(moved.length === 0, `翻转后每一格上还是原来那个东西(变了的:${JSON.stringify(moved)})`);
@@ -673,7 +673,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   };
   const at = (page, s) => page.evaluate((n) => {
     const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
-    const flip = !!document.querySelector('#orient-seg button[data-orient="b"].active');
+    const flip = window.__chess.flipped();
     let f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
     if (flip) { f = 7 - f; rk = 7 - rk; }
     return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
@@ -1587,7 +1587,7 @@ for (const appearance of ["light", "dark"]) {
     if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
     const r = await page.evaluate(() => {
       document.querySelector('#rail button[data-view="settings"]').click();
-      document.getElementById("cat-sound").click();
+      document.getElementById("cat-board").click();
       const shown = [...document.querySelectorAll("#page-settings .set-pane")].filter((p) => !p.hidden).map((p) => p.id);
       const cs = getComputedStyle(document.getElementById("page-settings"));
       const base = getComputedStyle(document.documentElement).getPropertyValue("--dur-slow").trim();
@@ -1595,7 +1595,7 @@ for (const appearance of ["light", "dark"]) {
       return { shown, name: cs.animationName, dur: cs.animationDuration, base, same: ms(cs.animationDuration) === ms(base), durMs: ms(cs.animationDuration) };
     });
     if (!reduced) {
-      assert(r.shown.length === 1 && r.shown[0] === "set-sound" && r.name === "page-in" && r.same,
+      assert(r.shown.length === 1 && r.shown[0] === "set-board" && r.name === "page-in" && r.same,
         `打开设置页:只画选中的那一类(${r.shown.join(",")}),页面用 page-in 淡入上移,时长就是 --dur-slow(${r.dur} / ${r.base})`);
     } else {
       assert(r.shown.length === 1 && r.durMs <= 1,
@@ -1779,7 +1779,7 @@ for (const appearance of ["light", "dark"]) {
   await page.click('#ng-custom #clock-seg-more button[data-tc="5+3"]'); await settle(page);
   await page.click("#ng-start"); await settle(page);
   s = await state();
-  const flipped = await page.evaluate(() => !!document.querySelector('#orient-seg button[data-orient="b"].active'));
+  const flipped = await page.evaluate(() => window.__chess.flipped());
   assert(s.settings.timeControl === "5+3" && flipped, `双人:棋钟 5+3、下方执黑(棋盘翻转 ${flipped})`);
   // with 自动转向 on, the board faces whoever is to move — a bottom side
   // chosen here would be undone the moment the game starts (Codex, #83).
@@ -1792,7 +1792,7 @@ for (const appearance of ["light", "dark"]) {
   assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-clock", "ng-custom"]),
     `双人、自动转向开着:不问哪一方在下方,只有棋钟(和收着更多棋钟的「更多选项」)(${s.rows.join(",")})`);
   await page.click("#ng-start"); await settle(page);
-  const white = await page.evaluate(() => !!document.querySelector('#orient-seg button[data-orient="w"].active'));
+  const white = await page.evaluate(() => !window.__chess.flipped());
   assert(white, "双人、自动转向开着:开局白方在下方");
   assert(errs.length === 0, `新对局对话框:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
   await ctx.close();
@@ -2017,7 +2017,7 @@ for (const appearance of ["light", "dark"]) {
     const tap = async (sq) => {
       const p = await page.evaluate((q) => {
         const r = document.getElementById("board").getBoundingClientRect(), z = r.width / 8;
-        const flip = !!document.querySelector('#orient-seg button[data-orient="b"].active');
+        const flip = window.__chess.flipped();
         const f = q.charCodeAt(0) - 97, rk = 8 - Number(q[1]);
         return { x: r.left + ((flip ? 7 - f : f) + 0.5) * z, y: r.top + ((flip ? 7 - rk : rk) + 0.5) * z };
       }, sq);

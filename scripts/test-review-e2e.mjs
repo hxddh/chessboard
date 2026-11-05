@@ -69,7 +69,7 @@ let failed = 0;
 async function setLive(pg, on) {
   await pg.click('#rail button[data-view="settings"]');
   await settle(pg);
-  await pg.click("#cat-advanced");
+  await pg.click("#cat-game");
   await settle(pg);
   const now = await pg.getAttribute("#opt-live", "aria-pressed");
   if ((now === "true") !== on) await pg.click("#opt-live");
@@ -692,7 +692,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   // 9.0 S5:线数在设置页的「高级」里(原先是侧栏的「设置」页签),从栏上去、从栏上回。
   await pg.click('#rail button[data-view="settings"]');
   await settle(pg);
-  await pg.click("#cat-advanced");
+  await pg.click("#cat-game");
   await pg.click('#multipv-seg button[data-multipv="3"]');
   await settle(pg);
   await pg.click('#rail button[data-view="play"]');

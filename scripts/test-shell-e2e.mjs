@@ -384,12 +384,12 @@ const state = (page) => page.evaluate(() => {
     await drag("e7", "e3");   // not a legal square: refused, no tap
     const afterRefused = await taps();
     await page.click('.rail-btn[data-view="settings"]');
-    await page.evaluate(() => document.getElementById("cat-sound").click());
+    await page.evaluate(() => document.getElementById("cat-general").click());   // 19.0 S4: 声音 is in 通用
     await page.waitForTimeout(300);
     const row = await page.evaluate(() => { const r = document.getElementById("row-haptics"); return !!r && !r.hidden && !!r.offsetParent; });
     if (can) {
       assert(afterDrop === 1 && afterRefused === 1, "12.0 N：拖一个子、落在能走的格子上 —— 触控板轻震一次；落在不能走的格子上不震（" + afterDrop + " / " + afterRefused + "）");
-      assert(row, "12.0 N：外壳能震的时候，设置 · 声音里有「触感反馈」");
+      assert(row, "12.0 N：外壳能震的时候，设置 · 通用的声音里有「触感反馈」");
       await page.evaluate(() => document.getElementById("opt-haptics").click());   // off (and no tap)
       const off = await taps();
       await page.click('.rail-btn[data-view="play"]'); await page.waitForTimeout(300);
@@ -645,21 +645,22 @@ const state = (page) => page.evaluate(() => {
     const ng = document.getElementById("newgame-modal");
     const at = (id, host) => !!document.querySelector("#" + host + " #" + id);
     return {
-      mode: has("mode-seg"), theme: has("appearance-seg") || has("board-pick-seg"), lang: has("lang-seg"), sound: has("opt-sound"),
-      pieces: has("piece-pick-seg"), data: has("alldata-export"), text: has("text-seg"), coords: has("opt-coords"),
-      diff: has("op-grid"), clock: has("clock-seg"), orient: has("orient-seg"), hash: has("hash-seg"),
+      mode: has("mode-seg"), theme: has("appearance-seg") || has("board-pick-seg"), lang: has("lang-seg"), sound: has("opt-volume"),
+      pieces: has("piece-pick-seg"), data: has("alldata-export"), text: has("text-seg"), coords: has("coords-seg"),
+      diff: has("op-grid"), clock: has("clock-seg"), multipv: has("multipv-seg"),
       panes: document.querySelectorAll(".side-pane").length, paneShown: !pane.hidden && pane.getClientRects().length > 0,
       tabs: document.querySelectorAll(".side-tabs, #tab-play, #tab-setup, #pane-setup, #prefs-modal, #prefs-open").length,
       ngRows: ["row-color", "row-clock"].every((id) => !!ng.querySelector("#" + id)) && at("row-persona", "ng-custom-body") && !document.getElementById("row-difficulty"),
       ngSegs: ["mode-seg", "op-grid", "clock-seg", "color-seg"].every((id) => !!ng.querySelector("#" + id)),
-      orientAt: at("orient-seg", "set-board"), hashAt: at("hash-seg", "set-advanced"),
+      gone: !document.getElementById("orient-seg") && !document.getElementById("hash-seg") && !document.getElementById("opt-sound"),
+      multipvAt: at("multipv-seg", "set-game"),
     };
   });
   assert(!side.mode, "A1: 模式分段不在侧栏");
   assert(!side.theme && !side.lang && !side.sound && !side.pieces && !side.data && !side.text && !side.coords,
     "A1: 外观、语言、声音、数据都不在侧栏(" + JSON.stringify(side) + ")");
-  assert(!side.diff && !side.clock && !side.orient && !side.hash && side.ngRows && side.ngSegs && side.orientAt && side.hashAt,
-    "S5: 对局相关的项各有去处 —— 对手卡 / 风格 / 执子 / 棋钟常驻新对局对话框,棋盘方向在设置·棋盘,引擎内存在设置·高级(" + JSON.stringify(side) + ")");
+  assert(!side.diff && !side.clock && !side.multipv && side.ngRows && side.ngSegs && side.gone && side.multipvAt,
+    "S5 × 19.0 S4: 对局相关的项各有去处 —— 对手卡 / 风格 / 执子 / 棋钟常驻新对局对话框,引擎线数在设置·对局;棋盘方向、引擎内存、音效开关没有了(" + JSON.stringify(side) + ")");
   assert(side.panes === 1 && side.paneShown && side.tabs === 0,
     "S5: 侧栏只剩一页,没有页签、偏好窗口;存下的「设置」页签打开时落在这一页(" + JSON.stringify(side) + ")");
   // Ctrl+, (⌘, on macOS) opens the settings page — a view, marked on the rail
@@ -668,7 +669,7 @@ const state = (page) => page.evaluate(() => {
   const opened = await state(page);
   assert(opened.view === "settings" && opened.current === "settings" && opened.settings && opened.stageInert,
     "S5: Ctrl+, 打开设置页,栏上标着「设置」(" + JSON.stringify(opened) + ")");
-  // six categories, a vertical tablist, one pane at a time (通用 first)
+  // four categories (six through 18.0), a vertical tablist, one pane at a time (通用 first)
   const cats = () => page.evaluate(() => {
     const list = document.querySelector("#page-settings .set-cats");
     const tabs = list ? [...list.querySelectorAll("[role=tab]")] : [];
@@ -685,8 +686,8 @@ const state = (page) => page.evaluate(() => {
   });
   const c0 = await cats();
   assert(c0.role === "tablist" && c0.orient === "vertical" && c0.controls &&
-    JSON.stringify(c0.ids) === JSON.stringify(["cat-general", "cat-board", "cat-sound", "cat-game", "cat-data", "cat-advanced"]),
-    "S5: 设置页左侧是竖排的六类:通用 / 棋盘 / 声音 / 对局 / 数据 / 高级(" + JSON.stringify(c0) + ")");
+    JSON.stringify(c0.ids) === JSON.stringify(["cat-general", "cat-board", "cat-game", "cat-data"]),
+    "19.0 S4: 设置页左侧是竖排的四类:通用 / 棋盘 / 对局 / 数据(" + JSON.stringify(c0) + ")");
   assert(JSON.stringify(c0.selected) === '["general"]' && JSON.stringify(c0.shown) === '["set-general"]' && JSON.stringify(c0.tabbable) === '["general"]',
     "S5: 头一回打开是「通用」,只显示这一类(" + JSON.stringify(c0) + ")");
   // where each row lives now: the window's rows and the old tab's rows, by category
@@ -694,16 +695,17 @@ const state = (page) => page.evaluate(() => {
     const at = (cat, id) => !!document.querySelector("#set-" + cat + " #" + id);
     return {
       general: at("general", "lang-seg") && at("general", "appearance-seg") && at("general", "text-seg")
-        && document.querySelectorAll("#set-general #lang-seg button").length === 3,
-      board: ["board-pick-seg", "frame-seg", "piece-pick-seg", "opt-coords", "coords-seg", "orient-seg", "opt-blind"].every((id) => at("board", id)),
-      sound: at("sound", "opt-sound"),
+        && document.querySelectorAll("#set-general #lang-seg button").length === 3
+        && ["opt-volume", "sound-set-seg"].every((id) => at("general", id)),
+      board: ["board-pick-seg", "frame-seg", "piece-pick-seg", "coords-seg", "opt-blind"].every((id) => at("board", id))
+        && document.querySelectorAll("#set-board #coords-seg button").length === 3,
       game: at("game", "row-coach") && at("game", "row-autoflip"),
       data: ["opt-netsync", "alldata-export", "alldata-import", "learning-export", "about-open", "learn-reset", "stats-clear", "clear-save"].every((id) => at("data", id)),
-      advanced: ["hash-seg", "multipv-seg", "opt-engine-arrows", "opt-softmark"].every((id) => at("advanced", id)),
+      engine: ["multipv-seg", "opt-live", "opt-engine-arrows", "opt-softmark"].every((id) => at("game", id)),
     };
   });
   assert(Object.values(where).every(Boolean),
-    "A1 × A3 × S5: 外观 / 语言 / 字号在通用,棋盘 / 边框 / 棋子 / 坐标在棋盘,声音、对局、数据、高级各在其类(" + JSON.stringify(where) + ")");
+    "A1 × A3 × S5 × 19.0 S4: 外观 / 语言 / 字号 / 声音在通用,棋盘 / 边框 / 棋子 / 坐标在棋盘,失着提醒与引擎在对局,数据在数据(" + JSON.stringify(where) + ")");
   // the ARIA tablist keyboard contract: ↓ / ↑ walk (and wrap), Home / End jump
   await page.focus("#cat-general");
   const walk = [];
@@ -713,8 +715,8 @@ const state = (page) => page.evaluate(() => {
     const c = await cats();
     walk.push(c.selected.join() + (c.focus === c.selected[0] && c.shown.join() === "set-" + c.selected[0] ? "" : "!"));
   }
-  assert(walk.join(" ") === "board sound advanced general advanced general advanced",
-    "S5: 方向键在六类间走、首尾相接,Home / End 到两头,焦点与显示的一类跟着走(" + walk.join(" ") + ")");
+  assert(walk.join(" ") === "board game data general data general data",
+    "S5: 方向键在四类间走、首尾相接,Home / End 到两头,焦点与显示的一类跟着走(" + walk.join(" ") + ")");
   // a click picks one, and the choice is remembered (setCat), page and all
   await page.click("#cat-board");
   await page.waitForTimeout(150);
@@ -870,7 +872,7 @@ for (const lang of ["en", "ja"]) {
   await page.waitForTimeout(900);
   await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
   const look = () => page.evaluate(() => ({
-    flipped: [...document.querySelectorAll("#orient-seg button")].filter((b) => b.classList.contains("active")).map((b) => b.dataset.orient)[0],
+    flipped: (window.__chess.flipped() ? "b" : "w"),
     panel: localStorage.getItem("chess.panelOpen") }));
   const fire = async (c) => { await page.evaluate((x) => window.__fire(x), c); await page.waitForTimeout(400); };
   // 9.0 S5: 设置 is one of the pages now
@@ -1329,15 +1331,15 @@ for (const v of ["home", "library", "me", "settings"]) {
   // ↓ moves the choice; a settings category by its name
   await page.keyboard.press(key);
   await page.waitForTimeout(300);
-  await page.keyboard.type("声音");
+  await page.keyboard.type("数据");
   await page.waitForTimeout(150);
   p = await pal();
-  assert(/设置 · 声音/.test(p.on), "A3：「声音」找到设置 · 声音", JSON.stringify(p.rows));
+  assert(/设置 · 数据/.test(p.on), "A3：「数据」找到设置 · 数据", JSON.stringify(p.rows));
   await page.keyboard.press("Enter");
   await page.waitForTimeout(500);
   const set = await page.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
     cat: (document.querySelector(".set-cat[aria-selected='true']") || {}).dataset?.cat }));
-  assert(set.view === "settings" && set.cat === "sound", "A3：…回车就到设置的那一类", JSON.stringify(set));
+  assert(set.view === "settings" && set.cat === "data", "A3：…回车就到设置的那一类", JSON.stringify(set));
   // a puzzle theme
   await page.keyboard.press(key);
   await page.waitForTimeout(300);
