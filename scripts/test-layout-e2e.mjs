@@ -745,7 +745,8 @@ if (scenario()) {
     // 数据 is not here, as the 偏好设置 window it came from never was: its
     // buttons open the OS file chooser or a download, which a headless page
     // cannot see happen.
-    ["双人·设置·棋盘", { mode: "pvp", tab: "settings", sel: "#page-settings .set-pane:not([hidden]) button[id], #page-settings .set-cat[id]", min: 7 },
+    // 19.0 S4: four categories, and 坐标 / 方向 no longer have buttons of their own
+    ["双人·设置·棋盘", { mode: "pvp", tab: "settings", sel: "#page-settings .set-pane:not([hidden]) button[id], #page-settings .set-cat[id]", min: 4 },
       async (page) => { await showCat(page, "board"); }],
     ["双人·设置·对局", { mode: "pvp", tab: "settings", sel: "#page-settings .set-pane:not([hidden]) button[id]", min: 4 },
       async (page) => { await showCat(page, "game"); }],
