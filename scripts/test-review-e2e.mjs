@@ -210,12 +210,14 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
   assert(a.gl >= a.railR, "…and clear of the rail (" + a.gl + " ≥ " + a.railR + ")");
   assert(Math.abs(a.fb - (a.gt + a.gh)) <= 1 && a.fh > a.gh / 2,
     "White ahead: the white fill rises from the bottom, White's side (" + Math.round(a.fh) + " of " + Math.round(a.gh) + ")");
-  await page.evaluate(() => document.querySelector('[data-orient="b"]').click());
+  // 19.0 S4: the settings page's 方向 buttons are gone — F turns the board
+  if (await page.evaluate(() => window.__chess.flipped()) !== true) { await page.evaluate(() => document.activeElement && document.activeElement.blur()); await page.keyboard.press("f"); }
   await settle(page);
   const b = await geo();
   assert(Math.abs(b.ft - b.gt) <= 1 && Math.abs(b.fh - a.fh) <= 1,
     "flipped: the same fill now hangs from the top, where White sits (" + Math.round(b.ft - b.gt) + "px from the top)");
-  await page.evaluate(() => document.querySelector('[data-orient="w"]').click());
+  // 19.0 S4: the settings page's 方向 buttons are gone — F turns the board
+  if (await page.evaluate(() => window.__chess.flipped()) !== false) { await page.evaluate(() => document.activeElement && document.activeElement.blur()); await page.keyboard.press("f"); }
   // back where the blocks below expect to start: the opening
   await page.evaluate(() => document.getElementById("rep-start").click());
   await settle(page);
