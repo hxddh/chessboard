@@ -207,6 +207,7 @@ async function openFilters(page) {
   // v8-0-plan A1: 记录 is two pages — 我的 (the entry, stats) and 棋谱 (the
   // library, the opening book, and the history (9.0 S4)); each is read while it shows
   await page.click('#rail button[data-view="me"]');
+  await page.waitForTimeout(400); // 19.0 S3: 我的 draws once its chunk is in
   const onMe = await read();
   await page.click('#rail button[data-view="library"]');
   const onLib = await read();
@@ -1681,6 +1682,7 @@ async function openFilters(page) {
     const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games: [
       { id: "g1", t: 1758000000000, white: "hxddh", black: "rival", result: "1-0", plies: 5, sans: "e4 e5 Nf3 Nc6 Bb5", side: "w", outcome: "win" }] }));
     const { page, errs } = await open(ctx);
+    await page.click('.rail-btn[data-view="me"]'); await page.waitForTimeout(600);
     const empty = await page.evaluate(() => !document.getElementById("record-empty").hidden);
     assert(!empty, "§5 库里有棋、别的都还没有:记录页不说「现在还空着」");
     assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
@@ -1689,10 +1691,16 @@ async function openFilters(page) {
   {
     const ctx = await freshContext();
     const { page, errs } = await open(ctx);
+    // 19.0 S3: 我的 draws when it opens (chunk-me.js) — read it there, as a person would
+    const atMe = async () => { await page.click('.rail-btn[data-view="me"]'); await page.waitForFunction(() => !document.getElementById("page-me").hidden, null, { timeout: 5000 }); await page.waitForTimeout(400); };
+    await atMe();
     const before = await page.evaluate(() => !document.getElementById("record-empty").hidden);
+    await page.click('.rail-btn[data-view="library"]'); await page.waitForTimeout(300);
     await importFile(page, PGN);
+    await atMe();
     const after = await page.evaluate(() => !document.getElementById("record-empty").hidden);
     assert(before && !after, "§5 空档案导入棋谱:入口卡片在导入那一刻让位(" + before + " → " + after + ")");
+    await page.click('.rail-btn[data-view="library"]'); await page.waitForTimeout(300);
     // (b) open one of them: a record, not a game of yours
     await page.click("#lib-open");
     await page.waitForTimeout(400);

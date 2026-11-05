@@ -2103,11 +2103,15 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   // then its renderers have no page to draw on and are skipped
   const MePage = {
     real: null,
-    onShow: () => { if (MePage.real) { MePage.real.onShow(); return; } loadChunk("chunk-me.js", "createMePage").then((create) => {
-      const m = MePage.real = MePage.real || create({ Icons, Progress, evalAch, libPlayedAt, loadStats, store, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n), Endgames: LessonsUI.Endgames, startEndgame: (id) => LessonsUI.startEndgame(id), Vis: PuzzlesUI.Vis, Metrics: ChessProgressMetrics, tdot, chartTokens, drawSpark });
-      m.renderTrends(); m.renderAchievements(); m.renderRecordEntry(); m.onShow();
-    }, () => {}); },
+    // …and warmed in idle time after launch, so the page is drawn before anyone opens it
+    warm: (show) => loadChunk("chunk-me.js", "createMePage").then((create) => {
+      if (MePage.real) { if (show) MePage.real.onShow(); return; }
+      const m = MePage.real = create({ Icons, Progress, evalAch, libPlayedAt, loadStats, store, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n), Endgames: LessonsUI.Endgames, startEndgame: (id) => LessonsUI.startEndgame(id), Vis: PuzzlesUI.Vis, Metrics: ChessProgressMetrics, tdot, chartTokens, drawSpark });
+      m.renderTrends(); m.renderAchievements(); m.renderRecordEntry(); if (show) m.onShow();
+    }, () => {}),
+    onShow: () => { if (MePage.real) MePage.real.onShow(); else MePage.warm(true); },
   };
+  setTimeout(() => (window.requestIdleCallback || setTimeout)(() => MePage.warm(false)), 2000);
   function renderTrends() { if (MePage.real) MePage.real.renderTrends(); }
   function renderAchievements() { if (MePage.real) MePage.real.renderAchievements(); }
   function renderRecordEntry() { if (MePage.real) MePage.real.renderRecordEntry(); }
