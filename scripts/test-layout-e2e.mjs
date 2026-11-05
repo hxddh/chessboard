@@ -1014,7 +1014,7 @@ if (scenario()) for (const tab of ["play", "settings"]) {
   } else out.push(...await past());
   for (const o of out) console.error("  past the panel edge: " + o);
   assert(out.length === 0,
-    tab + (tab === "settings" ? " 页(六类):没有控件被卡片边缘裁掉" : " 面板:没有控件被面板边缘裁掉") + (out.length ? " —— " + out.join(", ") : ""));
+    tab + (tab === "settings" ? " 页(四类):没有控件被卡片边缘裁掉" : " 面板:没有控件被面板边缘裁掉") + (out.length ? " —— " + out.join(", ") : ""));
   await ctx.close();
 }
 
@@ -2365,8 +2365,8 @@ if (scenario()) {
   const { ctx, page } = await open("zh-CN", "ai", "play");
   const kids = await page.evaluate(() => [...document.querySelector(".set-cats").children]
     .map((el) => el.getAttribute("role") + (document.getElementById(el.getAttribute("aria-controls") || "-") ? "" : "(no pane)")));
-  assert(kids.length === 6 && kids.every((r) => r === "tab"),
-    "the category list contains six tabs, each with its pane, and nothing else — got " + JSON.stringify(kids));
+  assert(kids.length === CATS.length && kids.every((r) => r === "tab"),
+    "the category list contains " + CATS.length + " tabs (19.0 S4: four), each with its pane, and nothing else — got " + JSON.stringify(kids));
   assert(await page.evaluate(() => !document.querySelector(".side-tabs, #side [role=tablist]")),
     "…and the panel has no tab row");
   // and the panel is still closable without it
