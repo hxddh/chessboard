@@ -2084,11 +2084,11 @@
        wide 「Win material」 and 「引き分け狙い」 broke inside an 83px cell;
        it steps down to two columns the same way (fit-row.js) */
     .theme-row.wrap.fit-row { grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); }
-    /* 7.7: 为你出一题 stands alone on its row, and one 70px track is narrower
+    /* 7.7: 按主题细分 stands alone on its row, and one 70px track is narrower
        than its five characters plus the 8px sides §1a gave every .act-btn —
-       it broke after 一, leaving 题 on a line of its own. Two tracks, still
-       not the full width (see auto-fill above). */
-    #puzzle-smart, #pz-themes-open { grid-column: span 2; }
+       it broke after the first character. Two tracks, still not the full
+       width (see auto-fill above). 19.0 S6 took 为你出一题, its row-mate. */
+    #pz-themes-open { grid-column: span 2; }
     /* The three weights this family has, and nothing else.
      *
      *   default   — a thing you can do
@@ -4326,7 +4326,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .train-seg { margin: 12px 0 4px; }
 .classic-mode { margin: 12px 0; } /* 15.0 F: a step under the switch too, as under every segment */
 /* 9.0 S3 — the picker under the puzzle (v9.css .train__hero / .tiles /
-   .modes): the rating with its curve and 为你出一题 in one card, the review
+   .modes): the rating with its curve in one card (19.0 S6: 为你出一题 is 下一题's rule now), the review
    queue as a row, the six kinds as tiles, the runs as two labelled rows.
    The first block of the picker starts a group. */
 #sec-puzzle > .pz-hero { margin-top: 12px; }
@@ -4348,7 +4348,6 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .pz-hero-more { flex-basis: 100%; font-size: 0.875rem; font-weight: 400; color: var(--muted); }
 .pz-rating-soon { font-size: 0.75rem; color: var(--muted); align-self: center; }
 #pz-hero #pz-rating-curve { height: 40px; border-bottom: 0; }
-#puzzle-smart { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; }
 .pz-review {
   appearance: none; cursor: pointer; font: inherit; color: var(--text); text-align: left;
   display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 12px;
@@ -4401,9 +4400,6 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .pz-vis-row .tool-btn { height: var(--ctl-h); white-space: nowrap; }
 #pz-vis .lesson-controls { margin: 8px 0 0; }
 #pz-vis .lesson-controls:not(:has(> :not([hidden]))) { display: none; }
-/* the nudge's row with its one button hidden is still a box, and a flex
-   gap is paid for every box — an empty one is not a block of the page */
-#sec-puzzle > .link-row:not(:has(> :not([hidden]))) { display: none; }
 /* …nor is 重做 / 下一题's row while a run has hidden both (8 / 20, not 16) */
 #sec-puzzle > .lesson-controls:not(:has(> :not([hidden]))) { display: none; }
 

@@ -2165,8 +2165,8 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
       // the same moment. The lesson chip above already settled what a chip is
       // for: where you are, not what the thing is called. Same answer here.
       // Which puzzle, of what kind; the goal, the detail and where it came
-      // from stay on the card, which is a box that wraps.
-      return tdot(tf("pz.nth", [store.session.puzzle.idx + 1]), t("pz.cat." + store.session.puzzle.p.cat));
+      // from stay on the card, which is a box that wraps. 19.0 S6: of what kind only — the card's 「一步杀 #30」 is the one number
+      return t("pz.cat." + store.session.puzzle.p.cat);
     }
     const g = viewGame();
     if (!isLive()) return tf("st.replayAt", [store.game.viewIndex, sanHistory().length]);
@@ -2587,7 +2587,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
       // black drills swap the chairs: the book plays White, you answer
       const asBlack = !!(store.session.puzzle && store.session.puzzle.p.side === "b");
       const you = { icon: "user", name: t(asBlack ? "role.youB" : "role.you"), level: "" };
-      const pr = store.session.puzzle ? PuzzlesUI.puzzleRatingOf(store.session.puzzle.p) : null;
+      const pr = store.session.puzzle ? store.session.puzzle.shownR : null; // 19.0 S6: as the puzzle started
       const book = { icon: "puzzle", name: t("role.puzzle"), level: pr != null ? tf("pz.ratingOf", [pr]) : "" };
       return asBlack ? { w: book, b: you } : { w: you, b: book };
     }
@@ -3000,8 +3000,8 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     const wants = card ? (unanalysed && !engineDown ? "go-analyse" : "go-again")
       : over && unanalysed ? "an-run" : null;
     for (const b of document.querySelectorAll(".act-btn.primary")) {
-      // not this function's: the pages' fills (7.9 §4a), 为你出一题 (9.0 S3), the trainers' bar (15.0 S3)
-      if (b.id !== wants && !b.closest(".page, .pz-hero, #tr-bar")) b.classList.remove("primary");
+      // not this function's: the pages' fills (7.9 §4a), the trainers' bar (15.0 S3)
+      if (b.id !== wants && !b.closest(".page, #tr-bar")) b.classList.remove("primary");
     }
     if (wants) {
       const b = el(wants);
@@ -3329,7 +3329,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   // v10-0-plan T1: the first-run question and its placement (onboarding.js, chunk-onboarding.js)
   const runOnboarding = () => loadChunk("chunk-onboarding.js", "createOnboarding").then((create) => create({
     t, store, startLearn, setPanelOpen, panelCoversBoard, saveSettings, maybeEngineTurn,
-    pickFromList: (...a) => pickFromList(...a), startPlacement, goHome: () => Shell.go("home"),
+    pickFromList: (...a) => pickFromList(...a), startPlacement, savePuzzleState, goHome: () => Shell.go("home"),
   }).run(), () => {});
 
   // --- position editor + FEN loading ---
@@ -4361,7 +4361,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   // 9.0 S1: 今天 — the page around the coach's card (today-page.js)
   const TodayPage = createTodayPage({ doc: document, store, t, tf, tdot, Chess, pieceSrc: (k, px) => BoardView.pieceSrc(k, px), LESSONS, lessonText, Endgames: LessonsUI.Endgames,
     CLASSICS: LessonsUI.CLASSICS, classicsTotal: LessonsUI.classicsTotal, classicText: LessonsUI.classicText, loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText: () => ratingLabel(),
-    drawRatingTrend, Shell, playNext: () => GameCtl.playNext() });
+    drawRatingTrend, Shell, playNext: () => GameCtl.playNext(), smartPuzzle: () => PuzzlesUI.smartNext() });
   TodayPage.wire();
   // v10-0-plan A1: 分析一局 — into the review in one step — and the blank analysis board
   const AnalyseEntry = createAnalyseEntry({ doc: document, t, Persist, Dlg, openPgnFile: (s) => openPgnFile(s), importPgnText: (x, l) => importPgnText(x, l, undefined, true),

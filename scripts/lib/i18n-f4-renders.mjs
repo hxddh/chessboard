@@ -17,6 +17,8 @@
  * 复习·N tab label with the category row it sat in. v15-0-plan S1 renamed
  * the review on purpose — 分析 / 持续分析 → 复盘 / 实时引擎 (Analyse → Review,
  * 解析・検討 → 振り返り) — and with it the rows that quote those words.
+ * 19.0 S6 deleted the puzzle chip's 「第 3 题 · 战术」: a puzzle has one
+ * number now, the card's, and the chip names the kind alone.
  *
  * Row: [id, (t, tf, tdot, diff) => text, zh-CN, en, ja]
  */
@@ -55,8 +57,6 @@ export const F4_RENDERS = [
     "编辑局面中 · 可开始对局", "Editing position · ready to play", "局面を編集中 · 対局開始できます"],
   ["learn.lessonN", (t, tf, tdot, diff) => tf("learn.lessonN", [97]),
     "第 97 课", "Lesson 97", "第 97 課"],
-  ["pz.chip", (t, tf, tdot, diff) => tdot(tf("pz.nth", [3]), t("pz.cat.tac")),
-    "第 3 题 · 战术", "Puzzle 3 · Tactics", "第 3 問 · 戦術"],
   ["st.replayAt", (t, tf, tdot, diff) => tf("st.replayAt", [4, 31]),
     "复盘 4/31", "Review 4/31", "振り返り 4/31"],
   ["st.check", (t, tf, tdot, diff) => tdot(t("turn.white"), t("turn.check")),

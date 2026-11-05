@@ -336,12 +336,9 @@
         <p class="hint" id="puzzle-idea" hidden></p>
         <div class="lesson-controls fit-row fit-fill">
           <button type="button" class="tool-btn" id="puzzle-retry" title="重新开始本题 (R)" data-i18n-title="tip.puzzle.retry" data-i18n="act.puzzleRetry">重来</button>
-          <button type="button" class="tool-btn" id="puzzle-next" title="下一道未解的题 (N)" data-i18n-title="tip.puzzle.next" data-i18n="act.puzzleNext">下一题</button>
+          <button type="button" class="tool-btn" id="puzzle-next" title="下一道：先清欠的复习，再按你的水平出 (N)" data-i18n-title="tip.puzzle.next" data-i18n="act.puzzleNext">下一题</button>
           <button type="button" class="tool-btn" id="puzzle-playon" hidden title="从这个开局局面接着与引擎对弈" data-i18n-title="tip.playOn" data-i18n="act.playOn">接实战</button>
           <button type="button" class="tool-btn" id="puzzle-source" hidden title="打开这道题挖出来的那一局，停在那一手" data-i18n-title="tip.drillSource" data-i18n="act.drillSource">看那局棋</button>
-        </div>
-        <div class="link-row">
-          <button type="button" class="act-btn" id="puzzle-review-nudge" hidden></button>
         </div>
         <div class="pz-hero" id="pz-hero">
           <div class="pz-hero-top" id="pz-rating">
@@ -352,7 +349,6 @@
             <canvas id="pz-rating-curve" aria-label="谜题等级分走势" data-i18n-aria="aria.trendRating" title="最近 60 次首答后的谜题等级分" data-i18n-title="tip.trendRating"></canvas>
             <span class="pz-rating-soon" id="pz-rating-soon" hidden></span>
           </div>
-          <button type="button" class="act-btn primary" id="puzzle-smart" title="按你的复习欠账和错误率挑下一题" data-i18n-title="tip.puzzle.smart"><span data-icon="zap" aria-hidden="true"></span><span data-i18n="pz.smart">为你出一题</span></button>
         </div>
         <button type="button" class="pz-review" id="pz-review">
           <span class="pz-review-ic" data-icon="rotate-ccw" aria-hidden="true"></span>
@@ -375,10 +371,9 @@
             <div class="pz-tiles" id="pz-groups" role="group" aria-label="按类做题" data-i18n-aria="pz.groups">
               <button type="button" class="pz-tile" data-group="mate" aria-pressed="false" title="一步、两步、三步将死，内置题与 Lichess 题一起" data-i18n-title="tip.grp.mate"><span class="pz-tile-ic" data-icon="crown" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.mate">杀棋</span><span class="pz-tile-n num"></span></button>
               <button type="button" class="pz-tile" data-group="tactic" aria-pressed="false" title="捉双、牵制、串击、闪击 —— 净得子力的一手" data-i18n-title="tip.grp.tactic"><span class="pz-tile-ic" data-icon="swords" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.tactic">战术</span><span class="pz-tile-n num"></span></button>
-              <button type="button" class="pz-tile" data-group="endgame" aria-pressed="false" title="车兵、后、轻子与兵残局里的那一手" data-i18n-title="tip.grp.endgame"><span class="pz-tile-ic" data-icon="hourglass" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.endgame">残局</span><span class="pz-tile-n num"></span></button>
+              <button type="button" class="pz-tile" data-group="endgame" aria-pressed="false" title="车兵、后、轻子与兵残局里的那一手" data-i18n-title="tip.grp.endgame"><span class="pz-tile-ic" data-icon="hourglass" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.endgame">残局题</span><span class="pz-tile-n num"></span></button>
               <button type="button" class="pz-tile" data-group="defense" aria-pressed="false" title="对方下一步就要将死或得子，找出守得住的一手" data-i18n-title="tip.grp.defense"><span class="pz-tile-ic" data-icon="shield" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.defense">防守</span><span class="pz-tile-n num"></span></button>
               <button type="button" class="pz-tile" data-group="opening" aria-pressed="false" title="照谱走主流开局，执白执黑都能练" data-i18n-title="tip.grp.opening"><span class="pz-tile-ic" data-icon="book-open" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.opening">开局</span><span class="pz-tile-n num"></span></button>
-              <button type="button" class="pz-tile" data-group="mine" aria-pressed="false" title="你自己对局里的失着，重摆一遍找对的那手" data-i18n-title="tip.grp.mine"><span class="pz-tile-ic" data-icon="circle-x" aria-hidden="true"></span><span class="pz-tile-name" data-i18n="pz.grp.mine">我的错题</span><span class="pz-tile-n num"></span></button>
             </div>
           </div>
           <div class="pz-modes" id="pz-modes">

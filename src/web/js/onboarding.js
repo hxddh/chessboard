@@ -27,6 +27,12 @@
 
 /** Where each self-assessment starts its placement (a puzzle rating). */
 export const PLACE_BASE = { knows: 900, often: 1400 };
+/**
+ * 19.0 S6: where 没下过棋 starts the puzzle rating — not the 1500 a fresh
+ * rating is. Provisional (rd 350, rating.js's fresh deviation): it is a
+ * guess, and the first answers move it fast.
+ */
+export const NEW_RATING = { r: 800, rd: 350, vol: 0.06 };
 
 /**
  * @param {object} d what the question needs from app.js
@@ -34,7 +40,7 @@ export const PLACE_BASE = { knows: 900, often: 1400 };
 export function createOnboarding(d) {
   const {
     t, store, pickFromList, startLearn, startPlacement, setPanelOpen, panelCoversBoard,
-    saveSettings, maybeEngineTurn, goHome,
+    saveSettings, maybeEngineTurn, goHome, savePuzzleState,
   } = d;
 
   async function run() {
@@ -53,6 +59,10 @@ export function createOnboarding(d) {
       // …and the engine they meet after the first lessons is the one built
       // for them (7.6 §3a)
       store.session.difficulty = "beginner";
+      // 19.0 S6: and the puzzles meet them near 800, not at 1500 — an answer
+      // that has a rating already (an imported profile) is left alone
+      const st = store.session.puzzleState;
+      if (st && !st.rating && savePuzzleState) { st.rating = Object.assign({}, NEW_RATING); savePuzzleState(); }
       startLearn();
     } else if (choice !== 1 && choice !== 2) {
       store.session.mode = "ai";

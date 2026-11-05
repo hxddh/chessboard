@@ -48,7 +48,8 @@ export const isThemeCat = (cat) => typeof cat === "string" && cat.startsWith(THE
  */
 export const GROUP_CAT = "grp:";
 export const isGroupCat = (cat) => typeof cat === "string" && cat.startsWith(GROUP_CAT);
-export const PUZZLE_GROUPS = ["mate", "tactic", "endgame", "defense", "opening", "mine"];
+// 19.0 S6: 我的错题 went into 复习 (the drills are queued there the moment they are mined)
+export const PUZZLE_GROUPS = ["mate", "tactic", "endgame", "defense", "opening"];
 /** The endings the importer verifies (trainer/themes.js): 残局 is these. */
 const ENDINGS = ["knightEnding", "bishopEnding", "queenEnding", "queenRookEnding", "pawnEnding", "rookEnding"];
 /** A pooled group's categories, in both books (a Lichess puzzle has one too). */
@@ -58,7 +59,6 @@ export function groupOfCat(cat) {
   if (isGroupCat(cat)) return cat.slice(GROUP_CAT.length);
   for (const g of Object.keys(GROUP_CATS)) if (GROUP_CATS[g].includes(cat)) return g;
   if (cat === "op" || cat === "rep" || cat === "repdue") return "opening";
-  if (cat === "mine") return "mine";
   return null;
 }
 /** Is `p` in the pooled group `g`? Endings by their verified themes. */
@@ -324,7 +324,7 @@ export function createPuzzleModes(d) {
   function goGroup(g) {
     endRun();
     store.session.run = null;
-    const cat = g === "opening" ? "op" : g === "mine" ? "mine" : GROUP_CAT + g;
+    const cat = g === "opening" ? "op" : GROUP_CAT + g;
     store.session.puzzleState.cat = cat;
     savePuzzleState();
     if (store.session.mode !== "puzzle") switchMode("puzzle"); // startPuzzles → startGroup
@@ -751,10 +751,10 @@ export function createPuzzleModes(d) {
       setText(el("pz-run-again"), t(place ? "run.toToday" : "run.again"));
       // practice's own controls stand down while a run owns the board (the
       // panel's paint sets the last three afresh on every sync)
-      for (const id of ["puzzle-review-nudge", "row-op-side"]) avail(el(id), false);
+      avail(el("row-op-side"), false);
     }
     avail(el("puzzle-retry"), !run);
-    avail(el("puzzle-next"), !run);
+    avail(el("puzzle-next"), !run || !!run.over); // 19.0 S6: and over, it is the way back to practice
     // the picker is practice's: a run owns the board until it is over, and
     // then the picker is the way on (its score card stays above it)
     const picking = !run || !!run.over;

@@ -383,10 +383,9 @@ await page.waitForTimeout(400);
 {
   const tiles = await page.evaluate(() => [...document.querySelectorAll("#pz-groups button[data-group]")]
     .filter((b) => !b.hidden).map((b) => ({ g: b.dataset.group, n: (b.querySelector(".pz-tile-n") || {}).textContent || "" })));
-  // v10-0-plan T2: 我的错题 is the sixth even when empty — it says how it
-  // fills instead of a count, and is checked on its own (the mines block)
-  assert(tiles.length === 6 && tiles[5].g === "mine" && !/\d/.test(tiles[5].n),
-    "9.0 S3 / 10.0 T2：五块按类做题，加上没有题时也在的我的错题", JSON.stringify(tiles));
+  // 19.0 S6: five — 我的错题 went into 复习 (checked in the mines block)
+  assert(tiles.length === 5 && !tiles.some((x) => x.g === "mine"),
+    "9.0 S3 / 19.0 S6：五块按类做题，没有单独的我的错题", JSON.stringify(tiles));
   for (const { g, n } of tiles.filter((x) => x.g !== "mine")) {
     await openPzMore(page); await page.click('#pz-groups button[data-group="' + g + '"]');
     let r = null;
@@ -526,8 +525,10 @@ if (hasTab && REAL.length) {
     await page.waitForTimeout(1000);
     return { ctx, page };
   };
+  // 19.0 S6: 为你出一题 is no button of the puzzle panel's (下一题 runs its
+  // rule past a puzzle); 今天's 题 card is the pick from a standing start
   const smart = async (page) => {
-    await page.click("#puzzle-smart");
+    await page.evaluate(() => document.getElementById("today-puzzle").click());
     await page.waitForTimeout(500);
     return page.evaluate(() => ({
       toast: document.getElementById("toast").textContent.trim(),
@@ -586,7 +587,7 @@ if (hasTab && REAL.length) {
   // the same page, the other mouth: the toast must name the same category
   // 9.0: the tally is on 我的, 为你出一题 on 训练 · 谜题
   await toTrain(pg, "puzzle");
-  await pg.click("#puzzle-smart");
+  await pg.evaluate(() => document.getElementById("today-puzzle").click()); // 19.0 S6: 今天's 题 card is 为你出一题
   await pg.waitForTimeout(500);
   const toast2 = await pg.evaluate(() => document.getElementById("toast").textContent.trim());
   assert(/防守.*错得最多/.test(toast2), "推荐 toast 与记录页标的是同一个类别", toast2);
@@ -828,19 +829,18 @@ if (hasTab && REAL.length) {
     pg.on("pageerror", (e) => errs.push(e.message));
     await pg.goto(`http://127.0.0.1:${PORT}/`);
     await pg.waitForTimeout(900);
-    // v10-0-plan T2: there all the same, saying how it fills; pressed, it
-    // explains itself and leaves the puzzle on the board alone
+    // 19.0 S6: no 我的错题 tile — the drills are 复习's. With neither, 复习
+    // says how it fills and leaves the puzzle on the board alone
     const empty = await pg.evaluate(() => {
-      const b = document.querySelector('#pz-groups button[data-group="mine"]');
       const before = document.getElementById("puzzle-task").textContent;
-      b.click();
-      return { hidden: b.hidden, n: b.querySelector(".pz-tile-n").textContent, active: b.classList.contains("active"),
+      document.getElementById("pz-review").click();
+      return { tile: !!document.querySelector('#pz-groups button[data-group="mine"]'),
         same: document.getElementById("puzzle-task").textContent === before };
     });
     await pg.waitForTimeout(200);
     const said = await pg.evaluate(() => document.getElementById("toast").textContent);
-    assert(!empty.hidden && empty.n === "复盘一局就有" && !empty.active && empty.same && /自动加进来/.test(said),
-      "T2: 没有错题时「我的错题」也在，写着怎么攒；点它说明来历，不换题", JSON.stringify(empty) + " " + said);
+    assert(!empty.tile && empty.same && /会进复习/.test(said),
+      "19.0 S6: 没有「我的错题」这一块；没有错题时点复习说明来历，不换题", JSON.stringify(empty) + " " + said);
     await ctx2.close();
   }
 
@@ -872,11 +872,10 @@ if (hasTab && REAL.length) {
   const toastText = () => pg.evaluate(() => document.getElementById("puzzle-feedback").textContent.trim());
 
   // the tab exists, the first drill is served, and the goal names the sin
-  const seg = await pg.evaluate(() => {
-    const b = document.querySelector('#pz-groups button[data-group="mine"]');
-    return { hidden: b.hidden, active: b.classList.contains("active"), n: b.querySelector(".pz-tile-n").textContent };
-  });
-  assert(!seg.hidden && seg.active && /2/.test(seg.n), "有错题时「我的错题」这一块出现、被选中、数着 2 道", JSON.stringify(seg));
+  // 19.0 S6: the personal drills are 复习's — its card is lit while they are on the board
+  const seg = await pg.evaluate(() => ({ active: document.getElementById("pz-review").classList.contains("active"),
+    tile: !!document.querySelector('#pz-groups button[data-group="mine"]') }));
+  assert(seg.active && !seg.tile, "有错题时做的是「复习」里的错题（复习亮着，没有单独的「我的错题」）", JSON.stringify(seg));
   const goal = await pg.evaluate(() => document.getElementById("puzzle-task").textContent || "");
   assert(/e4/.test(goal) && /更强/.test(goal) && /3\.5/.test(goal),
     "题面写明实战走了 e4、当时亏 3.5 分", goal.trim());
@@ -1306,7 +1305,7 @@ if (hasTab && REAL.length) {
 // 7.2 的顶栏 chip 直接返回 puzzleGoalText():
 //   顶栏  「实战里你走了 d3 —— 找出更强的一手 · 当时亏 3.2 分」
 //   题面  「第 1 题 · 实战里你走了 d3 —— 找出更强的一手 · 当时亏 3.2 分 · 评级 1500」
-// 一字不差。现在顶栏说「第几题 · 哪一类」,题面说目标、细节与来源。
+// 一字不差。现在顶栏说哪一类(19.0 S6: 不再说第几题),题面说目标、细节与来源。
 // 三语各跑一遍:重复是从一句共用的文案里来的,不是从中文里来的。
 {
   const MINE = [{ id: "mine:a", cat: "mine",
@@ -1351,8 +1350,8 @@ if (hasTab && REAL.length) {
     })();
     assert(!shared, lang + ":两处没有 8 字以上的重叠" + (shared ? "(「" + shared + "」)" : ""),
       JSON.stringify(seen));
-    // 顶栏确实说了「第几题」——这是它接手的那件事
-    assert(/\d/.test(seen.chip), lang + ":顶栏报出第几题", seen.chip);
+    // 19.0 S6: 顶栏只说哪一类 —— 「第几题」删了,一道题只有一个编号(题面的)
+    assert(!/\d/.test(seen.chip) && seen.chip.length > 0, lang + ":顶栏只报哪一类,不另报第几题", seen.chip);
     // 这里原本还断言「题面上没有四位数的评级」—— 写错了。B1 定下的规则是
     // 背谱类(op / rep)不进评级,**别的都进**,错题也在内(isRatedCat =
     // !isOpeningCat)。错题的题面本来就该带着它的评级,7.2 起的既有断言也是

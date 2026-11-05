@@ -753,7 +753,7 @@ if (scenario()) {
       async (page) => { await showCat(page, "game"); }],
     // 9.0 S3: 训练's own controls — the switch over the panel (the segment
     // you are on excepted, as the tab you are on is), and the puzzle picker:
-    // 为你出一题, 复习, the six kinds, 换个练法, 按主题细分. Most carry no id,
+    // 复习, the five kinds, 换个练法, 按主题细分 (19.0 S6: 为你出一题 went). Most carry no id,
     // so they are found again by their group and their data attribute.
     ["训练·谜题·选题器", { mode: "puzzle", tab: "play", min: 12,
       sel: "#train-seg button, #pz-hero button, #pz-review, #pz-groups button, #pz-modes button, #pz-themes-row button" },
@@ -1354,7 +1354,12 @@ if (scenario()) {
     const b = await blank(page);
     const unit = await page.evaluate((sg) => sg === "puzzle" ? !document.getElementById("pz-about").hidden
       : !document.getElementById("lesson-unit").hidden && !!document.querySelector("#lesson-unit .lesson-item.current"), seg);
-    assert(b <= 30 && unit, "12.0 L:训练·" + seg + " 右栏下半有这一单元 / 这一类,空白 " + b + "%(≤ 30%)");
+    // 19.0 S6: the puzzle panel lost 为你出一题 (one primary, 下一题, is left) —
+    // 48px less at 1400×900, 35% measured. A deliberate exception, written
+    // down in docs/v19-0-plan.md §10: filling the space back would undo the
+    // subtraction. Course and endgame keep 30%.
+    const most = seg === "puzzle" ? 36 : 30;
+    assert(b <= most && unit, "12.0 L:训练·" + seg + " 右栏下半有这一单元 / 这一类,空白 " + b + "%(≤ " + most + "%)");
     await ctx.close();
   }
 }
@@ -2476,6 +2481,7 @@ if (scenario()) {
 // whole control half again as tall, in English only.
 // 9.0 S3: the ten types are six tiles (#pz-groups: 杀棋 战术 残局 防守 开局,
 // and 我的错题 once the personal book holds drills) over 换个练法's two rows.
+// 19.0 S6: five — 我的错题 went into 复习, 残局 is 残局题.
 // The same claims, of them: three across, one height, no name or count cut
 // (a tile's name ellipsizes, so "cut" is its own scrollWidth), and the two
 // rows' labels and buttons whole too.
@@ -2513,9 +2519,9 @@ if (scenario()) {
   for (const lang of LANGS) {
     const { ctx, page } = await open(lang, "puzzle", "play");
     const seg = await pickerFits(page);
-    // v10-0-plan T2: 我的错题 is drawn with no drills too, saying how it fills
-    assert(seg.n === 6 && seg.groups === "mate,tactic,endgame,defense,opening,mine",
-      lang + ": five kinds and 我的错题, there with no drills (" + seg.groups + ")");
+    // 19.0 S6: five kinds — 我的错题 went into 复习
+    assert(seg.n === 5 && seg.groups === "mate,tactic,endgame,defense,opening",
+      lang + ": five kinds, no 我的错题 tile (" + seg.groups + ")");
     assert(seg.cols === 3, lang + ": the tiles lay out three across (" + seg.cols + ")");
     assert(seg.heights.length === 1 && seg.named, lang + ": every tile is one height and named (" + seg.heights.join(", ") + ")");
     assert(seg.tight.length === 0, lang + ": no kind's name or count is cut" + (seg.tight.length ? " — " + seg.tight.join(", ") : ""));
@@ -2524,8 +2530,9 @@ if (scenario()) {
       lang + ": 换个练法's two rows: labels and buttons whole, one height (" + seg.modeCut.join(", ") + "; " + seg.modeH.join(", ") + ")");
     await ctx.close();
   }
-  // …and when the personal book holds drills the 我的错题 tile is drawn: six
-  // must still be one height each, in the widest language too
+  // …and an 18.0 profile left on its personal drills (cat "mine") still
+  // loads: the drills are 复习's now, its card lit, the five tiles whole
+  // (19.0 S6: it was the 我的错题 tile, drawn sixth)
   for (const lang of LANGS) {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: lang });
     await ctx.addInitScript(([l]) => {
@@ -2541,10 +2548,11 @@ if (scenario()) {
     await page.goto(`http://127.0.0.1:${PORT}/`);
     await page.waitForTimeout(900);
     const seg = await pickerFits(page);
-    assert(seg.n === 6 && /mine/.test(seg.groups) && seg.heights.length === 1,
-      lang + ": with the personal book drawn, six kinds are still one height (" + seg.groups + "; " + seg.heights.join(", ") + ")");
-    assert(seg.tight.length === 0,
-      lang + ": the 我的错题 tile fits its cell" + (seg.tight.length ? " — " + seg.tight.join(", ") : ""));
+    const lit = await page.evaluate(() => document.getElementById("pz-review").classList.contains("active"));
+    assert(seg.n === 5 && !/mine/.test(seg.groups) && seg.heights.length === 1 && lit,
+      lang + ": on the personal drills 复习 is lit and the five kinds are one height (" + seg.groups + "; " + seg.heights.join(", ") + ")");
+    assert(seg.tight.length === 0 && seg.review.length === 0,
+      lang + ": the tiles and the 复习 card fit" + (seg.tight.length || seg.review.length ? " — " + seg.tight.concat(seg.review).join(", ") : ""));
     await ctx.close();
   }
 }

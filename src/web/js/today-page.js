@@ -35,7 +35,7 @@ export function createTodayPage(d) {
   const {
     doc, store, t, tf, tdot, Chess, pieceSrc, LESSONS, lessonText, Endgames, CLASSICS, classicsTotal, classicText,
     loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText, drawRatingTrend,
-    Shell, playNext,
+    Shell, playNext, smartPuzzle,
   } = d;
   const $ = (id) => doc.getElementById(id);
   const put = (node, s) => { if (node && node.textContent !== s) node.textContent = s; };
@@ -261,7 +261,7 @@ export function createTodayPage(d) {
     if (nw) nw.onclick = () => playNext();
     // …and 为你出一题, the puzzle page's own pick, without stopping on its segment
     const pz = $("today-puzzle");
-    if (pz) pz.onclick = () => { Shell.openTrain("puzzle"); const b = $("puzzle-smart"); if (b) b.click(); };
+    if (pz) pz.onclick = () => { Shell.openTrain("puzzle"); smartPuzzle(); };
     const all = $("today-all-games");
     if (all) all.onclick = () => Shell.go("library");
     const cont = $("today-cont");

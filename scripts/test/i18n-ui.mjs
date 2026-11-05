@@ -958,10 +958,11 @@ export async function run() {
     {
       const modesSrc = fs.readFileSync(path.join(root, "src/web/js/trainer/puzzle-modes.js"), "utf8");
       const groups = /export const PUZZLE_GROUPS = \[([^\]]*)\]/.exec(modesSrc);
-      assert(groups && groups[1].replace(/\s/g, "") === '"mate","tactic","endgame","defense","opening","mine"',
-        "S3: six kinds — 杀棋 / 战术 / 残局 / 防守 / 开局 / 我的错题 (" + (groups ? groups[1] : "missing") + ")");
+      // 19.0 S6: five — 我的错题 went into 复习
+      assert(groups && groups[1].replace(/\s/g, "") === '"mate","tactic","endgame","defense","opening"',
+        "S3: five kinds — 杀棋 / 战术 / 残局题 / 防守 / 开局 (" + (groups ? groups[1] : "missing") + ")");
       const tiles = [...html.matchAll(/data-group="([a-z]+)"/g)].map((m) => m[1]);
-      assert(tiles.join() === "mate,tactic,endgame,defense,opening,mine", "S3: a tile per kind, in that order (" + tiles.join() + ")");
+      assert(tiles.join() === "mate,tactic,endgame,defense,opening", "S3: a tile per kind, in that order (" + tiles.join() + ")");
       assert(/function groupList\(g\) \{\s*return localInGroup\(g\)\.concat\(lcPool\(\)\.filter/.test(modesSrc),
         "S3: a kind pools the built-in book and the Lichess bands");
       assert(!/row-puzzle-tier|puzzle-tier-seg|puzzle-cat-seg|tierApplies/.test(html + appSrc),

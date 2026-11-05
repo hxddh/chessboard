@@ -283,10 +283,11 @@ const hasMateIn = (g, n) => {
   assert(/^一步杀 #\d+ · 白先( · |$)/.test(goal) && !/步内将死/.test(goal), "12.0 F: 题面不把「一步杀」说两遍", goal);
   // …shown, not filed: a rating is written by an answer, never by the view
   // (test-library-e2e: a rote drill must leave `rating` unset)
-  // v11-0-plan U3: two layers — 为你出一题 and the reviews on top, the kinds
-  // and the runs one fold down under 更多练法, shut until asked for
-  assert(await hf.shown("#puzzle-smart") && await hf.shown("#pz-review") && !(await hf.shown("#pz-groups-sec")) && !(await hf.shown("#pz-modes")),
-    "11.0 U3: 上层只有「为你出一题」和复习，按类做题与挑战收在「更多练法」里");
+  // v11-0-plan U3: two layers — the rating and the reviews on top, the kinds
+  // and the runs one fold down under 更多练法, shut until asked for (19.0 S6:
+  // 为你出一题 went; 下一题 runs its rule)
+  assert(await hf.shown("#pz-hero") && await hf.shown("#pz-review") && !(await hf.shown("#pz-groups-sec")) && !(await hf.shown("#pz-modes")),
+    "11.0 U3: 上层只有评级和复习，按类做题与挑战收在「更多练法」里");
   await openPzMore(fresh.page);
   assert(!(await hf.shown("#pz-run")) && await hf.shown("#pz-groups-sec"), "c: 新档案在练习里（没有挑战在跑，按类做题在）");
   await fresh.page.evaluate(() => document.getElementById("puzzle-next").click());
@@ -785,10 +786,9 @@ async function solveCurrent(page, h) {
   const tiles = await page.evaluate(() => [...document.querySelectorAll("#pz-groups button[data-group]")].map((b) => ({ g: b.dataset.group, hidden: b.hidden, n: b.querySelector(".pz-tile-n").textContent, on: b.classList.contains("active") })));
   const mateN = localMate.length + MATE.reduce((n, id) => n + (LC_INDEX.themes[id] ? LC_INDEX.themes[id].n : 0), 0);
   const mate = tiles.find((x) => x.g === "mate");
-  // v10-0-plan T2: 我的错题 is there with no drills, saying how it fills
-  assert(tiles.map((x) => x.g).join() === "mate,tactic,endgame,defense,opening,mine" && !tiles.find((x) => x.g === "mine").hidden &&
-    tiles.find((x) => x.g === "mine").n === "复盘一局就有",
-    "m: 六块按类做题，没有错题时「我的错题」也在、写着怎么攒", JSON.stringify(tiles.map((x) => x.g + (x.hidden ? "(隐)" : ""))));
+  // 19.0 S6: five — 我的错题 went into 复习
+  assert(tiles.map((x) => x.g).join() === "mate,tactic,endgame,defense,opening",
+    "m: 五块按类做题（我的错题并进了复习）", JSON.stringify(tiles.map((x) => x.g + (x.hidden ? "(隐)" : ""))));
   assert(mate && mate.n === mateN + " 题" && mate.on, "m: 杀棋这一块数的是内置 + 题库两本书（" + localMate.length + " + 题库），存着的一步杀落在这一块上", JSON.stringify(mate));
   await openPzMore(page); await page.click('#pz-groups button[data-group="mate"]');
   await page.waitForTimeout(2500);
@@ -1641,6 +1641,71 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   await page.waitForTimeout(900);
   const again = await bar();
   assert((await h.occupied()) !== occ0 && !again.won && !again.next && !!again.head, "15.0 S3: 点它就是下一题，条回到这道题要做什么", JSON.stringify(again));
+  await ctx.close();
+}
+
+// --- 19.0 S6: one number, one 下一题, and 没下过棋 starts near 800 ------------
+{
+  const { ctx, page } = await open({ v: 1, idv: 2, solved: {}, missed: {}, cat: "m1" });
+  const h = helpers(page);
+  const head = () => page.evaluate(() => {
+    const txt = ["status", "puzzle-task", "tr-head"].map((id) => (document.getElementById(id) || {}).textContent || "").join(" | ");
+    return { txt, ids: [...new Set([...txt.matchAll(/#(\w+)/g)].map((m) => m[1]))], nth: /第 \d+ 题/.test(txt) };
+  });
+  const h0 = await head();
+  assert(h0.ids.length === 1 && !h0.nth, "19.0 S6: 题头只有一个编号（「一步杀 #N」，没有「第 N 题」）", h0.txt);
+  // the difficulty stands while the puzzle is on the board: a wrong first
+  // answer moves the puzzle's rating, and the card does not follow it
+  const diff = async () => Number((/难度 (\d+)/.exec((await h.text("#puzzle-task")) || "") || [])[1]);
+  const d0 = await diff();
+  const occ = await h.occupied();
+  const p = POOL.find((q) => q.cat === "m1" && (squaresOf(q.fen) === occ || mirror(squaresOf(q.fen)) === occ));
+  h.view.flipped = !!p && p.side === "b";
+  const g = p && new Chess(p.fen);
+  const wrong = g && g.moves({ verbose: true }).find((m) => { if (m.promotion) return false; g.move(m); const x = g.in_checkmate(); g.undo(); return !x; });
+  if (wrong) await h.move(wrong.from, wrong.to);
+  await page.waitForTimeout(500);
+  const st1 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles") || "{}"));
+  const moved = p && st1.pr && st1.pr[p.id] ? Math.round(st1.pr[p.id].r) : null;
+  const d1 = await diff();
+  assert(!!wrong && d0 > 0 && moved != null && moved !== d0 && d1 === d0 && !!st1.missed[p.id],
+    "19.0 S6: 答错之后题的难度变了（" + d0 + " → " + moved + "），题面上的难度不跟着跳", JSON.stringify({ d0, d1, moved }));
+  // one way on: no 为你出一题 or 先清复习 beside 下一题, and N runs 为你出一题's
+  // rule — the miss is owed a review, so the next puzzle is that review
+  assert(await page.evaluate(() => !document.getElementById("puzzle-smart") && !document.getElementById("puzzle-review-nudge")),
+    "19.0 S6: 面板上没有「为你出一题」「先清复习」");
+  await page.keyboard.press("n");
+  await page.waitForTimeout(700);
+  const st2 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles") || "{}"));
+  assert(st2.cat === "review" && /先清复习/.test((await h.text("#toast")) || ""),
+    "19.0 S6: 下一题（N）先清欠的复习", JSON.stringify({ cat: st2.cat, toast: await h.text("#toast") }));
+  // …and the next puzzle starts at the rating the answer gave it
+  assert((await diff()) === moved, "19.0 S6: 下一道开始时才显示更新后的难度", JSON.stringify({ shown: await diff(), moved }));
+  await solveCurrent(page, h);
+  await page.waitForTimeout(600);
+  const prim = await page.evaluate(() => [...document.querySelectorAll("#sec-puzzle .primary")]
+    .filter((b) => !b.hidden && b.getClientRects().length > 0).map((b) => b.id));
+  assert(prim.length === 1 && prim[0] === "puzzle-next", "19.0 S6: 解出之后面板上只有一个主按钮，是「下一题」", JSON.stringify(prim));
+  await ctx.close();
+}
+// the first-run question: 没下过棋 starts the puzzle rating near 800
+// (provisional), 会走子 still goes through the placement
+for (const [pick, want] of [[0, "new"], [1, "place"]]) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  const page = await ctx.newPage(); // nothing seeded: a new install
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(1200);
+  await page.evaluate((i) => document.querySelectorAll("#pick-list .pick-item")[i].click(), pick);
+  await page.waitForTimeout(1200);
+  const got = await page.evaluate(() => ({ pz: JSON.parse(localStorage.getItem("chess.puzzles") || "{}"),
+    run: (document.getElementById("pz-run-head") || {}).textContent || "" }));
+  if (want === "new") {
+    const r = got.pz.rating;
+    assert(!!r && Math.abs(r.r - 800) <= 50 && r.rd > 110, "19.0 S6: 新档案选「没下过棋」，谜题等级分从 800 附近起（暂定）", JSON.stringify(r));
+  } else {
+    assert(/定级/.test(got.run), "19.0 S6: 选「会走子」还是走定级", got.run);
+  }
   await ctx.close();
 }
 

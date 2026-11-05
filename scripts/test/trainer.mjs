@@ -277,8 +277,11 @@ export async function run() {
       const appSrc2 = allAppSource;
       assert(/renderPuzzleTally[\s\S]{0,1200}Picker\.weakest\(/.test(appSrc2),
         "记录页的「错得最多」标记读的是同一个 Picker.weakest");
-      assert(/puzzle-review-nudge[\s\S]{0,400}store\.session\.puzzle\.done && owed > 0/.test(appSrc2),
-        "解后复习提示只在「做完了且队列欠着」时画 — 不适用则不画");
+      // 19.0 S6: the after-solve 先清复习 nudge went — 下一题 itself goes to the reviews owed
+      const html2 = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+      assert(!/puzzle-review-nudge|puzzle-smart/.test(html2 + appSrc2) &&
+        /pc !== "review" && pc !== "repdue" && !isOpeningCat\(pc\) && owedNow\(\) > \(here \? 1 : 0\)\) \{ smartNext\(\); return; \}/.test(appSrc2),
+        "19.0 S6: 下一题 clears the reviews owed first (为你出一题's rule) — no 先清复习 or 为你出一题 button beside it");
     }
 
     // recordAnswer tolerates the states written before it existed
@@ -678,15 +681,16 @@ export async function run() {
     assert(/for \(const id of r\.dropped\) \{\s*delete store\.session\.puzzleState\.solved\[id\];\s*delete store\.session\.puzzleState\.missed\[id\];/.test(appSrc),
       "a retired drill takes its solved/missed entries with it — no orphan reviews owed");
     // the tab exists exactly while the book does (P3), and the cat is real
-    // v10-0-plan T2: the tile is always there; empty, it says how it fills
-    assert(!/if \(g === "mine"\) b\.hidden/.test(appSrc) && /g === "mine" && !n \? t\("pz\.mineNone"\)/.test(appSrc),
-      "T2: the 我的错题 tile is always drawn, and says how it fills while empty");
+    // 19.0 S6: no 我的错题 tile — the drills are 复习's (queued there when mined),
+    // and with nothing owed 复习 opens them
+    assert(/const cat = puzzlesInCat\("review"\)\.length \? "review" : store\.session\.mines\.length \? "mine" : null;/.test(appSrc),
+      "19.0 S6: 复习 is the way to the personal drills");
     assert(/"op", "rep", "mine", "review"\]/.test(appSrc) && /real: true, mine: true \}/.test(appSrc),
       "mine is a real category on the scripted-grading rail");
     assert(/\(cat === "review" \|\| cat === "mine" \|\| cat === "rep"\) && !puzzlesInCat\(cat\)\.length/.test(appSrc),
       "an emptied personal book does not strand the player");
     const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
-    assert(/data-group="mine" aria-pressed/.test(html), "T2: …and the tile is not hidden in the page either");
+    assert(!/data-group="mine"/.test(html), "19.0 S6: …and the page has no 我的错题 tile");
   }
 
   // 摸得到的复盘: hovering the move list or a PV chip puts that position on the
