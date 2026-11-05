@@ -1405,8 +1405,11 @@ await scenario("对手角色", async () => {
   await clickMove(page, "e2", "e4");
   const n = await until(() => plies(page).then((p) => (p >= 2 ? p : 0)), 20000, 150);
   const uci = await page.evaluate(() => window.__uci);
-  assert(n >= 2 && uci.includes("setoption name MultiPV value 10") && uci.includes("go depth 2"),
-    "对手角色：练习档按自己的设置搜（MultiPV 10、depth 2）并应着", JSON.stringify(uci.filter((c) => /^go|MultiPV/.test(c))));
+  // 19.0 T5: 练习 is a Maia rung — the net draws the move; Stockfish only
+  // takes its depth-8 look (resign and draw rules), no MultiPV-10 search
+  const hm = await page.evaluate(() => window.__chess.engine.human());
+  assert(n >= 2 && uci.includes("go depth 8") && !uci.includes("go depth 2") && hm && hm.fails === 0 && hm.ms > 0,
+    "对手角色：练习档由 Maia 落子（引擎只看一眼 depth 8）并应着", JSON.stringify({ uci: uci.filter((c) => /^go|MultiPV/.test(c)), hm }));
   assert(!errs.length, "对手角色：页面没有报错", errs.join(" / "));
   await ctx.close();
 });
