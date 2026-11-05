@@ -266,6 +266,9 @@ export function createLessonsUI(d) {
     // and whether this try leaned on undo or the hint (→ the review queue)
     store.session.learn.egStart = task.eg ? ChessEndgameRules.startOf(store.session.learn.g) : null;
     store.session.learn.egHelped = false;
+    store.session.learn.slip = null;
+    store.session.learn.egVal = null;
+    if (task.eg && task.goal !== "draw") egValue(store.session.learn.g, store.session.learn.token).then((v) => { if (v != null) store.session.learn.egVal = v; });
     store.game.selection = null;
     // first visit to an unfinished lesson: show the solution once, then reset
     if (store.session.learn.wantDemo && task.solution && (task.type === "stars" || task.type === "move")) {
@@ -390,6 +393,7 @@ export function createLessonsUI(d) {
     if (store.session.learn.gs) return Gs.m.task();
     const task = curTask();
     if (store.session.learn.demoing) return t("lm.demoing");
+    if (store.session.learn.slip) return store.session.learn.slip;
     if (store.session.learn.done && store.session.learn.eg) return tf("lm.doneThen", [t(Endgames.next(store.session.learn.eg) ? "eg.tapNext" : "eg.allDone")]);
     if (store.session.learn.done) return tf("lm.doneThen", [t(store.session.learn.li + 1 < LESSONS.length ? "lm.tapNext" : "lm.allDone")]);
     const tx = taskText(curLesson(), store.session.learn.ti);
@@ -526,8 +530,48 @@ export function createLessonsUI(d) {
       const done = drillOutcome(g, task);
       if (done === "win") { learnTaskDone(); return; }
       if (done) { learnRetryTask(done); return; }
+      if (task.eg && task.goal !== "draw") { egSlipCheck(g, task); return; }
       learnEngineReply();
     }
+  }
+
+  /**
+   * 19.0 T3: the move that gives the result away is named when it is made.
+   * Through 18.0 a won king-and-pawn ending turned into a draw at 2.d4 and
+   * the camp played on in silence for a dozen moves, then said 「和棋了，
+   * 重来」. Each of your moves is searched before the reply; a position that
+   * was winning and is now level stops the drill
+   * with the lesson's own rule and the way back (Z / 悔棋).
+   */
+  const EG_BUDGET = 300;
+  /** the position before the last move, as a game of its own */
+  function undoneCopy(g, fen) { const c = new Chess(fen); for (const m of g.history({ verbose: true }).slice(0, -1)) c.move(m); return c; }
+  function egValue(g, token) {
+    if (!ChessEngine || !ChessEngine.analyze) return Promise.resolve(null);
+    const fen = g.fen();
+    return ChessEngine.analyze(fen, EG_BUDGET).then((r) => {
+      if (!r || !store.session.learn || store.session.learn.token !== token) return null;
+      const v = r.mate != null ? (r.mate > 0 ? 10000 : -10000) : r.cp;
+      return v == null ? null : (r.turn === "w" ? v : -v);
+    }, () => null);
+  }
+  function egSlipCheck(g, task) {
+    const lr = store.session.learn, token = lr.token;
+    // the start's search may have run before the engine was up: then the
+    // position before this move is searched now (one more short search)
+    const beforeP = lr.egVal != null ? Promise.resolve(lr.egVal) : egValue(undoneCopy(g, task.fen), token);
+    Promise.all([beforeP, egValue(g, token)]).then(([before, now]) => {
+      if (!store.session.learn || store.session.learn.token !== token) return;
+      // the winning goals only: a short search reads a held defence (knight
+      // against pawn) as lost often enough to stop correct moves
+      const slipped = now != null && before != null && before >= 250 && now <= 60;
+      if (!slipped) { if (now != null) lr.egVal = now; learnEngineReply(); return; }
+      const rule = (curLesson().text || [])[0] || "";
+      lr.slip = tf("eg.slip", [t("eg.slipWin"), rule]);
+      lr.egHelped = true; // a try that needed the stop is not a clean one
+      toast(t("eg.slipWin"), "fix");
+      sync();
+    });
   }
 
   /**
@@ -622,6 +666,7 @@ export function createLessonsUI(d) {
     store.session.learn.token++; // drop any in-flight engine reply
     store.session.learn.engineBusy = false;
     store.session.learn.egHelped = true; // T2: a taken-back try is not a clean one
+    store.session.learn.slip = null;
     if (ChessEngine) ChessEngine.cancel();
     g.undo();
     if (g.history().length && g.turn() !== "w") g.undo();

@@ -292,6 +292,32 @@ const occ = (page, sq) => page.evaluate((q) => {
   }
 }
 
+// --- 19.0 T3: the move that gives the win away is named when it is made ----
+// 关键格 (Kd3, Pd2 v Kd6): 1.Kc3? steps off the key squares and …Kc5 holds
+// (the engine: +5.7 before, 0.0 after; 1.Kd4 keeps +5.7).
+// Through 18.0 the camp played on in silence and said 「和棋了」 a dozen moves
+// later. Now it stops on Kc3, says so with the lesson's rule, and Z takes it back.
+{
+  const { ctx, page, errs } = await openPage({ mode: "learn" });
+  assert(await openEndgame(page, "kp-keysq"), "T3：打开「关键格」");
+  await page.waitForTimeout(1500); // the start is searched once, in the background
+  const goal = await page.evaluate(() => document.getElementById("lesson-task").textContent);
+  assert(/让兵升变/.test(goal), "19.0 T3：王兵残局的目标写「让兵升变」，不写将死", goal);
+  await clickMove(page, "d3", "c3");
+  const said = await until(() => page.evaluate(() => { const t = document.getElementById("lesson-task").textContent; return /走成了和棋/.test(t) ? t : null; }), 15000);
+  assert(!!said && /先走王/.test(said) && /Z/.test(said), "19.0 T3：1.Kc3 当场停下：「这一步把胜局走成了和棋」，复述要领，说按 Z 退回", said);
+  await page.keyboard.press("z");
+  await page.waitForTimeout(500);
+  const back = await page.evaluate(() => document.getElementById("lesson-task").textContent);
+  assert(!/走成了和棋/.test(back) && await occ(page, "d3") && !(await occ(page, "c3")), "19.0 T3：按 Z 退回，王回到 d3，提示复原", back);
+  // the right way still works: the king onto a key square
+  await clickMove(page, "d3", "d4");
+  const replied = await until(() => page.evaluate(() => !/走成了和棋/.test(document.getElementById("lesson-task").textContent) && !document.querySelector(".engine-busy")), 15000);
+  assert(replied, "19.0 T3：王走上关键格（Kd4）不会被叫停");
+  assert(errs.length === 0, "T3：没有页面异常 — " + errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }

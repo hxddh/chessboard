@@ -206,9 +206,9 @@
       // v8-1-plan T2: the endgame camp (trainer/endgames.js)
       "eg.camp": "Endgame camp",
       "eg.engine": "Engine · Strongest",
-      "eg.goalWin": "Goal: win \u2014 checkmate, or leave Black a bare king while you keep a queen or rook",
+      "eg.goalPromote": "Goal: promote the pawn — a new queen that is not taken at once wins it", "eg.goalWin": "Goal: win \u2014 checkmate, or leave Black a bare king while you keep a queen or rook",
       "eg.goalDraw": "Goal: hold the draw \u2014 stalemate, insufficient material, threefold repetition or fifty moves; a bare black king counts too",
-      "eg.next": "Next endgame",
+      "eg.slipWin": "That move turns the win into a draw.", "eg.slip": "{0} The idea: {1} — press Z (Take back) to try that move again.", "eg.next": "Next endgame",
       "eg.tapNext": "Tap \u201cNext endgame\u201d to go on",
       "eg.allDone": "Every endgame tried, and no review due",
       "eg.src": "Source: {0}",

@@ -236,9 +236,9 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       // v8-1-plan T2: the endgame camp (trainer/endgames.js)
       "eg.camp": "残局训练营",
       "eg.engine": "引擎·全力",
-      "eg.goalWin": "目标：取胜 —— 将死对方；或吃到对方只剩一个王，而你还留着后或车",
+      "eg.goalPromote": "目标：让兵升变 —— 升变出的后不会被马上吃掉，就算赢下", "eg.goalWin": "目标：取胜 —— 将死对方；或吃到对方只剩一个王，而你还留着后或车",
       "eg.goalDraw": "目标：守和 —— 逼和、子力不足、三次重复、50 回合都算；对方只剩一个王也算",
-      "eg.next": "下一个残局",
+      "eg.slipWin": "这一步把胜局走成了和棋。", "eg.slip": "{0}要领：{1} —— 按 Z（悔棋）退回这一步再想。", "eg.next": "下一个残局",
       "eg.tapNext": "点「下一个残局」继续",
       "eg.allDone": "训练营的残局都做过了，也没有到期的复习",
       "eg.src": "出处：{0}",
