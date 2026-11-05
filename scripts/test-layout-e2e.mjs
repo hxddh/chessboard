@@ -1561,8 +1561,9 @@ if (scenario()) {
   });
   assert(!st.shut.open, "the rungs and styles start folded (自定义)");
   assert(st.shut.visibleButtons === 0, "…so none of the buttons is on screen (" + st.shut.visibleButtons + ")");
-  // 10.0 M0: five clocks and four styles — the rungs are the cards above it
-  assert(st.openButtons >= 9, "…and they are all there when you open it (" + st.openButtons + ")");
+  // 10.0 M0: the rarer clocks — the rungs are the cards above it (19.0 S5:
+  // the four styles went with the 陪练风格 row)
+  assert(st.openButtons >= 5, "…and they are all there when you open it (" + st.openButtons + ")");
   await ctx.close();
 }
 
