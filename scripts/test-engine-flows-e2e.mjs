@@ -1879,7 +1879,8 @@ await scenario("第二个引擎", async () => {
     const { ctx, page } = await openPage({ mode: "pvp", hash: 64 }, null, F4_VIEW);
     await page.evaluate(() => window.__chess.engine.analyze("rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1", 120));
     const uci = await page.evaluate(() => window.__uci.filter((m) => /Hash/.test(m)));
-    assert(uci.length && uci.every((m) => m === "setoption name Hash value 64"), "第二个引擎：存着的 Hash 64 在启动时就交给了引擎（" + uci.join(", ") + "）");
+    // 19.0 S4: 引擎内存 is no longer a setting — an old file's Hash 64 reads as the default
+    assert(uci.length && uci.every((m) => m === "setoption name Hash value 32"), "第二个引擎：旧设置里存着的 Hash 64 不再生效，启动时交给引擎的是默认的 32（" + uci.join(", ") + "）");
     await ctx.close();
   }
   const mem = {};
