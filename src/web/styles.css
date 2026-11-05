@@ -3317,6 +3317,12 @@
     .rv-summary {
       margin: 0 0 4px; font-size: 1rem; line-height: var(--lh-body); color: var(--text);
     }
+    /* 19.0 T2: the one thing to work on, and the way to the lesson */
+    .rv-work {
+      margin: 0 0 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+      font-size: 0.875rem; line-height: var(--lh-body); color: var(--text);
+    }
+    .rv-work[hidden] { display: none; }
     /* 9.0 M2: the second layer — accuracies, grades, 从错误中学 and every
        ? / ??, folded under one quiet heading, shut until asked for */
     .rv-full { margin-top: 12px; }

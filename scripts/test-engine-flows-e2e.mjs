@@ -1021,6 +1021,18 @@ await scenario("为什么", async () => {
   const said = at.line || at.card;
   assert(/捉双/.test(said) && /车/.test(said) && !(at.line && at.card),
     "为什么：光标停在 9. a3 上，这一句说一次（引擎线下面，或关键时刻卡片）", JSON.stringify(at));
+  // 19.0 T2: the one thing to work on — 9. a3 walked into a fork, and the
+  // course has a lesson on it
+  const work = await page.evaluate(() => { const e = document.getElementById("rv-work"); return e && !e.hidden ? e.textContent : null; });
+  assert(!!work && /捉双/.test(work) && /第 \d+ 课 · 捉双/.test(work) && /去学这一课/.test(work), "19.0 T2：总结下面写这盘最该练的是捉双，连到「捉双」那一课", work);
+  if (work) {
+    await page.click("#rv-work .rv-work-go");
+    await page.waitForTimeout(500);
+    const at = await page.evaluate(() => ({ view: document.getElementById("app").dataset.view, title: document.getElementById("lesson-title").textContent }));
+    assert(at.view === "train" && /捉双/.test(at.title), "19.0 T2：点「去学这一课」打开「捉双」那一课", JSON.stringify(at));
+    await page.click('#rail button[data-view="play"]');
+    await page.waitForTimeout(400);
+  }
   if (process.env.FLOWS_SHOTS) await page.screenshot({ path: process.env.FLOWS_SHOTS + "/why-line.png" });
 
   // 再试一次: a3 again is wrong

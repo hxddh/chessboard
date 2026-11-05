@@ -1583,7 +1583,9 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       assert(!twice.line && twice.retries === 1, "18.0 R4：关键时刻卡片讲着的这一步，理由和「再试一次」只出现一次 " + JSON.stringify(twice));
       // v10-0-plan A2: 为什么 is open as the moment comes up — no click
       const why = (await km()).why;
-      assert(/\d+%/.test(why) && why.length > 16, "A4 / A2：「为什么」默认展开，说清这一着让胜率掉了多少，再给出教练的解释（" + why + "）");
+      // 19.0 T2: the card's own line says the win chance; 为什么 is the coach's
+      // reason in words, and does not say the numbers again
+      assert(why.length > 6 && !/\d+%/.test(why), "A4 / A2 / 19.0 T2：「为什么」默认展开，给出教练的解释，不再复述胜率（" + why + "）");
       await pg.click('#rv-km button[data-act="why"]');
       await settle(pg);
       assert((await km()).why === "", "A2：再点「为什么」收起");
@@ -1667,7 +1669,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
         await settle(pg);
         const kl = await km();
         const atL = await vi();
-        assert(atL === later && kl.ply === later && kl.why !== "",
+        const noWhy = await pg.evaluate(() => { const b = document.querySelector('#rv-km button[data-act="why"]'); return !b || b.hidden; });
+        assert(atL === later && kl.ply === later && (kl.why !== "" || noWhy),
           "A4：相邻两步都是关键时刻，在后一个上点「看引擎线」，卡片不跳到前一个、「为什么」还开着（" + JSON.stringify({ at: atL, ply: kl.ply, later, why: !!kl.why }) + "）");
         // …and the board moving on by itself turns the card again
         await goto(later);
@@ -1886,6 +1889,20 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const s = await pg.evaluate(() => { const e = document.getElementById("rv-summary"); return e && !e.hidden ? e.textContent : null; });
   assert(!!s && /^莉娜：这盘最要紧的是第 9 步——你的胜率从 \d+% 掉到 \d+%。$/.test(s),
     "M2：人机对局的总结是对手说的，讲你掉得最多的那一步（「" + s + "」）");
+  // 19.0 T2: against the engine the key moments are yours only (you are Black)
+  {
+    const sides = [];
+    for (let k = 0; k < 8; k++) {
+      sides.push(await pg.evaluate(() => (document.querySelector("#rv-km .km-card .km-what") || {}).textContent || ""));
+      if (!(await pg.evaluate(() => { const b = document.querySelector("#rv-km .km-next"); return !!b && !b.disabled; }))) break;
+      await pg.click("#rv-km .km-next"); await settle(pg);
+    }
+    assert(sides.length > 0 && sides.every((x) => /^黑方/.test(x)), "19.0 T2：人机对局的关键时刻只有你的（黑方）", sides.join(" / "));
+    // …and no 「最该练的」 when none of your reasons names one: every one of
+    // Black's here is a plain 「更好的是 …」, so there is nothing true to say
+    const w = await pg.evaluate(() => { const e = document.getElementById("rv-work"); return e && !e.hidden ? e.textContent : null; });
+    assert(w === null, "19.0 T2：你的失误都说不出原因时，不编一件「最该练的」", w);
+  }
   // v10-0-plan T4: with no Black book, the report offers to keep this
   // game's opening; kept, it points at the first move the book stops before
   if (!(await pg.evaluate(() => document.getElementById("rv-full").open))) await pg.click("#rv-full > summary");

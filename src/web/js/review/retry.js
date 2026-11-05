@@ -486,5 +486,7 @@ export function createRetry(d) {
   }
 
   return { renderMistakeList, renderWhyLine, startRetry, retryModel, retryClick, renderRetry,
-    mistakeFacts, retryFacts, writeWhy, plyLabel, learnPlies, startLearn };
+    mistakeFacts, retryFacts, writeWhy, plyLabel, learnPlies, startLearn, mistakePlies,
+    /** 19.0 T2: the motif the reason for ply `i` names, or null */
+    mistakeMotif: (i) => ChessExplain.explainMotif(mistakeFacts(i)), mistakeKey: (i) => ChessExplain.explainKey(mistakeFacts(i)) };
 }
