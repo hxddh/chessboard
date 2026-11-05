@@ -20,7 +20,7 @@
 - **复盘**：关键时刻只列你自己的着法；总结下面多一行「这局最该练：捉双（2 次）」，点一下打开那一课。说不出具体战术时这一行不出现。
 - **残局**：把赢棋走成和棋的那一步当场停下，说清是这步丢的，按 Z 退回。只剩兵对光王时，目标是升后。
 - **课程**：看了答案才做完的课不打 ✓；第 7 课起的战术题，提示只说思路，不再写出答案的落点。
-- **低档对手像人**：1100 以下的五档（新手到稳健）也由 Maia 走棋，犯的是刚学棋的人会犯的错；分数重新对下量过（540–1055）。你大幅领先时提和，先问一句。
+- **低档对手像人**：1100 以下的五档（新手到稳健）也由 Maia 走棋，犯的是刚学棋的人会犯的错；分数重新对下量过（532–1056）。你大幅领先时提和，先问一句。
 
 **少一些。**
 - 左栏 6 项 → 5 项：「棋谱」去掉。开局书是训练里的第五段「开局」；棋谱库、对局历史和诊断在「我的」。
@@ -93,7 +93,7 @@ wasm 1.79 MB），vendored 于 `third_party/stockfish/`。zero:// 方案不能�
 `engine-src.js` 全局量，运行时 `engine.js` 用 Blob worker + `postMessage` 传 wasm 启动引擎——
 全程零 URL 解析。页面 CSP 的 `script-src` 带 `'wasm-unsafe-eval'`：blob worker 继承这份策略，没有它 WebView2 与 WKWebView 都拒绝编译 wasm（由 `test-engine-e2e` 守着）。
 
-21 档对手里，新手到高级−这十二档（540–1909）由 [Maia](https://github.com/CSSLab/maia-chess)（GPLv3）走棋：lc0 格式的 6 块 × 64 通道残差网络，1100 / 1300 / 1500 / 1700 / 1900 五个分段，vendored 于 `third_party/maia/`。`src/web/js/human/` 自己解 protobuf、按 lc0 的 112 个输入平面编码（含 8 步历史）、前向计算，在 worker 里跑；权重和 Stockfish 一样由 `scripts/gen-maia-src.mjs` 生成为 `maia-<分段>.js` 全局量，第一次用到才加载。每档按温度从网络的分布里抽；1100 以下的五档（新手到稳健，19.0 T5）也用 1100 的网络，温度更高，并且只抽概率不低于该档下限（`floor`，0.2%–0.33%）的着法；中级+、高级−在抽之前用 depth 8 的 MultiPV（只搜网络的候选）去掉比最好那步差出阈值（450 / 315 厘兵）的着法。Maia 答不上来（权重缺失、worker 出错、2 秒没答）时，这一档退回它原来的 Stockfish 设置。阶梯每一档的分数由 `scripts/test-ladder.mjs` 的循环对局拟合（[`docs/measured.json`](docs/measured.json) `ladder`），「像不像人」由 `scripts/measure-human.mjs` 在 Lichess 公开库（CC0）的局面上量（`human`）。
+21 档对手里，新手到高级−这十二档（532–1909）由 [Maia](https://github.com/CSSLab/maia-chess)（GPLv3）走棋：lc0 格式的 6 块 × 64 通道残差网络，1100 / 1300 / 1500 / 1700 / 1900 五个分段，vendored 于 `third_party/maia/`。`src/web/js/human/` 自己解 protobuf、按 lc0 的 112 个输入平面编码（含 8 步历史）、前向计算，在 worker 里跑；权重和 Stockfish 一样由 `scripts/gen-maia-src.mjs` 生成为 `maia-<分段>.js` 全局量，第一次用到才加载。每档按温度从网络的分布里抽；1100 以下的五档（新手到稳健，19.0 T5）也用 1100 的网络，温度更高，并且只抽概率不低于该档下限（`floor`，0.2%–0.33%）的着法；中级+、高级−在抽之前用 depth 8 的 MultiPV（只搜网络的候选）去掉比最好那步差出阈值（450 / 315 厘兵）的着法。Maia 答不上来（权重缺失、worker 出错、2 秒没答）时，这一档退回它原来的 Stockfish 设置。阶梯每一档的分数由 `scripts/test-ladder.mjs` 的循环对局拟合（[`docs/measured.json`](docs/measured.json) `ladder`），「像不像人」由 `scripts/measure-human.mjs` 在 Lichess 公开库（CC0）的局面上量（`human`）。
 
 其余各档用 UCI `UCI_LimitStrength/UCI_Elo` 限强，最上面几档按节点数满强度搜索，「全力」不限强。
 最下面几档 Maia 答不上来时退回的 Stockfish 设置不靠 UCI 选项：Stockfish 的 `UCI_Elo` 下限是 1320，比真正的初学者高得多，
