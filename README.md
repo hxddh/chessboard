@@ -65,7 +65,7 @@
 
 ### 设置
 
-齿轮、⌘, / Ctrl+, 或菜单「设置…」，一处管全部。**通用**：语言（中文 / English / 日本語，1414 个界面键三语齐备）、外观（跟随系统 / 浅色 / 深色）、字号。**棋盘**：五种棋盘、边框、七套棋子、坐标、方向、盲棋。**声音**：音效、音量、音色（木质 / 经典）、触感反馈（macOS 触控板）。**对局**：失着提醒、自动翻转。**数据**：从网站同步、学习数据与全部数据的导入导出、清除。**高级**：引擎内存、引擎线数、实时引擎、人会怎么走、引擎箭头、存疑标注。
+齿轮、⌘, / Ctrl+, 或菜单「设置…」，一处管全部，四类。**通用**：语言（中文 / English / 日本語，1408 个界面键三语齐备）、外观（跟随系统 / 浅色 / 深色）、字号、声音（音量，拖到 0 就是关；音色木质 / 经典；触感反馈，macOS 触控板）。**棋盘**：三种棋盘（木 / 绿 / 蓝）、边框、三套棋子（Merida / 伯内特 / 经典）、坐标（关 / 盘外 / 盘内）、盲棋。**对局**：失着提醒、自动翻转；复盘与引擎：引擎线数、实时引擎、人会怎么走、引擎箭头、存疑标注。**数据**：从网站同步、学习数据与全部数据的导入导出、清除。
 
 **⌘K**（Ctrl+K）命令面板：找课、残局、谜题主题、棋谱或一个动作。**?**（⌘/ / Ctrl+/）随时打开完整的快捷键表；任何对话框打开时，棋局的字母快捷键全部让路，Esc 一定关得掉。macOS 上关窗只是收起，⌘Q 退出；Windows 关窗就是退出。
 
@@ -163,8 +163,8 @@ src/web/
   js/chess.js      # 规则（vendored chess.js 0.13.4, BSD-2-Clause）
   js/pieces.js     # 「经典」棋子:cburnett 的 Wikimedia 重绘版（多重许可,见下）,按需加载的分块
   js/figurines.js  # 棋谱里的小棋子:Merida 的剪影,白黑同形（GPLv2+,同 Merida）
-  js/pieces-merida.js · pieces-cburnett.js · pieces-chessnut.js · pieces-fantasy.js · pieces-celtic.js · pieces-spatial.js
-                   # 其余六套棋子,各自一个按需加载的分块(默认的 Merida 在首帧前取来;许可见下；设置 → 棋盘 → 棋子)
+  js/pieces-merida.js · pieces-cburnett.js
+                   # 其余两套棋子,各自一个按需加载的分块(默认的 Merida 在首帧前取来;许可见下；设置 → 棋盘 → 棋子)
   js/look.js       # 外观 × 棋盘 × 边框 × 棋子四个维度(纯函数)
   js/today-page.js # 「今天」页;主卡在 js/trainer/today.js,小棋盘在 js/mini-board.js
   js/me-page.js    # 「我的」页
@@ -182,7 +182,7 @@ src/web/
                    #   各一个按需加载的分块(js/lichess/band-NNNN.js → chunk-lc-NNNN.js)
   js/fide.js       # FIDE 和棋算术:重复计数 / 6.9 将杀子力判定 / 局面是否已终局(纯函数,单测覆盖)
   js/pgn.js        # PGN 文本工具:多局切分 / 标签 / 摘要 / 起始局面(纯函数,单测覆盖)
-  js/i18n.js       # 界面文案字典 zh-CN / en / ja 各 1414 条(单测校验键完整、无漏译、
+  js/i18n.js       # 界面文案字典 zh-CN / en / ja 各 1408 条(单测校验键完整、无漏译、
                    #   tooltip 与 aria-label 全接线;句子一律整句模板 tf(),不拼碎片)
   js/lessons-en.js # 教学课文英文全译 96 课(仅文案;局面与解法仍只来自 lessons.js)
   js/library*.js   # 棋谱库:模型(library.js)、查询与索引、IndexedDB、列表页与本机棋局
@@ -207,13 +207,11 @@ third_party/maia/        # Maia 1100–1900 的 lc0 权重（GPLv3）
 ## 许可
 
 GPLv3（见 LICENSE）。vendored chess.js 保留其 BSD-2-Clause 版权头；vendored Stockfish.js
-为 GPLv3（`third_party/stockfish/COPYING.txt`）；Maia 的权重为 GPLv3（`third_party/maia/LICENSE`，安装包里是 `licenses/maia-LICENSE.txt`）；界面的 Latin 字体 Inter 为 SIL Open Font License 1.1（`src/web/fonts/Inter-OFL.txt`，安装包里是 `licenses/Inter-OFL.txt`）；棋子矢量图形共七套，逐套核过许可，应用内「关于」面板列的是同样的作者与许可：
+为 GPLv3（`third_party/stockfish/COPYING.txt`）；Maia 的权重为 GPLv3（`third_party/maia/LICENSE`，安装包里是 `licenses/maia-LICENSE.txt`）；界面的 Latin 字体 Inter 为 SIL Open Font License 1.1（`src/web/fonts/Inter-OFL.txt`，安装包里是 `licenses/Inter-OFL.txt`）；棋子矢量图形共三套（19.0 S8 由七套减到三套），逐套核过许可，应用内「关于」面板列的是同样的作者与许可：
 
 - **伯内特 / cburnett（`js/pieces-cburnett.js`）**：作者 Colin M.L. Burnett，原样取自 lichess-org/lila 的 `public/piece/cburnett`，该仓库 COPYING.md 列其许可为 GPLv2+，本应用按 GPLv3 使用。
 - **经典（`js/pieces.js`）**：同一套设计的 Wikimedia Commons 重绘版（作者 Cburnett / Rfc1394，经 cm-chessboard 整理）。原作以 GFDL / BSD / **GPL** / CC BY-SA 3.0 多重许可发布；本仓库按其中的 GPL 一项使用，与本应用的 GPLv3 相容（CC BY-SA 3.0 单独一项并不与 GPLv3 相容，4.0 才加入单向相容，所以写清楚取的是哪一项）。
 - **Merida（默认，`js/pieces-merida.js`）**：作者 Armando Hernandez Marroquin，原样取自 lila 的 `public/piece/merida`，COPYING.md 列为 GPLv2+。
-- **Chessnut（`js/pieces-chessnut.js`）**：作者 Alexis Luengas，原样取自 lila 的 `public/piece/chessnut`；COPYING.md 列为 Apache 2.0，作者自己的仓库（LexLuengas/chessnut-pieces 的 LICENSE.txt）是同一份 Apache 2.0 全文。Apache 2.0 与 GPLv3 相容。
-- **Fantasy / Celtic / Spatial（`js/pieces-fantasy.js` · `js/pieces-celtic.js` · `js/pieces-spatial.js`）**：作者 Maurizio Monge，原样取自 lila 的 `public/piece/{fantasy,celtic,spatial}`；COPYING.md 列为 MIT，作者仓库（maurimo/chess-art）的 LICENSE 是 MIT 全文，README 要求注明作者 —— 「关于」面板写了。MIT 与 GPLv3 相容。
 
 同一张表里其余候选没有收：CC BY-NC-SA（限非商业，与 GPL 不相容）、「freeware」、AGPL 的不收；mpchess（表中写 GPLv3+，作者仓库却是 LPPL 1.3c）、shapes 与 Firi（作者仓库里没有许可文件，只有 lila 表里的一行）三套，来源与表不一致或无法从来源核实，也不收。
 

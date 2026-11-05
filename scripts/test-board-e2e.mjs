@@ -159,10 +159,10 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   assert(r.pieces >= 30, `${theme}:将军后棋子仍在(数到 ${r.pieces} 个)`);
   assert(r.plies === 3, `${theme}:着法表记到第 3 手(实际 ${r.plies})`);
 }
-// v8-0-plan A3: the five boards, on the flat board and in the frame — the
-// paper board's ink men must leave every piece countable
+// v8-0-plan A3: the boards, on the flat board and in the frame. 19.0 S8:
+// three — paper (and its ink men) and marble are gone
 for (const [boardId, boardFrame, appearance] of [["wood", "flat", "system"], ["green", "flat", "dark"],
-  ["blue", "frame", "light"], ["paper", "flat", "light"], ["marble", "frame", "dark"]]) {
+  ["blue", "frame", "light"], ["wood", "frame", "dark"]]) {
   const tag = boardId + "/" + boardFrame;
   const r = await play({ appearance, boardId, boardFrame }, CHECK_LINE);
   assert(r.errs.length === 0, `${tag}:将军时无页面异常${r.errs.length ? " — " + r.errs[0] : ""}`);
@@ -1351,17 +1351,17 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     fetched: performance.getEntriesByType("resource").some((e) => /chunk-pieces-cburnett\.js$/.test(e.name)),
   }));
   assert(m.fetched && m.image === 2, `换伯内特:取了 chunk-pieces-cburnett.js,解码完只多画一次(共 ${m.image} 次)`);
-  // …and the same for a set that is new with A3
-  await page.evaluate(() => { const b = document.querySelector('[data-piece-set="fantasy"]'); if (b) b.click(); });
+  // …and the same for the third set. 19.0 S8: Fantasy went; classic (17.0 F's chunk) stays
+  await page.evaluate(() => { const b = document.querySelector('[data-piece-set="classic"]'); if (b) b.click(); });
   await page.waitForFunction(() => window.__chess.board().imageRedraws >= 3, null, { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(800);
   const f = await page.evaluate(() => ({
     image: window.__chess.board().imageRedraws,
-    fetched: performance.getEntriesByType("resource").some((e) => /chunk-pieces-fantasy\.js$/.test(e.name)),
+    fetched: performance.getEntriesByType("resource").some((e) => /chunk-pieces-classic\.js$/.test(e.name)),
     saved: JSON.parse(localStorage.getItem("chess.settings") || "{}").pieceSet,
   }));
-  assert(f.fetched && f.image === 3 && f.saved === "fantasy",
-    `换 Fantasy:取了 chunk-pieces-fantasy.js,只多画一次(共 ${f.image} 次),设置里记下 ${f.saved}`);
+  assert(f.fetched && f.image === 3 && f.saved === "classic",
+    `换经典:取了 chunk-pieces-classic.js,只多画一次(共 ${f.image} 次),设置里记下 ${f.saved}`);
   assert(errs.length === 0, `棋子图:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
   await ctx.close();
 }
@@ -1399,12 +1399,13 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.close();
 }
 
-// --- 17.0 T:棋盘没有纹理——五种棋盘、深浅两套,空格就是一个颜色 --------------
+// --- 17.0 T:棋盘没有纹理——每种棋盘、深浅两套,空格就是一个颜色 --------------
+// 19.0 S8: three boards now (paper and marble are gone).
 // 16.0 给每种棋盘加过纹理(木纹、磨砂、纸纹、大理石纹),17.0 按要求全部去掉。
 // 量的是一个空的浅格和一个空的深格:里面每个像素都相同,且正好是棋盘的
 // --sq-light / --sq-dark(纸棋盘的墨色棋子不是纹理,不在空格上)。
 for (const appearance of ["light", "dark"]) {
-  for (const boardId of ["wood", "green", "blue", "paper", "marble"]) {
+  for (const boardId of ["wood", "green", "blue"]) {
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
     await ctx.addInitScript(([a, b]) => {
       localStorage.setItem("chess.settings", JSON.stringify({
@@ -2218,10 +2219,11 @@ for (const appearance of ["light", "dark"]) {
     st = await state();
     assert(st.attrs === "notebook/green/frame" && st.saved.startsWith("light/green/frame") && st.pressed === "浅色/绿/木框",
       `A3 选浅色、木框:${st.attrs},${st.saved},按下 ${st.pressed}`);
-    // the board chosen is the board drawn: marble's colours on the canvas,
-    // flat (17.0 T — it had veins until then). 9.0 S5: the settings page
-    // covers the board, so it is read back on the play view
-    await pick('#board-pick-seg button[data-board-id="marble"]');
+    // the board chosen is the board drawn: blue's colours on the canvas,
+    // flat (17.0 T). 9.0 S5: the settings page covers the board, so it is
+    // read back on the play view. 19.0 S8: blue, since marble (whose veins
+    // this was about until 17.0 T) is gone
+    await pick('#board-pick-seg button[data-board-id="blue"]');
     await toPlay(page);
     const spread = await page.evaluate(() => {
       const c = document.getElementById("board"), g = c.getContext("2d"), step = c.width / 8;
@@ -2231,14 +2233,15 @@ for (const appearance of ["light", "dark"]) {
       for (let i = 0; i < d.length; i += 4) seen.add(d[i] + "," + d[i + 1] + "," + d[i + 2]);
       return seen.size;
     });
-    assert(spread === 1, `A3 大理石:空格子是一种颜色,没有纹理(${spread} 种,17.0 T)`);
+    assert(spread === 1, `A3 蓝盘:空格子是一种颜色,没有纹理(${spread} 种,17.0 T)`);
     await toSettings(page, "board");
     // the kings in the piece picker: fetched once the row is on screen
     await page.evaluate(() => document.getElementById("piece-pick-seg").scrollIntoView());
     await page.waitForFunction(() => [...document.querySelectorAll("#piece-pick-seg img")].every((i) => i.src.startsWith("data:image/svg")),
       null, { timeout: 8000 }).catch(() => {});
     const kings = await page.evaluate(() => [...document.querySelectorAll("#piece-pick-seg img")].filter((i) => i.src.startsWith("data:image/svg")).length);
-    assert(kings === 14, `A3 棋子选择器:七套各画出黑白两王(${kings} / 14)`);
+    // 19.0 S8: three sets, six kings
+    assert(kings === 6, `A3 棋子选择器:三套各画出黑白两王(${kings} / 6)`);
     // 10.0 M0: each king the board swatch's size, on the current board's own squares
     const look = await page.evaluate(() => {
       const cs = getComputedStyle(document.documentElement), probe = document.createElement("div");

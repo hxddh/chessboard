@@ -3137,8 +3137,9 @@ if (scenario()) for (const [lang, mode, tab] of [["zh-CN", "ai", "play"], ["en",
     for (const p of shut) p.hidden = true;
     return out;
   });
-  assert(look.open && look.tiles === 12 && look.segs >= 5,
-    `${lang}/${tab}: 设置页里量得到棋盘与棋子的图块(${look.tiles} / 12)和分段控件(${look.segs})`);
+  // 19.0 S8: three boards + three sets (it was five + seven)
+  assert(look.open && look.tiles === 6 && look.segs >= 5,
+    `${lang}/${tab}: 设置页里量得到棋盘与棋子的图块(${look.tiles} / 6)和分段控件(${look.segs})`);
   assert(look.tileKinds.length === 1 && look.segKinds.length === 1 && look.tileKinds[0] === look.segKinds[0],
     `${lang}/${tab}: 棋盘与棋子的图块和分段控件同一字号、同一边框(${look.tileKinds.join(" ")} vs ${look.segKinds.join(" ")})`);
   await ctx.close();

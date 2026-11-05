@@ -252,6 +252,50 @@ const PLACEMENT = STUDY.split(" ")[0];
   await ctx.close();
 }
 
+// --- 3c. 19.0 S8: an 18.0 settings file naming a set and a board that went ----
+// 18.0 offered seven sets and five boards; 19.0 offers Merida / 伯内特 / 经典
+// and 木 / 绿 / 蓝. A picked Fantasy on marble opens on Merida and wood — the
+// default's chunk fetched, never the gone one's — and the pickers show it.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN", colorScheme: "light" });
+  await ctx.addInitScript(() => {
+    if (sessionStorage.getItem("s8Seeded")) return;
+    sessionStorage.setItem("s8Seeded", "1");
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false,
+      appearance: "light", boardId: "marble", boardFrame: "frame", pieceSet: "fantasy", pieceSetPicked: true }));
+  });
+  const { page, errs } = await open(ctx);
+  await page.waitForFunction(() => window.__chess && window.__chess.board().imageRedraws >= 1, null, { timeout: 10000 }).catch(() => {});
+  const r = await page.evaluate(() => ({
+    attrs: [document.documentElement.dataset.theme, document.documentElement.dataset.board, document.documentElement.dataset.frame].join("/"),
+    chunks: performance.getEntriesByType("resource").filter((e) => /chunk-(merida|pieces-\w+)\.js$/.test(e.name)).map((e) => e.name.split("/").pop()),
+    drawn: window.__chess.board().imageRedraws,
+  }));
+  assert(r.attrs === "day/wood/frame", "S8: an 18.0 marble board opens on wood, the rest of the look kept (" + r.attrs + ")");
+  assert(r.chunks.join() === "chunk-merida.js" && r.drawn >= 1,
+    "S8: an 18.0 Fantasy opens on Merida — its chunk fetched and drawn, no removed set's asked for (" + r.chunks.join(", ") + "; " + r.drawn + " draws)");
+  await page.click('.rail-btn[data-view="settings"]');
+  await page.waitForTimeout(300);
+  await page.click("#cat-board");
+  await page.waitForTimeout(300);
+  const ui = await page.evaluate(() => ({
+    boards: [...document.querySelectorAll("#board-pick-seg button")].map((b) => b.dataset.boardId).join(),
+    sets: [...document.querySelectorAll("#piece-pick-seg button")].map((b) => b.dataset.pieceSet).join(),
+    on: [...document.querySelectorAll("#board-pick-seg button.active, #piece-pick-seg button.active")].map((b) => b.dataset.boardId || b.dataset.pieceSet).join(),
+  }));
+  assert(ui.boards === "wood,green,blue" && ui.sets === "merida,cburnett,classic",
+    "S8: the pickers offer three boards and three sets (" + ui.boards + " / " + ui.sets + ")");
+  assert(ui.on === "wood,merida", "S8: …and show wood and Merida chosen (" + ui.on + ")");
+  // anything that saves settings writes the defaults back over the gone names
+  await page.evaluate(() => document.querySelector('#board-pick-seg button[data-board-id="green"]').click());
+  await page.evaluate(() => document.querySelector('#board-pick-seg button[data-board-id="wood"]').click());
+  await page.waitForTimeout(300);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}"));
+  assert(saved.boardId === "wood" && saved.pieceSet === "merida", "S8: the next save writes wood / Merida (" + saved.boardId + " / " + saved.pieceSet + ")");
+  assert(errs.length === 0, "S8: no JS exception reading an 18.0 settings file with a removed set and board — " + errs.join(" / "));
+  await ctx.close();
+}
+
 // --- 4. the ordinary game is untouched by all of this ----------------------
 {
   const ctx = await freshContext();

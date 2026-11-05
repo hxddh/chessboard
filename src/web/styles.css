@@ -484,10 +484,11 @@
        follows the appearance and takes the board's warm or cool family. Five
        boards, each one its own thing — 7.x had four palettes and three
        boards, 日's squares sitting ΔE00 6.4 from 木's on the dark square and
-       2.8 on the light one. The closest two dark squares here are 10 apart
-       (docs/measured.json boardLook). 17.0 T: every board is two flat
+       2.8 on the light one. The closest two dark squares are at least 10
+       apart (docs/measured.json boardLook). 17.0 T: every board is two flat
        colours — the textures laid over them (wood's grain, paper's fibre,
-       marble's veins) are gone.
+       marble's veins) are gone. 19.0 S8: three boards — paper and marble
+       are gone, and with paper its ink-printed men (--piece-ink).
 
        Every mark on every board is held to two ceilings, over the light
        square AND the dark one (scripts/lib/mark-colour.mjs, test-chess):
@@ -510,7 +511,6 @@
          undoes 缺陷 17 (men sitting on flat colour with no contact at all);
          half keeps the contact at the base and loses the smudge. */
       --piece-shadow: rgba(38,20,4,.13);
-      --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #e0b07a, #c9965c 45%, #b8864e);
       --board-shadow: 0 0 0 1px rgba(0,0,0,.16), 0 3px 8px rgba(0,0,0,.18), 0 22px 56px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.22);
@@ -567,7 +567,6 @@
          at ΔL* 28 rather than Lichess's 35 (see the ceilings above). Marks
          in yellow and a dark olive, the way green boards mark a move. */
       --piece-shadow: rgba(10,26,4,.15);
-      --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #1a2e28, #15241f 50%, #101c18);
       --coord-ink: rgba(220,235,228,.55);
@@ -602,7 +601,6 @@
          last move on a blue board is a tint of the board — to a yellow-green
          and an orange hint. */
       --piece-shadow: rgba(30,44,54,.10);
-      --piece-ink: none;
 
       --board-frame: linear-gradient(180deg, #fffcf5, #f7f2e6);
       --coord-ink: rgba(42,49,64,.55);
@@ -631,77 +629,6 @@
       --engine-arrow-alt: rgba(255, 150, 0, var(--mark-soft));
       --board-shadow: 0 0 0 1px rgba(40,50,70,.08), 0 3px 8px rgba(40,50,70,.08), 0 20px 48px rgba(40,50,70,.14), inset 0 0 0 1px #d8d0c0;
     }
-    [data-board="paper"] {
-      /* 纸墨: the diagram page. Cream paper, dark squares a grey ink wash
-         (flat as of 17.0 T), and the men in ink (board-skin.js): their white is the paper's, their black the ink's (--piece-ink,
-         "ink paper"). The lowest-contrast board here (ΔL* 19), which is what
-         a printed diagram is — and so the marks are quiet too, an indigo
-         last move and a vermilion check, the two colours a printer has. */
-      --piece-shadow: rgba(40,34,20,.08);
-      --piece-ink: #1d2230 #f6f1e4;
-
-      --board-frame: linear-gradient(145deg, #efe6d2, #e3d7bd 50%, #d8caac);
-      --board-shadow: 0 0 0 1px rgba(60,48,20,.10), 0 3px 8px rgba(60,48,20,.10), 0 20px 48px rgba(60,48,20,.16), inset 0 1px 0 rgba(255,255,255,.6);
-      --coord-ink: rgba(40,36,30,.62);
-      --board-edge: rgba(60,50,30,.24);
-      --sq-light: #f3eee2;
-      --sq-dark: #c4b9a2;
-      --sq-sel: rgba(30, 60, 150, var(--mark-mid));
-      --sq-last: rgba(40, 90, 200, var(--mark-soft));
-      --sq-check: rgba(200, 40, 30, var(--mark-mid));
-      --sq-hint: rgba(20, 140, 90, var(--mark-mid));
-      --sq-star: rgba(200, 120, 0, var(--mark-strong));
-      --sq-star-edge: rgba(70, 40, 0, var(--mark-mid));
-      --sq-flash: rgba(20, 140, 90, var(--mark-mid));
-      --sq-cursor: rgba(255,255,255,.95);
-      --sq-cursor-edge: rgba(29,34,48,.60);
-      --sq-dot: rgba(29, 34, 48, var(--mark-soft));
-      --sq-ring: rgba(29, 34, 48, var(--mark-soft));
-      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
-      --shape-g: rgba(21, 120, 27, var(--mark-strong));
-      --shape-r: rgba(136, 32, 32, var(--mark-strong));
-      --shape-b: rgba(0, 48, 136, var(--mark-strong));
-      --shape-y: rgba(232, 143, 0, var(--mark-strong));
-      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
-         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
-      --engine-arrow: rgba(20, 140, 90, var(--mark-mid));
-      --engine-arrow-alt: rgba(20, 140, 90, var(--mark-soft));
-    }
-    [data-board="marble"] {
-      /* White Carrara and a grey bardiglio (flat as of 17.0 T). Neutral
-         where every other board has a hue, which is what sets it apart from
-         blue (ΔE00 10.8 on the dark square) at a similar lightness. */
-      --piece-shadow: rgba(20,20,24,.12);
-      --piece-ink: none;
-
-      --board-frame: linear-gradient(145deg, #d9d6d0, #bfbcb6 50%, #a9a6a0);
-      --board-shadow: 0 0 0 1px rgba(0,0,0,.12), 0 3px 8px rgba(0,0,0,.14), 0 22px 52px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.45);
-      --coord-ink: rgba(30,30,34,.62);
-      --board-edge: rgba(30,30,34,.26);
-      --sq-light: #e9e7e3;
-      --sq-dark: #989796;
-      --sq-sel: rgba(10, 95, 65, var(--mark-mid));
-      --sq-last: rgba(60, 170, 120, var(--mark-soft));
-      --sq-check: rgba(230, 40, 40, var(--mark-mid));
-      --sq-hint: rgba(40, 110, 240, var(--mark-mid));
-      --sq-star: rgba(230, 170, 20, var(--mark-strong));
-      --sq-star-edge: rgba(90, 60, 0, var(--mark-mid));
-      --sq-flash: rgba(10, 130, 80, var(--mark-mid));
-      --sq-cursor: rgba(255,255,255,.95);
-      --sq-cursor-edge: rgba(20,20,24,.58);
-      --sq-dot: rgba(24, 24, 30, var(--mark-soft));
-      --sq-ring: rgba(24, 24, 30, var(--mark-soft));
-      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
-      --shape-g: rgba(21, 120, 27, var(--mark-strong));
-      --shape-r: rgba(136, 32, 32, var(--mark-strong));
-      --shape-b: rgba(0, 48, 136, var(--mark-strong));
-      --shape-y: rgba(232, 143, 0, var(--mark-strong));
-      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
-         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
-      --engine-arrow: rgba(40, 110, 240, var(--mark-mid));
-      --engine-arrow-alt: rgba(40, 110, 240, var(--mark-soft));
-    }
-
     /* Board mark strength — one scale, three steps, all four boards.
 
        The four palettes were each tuned by eye and drifted apart: the target
@@ -1812,9 +1739,8 @@
     }
     .offer-text { flex: 1 1 12em; font-size: 0.875rem; color: var(--text); }
     .offer-bar .act-btn { flex: none; }
-    /* seven sets: 4 + 3, not the 3 + 3 + 1 the five-or-more rule above
-       would give — no segment alone on a line (test-layout 3m3) */
-    #piece-pick-seg { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    /* 19.0 S8: three sets, one line of three — the wrap rule's own; the
+       4 + 3 override seven sets needed is gone */
     .look-name { line-height: var(--lh-tight); }
     /* the selected segment: the accent's one tint and its hairline — the
        selected state is one of the three places the accent is allowed */

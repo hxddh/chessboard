@@ -23,7 +23,6 @@
  */
 import { loadChunk } from "./chunk.js";
 import { PIECE_CHUNKS } from "./lazy-content.js";
-import { parseInk, inkSprite } from "./board-skin.js";
 import { easeFromCss } from "./motion.js";
   const FILES = "abcdefgh";
 
@@ -89,9 +88,6 @@ import { easeFromCss } from "./motion.js";
     judgeDraw: ["--muted", "#8f8a84"],
     sideWhite: ["--side-white", "#f2f2ee"],
     sideBlack: ["--side-black", "#1d1d1b"],
-    // v8-0-plan A3: the ink and paper the paper board prints its men in
-    // (board-skin.js); "none" is pieces as drawn
-    pieceInk: ["--piece-ink", "none"],
   };
   const JUDGE_PAINT = { "?!": "judgeSoft", "?": "judgeMid", "??": "judgeBad", "!!": "judgeGood", "!": "judgeGood" };
   const SHAPE_PAINT = { G: "shapeG", R: "shapeR", B: "shapeB", Y: "shapeY", E: "engine", e: "engineAlt" };
@@ -116,8 +112,8 @@ import { easeFromCss } from "./motion.js";
   }
   /**
    * call when the theme changes — the next draw re-reads the variables. The
-   * sprites go too: on the paper board they are printed in its ink
-   * (v8-0-plan A3), so a board switch can change what they look like.
+   * sprites go too — they were printed in the paper board's ink (v8-0-plan
+   * A3); 19.0 S8 removed that board, and clearing them on a switch stays.
    */
   function invalidatePaint() { _paint = null; _slideMs = null; _durs = {}; _ease = null; _sprites = {}; }
 
@@ -383,19 +379,16 @@ import { easeFromCss } from "./motion.js";
       c.width = size;
       c.height = size;
       const g = c.getContext("2d");
-      // v8-0-plan A3: the paper board prints every set in its ink
-      const ink = parseInk(paint().pieceInk);
-      // v11-0-plan V2 (b): and a breath of relief — a soft shade under the
+      // v11-0-plan V2 (b): a breath of relief — a soft shade under the
       // man's own outline, so it stands off the square rather than being
       // printed on it (the contact shadow is the ground; this is the body).
-      // Not on paper: ink has no relief.
-      if (!ink && _set === "cburnett") {
+      // 19.0 S8: the paper board's ink reprint (board-skin.js) went with it.
+      if (_set === "cburnett") {
         g.shadowColor = "rgba(0, 0, 0, 0.22)";
         g.shadowBlur = size * 0.03;
         g.shadowOffsetY = size * 0.015;
       }
       g.drawImage(img, 0, 0, size, size);
-      if (ink) inkSprite(c, img, ink);
       _sprites[ck] = c;
     }
     return c;

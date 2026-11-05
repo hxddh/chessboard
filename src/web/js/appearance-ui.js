@@ -100,7 +100,7 @@ export function mount(container, deps) {
   appearance.title = t("tip.look.appearance");
   for (const a of APPEARANCES) label(button(appearance, "appearance", a), LABELS.appearance[a]);
 
-  // 棋盘: five boards, each a small corner of itself
+  // 棋盘: three boards (19.0 S8), each a small corner of itself
   const boards = row("board-pick", "look.board", "theme-row wrap look-grid");
   const previews = [];
   for (const id of BOARD_IDS) {
@@ -189,7 +189,8 @@ export function mount(container, deps) {
    * Draw the board previews — by the caller, once the row is on screen and
    * has a size. Not at mount: the settings page this lives on is closed at
    * launch and in most sessions (Codex on #86; it was paper's and marble's
-   * textures then, built in code — gone with 17.0 T; the deferral stays).
+   * textures then, built in code — gone with 17.0 T, and those two boards
+   * with 19.0 S8; the deferral stays).
    */
   function repaint() { for (const [cv, sw] of previews) paintBoardPreview(cv, sw); }
 
