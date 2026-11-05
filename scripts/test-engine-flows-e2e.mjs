@@ -1444,6 +1444,34 @@ await scenario("引擎认输", async () => {
   await ctx.close();
 });
 
+await scenario("领先时提和先问", async () => {
+  // 19.0 T5: +6.7 up, an offered draw was simply accepted — a queen and a
+  // rook up now (twenty quiet king moves in, so the offer is allowed), the
+  // app asks first; 继续下 keeps the game, the second time it is a draw
+  const save = JSON.stringify({ v: 1, savedAt: Date.now(), pgn: '[Event "flows"]\n[SetUp "1"]\n[FEN "4k3/8/8/8/8/8/8/R3K2Q w - - 0 1"]\n[Result "*"]\n\n' +
+    "1. Kf1 Kd8 2. Kg1 Ke8 3. Kg2 Kd8 4. Kf2 Ke8 5. Ke2 Kd8 6. Kd2 Ke8 7. Kd1 Kd8 8. Kc1 Ke8 9. Kb1 Kd8 10. Kc2 Ke8 *" });
+  const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" }, { "chess.save": save });
+  await page.waitForTimeout(800);
+  const ask = async () => {
+    await page.evaluate(() => document.getElementById("btn-offerdraw").click());
+    await page.waitForFunction(() => document.getElementById("confirm-modal").classList.contains("show"), null, { timeout: 15000 }).catch(() => {});
+    return page.evaluate(() => document.getElementById("confirm-modal").classList.contains("show") ? document.getElementById("confirm-message").textContent : "");
+  };
+  const asked = await ask();
+  assert(/优势很大/.test(asked), "领先时提和先问：领先 5 分以上，先问一句", asked);
+  await page.click("#confirm-cancel");
+  await page.waitForTimeout(500);
+  const live = await page.evaluate(() => !(JSON.parse(localStorage.getItem("chess.save") || "{}").drawAgreed));
+  assert(live, "领先时提和先问：点「继续下」，这局接着下");
+  await ask();
+  await page.click("#confirm-ok");
+  await page.waitForTimeout(800);
+  const drawn = await page.evaluate(() => !!(JSON.parse(localStorage.getItem("chess.save") || "{}").drawAgreed));
+  assert(drawn, "领先时提和先问：确认之后才是和棋");
+  assert(!errs.length, "领先时提和先问：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
 /** The last stats record, the stored rating and the result card's two lines. */
 const filedOf = (page) => page.evaluate(() => {
   const st = JSON.parse(localStorage.getItem("chess.stats") || "{}");

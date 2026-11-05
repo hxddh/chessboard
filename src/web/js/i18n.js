@@ -201,7 +201,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       // learn mode (lm.*) — task prompts, feedback and drill outcomes
       "lm.demoIntro": "先看一遍演示 —— 点击棋盘可跳过",
       "lm.yourTurn": "到你了！",
-      "lm.answerShown": "已为你标出答案",
+      "lm.notYet": "这一课看了答案，先记作「还没会」，之后会再排到它", "lm.notYetTask": "做完了，但有一步是看了答案的 —— 这一课先不打 ✓。点「重来」自己再做一遍，或接着学下一课", "lm.answerShown": "已为你标出答案",
       "lm.demoing": "演示中 —— 点击棋盘跳过，看完就轮到你",
       "lm.doneThen": "完成！{0}",
       "lm.tapNext": "点「下一课」继续",
@@ -319,7 +319,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "dlg.resign": "{0}认输，结束本局？",
       "dlg.whoResigns": "哪一方认输？",
       "dlg.whiteResigns": "白方认输", "dlg.blackResigns": "黑方认输",
-      "dlg.drawBoth": "双方都同意和棋吗？",
+      "dlg.drawBoth": "双方都同意和棋吗？", "dlg.drawAhead": "你现在优势很大（领先 5 分以上），确定提和？",
       "dlg.drawAgree": "同意和棋", "dlg.drawPlayOn": "继续下",
       "dlg.exportPgn": "导出 PGN", "dlg.openPgn": "打开 PGN",
       "dlg.pickGame": "这份 PGN 含 {0} 局，选择要导入的一局",

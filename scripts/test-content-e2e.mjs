@@ -343,6 +343,38 @@ for (const les of LESSONS) {
   }
 }
 
+// 19.0 T4: a lesson finished after the answer had to be shown is not ✓ —
+// the card says so and 重来 starts the whole lesson again
+{
+  const les = LESSONS.find((l) => l.id === "decoy");
+  await page.evaluate((want) => {
+    const rows = [...document.getElementById("lesson-list").querySelectorAll("button, .lesson-row")];
+    rows.find((r) => (r.textContent || "").includes(want))?.click();
+  }, les.title);
+  await page.waitForTimeout(500);
+  await settle();
+  for (const [ti, task] of les.tasks.entries()) {
+    await page.waitForFunction((p) => document.getElementById("lesson-task").textContent.includes(p.slice(0, 8)), task.prompt, { timeout: 8000 }).catch(() => {});
+    const g = new Chess(task.fen);
+    if (ti === 0) {
+      const wrongs = g.moves({ verbose: true }).filter((m) => !task.accept.includes(m.san)).slice(0, 2);
+      for (const w of wrongs) { await move(w.from, w.to); await page.waitForTimeout(300); }
+    }
+    const rm = g.moves({ verbose: true }).find((m) => m.san === task.solution[0]);
+    await move(rm.from, rm.to);
+    await page.waitForTimeout(1500);
+  }
+  const r = await page.evaluate((id) => ({
+    task: document.getElementById("lesson-task").textContent,
+    done: !!(JSON.parse(localStorage.getItem("chess.learn") || "{}").done || {})[id],
+  }), les.id);
+  assert(!r.done && r.task.includes("先不打 ✓"), "19.0 T4 看过答案做完的课不打 ✓，卡片说明为什么", JSON.stringify(r).slice(0, 160));
+  await page.click("#lesson-restart");
+  await page.waitForTimeout(600);
+  const again = await page.evaluate(() => document.getElementById("lesson-task").textContent);
+  assert(again.includes(les.tasks[0].prompt.slice(0, 8)), "19.0 T4 「重来」从这一课的第一步开始", again.slice(0, 60));
+}
+
 // P5 的验收条件是「选得到的就有题」—— 缺陷 14 是选中之后列表一片空白。9.0 S3
 // 起难度筛选（#row-puzzle-tier）和题型行都没有了，选得到的是六块「按类做题」：
 // 每一块亮着的都得有题、点下去棋盘上有题、列表不空，而且亮的就是点的那块。
@@ -1074,6 +1106,9 @@ if (hasTab && REAL.length) {
   pg4.on("pageerror", (e) => errs.push(e.message));
   await pg4.goto(`http://127.0.0.1:${PORT}/`);
   await pg4.waitForTimeout(900);
+  // 19.0 S3: 我的 is a chunk now — read it where it shows, once it has drawn
+  await pg4.click('#rail button[data-view="me"]');
+  await pg4.waitForFunction(() => !document.getElementById("trend-head").hidden, null, { timeout: 10000 }).catch(() => {});
   const trend = await pg4.evaluate(() => ({
     head: !document.getElementById("trend-head").hidden,
     curve: !document.getElementById("trend-acc").hidden,

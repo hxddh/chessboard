@@ -171,7 +171,7 @@
       // learn mode (lm.*) — task prompts, feedback and drill outcomes
       "lm.demoIntro": "Watch the demo first — click the board to skip",
       "lm.yourTurn": "Your turn!",
-      "lm.answerShown": "The answer is marked for you",
+      "lm.notYet": "You saw an answer in this lesson — it stays \u201cnot yet\u201d and comes back later", "lm.notYetTask": "Done, but one step needed the answer — no ✓ for this lesson yet. Restart it to do it on your own, or go on to the next", "lm.answerShown": "The answer is marked for you",
       "lm.demoing": "Demo running — click the board to skip; then it's your turn",
       "lm.doneThen": "Done! {0}",
       "lm.tapNext": "Tap \u201cNext lesson\u201d to continue",
@@ -289,7 +289,7 @@
       "dlg.resign": "{0} resigns and ends the game?",
       "dlg.whoResigns": "Which side resigns?",
       "dlg.whiteResigns": "White resigns", "dlg.blackResigns": "Black resigns",
-      "dlg.drawBoth": "Do both players agree to a draw?",
+      "dlg.drawBoth": "Do both players agree to a draw?", "dlg.drawAhead": "You are well ahead (more than 5 points). Offer a draw anyway?",
       "dlg.drawAgree": "Agree to a draw", "dlg.drawPlayOn": "Play on",
       "dlg.exportPgn": "Export PGN", "dlg.openPgn": "Open PGN",
       "dlg.pickGame": "This PGN holds {0:game|games} — choose the one to import",

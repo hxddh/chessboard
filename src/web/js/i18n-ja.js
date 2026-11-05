@@ -171,7 +171,7 @@
       // learn mode (lm.*) — task prompts, feedback and drill outcomes
       "lm.demoIntro": "まずお手本を見ましょう —— 盤をクリックでスキップ",
       "lm.yourTurn": "あなたの番です！",
-      "lm.answerShown": "答えを盤上に示しました",
+      "lm.notYet": "このレッスンでは答えを見たので「まだ」として、あとでもう一度出てくる", "lm.notYetTask": "終わったけれど、答えを見た手があった —— このレッスンにはまだ ✓ を付けない。「やり直す」で自力でもう一度、または次のレッスンへ", "lm.answerShown": "答えを盤上に示しました",
       "lm.demoing": "お手本を再生中 —— 盤をクリックでスキップ、終わればあなたの番です",
       "lm.doneThen": "できました！ {0}",
       "lm.tapNext": "「次のレッスン」で進みましょう",
@@ -289,7 +289,7 @@
       "dlg.resign": "{0}が投了して対局を終えますか？",
       "dlg.whoResigns": "どちらが投了しますか？",
       "dlg.whiteResigns": "白が投了", "dlg.blackResigns": "黒が投了",
-      "dlg.drawBoth": "両者とも引き分けに同意しますか？",
+      "dlg.drawBoth": "両者とも引き分けに同意しますか？", "dlg.drawAhead": "いまは大きく優勢です（5 点以上リード）。それでも引き分けを提案しますか？",
       "dlg.drawAgree": "引き分けに同意", "dlg.drawPlayOn": "指し続ける",
       "dlg.exportPgn": "PGN を書き出す", "dlg.openPgn": "PGN を開く",
       "dlg.pickGame": "この PGN には {0} 局が入っています。読み込む対局を選んでください",

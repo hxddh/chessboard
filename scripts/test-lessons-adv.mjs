@@ -217,6 +217,29 @@ const IDS = shell.ADV_IDS;
   }
 }
 
+// ------------------------------------------------------------------ 6 不报答案
+// 19.0 T4: from lesson 7 on, a tactic's prompt names the idea, not the move —
+// the seven that gave the answer square (or the move) away, in all three languages
+{
+  const m = loadAppModules(["src/web/js/lessons.js", "src/web/js/lessons-en.js", "src/web/js/lessons-ja.js"]);
+  const CASES = [["discovery", 0], ["deflect", 0], ["remove", 0], ["overload", 0], ["decoy", 0], ["interfere", 0], ["tc-decoy", 1]];
+  const bad = [];
+  for (const [id, ti] of CASES) {
+    const L = m.CHESS_LESSONS.find((x) => x.id === id);
+    if (!L || !L.tasks[ti]) { bad.push(id + " missing"); continue; }
+    const task = L.tasks[ti], g = new Chess(task.fen);
+    const ans = task.solution || task.accept || [];
+    const sols = [].concat(ans).map((a) => { try { const mv = g.move(a, { sloppy: true }); g.undo(); return mv; } catch (e) { return null; } }).filter(Boolean);
+    const words = [task.prompt, m.CHESS_LESSONS_EN[id]?.tasks?.[ti]?.prompt, m.CHESS_LESSONS_JA[id]?.tasks?.[ti]?.prompt];
+    for (const w of words) {
+      if (!w) { bad.push(id + " untranslated"); continue; }
+      for (const mv of sols) if (w.includes(mv.to) || w.includes(mv.san.replace(/[+#]/, ""))) bad.push(id + ": " + mv.to + " in " + w.slice(0, 24));
+    }
+    if (!sols.length) bad.push(id + " no answer found");
+  }
+  assert(!bad.length, "第 7 课起的七道战术题：三种语言的提示都不写答案的落点和着法", bad.join(" | "));
+}
+
 if (failed) { console.error(failed + " failure(s)"); process.exit(1); }
 console.log("all advanced-lesson tests passed");
 // the ADV_WAIT_MS timers of the wants above would hold the process open

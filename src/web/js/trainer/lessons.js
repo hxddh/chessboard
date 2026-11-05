@@ -213,7 +213,7 @@ export function createLessonsUI(d) {
   function curLesson() { const l = store.session.learn; return (l.gs && Gs.m.lesson()) || (l.eg && Endgames.lesson(l.eg)) || LESSONS[l.li]; }
   function curTask() { return curLesson().tasks[store.session.learn.ti]; }
 
-  function startLesson(i, stand) {
+  function startLesson(i, stand, again) {
     if (!LESSONS[i]) return;
     store.session.study = null;
     if (!stand) { store.session.learnState.last = i; saveLearnState(); Adv.want(-1); }
@@ -224,10 +224,10 @@ export function createLessonsUI(d) {
     // 14.0 E: parts 1–2's bodies are a chunk too — the first lesson opened
     // waits for it, unless another run starts meanwhile (an endgame, a classic)
     const my = ++store.session.learnRuns;
-    if (!Body.ready()) { Body.want(() => { if (my === store.session.learnRuns && store.session.mode === "learn") { startLesson(i, stand); sync(); } }); return; }
+    if (!Body.ready()) { Body.want(() => { if (my === store.session.learnRuns && store.session.mode === "learn") { startLesson(i, stand, again); sync(); } }); return; }
     // 14.0 A3: the step it was left at, when it is this lesson's (a relaunch, or the lesson opened again)
     const at = store.session.learnState.at, ti0 = at && at.id === LESSONS[i].id && at.ti < LESSONS[i].tasks.length ? at.ti : 0;
-    store.session.learn = { li: i, ti: ti0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !stand && !ti0 && !store.session.learnState.done[LESSONS[i].id] };
+    store.session.learn = { li: i, ti: ti0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !stand && !again && !ti0 && !store.session.learnState.done[LESSONS[i].id] };
     startLearnTask();
   }
 
@@ -368,6 +368,7 @@ export function createLessonsUI(d) {
     store.session.learn.misses++;
     if (store.session.learn.misses < 2 || store.session.learn.helpOn) return;
     store.session.learn.helpOn = true;
+    store.session.learn.shown = true; // 19.0 T4: the answer was given — not yet learnt
     const task = curTask();
     if (task.type === "move" && task.solution && task.solution.length) {
       try {
@@ -395,6 +396,7 @@ export function createLessonsUI(d) {
     if (store.session.learn.demoing) return t("lm.demoing");
     if (store.session.learn.slip) return store.session.learn.slip;
     if (store.session.learn.done && store.session.learn.eg) return tf("lm.doneThen", [t(Endgames.next(store.session.learn.eg) ? "eg.tapNext" : "eg.allDone")]);
+    if (store.session.learn.done && store.session.learn.shown && !store.session.learnState.done[curLesson().id]) return t("lm.notYetTask");
     if (store.session.learn.done) return tf("lm.doneThen", [t(store.session.learn.li + 1 < LESSONS.length ? "lm.tapNext" : "lm.allDone")]);
     const tx = taskText(curLesson(), store.session.learn.ti);
     if (task.type === "tap") return tf("lm.tapOf", [tx.step(store.session.learn.tapStep), store.session.learn.tapStep + 1, task.steps.length]);
@@ -728,6 +730,14 @@ export function createLessonsUI(d) {
       sync();
       return;
     }
+    // 19.0 T4: a lesson whose answer had to be shown is not learnt yet — no
+    // ✓, and the course offers it again (it was ✓ through 18.0, the same as
+    // one found unaided); a lesson learnt before keeps its ✓
+    if (store.session.learn.shown && !store.session.learnState.done[L.id]) {
+      toast(t("lm.notYet"), "fix");
+      sync();
+      return;
+    }
     if (!store.session.learnState.done[L.id]) {
       // 9.0 S1: when, so 今天 can count the lessons finished today
       if (!store.session.learnState.done[L.id]) store.session.learnState.done[L.id] = Date.now();
@@ -1015,7 +1025,10 @@ export function createLessonsUI(d) {
       if (lr) { const id = curLesson().id; lr.infoOpen = lr.infoOpen === id ? null : id; store.commit("session", "sync"); }
     };
     document.getElementById("lesson-restart").onclick = () => {
-      if (store.session.learn) { startLearnTask(); toast(t("lm.restarted")); }
+      // 19.0 T4: a lesson finished with an answer shown starts over from its first step
+      const lr = store.session.learn;
+      if (lr && lr.done && lr.shown && !lr.eg && !lr.gs) { startLesson(lr.li, false, true); toast(t("lm.restarted")); return; }
+      if (lr) { startLearnTask(); toast(t("lm.restarted")); }
     };
     document.getElementById("lesson-demo").onclick = () => {
       if (!store.session.learn || store.session.learn.demoing) return;

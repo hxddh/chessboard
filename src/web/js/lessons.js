@@ -378,7 +378,7 @@
       ],
       tasks: [
         { type: "move", fen: "4k3/8/5q2/8/4N3/8/8/4R1K1 w - - 0 1", goal: "capture", target: "f6",
-          prompt: "e4 的马身后是 e1 车、正对着黑王 —— 用马吃掉 f6 的后，同时露出车的闪将",
+          prompt: "e4 的马身后是 e1 车、正对着黑王 —— 马一挪开就是闪将：让这匹马顺手吃掉对方最值钱的子",
           retry: "让马去吃 f6 的后（它一挪开，e 线车就将军了）", solution: ["Nxf6+"] },
         { type: "move", fen: "4k3/8/8/2r5/4N3/8/8/4R1K1 w - - 0 1", goal: "capture", target: "c5",
           prompt: "换一组子再来一次：e4 的马挪开就露出 e1 车的将军 —— 挑一个「顺手」的落点，把 c5 的车吃掉",
@@ -415,7 +415,7 @@
       tasks: [
         { type: "move", fen: "3r2k1/5ppp/8/3n4/8/8/5PBP/4R1K1 w - - 0 1", goal: "one-of",
           accept: ["Re8+"],
-          prompt: "d5 的黑马由 d8 的车守着。走 e8 车将军 —— 黑车只能吃掉它，d 线一松，马就没人管了",
+          prompt: "d5 的黑马由 d8 的车守着。找一步将军，逼这个车离开 d 线 —— d 线一松，马就没人管了",
           retry: "先想想：是谁在守 d5 的马？怎样逼它离开 d 线", solution: ["Re8+"] },
         { type: "move", fen: "4r1k1/5ppp/8/3n4/8/8/5PBP/6K1 w - - 0 1",
           goal: "capture", target: "d5",
@@ -433,7 +433,7 @@
       tasks: [
         { type: "move", fen: "1r2k3/3n1ppp/8/8/6B1/8/5PPP/1R4K1 w - - 0 1", goal: "one-of",
           accept: ["Bxd7+"],
-          prompt: "b8 的黑车由 d7 的马守着。用象吃掉这匹马（还带将军）—— 车就孤零零地站在那儿了",
+          prompt: "b8 的黑车由一匹马守着。把这个守卫直接吃掉（最好还带将军）—— 车就孤零零地站在那儿了",
           retry: "别急着吃车 —— 先看谁在守它", solution: ["Bxd7+"] },
         { type: "move", fen: "1r6/3k1ppp/8/8/8/8/5PPP/1R4K1 w - - 0 1",
           goal: "capture", target: "b8",
@@ -451,7 +451,7 @@
       tasks: [
         { type: "move", fen: "2r3k1/5ppp/8/2n5/8/B7/5PPP/4R1K1 w - - 0 1", goal: "one-of",
           accept: ["Re8+"],
-          prompt: "c8 的黑车既守底线又守 c5 的马 —— 两份活。走 e8 车将军，逼它去管底线",
+          prompt: "c8 的黑车既守底线又守 c5 的马 —— 两份活。找一步底线上的将军，逼它去管底线",
           retry: "找那个身兼两职的子，再逼它二选一", solution: ["Re8+"] },
         { type: "move", fen: "4r1k1/5ppp/8/2n5/8/B7/5PPP/6K1 w - - 0 1",
           goal: "capture", target: "c5",
@@ -469,7 +469,7 @@
       tasks: [
         { type: "move", fen: "3q2k1/5pp1/8/6N1/8/8/8/6KR w - - 0 1", goal: "one-of",
           accept: ["Rh8+"],
-          prompt: "把车送到 h8 将军 —— 黑王只能吃。吃完之后王站到 h8，马从 f7 正好同时叉住王和后",
+          prompt: "先弃一个车将军，把黑王引到一个格子上 —— 让它站到马能同时叉住王和后的地方",
           retry: "先想好：王被骗到哪一格，你的马就能叉到它和后？", solution: ["Rh8+"] },
         { type: "move", fen: "3q3k/5pp1/8/6N1/8/8/8/6K1 w - - 0 1", goal: "one-of",
           accept: ["Nxf7+"],
@@ -487,7 +487,7 @@
       tasks: [
         { type: "move", fen: "1r4k1/5ppp/8/RbP5/2N5/8/8/6K1 w - - 0 1", goal: "one-of",
           accept: ["Nb6"],
-          prompt: "b8 的黑车沿 b 线守着 b5 的象。把马跳到 b6 切断这条线 —— 马有 c5 兵保护，吃它是亏的",
+          prompt: "b8 的黑车沿 b 线守着 b5 的象。用马切断这条线 —— 落点要有你的兵保护，对方吃它就是亏的",
           retry: "黑车是沿哪条线守着象的？在中间放一个有人保护的子", solution: ["Nb6"] },
         { type: "move", fen: "1r4k1/5ppp/8/RbP5/8/1N6/8/6K1 w - - 0 1",
           goal: "capture", target: "b5",
@@ -1451,7 +1451,7 @@
           { tip: "点 h8 —— 黑王现在不在这里，得把它请过来", squares: ["h8"] },
         ] },
         { type: "move", fen: "r2q2k1/pp3pp1/8/4N3/8/B7/PP3PP1/R5KR w - - 0 1", goal: "check",
-          prompt: "用车把黑王引到 h8", retry: "把车送到 h8 将军 —— 黑王除了吃它别无选择", solution: ["Rh8+"] },
+          prompt: "用车把黑王引到马能叉住它的格子上", retry: "把车送到 h8 将军 —— 黑王除了吃它别无选择", solution: ["Rh8+"] },
       ],
     },
     {
