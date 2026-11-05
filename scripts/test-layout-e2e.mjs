@@ -2341,14 +2341,15 @@ if (scenario()) {
     }));
     const all = Object.values(pg.secs).flat();
     assert(JSON.stringify(pg.cats) === JSON.stringify(CATS),
-      mode + ": six categories, 通用 first and 高级 last — " + pg.cats.join(" → "));
+      mode + ": four categories, 通用 first and 数据 last (19.0 S4) — " + pg.cats.join(" → "));
     assert(pg.open === "cat-general" && pg.secs.general[0] === "语言",
       mode + ": the page opens on 通用, the language first — " + pg.open + " / " + pg.secs.general.join(" → "));
     assert(!all.includes("模式") && pg.gameRows.length === 0,
       mode + ": no mode and none of the game's own rows on the settings page — " + pg.gameRows.join(", "));
     assert(all.filter((h) => h === "清除数据").length === 1 && pg.secs.data[pg.secs.data.length - 1] === "清除数据",
       mode + ": the deletions are the last card of 数据, and only there — " + pg.secs.data.join(" → "));
-    assert(pg.secs.advanced[0] === "引擎", mode + ": the engine comes last (高级) — " + pg.secs.advanced.join(" → "));
+    // 19.0 S4: the engine is 对局's last card (高级 was its own category through 18.0)
+    assert(pg.secs.game[pg.secs.game.length - 1] === "复盘与引擎", mode + ": the engine closes 对局 — " + pg.secs.game.join(" → "));
     await showCat(page, "game");
     const game = await page.evaluate(() => ["row-coach", "row-autoflip"].map((id) => !!document.getElementById(id).offsetParent));
     assert(game.every(Boolean), mode + ": 「对局」 shows 失着提醒 and 自动翻转 (" + game.join(", ") + ")");
