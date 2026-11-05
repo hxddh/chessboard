@@ -1779,8 +1779,6 @@
     .op-pick:not([hidden]) { display: block; margin-top: 8px; font-size: 0.875rem; color: var(--text); }
     .op-grid.full ~ #op-you { display: none; }
     #ng-custom-body { display: flex; flex-direction: column; gap: 12px; }
-    .setting-k.has-info { cursor: help; }
-    .setting-k.has-info::after { content: " ⓘ"; }
     /* the dialog is 512px inside: the extra clocks and the four styles each
        take one row, on the same grid as the clock row above them */
     @media (min-width: 600px) {

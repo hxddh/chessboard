@@ -579,9 +579,10 @@ export async function run() {
       const ng = markup.slice(markup.indexOf('id="newgame-modal"'), markup.indexOf('id="confirm-modal"'));
       // 10.0 M0: the rung is the opponent card (row-opponent); the two rows of
       // rung names that repeated the cards are gone
-      assert(["row-opponent", "row-persona", "row-color", "row-clock"].every((id) => ng.includes('id="' + id + '"')) &&
-        !ng.includes('data-diff="'),
-        "S5: opponent, style, side and clock live in the new-game dialog — the rung is chosen on the cards only");
+      // 19.0 S5: the style is the card's own — no 陪练风格 row
+      assert(["row-opponent", "row-color", "row-clock"].every((id) => ng.includes('id="' + id + '"')) &&
+        !ng.includes('data-diff="') && !ng.includes('id="row-persona"'),
+        "S5: opponent, side and clock live in the new-game dialog — the rung and its style are chosen on the cards only");
 
       // The heading is a promise about what is inside. 「外观」 once held the
       // language and the sound; since A1 each has its own group, and the rows

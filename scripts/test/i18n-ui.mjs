@@ -883,14 +883,7 @@ export async function run() {
       assert(/extreme: \{ elo: null, movetime: 1200 \}/.test(eng),
         "…which is 1200ms, as the tooltip now says");
 
-      // 缺陷 30: "changing style does not change strength" was half a sentence.
-      // 450cp of slack is about half a piece a move.
-      for (const lang of ["zh-CN", "en", "ja"]) {
-        const note = I.DICT[lang]["side.personaNote"];
-        assert(/半个子|half a piece|半駒/.test(note),
-          lang + " says how far a style may wander — " + note);
-        assert(/杀|mate|詰み/.test(note), lang + " …and what it will not give up");
-      }
+      // (缺陷 30's style note went with the 陪练风格 row (v19-0-plan S5): the style is the persona's own)
 
       // 缺陷 22: the number is not the number online sites call "accuracy" —
       // they compute it from win probability and get 60–75% where this gets 37%.

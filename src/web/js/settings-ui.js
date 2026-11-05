@@ -102,9 +102,6 @@ export function createSettingsUI(d) {
       difficulty: store.session.difficulty, personaId: store.session.personaId,
       color: store.session.humanColor, timeControl: store.game.timeControl,
     };
-    document.querySelectorAll("#persona-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.persona === pick.personaId);
-    });
     document.querySelectorAll("#color-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.color === pick.color);
       // 随机 is a way to start a game, not a side to switch to mid-game
@@ -128,8 +125,6 @@ export function createSettingsUI(d) {
     }
     const colorRow = document.getElementById("row-color");
     const clockRow = document.getElementById("row-clock");
-    const personaRow = document.getElementById("row-persona");
-    if (personaRow) personaRow.hidden = ngMode !== "ai";
     // in the dialog a two-player game also chooses a side: which one sits at
     // the bottom of the board (「谁执白」) — unless 自动翻转 is on, which
     // turns the board to White the moment the game starts (Codex, #83)
@@ -230,13 +225,6 @@ export function createSettingsUI(d) {
       if (inp) inp.onchange = () => { pickTc(customTc()); paintSettings(); };
     }
     // 10.0 M0: the rung is chosen on the opponent cards only (opponents-ui.js)
-    document.getElementById("persona-seg").onclick = (ev) => {
-      const b = ev.target.closest("button[data-persona]");
-      if (!b || draftPick("personaId", b.dataset.persona) || b.dataset.persona === store.session.personaId) return;
-      store.session.personaId = b.dataset.persona;
-      saveSettings();
-      store.commit("session", "sync");
-    };
     document.getElementById("color-seg").onclick = (ev) => {
       const b = ev.target.closest("button[data-color]");
       if (!b || draftPick("color", b.dataset.color) || !["w", "b"].includes(b.dataset.color)) return;

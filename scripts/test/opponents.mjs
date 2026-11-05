@@ -51,12 +51,12 @@ export async function run() {
       assert(["b1c3", "f1c4"].includes(P.pick(fen, own, "principled", Chess, 10)), "B4: …and still has a say among moves as good as it");
     }
 
-    // Every personality must be reachable from the panel and named in every
-    // language — a style you cannot select is a style that does not exist.
+    // 19.0 S5: a style is chosen by choosing the opponent who plays it — the
+    // 陪练风格 row is gone, so no button names a style on its own, and every
+    // style a persona plays is one persona.js knows
     const htmlP = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
-    const inMarkup = [...htmlP.matchAll(/data-persona="([a-z]+)"/g)].map((m) => m[1]);
-    assert(P.IDS.every((id) => inMarkup.includes(id)) && inMarkup.length === P.IDS.length,
-      "every personality has a button (" + inMarkup.join(", ") + ")");
+    assert(!/data-persona="/.test(htmlP) && !htmlP.includes('id="row-persona"'),
+      "S5: no 陪练风格 row and no style button of its own");
     loadModule(ctx, "src/web/js/i18n.js");
     const dict = ctx.ChessI18n.DICT;
     for (const lang of Object.keys(dict)) {
@@ -138,9 +138,9 @@ export async function run() {
     // 9.0 S2: the dialog shows eight personas, the ladder around the pick —
     // in ladder order, so a window of the list is a stretch of the ladder
     assert(O.PERSONAS.every((p, i) => i === 0 || O.LEVELS.indexOf(p.level) > O.LEVELS.indexOf(O.PERSONAS[i - 1].level)),
-      "S2: the personas run in ladder order, so eight in a row are neighbours");
-    assert(/const SHOWN = 8;/.test(fs.readFileSync(path.join(root, "src/web/js/opponents-ui.js"), "utf8")),
-      "S2: the dialog shows eight opponent cards");
+      "S2: the personas run in ladder order, so five in a row are neighbours");
+    assert(/const SHOWN = 5;/.test(fs.readFileSync(path.join(root, "src/web/js/opponents-ui.js"), "utf8")),
+      "19.0 S5: the dialog shows five opponent cards (eight through 18.0)");
     assert(new Set(O.PERSONAS.map((p) => p.level)).size === O.PERSONAS.length && O.PERSONAS.every((p) => O.LEVELS.includes(p.level)),
       "B4: each persona is its own rung of the ladder");
     assert(O.PERSONAS.every((p) => ctx.ChessPersona.IDS.includes(p.style)), "B4: each persona's style is one persona.js plays");

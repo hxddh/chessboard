@@ -228,7 +228,7 @@ const PLACEMENT = STUDY.split(" ")[0];
     if (sessionStorage.getItem("s4Seeded")) return;
     sessionStorage.setItem("s4Seeded", "1");
     localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", soundOn: false, volume: 80,
-      coordsOn: false, hash: 128, boardFrame: "frame", setCat: "sound" }));
+      coordsOn: false, hash: 128, boardFrame: "frame", setCat: "sound", difficulty: "normal", personaId: "greedy" }));
   });
   const { page, errs } = await open(ctx);
   await page.click('.rail-btn[data-view="settings"]');
@@ -244,6 +244,10 @@ const PLACEMENT = STUDY.split(" ")[0];
   await page.waitForTimeout(300);
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}"));
   assert(saved.soundOn === true && saved.volume === 60, "S4: dragging the volume up turns the sound on (" + saved.soundOn + " / " + saved.volume + ")");
+  // 19.0 S5: no 陪练风格 row — an 18.0 中级 + 贪吃子 reads as 索尔, whose style is none
+  await page.waitForFunction(() => (JSON.parse(localStorage.getItem("chess.settings") || "{}").personaId) === "off", null, { timeout: 10000 }).catch(() => {});
+  const persona = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}").personaId);
+  assert(persona === "off", "S5: an old style on a rung reads as that rung's opponent's own (" + persona + ")");
   assert(errs.length === 0, "no JS exception reading an 18.0 settings file — " + errs.join(" / "));
   await ctx.close();
 }

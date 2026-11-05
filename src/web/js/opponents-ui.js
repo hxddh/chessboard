@@ -20,8 +20,8 @@ import { OP_LINES } from "./opponents-lines.js";
 /**
  * @param {object} d what this module borrows from app.js
  */
-/** 9.0 S2: how many opponent cards the dialog shows at once. */
-const SHOWN = 8;
+/** 9.0 S2: how many opponent cards the dialog shows at once (8 through 18.0). */
+const SHOWN = 5;
 
 export function createOpponentsUI(d) {
   const { doc, store, t, tf, tdot, setText, repaint, saveSettings, diffName } = d;
@@ -46,6 +46,9 @@ export function createOpponentsUI(d) {
     // the fold widens the grid to the whole ladder (paint)
     const fold = el("ng-custom");
     if (fold) fold.addEventListener("toggle", () => paint());
+    // 19.0 S5: 全部 — the whole ladder, the same as opening 更多选项
+    const all = el("op-all");
+    if (all) all.onclick = () => { if (fold) { fold.open = true; paint(); } };
     let tier = -1;
     for (const p of Opponents.PERSONAS) {
       // 15.0 F: the whole ladder is six rows by strength, a label at the head of each
@@ -125,8 +128,12 @@ export function createOpponentsUI(d) {
     // two rows of rung names (陪练档 / 棋力档), a second way to choose.
     const all = Opponents.PERSONAS;
     const full = !!(el("ng-custom") && el("ng-custom").open);
-    const at = Math.max(0, on ? all.indexOf(on) : all.findIndex((p) => p.level === pick.difficulty));
-    const from = full ? 0 : Math.max(0, Math.min(all.length - SHOWN, at - 3));
+    // 19.0 S5: five, centred on the rung nearest your rating (on the pick
+    // until there is a rating) — and the pick kept on screen if it is further
+    const picked = Math.max(0, on ? all.indexOf(on) : all.findIndex((p) => p.level === pick.difficulty));
+    const me = d.rating();
+    const at = me && Number.isFinite(me.r) ? nearestTo(all, me.r) : picked;
+    const from = full ? 0 : Math.max(0, Math.min(all.length - SHOWN, at - 2));
     const shown = full ? all.length : SHOWN;
     // 15.0 F: open, the ladder is faces in six rows; the one picked is named under it
     if (grid.classList.contains("full") !== full) grid.classList.toggle("full", full);
@@ -135,7 +142,7 @@ export function createOpponentsUI(d) {
       const p = Opponents.personaById(b.dataset.op);
       if (!p) continue;
       const k = all.indexOf(p);
-      const out = k < from || k >= from + shown;
+      const out = (k < from || k >= from + shown) && k !== picked;
       if (b.hidden !== out) b.hidden = out;
       const active = !!on && on.id === p.id;
       if (b.classList.contains("active") !== active) b.classList.toggle("active", active);
@@ -148,10 +155,19 @@ export function createOpponentsUI(d) {
       const said = tdot(nameOf(p), String(Opponents.ratingOf(p.level)), p.style === "off" ? diffName(p.level) : styleName(p.style));
       if (b.getAttribute("aria-label") !== said) b.setAttribute("aria-label", said);
     }
+    const allEl = el("op-all");
+    if (allEl) { allEl.hidden = full; setText(allEl, tf("ng.allOps", [all.length])); }
     const pickEl = el("op-pick");
     if (pickEl) { pickEl.hidden = !full || !on; if (full && on) setText(pickEl, on ? grid.querySelector('[data-op="' + on.id + '"]').getAttribute("aria-label") : ""); }
     const r = d.rating();
     setText(el("op-you"), r ? tf("ng.yourRating", [fmtRating(r)]) : t("ng.noRating"));
+  }
+
+  /** the persona whose rung's rating is nearest `r` */
+  function nearestTo(all, r) {
+    let best = 0, gap = Infinity;
+    all.forEach((p, i) => { const x = Math.abs((Opponents.ratingOf(p.level) || 0) - r); if (x < gap) { gap = x; best = i; } });
+    return best;
   }
 
   /**

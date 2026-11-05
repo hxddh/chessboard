@@ -1030,7 +1030,12 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     has: (_, k) => DIFF_IDS.includes(k),
   });
   // v8-0-plan B4: the personas, the engine's clock plan, resign and draw offers, your rating
-  const OppUI = createOpponentsLazy({ loadStats, saveStats, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), portrait: (slot, id) => setPortrait(slot, id), parseTc: (x) => parseTc(x), onReady: () => { syncSettingsUI(); store.commit("game", "action"); },
+  const OppUI = createOpponentsLazy({ loadStats, saveStats, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), portrait: (slot, id) => setPortrait(slot, id), parseTc: (x) => parseTc(x), onReady: () => {
+      // 19.0 S5: no 陪练风格 row — the style is the rung's persona's; an 18.0
+      // pick of a rung with another style reads as that persona
+      const own = OppUI.styleOf(store.session.difficulty);
+      if (own && own !== store.session.personaId) { store.session.personaId = own; saveSettings(); }
+      syncSettingsUI(); store.commit("game", "action"); },
     doc: document, store, t, tf, setText, afterPress, acceptDraw: () => acceptDraw(), diffName: (id) => diffName(id),
     repaint: () => syncSettingsUI(), saveSettings, saveGame, announce: (m) => announce(m),
     // game-controller.js is created further down (v8-1-plan F3): late bindings go in as forwarders

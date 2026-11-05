@@ -650,7 +650,7 @@ const state = (page) => page.evaluate(() => {
       diff: has("op-grid"), clock: has("clock-seg"), multipv: has("multipv-seg"),
       panes: document.querySelectorAll(".side-pane").length, paneShown: !pane.hidden && pane.getClientRects().length > 0,
       tabs: document.querySelectorAll(".side-tabs, #tab-play, #tab-setup, #pane-setup, #prefs-modal, #prefs-open").length,
-      ngRows: ["row-color", "row-clock"].every((id) => !!ng.querySelector("#" + id)) && at("row-persona", "ng-custom-body") && !document.getElementById("row-difficulty"),
+      ngRows: ["row-color", "row-clock"].every((id) => !!ng.querySelector("#" + id)) && !document.getElementById("row-persona") && !document.getElementById("row-difficulty"),
       ngSegs: ["mode-seg", "op-grid", "clock-seg", "color-seg"].every((id) => !!ng.querySelector("#" + id)),
       gone: !document.getElementById("orient-seg") && !document.getElementById("hash-seg") && !document.getElementById("opt-sound"),
       multipvAt: at("multipv-seg", "set-game"),

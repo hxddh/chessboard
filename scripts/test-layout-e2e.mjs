@@ -601,7 +601,8 @@ if (scenario()) for (const [w, h] of [[1400, 900], [900, 700], [520, 520]]) {
     const { ctx, page } = await open(lang, "ai", "play", "wood", { width: w, height: h });
     // 9.0 S5: style and clock are the new-game dialog's; 开始 makes them the game's
     await openNewGame(page);
-    await page.click('#newgame-modal #persona-seg button[data-persona="principled"]');
+    // 19.0 S5: a style is an opponent's — 雷米 plays 重原则
+    await page.evaluate(() => document.querySelector('#newgame-modal #op-grid .op-card[data-op="remy"]').click());
     await page.click('#newgame-modal #clock-seg-more button[data-tc="3+2"]');
     await startNewGame(page);
     if (w <= 820) { await page.keyboard.press("p"); await settle(page); }
@@ -2341,7 +2342,7 @@ if (scenario()) {
       open: (document.querySelector('.set-cat[aria-selected="true"]') || {}).id,
       secs: Object.fromEntries([...document.querySelectorAll(".set-pane")].map((p) =>
         [p.id.slice(4), [...p.querySelectorAll(":scope > section")].map((s) => (s.querySelector(".side-h") || {}).textContent || "?")])),
-      gameRows: ["row-opponent", "row-persona", "row-color", "row-clock", "mode-seg"]
+      gameRows: ["row-opponent", "row-color", "row-clock", "mode-seg"]
         .filter((id) => document.getElementById(id) && document.getElementById(id).closest("#page-settings")),
     }));
     const all = Object.values(pg.secs).flat();
@@ -5442,7 +5443,8 @@ if (scenario()) {
     const { ctx, page } = await open(lang, "ai", "play", "wood", { width: 1384, height: 800 });
     // 9.0 S5: style and clock are chosen in the new-game dialog
     await openNewGame(page);
-    await page.click('#newgame-modal #persona-seg button[data-persona="principled"]');
+    // 19.0 S5: a style is an opponent's — 雷米 plays 重原则
+    await page.evaluate(() => document.querySelector('#newgame-modal #op-grid .op-card[data-op="remy"]').click());
     await page.click('#newgame-modal #clock-seg-more button[data-tc="3+2"]');
     await startNewGame(page);
     const r = await page.evaluate(() => [...document.querySelectorAll(".pstrip")].map((s) => {
@@ -5640,21 +5642,25 @@ if (scenario()) {
           past: cards.filter(outside).length,
           more: more.length, moreSpill: more.filter(cut).map((b) => b.textContent.trim()), morePast: more.filter(outside).length,
           sideways: modal.scrollWidth - modal.clientWidth,
+          controls: [...modal.querySelectorAll("button, summary, input")].filter((b) => b.checkVisibility()).length,
         };
       });
       const tag = `T1 对手卡 (${lang}, ${viewport.width}×${viewport.height})`;
       const r = await measure();
-      assert(r.ladder > 8 && r.cards === 8, `${tag}: 阶梯 ${r.ladder} 位对手里露出 8 张卡 (${r.cards})`);
-      assert(r.picked.length === 1, `${tag}: 选中的那位在这 8 张里 (${r.picked.join(", ") || "—"})`);
+      // 19.0 S5: five cards (eight through 18.0), and the dialog's controls
+      // as it opens — mode, cards, 全部, side, clock, 更多选项, cancel, start — at most 20
+      assert(r.ladder > 5 && r.cards === 5, `${tag}: 阶梯 ${r.ladder} 位对手里露出 5 张卡 (${r.cards})`);
+      assert(r.picked.length === 1, `${tag}: 选中的那位在这 5 张里 (${r.picked.join(", ") || "—"})`);
+      assert(r.controls <= 20, `${tag}: 对话框打开时可点的控件不超过 20 个 (${r.controls})`);
       assert(r.cardSpill.length === 0 && r.past === 0 && r.sideways <= 0,
         `${tag}: ${r.cards} 张卡片都在对话框里、名字和分数没被截 (${r.cardSpill.join(", ") || "—"}; ${r.sideways}px)`);
       assert(r.more === 0, `${tag}: 「更多选项」收着时里面的按钮一个也不露 (${r.more})`);
       await page.evaluate(() => { document.getElementById("ng-custom").open = true; });
       await settle(page);
       const o = await measure();
-      // 10.0 M0: its buttons are the rarer clocks and the styles (5 + 4); the
-      // rungs are the cards, all twenty-one of them now, as tidy as the eight
-      assert(o.more >= 9 && o.moreSpill.length === 0 && o.morePast === 0 && o.sideways <= 0,
+      // 10.0 M0: its buttons are the rarer clocks (19.0 S5: the four styles
+      // went); the rungs are the cards, all twenty-one of them now
+      assert(o.more >= 5 && o.moreSpill.length === 0 && o.morePast === 0 && o.sideways <= 0,
         `${tag}: 打开「更多选项」，${o.more} 个按钮都在对话框里、字不出按钮、不横向滚动 (${o.moreSpill.join(", ") || "—"}; ${o.sideways}px)`);
       assert(o.cards === 21 && o.cardSpill.length === 0 && o.past === 0,
         `${tag}: …对手卡展开成全部 ${o.cards} 张，都在对话框里、没被截 (${o.cardSpill.join(", ") || "—"})`);

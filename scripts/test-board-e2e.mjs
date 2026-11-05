@@ -1652,13 +1652,14 @@ for (const appearance of ["light", "dark"]) {
       focus: document.activeElement && (document.activeElement.id || document.activeElement.dataset.op || document.activeElement.dataset.diff || document.activeElement.textContent.trim()),
       // 9.0 S5: the rows live in the dialog (style in its 更多选项 fold),
       // whether it is open or not, and nowhere on the settings page
+      // 19.0 S5: no style row at all — the style is the card's own
       rowsHome: ["row-opponent", "row-color", "row-clock"].every((id) => document.getElementById(id).parentElement.id === "ng-host")
-        && document.getElementById("row-persona").parentElement.id === "ng-custom-body" && !document.getElementById("row-difficulty")
-        && !document.querySelector("#page-settings #op-grid, #page-settings #persona-seg, #page-settings #color-seg, #page-settings #clock-seg"),
+        && !document.getElementById("row-persona") && !document.getElementById("row-difficulty")
+        && !document.querySelector("#page-settings #op-grid, #page-settings #color-seg, #page-settings #clock-seg"),
     };
   });
   const stateBefore = await state();
-  assert(stateBefore.rowsHome, "开局前:对手、执子、棋钟、风格都在新对局对话框里(风格在「更多选项」里),设置页上没有它们");
+  assert(stateBefore.rowsHome, "开局前:对手、执子、棋钟都在新对局对话框里,没有单独的风格一行,设置页上没有它们");
 
   // a game in progress: one step, the warning in the dialog, no second box
   await tap("e2"); await tap("e4"); await settle(page);
@@ -1669,9 +1670,8 @@ for (const appearance of ["light", "dark"]) {
   // v8-0-plan B4: the opponent is a persona card first; rung and style are
   // folded under 自定义 (9.0 S5: after the side and the clock, and the
   // dialog's own rows rather than nodes borrowed from the settings page)
-  const inFold = await page.evaluate(() => !!document.getElementById("row-persona").closest("#ng-custom"));
-  assert(JSON.stringify(s.rows) === JSON.stringify(["row-opponent", "row-color", "row-clock", "ng-custom"]) && inFold && s.rowsHome,
-    `……里面是角色卡、执子、棋钟,风格收在「更多选项」里(${s.rows.join(",")})`);
+  assert(JSON.stringify(s.rows) === JSON.stringify(["row-opponent", "row-color", "row-clock", "ng-custom"]) && s.rowsHome,
+    `……里面是角色卡、执子、棋钟和「更多选项」(${s.rows.join(",")})`);
   assert(s.focus === "ng-start", `……焦点在「开始」上,直接回车就是再来一盘同样的(${s.focus})`);
   // the draft is not the game: choosing 执黑 here changes nothing until 开始
   await page.click('#ng-host #color-seg button[data-color="b"]'); await settle(page);
@@ -1711,7 +1711,8 @@ for (const appearance of ["light", "dark"]) {
   // place a rung is chosen (the two rows of rung names under it are gone)
   await page.evaluate(() => document.getElementById("btn-new").click()); await settle(page);
   const w0 = await cardsNow();
-  assert(w0 === "sol,leo,ivy,max*,iris,otto,hugo,zoe", `S2:选了马克斯(高级)再开对话框,八张卡是他和他两边的人,他亮着(${w0})`);
+  // 19.0 S5: five (no rating yet, so the window is around the pick)
+  assert(w0 === "leo,ivy,max*,iris,otto", `S5:选了马克斯(高级)再开对话框,五张卡是他和他两边的人,他亮着(${w0})`);
   await page.click("#ng-custom > summary"); await settle(page);
   const w1 = await cardsNow();
   assert(w1.split(",").length === 21 && w1.includes("max*") && !(await page.$("#diff-seg, #diff-seg-engine")),
@@ -1719,10 +1720,10 @@ for (const appearance of ["light", "dark"]) {
   await page.click('#ng-host #op-grid .op-card[data-op="pip"]'); await settle(page);
   await page.click("#ng-custom > summary"); await settle(page);
   const w2 = await cardsNow();
-  assert(w2 === "pip*,tomo,lina,kai,ada,remy,ben,nico", `S2:选了皮普再收起,八张卡挪到梯子底,皮普亮着(${w2})`);
+  assert(w2 === "pip*,tomo,lina,kai,ada", `S5:选了皮普再收起,五张卡挪到梯子底,皮普亮着(${w2})`);
   await page.click('#ng-host #op-grid .op-card[data-op="ben"]'); await settle(page);
   const w3 = await cardsNow();
-  assert(w3.split(",").length === 8 && w3.includes("ben*"), `S2:收起时选本,八张卡的窗口跟着他(${w3})`);
+  assert(w3 === "ada,remy,ben*,nico,vera", `S5:收起时选本,五张卡的窗口跟着他(${w3})`);
   await page.keyboard.press("Escape"); await settle(page);
   s = await state();
   assert(!s.open && s.settings.difficulty === "hard", `……Esc 不开始:设置里还是高级(${s.settings.difficulty})`);
@@ -1769,10 +1770,9 @@ for (const appearance of ["light", "dark"]) {
   await page.evaluate(() => document.getElementById("btn-new").click()); await settle(page);   // hidden with no moves on the board; N and the menu reach the same handler
   await page.click('#ng-host #mode-seg button[data-mode="pvp"]'); await settle(page);
   s = await state();
-  // 9.0 S2: 更多选项 stays (the rarer clocks are in it); its style row hides
-  const pvpFold = await page.evaluate(() => String(document.getElementById("row-persona").hidden));
-  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-color", "row-clock", "ng-custom"]) && pvpFold === "true",
-    `双人模式只显示「谁执白」、棋钟和「更多选项」(里面没有风格)(${s.rows.join(",")} / ${pvpFold})`);
+  // 9.0 S2: 更多选项 stays (the rarer clocks are in it)
+  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-color", "row-clock", "ng-custom"]),
+    `双人模式只显示「谁执白」、棋钟和「更多选项」(${s.rows.join(",")})`);
   await page.click('#ng-host #color-seg button[data-color="b"]'); await settle(page);
   // 9.0 S2: 5+3 is under 更多选项, which stays in 双人 (its style row hides)
   await page.click("#ng-custom > summary"); await settle(page);

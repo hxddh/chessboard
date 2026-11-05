@@ -1482,13 +1482,14 @@
                with a name, a face and a measured rating — chosen here, first.
                The cards are built once by opponents-ui.js and only relabelled
                afterwards (7.6). 10.0 M0: the cards are the only way to pick
-               a rung — 更多选项 opens them all; the style stays there with
-               the rarer clocks. -->
+               a rung — 更多选项 opens them all. 19.0 S5: the style is the
+               card's own; the 陪练风格 row is gone. -->
           <div class="setting-row stack" id="row-opponent">
             <span class="setting-k" data-i18n="ng.opponent">对手是谁</span>
-            <!-- 9.0 S2: eight cards — the opponents around the one picked;
-                 all 21 while 更多选项 is open -->
+            <!-- 19.0 S5: five cards — the opponents nearest your rating (around
+                 the one picked until you have one); 全部 or 更多选项 shows all 21 -->
             <div class="op-grid" id="op-grid" role="group" aria-label="对手是谁" data-i18n-aria="ng.opponent"></div>
+            <button type="button" class="tool-txt" id="op-all"></button>
             <span class="op-pick" id="op-pick" hidden></span>
             <span class="setting-note" id="op-you"></span>
           </div>
@@ -1526,17 +1527,6 @@
                   <label class="clock-field"><input type="number" class="text-input" id="tc-min" min="1" max="180" step="1" value="15" inputmode="numeric" /><span data-i18n="clock.minutes">分钟</span></label>
                   <label class="clock-field"><span>+</span><input type="number" class="text-input" id="tc-inc" min="0" max="60" step="1" value="10" inputmode="numeric" /><span data-i18n="clock.incSec">秒/步</span></label>
                 </div>
-              </div>
-              <div class="setting-row stack" id="row-persona">
-                <!-- 15.0 F: what a style does is the label's ⓘ, not a line under the row -->
-                <span class="setting-k has-info" data-i18n="side.persona" title="风格会让它偏离最优着法（最多约半个子），但不会送掉已经算到的杀" data-i18n-title="side.personaNote">陪练风格</span>
-                <div class="theme-row wrap" id="persona-seg" role="group" aria-label="陪练风格" data-i18n-aria="side.persona" aria-describedby="persona-note">
-                  <button type="button" data-persona="off" class="active" title="不加风格,引擎按难度正常发挥" data-i18n-title="tip.persona.off" data-i18n="persona.off">标准</button>
-                  <button type="button" data-persona="greedy" title="见子就吃,会主动踩进你的捉双和牵制" data-i18n-title="tip.persona.greedy" data-i18n="persona.greedy">贪吃子</button>
-                  <button type="button" data-persona="principled" title="按开局三原则出子:抢中心、快出轻子、尽早易位" data-i18n-title="tip.persona.principled" data-i18n="persona.principled">重原则</button>
-                  <button type="button" data-persona="attacker" title="子力一直往你的王那边压,练防守用" data-i18n-title="tip.persona.attacker" data-i18n="persona.attacker">爱进攻</button>
-                </div>
-                <span class="sr-only" id="persona-note" data-i18n="side.personaNote">风格会让它偏离最优着法（最多约半个子），但不会送掉已经算到的杀</span>
               </div>
             </div>
           </details>

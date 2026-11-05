@@ -1361,8 +1361,9 @@ await scenario("对手角色", async () => {
   // 9.0 S2: was T1's three segments 入门 / 进阶 / 高手, opening on the pick's
   // one — now there are no segments: eight cards, the ladder around the pick
   const mid = shownIds(dlg);
-  assert(!dlg.seg && mid.join() === "ben,nico,vera,sol,leo,ivy,max,iris",
-    "对手角色（S2）：没有分段，打开时显示当前对手（中级·索尔）和他两边的八张卡", mid.join(","));
+  // 19.0 S5: five (eight through 18.0) — no rating yet, so around the pick
+  assert(!dlg.seg && mid.join() === "nico,vera,sol,leo,ivy",
+    "对手角色（S5）：没有分段，打开时显示当前对手（中级·索尔）和他两边的五张卡", mid.join(","));
   assert(dlg.cards.filter((c) => c.on).length === 1 && dlg.focus === dlg.cards.find((c) => c.on).id,
     "对手角色：空棋盘的「新局」打开时，当前的角色亮着、焦点在它上面", JSON.stringify({ focus: dlg.focus }));
   // a card by keyboard: focus it, Space (Enter in this dialog is 开始); the
@@ -1371,11 +1372,13 @@ await scenario("对手角色", async () => {
   await page.keyboard.press("Space");
   await page.waitForTimeout(150);
   const top = await dialog();
-  assert(top.cards.find((c) => c.id === "iris").on && shownIds(top).join() === "leo,ivy,max,iris,otto,hugo,zoe,lars" && top.focus === "iris",
-    "对手角色（S2）：键盘空格选艾瑞丝，八张卡挪到她两边，焦点留在她身上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
+  assert(top.cards.find((c) => c.id === "iris").on && shownIds(top).join() === "ivy,max,iris,otto,hugo" && top.focus === "iris",
+    "对手角色（S5）：键盘空格选艾瑞丝，五张卡挪到她两边，焦点留在她身上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
   // 10.0 M0: 更多选项 open is the whole ladder on the cards — the one place a
-  // rung is chosen; 莉娜 is at its foot
-  await page.click("#ng-custom > summary");
+  // rung is chosen; 莉娜 is at its foot. 19.0 S5: 「全部 21 位对手」 opens it too
+  const allBtn = await page.evaluate(() => { const b = document.getElementById("op-all"); return b && !b.hidden ? b.textContent.trim() : ""; });
+  assert(allBtn === "全部 21 位对手", "对手角色（S5）：五张卡下面是「全部 21 位对手」", allBtn);
+  await page.click("#op-all");
   await page.waitForTimeout(150);
   const all = await dialog();
   assert(shownIds(all).length === 21 && all.cards.find((c) => c.id === "iris").on,
@@ -1385,8 +1388,8 @@ await scenario("对手角色", async () => {
   await page.click("#ng-custom > summary");
   await page.waitForTimeout(150);
   const low = await dialog();
-  assert(shownIds(low).join() === "pip,tomo,lina,kai,ada,remy,ben,nico" && low.cards.find((c) => c.id === "lina").on,
-    "对手角色（S2）：选了莉娜再收起，八张卡挪到梯子底，莉娜亮着", JSON.stringify(shownIds(low)));
+  assert(shownIds(low).join() === "pip,tomo,lina,kai,ada" && low.cards.find((c) => c.id === "lina").on,
+    "对手角色（S5）：选了莉娜再收起，五张卡挪到梯子底，莉娜亮着", JSON.stringify(shownIds(low)));
   await page.click("#ng-start");
   await page.waitForTimeout(600);
   const st = await page.evaluate(() => ({
