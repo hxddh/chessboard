@@ -785,7 +785,12 @@ if (scenario()) {
       let ch = 7; for (let i = 0; i < d.length; i += 401) ch = (ch * 31 + d[i]) | 0;
       const store = Object.keys(localStorage).sort().map((k) => k + "=" + localStorage.getItem(k)).join("\u0000");
       const toast = document.getElementById("toast");
-      return [hash(document.getElementById("app").innerHTML), ch, hash(store), toast ? toast.textContent.trim() : ""].join("/");
+      // the dialogs that live outside #app (the theme list, the library list…):
+      // opening one is a change too — it was invisible here, and the click
+      // only "did something" when a redraw elsewhere happened to land in the
+      // same 800 ms (#pz-themes-open, CI)
+      const open = [...document.querySelectorAll(".modal-bg.show, dialog[open]")].map((e) => e.id).join();
+      return [hash(document.getElementById("app").innerHTML), ch, hash(store), toast ? toast.textContent.trim() : "", open].join("/");
     });
 
     // Wait for silence first, and wait for it properly. The toast lives inside
@@ -836,8 +841,7 @@ if (scenario()) {
       await settle(page);
       await quiet(page);
       // a control drawn late (a chunk's list, a picker filled after its data)
-      // is waited for: clicking before it shows timed out in silence and read
-      // as 「did nothing」 (CI, #pz-themes-open)
+      // is waited for: a click before it shows times out in silence
       await page.waitForSelector(id, { state: "visible", timeout: 5000 }).catch(() => {});
       await settle(page);
       const before = await snapshot(page);
