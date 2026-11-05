@@ -103,7 +103,8 @@ async function bootLibrary(d) {
   const localRec = new Map();   // entry id → the stats record it stands for
   const listModal = () => doc.getElementById("lib-list-modal");
   const listOpen = () => { const m = listModal(); return !!m && m.classList.contains("show"); };
-  const diagOpen = () => { const m = doc.getElementById("lib-modal"); return !!m && m.classList.contains("show"); };
+  // 19.0 S2: the diagnosis is a block on 我的, not a dialog
+  const diagOpen = () => store.ui.view === "me";
   const f = store.ui.libFilter = Object.assign({ result: "all", color: "all", sort: "t", src: "all", tc: "all",
     q: "", from: "", to: "", pos: false }, store.ui.libFilter);
   let shown = PAGE;

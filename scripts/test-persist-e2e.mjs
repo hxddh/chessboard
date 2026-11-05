@@ -198,8 +198,8 @@ const PLACEMENT = STUDY.split(" ")[0];
   assert(r.slots && r.slots.slots.filter(Boolean).length === 1 && r.slots.slots[4] && r.slots.slots[4].pgn.includes(STUDY),
     "S7: the slots that moved are cleared; the set-up with no moves stays in chess.slots");
   assert(!r.button, "S7: the ⋯ menu has no 存档槽 any more");
-  // one of them opens onto the board, from the library's list
-  await page.click('#rail button[data-view="library"]').catch(() => {});
+  // one of them opens onto the board, from the library's list (19.0 S1: on 我的)
+  await page.click('#rail button[data-view="me"]').catch(() => {});
   await page.waitForTimeout(400);
   await page.click("#lib-open");
   await page.waitForSelector("#lib-list button[data-lib]", { timeout: 8000 }).catch(() => {});
@@ -453,9 +453,10 @@ const PLACEMENT = STUDY.split(" ")[0];
   await page.waitForTimeout(300);
   await page.click('#rail button[data-view="me"]');   // v8-0-plan A1: the record is the 我的 page
   await page.waitForTimeout(500);
-  const stats = await page.evaluate(() =>
-    (document.getElementById("sec-stats") || {}).textContent.replace(/\s+/g, " "));
-  assert(/1\s*胜/.test(stats) && /0\s*负/.test(stats), `统计段记到了这一胜(「${stats.slice(0, 40)}」)`);
+  // 19.0 S3: 统计 left 我的 — the game is a day on the calendar (and a row in the history, below)
+  await page.waitForFunction(() => { const e = document.getElementById("sec-cal"); return !!e && !e.hidden; }, null, { timeout: 5000 }).catch(() => {});
+  const cal = await page.evaluate(() => (document.getElementById("me-cal-meta") || {}).textContent || "");
+  assert(/1/.test(cal), `练习日历记到了今天这一局(「${cal}」)`);
   // the key is chess.achv — persist.js KEYS, not the name the section has
   const ach = await page.evaluate(() => {
     const raw = localStorage.getItem("chess.achv");
@@ -466,13 +467,13 @@ const PLACEMENT = STUDY.split(" ")[0];
   assert(ach >= 1, `成就真的落了盘(解锁 ${ach} 个)`);
 
   // v8-0-plan C1: 「全部 N 局」 opens the library's list on its 本机 games
-  // (9.0 S4: 对局历史 is on 棋谱 now, not on 我的)
-  await page.click('#rail button[data-view="library"]');
+  // (9.0 S4: 对局历史 is on 棋谱 now, not on 我的 — 19.0 S1: on 我的 again, 棋谱 having left the rail)
+  await page.click('#rail button[data-view="me"]');
   await page.waitForTimeout(400);
   const preview = await page.evaluate(() => ({
-    onLib: !!document.querySelector("#page-library #sec-history"),
+    onMe: !!document.querySelector("#page-me #sec-history"),
     rows: document.querySelectorAll("#hist-body [data-hist]").length }));
-  assert(preview.onLib && preview.rows === 1, `对局历史在「棋谱」页上，预览里就是这一局(${JSON.stringify(preview)})`);
+  assert(preview.onMe && preview.rows === 1, `对局历史在「我的」页上，预览里就是这一局(${JSON.stringify(preview)})`);
   await page.click("#hist-open");
   await page.waitForTimeout(800);
   const rows = await page.evaluate(() =>

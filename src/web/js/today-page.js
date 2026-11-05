@@ -263,7 +263,8 @@ export function createTodayPage(d) {
     const pz = $("today-puzzle");
     if (pz) pz.onclick = () => { Shell.openTrain("puzzle"); smartPuzzle(); };
     const all = $("today-all-games");
-    if (all) all.onclick = () => Shell.go("library");
+    // 19.0 S1: the games are on 我的, under the record
+    if (all) all.onclick = () => { Shell.go("me"); const sec = $("sec-library"); if (sec && sec.scrollIntoView) sec.scrollIntoView({ block: "start" }); };
     const cont = $("today-cont");
     if (cont) cont.onclick = (ev) => {
       const b = ev.target.closest(".today-c[data-seg]");

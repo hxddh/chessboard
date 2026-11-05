@@ -133,6 +133,14 @@ async function open(lang, mode, tab, theme = "wood", viewport = { width: 1400, h
 
 const LANGS = ["zh-CN", "en", "ja"];
 
+/** 19.0 S2: the diagnosis is a block on 我的 (it was the 棋谱 page's 看诊断 sheet) — there, drawn. */
+async function toDiag(page, ms = 600) {
+  await page.click('#rail button[data-view="me"]', { timeout: 1500 }).catch(() => {});
+  await page.waitForFunction(() => { const b = document.getElementById("diag-lib"), e = document.getElementById("lib-diag");
+    return !!b && !b.hidden && !!e && e.childElementCount > 0; }, null, { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(ms);
+}
+
 // 9.0 S5: the settings page's categories (shell.js SETTING_CATS), one shown at
 // a time — a check that used to read the whole 设置 tab reads each of them
 const CATS = ["general", "board", "game", "data"];   // 19.0 S4: four
@@ -323,7 +331,8 @@ if (scenario()) {
   assert(!where.inPanel && where.inDialog, "…off the panel, in the new-game dialog");
   // 9.0 S5: the rail ends in 设置 (the preferences window and the 设置 tab, one page)
   // 9.0 S3: 谜题 and 学习 are one entry, 训练 (its segments over the panel)
-  assert(where.rail === "home,play,train,library,me,settings", "…and the modes are the rail's (" + where.rail + ")");
+  // 19.0 S1: 棋谱 left the rail
+  assert(where.rail === "home,play,train,me,settings", "…and the modes are the rail's (" + where.rail + ")");
   assert(!where.trainSegShown, "…and 下棋's panel does not carry 训练's segment switch");
   // 9.0 S5: the panel's tab row went with its 设置 tab — one pane, so no
   // navigation row in the panel at all (it was "one, not two")
@@ -1327,7 +1336,8 @@ if (scenario()) {
       gap: box.right - Math.max(...row.map((x) => x.r)),
     }));
   }, sel);
-  for (const [tab, sel] of [["me", "#page-me .page-cols > .page-sec"], ["library", "#page-library .page-cols > .page-sec"], ["home", "#page-home .today-row .today-card"]]) {
+  // 19.0 S1: 棋谱's cards are 我的's now (the library, the history; the book is under 训练 · 开局)
+  for (const [tab, sel] of [["me", "#page-me .page-cols > .page-sec"], ["home", "#page-home .today-row .today-card"]]) {
     const { ctx, page } = await open("zh-CN", "ai", tab);
     await settle(page);
     const rs = await rows(page, sel);
@@ -1906,7 +1916,9 @@ if (scenario()) {
         h: Math.round(e.getBoundingClientRect().height),
         k: (e.querySelector(".stat-k") || {}).textContent || "",
       })));
-    assert(rows.length >= 6, lang + ": the statistics are on screen (" + rows.length + " rows)");
+    // 19.0 S3: 统计's six difficulty rows left 我的 with the block; the list
+    // left on the page is the camp's five themes, and the rule still holds of it
+    assert(rows.length >= 5, lang + ": the record's rows are on screen (" + rows.length + " rows)");
     const heights = [...new Set(rows.map((r) => r.h))];
     assert(heights.length === 1,
       lang + ": every row in the list is the same height (" + heights.join(", ") + ") — tallest is 「" +
@@ -1999,10 +2011,8 @@ if (scenario()) {
 
     for (const where of ["panel", "diagnosis"]) {
       if (where === "diagnosis") {
-        // v8-0-plan A1: the diagnosis opens from the library page
-        await page.click('#rail button[data-view="library"]', { timeout: 800 }).catch(() => {});
-        await page.click("#lib-diagnose", { timeout: 800 }).catch(() => {});
-        await page.waitForTimeout(1600);
+        // v8-0-plan A1: the diagnosis opens from the library page — 19.0 S2: it is 我的's block
+        await toDiag(page, 1600);
       }
       const rows = await read();
       assert(rows.length >= (where === "panel" ? 6 : 8),
@@ -2074,9 +2084,7 @@ if (scenario()) {
   await page.reload();
   await page.waitForTimeout(1000);
   await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
-  await page.click('#rail button[data-view="library"]', { timeout: 900 });   // v8-0-plan A1
-  await page.click("#lib-diagnose", { timeout: 900 });
-  await page.waitForTimeout(1800);
+  await toDiag(page, 1800);   // v8-0-plan A1 — 19.0 S2: on 我的
 
   const charts = await page.evaluate(() => {
     const out = [];
@@ -2227,7 +2235,8 @@ if (scenario()) {
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     await new Promise((r) => setTimeout(r, 420));
     const b = document.getElementById("board-wrap").getBoundingClientRect();
-    const sec = document.getElementById("sec-stats");
+    // 19.0 S3: 统计 left 我的; the library's card is one of its columns now (S1)
+    const sec = document.getElementById("sec-library");
     const p = sec && sec.offsetParent ? sec.getBoundingClientRect() : { width: 0 };
     return { board: Math.round(b.width), left: Math.round(b.left), content: Math.round(p.width) };
   }, view);
@@ -2686,11 +2695,11 @@ if (scenario()) {
     await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
     // v8-0-plan C1: 「全部 N 局」 opens the library's list on its 本机 games —
     // the history's own dialog is gone, and the same ruler applies to this one
-    // 9.0 S4: the history is 棋谱's now (moved from 我的)
-    await page.click('#rail button[data-view="library"]');
+    // 9.0 S4: the history is 棋谱's now (moved from 我的) — 19.0 S1: 我的's again
+    await page.click('#rail button[data-view="me"]');
     await settle(page);
-    assert(await page.evaluate(() => !!document.getElementById("sec-history").closest("#page-library")
-      && !!document.getElementById("hist-open").offsetParent), lang + ": 对局历史 and its 「全部 N 局」 are on 棋谱");
+    assert(await page.evaluate(() => !!document.getElementById("sec-history").closest("#page-me")
+      && !!document.getElementById("hist-open").offsetParent), lang + ": 对局历史 and its 「全部 N 局」 are on 我的");
     await page.click("#hist-open", { timeout: 2500 });
     await page.waitForTimeout(800);
     const fold = await openLibFilters(page);
@@ -2762,7 +2771,7 @@ if (scenario()) {
     await page.reload();
     await page.waitForTimeout(900);
     await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
-    await page.click('#rail button[data-view="library"]', { timeout: 2000 }).catch(() => {});
+    await page.click('#rail button[data-view="me"]', { timeout: 2000 }).catch(() => {});   // 19.0 S1: the library is on 我的
     await page.click("#lib-open", { timeout: 2500 }).catch(() => {});
     await page.waitForTimeout(500);
     const fold = await openLibFilters(page);
@@ -3859,6 +3868,7 @@ if (scenario()) {
     // 9.0 S5: the 设置 tab is the settings page, a page over the board like
     // the other three; and with the tab row gone the panel's one pane is what
     // sits at its top (was: the tab row, ≤ 12px from the window's top)
+    // 19.0 S1: a saved "library" is 我的 now — still a page over the board
     for (const [mode, tab] of [["ai", "play"], ["ai", "settings"], ["ai", "record"], ["pvp", "play"], ["learn", "play"], ["puzzle", "play"], ["puzzle", "record"], ["ai", "home"], ["pvp", "library"]]) {
       const { ctx, page } = await open("zh-CN", mode, tab, "wood", { width: w, height: h });
       const r = await page.evaluate(() => {
@@ -4132,7 +4142,8 @@ if (scenario()) for (const [when, mode, act] of [
   ["人机·开局前", "ai", async () => {}],
   ["我的", "ai", async (page) => { await page.click('#rail button[data-view="me"]'); }],
   ["首页", "ai", async (page) => { await page.click('#rail button[data-view="home"]'); }],
-  ["棋谱库", "ai", async (page) => { await page.click('#rail button[data-view="library"]'); }],
+  // 19.0 S1: 棋谱 left the rail — its book is 训练 · 开局 (the library is on 我的, above)
+  ["训练·开局", "puzzle", async (page) => { await page.click('#train-seg button[data-seg="opening"]'); await page.waitForTimeout(600); }],
   // 9.0 S5: the 设置 tab is the settings page — every category of it
   ...CATS.map((c) => ["设置页·" + c, "pvp", async (page) => {
     await page.click('#rail button[data-view="settings"]'); await settle(page);
@@ -4897,13 +4908,13 @@ if (scenario()) {
     });
     const first = await railBox();
     const seen = new Set();
-    // 9.0 S3: 谜题 / 学习 are one entry, 训练; the six are now with 设置
-    for (const v of ["home", "train", "library", "me", "settings", "play"]) {
+    // 9.0 S3: 谜题 / 学习 are one entry, 训练; the six are now with 设置 — 19.0 S1: five, 棋谱 gone
+    for (const v of ["home", "train", "me", "settings", "play"]) {
       await page.click('#rail button[data-view="' + v + '"]');
       await settle(page);
       const b = await railBox();
       seen.add(b.rail + " | " + b.buttons);
-      if (v === "play") assert(b.board === first.board, tag + ": 走遍六个入口回到「下棋」,棋盘逐像素在原处(" + first.board + " → " + b.board + ")");
+      if (v === "play") assert(b.board === first.board, tag + ": 走遍五个入口回到「下棋」,棋盘逐像素在原处(" + first.board + " → " + b.board + ")");
     }
     assert(seen.size === 1 && [...seen][0] === first.rail + " | " + first.buttons,
       tag + ": 切换入口时导航栏和它的每个按钮都不动(" + seen.size + " 种)");
@@ -5060,11 +5071,9 @@ if (scenario()) {
       };
       await check("首页", "#page-home");
       await todayChecks(tag, page);
-      await page.click('#rail button[data-view="library"]'); await settle(page);
-      await check("棋谱库", "#page-library");
-      await page.click("#lib-diagnose"); await page.waitForTimeout(900);
-      await check("诊断", "#lib-modal .modal");
-      await page.keyboard.press("Escape"); await settle(page);
+      // 19.0 S1/S2: 棋谱 left the rail — the library and the diagnosis are 我的's blocks
+      await toDiag(page, 300);
+      await check("我的·诊断与棋谱库", "#page-me");
       await page.click("#lib-open"); await page.waitForTimeout(500);
       await check("棋谱列表", "#lib-list-modal .modal");
       await page.keyboard.press("Escape"); await settle(page);
@@ -5076,13 +5085,12 @@ if (scenario()) {
       for (const cat of CATS) { await showCat(page, cat); await check("设置·" + cat, "#page-settings"); }
       await page.click('#rail button[data-view="me"]'); await settle(page);
       // …and a page is as wide as the window lets it be: the diagnosis was
-      // cut at 460px
+      // cut at 460px (19.0 S2: a whole-row block on 我的)
       if (w >= 1024) {
-        await page.click('#rail button[data-view="library"]'); await settle(page);
-        await page.click("#lib-diagnose"); await page.waitForTimeout(700);
-        const cw = await page.evaluate(() => Math.round(document.querySelector("#lib-modal .modal").getBoundingClientRect().width));
-        assert(cw >= 900, tag + ": 诊断是整页宽(" + cw + "px),不再是 460px 的弹窗");
-        await page.keyboard.press("Escape");
+        await toDiag(page, 300);
+        // a whole row of the page's grid (at 1024 the page itself is 880 wide)
+        const cw = await page.evaluate(() => [document.getElementById("sec-diag"), document.querySelector("#page-me .page-cols")].map((e) => Math.round(e.getBoundingClientRect().width)));
+        assert(cw[0] >= cw[1] - 1 && cw[0] >= 800, tag + ": 诊断是整页宽(" + cw[0] + " / " + cw[1] + "px),不再是 460px 的弹窗");
       }
       assert(errs.length === 0, tag + ": 没有页面异常 " + errs.join(" / "));
       await ctx.close();
@@ -5142,29 +5150,30 @@ if (scenario()) {
       await page.waitForTimeout(1200);
       const r = await page.evaluate(() => {
         const root = document.getElementById("page-me");
-        const sec = document.getElementById("sec-growth");
+        // 19.0 S3: 成长 is three of the four blocks now — the ratings, the calendar — and S2's diagnosis
+        const secs = ["sec-ratings", "sec-cal", "sec-diag"].map((id) => document.getElementById(id));
         const shown = (e) => e.getClientRects().length > 0;
         const edge = root.getBoundingClientRect().right;
         const past = [...root.querySelectorAll("*")].filter(shown)
           .filter((e) => e.getBoundingClientRect().right > edge + 1)
           .map((e) => (e.id || e.className || e.tagName) + "@" + Math.round(e.getBoundingClientRect().right));
-        const cut = [...sec.querySelectorAll(".me-k, .me-v, .me-sw-h, .hint, .side-h, .side-h-meta")].filter(shown)
+        const cut = secs.flatMap((sec) => [...sec.querySelectorAll(".me-k, .me-v, .me-sw-h, .side-h, .side-h-meta")].filter(shown)
           .filter((e) => e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > sec.getBoundingClientRect().right + 0.5)
-          .map((e) => e.textContent.trim().slice(0, 24) + " " + e.scrollWidth + ">" + e.clientWidth);
+          .map((e) => e.textContent.trim().slice(0, 24) + " " + e.scrollWidth + ">" + e.clientWidth));
         // a heading and its figure share a row: neither may run into the other
-        const clash = [...sec.querySelectorAll(".side-h-row")].filter(shown).filter((row) => {
+        const clash = secs.flatMap((sec) => [...sec.querySelectorAll(".side-h-row")]).filter(shown).filter((row) => {
           const [a, b] = [row.querySelector(".side-h"), row.querySelector(".side-h-meta")];
           return a && b && shown(b) && a.getBoundingClientRect().right > b.getBoundingClientRect().left + 0.5;
         }).map((row) => row.id);
         return {
-          on: shown(sec), blocks: ["me-cal", "me-rating", "me-sw", "me-metrics"].filter((id) => shown(document.getElementById(id))).length,
+          on: secs.every(shown), blocks: ["me-cal", "me-rating", "trend-rating", "me-sw"].filter((id) => shown(document.getElementById(id))).length,
           doc: document.scrollingElement.scrollWidth - innerWidth, own: root.scrollWidth - root.clientWidth,
           past: past.slice(0, 4), cut: cut.slice(0, 4), clash,
         };
       });
-      assert(r.on && r.blocks === 4, tag + ": 成长一节四块都在(" + r.blocks + ")");
+      assert(r.on && r.blocks === 4, tag + ": 等级分、日历、诊断都在:两条曲线、日历、强弱项(" + r.blocks + ")");
       assert(r.doc <= 0 && r.own <= 0 && r.past.length === 0, tag + ": 「我的」没有横向滚动,也没有东西伸出右缘(" + JSON.stringify(r) + ")");
-      assert(r.cut.length === 0 && r.clash.length === 0, tag + ": 成长一节没有被截断的字,标题不压着数字(" + JSON.stringify({ cut: r.cut, clash: r.clash }) + ")");
+      assert(r.cut.length === 0 && r.clash.length === 0, tag + ": 这几块没有被截断的字,标题不压着数字(" + JSON.stringify({ cut: r.cut, clash: r.clash }) + ")");
       assert(errs.length === 0, tag + ": 没有页面异常 " + errs.join(" / "));
       await ctx.close();
     }
@@ -5586,17 +5595,15 @@ if (scenario()) {
       await page.waitForFunction(() => window.__chess && window.__chess.library && window.__chess.library().ready, null, { timeout: 20000 }).catch(() => {});
       await page.waitForTimeout(600);
       await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
-      await page.click('#rail button[data-view="library"]', { timeout: 1500 }).catch(() => {});
-      await page.click("#lib-diagnose", { timeout: 2500 }).catch(() => {});
-      await page.waitForTimeout(500);
+      await toDiag(page, 500);   // 19.0 S2: 我的's block (was the 看诊断 sheet)
       await page.click('#diag-src-seg [data-dsrc="local"]', { timeout: 1500 }).catch(() => {});
       await page.waitForTimeout(500);
       const r = await page.evaluate(() => {
         const seg = document.getElementById("diag-src-seg");
         const label = document.getElementById(seg.getAttribute("aria-labelledby"));
         const bs = [...seg.querySelectorAll("button")];
-        const modal = document.querySelector("#lib-modal .modal");
-        return { open: document.getElementById("lib-modal").classList.contains("show"),
+        const modal = document.getElementById("sec-diag");
+        return { open: !modal.hidden && modal.getClientRects().length > 0,
           label: label && label.offsetParent ? label.textContent.trim() : null, stray: seg.getAttribute("aria-label"),
           heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
           widths: bs.map((b) => b.getBoundingClientRect().width),
@@ -5606,12 +5613,12 @@ if (scenario()) {
           diag: /\d/.test(document.getElementById("lib-diag").textContent) };
       });
       const tag = `T5 诊断来源 (${lang}, ${viewport.width}×${viewport.height})`;
-      assert(r.open && r.diag, `${tag}: 对话框开着，读的是本机的棋`);
+      assert(r.open && r.diag, `${tag}: 诊断在「我的」上，读的是本机的棋`);
       assert(r.label && !r.stray, `${tag}: 有一个看得见的标签「${r.label}」，没有第二份 aria-label`);
       assert(r.heights.length === 1 && r.heights[0] < 40, `${tag}: 每一段一行高 (${r.heights.join(", ")})`);
       assert(Math.max(...r.widths) - Math.min(...r.widths) < 0.1, `${tag}: 每一段等宽 (${r.widths.map((w) => w.toFixed(2)).join(", ")})`);
       assert(r.spill.length === 0 && r.past === 0 && r.sideways <= 0,
-        `${tag}: 文字不出按钮，按钮不出对话框，对话框不横向滚动 (${r.spill.join(", ") || "—"}; ${r.sideways}px)`);
+        `${tag}: 文字不出按钮，按钮不出诊断那一块，它不横向滚动 (${r.spill.join(", ") || "—"}; ${r.sideways}px)`);
       assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
       await ctx.close();
     }
@@ -5996,23 +6003,11 @@ if (scenario()) {
           assert(r.sideways <= 0, `${at}: 页面不横向滚动 (${r.sideways}px)`);
         }
       }
+      // 19.0 S3: 「我的」 has four blocks — 计算专项 (v8-2-plan T2) is not one of them
       await page.click('#rail button[data-view="me"]', { timeout: 1500 }).catch(() => {});
-      await page.waitForFunction(() => !document.getElementById("sec-vis").hidden, null, { timeout: 6000 }).catch(() => {});
-      const me = await page.evaluate(() => {
-        const sec = document.getElementById("sec-vis"), box = sec.getBoundingClientRect();
-        const rows = [...sec.querySelectorAll(".stat-row")];
-        const bs = [...sec.querySelectorAll("button")].filter((b) => !b.hidden && b.offsetParent);
-        const line = (e) => parseFloat(getComputedStyle(e).lineHeight) || 20;
-        return { shown: !sec.hidden, n: rows.length, h: document.getElementById("vis-h").textContent,
-          tall: rows.filter((r) => r.getBoundingClientRect().height > line(r) * 1.6).map((r) => r.textContent.trim()),
-          heights: [...new Set(bs.map((b) => Math.round(b.getBoundingClientRect().height)))],
-          spill: bs.filter((b) => b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1 || b.getBoundingClientRect().right > box.right + 1).map((b) => b.textContent.trim()),
-          nb: bs.length, sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
-      });
-      // 9.0 S3: a record, not a second way in (看 N 步 / 盲走 are 训练 · 谜题's)
-      assert(me.shown && me.n === 2 && me.nb === 0 && me.h, `${tag}: 「我的」有计算专项一节，两行，没有第二个入口（${me.h}）`);
-      assert(me.tall.length === 0, `${tag}: 每个模式一行` + (me.tall.length ? " — " + me.tall.join(", ") : ""));
-      assert(me.sideways <= 0, `${tag}: 页面不横向滚动 (${me.sideways}px)`);
+      await page.waitForTimeout(600);
+      const me = await page.evaluate(() => ({ vis: !!document.getElementById("sec-vis"), sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth }));
+      assert(!me.vis && me.sideways <= 0, `${tag}: 「我的」上没有计算专项一节，页面不横向滚动 (${me.sideways}px)`);
       assert(errs.length === 0, `${tag}: 没有页面异常 — ` + errs.join(" / "));
       await ctx.close();
     }

@@ -364,13 +364,9 @@
       "daily.why.review": "Reviews due", "daily.why.mine": "A position you got wrong", "daily.why.weak": "Your weakest category",
       "daily.why.lesson": "Next in the course", "daily.why.op": "An opening you have not learned yet", "daily.why.game": "No game played today",
       "daily.why.motif": "A motif you keep missing",
-      "side.trend": "Progress",
-      "aria.trendAcc": "Accuracy over time",
-      "tip.trendAcc": "Accuracy of recently reviewed games, in play order",
-      "trend.row": "solved {0} this week · {1} last week",
-      "trend.rowNew": "solved {0} this week",
-      "trend.rowPrev": "solved {0} last week · none answered yet this week",
-      "trend.mines": "banked {0} · redeemed {1} this week",
+      
+      
+      
       "me.cal": "Practice calendar",
       "me.calMeta": "{0}-day streak · best {1}",
       "aria.cal": "Played or solved on {1:day|days} in the last {0} weeks",
@@ -381,18 +377,12 @@
       "me.sw.theme": "puzzle rating {0}",
       "me.sw.motif": "missed {0}× in games",
       "me.sw.eco": "scored {0}% in {1} games",
-      "me.metrics": "Across games", "me.phase": "Mistakes by phase",
-      "me.m.convert": "Converting an advantage",
-      "me.m.resil": "Resilience",
-      "me.m.clock": "Blunders under time pressure",
-      "me.m.convertV": "won {1} of {0} games after being 2 pawns up",
-      "me.m.resilV": "saved {1} of {0} games after being 2 pawns down, {2} of them won",
-      "me.m.clockV": "{1:blunder|blunders} in {0:move|moves} on a low clock · {2} otherwise",
-      "me.m.clockNone": "{0} clocked games, no move made on a low clock",
-      "me.m.need": "needs {0} games, {1} so far",
-      "me.m.convertD": "Games in which you were 2 or more pawns up, and how many you won (shown from {0} games)",
-      "me.m.resilD": "Games in which you were 2 or more pawns down, and how many you drew or won (shown from {0} games)",
-      "me.m.clockD": "Reviewed games with clock times (%clk in the PGN); under a tenth of your starting time counts as time pressure (shown from {0} games)",
+      
+      
+      
+      
+      
+      
       "pz.cat.real": "Real games",
       "pz.cat.def": "Defence", "pz.cat.draw": "Saves",
       "pz.more": "More ways to practise", "pz.smart": "Pick for me",
@@ -405,9 +395,7 @@
       "rec.due": "Reviews due {0} · tomorrow {1}",
       "study.part": "Classic games", "study.head": "Reading a game", "study.intro": "{0}, {1} · {2} · result {3}. Step through with ← →; the notes appear with the moves, and you can try another move at any point.", "study.ofNoNote": "Move {0} · {1} (no note on this move)", "study.ofNote": "Move {0} · {1} —— {2}",
       "pz.smart.done": "The whole book is solved \u2014 nothing left to recommend",
-      "side.puzzleTally": "Puzzle record",
-      "rec.tally": "{0} solved \u00b7 {1} missed",
-      "rec.weakMark": "most missed",
+      
       "pz.side": "Side",
       "tip.opSide.w": "Drill the line as White; Black's book replies play themselves",
       "tip.opSide.b": "Drill the line as Black; White's book moves play themselves",
@@ -419,7 +407,7 @@
       "side.textSize": "Text size", "text.s": "Small", "text.m": "Standard", "text.l": "Large", "tip.textSize": "Text size across the whole interface",
       "side.pieces": "Piece set", "pieces.cburnett": "Burnett", "pieces.merida": "Merida", "pieces.classic": "Classic",
       "side.coach": "Blunder alerts", "side.autoflip": "Auto-flip", "side.language": "Language",
-      "side.moves": "Moves", "side.stats": "Stats", "side.ach": "Achievements",
+      "side.moves": "Moves", "side.ach": "Achievements",
       "learn.doneN": "Done {0}/{1}", "learn.doneOf": "Lessons completed",
       "side.learn": "Lessons", "side.puzzle": "Puzzles", "side.editor": "Edit position",
       "mode.ai": "Engine", "mode.pvp": "2 players", 
@@ -520,11 +508,8 @@
       "msg.side.blackChosen": "Playing Black \u00b7 Black's view",
       "ach.unlocked": "Achievement unlocked",
       "brand": "Chess", "vs.player": "You",
-      "stats.emptyHint": "Finished engine games are recorded here automatically.",
-      "stats.hint": "engine games recorded automatically", "stats.accFrom": "accuracy comes from Review",
-      "stats.accHow": "run Review after a game to record accuracy",
-      "stats.gamesN": "{0:game|games}",
-      "stats.recentAccN": "Accuracy (last {0})", "stats.accLine": "{0}% · last {1}%",
+      
+      
       "tipRun.analyze": "A quick pass over every move, flagging mistakes",
       "tipRun.stop": "Stop the review (keep what has been measured)",
       "tipRun.claimThreefold": "This position has occurred three times — the draw can be claimed",
@@ -563,7 +548,6 @@
       "mat.takenW": "Pieces White has captured", "mat.takenB": "Pieces Black has captured",
       // v8-0-plan A1: the rail, the home page; 9.0 S5: the settings page
       "nav.aria": "Main navigation", "nav.home": "Today", "nav.play": "Play",
-      "nav.library": "Games",
       "nav.settings": "Settings",
       "set.catsAria": "Settings categories",
       "set.general": "General",
@@ -584,6 +568,7 @@
       "nav.train": "Train",
       "train.course": "Lessons",
       "train.puzzle": "Puzzles",
+      "train.opening": "Openings",
       "train.endgame": "Endgames",
       "train.classic": "Classics",
       "train.read": "Read",
@@ -724,7 +709,7 @@
       "ng.mode": "Opponent", 
       "home.cont.live": "{0} game in progress · move {1}", 
       // 7.0 game library
-      "lib.title": "Game library", "lib.import": "Import to library", "lib.diagnose": "See the diagnosis",
+      "lib.title": "Game library", "lib.import": "Import to library", 
       "lib.sync": "Sync from a site", "sync.user": "User name", "sync.go": "Sync", "sync.allow": "Allow online sync", "sync.hint": "Off by default. When on, the app contacts Lichess or Chess.com only when you press Sync, and sends only the user name.", "sync.noHost": "Online sync is available in the desktop app only.", "sync.fetching": "Fetching games from {0}…", "sync.offline": "Can't reach {0}. Check the connection and try again.", "sync.rate": "{0} is limiting requests for now. Try again in a minute.", "sync.notFound": "{0} has no user {1}.", "sync.empty": "{1} has no games on {0} yet.", "sync.failed": "The sync did not finish ({0}).", "sync.badName": "A user name is 2 to 30 letters, digits, - or _.",
       "sync.limit": "New games since last time, at most", "sync.analyse": "Review the games after syncing", "sync.progress": "Fetching games from {0}… {1:game|games} so far", "sync.none": "{1} has no new games on {0}.", "sync.timeout": "{0} took too long to answer. Please try again later.", "sync.busy": "The previous sync has not finished yet. Please try again shortly.",
       "pz.repBook": "the book plays {0}",
@@ -787,7 +772,7 @@
       "lib.deepDone": "{0}, deep review: {1} withdrawn, {2} re-answered, {3} added",
       "lib.deepCut": "That game was not finished \u2014 its earlier review is left as it was",
       "lib.passCut": "The engine gave no evaluation twice, so the review stopped here; the unfinished game is left as it was",
-      "diag.title": "Library diagnosis",
+      "diag.title": "Diagnosis",
       "diag.from": "{0} reviewed games, all read from your side of the board",
       "diag.record": "Record", "diag.wld": "{0}W {1}L {2}D",
       "diag.acc": "Average accuracy", "diag.phase": "By phase", "diag.phaseOpening": "Opening (first {0} moves)",

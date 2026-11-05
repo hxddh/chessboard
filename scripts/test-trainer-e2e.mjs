@@ -533,7 +533,7 @@ async function solveCurrent(page, h) {
   await page.waitForTimeout(900);
   const before = { score: await h.text("#pz-run-score"), left: await secs(), runs: await runsOf() };
   assert(answered && /得分 1/.test(before.score), "a/#88: 冲刺答对一题", before.score);
-  await page.click('#rail button[data-view="library"]');
+  await page.click('#rail button[data-view="me"]');
   await page.waitForTimeout(300);
   await page.click("#lib-open");
   await page.waitForTimeout(400);
@@ -555,7 +555,7 @@ async function solveCurrent(page, h) {
   assert(t1 != null && t2 != null && t1 <= before.left && t1 > 150 && t2 < t1, "a/#88: 钟接着原来的时间在走", [before.left, t1, t2].join(" → "));
   assert(!!(await h.text("#puzzle-task")) && !(await h.shown("#pz-groups-sec")), "a/#88: 棋盘上还是这一局冲刺的题");
   // …and answered 替换, the run ends there and its score is filed
-  await page.click('#rail button[data-view="library"]');
+  await page.click('#rail button[data-view="me"]');
   await page.waitForTimeout(300);
   await page.click("#lib-open");
   await page.waitForTimeout(400);
@@ -977,11 +977,14 @@ const wrongSquare = (q) => ["a1", "h8", "a8", "h1", "d4", "e5"].find((s) => !(q.
   const ha = helpers(again.page);
   assert((await ha.text("#pz-vis-moves")).includes(VIS.lineText(q1.start, q1.sans)) && /复习/.test(await ha.text("#pz-run-head")),
     "h: 下一组先出复习题（答错的那道）", await ha.text("#pz-run-head"));
-  // 我的: the section, its rows and the way back
+  // 我的: the section, its rows and the way back — 19.0 S3: 计算专项 left 我的
+  // (four blocks); the answers are still kept with the mode
   await again.page.click('#rail button[data-view="me"]');
-  await again.page.waitForFunction(() => !document.getElementById("sec-vis").hidden, null, { timeout: 4000 }).catch(() => {});
-  assert(await ha.shown("#sec-vis") && /计算专项/.test(await ha.text("#vis-h")) && /对 1 \/ 错 1/.test(await ha.text("#vis-body")),
-    "h: 「我的」有计算专项一节，记着对错", await ha.text("#vis-body"));
+  await again.page.waitForTimeout(600);
+  const visRec = await again.page.evaluate(() => ({ sec: !!document.getElementById("sec-vis"),
+    look: (JSON.parse(localStorage.getItem("chess.puzzles") || "{}").vis || {}).look || null }));
+  assert(!visRec.sec && visRec.look && visRec.look.solve === 1 && visRec.look.miss === 1,
+    "h: 计算专项不再是「我的」的一节,对错照旧记着(对 1 / 错 1)", JSON.stringify(visRec));
   await again.ctx.close();
   await ctx.close();
 }
@@ -1181,7 +1184,7 @@ for (const [lang, label, head, ask, go] of [["en", "Look ahead", /Look ahead/, /
   }
   const head = await h.text("#pz-run-head");
   assert(/答对了/.test(await h.feedback()) && await h.shown("#pz-vis-next") && /第 2\/10 题/.test(head), "i: 两步杀答完，停在答案卡", head);
-  await page.click('#rail button[data-view="library"]');
+  await page.click('#rail button[data-view="me"]');
   await page.waitForTimeout(300);
   await page.click("#lib-open");
   await page.waitForTimeout(400);

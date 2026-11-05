@@ -993,6 +993,6 @@ export function createPuzzlesUI(d) {
     saveProgress, bookNow, loadPuzzleState, savePuzzleState, Srs, Picker,
     owedNow, ratingLabel, ratingTip, practiceLeft, puzzlesInCat,
     startPuzzleAt, startPuzzles, stopPuzzles, puzzleModel, puzzleHumanSide, puzzleClick,
-    showPuzzleAnswer, hintLevel, leaveTrainer, nextPuzzle, smartNext, syncPuzzleUI, closeThemes: () => Modes.closeThemes(), Vis, startPlacement, goTheme,
+    showPuzzleAnswer, hintLevel, leaveTrainer, nextPuzzle, smartNext, syncPuzzleUI, closeThemes: () => Modes.closeThemes(), startPlacement, goTheme,
   };
 }

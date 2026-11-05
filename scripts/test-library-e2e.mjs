@@ -77,6 +77,30 @@ async function freshContext(seed) {
   return ctx;
 }
 
+/** 19.0 S1: 我的开局书 is under 训练 · 开局 — the rail's 训练, then the segment. */
+async function toBook(page) {
+  if (await page.evaluate(() => { const e = document.getElementById("sec-rep"); return !!e && !e.hidden && e.getClientRects().length > 0; })) return;
+  await page.click('#rail button[data-view="train"]');
+  await page.waitForTimeout(300);
+  await page.click('#train-seg button[data-seg="opening"]');
+  await page.waitForFunction(() => { const e = document.getElementById("sec-rep"); return !!e && !e.hidden; }, null, { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(200);
+}
+
+/**
+ * 19.0 S2: the diagnosis is a block on 我的 (it was the 棋谱 page's 看诊断
+ * sheet): go there and wait for it to be drawn — or, below its floor, for
+ * the page to have drawn without it.
+ */
+async function toDiag(page) {
+  await page.click('#rail button[data-view="me"]').catch(() => {});
+  await page.waitForFunction(() => !!window.createMePage, null, { timeout: 8000 }).catch(() => {});
+  await page.waitForFunction(() => { const b = document.getElementById("diag-lib"), e = document.getElementById("lib-diag");
+    return !!b && !b.hidden && !!e && e.childElementCount > 0; }, null, { timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(400);
+}
+const diagShown = (page) => page.evaluate(() => { const b = document.getElementById("diag-lib"); return !!b && !b.hidden && b.getClientRects().length > 0; });
+
 async function open(ctx) {
   const page = await ctx.newPage();
   const errs = [];
@@ -84,13 +108,15 @@ async function open(ctx) {
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(900);
   await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
-  await page.click('#rail button[data-view="library"]').catch(() => {});
+  await page.click('#rail button[data-view="me"]').catch(() => {});
   await page.waitForTimeout(200);
   return { page, errs };
 }
 
 /** Feed the file picker the way a person does: click, choose, done. */
 async function importFile(page, text, button) {
+  // 19.0 S1: the book's imports are under 训练 · 开局
+  if (/^#rep-/.test(button || "")) await toBook(page);
   const file = path.join(HERE, "..", "node_modules", ".cache", "lib-e2e.pgn");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, text);
@@ -185,14 +211,15 @@ async function openFilters(page) {
   const read = () => page.evaluate(() => {
     const vis = (e) => !!e.offsetParent;
     const CARD = ".rec-entry, .rec-block.empty, .empty-note";
-    const cards = [...document.querySelectorAll(".page:not([hidden]) " + CARD)].filter(vis)
+    const cards = [...document.querySelectorAll(".page:not([hidden]) " + CARD + ", #sec-rep:not([hidden]) " + CARD.split(", ").join(", #sec-rep:not([hidden]) "))].filter(vis)
       .filter((c) => !c.parentElement.closest(".rec-block.empty"));
     const inside = (b, c) => {
       const x = b.getBoundingClientRect(), y = c.getBoundingClientRect();
       return x.left >= y.left - 0.5 && x.right <= y.right + 0.5 && x.top >= y.top - 0.5 && x.bottom <= y.bottom + 0.5;
     };
     // the empty sections and everything that belongs to them, headings included
-    const scope = ["record-empty", "stats-body", "lib-block", "rep-block", "hist-body", "hist-open"]
+    // 19.0 S3: 统计 (#stats-body) left 我的
+    const scope = ["record-empty", "lib-block", "rep-block", "hist-body", "hist-open"]
       .map((id) => document.getElementById(id));
     const buttons = scope.flatMap((el) => el.matches("button") ? [el] : [...el.querySelectorAll("button")]).filter(vis);
     return {
@@ -205,14 +232,18 @@ async function openFilters(page) {
     };
   });
   // v8-0-plan A1: 记录 is two pages — 我的 (the entry, stats) and 棋谱 (the
-  // library, the opening book, and the history (9.0 S4)); each is read while it shows
+  // library, the opening book, and the history (9.0 S4)); each is read while it shows.
+  // 19.0 S1: 棋谱 left the rail — the library and the history are on 我的, the
+  // book under 训练 · 开局; the two are read where they are
   await page.click('#rail button[data-view="me"]');
   await page.waitForTimeout(400); // 19.0 S3: 我的 draws once its chunk is in
   const onMe = await read();
-  await page.click('#rail button[data-view="library"]');
+  await toBook(page);
   const onLib = await read();
+  await page.click('#rail button[data-view="me"]');
+  await page.waitForTimeout(300);
   const r = Object.assign({}, onLib, { cards: onMe.cards.concat(onLib.cards), outside: onMe.outside.concat(onLib.outside) });
-  assert(r.cards.length >= 5, "§4a 全新档案的记录页:入口、统计、棋谱库、开局书、对局历史,五张空状态卡片",
+  assert(r.cards.length >= 4, "§4a 全新档案的记录页:入口、棋谱库、开局书、对局历史,四张空状态卡片(19.0 S3: 统计那一张随它去掉)",
     JSON.stringify(r.cards));
   // 9.0 V1: no dashed boxes anywhere; an empty state is an icon, a line and
   // one action on the surface it sits on (no box), the 我的 entry card aside
@@ -261,7 +292,8 @@ async function openFilters(page) {
   {
     const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games: games.slice(0, 5) }));
     const { page } = await open(ctx);
-    assert(await page.isHidden("#lib-diagnose"), "只有五局时,「看诊断」根本不出现");
+    await toDiag(page);
+    assert(!(await diagShown(page)), "只有五局时,诊断根本不出现(19.0 S2: 「我的」上的那一块;以前是「看诊断」)");
     assert(/还差 15 局/.test(await libText(page)), "……并且说清楚还差多少",
       await libText(page));
     await ctx.close();
@@ -270,9 +302,8 @@ async function openFilters(page) {
   {
     const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
     const { page, errs } = await open(ctx);
-    assert(await page.isVisible("#lib-diagnose"), "二十局以上,诊断才开门");
-    await page.click("#lib-diagnose");
-    await page.waitForTimeout(300);
+    await toDiag(page);
+    assert(await diagShown(page), "二十局以上,诊断才开门(19.0 S2: 在「我的」上)");
     const text = await page.textContent("#lib-diag");
     assert(/25 局已复盘的棋/.test(text), "诊断先说自己是从多少局里读出来的", text.slice(0, 80));
     assert(/12 胜 13 负 0 和/.test(text), "战绩", text.slice(0, 200));
@@ -384,10 +415,8 @@ async function openFilters(page) {
     JSON.stringify(bad));
 
   // 诊断的母题行是一扇门
-  await page.click('#rail button[data-view="library"]');
-  await page.waitForTimeout(200);
-  await page.click("#lib-diagnose");
-  await page.waitForTimeout(1200);
+  await toDiag(page);   // 19.0 S2: 我的's block
+  await page.waitForTimeout(800);
   const diagText = await page.textContent("#lib-diag");
   assert(/C6[0-9]|西班牙|Ruy/.test(diagText),
     "开局战绩终于有东西了 —— 7.0 从来没有人给条目写过 eco,这一段一直是死的", diagText);
@@ -455,11 +484,12 @@ async function openFilters(page) {
   assert(!/下一盘|下一局/.test(plan),
     "今天在别处下过棋，就不该再劝他去下一盘", plan);
 
-  // 进步页的准确率走势有东西可画 —— 数据全部来自棋谱库
-  await page.click('#rail button[data-view="me"]');   // v8-0-plan A1: the trend is on 我的
-  await page.waitForTimeout(400);
-  assert(await page.isVisible("#trend-acc"),
-    "准确率走势画得出来 —— 本地战绩是空的，这条线全部来自棋谱库");
+  // 进步页的准确率走势有东西可画 —— 数据全部来自棋谱库。19.0 S3：「进步」
+  // 这一块去掉了；棋谱库里的棋照样记在练习日历上
+  await page.click('#rail button[data-view="me"]');   // v8-0-plan A1: the record is on 我的
+  await page.waitForFunction(() => { const e = document.getElementById("sec-cal"); return !!e && !e.hidden; }, null, { timeout: 8000 }).catch(() => {});
+  assert(await page.isVisible("#me-cal") && !(await page.$("#trend-acc")),
+    "练习日历画得出来 —— 本地战绩是空的，这几天全部来自棋谱库(「进步」那条线随 19.0 S3 去掉)");
 
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
@@ -497,8 +527,8 @@ async function openFilters(page) {
   }
   const ctx = await freshContext(JSON.stringify({ v: 1, names: ["hxddh"], games }));
   const { page, errs } = await open(ctx);
-  await page.click("#lib-diagnose");
-  await page.waitForTimeout(1500);
+  await toDiag(page);   // 19.0 S2: 我的's block
+  await page.waitForTimeout(1100);
   const charts = await page.evaluate(() =>
     [...document.querySelectorAll("#lib-diag canvas.diag-chart")]
       .map((c) => ({ label: c.getAttribute("aria-label"), w: c.width, h: c.height,
@@ -678,7 +708,7 @@ async function openFilters(page) {
   page.on("pageerror", (e) => errs.push(e.message));
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(900);
-  await page.click('#rail button[data-view="library"]').catch(() => {});
+  await page.click('#rail button[data-view="me"]').catch(() => {});
   await page.waitForTimeout(200);
 
   const body = await libText(page);
@@ -889,8 +919,8 @@ async function openFilters(page) {
     "「接实战」把刚背完的那条线带上棋盘，继续跟引擎下", JSON.stringify(playedOn));
 
   // 清空开局书：欠下的复习跟着一起没有，否则 owedNow() 会永远数着一道谁也
-  // 端不出来的题
-  await page.click('#rail button[data-view="library"]');
+  // 端不出来的题（19.0 S1：书在训练 · 开局）
+  await toBook(page);
   await page.waitForTimeout(300);
   await page.click("#rep-clear");
   await page.waitForTimeout(400);
@@ -1025,7 +1055,7 @@ async function openFilters(page) {
   // 行签名里有语言：换成英文再打开列表，行文字跟着换（7.1 就有的缝）
   await page.evaluate(() => document.querySelector('#lang-seg button[data-lang="en"]').click());
   await page.waitForTimeout(300);
-  await page.click('#rail button[data-view="library"]');
+  await page.click('#rail button[data-view="me"]');
   await page.click("#lib-open");
   await page.waitForTimeout(400);
   const enRow = await rowOf("bravo").locator("button[data-lib]").textContent();
@@ -1168,14 +1198,14 @@ async function openFilters(page) {
   await mv("e2", "e4");
   await mv("e7", "e5");
 
-  await page.click('#rail button[data-view="library"]');   // the book is on the library page
+  await toBook(page);   // the book is under 训练 · 开局 (19.0 S1; was the library page)
   await importFile(page, REP, "#rep-import-w");
   await page.waitForTimeout(400);
   await page.click("#rep-drill");
   await page.waitForTimeout(900);
 
-  // 书清掉，题还在屏幕上
-  await page.click('#rail button[data-view="library"]');
+  // 书清掉，题还在屏幕上（19.0 S1：清空就在题下面，训练 · 开局）
+  await toBook(page);
   await page.waitForTimeout(200);
   await page.click("#rep-clear");
   await page.waitForTimeout(300);
@@ -1188,7 +1218,7 @@ async function openFilters(page) {
     JSON.stringify(await missedRep()));
 
   // 「接实战」：重新导书、背完一条线，棋盘上还压着那盘没下完的棋
-  await page.click('#rail button[data-view="library"]');   // the book is on the library page
+  await toBook(page);   // the book is under 训练 · 开局 (19.0 S1; was the library page)
   await importFile(page, REP, "#rep-import-w");
   await page.waitForTimeout(400);
   await page.click("#rep-drill");
@@ -1275,7 +1305,7 @@ async function openFilters(page) {
   await page.reload();
   await page.waitForTimeout(900);
   await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
-  await page.click('#rail button[data-view="library"]').catch(() => {});
+  await page.click('#rail button[data-view="me"]').catch(() => {});
   await page.waitForTimeout(200);
   const mid = (await libOf(page)).games;
   const kept = before.filter((g) => g.an);
@@ -1423,43 +1453,35 @@ async function openFilters(page) {
   const settingsOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}"));
 
   // §3c —— 两个窗口都要能点到弹窗的最后一行，而且是用滚轮滚过去的，不是脚本
-  // 替人 scrollIntoView（#app 是 overflow: hidden，脚本滚得动它，人滚不动）
+  // 替人 scrollIntoView（#app 是 overflow: hidden，脚本滚得动它，人滚不动）。
+  // 19.0 S2：诊断不是弹窗了，是「我的」上的一块 —— 滚轮滚的是这一页
   for (const viewport of [{ width: 1400, height: 900 }, { width: 540, height: 900 }]) {
     const tag = viewport.width + "×" + viewport.height;
     const { ctx, page, errs } = await openAt(viewport, "pvp", "record");
-    await page.click("#lib-diagnose");
-    await page.waitForTimeout(900);
+    await toDiag(page);
+    await page.waitForTimeout(500);
     const geo = () => page.evaluate(() => {
-      const card = document.querySelector("#lib-modal .modal").getBoundingClientRect();
       const rows = document.querySelectorAll("#lib-diag [data-diag-pick]");
       const last = rows[rows.length - 1];
       const r = last.getBoundingClientRect();
       const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-      const close = document.getElementById("lib-modal-close").getBoundingClientRect();
-      const hitClose = document.elementFromPoint(close.left + close.width / 2, close.top + close.height / 2);
       return {
-        cardTop: card.top, cardBottom: card.bottom, vh: innerHeight,
-        lastTop: r.top, lastBottom: r.bottom,
+        vh: innerHeight, lastTop: r.top, lastBottom: r.bottom,
         lastReachable: !!hit && (hit === last || last.contains(hit)),
-        closeReachable: !!hitClose && hitClose.id === "lib-modal-close",
-        paneScroll: document.getElementById("page-library").scrollTop,
+        paneScroll: document.getElementById("page-me").scrollTop,
         lastPick: last.dataset.diagPick,
       };
     });
     const g0 = await geo();
-    assert(g0.cardTop >= 0 && g0.cardBottom <= g0.vh,
-      tag + "：诊断卡片整张在窗口里（" + Math.round(g0.cardTop) + "–" + Math.round(g0.cardBottom) + " / " + g0.vh + "）");
-    assert(g0.closeReachable, tag + "：一打开，「关闭」就点得到");
-    // 滚轮在卡片上往下滚到底
-    const card = await page.$("#lib-modal .modal");
-    const cb = await card.boundingBox();
-    await page.mouse.move(cb.x + cb.width / 2, cb.y + cb.height / 2);
-    for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, 400); await page.waitForTimeout(40); }
+    // 滚轮在页面上往下滚到底
+    const pg = await page.$("#page-me");
+    const pb = await pg.boundingBox();
+    await page.mouse.move(pb.x + pb.width / 2, pb.y + pb.height / 2);
+    for (let i = 0; i < 30; i++) { await page.mouse.wheel(0, 400); await page.waitForTimeout(40); }
     await page.waitForTimeout(300);
     const g1 = await geo();
-    assert(g1.lastReachable, tag + "：滚到底，最后一行开局点得到（y=" + Math.round(g1.lastTop) + "）");
-    assert(g1.closeReachable, tag + "：滚到底，「关闭」也还在、点得到");
-    assert(g1.paneScroll === g0.paneScroll, tag + "：滚轮滚的是弹窗，不是背后的页面（" + g0.paneScroll + " → " + g1.paneScroll + "）");
+    assert(g1.lastReachable, tag + "：滚到底，诊断最后一行开局点得到（y=" + Math.round(g1.lastTop) + "）");
+    assert(g1.paneScroll > g0.paneScroll || g0.lastReachable, tag + "：滚轮滚的是「我的」这一页（" + g0.paneScroll + " → " + g1.paneScroll + "）");
     // 真点一下最后一行：那一组棋的列表打开
     const lastBox = await page.evaluate(() => {
       const rows = document.querySelectorAll("#lib-diag [data-diag-pick]");
@@ -1534,7 +1556,7 @@ async function openFilters(page) {
     await page.mouse.click(pt.x, pt.y);
     await page.waitForTimeout(1200);
     const before = await task();
-    await page.click('#rail button[data-view="library"]');
+    await page.click('#rail button[data-view="me"]');
     await page.waitForTimeout(300);
     await page.click("#lib-open");
     await page.waitForTimeout(400);
@@ -1557,8 +1579,8 @@ async function openFilters(page) {
   // （9.0 S5：侧栏只剩一页 —— 「在对局页」就是回到下棋、那一页看得见）
   for (const kind of ["peak", "motif"]) {
     const { ctx, page, errs } = await openAt({ width: 1400, height: 900 }, "pvp", "record");
-    await page.click("#lib-diagnose");
-    await page.waitForTimeout(900);
+    await toDiag(page);   // 19.0 S2: 我的's block
+    await page.waitForTimeout(500);
     const pick = await page.evaluate((k) => {
       const b = [...document.querySelectorAll("#lib-diag [data-diag-pick]")]
         .find((x) => JSON.parse(x.dataset.diagPick).kind === k);
@@ -1695,12 +1717,12 @@ async function openFilters(page) {
     const atMe = async () => { await page.click('.rail-btn[data-view="me"]'); await page.waitForFunction(() => !document.getElementById("page-me").hidden, null, { timeout: 5000 }); await page.waitForTimeout(400); };
     await atMe();
     const before = await page.evaluate(() => !document.getElementById("record-empty").hidden);
-    await page.click('.rail-btn[data-view="library"]'); await page.waitForTimeout(300);
+    await page.click('.rail-btn[data-view="me"]'); await page.waitForTimeout(300);
     await importFile(page, PGN);
     await atMe();
     const after = await page.evaluate(() => !document.getElementById("record-empty").hidden);
     assert(before && !after, "§5 空档案导入棋谱:入口卡片在导入那一刻让位(" + before + " → " + after + ")");
-    await page.click('.rail-btn[data-view="library"]'); await page.waitForTimeout(300);
+    await page.click('.rail-btn[data-view="me"]'); await page.waitForTimeout(300);
     // (b) open one of them: a record, not a game of yours
     await page.click("#lib-open");
     await page.waitForTimeout(400);
@@ -1751,11 +1773,9 @@ async function openFilters(page) {
       }, lang);
       await ctx.addInitScript(seedLibrary, { names: ["hxddh"], games });
       const { page, errs } = await open(ctx);
-      await page.click('#rail button[data-view="library"]').catch(() => {});
-      await page.click("#lib-diagnose");
-      await page.waitForTimeout(400);
+      await toDiag(page);   // 19.0 S2: 我的's block (was the sheet)
       const bad = await page.evaluate(() => {
-        const box = document.querySelector("#lib-modal .modal").getBoundingClientRect();
+        const box = document.getElementById("sec-diag").getBoundingClientRect();
         const out = [];
         for (const v of document.querySelectorAll("#lib-diag .stat-v")) {
           if (!v.textContent) continue;
@@ -1769,7 +1789,7 @@ async function openFilters(page) {
         }
         return out;
       });
-      assert(bad.length === 0, "§5 " + lang + " " + vp.width + ":诊断里每个数值都完整、在弹窗之内", bad.join(" / "));
+      assert(bad.length === 0, "§5 " + lang + " " + vp.width + ":诊断里每个数值都完整、在那一块之内", bad.join(" / "));
       assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
       await ctx.close();
     }
@@ -1788,8 +1808,9 @@ async function openFilters(page) {
   const { page, errs } = await open(ctx);
   await page.click('#rail button[data-view="me"]');
   await page.waitForTimeout(300);
-  const before = await page.evaluate(() => !document.getElementById("me-cal").hidden);
-  await page.click('#rail button[data-view="library"]');
+  // 19.0 S3: the calendar is a block of its own (#sec-cal) that is there only with a day on it
+  const before = await page.evaluate(() => !document.getElementById("sec-cal").hidden);
+  await page.click('#rail button[data-view="me"]');
   await page.waitForTimeout(200);
   await importFile(page, `[Event "Rated blitz"]\n[Date "${today}"]\n[White "hxddh"]\n[Black "rival"]\n[Result "1-0"]\n\n` +
     "1. e4 { [%clk 0:03:00] } e5 { [%clk 0:03:00] } 2. Qh5 { [%clk 0:02:57] } Nc6 { [%clk 0:02:55.2] } " +
@@ -1798,7 +1819,7 @@ async function openFilters(page) {
   assert(JSON.stringify(clk) === "[[180,180,177,175,170,160,169]]", "B5 导入的棋谱带着每手的钟", JSON.stringify(clk));
   await page.click('#rail button[data-view="me"]');
   await page.waitForTimeout(400);
-  const after = await page.evaluate(() => ({ cal: !document.getElementById("me-cal").hidden,
+  const after = await page.evaluate(() => ({ cal: !document.getElementById("sec-cal").hidden,
     meta: document.getElementById("me-cal-meta").textContent, w: document.getElementById("me-cal").width }));
   assert(!before && after.cal && /1/.test(after.meta) && after.w > 1,
     "B5 今天下的一局导进来:「我的」打开时日历上有今天(" + JSON.stringify({ before, after }) + ")");
@@ -2165,7 +2186,7 @@ function tenThousand() {
   assert(typeof sumBefore === "string" && early.sum === sumBefore,
     `F3 重启：摘要核对完之前的一次保存，头里的摘要 id 不丢(${sumBefore} → ${early.sum}；核对${early.answered ? "已" : "未"}答)`);
   await c1Ready(page);
-  await page.click('#rail button[data-view="library"]').catch(() => {});
+  await page.click('#rail button[data-view="me"]').catch(() => {});
   await page.waitForTimeout(300);
   const r0 = (x) => Math.round(x);
   const median = (xs) => xs.slice().sort((a, b) => a - b)[xs.length >> 1];
@@ -2229,15 +2250,16 @@ function tenThousand() {
   const ctx = await c1Context({ "chess.stats": STATS, "chess.library": V1.clocked });
   const { page, errs } = await open(ctx);
   await c1Ready(page);
-  // 9.0 S4: 对局历史 is on 棋谱 now, under the library — not on 我的
-  await page.click('#rail button[data-view="library"]');
+  // 9.0 S4: 对局历史 is on 棋谱 now, under the library — not on 我的.
+  // 19.0 S1: 棋谱 left the rail; the history and the library are on 我的
+  await page.click('#rail button[data-view="me"]');
   await page.waitForTimeout(300);
   const home = await page.evaluate(() => ({
-    lib: !!document.querySelector("#page-library #sec-history"),
-    me: !!document.querySelector("#page-me #sec-history"),
+    noPage: !document.getElementById("page-library"),
+    me: !!document.querySelector("#page-me #sec-history") && !!document.querySelector("#page-me #sec-library"),
     shown: !!document.getElementById("sec-history").offsetParent,
   }));
-  assert(home.lib && !home.me && home.shown, "S4 对局历史在「棋谱」页上，不在「我的」", JSON.stringify(home));
+  assert(home.noPage && home.me && home.shown, "S4 × 19.0 S1 对局历史和棋谱库在「我的」上,「棋谱」页没有了", JSON.stringify(home));
   const label = (await page.textContent("#hist-open")).trim();
   await page.click("#hist-open");
   await page.waitForTimeout(500);
@@ -2261,17 +2283,17 @@ function tenThousand() {
   await page.waitForTimeout(900);
   const board = await page.evaluate(() => ({
     list: document.getElementById("lib-list-modal").classList.contains("show"),
-    page: !document.getElementById("page-library").hidden && document.getElementById("page-library").offsetParent !== null,
+    page: !document.getElementById("page-me").hidden && document.getElementById("page-me").offsetParent !== null,   // 19.0 S1: was 棋谱
     view: JSON.parse(localStorage.getItem("chess.settings")).view,
     mode: JSON.parse(localStorage.getItem("chess.settings")).mode,
     pgn: JSON.parse(localStorage.getItem("chess.save")).pgn,
   }));
-  assert(!board.list && !board.page && board.mode === "ai" && /Qxf7#/.test(board.pgn) && board.view !== "library",
-    `C1 点本机那一局：列表关掉、离开「棋谱」回到棋盘、人机模式、就是那一局，而且记下了(${JSON.stringify({ view: board.view, mode: board.mode })})`);
+  assert(!board.list && !board.page && board.mode === "ai" && /Qxf7#/.test(board.pgn) && board.view !== "library" && board.view !== "me",
+    `C1 点本机那一局：列表关掉、离开「我的」回到棋盘、人机模式、就是那一局，而且记下了(${JSON.stringify({ view: board.view, mode: board.mode })})`);
   // the preview rows on 棋谱 still load a game
-  await page.click('#rail button[data-view="library"]');
+  await page.click('#rail button[data-view="me"]');
   await page.waitForTimeout(300);
-  assert(await page.$$eval("#hist-body [data-hist]", (b) => b.length) === 2, "C1 「棋谱」上的对局历史预览还在(2 行)");
+  assert(await page.$$eval("#hist-body [data-hist]", (b) => b.length) === 2, "C1 「我的」上的对局历史预览还在(2 行)");
   // search the merged list: by the engine level, and by the position on the board
   await page.click("#hist-open");
   await page.waitForTimeout(300);
@@ -2428,10 +2450,10 @@ let t5Export = "";
   await c1Ready(page);
   await page.waitForTimeout(600);
   // one analysed import and twenty analysed 本机 games: the button is there
-  // (red before T5: it counted the one import and stayed hidden)
-  assert(await page.isVisible("#lib-diagnose"), "T5 本机分析过的够数，「看诊断」就出现(导入的只有 1 局)");
-  await page.click("#lib-diagnose");
-  await page.waitForTimeout(500);
+  // (red before T5: it counted the one import and stayed hidden) — 19.0 S2:
+  // the diagnosis is 我的's block, and it is there
+  await toDiag(page);
+  assert(await diagShown(page), "T5 本机分析过的够数，诊断就出现在「我的」上(导入的只有 1 局)");
   const read = () => page.evaluate(() => ({
     on: [...document.querySelectorAll("#diag-src-seg button")].filter((b) => b.classList.contains("active")).map((b) => b.dataset.dsrc + ":" + b.getAttribute("aria-pressed")),
     text: document.getElementById("lib-diag").innerText.replace(/\s+/g, " ") }));
@@ -2485,10 +2507,8 @@ let t5Export = "";
   await page.reload();
   await c1Ready(page);
   await page.waitForTimeout(400);
-  await page.click("#lib-diagnose");
-  await page.waitForTimeout(400);
+  await toDiag(page);
   assert((await read()).on.join() === "import:true", "T5 重启之后，诊断的来源回到默认的「导入的」");
-  await page.click("#lib-modal-close");
 
   // --- T5.4 导出 PGN with the 本机 games, into an empty profile, and back ---------
   await page.evaluate(() => window.__chess.libDb().openList(null, { src: "import" }));

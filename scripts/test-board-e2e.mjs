@@ -2531,8 +2531,9 @@ for (const appearance of ["light", "dark"]) {
   page.on("pageerror", (e) => errs.push(e.message));
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(1500);
-  const under = await page.evaluate(() => ({ paints: window.__paints, page: !document.getElementById("page-library").hidden }));
-  assert(under.page && under.paints === 0, `F3 开在棋谱库页上：被盖住的棋盘一遍都不画（画了 ${under.paints} 遍）`);
+  // 19.0 S1: a saved 棋谱 view opens on 我的 — a page over the board all the same
+  const under = await page.evaluate(() => ({ paints: window.__paints, page: !document.getElementById("page-me").hidden }));
+  assert(under.page && under.paints === 0, `F3 开在整页上（存着的「棋谱」打开在「我的」）：被盖住的棋盘一遍都不画（画了 ${under.paints} 遍）`);
   await page.click('#rail button[data-view="play"]');
   await settle(page);
   const back = await page.evaluate(() => window.__paints);

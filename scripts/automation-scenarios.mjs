@@ -37,7 +37,7 @@
  *   prefetch-seed  the page: 300 games into the library (R18)
  *   prefetch-read  the page: the boot's prefetch answered with all of them
  *   menus          menu-command game.new → 新对局 opens; view.repertoire →
- *                  the library's 我的开局书 (B1–B5's command path)
+ *                  训练 · 开局's 我的开局书 (B1–B5's command path; 19.0 S1)
  *
  *   node scripts/automation-scenarios.mjs <exe> [--manifest build/app.macos.zon] [--out report.json] [--only sync,menus] [--real-profile-ok]
  *   node scripts/automation-scenarios.mjs <null-platform exe> --null

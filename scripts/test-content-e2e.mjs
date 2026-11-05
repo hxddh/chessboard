@@ -577,20 +577,17 @@ if (hasTab && REAL.length) {
   pg.on("pageerror", (e) => errs.push(e.message));
   await pg.goto(`http://127.0.0.1:${PORT}/`);
   await pg.waitForTimeout(1000);
-  const tally = await pg.evaluate(() => ({
-    headShown: !document.getElementById("puzzle-tally-head").hidden,
-    rows: [...document.querySelectorAll("#puzzle-tally-body .stat-row")].map((r) => r.textContent.trim()),
-  }));
-  assert(tally.headShown && tally.rows.length === 2, "有作答记录的两个类别各占一行,其余不画", tally.rows.join(" | "));
-  assert(/防守.*错得最多/.test(tally.rows[0]), "错误率最高的一行排最前并带标记", tally.rows[0]);
-  assert(/失手 3/.test(tally.rows[0]) && /解出 4/.test(tally.rows[1]), "数字就是存档里的数字", tally.rows.join(" | "));
-  // the same page, the other mouth: the toast must name the same category
+  // 19.0 S3: the tally's rows left 我的 (four blocks); the memory they drew is
+  // still the picker's, and 为你出一题 still speaks from it
+  const tally = await pg.evaluate(() => ({ body: !!document.getElementById("puzzle-tally-body"), head: !!document.getElementById("puzzle-tally-head") }));
+  assert(!tally.body && !tally.head, "19.0 S3: 「我的」上没有做题战绩这一节了", JSON.stringify(tally));
+  // the other mouth: the toast names the category the record says is weakest
   // 9.0: the tally is on 我的, 为你出一题 on 训练 · 谜题
   await toTrain(pg, "puzzle");
   await pg.evaluate(() => document.getElementById("today-puzzle").click()); // 19.0 S6: 今天's 题 card is 为你出一题
   await pg.waitForTimeout(500);
   const toast2 = await pg.evaluate(() => document.getElementById("toast").textContent.trim());
-  assert(/防守.*错得最多/.test(toast2), "推荐 toast 与记录页标的是同一个类别", toast2);
+  assert(/防守.*错得最多/.test(toast2), "推荐 toast 说的是错得最多的那一类(防守:失手 3、解出 0)", toast2);
   await ctx2.close();
 }
 // 空 tally:整节不出现
@@ -604,8 +601,11 @@ if (hasTab && REAL.length) {
   const pg = await ctx2.newPage();
   await pg.goto(`http://127.0.0.1:${PORT}/`);
   await pg.waitForTimeout(1000);
-  assert(await pg.evaluate(() => document.getElementById("puzzle-tally-head").hidden),
-    "没有任何作答记录时,「做题战绩」整节不画");
+  // 19.0 S3: was 「做题战绩」 — the puzzle rating's line in 等级分 is what is left of it
+  await pg.click('#rail button[data-view="me"]').catch(() => {});
+  await pg.waitForTimeout(600);
+  assert(await pg.evaluate(() => document.getElementById("me-pz-head").hidden && document.getElementById("sec-ratings").hidden),
+    "没有任何作答记录时,谜题等级分一行不画,等级分整块也不画");
   await ctx2.close();
 }
 
@@ -1072,8 +1072,9 @@ if (hasTab && REAL.length) {
   const pg3 = await ctx3.newPage();
   await pg3.goto(`http://127.0.0.1:${PORT}/`);
   await pg3.waitForTimeout(900);
-  assert(await pg3.evaluate(() => document.getElementById("trend-head").hidden),
-    "没有任何进步数据时,「进步」整节不存在(P3)");
+  // 19.0 S3: 「进步」 left 我的 — not there with data or without
+  assert(await pg3.evaluate(() => !document.getElementById("trend-head") && !document.getElementById("trend-acc")),
+    "「进步」这一节不在「我的」上了(19.0 S3)");
   await ctx3.close();
 
   const ctx4 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
@@ -1105,21 +1106,14 @@ if (hasTab && REAL.length) {
   pg4.on("pageerror", (e) => errs.push(e.message));
   await pg4.goto(`http://127.0.0.1:${PORT}/`);
   await pg4.waitForTimeout(900);
-  // 19.0 S3: 我的 is a chunk now — read it where it shows, once it has drawn
+  // 19.0 S3: 「进步」 went (its rows and its accuracy line); the weeks it read
+  // are still kept, and the calendar draws the days with answers in them
   await pg4.click('#rail button[data-view="me"]');
-  await pg4.waitForFunction(() => !document.getElementById("trend-head").hidden, null, { timeout: 10000 }).catch(() => {});
-  const trend = await pg4.evaluate(() => ({
-    head: !document.getElementById("trend-head").hidden,
-    curve: !document.getElementById("trend-acc").hidden,
-    rows: [...document.querySelectorAll("#trend-body .stat-row")].map((r) => r.textContent.trim()),
-  }));
-  assert(trend.head && trend.curve, "有数据时「进步」节与准确率走势都画出来了", JSON.stringify(trend));
-  // 7.6: the figure is the solve rate and says so — a clean week of three
-  // solves reads 100%, not the old unlabelled miss rate "0%"
-  assert(trend.rows.some((r) => /防守/.test(r) && /本周正确率 100%/.test(r) && /上周 50%/.test(r)),
-    "防守一行:本周正确率 100% 对上周 50% — 数字就是档案里的数字,且写明是正确率", trend.rows.join(" | "));
-  assert(trend.rows.some((r) => /错题/.test(r) && /收 3/.test(r) && /找回 1/.test(r)),
-    "错题一行:本周收 3 · 找回 1", trend.rows.join(" | "));
+  await pg4.waitForFunction(() => { const e = document.getElementById("sec-cal"); return !!e && !e.hidden; }, null, { timeout: 10000 }).catch(() => {});
+  const trend = await pg4.evaluate(() => ({ gone: !document.getElementById("trend-head"),
+    weeks: Object.keys((JSON.parse(localStorage.getItem("chess.progress") || "{}").weeks) || {}).length,
+    cal: !document.getElementById("sec-cal").hidden }));
+  assert(trend.gone && trend.weeks === 2 && trend.cal, "19.0 S3: 没有「进步」一节;两周的记录还在,日历照画", JSON.stringify(trend));
   await ctx4.close();
 }
 
@@ -1503,7 +1497,7 @@ if (hasTab && REAL.length) {
     await pg.click('#rail button[data-view="me"]').catch(() => {});
     await pg.waitForTimeout(300);
     const meta = await pg.evaluate(() => (document.getElementById("rating-meta") || {}).textContent || "");
-    const m = /谜题等级分 (\S+)/.exec(meta);
+    const m = /^\s*(\S+)/.exec(meta);   // 19.0 S3: the block's heading says 谜题等级分; its line starts with the figure
     assert(!!m && m[1] === want, `§5 ${label}评级(RD ${rd})写作「${want}」`, meta);
     await c.close();
   }

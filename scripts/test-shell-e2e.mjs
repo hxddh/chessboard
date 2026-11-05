@@ -4,10 +4,11 @@
  * preferences window and the panel's 设置 tab.
  *
  * What the plan asks of it, each a claim only a running page can settle:
- *   - 今天 / 下棋 / 训练 / 棋谱 / 我的 on a left rail in a wide window, in
+ *   - 今天 / 下棋 / 训练 / 我的 on a left rail in a wide window, in
  *     the top bar in a narrow one; keyboard-walkable, current entry marked
  *     (9.0 S3: 谜题 and 学习 are one view, 训练, with a segment switch —
- *     课程 / 谜题 / 残局 / 名局 — over the panel);
+ *     课程 / 谜题 / 开局 / 残局 / 名局 — over the panel; 19.0 S1: 棋谱 left
+ *     the rail, its book to 训练 · 开局, its library and history to 我的);
  *   - 今天 (9.0 S1: was 首页's three cards): the hero card — the live game
  *     first, else the plan's step, 换一件事 moving on — the three 继续 cards
  *     into 训练, 下一盘; every view one click away from it;
@@ -86,7 +87,9 @@ const state = (page) => page.evaluate(() => {
     current: cur ? cur.dataset.view : null,
     mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode,
     home: vis(document.getElementById("page-home")),
-    library: vis(document.getElementById("page-library")),
+    // 19.0 S1: the 棋谱 page is gone; a "library" view lands on 我的
+    library: !!document.getElementById("page-library"),
+    rep: vis(document.getElementById("sec-rep")),
     me: vis(document.getElementById("page-me")),
     settings: vis(document.getElementById("page-settings")),
     puzzleSec: vis(document.getElementById("sec-puzzle")),
@@ -98,7 +101,7 @@ const state = (page) => page.evaluate(() => {
   };
 });
 
-// --- 1. the rail: six views, in the plan's order ----------------------------
+// --- 1. the rail: five views, in the plan's order (19.0 S1: was six) ---------
 // 9.0 S5: the preferences entry (#prefs-open) became the 设置 view, still last;
 // 9.0 S3: 谜题 and 学习 became one entry, 训练 (S1/S4: 首页 → 今天, 棋谱库 → 棋谱)
 {
@@ -119,10 +122,11 @@ const state = (page) => page.evaluate(() => {
     };
   });
   assert(rail && rail.tag === "NAV" && !!rail.label, "A1: 有一条带名字的 <nav> 导航栏");
-  assert(rail && JSON.stringify(rail.views) === JSON.stringify(["home", "play", "train", "library", "me", "settings"]),
-    "A1 × S3 × S5: 入口依次是 今天 / 下棋 / 训练 / 棋谱 / 我的 / 设置(" + (rail && rail.views.join(" ")) + ")");
-  assert(rail && JSON.stringify(rail.labels.slice(0, 5)) === JSON.stringify(["今天", "下棋", "训练", "棋谱", "我的"]),
-    "A1 × S1 × S3: 五个入口的字(" + (rail && rail.labels.join(" / ")) + ")");
+  // 19.0 S1: 棋谱 is not on the rail any more
+  assert(rail && JSON.stringify(rail.views) === JSON.stringify(["home", "play", "train", "me", "settings"]),
+    "A1 × S3 × S5 × 19.0 S1: 入口依次是 今天 / 下棋 / 训练 / 我的 / 设置,没有「棋谱」(" + (rail && rail.views.join(" ")) + ")");
+  assert(rail && JSON.stringify(rail.labels.slice(0, 4)) === JSON.stringify(["今天", "下棋", "训练", "我的"]),
+    "A1 × S1 × S3 × 19.0 S1: 四个入口的字(" + (rail && rail.labels.join(" / ")) + ")");
   assert(rail && rail.settings, "S5: 栏尾是「设置」的入口(" + JSON.stringify(rail && rail.labels) + ")");
   assert(rail && rail.x === 0 && rail.w > 0 && rail.w <= 72 && rail.h === WIDE.height,
     "A1: 宽窗是左侧窄栏,不超过 72px 宽、通高(" + JSON.stringify(rail) + ")");
@@ -164,19 +168,18 @@ const state = (page) => page.evaluate(() => {
     // the puzzle mode, the switch over the panel naming the segment
     train: (s) => !s.stageInert && s.segShown && ((s.mode === "puzzle" && s.puzzleSec && s.seg === "puzzle")
       || (s.mode === "learn" && s.learnSec && ["course", "endgame", "classic"].includes(s.seg))),
-    library: (s) => s.library && s.stageInert,
     me: (s) => s.me && s.stageInert,
-    settings: (s) => s.settings && s.stageInert && !s.me && !s.home && !s.library,
-    play: (s) => !s.home && !s.library && !s.me && s.mode === "ai" && !s.puzzleSec && !s.learnSec && !s.segShown,
+    settings: (s) => s.settings && s.stageInert && !s.me && !s.home,
+    play: (s) => !s.home && !s.me && s.mode === "ai" && !s.puzzleSec && !s.learnSec && !s.segShown,
   };
-  for (const v of ["home", "train", "library", "me", "settings", "play"]) {
+  for (const v of ["home", "train", "me", "settings", "play"]) {
     await page.click('#rail button[data-view="' + v + '"]');
     await page.waitForTimeout(300);
     const s = await state(page);
     assert(s.view === v && s.current === v && EXPECT[v](s), "A1: 点「" + v + "」一次就到(" + JSON.stringify(s) + ")");
   }
   // …and from the home page, each of them is one click
-  for (const v of ["play", "train", "library", "me", "settings"]) {
+  for (const v of ["play", "train", "me", "settings"]) {
     await page.click('#rail button[data-view="home"]');
     await page.waitForTimeout(200);
     await page.click('#rail button[data-view="' + v + '"]');
@@ -261,7 +264,52 @@ const state = (page) => page.evaluate(() => {
   await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
   const r = await state(page);
   assert(r.view === "train" && r.current === "train" && r.seg === "puzzle" && r.segShown, "S3: 重开还在训练·谜题(" + JSON.stringify(r) + ")");
+  // 19.0 S1: 开局 — the fifth segment: the puzzle mode on the opening drills
+  // (the built-in book's, with no book of your own), 我的开局书 under them
+  await seg("opening");
+  const o1 = await state(page);
+  const cat = () => page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles") || "{}").cat);
+  assert(o1.view === "train" && o1.seg === "opening" && o1.mode === "puzzle" && o1.puzzleSec && o1.rep && (await cat()) === "op",
+    "19.0 S1: 点「开局」是谜题模式里的背开局(内置开局书),我的开局书在下面(" + JSON.stringify({ seg: o1.seg, mode: o1.mode, rep: o1.rep }) + ")");
+  // …谜题 goes back to the kind it was left on, the book's card gone with 开局
+  await seg("puzzle");
+  const o2 = await state(page);
+  assert(o2.seg === "puzzle" && o2.mode === "puzzle" && !o2.rep && (await cat()) !== "op",
+    "19.0 S1: 再点「谜题」回到原来那一类,开局书的卡片收起(" + JSON.stringify({ seg: o2.seg, rep: o2.rep }) + ")");
+  // …and 开局 is remembered as 训练's segment, like the other four
+  await seg("opening");
+  await page.click('#rail button[data-view="play"]');
+  await page.waitForTimeout(300);
+  await page.click('#rail button[data-view="train"]');
+  await page.waitForTimeout(600);
+  const o3 = await state(page);
+  assert(o3.seg === "opening" && o3.rep && (await look()).saved === "opening", "19.0 S1: 从下棋回「训练」,还在开局(" + JSON.stringify({ seg: o3.seg }) + ")");
   assert(errs.length === 0, "训练分段:没有页面异常 " + errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 3c. 19.0 S1: 棋谱 left the rail ------------------------------------------
+// A profile saved on the 棋谱 page (settings.view "library") opens on 我的,
+// where the library and the history are now; nothing throws on the way.
+{
+  const { ctx, page, errs } = await open({ view: "library" });
+  const s0 = await state(page);
+  const here = await page.evaluate(() => ({
+    lib: (() => { const e = document.getElementById("sec-library"); return !!e && !!e.closest("#page-me") && e.getClientRects().length > 0; })(),
+    hist: (() => { const e = document.getElementById("sec-history"); return !!e && !!e.closest("#page-me") && e.getClientRects().length > 0; })(),
+    rail: !document.querySelector('#rail button[data-view="library"]'),
+  }));
+  assert(s0.view === "me" && s0.current === "me" && s0.me && !s0.library,
+    "19.0 S1: 存着「棋谱」的档案(view: library)打开在「我的」(" + JSON.stringify({ view: s0.view, current: s0.current }) + ")");
+  assert(here.lib && here.hist && here.rail, "19.0 S1: 「我的」上有棋谱库和对局历史,栏上没有「棋谱」(" + JSON.stringify(here) + ")");
+  // the next save writes the view it landed on
+  await page.click('#rail button[data-view="play"]');
+  await page.waitForTimeout(300);
+  await page.click('#rail button[data-view="me"]');
+  await page.waitForTimeout(300);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}").view);
+  assert(saved === "me", "19.0 S1: 之后存下的是「我的」(" + saved + ")");
+  assert(errs.length === 0, "19.0 S1: 旧的「棋谱」视图没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
 
@@ -605,7 +653,8 @@ const state = (page) => page.evaluate(() => {
   await page.keyboard.press("Home");
   const f3 = await page.evaluate(() => document.activeElement.dataset.view);
   assert(f3 === "home", "A1: Home 到栏首(" + f3 + ")");
-  await page.click('#rail button[data-view="library"]');
+  // 19.0 S1: was 棋谱; 我的 is the page in front now
+  await page.click('#rail button[data-view="me"]');
   await page.waitForTimeout(200);
   await page.evaluate(() => document.activeElement.blur());
   await page.keyboard.press("n");
@@ -823,15 +872,16 @@ const state = (page) => page.evaluate(() => {
   await page.waitForTimeout(900);
   const back = await state(page);
   assert(back.view === "me" && back.me, "A1: 停在「我的」,重开还是「我的」(" + JSON.stringify(back) + ")");
-  // 9.0 S4: 对局历史 moved from 我的 to 棋谱
+  // 9.0 S4: 对局历史 moved from 我的 to 棋谱 — 19.0 S1: and back, with the
+  // library, when 棋谱 left the rail; the book went to 训练 · 开局
   const moved = await page.evaluate(() => ({
-    stats: !!document.querySelector("#page-me #stats-body"),
     ach: !!document.querySelector("#page-me #ach-body"),
-    hist: !!document.querySelector("#page-library #sec-history #hist-body") && !document.querySelector("#page-me #hist-body"),
-    lib: !!document.querySelector("#page-library #lib-body"),
-    rep: !!document.querySelector("#page-library #rep-body"),
+    hist: !!document.querySelector("#page-me #sec-history #hist-body"),
+    lib: !!document.querySelector("#page-me #sec-library #lib-body"),
+    rep: !!document.querySelector("#sec-puzzle #sec-rep #rep-body"),
+    noPage: !document.getElementById("page-library"),
   }));
-  assert(Object.values(moved).every(Boolean), "A1 × S4: 统计/成就在「我的」,棋谱库/开局书/对局历史在「棋谱」(" + JSON.stringify(moved) + ")");
+  assert(Object.values(moved).every(Boolean), "A1 × S4 × 19.0 S1: 成就、棋谱库、对局历史在「我的」,开局书在训练的谜题面板里,没有「棋谱」页(" + JSON.stringify(moved) + ")");
   assert(errs.length === 0, "restore: 没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
@@ -840,7 +890,7 @@ const state = (page) => page.evaluate(() => {
 for (const lang of ["en", "ja"]) {
   const { ctx, page, errs } = await open({ langId: lang });
   const labels = await page.evaluate(() => [...document.querySelectorAll("#rail .rail-lbl")].map((s) => s.textContent.trim()));
-  assert(labels.length === 6 && labels.every(Boolean), lang + ": 栏上六个字都有(" + labels.join(" / ") + ")");
+  assert(labels.length === 5 && labels.every(Boolean), lang + ": 栏上五个字都有(19.0 S1: 六个,到「棋谱」离开)(" + labels.join(" / ") + ")");
   if (lang === "en") assert(!labels.some((l) => /[一-鿿]/.test(l)), "en: 栏上没有中文");
   const fits = await page.evaluate(() => [...document.querySelectorAll("#rail .rail-lbl")].every((s) => s.scrollWidth <= s.clientWidth + 1));
   assert(fits, lang + ": 栏上的字都放得下");
@@ -876,7 +926,7 @@ for (const lang of ["en", "ja"]) {
     panel: localStorage.getItem("chess.panelOpen") }));
   const fire = async (c) => { await page.evaluate((x) => window.__fire(x), c); await page.waitForTimeout(400); };
   // 9.0 S5: 设置 is one of the pages now
-  for (const v of ["home", "library", "me", "settings"]) {
+  for (const v of ["home", "me", "settings"]) {
     await page.click('#rail button[data-view="' + v + '"]');
     await page.waitForTimeout(400);
     const before = await look();
@@ -892,6 +942,17 @@ for (const lang of ["en", "ja"]) {
   const b0 = await look();
   await fire("game.flip");
   assert((await look()).flipped !== b0.flipped, "回到下棋,菜单的「翻转棋盘」照常翻");
+  // 19.0 S1: the menu's 开局书 opens 训练 · 开局 with the book in the panel;
+  // 棋谱's old command, from a shell that still sends it, lands on 我的
+  await fire("view.repertoire");
+  await page.waitForTimeout(600);
+  const vr = await page.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
+    seg: (document.querySelector('#train-seg button[aria-pressed="true"]') || {}).dataset?.seg,
+    rep: (() => { const e = document.getElementById("sec-rep"); return !!e && !e.hidden && e.getClientRects().length > 0; })() }));
+  assert(vr.view === "train" && vr.seg === "opening" && vr.rep, "19.0 S1:菜单「开局书」到训练 · 开局,我的开局书在侧栏(" + JSON.stringify(vr) + ")");
+  await fire("go.library");
+  const gl = await page.evaluate(() => document.getElementById("app").getAttribute("data-view"));
+  assert(gl === "me", "19.0 S1:旧的「棋谱」菜单命令(go.library)打开「我的」(" + gl + ")");
   assert(errs.length === 0, "菜单快捷键与整页:没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
@@ -900,6 +961,7 @@ for (const lang of ["en", "ja"]) {
 // so the board is what shows next — as a library game already does. Red
 // before: the sheet closed, and the 我的 page went on covering the new game.
 // 9.0 S4: 对局历史 is on 棋谱 now; the same two doors, from there.
+// 19.0 S1: …and on 我的 again, 棋谱 having left the rail.
 {
   const { ctx, page, errs } = await open();
   await page.evaluate(() => {
@@ -915,7 +977,7 @@ for (const lang of ["en", "ja"]) {
   // and a row there loads the same way the history's own rows did; the
   // preview rows on 棋谱 (9.0 S4: was 我的) are the second door
   for (const door of ["#lib-list [data-loc]", "#hist-body [data-hist]"]) {
-    await page.click('#rail button[data-view="library"]');
+    await page.click('#rail button[data-view="me"]');
     await page.waitForTimeout(400);
     if (door.startsWith("#lib-list")) {
       await page.click("#hist-open");
@@ -928,8 +990,8 @@ for (const lang of ["en", "ja"]) {
     const st = await state(page);
     const rows = await page.evaluate(() => document.querySelectorAll(".mlrow").length);
     assert(rows === 2, door + ":从对局历史打开的一局载入了棋盘(" + rows + " 行)");
-    assert(!st.library && st.current === "play" && !st.stageInert,
-      door + ":……载入之后看见的是棋盘,不是还盖着的「棋谱」(" + JSON.stringify({ library: st.library, current: st.current, inert: st.stageInert }) + ")");
+    assert(!st.me && st.current === "play" && !st.stageInert,
+      door + ":……载入之后看见的是棋盘,不是还盖着的「我的」(" + JSON.stringify({ me: st.me, current: st.current, inert: st.stageInert }) + ")");
     // Codex #89: the opponent comes back with the game — 练习档 × 重原则 is 莉娜 —
     // not whoever is chosen today (the default: no persona); both doors
     await page.waitForFunction(() => !!window.CHESS_OPPONENTS, null, { timeout: 8000 }).catch(() => {});
@@ -1055,8 +1117,8 @@ for (const lang of ["en", "ja"]) {
 // onto the board, and the board is what shows next — the same as a game from
 // the library or the history. Red before: the toast said it loaded, and the
 // page went on covering it.
-// 9.0 S5: 设置 is one of the pages now
-for (const v of ["home", "library", "me", "settings"]) {
+// 9.0 S5: 设置 is one of the pages now (19.0 S1: 棋谱 is not)
+for (const v of ["home", "me", "settings"]) {
   const { ctx, page, errs } = await open({ mode: "pvp" });
   await page.click('#rail button[data-view="' + v + '"]');
   await page.waitForTimeout(300);
@@ -1122,7 +1184,7 @@ for (const v of ["home", "library", "me", "settings"]) {
   const f = await page.evaluate(() => {
     const a = document.activeElement;
     return { tag: a && a.tagName, id: a && (a.id || a.dataset.view || ""), seen: !!a && a !== document.body && a.getClientRects().length > 0,
-      inPage: !!a && !!a.closest("#page-home, #page-library, #page-me, #page-settings") };
+      inPage: !!a && !!a.closest("#page-home, #page-me, #page-settings") };
   });
   assert(f.seen && !f.inPage, "键盘点首页卡片离开整页后,焦点在看得见的地方(" + JSON.stringify(f) + ")");
   assert(errs.length === 0, "焦点:没有页面异常 " + errs.join(" / "));
@@ -1130,6 +1192,8 @@ for (const v of ["home", "library", "me", "settings"]) {
 }
 
 // --- v8-0-plan B5: the 我的 page puts everything on one page ---------------
+// 19.0 S3: four blocks now (the ratings, the calendar, the camp, the next
+// badge) and S2's diagnosis; the three cross-game figures went.
 // The engine-game rating curve, the practice calendar, strengths and
 // weaknesses and the three cross-game figures, each drawn only when it has
 // data (7.1: a chart that cannot be drawn does not exist) and each figure
@@ -1178,13 +1242,19 @@ for (const v of ["home", "library", "me", "settings"]) {
     await page.waitForTimeout(1200);
     return { ctx, page, errs };
   };
+  // 19.0 S3: 成长 (#sec-growth) became two of 我的's four blocks — the ratings
+  // and the calendar; 强项 / 弱项 are S2's diagnosis, 跨局指标 is gone
   const meState = (page) => page.evaluate(() => {
     const vis = (id) => { const e = document.getElementById(id); return !!e && !e.hidden && e.getClientRects().length > 0; };
     const m = document.getElementById("me-metrics");
     return {
       view: document.getElementById("app").getAttribute("data-view"),
-      empty: vis("record-empty"), growth: vis("sec-growth"), rating: vis("me-rating"), cal: vis("me-cal"),
-      sw: vis("me-sw"), metrics: vis("me-metrics"),
+      empty: vis("record-empty"), growth: vis("sec-ratings") || vis("sec-cal"), rating: vis("me-rating"), cal: vis("me-cal"),
+      pz: vis("trend-rating") || vis("me-pz-head"), sw: vis("me-sw"), metrics: !!m, diag: vis("sec-diag"),
+      // the record's blocks, in the page's order, and the five that left it
+      blocks: [...document.querySelectorAll("#page-me .page-cols > .page-sec")].filter((e) => !e.hidden && e.getClientRects().length > 0)
+        .map((e) => e.id).filter((id) => !["sec-diag", "sec-library", "sec-history"].includes(id)),
+      gone: ["sec-stats", "stats-body", "puzzle-tally-body", "trend-head", "trend-acc", "me-metrics", "me-phase", "sec-vis", "sec-growth"].filter((id) => document.getElementById(id)),
       calMeta: (document.getElementById("me-cal-meta") || {}).textContent || "",
       ratingMeta: (document.getElementById("me-rating-meta") || {}).textContent || "",
       calLabel: (document.getElementById("me-cal") || { getAttribute: () => "" }).getAttribute("aria-label") || "",
@@ -1196,8 +1266,8 @@ for (const v of ["home", "library", "me", "settings"]) {
   {
     const { ctx, page, errs } = await seeded({});
     const s = await meState(page);
-    assert(s.view === "me" && s.empty && !s.growth && !s.rating && !s.cal && !s.sw && !s.metrics,
-      "B5 什么都没有:入口卡片在,成长一节整个不存在(" + JSON.stringify(s) + ")");
+    assert(s.view === "me" && s.empty && !s.growth && !s.rating && !s.cal && !s.sw && !s.metrics && !s.diag,
+      "B5 什么都没有:入口卡片在,等级分、日历、诊断都不存在(" + JSON.stringify(s) + ")");
     assert(errs.length === 0, "B5 空档案:没有页面异常 " + errs.join(" / "));
     await ctx.close();
   }
@@ -1206,36 +1276,42 @@ for (const v of ["home", "library", "me", "settings"]) {
     // page — which is a record, and the entry card said 「现在还空着」 over it
     const { ctx, page, errs } = await seeded({ "chess.puzzles": { v: 1, solved: {}, tally: { tac: { miss: 1, solve: 0 } }, rhist: [{ t: now, r: 1480 }] } });
     const s = await meState(page);
-    const tally = await page.evaluate(() => !document.getElementById("puzzle-tally-body").hidden);
-    assert(tally && !s.empty, "B5 答错过一道题:战绩里有这一行,入口卡片不再说「现在还空着」(" + JSON.stringify({ tally, empty: s.empty }) + ")");
-    assert(s.growth && s.cal && !s.rating && !s.sw && !s.metrics,
-      "B5 只有一次作答:日历画出今天,评级曲线、强弱项、跨局指标都不在(" + JSON.stringify(s) + ")");
+    // 19.0 S3: 做题战绩's rows left; the puzzle rating is the line in 等级分
+    const pzMeta = await page.evaluate(() => document.getElementById("rating-meta").textContent);
+    assert(s.pz && /\d{3,4}/.test(pzMeta) && !s.empty, "B5 × 19.0 S3 答错过一道题:等级分一块里有谜题等级分,入口卡片不再说「现在还空着」(" + JSON.stringify({ pzMeta, empty: s.empty }) + ")");
+    assert(s.growth && s.cal && !s.rating && !s.sw && !s.diag,
+      "B5 只有一次作答:日历画出今天,对局评级曲线、强弱项、诊断都不在(" + JSON.stringify(s) + ")");
     assert(/1/.test(s.calLabel), "B5 日历有读屏说明(" + s.calLabel + ")");
     assert(errs.length === 0, "B5 一次作答:没有页面异常 " + errs.join(" / "));
     await ctx.close();
   }
   {
-    // too few games for any figure: the block is there, says what it needs,
-    // and prints no percentage
+    // too few games for any figure: B5's block said what it needed. 19.0 S2:
+    // the three figures went with it; the diagnosis waits for its floor, and
+    // the library's card is what says how many games it still needs
     const few = lib.slice(0, 3).map((g) => Object.assign({}, g, { clk: undefined }));
     const { ctx, page, errs } = await seeded({ "chess.library": { v: 1, names: ["hxddh"], games: few } });
     const s = await meState(page);
-    assert(s.metrics && s.rows.length === 3 && s.rows.every((r) => !/%/.test(r)) && s.rows.every((r) => /5|10/.test(r)),
-      "B5 三局:三项指标都写明要几局,一个百分比也不给(" + JSON.stringify(s.rows) + ")");
+    const status = await page.evaluate(() => document.getElementById("lib-status").textContent);
+    assert(!s.metrics && !s.diag && /还差 17 局/.test(status),
+      "B5 × 19.0 S2 三局:没有跨局指标,诊断还不出现,棋谱库说还差 17 局(" + JSON.stringify({ diag: s.diag, status }) + ")");
     assert(errs.length === 0, "B5 三局:没有页面异常 " + errs.join(" / "));
     await ctx.close();
   }
   {
     const { ctx, page, errs } = await seeded({ "chess.library": { v: 1, names: ["hxddh"], games: lib },
       "chess.stats": stats, "chess.puzzles": puzzles, "chess.progress": { v: 1, weeks: {}, days: {} } });
+    // the camp's block draws when its chunk is in
+    await page.waitForFunction(() => { const e = document.getElementById("sec-endgame"); return !!e && !e.hidden; }, null, { timeout: 8000 }).catch(() => {});
     const s = await meState(page);
-    assert(!s.empty && s.growth && s.rating && s.cal && s.sw && s.metrics, "B5 满档案:评级曲线、日历、强弱项、跨局指标都在(" + JSON.stringify(s) + ")");
+    assert(!s.empty && s.growth && s.rating && s.pz && s.cal && s.sw && s.diag, "B5 满档案:两条评级曲线、日历、诊断里的强弱项都在(" + JSON.stringify(s) + ")");
+    // 19.0 S3: 我的 is four blocks — the ratings, the calendar, the camp, the next badge
+    assert(JSON.stringify(s.blocks) === JSON.stringify(["sec-ratings", "sec-cal", "sec-endgame", "sec-ach"]) && s.gone.length === 0,
+      "19.0 S3: 「我的」四块:等级分、练习日历、残局训练营、成就;统计、做题战绩、进步、跨局指标、失误按阶段、计算专项都没有了(" + JSON.stringify({ blocks: s.blocks, gone: s.gone }) + ")");
     assert(/1510/.test(s.ratingMeta), "B5 对局评级读的是每局存下的评级(" + s.ratingMeta + ")");
     assert(s.calW > 1, "B5 日历按显示宽度画(" + s.calW + ")");
     assert(/10/.test(s.calMeta), "B5 连续 10 天写在日历上(" + s.calMeta + ")");
     assert(/捉双/.test(s.swText) && /牵制/.test(s.swText), "B5 强弱项读的是主题评级(" + s.swText + ")");
-    assert(s.rows.length === 3 && /60%/.test(s.rows[0]) && /40%/.test(s.rows[1]) && /33%/.test(s.rows[2]),
-      "B5 化优为胜 3/5、逆境求生 2/5、时间紧 10/30 步(" + JSON.stringify(s.rows) + ")");
     // cleared from 设置 (9.0 S5: a page, its 数据 category, rather than the
     // window over 我的): the curve goes with the games it was drawn from
     await page.keyboard.press("Control+,");
@@ -1355,6 +1431,20 @@ for (const v of ["home", "library", "me", "settings"]) {
   const th = await page.evaluate(() => ({ mode: JSON.parse(localStorage.getItem("chess.settings") || "{}").mode,
     theme: (document.getElementById("pz-theme-name") || {}).textContent }));
   assert(th.mode === "puzzle" && /捉双/.test(th.theme || ""), "A3：…回车就在做捉双的题", JSON.stringify(th));
+  // 19.0 S1: 棋谱 is not a place any more — 我的开局书 is 训练 · 开局, and ⌘K says so
+  await page.keyboard.press(key);
+  await page.waitForTimeout(300);
+  p = await pal();
+  const goRows = p.rows.filter((r) => /^前往/.test(r) || /前往/.test(r.slice(0, 4)));
+  assert(!p.rows.some((r) => /前往/.test(r) && /棋谱$/.test(r.trim())), "19.0 S1：⌘K 里没有「棋谱」这一页", JSON.stringify(goRows));
+  await page.keyboard.type("训练 · 开局");
+  await page.waitForTimeout(150);
+  p = await pal();
+  assert(/训练 · 开局/.test(p.on), "19.0 S1：⌘K 找得到「训练 · 开局」", JSON.stringify(p.rows.slice(0, 4)));
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(900);
+  const op = await state(page);
+  assert(op.view === "train" && op.seg === "opening" && op.mode === "puzzle" && op.rep, "19.0 S1：…回车就在训练 · 开局，我的开局书在侧栏(" + JSON.stringify(op) + ")");
   // Escape closes it; ⌘K again closes it too; nothing found says so
   await page.keyboard.press(key);
   await page.waitForTimeout(300);
@@ -1385,8 +1475,9 @@ for (const v of ["home", "library", "me", "settings"]) {
   });
   const go = (v) => page.evaluate((v) => document.querySelector('#rail button[data-view="' + v + '"]').click(), v);
   const seen = {};
-  for (const v of ["home", "play", "library", "me", "settings"]) { await go(v); await page.waitForTimeout(500); seen[v] = await fills(); }
-  for (const sg of ["course", "puzzle", "endgame", "classic"]) {
+  // 19.0 S1: no 棋谱 view; 开局 is 训练's fifth segment
+  for (const v of ["home", "play", "me", "settings"]) { await go(v); await page.waitForTimeout(500); seen[v] = await fills(); }
+  for (const sg of ["course", "puzzle", "opening", "endgame", "classic"]) {
     await go("train");
     await page.evaluate((sg) => { const b = document.querySelector('#train-seg button[data-seg="' + sg + '"]'); if (b) b.click(); }, sg);
     await page.waitForTimeout(900);

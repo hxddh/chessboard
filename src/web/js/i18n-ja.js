@@ -364,13 +364,9 @@
       "daily.why.review": "期限が来た復習", "daily.why.mine": "あなたが間違えた局面", "daily.why.weak": "成績が最も弱い分野",
       "daily.why.lesson": "次のレッスン", "daily.why.op": "まだ覚えていない定跡", "daily.why.game": "今日はまだ対局していない",
       "daily.why.motif": "繰り返し間違えている戦術テーマ",
-      "side.trend": "上達",
-      "aria.trendAcc": "正確度の推移",
-      "tip.trendAcc": "最近振り返った対局の正確度を時系列で表示します",
-      "trend.row": "今週の正答率 {0} · 先週 {1}",
-      "trend.rowNew": "今週の正答率 {0}",
-      "trend.rowPrev": "先週の正答率 {0} · 今週はまだ未回答",
-      "trend.mines": "今週の収録 {0} · 取り返し {1}",
+      
+      
+      
       "me.cal": "練習カレンダー",
       "me.calMeta": "連続 {0} 日 · 最長 {1} 日",
       "aria.cal": "直近 {0} 週のうち {1} 日に対局か問題",
@@ -381,18 +377,12 @@
       "me.sw.theme": "パズルレーティング {0}",
       "me.sw.motif": "対局で {0} 回見逃し",
       "me.sw.eco": "得点率 {0}% · {1} 局",
-      "me.metrics": "対局をまたぐ指標", "me.phase": "局面別のミス",
-      "me.m.convert": "優勢を勝ちに",
-      "me.m.resil": "劣勢からの粘り",
-      "me.m.clock": "時間切迫時の大悪手率",
-      "me.m.convertV": "2 ポーン以上優勢だった {0} 局中 {1} 局勝ち",
-      "me.m.resilV": "2 ポーン以上劣勢だった {0} 局中 {1} 局を救い、うち {2} 局は勝ち",
-      "me.m.clockV": "時間切迫で {0} 手、大悪手 {1} 回 · 普段は {2}",
-      "me.m.clockNone": "持ち時間つき {0} 局、時間切迫で指した手はなし",
-      "me.m.need": "{0} 局から表示、いまは {1} 局",
-      "me.m.convertD": "2 ポーン以上優勢になった対局と、そのうち勝った数（{0} 局から表示）",
-      "me.m.resilD": "2 ポーン以上劣勢になった対局と、そのうち引き分けか勝ちにした数（{0} 局から表示）",
-      "me.m.clockD": "持ち時間の記録（PGN の %clk）がある振り返り済みの対局。残り時間が最初の 1 割を切ったら時間切迫（{0} 局から表示）",
+      
+      
+      
+      
+      
+      
       "pz.cat.real": "実戦",
       "pz.cat.def": "受け", "pz.cat.draw": "引き分け狙い",
       "pz.more": "ほかの練習", "pz.smart": "おすすめの一問",
@@ -405,9 +395,7 @@
       "rec.due": "復習の期限 {0} · 明日 {1}",
       "study.part": "名局を読む", "study.head": "棋譜を読む", "study.intro": "{0}、{1} 年 · {2} · 結果 {3}。← → で一手ずつ読み進めると注釈が現れます。いつでも別の手を試せます。", "study.ofNoNote": "{0} 手目 · {1} （この手に注釈はありません）", "study.ofNote": "{0} 手目 · {1} —— {2}",
       "pz.smart.done": "全問クリア \u2014 おすすめできる問題がありません",
-      "side.puzzleTally": "問題の戦績",
-      "rec.tally": "正解 {0} \u00b7 ミス {1}",
-      "rec.weakMark": "最もミスが多い",
+      
       "pz.side": "手番",
       "tip.opSide.w": "白番で定跡を指し、黒の定跡手は自動で応じられます",
       "tip.opSide.b": "黒番で定跡に応じ、白の定跡手は自動で指されます",
@@ -419,7 +407,7 @@
       "side.textSize": "文字サイズ", "text.s": "小さめ", "text.m": "標準", "text.l": "大きめ", "tip.textSize": "インターフェース全体の文字の大きさ",
       "side.pieces": "駒のデザイン", "pieces.cburnett": "バーネット", "pieces.merida": "メリダ", "pieces.classic": "クラシック",
       "side.coach": "悪手の警告", "side.autoflip": "自動反転", "side.language": "言語",
-      "side.moves": "棋譜", "side.stats": "成績", "side.ach": "実績",
+      "side.moves": "棋譜", "side.ach": "実績",
       "learn.doneN": "完了 {0}/{1}", "learn.doneOf": "完了したレッスン数",
       "side.learn": "レッスン", "side.puzzle": "パズル", "side.editor": "局面編集",
       "mode.ai": "エンジン", "mode.pvp": "2 人", 
@@ -520,11 +508,8 @@
       "msg.side.blackChosen": "黒番 · 黒から見た向き",
       "ach.unlocked": "実績を獲得",
       "brand": "チェス", "vs.player": "あなた",
-      "stats.emptyHint": "エンジン対局が終わると、ここに自動で記録されます。",
-      "stats.hint": "エンジン対局は自動で記録されます", "stats.accFrom": "正確度は「振り返る」から記録されます",
-      "stats.accHow": "対局後に「振り返る」を押すと正確度が記録されます",
-      "stats.gamesN": "計 {0} 局",
-      "stats.recentAccN": "直近 {0} 局の正確度", "stats.accLine": "{0}% · 最新 {1}%",
+      
+      
       "tipRun.analyze": "全手をすばやく評価し、悪手に印を付けます",
       "tipRun.stop": "振り返りを中止（ここまでの結果は残します）",
       "tipRun.claimThreefold": "同一局面が 3 回現れました —— 引き分けを宣言できます",
@@ -563,7 +548,6 @@
       "mat.takenW": "白が取った駒", "mat.takenB": "黒が取った駒",
       // v8-0-plan A1: the rail, the home page; 9.0 S5: the settings page
       "nav.aria": "メインナビゲーション", "nav.home": "今日", "nav.play": "対局",
-      "nav.library": "棋譜",
       "nav.settings": "設定",
       "set.catsAria": "設定の分類",
       "set.general": "一般",
@@ -584,6 +568,7 @@
       "nav.train": "特訓",
       "train.course": "レッスン",
       "train.puzzle": "パズル",
+      "train.opening": "序盤",
       "train.endgame": "終盤",
       "train.classic": "名勝負",
       "train.read": "読む",
@@ -724,7 +709,7 @@
       "ng.mode": "相手", 
       "home.cont.live": "{0}の対局が進行中 · {1} 手目", 
       // 7.0 棋譜ライブラリ
-      "lib.title": "棋譜ライブラリ", "lib.import": "ライブラリに読み込む", "lib.diagnose": "診断を見る",
+      "lib.title": "棋譜ライブラリ", "lib.import": "ライブラリに読み込む", 
       "lib.sync": "サイトから同期", "sync.user": "ユーザー名", "sync.go": "同期", "sync.allow": "オンライン同期を許可", "sync.hint": "初期設定はオフです。オンにしても、「同期」を押したときだけ Lichess または Chess.com に接続し、送るのはユーザー名だけです。", "sync.noHost": "オンライン同期はデスクトップアプリでのみ使えます。", "sync.fetching": "{0} から対局を取得しています…", "sync.offline": "{0} に接続できません。ネットワークを確認してもう一度お試しください。", "sync.rate": "{0} が一時的にリクエストを制限しています。1 分ほどしてからお試しください。", "sync.notFound": "{0} にユーザー {1} は見つかりません。", "sync.empty": "{0} には {1} の対局がまだありません。", "sync.failed": "同期を完了できませんでした（{0}）。", "sync.badName": "ユーザー名は英数字・-・_ の 2〜30 文字です。",
       "sync.limit": "前回以降の新しい対局（最大）", "sync.analyse": "同期したら振り返りを始める", "sync.progress": "{0} から対局を取得しています…{1} 局取得済み", "sync.none": "{0} には {1} の新しい対局はありません。", "sync.timeout": "{0} から応答がありません。しばらくしてからもう一度お試しください。", "sync.busy": "前回の同期がまだ終わっていません。しばらくしてからもう一度お試しください。",
       "pz.repBook": "定跡書では {0}",
@@ -787,7 +772,7 @@
       "lib.deepDone": "{0} の精密な振り返りが完了：取り消し {1} 問・答え変更 {2} 問・追加 {3} 問",
       "lib.deepCut": "この一局は振り返りを終えていません。元の結果はそのままです",
       "lib.passCut": "エンジンが二度とも評価を返さなかったので、振り返りをここで止めました。途中の一局はそのままです",
-      "diag.title": "ライブラリ診断",
+      "diag.title": "診断",
       "diag.from": "振り返り済み {0} 局、すべてあなたの側から見た数字です",
       "diag.record": "成績", "diag.wld": "{0} 勝 {1} 敗 {2} 分",
       "diag.acc": "平均精度", "diag.phase": "局面別", "diag.phaseOpening": "序盤（最初の {0} 手）",

@@ -3,8 +3,9 @@
  *
  * The model is library.js and has been since 7.0; this is everything the app
  * wraps around it — the background pass, the on-disk record, the 记录 pane's
- * section, the list dialog and the diagnosis dialog (its three charts are
- * diag-charts.js, in chunk-libdb.js since the M5 merge).
+ * section and the list dialog; the diagnosis (its three charts are
+ * diag-charts.js, in chunk-libdb.js since the M5 merge) is drawn on 我的
+ * as of 19.0 S2 (me-page.js), from what this module hands it.
  * Carved out of app.js in 7.2 (v7-2-plan §4), the same way report.js and
  * native-commands.js were: app.js had grown past ten thousand lines and this
  * was by far the largest thing in it that already had a clean seam under it.
@@ -665,9 +666,6 @@ export function createLibraryUI(d) {
       setText(an, store.session.libRun ? t("lib.pause")
         : queued ? tf("lib.analyseEta", [queued, libEta(queuedGames)]) : tf("lib.analyse", [queued]));
     }
-    const dg = doc.getElementById("lib-diagnose");
-    // v8-1-plan T5: any source with enough (the dialog's row picks which)
-    if (dg) dg.hidden = analysed.length + (libDb ? libDb.localAnalysed() : 0) < LIB_MIN_GAMES;
     const op = doc.getElementById("lib-open");
     if (op) {
       op.hidden = !shown;
@@ -884,141 +882,27 @@ export function createLibraryUI(d) {
     return true;
   }
 
-  /** The diagnosis dialog: what `diagnose()` found, in sentences. */
-  function renderDiagnosis() {
-    const el = doc.getElementById("lib-diag");
-    if (!el) return;
-    renderDiagnosisInto(el);
-    fitDiagColumn(el);
-  }
-  function renderDiagnosisInto(el) {
-    el.replaceChildren();
-    // v8-1-plan T5: the games of the source row (导入的 until the chunk is in)
-    const view = libDb ? libDb.diagView() : { games: store.session.library, note: "" };
-    const d = Library.diagnose(view.games, LIB_MIN_GAMES);
-    const para = (text, cls) => {
-      const p = doc.createElement("p");
-      p.className = cls || "hint";
-      p.textContent = text;
-      el.appendChild(p);
-    };
-    const row = (kText, vText, pick, full) => {
-      const r = doc.createElement(pick ? "button" : "div");
-      r.className = "stat-row" + (pick ? " stat-row-link" : "");
-      if (pick) {
-        r.type = "button";
-        r.dataset.diagPick = JSON.stringify(pick);
-        r.title = t("diag.openThese");
-      }
-      const k = doc.createElement("span");
-      k.className = "stat-k";
-      k.textContent = kText;
-      // `full` for a name that will not fit the name track: it is cut with an
-      // ellipsis there, so the whole of it goes on `title` (7.3 B3). Only the
-      // rows carrying data — an opening's name — need it; the fixed labels fit.
-      if (full) k.title = kText;
-      const v = doc.createElement("span");
-      v.className = "stat-v num";
-      v.textContent = vText;
-      r.append(k, v);
-      el.appendChild(r);
-    };
-    // v7-plan §6.2: 「每一条都必须点到一个可执行的下一步；没有下一步的统计
-    // 不写进这一页」。7.0 写了统计，一条下一步都没接上。These three are the
-    // rows that name a subset of games, so each one is a door to that subset.
-    const pickPara = (text, cls, pick) => {
-      const p = doc.createElement(pick ? "button" : "p");
-      p.className = (cls || "hint") + (pick ? " hint-link" : "");
-      if (pick) { p.type = "button"; p.dataset.diagPick = JSON.stringify(pick); }
-      p.textContent = text;
-      el.appendChild(p);
-    };
-    if (view.note) para(view.note);
-    if (!d.enough) { para(tf("lib.needMore", [d.need - d.have, d.have, d.need])); return; }
-    para(tf("diag.from", [d.games]));
-    row(t("diag.record"), tf("diag.wld", [d.outcome.win, d.outcome.loss, d.outcome.draw]));
-    if (d.acc != null) row(t("diag.acc"), d.acc + "%");
-    const phaseName = {
-      opening: tf("diag.phaseOpening", [Library.OPENING_UNTIL]),
-      middle: t("diag.phaseMiddle"),
-      end: t("diag.phaseEnd"),
-    };
-    for (const k of ["opening", "middle", "end"]) {
-      const p = d.phase[k];
-      if (p.acpl == null) continue;
-      row(phaseName[k], tdot(tf("diag.acpl", [p.acpl]), tf("diag.badRate", [Math.round((p.badRate || 0) * 1000) / 10])));
-    }
-    if (charts) charts.drawPhaseChart(el, d, phaseName);
-    if (d.weakestPhase) {
-      const best = ["opening", "middle", "end"].map((k) => d.phase[k].acpl).filter((n) => n != null);
-      para(tf("diag.weakest", [phaseName[d.weakestPhase], d.phase[d.weakestPhase].acpl,
-        d.phase[d.weakestPhase].acpl - Math.min(...best)]), "hint warn");
-    } else {
-      para(t("diag.noWeakest"));
-    }
-    const peakAxes = charts && charts.drawPeakChart(el, view.games);
-    // the chart is not the only place its numbers appear (v7-3-plan §4B)
-    if (peakAxes) para(tf("diag.peakRange", [1, peakAxes.last, peakAxes.max]));
-    if (d.peak) {
-      pickPara(tf("diag.peak", [d.peak.move, d.peak.n]), "hint",
-        { kind: "peak", value: d.peak.move, label: tf("diag.pickPeak", [d.peak.move]) });
-    }
-    if (d.motifs.length) {
-      row(t("diag.motifs"), "");
-      for (const m of d.motifs.slice(0, 6)) {
-        row(t("motif." + m.motif), tf("diag.motifN", [m.n]),
-          { kind: "motif", value: m.motif, label: tf("diag.pickMotif", [t("motif." + m.motif)]) });
-      }
-    }
-    if (d.ecos.length) {
-      row(t("diag.ecos"), "");
-      if (charts) charts.drawEcoChart(el, d.ecos);
-      for (const e of d.ecos.slice(0, 6)) {
-        const name = libEcoName(e.eco, e.name);
-        row(e.eco + (name ? " " + name : ""),
-          tf("diag.ecoRow", [e.n, Math.round((e.score || 0) * 100)]),
-          { kind: "eco", value: e.eco, label: tf("diag.pickEco", [e.eco + (name ? " " + name : "")]) },
-          true);
-      }
-    }
-  }
+  // --- 19.0 S2: the diagnosis is drawn on 我的 (me-page.js, a chunk) --------
+  //
+  // It was this module's dialog (看诊断); what stays here is what only this
+  // module holds — the source row's games, the charts the library's chunk
+  // brought, and the openings filled in before a draw (7.1).
 
+  /** library-page.js asks for a redraw: its source row changed, or 本机 openings were filled. */
+  function renderDiagnosis() { if (d.renderDiag) d.renderDiag(); }
+  /** How many analysed games, from any source (v8-1-plan T5: the row picks which). */
+  const diagCount = () => store.session.library.filter((g) => g.an && g.side).length + (libDb ? libDb.localAnalysed() : 0);
+  const diagWait = { eco: false, charts: false };
   /**
-   * v8-0-plan §5: one value column as wide as the widest value in it, up to
-   * two thirds of the dialog — measured, because the values are sentences
-   * whose length depends on the language and the numbers.
+   * Before the diagnosis draws: the 开局战绩 section needs an `eco` on the
+   * records, which 7.0 never wrote — filled in here, and `redraw` runs again
+   * when the ECO chunk lands, or the charts with the library's chunk.
    */
-  function fitDiagColumn(el) {
-    el.style.removeProperty("--stat-v-w");
-    const vs = [...el.querySelectorAll(".stat-v")];
-    if (!vs.length || !el.clientWidth) return;
-    for (const v of vs) v.style.whiteSpace = "nowrap";
-    // scrollWidth is rounded; the extra pixel keeps a 152.4px value on one line
-    const need = Math.max(...vs.map((v) => v.scrollWidth)) + 1;
-    for (const v of vs) v.style.removeProperty("white-space");
-    const cap = Math.floor(el.clientWidth * 2 / 3);
-    el.style.setProperty("--stat-v-w", Math.min(need, cap) + "px");
-    // a narrow window can cut a fixed label too; it keeps itself on title
-    for (const k of el.querySelectorAll(".stat-k")) {
-      if (k.scrollWidth > k.clientWidth && !k.title) k.title = k.textContent;
-    }
+  function prepDiag(redraw) {
+    if (ChessEco.loaded()) { if (fillOpenings()) saveLibrary(); }
+    else if (!diagWait.eco) { diagWait.eco = true; ChessEco.whenReady(() => { diagWait.eco = false; if (fillOpenings()) saveLibrary(); redraw(); }); }
+    if (!charts && !diagWait.charts) { diagWait.charts = true; libDbReady.then(() => { if (charts) redraw(); }); }
   }
-
-  function openDiagnosis() {
-    // 7.1: the 开局战绩 section needs an `eco` on the records, which 7.0 never
-    // wrote. Fill what is missing before drawing, and draw again when the ECO
-    // chunk lands — a library analysed under 7.0 gets its openings without
-    // anyone re-running the engine over it.
-    if (!ChessEco.loaded()) ChessEco.whenReady(() => { if (fillOpenings()) saveLibrary(); renderDiagnosis(); });
-    else if (fillOpenings()) saveLibrary();
-    // open FIRST: the charts size themselves from their laid-out width, and a
-    // canvas inside a hidden dialog measures zero
-    Dlg.open(doc.getElementById("lib-modal"));
-    renderDiagnosis();
-    // opened before the chunk landed: the charts join the sentences then
-    if (!charts) libDbReady.then(() => { if (charts) renderDiagnosis(); });
-  }
-  function closeDiagnosis() { Dlg.close(doc.getElementById("lib-modal")); }
 
   // 14.0 A3: 粘贴 PGN — the clipboard's games into the library, as a file's go
   const pasteBtn = doc.getElementById("lib-paste");
@@ -1032,8 +916,11 @@ export function createLibraryUI(d) {
 
   return {
     LIB_MIN_GAMES, fillOpenings,
-    adoptBoardAnalysis, closeDiagnosis, closeLibList, deepenLibraryGame, importPgnToLibrary,
-    libEcoName, libNamesFrom, loadFromLibrary, loadLibraryEntry, openDiagnosis, openLibList,
+    adoptBoardAnalysis, closeLibList, deepenLibraryGame, importPgnToLibrary,
+    libEcoName, libNamesFrom, loadFromLibrary, loadLibraryEntry, openLibList,
+    // 19.0 S2: what 我的's diagnosis reads (me-page.js)
+    diagCount, prepDiag, charts: () => charts,
+    diagView: () => (libDb ? libDb.diagView() : { games: store.session.library, note: "" }),
     reclaimLibrary, renderLibList, renderLibrary, runLibraryPass, saveLibrary,
     // v8-0-plan C1: the query API (library-query.js), over imported + 本机
     // games, once the chunk is in — the seam C3's explorer reads

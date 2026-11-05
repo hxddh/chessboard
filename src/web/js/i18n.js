@@ -394,13 +394,9 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "daily.why.review": "到期的复习", "daily.why.mine": "你走错过的局面", "daily.why.weak": "战绩最弱的题型",
       "daily.why.lesson": "课程的下一课", "daily.why.op": "还没走熟的开局", "daily.why.game": "今天还没下过棋",
       "daily.why.motif": "反复出错的战术主题",
-      "side.trend": "进步",
-      "aria.trendAcc": "准确率走势",
-      "tip.trendAcc": "最近复盘过的对局的准确率，按时间排列",
-      "trend.row": "本周正确率 {0} · 上周 {1}",
-      "trend.rowNew": "本周正确率 {0}",
-      "trend.rowPrev": "上周正确率 {0} · 本周还没答过",
-      "trend.mines": "本周收 {0} · 找回 {1}",
+      
+      
+      
       // v8-0-plan B5: 成长 on 我的 (me-page.js)
       "me.cal": "练习日历",
       "me.calMeta": "连续 {0} 天 · 最长 {1} 天",
@@ -412,18 +408,12 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "me.sw.theme": "谜题等级分 {0}",
       "me.sw.motif": "对局里栽过 {0} 次",
       "me.sw.eco": "得分 {0}% · {1} 局",
-      "me.metrics": "跨局指标", "me.phase": "失误按阶段",
-      "me.m.convert": "化优为胜",
-      "me.m.resil": "逆境求生",
-      "me.m.clock": "时间紧时的失误率",
-      "me.m.convertV": "领先 2 兵以上的 {0} 局里赢下 {1} 局",
-      "me.m.resilV": "落后 2 兵以上的 {0} 局里保住 {1} 局，其中赢下 {2} 局",
-      "me.m.clockV": "时间紧时走了 {0} 步，失误 {1} 次 · 平时失误率 {2}",
-      "me.m.clockNone": "{0} 局带棋钟，没有一步是在时间紧时走的",
-      "me.m.need": "至少要 {0} 局，现在 {1} 局",
-      "me.m.convertD": "算的是领先过 2 兵以上的对局（至少 {0} 局才给数）",
-      "me.m.resilD": "算的是落后过 2 兵以上的对局里守和或赢下的（至少 {0} 局才给数）",
-      "me.m.clockD": "带棋钟（PGN 里的 %clk）并复盘过的对局；自己的钟少于开局时的一成算时间紧（至少 {0} 局才给数）",
+      
+      
+      
+      
+      
+      
       "pz.cat.real": "实战",
       "pz.cat.def": "防守", "pz.cat.draw": "求和",
       "pz.more": "更多练法", "pz.smart": "为你出一题",
@@ -436,9 +426,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "rec.due": "复习到期 {0} · 明天 {1}",
       "study.part": "名局", "study.head": "读棋", "study.intro": "{0}，{1} 年 · {2} · 结果 {3}。用 ← → 逐着读，注释随着法出现；随时可以走别的着法试试。", "study.ofNoNote": "第 {0} 手 · {1} （这一手没有注释）", "study.ofNote": "第 {0} 手 · {1} —— {2}",
       "pz.smart.done": "全书都做完了 —— 没有可推荐的了",
-      "side.puzzleTally": "做题战绩",
-      "rec.tally": "解出 {0} · 失手 {1}",
-      "rec.weakMark": "错得最多",
+      
       "pz.side": "执方",
       "tip.opSide.w": "执白照谱走，黑方谱着自动应出",
       "tip.opSide.b": "执黑照谱应，白方谱着自动走出",
@@ -450,7 +438,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "side.textSize": "字号", "text.s": "小", "text.m": "标准", "text.l": "大", "tip.textSize": "整个界面的文字大小",
       "side.pieces": "棋子样式", "pieces.cburnett": "伯内特", "pieces.merida": "梅里达", "pieces.classic": "经典",
       "side.coach": "失着提醒", "side.autoflip": "自动翻转", "side.language": "语言",
-      "side.moves": "棋谱", "side.stats": "统计", "side.ach": "成就",
+      "side.moves": "棋谱", "side.ach": "成就",
       "learn.doneN": "完成 {0}/{1}", "learn.doneOf": "已完成的课数",
       "side.learn": "教学", "side.puzzle": "做题", "side.editor": "编辑局面",
       "mode.ai": "人机", "mode.pvp": "双人", 
@@ -489,11 +477,8 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "st.learn": "教学模式", "st.puzzle": "做题练习", "st.lessonDone": "课程完成", "st.puzzleDone": "解出 · 下一题",
       "ach.unlocked": "成就解锁",
       "brand": "国际象棋", "vs.player": "你",
-      "stats.emptyHint": "人机对局分出胜负后，自动记在这里。",
-      "stats.hint": "人机完局自动记录", "stats.accFrom": "精准度来自「复盘」",
-      "stats.accHow": "完局后点「复盘」可记录精准度",
-      "stats.gamesN": "共 {0} 局",
-      "stats.recentAccN": "近 {0} 局精准度", "stats.accLine": "{0}% · 最近 {1}%",
+      
+      
       "tipRun.analyze": "快速过一遍每一步，标出失着",
       "tipRun.stop": "停止复盘（保留已算出的部分）",
       "tipRun.claimThreefold": "同一局面已第三次出现，可依规则判和",
@@ -595,7 +580,6 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "mat.takenW": "白方已吃掉的子", "mat.takenB": "黑方已吃掉的子",
       // v8-0-plan A1: the rail, the home page; 9.0 S5: the settings page
       "nav.aria": "主导航", "nav.home": "今天", "nav.play": "下棋",
-      "nav.library": "棋谱",
       "nav.settings": "设置",
       "set.catsAria": "设置分类",
       "set.general": "通用",
@@ -616,6 +600,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "nav.train": "训练",
       "train.course": "课程",
       "train.puzzle": "谜题",
+      "train.opening": "开局",
       "train.endgame": "残局",
       "train.classic": "名局",
       "train.read": "读谱",
@@ -756,7 +741,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "ng.mode": "对手", 
       "home.cont.live": "{0}对局进行中 · 第 {1} 回合", 
       // 7.0 棋谱库
-      "lib.title": "棋谱库", "lib.import": "导入到库", "lib.diagnose": "看诊断",
+      "lib.title": "棋谱库", "lib.import": "导入到库", 
       "lib.sync": "从网站同步", "sync.user": "用户名", "sync.go": "同步", "sync.allow": "允许联网同步", "sync.hint": "默认关闭。打开后只在你点「同步」时联网，只发送用户名。", "sync.noHost": "只有桌面应用能联网同步。", "sync.fetching": "正在从 {0} 取棋…", "sync.offline": "连不上 {0}，请检查网络。", "sync.rate": "{0} 暂时限制了请求，请一分钟后再试。", "sync.notFound": "{0} 上没有用户 {1}", "sync.empty": "{0} 上还没有 {1} 的对局", "sync.failed": "同步没有完成（{0}）", "sync.badName": "用户名是 2 到 30 个字母、数字、- 或 _",
       "sync.limit": "上次以来的新对局，最多取", "sync.analyse": "同步完就开始复盘", "sync.progress": "正在从 {0} 取棋…已取到 {1} 局", "sync.none": "{0} 上没有 {1} 的新对局", "sync.timeout": "{0} 迟迟没有应答，请稍后再试。", "sync.busy": "上一次同步还没有结束，请稍后再试。",
       "pz.repBook": "书上走的是 {0}",
@@ -819,7 +804,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "lib.deepDone": "{0} 精细复盘完：撤销 {1} 道、改答 {2} 道、新增 {3} 道",
       "lib.deepCut": "这一局没复盘完，原来的结果原样留着",
       "lib.passCut": "引擎两次都没给出评估，复盘先停在这里；没复盘完的那一局原样留着",
-      "diag.title": "棋谱库诊断",
+      "diag.title": "诊断",
       "diag.from": "{0} 局已复盘的棋，全部从你这一边读",
       "diag.record": "战绩", "diag.wld": "{0} 胜 {1} 负 {2} 和",
       "diag.acc": "平均精准度", "diag.phase": "分阶段", "diag.phaseOpening": "开局（前 {0} 回合）",

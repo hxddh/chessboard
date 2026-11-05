@@ -205,44 +205,25 @@ const waitRows = async (page, pred, ms = 3000) => {
   await ctx.close();
 }
 
-// --- 3. 空库：说清楚，并列出开局书；棋谱库页的入口 --------------------------------
+// --- 3. 空库：说清楚，并列出开局书 ---------------------------------------------
+// 19.0 S1: the library page's door (and 14.0 A1's start-of-game rule for it)
+// went with the page — the explorer opens from the play panel's 开局 key only.
 {
-  const ctx = await context({ games: null, view: "library" });
+  const ctx = await context({ games: null, view: "library", explorer: { open: false } });
   const { page, errs } = await open(ctx);
-  await page.click('#rail button[data-view="library"]').catch(() => {});
   await page.waitForTimeout(200);
-  assert(await page.isVisible("#lib-explorer"), "棋谱库页上有「开局浏览器」");
-  await page.click("#lib-explorer");
+  const doors = await page.evaluate(() => ({ lib: !!document.getElementById("lib-explorer"),
+    view: document.getElementById("app").getAttribute("data-view") }));
+  assert(!doors.lib && doors.view === "me", "19.0 S1：「棋谱」页和它的「开局浏览器」入口都没有了（旧的 view: library 打开「我的」）", JSON.stringify(doors));
+  await page.click('#rail button[data-view="play"]');
+  await page.waitForTimeout(300);
+  await surface(page, "explorer-open");
   const r = await waitRows(page, (x) => x.length > 0);
-  assert(await page.isHidden("#page-library") && await page.isVisible("#explorer"), "点它：回到棋盘，面板开着");
+  assert(await page.isVisible("#explorer"), "下棋面板的「开局」键打开浏览器");
   assert(/棋谱库是空的/.test(await note(page)), "空库时说清楚", await note(page));
   assert(r.length >= 10 && r.every((x) => x.book && x.n === ""), "……并列出开局书的首着（" + r.length + " 个，局数空着）");
   const e4 = r.find((x) => x.san === "e4");
   assert(e4 && e4.label === "e4 · 书", "书着行读出来是「e4 · 书」", e4 && e4.label);
-  assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
-  await ctx.close();
-}
-
-// --- 3b. 14.0 A1: from the library, an imported game opens at its start ------
-// The door opened on the game's last move, where the library has nothing
-// (「没有对局」); a game already over or imported starts from move 0, so the
-// panel has the library's first moves.
-{
-  const ctx = await context({ view: "library" });
-  await ctx.addInitScript(() => {
-    if (sessionStorage.getItem("seeded2")) return;
-    sessionStorage.setItem("seeded2", "1");
-    localStorage.setItem("chess.save", JSON.stringify({ v: 1, imported: true, savedAt: Date.now(),
-      pgn: '[White "A"]\n[Black "B"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 1-0\n' }));
-  });
-  const { page, errs } = await open(ctx);
-  await page.click('#rail button[data-view="library"]').catch(() => {});
-  await page.waitForTimeout(200);
-  await page.click("#lib-explorer");
-  const r = await waitRows(page, (x) => x.length >= 2);
-  const pos = (await page.textContent("#replay-pos")).trim();
-  assert(/^0 \//.test(pos) && r.some((x) => x.san === "e4") && !/没有对局/.test(await note(page)),
-    "14.0 A1：从棋谱库打开浏览器，导入的那局回到开头，列出库里的首着（" + pos + "）", JSON.stringify(r.map((x) => x.san)));
   assert(errs.length === 0, "没有 JS 异常", errs.join(" / "));
   await ctx.close();
 }

@@ -18,7 +18,9 @@
  * the review on purpose — 分析 / 持续分析 → 复盘 / 实时引擎 (Analyse → Review,
  * 解析・検討 → 振り返り) — and with it the rows that quote those words.
  * 19.0 S6 deleted the puzzle chip's 「第 3 题 · 战术」: a puzzle has one
- * number now, the card's, and the chip names the kind alone.
+ * number now, the card's, and the chip names the kind alone. 19.0 S3
+ * deleted 统计's four rows with the block (stats.recentAccN, stats.accLine,
+ * stats.hint.acc / .noAcc).
  *
  * Row: [id, (t, tf, tdot, diff) => text, zh-CN, en, ja]
  */
@@ -37,14 +39,6 @@ export const F4_RENDERS = [
     "预览 · 引擎变化 · Esc 返回实战", "Preview · engine line · Esc returns to the game", "プレビュー · エンジンの読み筋 · Esc で対局に戻る"],
   ["chrome.hint", (t, tf, tdot, diff) => tdot(t("chrome.hint"), "Nf3"),
     "提示 · Nf3", "Hint · Nf3", "ヒント · Nf3"],
-  ["stats.recentAccN", (t, tf, tdot, diff) => tf("stats.recentAccN", [7]),
-    "近 7 局精准度", "Accuracy (last 7)", "直近 7 局の正確度"],
-  ["stats.accLine", (t, tf, tdot, diff) => tf("stats.accLine", [81, 77]),
-    "81% · 最近 77%", "81% · last 77%", "81% · 最新 77%"],
-  ["stats.hint.acc", (t, tf, tdot, diff) => tdot(tf("stats.gamesN", [12]), t("stats.hint"), t("stats.accFrom")),
-    "共 12 局 · 人机完局自动记录 · 精准度来自「复盘」", "12 games · engine games recorded automatically · accuracy comes from Review", "計 12 局 · エンジン対局は自動で記録されます · 正確度は「振り返る」から記録されます"],
-  ["stats.hint.noAcc", (t, tf, tdot, diff) => tdot(tf("stats.gamesN", [1]), t("stats.hint"), t("stats.accHow")),
-    "共 1 局 · 人机完局自动记录 · 完局后点「复盘」可记录精准度", "1 game · engine games recorded automatically · run Review after a game to record accuracy", "計 1 局 · エンジン対局は自動で記録されます · 対局後に「振り返る」を押すと正確度が記録されます"],
   ["hist.todayAt", (t, tf, tdot, diff) => tf("hist.todayAt", ["09:41"]),
     "今天 09:41", "today 09:41", "今日 09:41"],
   ["hist.yesterdayAt", (t, tf, tdot, diff) => tf("hist.yesterdayAt", ["23:05"]),

@@ -5,15 +5,15 @@
  * on the settings page (index.html's #sec-mode), the library and its
  * diagnosis were ~460px dialogs, and 统计 / 棋谱库 / 开局书 / 对局历史 / 成就
  * were stacked in the 400px side panel under 记录. This is the level above
- * all of that — six views, one of them showing at a time:
+ * all of that — five views (19.0 S1 took 棋谱 off), one of them showing at a time:
  *
  *   home     今天: the next thing on a board, today's counts, where each
  *            course was left, the last games, the ratings (9.0 S1)
  *   play     下棋: the board with the panel — the geometry players know
  *   train    训练: the same board view, in the lesson or the puzzle mode —
- *            课程 / 谜题 / 残局 / 名局 at the top of the panel (9.0 S3)
- *   library  棋谱库: a page — the library, its diagnosis, the opening book
- *   me       我的: a page — statistics, history, achievements
+ *            课程 / 谜题 / 开局 / 残局 / 名局 at the top of the panel (9.0 S3)
+ *   me       我的: a page — the record, the diagnosis, the library and the
+ *            history (19.0 S1: 棋谱库's page went; its book is 训练 · 开局)
  *   settings 设置: a page — the one place settings live (9.0 S5)
  *
  * The two board views are the one stage in its modes, so the board's
@@ -32,11 +32,19 @@ import { ChessDialog } from "./dialog.js";
 import { ChessBoardView } from "./board.js";
 
 /** The views, in the rail's order; `home` is the rail's head. */
-export const SHELL_VIEWS = ["home", "play", "train", "library", "me", "settings"];
-/** 9.0 S3: 训练's four segments, in the switch's order. */
-export const TRAIN_SEGS = ["course", "puzzle", "endgame", "classic"];
+export const SHELL_VIEWS = ["home", "play", "train", "me", "settings"];
+/**
+ * 19.0 S1: 棋谱 left the rail — its library and history are on 我的, its
+ * book under 训练 · 开局. A saved or linked "library" opens 我的.
+ */
+const OLD_VIEW = { library: "me" };
+const viewOf = (v) => OLD_VIEW[v] || v;
+/** 9.0 S3: 训练's segments, in the switch's order (19.0 S1: 开局 the fifth). */
+export const TRAIN_SEGS = ["course", "puzzle", "opening", "endgame", "classic"];
+/** 19.0 S1: the puzzle categories that are 开局's — the built-in book, yours, its reviews due. */
+const OPENING_CATS = ["op", "rep", "repdue"];
 /** The views that are pages over the stage, and the page each one shows. */
-const PAGES = { home: "page-home", library: "page-library", me: "page-me", settings: "page-settings" };
+const PAGES = { home: "page-home", me: "page-me", settings: "page-settings" };
 /** 9.0 S5: the settings page's categories, in the list's order. */
 export const SETTING_CATS = ["general", "board", "game", "data"];
 /** 19.0 S4: the two categories folded into others, for a remembered or linked one */
@@ -47,7 +55,7 @@ const OLD_CAT = { sound: "general", advanced: "game" };
  */
 export function createShell(d) {
   const {
-    doc, store, appEl, switchMode, saveSettings, onSettings, onHome, onMe, learnSeg, openSeg,
+    doc, store, appEl, switchMode, saveSettings, onSettings, onHome, onMe, learnSeg, openSeg, puzzles,
   } = d;
   const Dlg = ChessDialog;
   const rail = doc.getElementById("rail");
@@ -65,7 +73,7 @@ export function createShell(d) {
   /** The segment on the board now, or null outside 训练. */
   function trainSeg() {
     const m = store.session.mode;
-    if (m === "puzzle") return "puzzle";
+    if (m === "puzzle") return OPENING_CATS.includes(store.session.puzzleState.cat) ? "opening" : "puzzle";
     return m === "learn" ? (learnSeg && learnSeg()) || "course" : null;
   }
   /**
@@ -75,13 +83,27 @@ export function createShell(d) {
   function openTrain(seg) {
     const want = TRAIN_SEGS.includes(seg) ? seg : "course";
     store.ui.trainSeg = want;
-    if (want === "puzzle") { if (store.session.mode !== "puzzle") switchMode("puzzle"); }
+    if (want === "puzzle" || want === "opening") openPuzzles(want);
     else {
       if (store.session.mode !== "learn") switchMode("learn");
       if (openSeg) openSeg(want);
     }
     show("train");
     saveSettings();
+  }
+  /**
+   * 19.0 S1: 谜题 and 开局 are both the puzzle mode — 开局 its opening drills
+   * (yours if you have a book, else the built-in one's), 谜题 the category it
+   * was left on. A switch between them changes the category, not the mode.
+   */
+  function openPuzzles(want) {
+    const st = store.session.puzzleState;
+    const op = OPENING_CATS.includes(st.cat);
+    const was = st.cat;
+    if (want === "opening" && !op) st.cat = puzzles && puzzles.hasBook() ? "rep" : "op";
+    if (want === "puzzle" && op) st.cat = store.ui.pzCat || "grp:mate";
+    if (store.session.mode !== "puzzle") { if (puzzles) puzzles.save(); switchMode("puzzle"); }
+    else if (st.cat !== was && puzzles) { puzzles.save(); puzzles.restart(); }
   }
   /** The switch over the panel: shown while training, the segment lit. */
   function paintTrain() {
@@ -90,6 +112,10 @@ export function createShell(d) {
     const seg = trainSeg();
     row.hidden = !seg;
     if (seg) store.ui.trainSeg = seg;
+    // 19.0 S1: what 谜题 goes back to from 开局; and the book's card, under 开局 only
+    if (seg === "puzzle") store.ui.pzCat = store.session.puzzleState.cat;
+    const rep = doc.getElementById("sec-rep");
+    if (rep) rep.hidden = seg !== "opening";
     for (const b of row.querySelectorAll("button[data-seg]")) {
       const on = b.dataset.seg === seg;
       b.classList.toggle("active", on);
@@ -105,7 +131,7 @@ export function createShell(d) {
    * which half of the window is live. No state is changed but the view's.
    */
   function show(view) {
-    const want = SHELL_VIEWS.includes(view) ? view : "play";
+    const want = SHELL_VIEWS.includes(viewOf(view)) ? viewOf(view) : "play";
     store.ui.view = want;
     appEl.setAttribute("data-view", want);
     // v8-2-plan F3: the board is drawn when it is uncovered, not under a page
@@ -178,7 +204,7 @@ export function createShell(d) {
 
   /** At launch: the page that was open, or the board of the restored mode. */
   function restore() {
-    show(isPage(store.ui.view) ? store.ui.view : boardView());
+    show(isPage(viewOf(store.ui.view)) ? viewOf(store.ui.view) : boardView());
   }
 
   /**

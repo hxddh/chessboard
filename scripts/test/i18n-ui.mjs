@@ -273,17 +273,16 @@ export async function run() {
     // --- v8-3-plan T4: English counts that can be 1 take tf's {n:one|other} ---
     // Each key renders its count with 1 and with 2 (the other values fixed).
     // Chinese and Japanese do not inflect: their entries keep bare {n}, so they
-    // read exactly as a plain substitution would.
+    // read exactly as a plain substitution would. (19.0 S3 deleted stats.gamesN
+    // and me.m.clockV with 统计 and 跨局指标.)
     {
       const PLURALS = [
-        ["stats.gamesN", (n) => [n], "1 game", "2 games"],
         ["msg.learning.imported", (n) => [n], "Merged — the personal book now holds 1 drill", "Merged — the personal book now holds 2 drills"],
         ["pz.goalOp", (n) => ["Italian", n], "Italian · play the book line as White for 1 move", "Italian · play the book line as White for 2 moves"],
         ["pz.goalOpB", (n) => ["Italian", n], "Italian · answer the book line as Black for 1 move", "Italian · answer the book line as Black for 2 moves"],
         ["pz.moveN", (n) => [n], "1 move", "2 moves"],
         ["dlg.retryHere", (n) => [5, n], "Resume from move 5; what follows (1 move) stays as a variation. Continue?", "Resume from move 5; what follows (2 moves) stays as a variation. Continue?"],
         ["aria.cal", (n) => [18, n], "Played or solved on 1 day in the last 18 weeks", "Played or solved on 2 days in the last 18 weeks"],
-        ["me.m.clockV", (n) => [n, n, "4%"], "1 blunder in 1 move on a low clock · 4% otherwise", "2 blunders in 2 moves on a low clock · 4% otherwise"],
         ["msg.analysis.kept", (n) => [n], "Review stopped · kept the first 1 ply", "Review stopped · kept the first 2 plies"],
         ["rep.removeAsk", (n) => ["e4", "White", n, 1], "Take e4 out of your repertoire (White)? 1 line through it will be cut short, 1 of them removed entirely. You can undo this afterwards.",
           "Take e4 out of your repertoire (White)? 2 lines through it will be cut short, 1 of them removed entirely. You can undo this afterwards."],

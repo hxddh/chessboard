@@ -1397,7 +1397,6 @@
     }
     .side-h-row .side-h { margin: 0; height: auto; }
     .side-h-meta { font-size: 0.75rem; color: var(--muted); }
-    .side-h-end { display: inline-flex; align-items: center; gap: 12px; }
     /* A section that holds more than one heading — statistics, which stacks
        统计 / 对局历史 / 成就 — needs air above every heading but its first.
        This was three `style="margin-top:14px"` attributes in the markup, and
@@ -3503,8 +3502,6 @@
     .rt-acts .pv-act { margin-left: 0; }
 
     .ach-pg { font-size: 0.75rem; color: var(--muted); }
-    /* the "what next?" suggestion under the statistics */
-    .stat-rec { margin-top: 8px; color: var(--text); }
 
     .mvtag { margin-left: 2px; font-weight: 400; font-size: 0.6875rem; }
     .mvtag.t-soft { color: var(--judge-soft); }
@@ -3625,26 +3622,6 @@
        keyboard and a screen reader get it for free. */
     /* 9.0 V1: a door is told by the fill under the pointer, as every other
        row that can be pressed is — not by a dashed rule appearing */
-    /* 12.0 C: a difficulty's record as a bar under its row — won in
-       --chart-now, drawn in the data colour, lost in the mark colour */
-    .stat-row:has(> .wdl) { position: relative; }
-    /* drawn in the row's bottom padding, so the list keeps one row height */
-    .wdl {
-      --w: 0; --d: 0; --l: 0;
-      position: absolute; left: 2px; right: 2px; bottom: 0;
-      display: flex; height: 2px; border-radius: var(--radius-sm); overflow: hidden;
-    }
-    .wdl > i { flex: 0 1 0; min-width: 0; }
-    .wdl > .w { flex-grow: var(--w); background: var(--chart-now); }
-    .wdl > .d { flex-grow: var(--d); background: var(--chart-line); opacity: 0.5; }
-    .wdl > .l { flex-grow: var(--l); background: var(--judge-bad); }
-    /* …and a phase's share of mistakes, the worst one in the mark colour */
-    .me-bar {
-      --p: 0; flex: 0 0 100%; display: block; height: 4px; margin: 2px 0 4px;
-      border-radius: var(--radius-sm);
-      background: linear-gradient(90deg, var(--chart-line) calc(var(--p) * 1%), var(--chart-grid) 0);
-    }
-    .me-bar.is-weak { background: linear-gradient(90deg, var(--judge-bad) calc(var(--p) * 1%), var(--chart-grid) 0); }
     button.stat-row, button.hint-link {
       width: 100%; font: inherit; text-align: left;
       background: transparent; border: 0;
@@ -3860,10 +3837,10 @@ kbd.accel {
   display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 8px;
   padding: 2px; font-size: 0.875rem;
 }
+/* 19.0 S2: the library's part of the diagnosis, under 强项 / 弱项 */
+#me-sw:not([hidden]) + #diag-lib { margin-top: 16px; }
 .me-k { min-width: 0; color: var(--muted); overflow-wrap: anywhere; }
 .me-v { margin-left: auto; color: var(--text); font-size: 0.875rem; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
-.me-metric + .me-metric { margin-top: 8px; }
-.me-metric .hint { margin: 0 2px; }
 
 
 /* 6.0 (v6-plan Q3.6): a higher-contrast variant, from the same tokens. Muted
@@ -4215,6 +4192,12 @@ span[data-icon] { display: inline-grid; place-items: center; }
   margin: 0;
 }
 .rec-block.empty > .close-row > .btn-pair { display: contents; }
+/* 19.0 S1: 我的开局书 in the panel (训练 · 开局): its buttons wrap at the
+   panel's width; on the empty card the two imports are a pair under 生成 */
+#sec-rep .close-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+#sec-rep .btn-pair { display: contents; }
+#sec-rep .rec-block.empty > .close-row { display: grid; grid-template-columns: 1fr 1fr; }
+#sec-rep .rec-block.empty #rep-seed { grid-column: 1 / -1; }
 .rec-block.empty > .stats-body:empty { display: none; }
 
 /* ------------------------------------------------------------------

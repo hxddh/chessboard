@@ -1640,75 +1640,14 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     drawSpark(document, cv, ys, { lo, hi, ref: ys[0] });
   }
 
+  // 19.0 S3: 统计 left 我的 with four other blocks (me-page.js draws the four
+  // that stayed); the name stays for the callers: "the record changed"
   function renderStats() {
-    const el = document.getElementById("stats-body");
-    if (!el) return;
-    const s = loadStats();
-    const agg = {};
-    for (const g of s.games) {
-      const k = DIFF_NAMES[g.diff] ? g.diff : "normal";
-      const a = (agg[k] = agg[k] || { win: 0, loss: 0, draw: 0 });
-      a[g.result] = (a[g.result] || 0) + 1;
-    }
-    // accuracy of the most recent analysed games (only games the user analysed
-    // carry it, so this stays empty until they use 分析/精析)
-    const withAcc = s.games.filter((g) => typeof g.acc === "number");
-    el.replaceChildren();
-    let total = 0;
-    for (const k of DIFF_IDS) {
-      const a = agg[k];
-      if (!a) continue;
-      total += a.win + a.loss + a.draw;
-      const row = document.createElement("div");
-      row.className = "stat-row";
-      const name = document.createElement("span");
-      name.className = "stat-k";
-      name.textContent = DIFF_NAMES[k];
-      const val = document.createElement("span");
-      val.className = "stat-v num";
-      val.textContent = tf("stats.wld", [a.win, a.loss, a.draw]);
-      // 12.0 C: and as a bar — won, drawn, lost, in proportion
-      const bar = document.createElement("span");
-      bar.className = "wdl";
-      bar.setAttribute("aria-hidden", "true");
-      for (const [c, n] of [["w", a.win], ["d", a.draw], ["l", a.loss]]) bar.style.setProperty("--" + c, String(n));
-      bar.append(...["w", "d", "l"].map((c) => Object.assign(document.createElement("i"), { className: c })));
-      row.append(name, val, bar);
-      el.appendChild(row);
-    }
-    if (withAcc.length) {
-      const recent = withAcc.slice(-10);
-      const avg = Math.round(recent.reduce((n, g) => n + g.acc, 0) / recent.length);
-      const row = document.createElement("div");
-      row.className = "stat-row";
-      const name = document.createElement("span");
-      name.className = "stat-k";
-      name.textContent = tf("stats.recentAccN", [recent.length]);
-      const val = document.createElement("span");
-      val.className = "stat-v num";
-      val.textContent = tf("stats.accLine", [avg, recent[recent.length - 1].acc]);
-      row.append(name, val);
-      el.appendChild(row);
-    }
-    const hint = document.createElement("p");
-    hint.className = total ? "hint" : "hint empty-note";   // 7.7 §3: see .empty-note
-    hint.textContent = total
-      ? tdot(tf("stats.gamesN", [total]), t("stats.hint"), t(withAcc.length ? "stats.accFrom" : "stats.accHow"))
-      : t("stats.emptyHint");
-    el.appendChild(hint);
     renderLibrary();
     renderRepertoire();
     renderPuzzleTally();
-    renderTrends();
-    const rec = recommendation();
-    if (rec) {
-      const line = document.createElement("div");
-      line.className = "stat-hint stat-rec";
-      line.textContent = rec;
-      el.appendChild(line);
-    }
     const clearBtn = document.getElementById("stats-clear");
-    if (clearBtn) clearBtn.disabled = !total;
+    if (clearBtn) clearBtn.disabled = !loadStats().games.length;
     renderHistory();
   }
 
@@ -1800,15 +1739,13 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     saveSettings, setSideTab, setViewIndex, stopLiveAnalysis, withMotifs, recallAnalysis,
     renderRecordEntry, loadStats, saveStats, copyText: (text, okMsg) => copyText(text, okMsg),
     exportText: (name, text, mime, title, recent) => exportText(name, text, mime, title, recent), loadHistoryRecord: (rec) => loadHistoryRecord(rec),
-    boardFen: () => viewGame().fen(), onLibraryLoaded: () => { renderStats(); sync(); },
+    boardFen: () => viewGame().fen(), onLibraryLoaded: () => { renderStats(); sync(); }, renderDiag: () => { if (MePage.real) MePage.real.renderDiag(); },
   });
   const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;
-  const closeDiagnosis = () => LibraryUI.closeDiagnosis();
   const closeLibList = () => LibraryUI.closeLibList();
   const importPgnToLibrary = (text, label) => LibraryUI.importPgnToLibrary(text, label);
   const libNamesFrom = (text) => LibraryUI.libNamesFrom(text);
   const loadLibraryEntry = (entry) => LibraryUI.loadLibraryEntry(entry);
-  const openDiagnosis = () => LibraryUI.openDiagnosis();
   const openLibList = (pick, opts) => LibraryUI.openLibList(pick, opts);
   const reclaimLibrary = () => LibraryUI.reclaimLibrary();
   const renderLibrary = () => LibraryUI.renderLibrary();
@@ -1816,15 +1753,15 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   const saveLibrary = () => LibraryUI.saveLibrary();
   // v8-0-plan F4: 今天的训练 and the puzzle tally (trainer/today.js)
   const TodayUI = createTodayUI({
-    ALL_PUZZLES, Icons, LESSONS, LIB_MIN_GAMES, Library, Picker, Planner, Progress, Srs, avail,
-    bookNow, drawRatingTrend, el, loadStats, motifKeyOf, owedNow, puzzlesInCat, ratingLabel,
-    ratingTip, runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
+    ALL_PUZZLES, Icons, LESSONS, LIB_MIN_GAMES, Library, Picker, Planner, Progress, avail,
+    bookNow, el, loadStats, motifKeyOf, owedNow, puzzlesInCat,
+    runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
     sync, t, tf, toast, pieceSrc: (k, px) => BoardView.pieceSrc(k, px), game, isOver: () => appGameOver(), isLive: () => isLive(),
     Shell: { go: (id) => Shell.go(id), openTrain: (g) => Shell.openTrain(g) }, rep: { due: () => (RepUI.booted() ? RepUI.dueDrills().length : 0), start: () => startRepDrills(true) }, ecoName: (e, n) => LibraryUI.libEcoName(e, n),
   });
   const {
-    renderPuzzleTally, libPlayedAt, dailySignals, dailyStepLabel, syncDailyUI,
+    libPlayedAt, dailySignals, dailyStepLabel, syncDailyUI,
     dailyStepIsHere, dailyJump,
   } = TodayUI;
 
@@ -2114,13 +2051,14 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     // …and warmed in idle time after launch, so the page is drawn before anyone opens it
     warm: (show) => loadChunk("chunk-me.js", "createMePage").then((create) => {
       if (MePage.real) { if (show) MePage.real.onShow(); return; }
-      const m = MePage.real = create({ Icons, Progress, evalAch, libPlayedAt, loadStats, store, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n), Endgames: LessonsUI.Endgames, startEndgame: (id) => LessonsUI.startEndgame(id), Vis: PuzzlesUI.Vis, Metrics: ChessProgressMetrics, tdot, chartTokens, drawSpark });
-      m.renderTrends(); m.renderAchievements(); m.renderRecordEntry(); if (show) m.onShow();
+      const m = MePage.real = create({ Icons, evalAch, libPlayedAt, loadStats, store, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n), Endgames: LessonsUI.Endgames, Metrics: ChessProgressMetrics, tdot, chartTokens,
+        owedNow, Srs, ratingLabel, ratingTip, diag: { view: () => LibraryUI.diagView(), charts: () => LibraryUI.charts(), prep: (redraw) => LibraryUI.prepDiag(redraw), count: () => LibraryUI.diagCount() } });
+      m.renderAchievements(); m.renderRecordEntry(); if (show) m.onShow();
     }, () => {}),
     onShow: () => { if (MePage.real) MePage.real.onShow(); else MePage.warm(true); },
   };
   setTimeout(() => (window.requestIdleCallback || setTimeout)(() => MePage.warm(false)), 2000);
-  function renderTrends() { if (MePage.real) MePage.real.renderTrends(); }
+  function renderPuzzleTally() { if (MePage.real) MePage.real.renderRatings(); }   // 19.0 S3: the rating block (was today.js's tally)
   function renderAchievements() { if (MePage.real) MePage.real.renderAchievements(); }
   function renderRecordEntry() { if (MePage.real) MePage.real.renderRecordEntry(); }
 
@@ -4224,10 +4162,6 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     if (impBtn) impBtn.onclick = () => { openPgnFile(importPgnToLibrary); };
     const anBtn = document.getElementById("lib-analyse");
     if (anBtn) anBtn.onclick = () => { runLibraryPass(); };
-    const dgBtn = document.getElementById("lib-diagnose");
-    if (dgBtn) dgBtn.onclick = openDiagnosis;
-    const closeBtn = document.getElementById("lib-modal-close");
-    if (closeBtn) closeBtn.onclick = closeDiagnosis;
     // 7.1: the list, and the three diagnosis rows that open a slice of it
     const openBtn = document.getElementById("lib-open");
     if (openBtn) openBtn.onclick = () => { openLibList(null, { src: "all" }); };
@@ -4241,14 +4175,11 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
         let pick = null;
         try { pick = JSON.parse(b.dataset.diagPick); } catch (_) { pick = null; }
         if (!pick) return;
-        closeDiagnosis();
-        openLibList(pick);
+        openLibList(pick);   // 19.0 S2: from 我的's diagnosis (it was a dialog's)
       };
     }
     const listModal = document.getElementById("lib-list-modal");
     if (listModal) listModal.onclick = (ev) => { if (ev.target === listModal) closeLibList(); };
-    const diagModal = document.getElementById("lib-modal");
-    if (diagModal) diagModal.onclick = (ev) => { if (ev.target === diagModal) closeDiagnosis(); };
     const names = document.getElementById("lib-names");
     if (names) {
       names.value = store.session.libNames.join(", ");
@@ -4321,7 +4252,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     setFlipped: (v) => setFlipped(v),
     togglePanel: () => togglePanel(),
     setViewIndex: (n) => setViewIndex(n),
-    escapeKey: () => escapeKey(), go: (v) => Shell.go(v),   // v8-2-plan T4: 开局书 → the 棋谱库 page
+    escapeKey: () => escapeKey(), go: (v) => Shell.go(v), openTrain: (g) => Shell.openTrain(g),   // 19.0 S1: 开局书 → 训练 · 开局
   });
   const keysModal = NativeCmds.keysModal;
   const openKeyHelp = () => NativeCmds.openKeyHelp();
@@ -4356,7 +4287,8 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   SettingsUI.wire();
   // v8-0-plan A1: the rail, the home page and the pages (shell.js)
   const Shell = createShell({ doc: document, store, appEl, switchMode, saveSettings, onSettings: (c) => PrefsUI.onCat(c),
-    onHome: () => { TodayPage.render(); syncDailyUI(); }, onMe: () => MePage.onShow(), learnSeg: () => LessonsUI.learnSeg(), openSeg: (g) => LessonsUI.openSeg(g) });
+    onHome: () => { TodayPage.render(); syncDailyUI(); }, onMe: () => MePage.onShow(), learnSeg: () => LessonsUI.learnSeg(), openSeg: (g) => LessonsUI.openSeg(g),
+    puzzles: { hasBook: () => RepUI.total() > 0, save: () => savePuzzleState(), restart: () => { stopPuzzles(); startPuzzles(); setSideTab("play", { top: true }); sync(); } } });
   Shell.wire();
   // 9.0 S1: 今天 — the page around the coach's card (today-page.js)
   const TodayPage = createTodayPage({ doc: document, store, t, tf, tdot, Chess, pieceSrc: (k, px) => BoardView.pieceSrc(k, px), LESSONS, lessonText, Endgames: LessonsUI.Endgames,
@@ -4380,8 +4312,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
       train: (s) => Shell.openTrain(s), settings: (c) => { store.ui.setCat = c; Shell.go("settings"); }, lesson: (i) => dailyJump({ kind: "lesson", i }),
       theme: (id) => goTheme(id), endgame: (id) => LessonsUI.startEndgame(id), libGame: (e) => loadLibraryEntry(e) } });
   // v8-0-plan C3: 开局浏览器 — the key, the panel's state; the panel itself is a chunk
-  createExplorerLazy({ store, t, tf, tdot, viewGame, gameAt, setViewIndex, movePath, startClockIfIdle, saveSettings, library: LibraryUI, repertoire: RepUI, saved: Persist.read("settings").value,
-    toBoard: () => { Shell.go("play"); setSideTab("play"); }, toStart: () => { if (sanHistory().length && (appGameOver() || store.game.imported)) setViewIndex(0); } });
+  createExplorerLazy({ store, t, tf, tdot, viewGame, gameAt, setViewIndex, movePath, startClockIfIdle, saveSettings, library: LibraryUI, repertoire: RepUI, saved: Persist.read("settings").value });
   /**
    * Put a mode on the board: the mode segment's handler until v8-0-plan A1,
    * now the rail's (shell.js) and the new-game dialog's. It stops the engine,
@@ -4718,7 +4649,6 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
    */
   function wireDialogs() {
     Dlg.register(promoModal, () => finishPromotion(null));
-    Dlg.register(document.getElementById("lib-modal"), closeDiagnosis);
     Dlg.register(document.getElementById("lib-list-modal"), closeLibList);
     Dlg.register(document.getElementById("theme-modal"), () => PuzzlesUI.closeThemes());
     Dlg.register(pickModal, () => finishPick(null));

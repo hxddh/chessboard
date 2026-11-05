@@ -2001,7 +2001,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.waitForTimeout(900);
   await pg.evaluate((x) => { window.__lichessPgn = x; const E = window.__chess.engine; E.init = () => Promise.resolve(); E.retry = () => {}; E.isReady = () => true; }, pgn);
   await scriptOpera(pg);
-  await pg.click('#rail button[data-view="library"]');
+  await pg.click('#rail button[data-view="me"]');   // 19.0 S1: the library is on 我的
   await pg.click("#lib-analyse-one");
   await pg.fill("#an-text", "https://lichess.org/q7ZvsdUF/black#12");
   await pg.click("#an-go");
@@ -2380,7 +2380,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     const t = await pg.evaluate(async () => {
       const t0 = performance.now();
       const wait = async (sel) => { for (let i = 0; i < 60 && !document.querySelector(sel); i++) await new Promise((r) => setTimeout(r, 10)); return document.querySelector(sel); };
-      document.querySelector('#rail button[data-view="library"]').click();
+      document.querySelector('#rail button[data-view="me"]').click();   // 19.0 S1: the library is on 我的
       (await wait("#lib-open")).click();
       (await wait("#lib-list button[data-lib]")).click();
       return performance.now() - t0;
