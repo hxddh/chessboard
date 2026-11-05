@@ -834,6 +834,11 @@ if (scenario()) {
       await page.evaluate((i) => document.querySelector(i).focus(), id);
       await settle(page);
       await quiet(page);
+      // a control drawn late (a chunk's list, a picker filled after its data)
+      // is waited for: clicking before it shows timed out in silence and read
+      // as 「did nothing」 (CI, #pz-themes-open)
+      await page.waitForSelector(id, { state: "visible", timeout: 5000 }).catch(() => {});
+      await settle(page);
       const before = await snapshot(page);
       await page.click(id, { timeout: 2000 }).catch(() => {});
       await page.waitForTimeout(800);
