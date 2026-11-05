@@ -1368,12 +1368,13 @@ await scenario("对手角色", async () => {
     "对手角色：空棋盘的「新局」打开时，当前的角色亮着、焦点在它上面", JSON.stringify({ focus: dlg.focus }));
   // a card by keyboard: focus it, Space (Enter in this dialog is 开始); the
   // window moves with the pick, and focus stays on the card
-  await page.focus('#op-grid .op-card[data-op="iris"]');
+  // 19.0 S5: a card on screen — 艾薇, the window's right end (艾瑞丝 is past it now)
+  await page.focus('#op-grid .op-card[data-op="ivy"]');
   await page.keyboard.press("Space");
   await page.waitForTimeout(150);
   const top = await dialog();
-  assert(top.cards.find((c) => c.id === "iris").on && shownIds(top).join() === "ivy,max,iris,otto,hugo" && top.focus === "iris",
-    "对手角色（S5）：键盘空格选艾瑞丝，五张卡挪到她两边，焦点留在她身上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
+  assert(top.cards.find((c) => c.id === "ivy").on && shownIds(top).join() === "sol,leo,ivy,max,iris" && top.focus === "ivy",
+    "对手角色（S5）：键盘空格选艾薇，五张卡挪到她两边，焦点留在她身上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
   // 10.0 M0: 更多选项 open is the whole ladder on the cards — the one place a
   // rung is chosen; 莉娜 is at its foot. 19.0 S5: 「全部 21 位对手」 opens it too
   const allBtn = await page.evaluate(() => { const b = document.getElementById("op-all"); return b && !b.hidden ? b.textContent.trim() : ""; });
@@ -1381,8 +1382,8 @@ await scenario("对手角色", async () => {
   await page.click("#op-all");
   await page.waitForTimeout(150);
   const all = await dialog();
-  assert(shownIds(all).length === 21 && all.cards.find((c) => c.id === "iris").on,
-    "对手角色（10.0 M0）：打开「更多选项」，二十一张卡全在，艾瑞丝还亮着", JSON.stringify(shownIds(all)));
+  assert(shownIds(all).length === 21 && all.cards.find((c) => c.id === "ivy").on,
+    "对手角色（10.0 M0）：打开「全部」，二十一张卡全在，艾薇还亮着", JSON.stringify(shownIds(all)));
   await page.click('#op-grid .op-card[data-op="lina"]');
   await page.waitForTimeout(150);
   await page.click("#ng-custom > summary");
