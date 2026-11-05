@@ -273,17 +273,16 @@ export async function run() {
     // --- v8-3-plan T4: English counts that can be 1 take tf's {n:one|other} ---
     // Each key renders its count with 1 and with 2 (the other values fixed).
     // Chinese and Japanese do not inflect: their entries keep bare {n}, so they
-    // read exactly as a plain substitution would.
+    // read exactly as a plain substitution would. (19.0 S3 deleted stats.gamesN
+    // and me.m.clockV with 统计 and 跨局指标.)
     {
       const PLURALS = [
-        ["stats.gamesN", (n) => [n], "1 game", "2 games"],
         ["msg.learning.imported", (n) => [n], "Merged — the personal book now holds 1 drill", "Merged — the personal book now holds 2 drills"],
         ["pz.goalOp", (n) => ["Italian", n], "Italian · play the book line as White for 1 move", "Italian · play the book line as White for 2 moves"],
         ["pz.goalOpB", (n) => ["Italian", n], "Italian · answer the book line as Black for 1 move", "Italian · answer the book line as Black for 2 moves"],
         ["pz.moveN", (n) => [n], "1 move", "2 moves"],
         ["dlg.retryHere", (n) => [5, n], "Resume from move 5; what follows (1 move) stays as a variation. Continue?", "Resume from move 5; what follows (2 moves) stays as a variation. Continue?"],
         ["aria.cal", (n) => [18, n], "Played or solved on 1 day in the last 18 weeks", "Played or solved on 2 days in the last 18 weeks"],
-        ["me.m.clockV", (n) => [n, n, "4%"], "1 blunder in 1 move on a low clock · 4% otherwise", "2 blunders in 2 moves on a low clock · 4% otherwise"],
         ["msg.analysis.kept", (n) => [n], "Review stopped · kept the first 1 ply", "Review stopped · kept the first 2 plies"],
         ["rep.removeAsk", (n) => ["e4", "White", n, 1], "Take e4 out of your repertoire (White)? 1 line through it will be cut short, 1 of them removed entirely. You can undo this afterwards.",
           "Take e4 out of your repertoire (White)? 2 lines through it will be cut short, 1 of them removed entirely. You can undo this afterwards."],
@@ -883,14 +882,7 @@ export async function run() {
       assert(/extreme: \{ elo: null, movetime: 1200 \}/.test(eng),
         "…which is 1200ms, as the tooltip now says");
 
-      // 缺陷 30: "changing style does not change strength" was half a sentence.
-      // 450cp of slack is about half a piece a move.
-      for (const lang of ["zh-CN", "en", "ja"]) {
-        const note = I.DICT[lang]["side.personaNote"];
-        assert(/半个子|half a piece|半駒/.test(note),
-          lang + " says how far a style may wander — " + note);
-        assert(/杀|mate|詰み/.test(note), lang + " …and what it will not give up");
-      }
+      // (缺陷 30's style note went with the 陪练风格 row (v19-0-plan S5): the style is the persona's own)
 
       // 缺陷 22: the number is not the number online sites call "accuracy" —
       // they compute it from win probability and get 60–75% where this gets 37%.
@@ -965,10 +957,11 @@ export async function run() {
     {
       const modesSrc = fs.readFileSync(path.join(root, "src/web/js/trainer/puzzle-modes.js"), "utf8");
       const groups = /export const PUZZLE_GROUPS = \[([^\]]*)\]/.exec(modesSrc);
-      assert(groups && groups[1].replace(/\s/g, "") === '"mate","tactic","endgame","defense","opening","mine"',
-        "S3: six kinds — 杀棋 / 战术 / 残局 / 防守 / 开局 / 我的错题 (" + (groups ? groups[1] : "missing") + ")");
+      // 19.0 S6: five — 我的错题 went into 复习
+      assert(groups && groups[1].replace(/\s/g, "") === '"mate","tactic","endgame","defense","opening"',
+        "S3: five kinds — 杀棋 / 战术 / 残局题 / 防守 / 开局 (" + (groups ? groups[1] : "missing") + ")");
       const tiles = [...html.matchAll(/data-group="([a-z]+)"/g)].map((m) => m[1]);
-      assert(tiles.join() === "mate,tactic,endgame,defense,opening,mine", "S3: a tile per kind, in that order (" + tiles.join() + ")");
+      assert(tiles.join() === "mate,tactic,endgame,defense,opening", "S3: a tile per kind, in that order (" + tiles.join() + ")");
       assert(/function groupList\(g\) \{\s*return localInGroup\(g\)\.concat\(lcPool\(\)\.filter/.test(modesSrc),
         "S3: a kind pools the built-in book and the Lichess bands");
       assert(!/row-puzzle-tier|puzzle-tier-seg|puzzle-cat-seg|tierApplies/.test(html + appSrc),

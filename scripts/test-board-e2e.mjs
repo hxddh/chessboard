@@ -101,7 +101,7 @@ async function play(theme, line) {
     const f = sq.charCodeAt(0) - 97, rk = 8 - Number(sq[1]);
     // the app puts no "flipped" class anywhere — the orientation segment is
     // where that state is rendered, so that is what a test can read
-    const flip = !!document.querySelector('#orient-seg button[data-orient="b"].active');
+    const flip = window.__chess.flipped();
     const col = flip ? 7 - f : f, row = flip ? 7 - rk : rk;
     const sz = r.width / 8;
     return { x: r.left + (col + 0.5) * sz, y: r.top + (row + 0.5) * sz };
@@ -159,10 +159,10 @@ for (const theme of ["wood", "night", "day", "notebook"]) {
   assert(r.pieces >= 30, `${theme}:将军后棋子仍在(数到 ${r.pieces} 个)`);
   assert(r.plies === 3, `${theme}:着法表记到第 3 手(实际 ${r.plies})`);
 }
-// v8-0-plan A3: the five boards, on the flat board and in the frame — the
-// paper board's ink men must leave every piece countable
+// v8-0-plan A3: the boards, on the flat board and in the frame. 19.0 S8:
+// three — paper (and its ink men) and marble are gone
 for (const [boardId, boardFrame, appearance] of [["wood", "flat", "system"], ["green", "flat", "dark"],
-  ["blue", "frame", "light"], ["paper", "flat", "light"], ["marble", "frame", "dark"]]) {
+  ["blue", "frame", "light"], ["wood", "frame", "dark"]]) {
   const tag = boardId + "/" + boardFrame;
   const r = await play({ appearance, boardId, boardFrame }, CHECK_LINE);
   assert(r.errs.length === 0, `${tag}:将军时无页面异常${r.errs.length ? " — " + r.errs[0] : ""}`);
@@ -257,7 +257,7 @@ const READ_BOARD = () => {
   const c = document.getElementById("board");
   const g = c.getContext("2d");
   const step = c.width / 8;
-  const flip = !!document.querySelector('#orient-seg button[data-orient="b"].active');
+  const flip = window.__chess.flipped();
   const out = { __w: c.width };
   for (let sr = 0; sr < 8; sr++) for (let sc = 0; sc < 8; sc++) {
     const n = Math.round(step);
@@ -338,7 +338,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   const at = (s) => page.evaluate((n) => {
     const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
     const f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
-    const flip = !!document.querySelector('#orient-seg button[data-orient="b"].active');
+    const flip = window.__chess.flipped();
     const col = flip ? 7 - f : f, row = flip ? 7 - rk : rk;
     return { x: r.left + (col + 0.5) * (r.width / 8), y: r.top + (row + 0.5) * (r.height / 8) };
   }, s);
@@ -416,7 +416,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await page.keyboard.press("f");
   await page.waitForTimeout(700);
   const flipped = await read();
-  assert(await page.evaluate(() => !!document.querySelector('#orient-seg button[data-orient="b"].active')),
+  assert(await page.evaluate(() => window.__chess.flipped()),
     "翻转:视角切到了黑方");
   const moved = SQUARES.filter((s) => ham(flipped[s].ink, beforeFlip[s].ink) > SAME);
   assert(moved.length === 0, `翻转后每一格上还是原来那个东西(变了的:${JSON.stringify(moved)})`);
@@ -673,7 +673,7 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   };
   const at = (page, s) => page.evaluate((n) => {
     const cv = document.getElementById("board"); const r = cv.getBoundingClientRect();
-    const flip = !!document.querySelector('#orient-seg button[data-orient="b"].active');
+    const flip = window.__chess.flipped();
     let f = n.charCodeAt(0) - 97, rk = 8 - Number(n[1]);
     if (flip) { f = 7 - f; rk = 7 - rk; }
     return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
@@ -1351,17 +1351,17 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
     fetched: performance.getEntriesByType("resource").some((e) => /chunk-pieces-cburnett\.js$/.test(e.name)),
   }));
   assert(m.fetched && m.image === 2, `换伯内特:取了 chunk-pieces-cburnett.js,解码完只多画一次(共 ${m.image} 次)`);
-  // …and the same for a set that is new with A3
-  await page.evaluate(() => { const b = document.querySelector('[data-piece-set="fantasy"]'); if (b) b.click(); });
+  // …and the same for the third set. 19.0 S8: Fantasy went; classic (17.0 F's chunk) stays
+  await page.evaluate(() => { const b = document.querySelector('[data-piece-set="classic"]'); if (b) b.click(); });
   await page.waitForFunction(() => window.__chess.board().imageRedraws >= 3, null, { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(800);
   const f = await page.evaluate(() => ({
     image: window.__chess.board().imageRedraws,
-    fetched: performance.getEntriesByType("resource").some((e) => /chunk-pieces-fantasy\.js$/.test(e.name)),
+    fetched: performance.getEntriesByType("resource").some((e) => /chunk-pieces-classic\.js$/.test(e.name)),
     saved: JSON.parse(localStorage.getItem("chess.settings") || "{}").pieceSet,
   }));
-  assert(f.fetched && f.image === 3 && f.saved === "fantasy",
-    `换 Fantasy:取了 chunk-pieces-fantasy.js,只多画一次(共 ${f.image} 次),设置里记下 ${f.saved}`);
+  assert(f.fetched && f.image === 3 && f.saved === "classic",
+    `换经典:取了 chunk-pieces-classic.js,只多画一次(共 ${f.image} 次),设置里记下 ${f.saved}`);
   assert(errs.length === 0, `棋子图:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
   await ctx.close();
 }
@@ -1399,12 +1399,13 @@ for (const f of "abcdefgh") for (let r = 1; r <= 8; r++) SQUARES.push(f + r);
   await ctx.close();
 }
 
-// --- 17.0 T:棋盘没有纹理——五种棋盘、深浅两套,空格就是一个颜色 --------------
+// --- 17.0 T:棋盘没有纹理——每种棋盘、深浅两套,空格就是一个颜色 --------------
+// 19.0 S8: three boards now (paper and marble are gone).
 // 16.0 给每种棋盘加过纹理(木纹、磨砂、纸纹、大理石纹),17.0 按要求全部去掉。
 // 量的是一个空的浅格和一个空的深格:里面每个像素都相同,且正好是棋盘的
 // --sq-light / --sq-dark(纸棋盘的墨色棋子不是纹理,不在空格上)。
 for (const appearance of ["light", "dark"]) {
-  for (const boardId of ["wood", "green", "blue", "paper", "marble"]) {
+  for (const boardId of ["wood", "green", "blue"]) {
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
     await ctx.addInitScript(([a, b]) => {
       localStorage.setItem("chess.settings", JSON.stringify({
@@ -1587,7 +1588,7 @@ for (const appearance of ["light", "dark"]) {
     if (await page.isVisible("#pick-cancel")) await page.click("#pick-cancel");
     const r = await page.evaluate(() => {
       document.querySelector('#rail button[data-view="settings"]').click();
-      document.getElementById("cat-sound").click();
+      document.getElementById("cat-board").click();
       const shown = [...document.querySelectorAll("#page-settings .set-pane")].filter((p) => !p.hidden).map((p) => p.id);
       const cs = getComputedStyle(document.getElementById("page-settings"));
       const base = getComputedStyle(document.documentElement).getPropertyValue("--dur-slow").trim();
@@ -1595,7 +1596,7 @@ for (const appearance of ["light", "dark"]) {
       return { shown, name: cs.animationName, dur: cs.animationDuration, base, same: ms(cs.animationDuration) === ms(base), durMs: ms(cs.animationDuration) };
     });
     if (!reduced) {
-      assert(r.shown.length === 1 && r.shown[0] === "set-sound" && r.name === "page-in" && r.same,
+      assert(r.shown.length === 1 && r.shown[0] === "set-board" && r.name === "page-in" && r.same,
         `打开设置页:只画选中的那一类(${r.shown.join(",")}),页面用 page-in 淡入上移,时长就是 --dur-slow(${r.dur} / ${r.base})`);
     } else {
       assert(r.shown.length === 1 && r.durMs <= 1,
@@ -1652,13 +1653,14 @@ for (const appearance of ["light", "dark"]) {
       focus: document.activeElement && (document.activeElement.id || document.activeElement.dataset.op || document.activeElement.dataset.diff || document.activeElement.textContent.trim()),
       // 9.0 S5: the rows live in the dialog (style in its 更多选项 fold),
       // whether it is open or not, and nowhere on the settings page
+      // 19.0 S5: no style row at all — the style is the card's own
       rowsHome: ["row-opponent", "row-color", "row-clock"].every((id) => document.getElementById(id).parentElement.id === "ng-host")
-        && document.getElementById("row-persona").parentElement.id === "ng-custom-body" && !document.getElementById("row-difficulty")
-        && !document.querySelector("#page-settings #op-grid, #page-settings #persona-seg, #page-settings #color-seg, #page-settings #clock-seg"),
+        && !document.getElementById("row-persona") && !document.getElementById("row-difficulty")
+        && !document.querySelector("#page-settings #op-grid, #page-settings #color-seg, #page-settings #clock-seg"),
     };
   });
   const stateBefore = await state();
-  assert(stateBefore.rowsHome, "开局前:对手、执子、棋钟、风格都在新对局对话框里(风格在「更多选项」里),设置页上没有它们");
+  assert(stateBefore.rowsHome, "开局前:对手、执子、棋钟都在新对局对话框里,没有单独的风格一行,设置页上没有它们");
 
   // a game in progress: one step, the warning in the dialog, no second box
   await tap("e2"); await tap("e4"); await settle(page);
@@ -1669,9 +1671,8 @@ for (const appearance of ["light", "dark"]) {
   // v8-0-plan B4: the opponent is a persona card first; rung and style are
   // folded under 自定义 (9.0 S5: after the side and the clock, and the
   // dialog's own rows rather than nodes borrowed from the settings page)
-  const inFold = await page.evaluate(() => !!document.getElementById("row-persona").closest("#ng-custom"));
-  assert(JSON.stringify(s.rows) === JSON.stringify(["row-opponent", "row-color", "row-clock", "ng-custom"]) && inFold && s.rowsHome,
-    `……里面是角色卡、执子、棋钟,风格收在「更多选项」里(${s.rows.join(",")})`);
+  assert(JSON.stringify(s.rows) === JSON.stringify(["row-opponent", "row-color", "row-clock", "ng-custom"]) && s.rowsHome,
+    `……里面是角色卡、执子、棋钟和「更多选项」(${s.rows.join(",")})`);
   assert(s.focus === "ng-start", `……焦点在「开始」上,直接回车就是再来一盘同样的(${s.focus})`);
   // the draft is not the game: choosing 执黑 here changes nothing until 开始
   await page.click('#ng-host #color-seg button[data-color="b"]'); await settle(page);
@@ -1694,10 +1695,12 @@ for (const appearance of ["light", "dark"]) {
   // eight cards around the pick (中级 is 索尔, so 本 … 艾瑞丝) come straight after 人机 / 双人
   const cardsNow = () => page.evaluate(() => [...document.querySelectorAll("#op-grid .op-card")].filter((b) => !b.hidden)
     .map((b) => b.dataset.op + (b.classList.contains("active") && b.getAttribute("aria-pressed") === "true" ? "*" : "")).join(","));
-  assert(order[0] === "ai" && order[1] === "pvp" && order.slice(2, 10).join() === "ben,nico,vera,sol,leo,ivy,max,iris" && order[order.length - 2] === "ng-cancel" && order[order.length - 1] === "ng-start" && wrapped === "人机" && back === "ng-start",
-    `Tab 顺序:对手(人机 / 双人) → 八张角色卡 → … → 棋钟 → 取消 → 开始,从「开始」再 Tab 回到第一个(${order.slice(0, 10).join(",")}…${order.slice(-2).join(",")};${wrapped} / ${back})`);
+  assert(order[0] === "ai" && order[1] === "pvp" && order.slice(2, 8).join() === "nico,vera,sol,leo,ivy,op-all" && order[order.length - 2] === "ng-cancel" && order[order.length - 1] === "ng-start" && wrapped === "人机" && back === "ng-start",
+    `Tab 顺序:对手(人机 / 双人) → 五张角色卡 → 全部 → … → 棋钟 → 取消 → 开始,从「开始」再 Tab 回到第一个(${order.slice(0, 8).join(",")}…${order.slice(-2).join(",")};${wrapped} / ${back})`);
   assert(!(await page.$("#op-seg")), "S2: 角色卡上面没有「入门 / 进阶 / 高手」分段了");
   // change the opponent and start: one step, the strip and the dialog's cards agree
+  // 19.0 S5: 马克斯 is past the five around 索尔 — 全部 first, as a person would
+  await page.click("#op-all"); await settle(page);
   await page.click('#ng-host #op-grid .op-card[data-op="max"]'); await settle(page);
   await page.keyboard.press("Enter"); await page.waitForTimeout(500);
   s = await state();
@@ -1711,7 +1714,8 @@ for (const appearance of ["light", "dark"]) {
   // place a rung is chosen (the two rows of rung names under it are gone)
   await page.evaluate(() => document.getElementById("btn-new").click()); await settle(page);
   const w0 = await cardsNow();
-  assert(w0 === "sol,leo,ivy,max*,iris,otto,hugo,zoe", `S2:选了马克斯(高级)再开对话框,八张卡是他和他两边的人,他亮着(${w0})`);
+  // 19.0 S5: five (no rating yet, so the window is around the pick)
+  assert(w0 === "leo,ivy,max*,iris,otto", `S5:选了马克斯(高级)再开对话框,五张卡是他和他两边的人,他亮着(${w0})`);
   await page.click("#ng-custom > summary"); await settle(page);
   const w1 = await cardsNow();
   assert(w1.split(",").length === 21 && w1.includes("max*") && !(await page.$("#diff-seg, #diff-seg-engine")),
@@ -1719,10 +1723,10 @@ for (const appearance of ["light", "dark"]) {
   await page.click('#ng-host #op-grid .op-card[data-op="pip"]'); await settle(page);
   await page.click("#ng-custom > summary"); await settle(page);
   const w2 = await cardsNow();
-  assert(w2 === "pip*,tomo,lina,kai,ada,remy,ben,nico", `S2:选了皮普再收起,八张卡挪到梯子底,皮普亮着(${w2})`);
-  await page.click('#ng-host #op-grid .op-card[data-op="ben"]'); await settle(page);
+  assert(w2 === "pip*,tomo,lina,kai,ada", `S5:选了皮普再收起,五张卡挪到梯子底,皮普亮着(${w2})`);
+  await page.click('#ng-host #op-grid .op-card[data-op="kai"]'); await settle(page);
   const w3 = await cardsNow();
-  assert(w3.split(",").length === 8 && w3.includes("ben*"), `S2:收起时选本,八张卡的窗口跟着他(${w3})`);
+  assert(w3 === "tomo,lina,kai*,ada,remy", `S5:收起时选凯,五张卡的窗口跟着他(${w3})`);
   await page.keyboard.press("Escape"); await settle(page);
   s = await state();
   assert(!s.open && s.settings.difficulty === "hard", `……Esc 不开始:设置里还是高级(${s.settings.difficulty})`);
@@ -1769,17 +1773,16 @@ for (const appearance of ["light", "dark"]) {
   await page.evaluate(() => document.getElementById("btn-new").click()); await settle(page);   // hidden with no moves on the board; N and the menu reach the same handler
   await page.click('#ng-host #mode-seg button[data-mode="pvp"]'); await settle(page);
   s = await state();
-  // 9.0 S2: 更多选项 stays (the rarer clocks are in it); its style row hides
-  const pvpFold = await page.evaluate(() => String(document.getElementById("row-persona").hidden));
-  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-color", "row-clock", "ng-custom"]) && pvpFold === "true",
-    `双人模式只显示「谁执白」、棋钟和「更多选项」(里面没有风格)(${s.rows.join(",")} / ${pvpFold})`);
+  // 9.0 S2: 更多选项 stays (the rarer clocks are in it)
+  assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-color", "row-clock", "ng-custom"]),
+    `双人模式只显示「谁执白」、棋钟和「更多选项」(${s.rows.join(",")})`);
   await page.click('#ng-host #color-seg button[data-color="b"]'); await settle(page);
   // 9.0 S2: 5+3 is under 更多选项, which stays in 双人 (its style row hides)
   await page.click("#ng-custom > summary"); await settle(page);
   await page.click('#ng-custom #clock-seg-more button[data-tc="5+3"]'); await settle(page);
   await page.click("#ng-start"); await settle(page);
   s = await state();
-  const flipped = await page.evaluate(() => !!document.querySelector('#orient-seg button[data-orient="b"].active'));
+  const flipped = await page.evaluate(() => window.__chess.flipped());
   assert(s.settings.timeControl === "5+3" && flipped, `双人:棋钟 5+3、下方执黑(棋盘翻转 ${flipped})`);
   // with 自动转向 on, the board faces whoever is to move — a bottom side
   // chosen here would be undone the moment the game starts (Codex, #83).
@@ -1792,7 +1795,7 @@ for (const appearance of ["light", "dark"]) {
   assert(s.open && JSON.stringify(s.rows) === JSON.stringify(["row-clock", "ng-custom"]),
     `双人、自动转向开着:不问哪一方在下方,只有棋钟(和收着更多棋钟的「更多选项」)(${s.rows.join(",")})`);
   await page.click("#ng-start"); await settle(page);
-  const white = await page.evaluate(() => !!document.querySelector('#orient-seg button[data-orient="w"].active'));
+  const white = await page.evaluate(() => !window.__chess.flipped());
   assert(white, "双人、自动转向开着:开局白方在下方");
   assert(errs.length === 0, `新对局对话框:全程没有页面异常${errs.length ? " — " + errs[0] : ""}`);
   await ctx.close();
@@ -2017,7 +2020,7 @@ for (const appearance of ["light", "dark"]) {
     const tap = async (sq) => {
       const p = await page.evaluate((q) => {
         const r = document.getElementById("board").getBoundingClientRect(), z = r.width / 8;
-        const flip = !!document.querySelector('#orient-seg button[data-orient="b"].active');
+        const flip = window.__chess.flipped();
         const f = q.charCodeAt(0) - 97, rk = 8 - Number(q[1]);
         return { x: r.left + ((flip ? 7 - f : f) + 0.5) * z, y: r.top + ((flip ? 7 - rk : rk) + 0.5) * z };
       }, sq);
@@ -2216,10 +2219,11 @@ for (const appearance of ["light", "dark"]) {
     st = await state();
     assert(st.attrs === "notebook/green/frame" && st.saved.startsWith("light/green/frame") && st.pressed === "浅色/绿/木框",
       `A3 选浅色、木框:${st.attrs},${st.saved},按下 ${st.pressed}`);
-    // the board chosen is the board drawn: marble's colours on the canvas,
-    // flat (17.0 T — it had veins until then). 9.0 S5: the settings page
-    // covers the board, so it is read back on the play view
-    await pick('#board-pick-seg button[data-board-id="marble"]');
+    // the board chosen is the board drawn: blue's colours on the canvas,
+    // flat (17.0 T). 9.0 S5: the settings page covers the board, so it is
+    // read back on the play view. 19.0 S8: blue, since marble (whose veins
+    // this was about until 17.0 T) is gone
+    await pick('#board-pick-seg button[data-board-id="blue"]');
     await toPlay(page);
     const spread = await page.evaluate(() => {
       const c = document.getElementById("board"), g = c.getContext("2d"), step = c.width / 8;
@@ -2229,14 +2233,15 @@ for (const appearance of ["light", "dark"]) {
       for (let i = 0; i < d.length; i += 4) seen.add(d[i] + "," + d[i + 1] + "," + d[i + 2]);
       return seen.size;
     });
-    assert(spread === 1, `A3 大理石:空格子是一种颜色,没有纹理(${spread} 种,17.0 T)`);
+    assert(spread === 1, `A3 蓝盘:空格子是一种颜色,没有纹理(${spread} 种,17.0 T)`);
     await toSettings(page, "board");
     // the kings in the piece picker: fetched once the row is on screen
     await page.evaluate(() => document.getElementById("piece-pick-seg").scrollIntoView());
     await page.waitForFunction(() => [...document.querySelectorAll("#piece-pick-seg img")].every((i) => i.src.startsWith("data:image/svg")),
       null, { timeout: 8000 }).catch(() => {});
     const kings = await page.evaluate(() => [...document.querySelectorAll("#piece-pick-seg img")].filter((i) => i.src.startsWith("data:image/svg")).length);
-    assert(kings === 14, `A3 棋子选择器:七套各画出黑白两王(${kings} / 14)`);
+    // 19.0 S8: three sets, six kings
+    assert(kings === 6, `A3 棋子选择器:三套各画出黑白两王(${kings} / 6)`);
     // 10.0 M0: each king the board swatch's size, on the current board's own squares
     const look = await page.evaluate(() => {
       const cs = getComputedStyle(document.documentElement), probe = document.createElement("div");
@@ -2526,8 +2531,9 @@ for (const appearance of ["light", "dark"]) {
   page.on("pageerror", (e) => errs.push(e.message));
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await page.waitForTimeout(1500);
-  const under = await page.evaluate(() => ({ paints: window.__paints, page: !document.getElementById("page-library").hidden }));
-  assert(under.page && under.paints === 0, `F3 开在棋谱库页上：被盖住的棋盘一遍都不画（画了 ${under.paints} 遍）`);
+  // 19.0 S1: a saved 棋谱 view opens on 我的 — a page over the board all the same
+  const under = await page.evaluate(() => ({ paints: window.__paints, page: !document.getElementById("page-me").hidden }));
+  assert(under.page && under.paints === 0, `F3 开在整页上（存着的「棋谱」打开在「我的」）：被盖住的棋盘一遍都不画（画了 ${under.paints} 遍）`);
   await page.click('#rail button[data-view="play"]');
   await settle(page);
   const back = await page.evaluate(() => window.__paints);

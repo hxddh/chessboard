@@ -353,6 +353,11 @@ export function createGameController(d) {
     // e.cp is from the side to move (the human here); engine eval = -cp
     const engineCp = e && e.cp != null ? -e.cp : e && e.mate != null ? (e.mate > 0 ? -10000 : 10000) : null;
     if (engineCp != null && engineCp < 60) {
+      // 19.0 T5: well ahead (+5), a draw gives the win away — ask first
+      if (e && (e.mate > 0 || (e.cp != null && e.cp >= 500))) {
+        if (!(await confirmNative(t("dlg.drawAhead"), t("act.offerDraw"), { ok: t("dlg.drawAgree"), cancel: t("dlg.drawPlayOn") }))) return;
+        if (game.fen() !== sig || appGameOver()) return;
+      }
       acceptDraw();
     } else {
       store.commit("session", "sync");

@@ -30,10 +30,11 @@
 /** The marks the plan names: last move, selection, check, hint. */
 export const MARKS = ["last", "sel", "check", "hint"];
 /**
- * v8-0-plan A3: the five boards of js/look.js (7.x's four were wood, night,
+ * v8-0-plan A3: the boards of js/look.js (7.x's four were wood, night,
  * day and notebook — the palettes are now per board, not per theme).
+ * 19.0 S8: three — paper and marble are gone.
  */
-export const BOARDS = ["wood", "green", "blue", "paper", "marble"];
+export const BOARDS = ["wood", "green", "blue"];
 
 /** One board palette's declarations, from the stylesheet text. */
 export function boardBlock(css, board) {
@@ -210,7 +211,7 @@ export const SEP_FLOOR = { wood: 10.9, night: 13, day: 10.1, notebook: 11 };
  * four new boards take the suite-wide floor (10) — they have no 7.8.0 to
  * hold to. 7.x's night / day / notebook stay above for the record.
  */
-export const SEP_FLOOR_BOARD = { wood: SEP_FLOOR.wood, green: 10, blue: 10, paper: 10, marble: 10 };
+export const SEP_FLOOR_BOARD = { wood: SEP_FLOOR.wood, green: 10, blue: 10 }; // 19.0 S8: paper, marble gone
 
 /** C* of a composite, one decimal. */
 export function chroma(c) {

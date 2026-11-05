@@ -52,11 +52,10 @@ const MENU_TEXT = [_]MenuText{
     .{ .key = "view.repertoire", .en = "My Repertoire", .ja = "自分の定跡書" },
     .{ .key = "view.prev", .en = "Previous Move", .ja = "前の手" },
     .{ .key = "view.next", .en = "Next Move", .ja = "次の手" },
-    // 9.0 S5: the five places (nav.* in i18n-en / i18n-ja) and 设置
+    // 9.0 S5: the places (nav.* in i18n-en / i18n-ja; four since 19.0 S1) and 设置
     .{ .key = "go.home", .en = "Today", .ja = "今日" },
     .{ .key = "go.play", .en = "Play", .ja = "対局" },
     .{ .key = "go.train", .en = "Train", .ja = "特訓" },
-    .{ .key = "go.library", .en = "Games", .ja = "棋譜" },
     .{ .key = "go.me", .en = "Me", .ja = "マイ" },
     .{ .key = "go.settings", .en = "Settings…", .ja = "設定…" },
     .{ .key = "help.keys", .en = "Keyboard Shortcuts", .ja = "キーボードショートカット" },

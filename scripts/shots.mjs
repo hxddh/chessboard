@@ -64,7 +64,7 @@ async function sqXY(page, sq) {
   return page.evaluate((s) => {
     const cv = document.getElementById("board");
     const r = cv.getBoundingClientRect();
-    const flip = !!document.querySelector('#orient-seg button[data-orient="b"].active');
+    const flip = window.__chess.flipped();
     let f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
     if (flip) { f = 7 - f; rk = 7 - rk; }
     return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };

@@ -49,25 +49,21 @@ export function createSettingsUI(d) {
     if (syncLook) syncLook();
     // v8-0-plan B4: the persona cards beside these rows (opponents-ui.js) repaint with them
     if (onPaint) onPaint();
-    const sb = document.getElementById("opt-sound");
-    if (sb) {
-      sb.classList.toggle("active", store.ui.soundOn);
-      sb.setAttribute("aria-pressed", store.ui.soundOn ? "true" : "false");
-    }
     const sw = (id, on) => {
       const b = document.getElementById(id);
       if (!b) return;
       b.classList.toggle("active", !!on);
       b.setAttribute("aria-pressed", on ? "true" : "false");
     };
-    sw("opt-coords", store.ui.coordsOn);
-    // where they are printed only matters while they are printed at all
-    const rowCoordsAt = document.getElementById("row-coords-at");
-    // …and only on the wooden frame: a flat board has no frame to print on,
-    // so there they are always in the squares (v8-0-plan A3)
+    // 19.0 S4: one row — 关 / 盘外 / 盘内 (a switch and a position through
+    // 18.0). 盘外 only on the wooden frame: a flat board has no frame to print
+    // on, so there they are always in the squares (v8-0-plan A3)
     const framed = store.ui.boardFrame === "frame";
-    if (rowCoordsAt) rowCoordsAt.hidden = !store.ui.coordsOn || !framed;
-    document.querySelectorAll("#coords-seg button").forEach((b) => b.classList.toggle("active", (b.dataset.coords === "in") === store.ui.coordsInside));
+    const at = !store.ui.coordsOn ? "off" : store.ui.coordsInside || !framed ? "in" : "out";
+    document.querySelectorAll("#coords-seg button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.coords === at);
+      if (b.dataset.coords === "out") b.hidden = !framed;
+    });
     // the frame narrows with them (styles.css #app[data-coords="in"]); an
     // attribute on #app because the board rect is the layout's, not the canvas's
     appEl.setAttribute("data-coords", store.ui.coordsOn && (store.ui.coordsInside || !framed) ? "in" : "out");
@@ -78,8 +74,6 @@ export function createSettingsUI(d) {
     document.querySelectorAll("#text-seg button").forEach((b) => b.classList.toggle("active", b.dataset.text === store.ui.textSize));
     const vol = document.getElementById("opt-volume");
     if (vol && Number(vol.value) !== store.ui.volume) vol.value = String(store.ui.volume);
-    const rowVol = document.getElementById("row-volume");
-    if (rowVol) rowVol.hidden = !store.ui.soundOn;
     const rowSet = document.getElementById("row-sound-set");
     if (rowSet) rowSet.hidden = !store.ui.soundOn;
     // 12.0 N: the trackpad's tap, where the shell has one
@@ -87,7 +81,6 @@ export function createSettingsUI(d) {
     const rowHap = document.getElementById("row-haptics");
     if (rowHap) rowHap.hidden = !(Host.hasHaptic && Host.hasHaptic());
     document.querySelectorAll("#sound-set-seg button").forEach((b) => b.classList.toggle("active", b.dataset.soundSet === store.ui.soundSet));
-    document.querySelectorAll("#hash-seg button").forEach((b) => b.classList.toggle("active", Number(b.dataset.hash) === store.ui.hash));
     // the engine's knobs follow the store here, not at wire time: wiring runs
     // before loadSettings(), so a saved Hash reached the engine only when its
     // segment was clicked again (found by v8-1-plan F4, whose `bgWorker` —
@@ -109,16 +102,10 @@ export function createSettingsUI(d) {
       difficulty: store.session.difficulty, personaId: store.session.personaId,
       color: store.session.humanColor, timeControl: store.game.timeControl,
     };
-    document.querySelectorAll("#persona-seg button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.persona === pick.personaId);
-    });
     document.querySelectorAll("#color-seg button").forEach((b) => {
       b.classList.toggle("active", b.dataset.color === pick.color);
       // 随机 is a way to start a game, not a side to switch to mid-game
       if (b.dataset.color === "random") b.hidden = !ng;
-    });
-    document.querySelectorAll("#orient-seg button").forEach((b) => {
-      b.classList.toggle("active", (b.dataset.orient === "b") === !!store.game.flipped);
     });
     // v8-0-plan B4: 自定义 is lit by any c<min>+<inc> id, and shows its numbers
     const custom = TimeControl.isCustom(pick.timeControl);
@@ -138,8 +125,6 @@ export function createSettingsUI(d) {
     }
     const colorRow = document.getElementById("row-color");
     const clockRow = document.getElementById("row-clock");
-    const personaRow = document.getElementById("row-persona");
-    if (personaRow) personaRow.hidden = ngMode !== "ai";
     // in the dialog a two-player game also chooses a side: which one sits at
     // the bottom of the board (「谁执白」) — unless 自动翻转 is on, which
     // turns the board to White the moment the game starts (Codex, #83)
@@ -240,13 +225,6 @@ export function createSettingsUI(d) {
       if (inp) inp.onchange = () => { pickTc(customTc()); paintSettings(); };
     }
     // 10.0 M0: the rung is chosen on the opponent cards only (opponents-ui.js)
-    document.getElementById("persona-seg").onclick = (ev) => {
-      const b = ev.target.closest("button[data-persona]");
-      if (!b || draftPick("personaId", b.dataset.persona) || b.dataset.persona === store.session.personaId) return;
-      store.session.personaId = b.dataset.persona;
-      saveSettings();
-      store.commit("session", "sync");
-    };
     document.getElementById("color-seg").onclick = (ev) => {
       const b = ev.target.closest("button[data-color]");
       if (!b || draftPick("color", b.dataset.color) || !["w", "b"].includes(b.dataset.color)) return;
@@ -297,13 +275,6 @@ export function createSettingsUI(d) {
       paintSettings();
       toast(store.ui.autoFlipPvp ? t("msg.autoflip.on") : t("msg.autoflip.off"));
     };
-    document.getElementById("opt-sound").onclick = () => {
-      store.ui.soundOn = !store.ui.soundOn;
-      saveSettings();
-      paintSettings();
-      if (store.ui.soundOn) Audio2.playMove("w");
-      toast(store.ui.soundOn ? t("msg.sound.on") : t("msg.sound.off"));
-    };
     document.getElementById("opt-haptics").onclick = () => {
       store.ui.haptics = !store.ui.haptics;
       saveSettings();
@@ -314,12 +285,14 @@ export function createSettingsUI(d) {
     Audio2.setVolume(store.ui.volume / 100);
     const volEl = document.getElementById("opt-volume");
     if (volEl) {
+      // 19.0 S4: the volume is the switch — dragged to 0 the sound is off
       volEl.oninput = () => {
         store.ui.volume = Math.max(0, Math.min(100, Number(volEl.value) || 0));
+        store.ui.soundOn = store.ui.volume > 0;
         Audio2.setVolume(store.ui.volume / 100);
       };
       // one save and one sample per release of the slider, not one per pixel
-      volEl.onchange = () => { saveSettings(); if (store.ui.soundOn) Audio2.playMove("w"); };
+      volEl.onchange = () => { saveSettings(); paintSettings(); if (store.ui.soundOn) Audio2.playMove("w"); };
     }
     // 7.7 (v7-7-plan §8): wood or classic, with a sample of the one just picked
     document.getElementById("sound-set-seg").onclick = (ev) => {
@@ -352,16 +325,13 @@ export function createSettingsUI(d) {
       paintSettings();
       applyTextSize();
     };
-    document.getElementById("opt-coords").onclick = () => {
-      store.ui.coordsOn = !store.ui.coordsOn;
-      saveSettings();
-      paintSettings();
-      draw();
-    };
     document.getElementById("coords-seg").onclick = (ev) => {
       const b = ev.target.closest("button[data-coords]");
-      if (!b || (b.dataset.coords === "in") === store.ui.coordsInside) return;
-      store.ui.coordsInside = b.dataset.coords === "in";
+      if (!b) return;
+      const v = b.dataset.coords;
+      if (v === "off" ? !store.ui.coordsOn : store.ui.coordsOn && (v === "in") === store.ui.coordsInside) return;
+      store.ui.coordsOn = v !== "off";
+      if (v !== "off") store.ui.coordsInside = v === "in";
       saveSettings();
       paintSettings();
       draw();
@@ -395,14 +365,6 @@ export function createSettingsUI(d) {
       toast(store.ui.blindfold ? t("msg.blind.on") : t("msg.blind.off"));
     };
     // 6.0 (v6-plan Q2.6): the engine knobs (handed over in paintSettings)
-    document.getElementById("hash-seg").onclick = (ev) => {
-      const b = ev.target.closest("button[data-hash]");
-      if (!b) return;
-      store.ui.hash = Number(b.dataset.hash);
-      if (ChessEngine && ChessEngine.setOptions) ChessEngine.setOptions({ hash: store.ui.hash });
-      saveSettings();
-      paintSettings();
-    };
     document.getElementById("multipv-seg").onclick = (ev) => {
       const b = ev.target.closest("button[data-multipv]");
       if (!b) return;

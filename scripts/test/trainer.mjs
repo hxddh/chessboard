@@ -275,10 +275,15 @@ export async function run() {
       const w = P.weakest(st, ["m1", "win", "def"]);
       assert(w && w.cat === "def", "weakest() 独立可调,答案与选题一致");
       const appSrc2 = allAppSource;
-      assert(/renderPuzzleTally[\s\S]{0,1200}Picker\.weakest\(/.test(appSrc2),
-        "记录页的「错得最多」标记读的是同一个 Picker.weakest");
-      assert(/puzzle-review-nudge[\s\S]{0,400}store\.session\.puzzle\.done && owed > 0/.test(appSrc2),
-        "解后复习提示只在「做完了且队列欠着」时画 — 不适用则不画");
+      // 19.0 S3: 做题战绩's rows (and their 「错得最多」 mark) left 我的; the one
+      // reader of the memory left is the picker itself, and its toast
+      assert(!/renderPuzzleTally[\s\S]{0,1200}Picker\.weakest\(/.test(appSrc2) && /pick\.kind === "weak" \? tf\("pz\.smart\.weak"/.test(appSrc2),
+        "「错得最多」只剩选题自己在说(19.0 S3: 记录页的那一行去掉了)");
+      // 19.0 S6: the after-solve 先清复习 nudge went — 下一题 itself goes to the reviews owed
+      const html2 = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
+      assert(!/puzzle-review-nudge|puzzle-smart/.test(html2 + appSrc2) &&
+        /pc !== "review" && pc !== "repdue" && !isOpeningCat\(pc\) && owedNow\(\) > \(here \? 1 : 0\)\) \{ smartNext\(\); return; \}/.test(appSrc2),
+        "19.0 S6: 下一题 clears the reviews owed first (为你出一题's rule) — no 先清复习 or 为你出一题 button beside it");
     }
 
     // recordAnswer tolerates the states written before it existed
@@ -678,15 +683,16 @@ export async function run() {
     assert(/for \(const id of r\.dropped\) \{\s*delete store\.session\.puzzleState\.solved\[id\];\s*delete store\.session\.puzzleState\.missed\[id\];/.test(appSrc),
       "a retired drill takes its solved/missed entries with it — no orphan reviews owed");
     // the tab exists exactly while the book does (P3), and the cat is real
-    // v10-0-plan T2: the tile is always there; empty, it says how it fills
-    assert(!/if \(g === "mine"\) b\.hidden/.test(appSrc) && /g === "mine" && !n \? t\("pz\.mineNone"\)/.test(appSrc),
-      "T2: the 我的错题 tile is always drawn, and says how it fills while empty");
+    // 19.0 S6: no 我的错题 tile — the drills are 复习's (queued there when mined),
+    // and with nothing owed 复习 opens them
+    assert(/const cat = puzzlesInCat\("review"\)\.length \? "review" : store\.session\.mines\.length \? "mine" : null;/.test(appSrc),
+      "19.0 S6: 复习 is the way to the personal drills");
     assert(/"op", "rep", "mine", "review"\]/.test(appSrc) && /real: true, mine: true \}/.test(appSrc),
       "mine is a real category on the scripted-grading rail");
     assert(/\(cat === "review" \|\| cat === "mine" \|\| cat === "rep"\) && !puzzlesInCat\(cat\)\.length/.test(appSrc),
       "an emptied personal book does not strand the player");
     const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
-    assert(/data-group="mine" aria-pressed/.test(html), "T2: …and the tile is not hidden in the page either");
+    assert(!/data-group="mine"/.test(html), "19.0 S6: …and the page has no 我的错题 tile");
   }
 
   // 摸得到的复盘: hovering the move list or a PV chip puts that position on the
@@ -1014,8 +1020,9 @@ export async function run() {
       "挖进的错题记进当周");
     assert(/store\.subscribe\("session", syncDailyUI\);\s*store\.subscribe\("game", syncDailyUI\)/.test(appSrc),
       "课表在 session 与 game 两个切片上都会醒 — 对局一步也是进度");
-    assert(/renderPuzzleTally\(\);\s*renderTrends\(\)/.test(appSrc),
-      "记录页画完战绩画进步");
+    // 19.0 S3: 进步 left 我的; the record's hub still draws the puzzle rating (me-page.js)
+    assert(/renderPuzzleTally\(\);[\s\S]{0,160}renderHistory\(\)/.test(appSrc) && !/renderTrends/.test(appSrc),
+      "记录页画等级分,不再画进步");
     // 7.1 A3: the coach and the progress page can see the library
     assert(/playedToday: games\.some[\s\S]{0,200}store\.session\.library\.some\(\(g\) => g\.side && Progress\.dayKey\(libPlayedAt\(g\)\) === today\)/.test(appSrc),
       "在别处下的棋也是今天下过棋 —— 7.0 只读本地战绩，导进来今早的快棋还被劝去下一盘");
@@ -1023,13 +1030,15 @@ export async function run() {
       "日课读得到棋谱库说的弱项和还欠着的分析");
     assert(/const d = Library\.diagnose\(store\.session\.library, LIB_MIN_GAMES\);\s*return d\.enough/.test(appSrc),
       "教练用的是诊断页同一个门槛 —— 两个门槛就是两张嘴");
-    assert(/Progress\.accSeries\(loadStats\(\)\.games\.concat\(libPoints\), 30\)/.test(appSrc),
-      "准确率走势把棋谱库里的棋并进同一条轴");
+    // 19.0 S3: the accuracy line went with 进步; the calendar is what counts the library's games
+    assert(/\.concat\(\(store\.session\.library \|\| \[\]\)\.filter\(\(g\) => g\.side\)\.map\(libPlayedAt\)\)/.test(appSrc),
+      "练习日历把棋谱库里的棋并进同一张日历");
     assert(/function dailyJump\(step\) \{[\s\S]{0,400}switchMode\("learn"\)/.test(appSrc),
       "跳步走的是换模式的那一个函数(导航栏也走它),不是旁路");
     const html = fs.readFileSync(path.join(root, "src/web/index.html"), "utf8");
     // 9.0 S1: the plan's entrance is 今天's card (its button and its steps)
-    assert(/id="today-go"/.test(html) && /id="daily-plan"/.test(html) && /id="trend-head" hidden/.test(html) && /id="trend-acc" hidden/.test(html),
-      "训练入口在(今天的主卡),进步区默认不画,有数据才出现(P3)");
+    // 19.0 S3: 进步 left 我的; the blocks that stayed are not drawn until they have data
+    assert(/id="today-go"/.test(html) && /id="daily-plan"/.test(html) && !/id="trend-head"/.test(html) && /id="sec-ratings" hidden/.test(html) && /id="sec-cal" hidden/.test(html),
+      "训练入口在(今天的主卡),等级分和日历默认不画,有数据才出现(P3)");
   }
 }

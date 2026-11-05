@@ -33,7 +33,7 @@
  *                with the whole library, and when (selftest-boot.js `pre`)
  *   menus        the native menu commands reach the page and do what the
  *                menu says: game.new opens 新对局, view.repertoire goes to
- *                the library's 我的开局书 (B1–B5's command path)
+ *                训练 · 开局's 我的开局书 (B1–B5's command path; 19.0 S1)
  *
  * The page reports facts and judges only what is not a timing; the timing
  * thresholds live with the driver. Checks say `pass`, never `ok`.
@@ -300,9 +300,10 @@ const SCENARIOS = {
       const ok = await until(() => {
         const s = JSON.parse(d.Persist.get("settings") || "{}");
         const sec = document.getElementById("sec-rep");
-        return s.view === "library" && sec && sec.offsetParent !== null;
+        // 19.0 S1: under 训练 · 开局 (it was the 棋谱 page's)
+        return s.view === "train" && sec && sec.offsetParent !== null;
       }, 5000, 100);
-      if (!ok) throw new Error("the library's 我的开局书 is not what is shown");
+      if (!ok) throw new Error("训练 · 开局's 我的开局书 is not what is shown");
       return {};
     });
   },

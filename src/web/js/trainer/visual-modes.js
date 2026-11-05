@@ -138,9 +138,6 @@ const W = {
   reply: ["对方应 {0}，轮到你", "Reply: {0} — your move", "相手の応手 {0}。あなたの番"],
   played: ["已走：{0}", "Played: {0}", "指した手：{0}"],
   rating: ["{0}等级分 {1}", "{0} rating {1}", "{0}のレーティング {1}"],
-  meH: ["计算专项", "Calculation", "読みの特訓"],
-  meRow: ["等级分 {0} · 对 {1} / 错 {2} · 最佳 {3}", "Rating {0} · {1} right / {2} wrong · best {3}", "レーティング {0} · 正解 {1} / 不正解 {2} · 最高 {3}"],
-  meDue: ["{0} · 复习 {1} 题", "{0} · review {1}", "{0} · 復習 {1} 問"],
   white: ["白方", "White", "白"],
   black: ["黑方", "Black", "黒"],
   on: ["{0} 上的{1}", "the {1} on {0}", "{0} の{1}"],
@@ -541,7 +538,7 @@ export function createVisualModes(d) {
     return Object.keys(q).filter((k) => Srs.dueBy(q[k], now)).sort((a, b) => Srs.entry(q[a]).due - Srs.entry(q[b]).due);
   }
 
-  const api = { make, serve, render, click, solved, missed, answer, renderMe };
+  const api = { make, serve, render, click, solved, missed, answer };
 
   /**
    * A new set: trainer/visual.js calls this, puzzle-modes.js startRun takes
@@ -904,35 +901,8 @@ export function createVisualModes(d) {
     avail(next, done && !run.over && !!pz);
   }
 
-  // --- 「我的」 -------------------------------------------------------------------
-
-  /** The section on 「我的」: each mode's rating, answers, best, and what is due. */
-  function renderMe() {
-    const sec = el("sec-vis");
-    if (!sec) return;
-    const st = store.session.puzzleState;
-    const kinds = ["look", "blind"];
-    const any = kinds.some((k) => st.vis && st.vis[k] && ((st.vis[k].solve || 0) + (st.vis[k].miss || 0) > 0));
-    sec.hidden = !any;
-    if (!any) return;
-    setText(el("vis-h"), w("meH"));
-    const now = Date.now();
-    el("vis-body").replaceChildren(...kinds.map((k) => {
-      const m = rec(k);
-      const row = document.createElement("div");
-      row.className = "stat-row";
-      const a = document.createElement("span");
-      a.className = "stat-k";
-      // 9.0 S3: what is due is said on the row; the way in is 训练 · 谜题
-      const n = due(k, now).length;
-      a.textContent = n ? w("meDue", [t("pz.cat." + k), n]) : t("pz.cat." + k);
-      const b = document.createElement("span");
-      b.className = "stat-v num";
-      b.textContent = w("meRow", [m.rating ? ratingText(m.rating) : "—", m.solve || 0, m.miss || 0, (st.runs && st.runs[k] && st.runs[k].best) || 0]);
-      row.append(a, b);
-      return row;
-    }));
-  }
+  // 19.0 S3: 「我的」's 计算专项 section (renderMe, v8-2-plan T2) went with the page's
+  // other five blocks; each mode's rating and best are still kept here
 
   // wired once, when the chunk arrives
   {

@@ -99,10 +99,13 @@ export function createEndgames(d) {
       text: [word(it.tip), src],
       tasks: [{ type: "drill", eg: true, fen: it.fen, goal: it.goal, engine: "extreme",
         winOn: it.goal === "draw" ? "draw" : undefined,
-        prompt: t(it.goal === "draw" ? "eg.goalDraw" : "eg.goalWin") }],
+        prompt: t(it.goal === "draw" ? "eg.goalDraw" : bareStart(it.fen) ? "eg.goalPromote" : "eg.goalWin") }],
     };
     return cache.L;
   }
+
+  /** 19.0 T3: a bare black king and White without a queen yet (the pawn endings): the goal is a queen, not a mate */
+  function bareStart(fen) { const b = fen.split(" ")[0]; return !/[qrbnp]/.test(b) && !/Q/.test(b) && /P/.test(b); }
 
   /** @param {boolean} ok goal reached  @param {boolean} helped undo or hint was used */
   function record(id, ok, helped, now) {

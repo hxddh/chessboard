@@ -63,8 +63,9 @@ export function createPalette(d) {
     add("action", t("act.loadFen"), run.fen, "fen");
     add("action", t("pal.exportPgn"), run.exportPgn, "pgn");
     add("action", t("pal.flip"), run.flip);
-    for (const v of ["home", "play", "library", "me"]) add("go", t("nav." + v), () => run.go(v));
-    for (const s of ["course", "puzzle", "endgame", "classic"]) add("go", tdot(t("nav.train"), t("train." + s)), () => run.train(s));
+    // 19.0 S1: 棋谱 left with the rail; 开局 is 训练's fifth segment
+    for (const v of ["home", "play", "me"]) add("go", t("nav." + v), () => run.go(v));
+    for (const s of ["course", "puzzle", "opening", "endgame", "classic"]) add("go", tdot(t("nav.train"), t("train." + s)), () => run.train(s));
     for (const c of d.SETTING_CATS) add("go", tdot(t("nav.settings"), t("set." + c)), () => run.settings(c));
     d.LESSONS.forEach((L, i) => {
       if (!L.n) return;

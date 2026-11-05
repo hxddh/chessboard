@@ -160,6 +160,13 @@ const { GROUPS, ITEMS } = CHESS_ENDGAMES;
   assert(r3 && r3.ok && r3.how === "bare", "对方只剩光王、你的后吃不掉 → 取胜");
   const r3b = at("7k/8/8/8/8/8/1Q6/K7 b - - 0 1", "win", { bq: 0, bare: true });
   assert(r3b === null, "……但对方开局就是光王（后杀王、车杀王）时，要真的将死");
+  // 19.0 T3: a pawn ending against a bare king is won by the new queen
+  const r3c = at("7k/8/8/8/8/8/1Q6/K7 b - - 0 1", "win", { bq: 0, bare: true, wq: 0 });
+  assert(r3c && r3c.ok && r3c.how === "promoted", "19.0 T3：王兵对光王，兵升变出一个吃不掉的后 → 取胜（不用再将死）");
+  const r3d = at("7k/8/8/8/8/8/1Q6/K7 b - - 0 1", "win", { bq: 0, bare: true, wq: 1 });
+  assert(r3d === null, "……开局就有后的（后杀王），照旧要将死");
+  const r3e = at("6Qk/8/6K1/8/8/8/8/8 b - - 0 1", "win", { bq: 0, bare: true, wq: 0 });
+  assert(!(r3e && r3e.how === "promoted"), "……新后马上被吃掉的不算", JSON.stringify(r3e));
   const r4 = at("8/8/8/8/8/8/1kQ5/7K b - - 0 1", "win");
   assert(r4 === null, "光王下一步能吃掉你唯一的后 → 还没完");
   const r5 = at("4k3/8/8/8/8/8/4p3/4KN2 w - - 0 1", "win");

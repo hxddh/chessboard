@@ -18,7 +18,7 @@
  *     right after the first paint, the way the engine is booted.
  *   - **a piece set other than the two in the bundle** is needed only by a
  *     player who chose it; board.js asks (v8-0-plan A3: Merida, and since
- *     8.0 four more — PIECE_CHUNKS).
+ *     8.0 four more — PIECE_CHUNKS; 19.0 S8: three sets in all, each a chunk).
  *
  * zh-CN, the source, stays in the bundle: it is also every other language's
  * last fallback, key by key.
@@ -50,10 +50,7 @@ import { readLook } from "./look.js";
     cburnett: { file: "chunk-pieces-cburnett.js", global: "CBURNETT_PIECE_SVGS" },
     // 17.0 F: the 7.x drawing left the bundle with the figurines (figurines.js)
     classic: { file: "chunk-pieces-classic.js", global: "CHESS_PIECE_SVGS" },
-    chessnut: { file: "chunk-pieces-chessnut.js", global: "CHESSNUT_PIECE_SVGS" },
-    fantasy: { file: "chunk-pieces-fantasy.js", global: "FANTASY_PIECE_SVGS" },
-    celtic: { file: "chunk-pieces-celtic.js", global: "CELTIC_PIECE_SVGS" },
-    spatial: { file: "chunk-pieces-spatial.js", global: "SPATIAL_PIECE_SVGS" },
+    // 19.0 S8: chessnut, fantasy, celtic and spatial are gone with their sets
   };
 
   /**

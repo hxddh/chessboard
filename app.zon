@@ -3,7 +3,7 @@
     .name = "chessboard",
     .display_name = "国际象棋",
     .description = "Chess for macOS & Windows — Native SDK WebView + Canvas, GPLv3.",
-    .version = "18.0.0",
+    .version = "19.0.0",
     .icons = .{ "assets/icon.icns", "assets/icon.ico", "assets/icon.png" },
     .platforms = .{ "macos", "windows" },
     .permissions = .{},
@@ -76,22 +76,22 @@
             .title = "视图",
             .items = .{
                 .{ .label = "侧栏", .command = "view.panel", .key = "\\", .modifiers = .{"primary"} },
-                // v8-2-plan T4: the book's section on the 棋谱库 page, from any view
+                // v8-2-plan T4: the book's section — 19.0 S1: under 训练 · 开局, from any view
                 .{ .label = "开局书", .command = "view.repertoire", .key = "o", .modifiers = .{ "primary", "shift" } },
                 .{ .separator = true },
                 .{ .label = "上一手", .command = "view.prev", .key = "[", .modifiers = .{"primary"} },
                 .{ .label = "下一手", .command = "view.next", .key = "]", .modifiers = .{"primary"} },
             },
         },
-        // 9.0 S5: the five places and the one settings page, from the menu bar
+        // 9.0 S5: the places (four since 19.0 S1) and the one settings page, from the menu bar
         .{
             .title = "前往",
             .items = .{
                 .{ .label = "今天", .command = "go.home", .key = "1", .modifiers = .{"primary"} },
                 .{ .label = "下棋", .command = "go.play", .key = "2", .modifiers = .{"primary"} },
                 .{ .label = "训练", .command = "go.train", .key = "3", .modifiers = .{"primary"} },
-                .{ .label = "棋谱", .command = "go.library", .key = "4", .modifiers = .{"primary"} },
-                .{ .label = "我的", .command = "go.me", .key = "5", .modifiers = .{"primary"} },
+                // 19.0 S1: 棋谱 left the rail; 我的 takes its key
+                .{ .label = "我的", .command = "go.me", .key = "4", .modifiers = .{"primary"} },
                 .{ .separator = true },
                 .{ .label = "设置…", .command = "go.settings", .key = ",", .modifiers = .{"primary"} },
             },

@@ -39,11 +39,6 @@ export function createVisual(d) {
   return {
     /** A new set of `kind`, or null when the chunk cannot be had (or `alive()` turned false meanwhile). */
     make: (kind, alive) => ensure().then((m) => m.make(kind, alive), () => { d.toast(d.t("theme.loadFailed"), "fix"); return null; }),
-    /** 「我的」: the section, once there is anything to show in it. */
-    renderMe() {
-      const sec = document.getElementById("sec-vis");
-      if (sec && !d.store.session.puzzleState.vis) sec.hidden = true;
-      else if (sec) ensure().then((m) => m.renderMe(), () => {});
-    },
+    // 19.0 S3: 计算专项 left 「我的」 (renderMe); its ratings stay with the modes
   };
 }

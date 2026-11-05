@@ -147,7 +147,9 @@ export function createPuzzlesUI(d) {
   function seatPuzzle(cat, idx, p, run) {
     if (!p) p = puzzlesInCat(cat)[idx];
     if (!p) return;
-    store.session.puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null, rated: false, opPath: isOpeningCat(p.cat) ? [] : null, run: run || null };
+    // 19.0 S6: `shownR` is the difficulty as the puzzle started (the first answer moves it; a retry keeps it)
+    const was = store.session.puzzle, shownR = was && was.p.id === p.id && was.cat === cat ? was.shownR : puzzleRatingOf(p);
+    store.session.puzzle = { cat, idx, p, g: p.fen ? new Chess(p.fen) : new Chess(), stage: 0, done: false, misses: 0, usedAnswer: false, helpArrow: null, last: null, rated: false, opPath: isOpeningCat(p.cat) ? [] : null, run: run || null, shownR };
     // a due card (v8-1-plan T3): the moves that lead to its position are played for you
     if (p.card) {
       const pz = store.session.puzzle;
@@ -698,6 +700,11 @@ export function createPuzzlesUI(d) {
   }
 
   function nextPuzzle() {
+    // 19.0 S6: 下一题 is the panel's one way on (为你出一题 and 先清复习 were
+    // two more): from a finished run's card or an empty board, the picker's
+    // pick; past a puzzle, the reviews owed first (below), then more of this kind
+    const run = store.session.run;
+    if ((run && run.over) || (!run && !store.session.puzzle)) { smartNext(); return; }
     if (!store.session.puzzle || store.session.puzzle.run) return;
     // 7.6 §3g: while 今天的训练 is running, 下一题 is the plan's next step.
     // It used to be only "the next one in this category" — so the step that
@@ -708,6 +715,9 @@ export function createPuzzlesUI(d) {
     const step = d && d.steps[d.i];
     if (step && !dailyStepIsHere(step) && dailyJump(step)) { store.commit("session", "sync"); return; }
     if (store.session.puzzle.cat === "review" && reviewWaits(nextPuzzle)) return;
+    // (a puzzle just solved after a miss is still owed, but not again at once)
+    const pc = store.session.puzzle.cat, here = store.session.puzzle.done && Srs.isDue(store.session.puzzleState.missed[store.session.puzzle.p.id], Date.now());
+    if (pc !== "review" && pc !== "repdue" && !isOpeningCat(pc) && owedNow() > (here ? 1 : 0)) { smartNext(); return; }
     let list = puzzlesInCat(store.session.puzzle.cat);
     // v8-1-plan T3: the card just answered has left the due list (or, missed,
     // gone to its end), so the one now at this index is the next
@@ -734,7 +744,6 @@ export function createPuzzlesUI(d) {
     }
     // 9.0 S3: a kind or a theme serves near the rating, as it started; 14.0
     // A2: and so does a built-in rated category (it went in list order)
-    const pc = store.session.puzzle.cat;
     if (isGroupCat(pc) || isThemeCat(pc) || (Book.isRatedCat(pc) && pc !== "mine")) {
       const near = Modes.nearestIdx(list, store.session.puzzle.idx);
       if (near >= 0) { startPuzzleAt(pc, near); return; }
@@ -796,18 +805,16 @@ export function createPuzzlesUI(d) {
     const due = puzzlesInCat("review").length;
     const rv = el("pz-review");
     if (rv) {
-      rv.classList.toggle("active", cat === "review");
+      rv.classList.toggle("active", cat === "review" || cat === "mine"); // 19.0 S6: 我的错题 is 复习's
       setText(el("pz-review-n"), due ? tf("pz.dueN", [due]) : t("pz.dueNone"));
     }
-    const on = cat === "review" || isThemeCat(cat) ? null : groupOfCat(cat);
+    const on = isThemeCat(cat) ? null : groupOfCat(cat);
     document.querySelectorAll("#pz-groups button[data-group]").forEach((b) => {
       const g = b.dataset.group;
       b.classList.toggle("active", g === on);
       b.setAttribute("aria-pressed", g === on ? "true" : "false");
-      const n = g === "opening" ? ALL_PUZZLES.filter((p) => p.cat === "op").length
-        : g === "mine" ? store.session.mines.length : Modes.groupCount(g);
-      // v10-0-plan T2: 我的错题 is always there; empty, it says how it fills
-      setText(b.querySelector(".pz-tile-n"), g === "mine" && !n ? t("pz.mineNone") : tf("pz.countN", [n]));
+      const n = g === "opening" ? ALL_PUZZLES.filter((p) => p.cat === "op").length : Modes.groupCount(g);
+      setText(b.querySelector(".pz-tile-n"), tf("pz.countN", [n]));
     });
   }
 
@@ -848,7 +855,7 @@ export function createPuzzlesUI(d) {
       task.dataset.goal = puzzleGoalText();
       task.textContent = store.session.puzzle.done && !store.session.puzzle.run
         ? t("pz.solvedNext")
-        : tdot(puzzleGoalText(), puzzleRatingOf(store.session.puzzle.p) != null && tf("pz.ratingOf", [puzzleRatingOf(store.session.puzzle.p)]));
+        : tdot(puzzleGoalText(), store.session.puzzle.shownR != null && tf("pz.ratingOf", [store.session.puzzle.shownR]));
     }
     renderPuzzleLine();
     renderPuzzleFeedback();
@@ -874,17 +881,9 @@ export function createPuzzlesUI(d) {
     // 「答案」 lives in the chrome's hint slot only (7.4 §5 — see index.html):
     // renderGameActions() empties that slot once the puzzle is done, the
     // same P3 rule the panel copy used to keep here.
-    // the after-solve review nudge: the queue's size is the whole message
-    const nudge = document.getElementById("puzzle-review-nudge");
-    if (nudge) {
-      const owed = owedNow();
-      const show = !!store.session.puzzle.done && owed > 0 && store.session.puzzle.cat !== "review";
-      nudge.hidden = !show;
-      if (show) nudge.textContent = tf("pz.smart.review", [owed]);
-    }
+    // 19.0 S6: the after-solve 先清复习 nudge went: 下一题 itself goes to the reviews owed
     const next = document.getElementById("puzzle-next");
     if (next) next.classList.toggle("primary", store.session.puzzle.done && !canPlayOn);
-    if (document.getElementById("puzzle-smart")) document.getElementById("puzzle-smart").classList.toggle("primary", !store.session.puzzle); // 15.0 S2: the puzzle's own step is the fill
     // 9.0 S3: a kind holds thousands of puzzles — the list is drawn only
     // while its fold is open (opening it syncs), not on every sync
     const listEl = document.getElementById("puzzle-list");
@@ -912,14 +911,15 @@ export function createPuzzlesUI(d) {
     // 9.0 S3: the six kinds, and the review queue as its own card
     document.getElementById("pz-groups").onclick = (ev) => {
       const b = ev.target.closest("button[data-group]");
-      if (b && b.dataset.group === "mine" && !store.session.mines.length) toast(t("pz.mineEmpty"), "fix");
-      else if (b) Modes.goGroup(b.dataset.group);
+      if (b) Modes.goGroup(b.dataset.group);
     };
     document.getElementById("pz-review").onclick = () => {
       if (store.session.run) { Modes.endRun(); store.session.run = null; }
       const go = () => {
-        if (!puzzlesInCat("review").length) { toast(t("pz.noMissed")); return; }
-        store.session.puzzleState.cat = "review";
+        // 19.0 S6: 我的错题 is here now — with nothing owed, your own drills
+        const cat = puzzlesInCat("review").length ? "review" : store.session.mines.length ? "mine" : null;
+        if (!cat) { toast(t("pz.noMissed")); return; }
+        store.session.puzzleState.cat = cat;
         savePuzzleState();
         startPuzzles();
       };
@@ -941,35 +941,6 @@ export function createPuzzlesUI(d) {
     document.getElementById("puzzle-next").onclick = () => { nextPuzzle(); };
     // the feedback card's way to the answer: the same as the chrome's 答案
     document.getElementById("puzzle-fb-hint").onclick = () => { showPuzzleAnswer(); };
-    document.getElementById("puzzle-review-nudge").onclick = () =>
-      document.getElementById("puzzle-smart").click();
-    document.getElementById("puzzle-smart").onclick = function smart() {
-      // 9.0 S3: from a finished run's card, back to practice
-      if (store.session.run) { Modes.endRun(); store.session.run = null; }
-      // the review rung reads the queue: a due bank puzzle's band first (v8-1-plan T6)
-      if (reviewWaits(smart)) return;
-      // the rating rung only once a first answer has moved the rating — a fresh
-      // profile is still sent exploring
-      const rated = Array.isArray(store.session.puzzleState.rhist) && store.session.puzzleState.rhist.length > 0;
-      const pick = Picker.pickNext(store.session.puzzleState, bookNow(), Srs, puzzleTier, motifKeyOf,
-        puzzleRatingOf, rated ? ChessRating.pickRange(playerRating()) : null, Date.now(), reviewBank());
-      if (pick.kind === "done") { toast(t("pz.smart.done")); return; }
-      store.session.puzzleState.cat = pick.cat;
-      // same contract for the side segment: if the picker chose an opening line
-      // from the chair not currently shown, switch chairs so the pick is servable
-      const picked = bookNow().find((p) => p.id === pick.id);
-      if (picked && isOpeningCat(picked.cat) && isOpeningCat(pick.cat))
-        store.session.puzzleState.opSide = picked.side === "b" ? "b" : "w";
-      savePuzzleState();
-      const list = puzzlesInCat(pick.cat);
-      const idx = Math.max(0, list.findIndex((p) => p.id === pick.id));
-      startPuzzleAt(pick.cat, idx);
-      toast(pick.kind === "review" ? tf("pz.smart.review", [pick.due]) :
-            pick.kind === "rated" ? tf("pz.smart.rated", [pick.rating]) :
-            pick.kind === "motif" ? tf("pz.smart.motif", [t("motif." + pick.motif)]) :
-            pick.kind === "weak" ? tf("pz.smart.weak", [t("pz.cat." + pick.cat)]) :
-            tf("pz.smart.explore", [t("pz.cat." + pick.cat)]));
-    };
     const playOnEl = document.getElementById("puzzle-playon");
     if (playOnEl) playOnEl.onclick = () => { playOnFromPuzzle(); };
     const drillSrcEl = document.getElementById("puzzle-source");
@@ -980,6 +951,34 @@ export function createPuzzlesUI(d) {
       const b = ev.target.closest("button[data-i]");
       if (b && store.session.puzzle) startPuzzleAt(store.session.puzzle.cat, Number(b.dataset.i));
     };
+  }
+  /** 为你出一题 (9.0 S3) — 19.0 S6: 下一题's rule, and 今天's 题 card's. */
+  function smartNext() {
+    // 9.0 S3: from a finished run's card, back to practice
+    if (store.session.run) { Modes.endRun(); store.session.run = null; }
+    // the review rung reads the queue: a due bank puzzle's band first (v8-1-plan T6)
+    if (reviewWaits(smartNext)) return;
+    // the rating rung only once a first answer has moved the rating — a fresh
+    // profile is still sent exploring
+    const rated = Array.isArray(store.session.puzzleState.rhist) && store.session.puzzleState.rhist.length > 0;
+    const pick = Picker.pickNext(store.session.puzzleState, bookNow(), Srs, puzzleTier, motifKeyOf,
+      puzzleRatingOf, rated ? ChessRating.pickRange(playerRating()) : null, Date.now(), reviewBank());
+    if (pick.kind === "done") { toast(t("pz.smart.done")); return; }
+    store.session.puzzleState.cat = pick.cat;
+    // same contract for the side segment: if the picker chose an opening line
+    // from the chair not currently shown, switch chairs so the pick is servable
+    const picked = bookNow().find((p) => p.id === pick.id);
+    if (picked && isOpeningCat(picked.cat) && isOpeningCat(pick.cat))
+      store.session.puzzleState.opSide = picked.side === "b" ? "b" : "w";
+    savePuzzleState();
+    const list = puzzlesInCat(pick.cat);
+    const idx = Math.max(0, list.findIndex((p) => p.id === pick.id));
+    startPuzzleAt(pick.cat, idx);
+    toast(pick.kind === "review" ? tf("pz.smart.review", [pick.due]) :
+          pick.kind === "rated" ? tf("pz.smart.rated", [pick.rating]) :
+          pick.kind === "motif" ? tf("pz.smart.motif", [t("motif." + pick.motif)]) :
+          pick.kind === "weak" ? tf("pz.smart.weak", [t("pz.cat." + pick.cat)]) :
+          tf("pz.smart.explore", [t("pz.cat." + pick.cat)]));
   }
 
   // exactly what the one-file trainer returned (M1 评审): the book's and the
@@ -992,8 +991,8 @@ export function createPuzzlesUI(d) {
     wirePuzzlePanel,
     onMinedArrived, ALL_PUZZLES, Library, Mistakes, loadMines, saveMines, Progress, Planner,
     saveProgress, bookNow, loadPuzzleState, savePuzzleState, Srs, Picker,
-    owedNow, ratingLabel, ratingTip, practiceLeft, puzzlesInCat, puzzleRatingOf,
+    owedNow, ratingLabel, ratingTip, practiceLeft, puzzlesInCat,
     startPuzzleAt, startPuzzles, stopPuzzles, puzzleModel, puzzleHumanSide, puzzleClick,
-    showPuzzleAnswer, hintLevel, leaveTrainer, nextPuzzle, syncPuzzleUI, closeThemes: () => Modes.closeThemes(), Vis, startPlacement, goTheme,
+    showPuzzleAnswer, hintLevel, leaveTrainer, nextPuzzle, smartNext, syncPuzzleUI, closeThemes: () => Modes.closeThemes(), startPlacement, goTheme,
   };
 }

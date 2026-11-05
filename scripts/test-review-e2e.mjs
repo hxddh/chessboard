@@ -69,7 +69,7 @@ let failed = 0;
 async function setLive(pg, on) {
   await pg.click('#rail button[data-view="settings"]');
   await settle(pg);
-  await pg.click("#cat-advanced");
+  await pg.click("#cat-game");
   await settle(pg);
   const now = await pg.getAttribute("#opt-live", "aria-pressed");
   if ((now === "true") !== on) await pg.click("#opt-live");
@@ -210,12 +210,14 @@ assert(start.text !== end.text, "the bar reads the position the board is standin
   assert(a.gl >= a.railR, "…and clear of the rail (" + a.gl + " ≥ " + a.railR + ")");
   assert(Math.abs(a.fb - (a.gt + a.gh)) <= 1 && a.fh > a.gh / 2,
     "White ahead: the white fill rises from the bottom, White's side (" + Math.round(a.fh) + " of " + Math.round(a.gh) + ")");
-  await page.evaluate(() => document.querySelector('[data-orient="b"]').click());
+  // 19.0 S4: the settings page's 方向 buttons are gone — F turns the board
+  if (await page.evaluate(() => window.__chess.flipped()) !== true) { await page.evaluate(() => document.activeElement && document.activeElement.blur()); await page.keyboard.press("f"); }
   await settle(page);
   const b = await geo();
   assert(Math.abs(b.ft - b.gt) <= 1 && Math.abs(b.fh - a.fh) <= 1,
     "flipped: the same fill now hangs from the top, where White sits (" + Math.round(b.ft - b.gt) + "px from the top)");
-  await page.evaluate(() => document.querySelector('[data-orient="w"]').click());
+  // 19.0 S4: the settings page's 方向 buttons are gone — F turns the board
+  if (await page.evaluate(() => window.__chess.flipped()) !== false) { await page.evaluate(() => document.activeElement && document.activeElement.blur()); await page.keyboard.press("f"); }
   // back where the blocks below expect to start: the opening
   await page.evaluate(() => document.getElementById("rep-start").click());
   await settle(page);
@@ -692,7 +694,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   // 9.0 S5:线数在设置页的「高级」里(原先是侧栏的「设置」页签),从栏上去、从栏上回。
   await pg.click('#rail button[data-view="settings"]');
   await settle(pg);
-  await pg.click("#cat-advanced");
+  await pg.click("#cat-game");
   await pg.click('#multipv-seg button[data-multipv="3"]');
   await settle(pg);
   await pg.click('#rail button[data-view="play"]');
@@ -1583,7 +1585,9 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       assert(!twice.line && twice.retries === 1, "18.0 R4：关键时刻卡片讲着的这一步，理由和「再试一次」只出现一次 " + JSON.stringify(twice));
       // v10-0-plan A2: 为什么 is open as the moment comes up — no click
       const why = (await km()).why;
-      assert(/\d+%/.test(why) && why.length > 16, "A4 / A2：「为什么」默认展开，说清这一着让胜率掉了多少，再给出教练的解释（" + why + "）");
+      // 19.0 T2: the card's own line says the win chance; 为什么 is the coach's
+      // reason in words, and does not say the numbers again
+      assert(why.length > 6 && !/\d+%/.test(why), "A4 / A2 / 19.0 T2：「为什么」默认展开，给出教练的解释，不再复述胜率（" + why + "）");
       await pg.click('#rv-km button[data-act="why"]');
       await settle(pg);
       assert((await km()).why === "", "A2：再点「为什么」收起");
@@ -1628,8 +1632,14 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
         await pg.waitForFunction(() => { const v = document.querySelector("#retry-box .rt-verdict"); return v && /is-(right|wrong|ok)/.test(v.className); }, null, { timeout: 20000 }).catch(() => {});
         await settle(pg);
         const want = bests[bril].slice(0, 2) + bests[bril].slice(2, 4);
+        // 19.0 T1: a miss holds the arrow back until 看答案
+        const early = await pg.evaluate(() => window.__chess.board().hint);
+        if (await pg.evaluate(() => !!document.getElementById("rt-show"))) {
+          assert(!early, "19.0 T1：走错之后、看答案之前，棋盘上没有最佳着的箭头", String(early));
+          await pg.click("#rt-show"); await settle(pg);
+        }
         const hint = await pg.evaluate(() => window.__chess.board().hint);
-        assert(hint === want, "A4：妙着这个关键时刻「再试一次」走错判完之后，棋盘上画出最佳着的箭头（" + want + "）", String(hint));
+        assert(hint === want, "A4：妙着这个关键时刻「再试一次」走错、看答案之后，棋盘上画出最佳着的箭头（" + want + "）", String(hint));
         // #89 review: the brilliancy itself, found again — judged right, and
         // the panel does not go on to say 「更好的是」 the move just played
         await pg.click("#rt-again");
@@ -1661,7 +1671,8 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
         await settle(pg);
         const kl = await km();
         const atL = await vi();
-        assert(atL === later && kl.ply === later && kl.why !== "",
+        const noWhy = await pg.evaluate(() => { const b = document.querySelector('#rv-km button[data-act="why"]'); return !b || b.hidden; });
+        assert(atL === later && kl.ply === later && (kl.why !== "" || noWhy),
           "A4：相邻两步都是关键时刻，在后一个上点「看引擎线」，卡片不跳到前一个、「为什么」还开着（" + JSON.stringify({ at: atL, ply: kl.ply, later, why: !!kl.why }) + "）");
         // …and the board moving on by itself turns the card again
         await goto(later);
@@ -1704,6 +1715,10 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       await settle(pg);
       const v = await pg.evaluate(() => (document.querySelector("#retry-box .rt-verdict") || {}).className || "");
       assert(/is-wrong/.test(v), "A4：又走了一遍原来的失着，判「不对」（" + v + "）");
+      // 19.0 T1: a first miss keeps the answer back; 看答案, then on to the next
+      const held = await pg.evaluate(() => !document.getElementById("rt-next") && !!document.getElementById("rt-show"));
+      assert(held, "19.0 T1 A4：第一次走错，先不给答案、也不跳到下一个，只有「再想想」「看答案」");
+      if (held) { await pg.click("#rt-show"); await settle(pg); }
       const next = await pg.evaluate(() => { const b = document.getElementById("rt-next"); return b ? b.textContent : null; });
       assert(!!next, "A4：判完有「下一个」（" + next + "）");
       if (!next) break;
@@ -1876,6 +1891,20 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   const s = await pg.evaluate(() => { const e = document.getElementById("rv-summary"); return e && !e.hidden ? e.textContent : null; });
   assert(!!s && /^莉娜：这盘最要紧的是第 9 步——你的胜率从 \d+% 掉到 \d+%。$/.test(s),
     "M2：人机对局的总结是对手说的，讲你掉得最多的那一步（「" + s + "」）");
+  // 19.0 T2: against the engine the key moments are yours only (you are Black)
+  {
+    const sides = [];
+    for (let k = 0; k < 8; k++) {
+      sides.push(await pg.evaluate(() => (document.querySelector("#rv-km .km-card .km-what") || {}).textContent || ""));
+      if (!(await pg.evaluate(() => { const b = document.querySelector("#rv-km .km-next"); return !!b && !b.disabled; }))) break;
+      await pg.click("#rv-km .km-next"); await settle(pg);
+    }
+    assert(sides.length > 0 && sides.every((x) => /^黑方/.test(x)), "19.0 T2：人机对局的关键时刻只有你的（黑方）", sides.join(" / "));
+    // …and no 「最该练的」 when none of your reasons names one: every one of
+    // Black's here is a plain 「更好的是 …」, so there is nothing true to say
+    const w = await pg.evaluate(() => { const e = document.getElementById("rv-work"); return e && !e.hidden ? e.textContent : null; });
+    assert(w === null, "19.0 T2：你的失误都说不出原因时，不编一件「最该练的」", w);
+  }
   // v10-0-plan T4: with no Black book, the report offers to keep this
   // game's opening; kept, it points at the first move the book stops before
   if (!(await pg.evaluate(() => document.getElementById("rv-full").open))) await pg.click("#rv-full > summary");
@@ -1972,7 +2001,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   await pg.waitForTimeout(900);
   await pg.evaluate((x) => { window.__lichessPgn = x; const E = window.__chess.engine; E.init = () => Promise.resolve(); E.retry = () => {}; E.isReady = () => true; }, pgn);
   await scriptOpera(pg);
-  await pg.click('#rail button[data-view="library"]');
+  await pg.click('#rail button[data-view="me"]');   // 19.0 S1: the library is on 我的
   await pg.click("#lib-analyse-one");
   await pg.fill("#an-text", "https://lichess.org/q7ZvsdUF/black#12");
   await pg.click("#an-go");
@@ -2351,7 +2380,7 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
     const t = await pg.evaluate(async () => {
       const t0 = performance.now();
       const wait = async (sel) => { for (let i = 0; i < 60 && !document.querySelector(sel); i++) await new Promise((r) => setTimeout(r, 10)); return document.querySelector(sel); };
-      document.querySelector('#rail button[data-view="library"]').click();
+      document.querySelector('#rail button[data-view="me"]').click();   // 19.0 S1: the library is on 我的
       (await wait("#lib-open")).click();
       (await wait("#lib-list button[data-lib]")).click();
       return performance.now() - t0;

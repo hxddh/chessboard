@@ -230,7 +230,7 @@ export function createRetry(d) {
     // `run`: 从错误中学 (v8-0-plan A4) — the chain this question is one of.
     // It rides on the retry itself, so any way back to the game (which
     // clears the retry) ends the run with it.
-    store.session.retry = { a, ply: i, fen, g: new Chess(fen), ex, side: ex.side, last: null, verdict: null, tried: null, run: run || null };
+    store.session.retry = { a, ply: i, fen, g: new Chess(fen), ex, side: ex.side, last: null, verdict: null, tried: null, run: run || null, misses: 0, shown: false, reply: null };
     store.game.selection = null;
     BoardView.cancelAnim();
     sync();
@@ -281,7 +281,7 @@ export function createRetry(d) {
   function resetRetry() {
     const r = store.session.retry;
     if (!r || r.verdict === "checking") return;
-    Object.assign(r, { g: new Chess(r.fen), last: null, verdict: null, tried: null });
+    Object.assign(r, { g: new Chess(r.fen), last: null, verdict: null, tried: null, reply: null });
     store.game.selection = null;
     sync();
   }
@@ -300,7 +300,7 @@ export function createRetry(d) {
       // the best move" — drawn from the position before the move tried; read
       // off the analysis itself, since a graded moment that is no mistake
       // (!!, 仅此一着, 错失良机) has a retry too and bestArrowAt keeps to mistakes (Codex #89)
-      hintMove: r.verdict && r.verdict !== "checking" ? retryArrow(r.ply) : null,
+      hintMove: answerShown(r) ? retryArrow(r.ply) : null,
       stars: [], cursor: cursorSquare(), drag: store.ui.dragging,
       coords: store.ui.coordsOn, blind: store.ui.blindfold,
     };
@@ -339,7 +339,7 @@ export function createRetry(d) {
     BoardView.cancelAnim();
     moveSound(mv, r.g);
     const quick = ChessExplain.retryQuick(mv.san, r.ex);
-    if (quick) { settle(r, quick); sync(); return; }
+    if (quick) { settle(r, quick); missed(r); sync(); return; }
     if (!ChessEngine || !ChessEngine.isReady || !ChessEngine.isReady()) { r.verdict = "unknown"; sync(); return; }
     r.verdict = "checking";
     sync();
@@ -356,7 +356,35 @@ export function createRetry(d) {
     if (cpBest == null || cpAlt == null) { r.verdict = "unknown"; sync(); return; }
     const v = Mistakes.judgeAlt(cpBest, cpAlt, r.side, Review.MISTAKE);
     settle(r, v.ok ? "right" : "wrong");
+    missed(r, eAlt);
     sync();
+  }
+
+  /**
+   * 19.0 T1: a miss is answered with what the move allows, and another go —
+   * the engine's move and its arrow wait for the second miss or 看答案.
+   * Through 18.0 the first wrong try showed 「引擎的最佳：Bb3」 at once.
+   */
+  function missed(r, after) {
+    if (r.verdict !== "wrong") return;
+    r.misses++;
+    if (r.misses >= 2) r.shown = true;
+    const reply = after && after.best;
+    if (reply) { r.reply = replySan(r.g, reply); return; }
+    if (!ChessEngine || !ChessEngine.isReady || !ChessEngine.isReady()) return;
+    const g = r.g;
+    ChessEngine.analyze(g.fen(), r.a.budget || SCAN_BUDGET).then((e) => {
+      if (store.session.retry !== r || r.g !== g || !e || !e.best) return;
+      r.reply = replySan(g, e.best);
+      sync();
+    }).catch(() => {});
+  }
+  function replySan(g, uci) {
+    try { const m = new Chess(g.fen()).move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" }); return m ? m.san : null; } catch (_) { return null; }
+  }
+  /** Is the engine's answer on screen: a right move, an unjudged one, the second miss or 看答案. */
+  function answerShown(r) {
+    return !!r.verdict && r.verdict !== "checking" && (r.verdict !== "wrong" || r.shown);
   }
 
   /** The 再试一次 panel: the question, then the verdict, the best move and why. */
@@ -372,7 +400,7 @@ export function createRetry(d) {
       store.game.selection = null;
       draw();
     }
-    const key = r ? JSON.stringify([r.ply, r.verdict, r.tried, store.ui.langId, r.run && [r.run.k, r.run.plies.length]]) : "";
+    const key = r ? JSON.stringify([r.ply, r.verdict, r.tried, r.shown, r.reply, store.ui.langId, r.run && [r.run.k, r.run.plies.length]]) : "";
     box.hidden = !r;
     if (box.dataset.key === key) return;
     box.dataset.key = key;
@@ -397,7 +425,16 @@ export function createRetry(d) {
       status.classList.add("is-" + r.verdict);
       status.append(tried, document.createTextNode(" · " + word));
     }
-    if (r.verdict && r.verdict !== "checking") {
+    if (r.verdict === "wrong" && !r.shown && r.reply) {
+      const after = p("rt-reply");
+      const tpl = t("rt.reply").split(/\{[01]\}/);
+      const a1 = document.createElement("span"), a2 = document.createElement("span");
+      a1.className = a2.className = "why-san";
+      writeSan(a1, r.tried, r.side);
+      writeSan(a2, r.reply, r.side === "w" ? "b" : "w");
+      after.append(document.createTextNode(tpl[0]), a1, document.createTextNode(tpl[1] || ""), a2, document.createTextNode(tpl[2] || ""));
+    }
+    if (answerShown(r)) {
       const best = p("rt-best");
       const tpl = t("rt.best").split("{0}");
       const bs = document.createElement("span");
@@ -415,12 +452,21 @@ export function createRetry(d) {
       again.type = "button";
       again.className = "pv-act";
       again.id = "rt-again";
-      again.textContent = t("rt.again");
+      again.textContent = t(answerShown(r) ? "rt.again" : "rt.think");
       again.onclick = resetRetry;
       row.appendChild(again);
     }
+    if (r.verdict && !answerShown(r) && r.verdict !== "checking") {
+      const show = document.createElement("button");
+      show.type = "button";
+      show.className = "pv-act";
+      show.id = "rt-show";
+      show.textContent = t("rt.show");
+      show.onclick = () => { r.shown = true; sync(); };
+      row.appendChild(show);
+    }
     // 从错误中学: once judged, on to the next one — or, after the last, done
-    if (r.run && r.verdict && r.verdict !== "checking") {
+    if (r.run && answerShown(r)) {
       const next = document.createElement("button");
       next.type = "button";
       next.className = "pv-act rt-next";
@@ -440,5 +486,7 @@ export function createRetry(d) {
   }
 
   return { renderMistakeList, renderWhyLine, startRetry, retryModel, retryClick, renderRetry,
-    mistakeFacts, retryFacts, writeWhy, plyLabel, learnPlies, startLearn };
+    mistakeFacts, retryFacts, writeWhy, plyLabel, learnPlies, startLearn, mistakePlies,
+    /** 19.0 T2: the motif the reason for ply `i` names, or null */
+    mistakeMotif: (i) => ChessExplain.explainMotif(mistakeFacts(i)), mistakeKey: (i) => ChessExplain.explainKey(mistakeFacts(i)) };
 }

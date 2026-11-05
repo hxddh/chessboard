@@ -8,20 +8,21 @@
 
 /**
  * The draw. Moves under 1% are never played (the long tail is noise, not
- * people); the rest are drawn with weights p^(1/temp), a temperature under
+ * people) — under `floor` on a rung that sets one (19.0 T5: the rungs below
+ * 1100, whose players do hang pieces); the rest are drawn with weights p^(1/temp), a temperature under
  * 1 being stronger than the band, over 1 weaker. A style (persona.js) then
  * chooses, among the moves at least half as likely as the one drawn (and 5%
  * at least), the one it likes best — the draw decides how good the move is,
  * the style only which of the likely ones, as pickByWinLoss.
  * @param {Array<{uci: string, p: number}>} pol most likely first
- * @param {{temp?: number}} tier
+ * @param {{temp?: number, floor?: number}} tier
  * @param {() => number} rng
  * @param {((uci: string) => number|null)|null} styleOf
  * @returns {string|null}
  */
 export function pickHuman(pol, tier, rng, styleOf) {
   if (!pol || !pol.length) return null;
-  let rows = pol.filter((r) => r.p >= 0.01);
+  let rows = pol.filter((r) => r.p >= (tier.floor || 0.01));
   if (!rows.length) rows = pol.slice(0, 1);
   const inv = 1 / Math.max(0.05, tier.temp || 1);
   const w = rows.map((r) => Math.pow(r.p, inv));

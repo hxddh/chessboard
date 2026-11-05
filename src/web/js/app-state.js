@@ -196,6 +196,8 @@ export function initialState() {
       setCat: "general",
       /** 9.0 S3: 训练's last segment (shell.js TRAIN_SEGS), and 名局 read or guessed */
       trainSeg: "course",
+      /** 19.0 S1: the puzzle category 谜题 goes back to from 开局 (shell.js) */
+      pzCat: null,
       classicMode: "read",
       /** UI language id (see i18n.js); lesson/puzzle content stays Chinese */
       langId: null,  // filled in below, where it can first be computed

@@ -68,6 +68,8 @@ export function createOpponentsLazy(d) {
     savedOpponent: (o) => (o && typeof o.diff === "string" && typeof o.style === "string" ? o : null),
     syncOffer: call("syncOffer"), wireOffer: call("wireOffer"), paintHello: call("paintHello"),
     paintCard: call("paintCard"), applyAdvice: call("applyAdvice"),
+    /** 19.0 S5: the style the rung's own persona plays — null until the chunk is in */
+    styleOf: (level) => { const p = mod && mod.Opponents.PERSONAS.find((x) => x.level === level); return p ? p.style : null; },
     /** persona.js, for engine.js's styled pick — null until the chunk is in */
     style: () => (mod ? mod.ChessPersona : null),
     /**

@@ -83,6 +83,10 @@
     if (g.game_over()) return { ok: false, how: g.in_stalemate() ? "stalemate" : "draw" };
     if (!canMate(material(g, "w"))) return { ok: false, how: "material" };
     if (!(start && start.bare) && bare(material(g, "b")) && keepsHeavy(g)) return { ok: true, how: "bare" };
+    // 19.0 T3: against a bare king from the start (the pawn endings), the
+    // goal is the queen — a new one that survives Black's reply. Through
+    // 18.0 the camp then asked for a twenty-move K+Q mate as well.
+    if (start && start.bare && Number.isFinite(start.wq) && material(g, "w").q > start.wq && keepsHeavy(g)) return { ok: true, how: "promoted" };
     return null;
   }
 
@@ -121,7 +125,7 @@
    */
   function startOf(g) {
     const m = material(g, "b");
-    return { bq: m.q, bare: bare(m) };
+    return { bq: m.q, bare: bare(m), wq: material(g, "w").q };
   }
 
   export const ChessEndgameRules = { outcome, startOf, material, canMate };

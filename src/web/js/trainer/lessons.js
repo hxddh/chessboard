@@ -213,7 +213,7 @@ export function createLessonsUI(d) {
   function curLesson() { const l = store.session.learn; return (l.gs && Gs.m.lesson()) || (l.eg && Endgames.lesson(l.eg)) || LESSONS[l.li]; }
   function curTask() { return curLesson().tasks[store.session.learn.ti]; }
 
-  function startLesson(i, stand) {
+  function startLesson(i, stand, again) {
     if (!LESSONS[i]) return;
     store.session.study = null;
     if (!stand) { store.session.learnState.last = i; saveLearnState(); Adv.want(-1); }
@@ -224,10 +224,10 @@ export function createLessonsUI(d) {
     // 14.0 E: parts 1–2's bodies are a chunk too — the first lesson opened
     // waits for it, unless another run starts meanwhile (an endgame, a classic)
     const my = ++store.session.learnRuns;
-    if (!Body.ready()) { Body.want(() => { if (my === store.session.learnRuns && store.session.mode === "learn") { startLesson(i, stand); sync(); } }); return; }
+    if (!Body.ready()) { Body.want(() => { if (my === store.session.learnRuns && store.session.mode === "learn") { startLesson(i, stand, again); sync(); } }); return; }
     // 14.0 A3: the step it was left at, when it is this lesson's (a relaunch, or the lesson opened again)
     const at = store.session.learnState.at, ti0 = at && at.id === LESSONS[i].id && at.ti < LESSONS[i].tasks.length ? at.ti : 0;
-    store.session.learn = { li: i, ti: ti0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !stand && !ti0 && !store.session.learnState.done[LESSONS[i].id] };
+    store.session.learn = { li: i, ti: ti0, g: null, stars: new Set(), tapStep: 0, last: null, done: false, engineBusy: false, token: carryToken(), misses: 0, helpOn: false, helpArrow: null, flash: null, demoing: false, wantDemo: !stand && !again && !ti0 && !store.session.learnState.done[LESSONS[i].id] };
     startLearnTask();
   }
 
@@ -266,6 +266,9 @@ export function createLessonsUI(d) {
     // and whether this try leaned on undo or the hint (→ the review queue)
     store.session.learn.egStart = task.eg ? ChessEndgameRules.startOf(store.session.learn.g) : null;
     store.session.learn.egHelped = false;
+    store.session.learn.slip = null;
+    store.session.learn.egVal = null;
+    if (task.eg && task.goal !== "draw") egValue(store.session.learn.g, store.session.learn.token).then((v) => { if (v != null) store.session.learn.egVal = v; });
     store.game.selection = null;
     // first visit to an unfinished lesson: show the solution once, then reset
     if (store.session.learn.wantDemo && task.solution && (task.type === "stars" || task.type === "move")) {
@@ -365,6 +368,7 @@ export function createLessonsUI(d) {
     store.session.learn.misses++;
     if (store.session.learn.misses < 2 || store.session.learn.helpOn) return;
     store.session.learn.helpOn = true;
+    store.session.learn.shown = true; // 19.0 T4: the answer was given — not yet learnt
     const task = curTask();
     if (task.type === "move" && task.solution && task.solution.length) {
       try {
@@ -390,7 +394,9 @@ export function createLessonsUI(d) {
     if (store.session.learn.gs) return Gs.m.task();
     const task = curTask();
     if (store.session.learn.demoing) return t("lm.demoing");
+    if (store.session.learn.slip) return store.session.learn.slip;
     if (store.session.learn.done && store.session.learn.eg) return tf("lm.doneThen", [t(Endgames.next(store.session.learn.eg) ? "eg.tapNext" : "eg.allDone")]);
+    if (store.session.learn.done && store.session.learn.shown && !store.session.learnState.done[curLesson().id]) return t("lm.notYetTask");
     if (store.session.learn.done) return tf("lm.doneThen", [t(store.session.learn.li + 1 < LESSONS.length ? "lm.tapNext" : "lm.allDone")]);
     const tx = taskText(curLesson(), store.session.learn.ti);
     if (task.type === "tap") return tf("lm.tapOf", [tx.step(store.session.learn.tapStep), store.session.learn.tapStep + 1, task.steps.length]);
@@ -526,8 +532,48 @@ export function createLessonsUI(d) {
       const done = drillOutcome(g, task);
       if (done === "win") { learnTaskDone(); return; }
       if (done) { learnRetryTask(done); return; }
+      if (task.eg && task.goal !== "draw") { egSlipCheck(g, task); return; }
       learnEngineReply();
     }
+  }
+
+  /**
+   * 19.0 T3: the move that gives the result away is named when it is made.
+   * Through 18.0 a won king-and-pawn ending turned into a draw at 2.d4 and
+   * the camp played on in silence for a dozen moves, then said 「和棋了，
+   * 重来」. Each of your moves is searched before the reply; a position that
+   * was winning and is now level stops the drill
+   * with the lesson's own rule and the way back (Z / 悔棋).
+   */
+  const EG_BUDGET = 300;
+  /** the position before the last move, as a game of its own */
+  function undoneCopy(g, fen) { const c = new Chess(fen); for (const m of g.history({ verbose: true }).slice(0, -1)) c.move(m); return c; }
+  function egValue(g, token) {
+    if (!ChessEngine || !ChessEngine.analyze) return Promise.resolve(null);
+    const fen = g.fen();
+    return ChessEngine.analyze(fen, EG_BUDGET).then((r) => {
+      if (!r || !store.session.learn || store.session.learn.token !== token) return null;
+      const v = r.mate != null ? (r.mate > 0 ? 10000 : -10000) : r.cp;
+      return v == null ? null : (r.turn === "w" ? v : -v);
+    }, () => null);
+  }
+  function egSlipCheck(g, task) {
+    const lr = store.session.learn, token = lr.token;
+    // the start's search may have run before the engine was up: then the
+    // position before this move is searched now (one more short search)
+    const beforeP = lr.egVal != null ? Promise.resolve(lr.egVal) : egValue(undoneCopy(g, task.fen), token);
+    Promise.all([beforeP, egValue(g, token)]).then(([before, now]) => {
+      if (!store.session.learn || store.session.learn.token !== token) return;
+      // the winning goals only: a short search reads a held defence (knight
+      // against pawn) as lost often enough to stop correct moves
+      const slipped = now != null && before != null && before >= 250 && now <= 60;
+      if (!slipped) { if (now != null) lr.egVal = now; learnEngineReply(); return; }
+      const rule = (curLesson().text || [])[0] || "";
+      lr.slip = tf("eg.slip", [t("eg.slipWin"), rule]);
+      lr.egHelped = true; // a try that needed the stop is not a clean one
+      toast(t("eg.slipWin"), "fix");
+      sync();
+    });
   }
 
   /**
@@ -622,6 +668,7 @@ export function createLessonsUI(d) {
     store.session.learn.token++; // drop any in-flight engine reply
     store.session.learn.engineBusy = false;
     store.session.learn.egHelped = true; // T2: a taken-back try is not a clean one
+    store.session.learn.slip = null;
     if (ChessEngine) ChessEngine.cancel();
     g.undo();
     if (g.history().length && g.turn() !== "w") g.undo();
@@ -680,6 +727,14 @@ export function createLessonsUI(d) {
       // counts as reached, and comes back for review
       Endgames.record(L.eg, true, store.session.learn.egHelped);
       if (store.session.learn.egHelped) toast(t("eg.helped"), "fix");
+      sync();
+      return;
+    }
+    // 19.0 T4: a lesson whose answer had to be shown is not learnt yet — no
+    // ✓, and the course offers it again (it was ✓ through 18.0, the same as
+    // one found unaided); a lesson learnt before keeps its ✓
+    if (store.session.learn.shown && !store.session.learnState.done[L.id]) {
+      toast(t("lm.notYet"), "fix");
       sync();
       return;
     }
@@ -970,7 +1025,10 @@ export function createLessonsUI(d) {
       if (lr) { const id = curLesson().id; lr.infoOpen = lr.infoOpen === id ? null : id; store.commit("session", "sync"); }
     };
     document.getElementById("lesson-restart").onclick = () => {
-      if (store.session.learn) { startLearnTask(); toast(t("lm.restarted")); }
+      // 19.0 T4: a lesson finished with an answer shown starts over from its first step
+      const lr = store.session.learn;
+      if (lr && lr.done && lr.shown && !lr.eg && !lr.gs) { startLesson(lr.li, false, true); toast(t("lm.restarted")); return; }
+      if (lr) { startLearnTask(); toast(t("lm.restarted")); }
     };
     document.getElementById("lesson-demo").onclick = () => {
       if (!store.session.learn || store.session.learn.demoing) return;

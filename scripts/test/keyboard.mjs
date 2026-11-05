@@ -161,7 +161,7 @@ export async function run() {
       dialogOpen: () => false,
       requestNewGame: rec("game.new"), undo: rec("game.undo"), requestHint: rec("game.hint"),
       setFlipped: rec("setFlipped"), togglePanel: rec("view.panel"),
-      setViewIndex: rec("setViewIndex"), escapeKey: rec("escapeKey"), go: rec("go"),
+      setViewIndex: rec("setViewIndex"), escapeKey: rec("escapeKey"), go: rec("go"), openTrain: rec("openTrain"),
     }, over || {});
     const dead = [];
     for (const c of commands) {
@@ -176,13 +176,18 @@ export async function run() {
     }
     assert(dead.length === 0,
       "every menu item does something" + (dead.length ? " — dead: " + dead.join(", ") : ""));
-    // v8-2-plan T4: 开局书 goes to the 棋谱库 page — from in front of a page too,
-    // where the board's commands stay inert
+    // v8-2-plan T4: 开局书 goes to the book — from in front of a page too,
+    // where the board's commands stay inert. 19.0 S1: the book is under
+    // 训练 · 开局 now (was the 棋谱库 page, go:library)
     {
       fired.length = 0;
       NC.create(menuApp({ pageShown: () => true, store: { session: { mode: "puzzle" }, game: { flipped: false, viewIndex: 3 } } })).run("view.repertoire");
       NC.create(menuApp({ pageShown: () => true })).run("game.flip");
-      assert(fired.join() === "go:library", "the 开局书 menu item opens the 棋谱库 page from any view (fired: " + (fired.join() || "nothing") + ")");
+      assert(fired.join() === "openTrain:opening", "the 开局书 menu item opens 训练 · 开局 from any view (fired: " + (fired.join() || "nothing") + ")");
+      // …and 棋谱 left the menu with the rail: an older shell's go.library lands on 我的
+      fired.length = 0;
+      NC.create(menuApp({ pageShown: () => true })).run("go.library");
+      assert(fired.join() === "go:me", "19.0 S1: go.library opens 我的 (fired: " + (fired.join() || "nothing") + ")");
     }
     assert(/handlers\.shortcut/.test(fs.readFileSync(path.join(root, "src/web/js/host.js"), "utf8")),
       "the host bridge forwards the shortcut event");

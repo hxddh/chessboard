@@ -4,8 +4,8 @@
  * The explorer is a chunk (chunk-explorer.js: the panel, the arithmetic, the
  * fast replay board and the master tree's index), because the main bundle
  * had ~3 KB left under F5's budget. What stays here is what must work before
- * the chunk is asked for: the 开局 key in the tool row, the library page's
- * door, whether the panel is open (kept in the settings, so a restart keeps
+ * the chunk is asked for: the 开局 key in the tool row (the one door since
+ * 19.0 S1), whether the panel is open (kept in the settings, so a restart keeps
  * it), and a render that shows or hides the section. The first render with
  * the panel open fetches the chunk; from then on every render is the chunk's.
  * The book is handed over from here — openings.js is in the bundle already,
@@ -17,7 +17,7 @@ import { CHESS_OPENINGS } from "../openings.js";
 
 /**
  * @param {object} d from app.js: store, t, tf, viewGame, movePath, library (LibraryUI),
- *   startClockIfIdle, toBoard, saveSettings, saved (the stored settings)
+ *   startClockIfIdle, saveSettings, saved (the stored settings)
  */
 export function createExplorerLazy(d) {
   const doc = document, { store } = d;
@@ -42,11 +42,8 @@ export function createExplorerLazy(d) {
     render();
   }
   key.addEventListener("click", () => toggle());
-  // the library page's door: the board, with the panel open on it — at the
-  // start of a game already over or imported (14.0 A1: it opened on that
-  // game's last move, where the library has 「没有对局」); a live game keeps
-  // its place
-  doc.getElementById("lib-explorer").addEventListener("click", () => { d.toBoard(); if (d.toStart) d.toStart(); toggle(true); });
+  // 19.0 S1: the library page's door (14.0 A1) went with the page — the
+  // explorer opens from the play panel only
   // the position (game) and the mode (session); the panel's own state renders itself
   store.subscribe("game", render);
   store.subscribe("session", render);

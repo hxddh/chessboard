@@ -36,8 +36,7 @@ import { createTrainBar } from "./trainer/train-bar.js";
 import { createNotices, TOAST_MS } from "./notices.js";
 import { createPuzzlesUI } from "./trainer/puzzles.js";
 import { createTodayUI } from "./trainer/today.js";
-import { createMePage } from "./me-page.js";
-import { createShell } from "./shell.js";
+import { createShell, SETTING_CATS } from "./shell.js";
 import { createTodayPage } from "./today-page.js";
 import { createAnalyseEntry } from "./analyse-entry.js";
 import { createPaletteLazy } from "./palette-lazy.js";
@@ -55,7 +54,7 @@ import { createRetry } from "./review/retry.js";
 import { createMomentsLazy } from "./review/moments-lazy.js";
 import { createExplorerLazy } from "./explorer/lazy.js";
 import { createGameEnd } from "./game-end.js";
-import { createSaveSlots } from "./save-slots.js";
+import { migrateSlots } from "./save-slots.js";
 import { createMaterialStrip } from "./material-strip.js";
 import { createGameController } from "./game-controller.js";
 import { createIO } from "./io.js";
@@ -65,7 +64,8 @@ import { watchPlayLayout } from "./play-layout.js";
 import { createStore } from "./store.js";
 import { SELFTEST_BOOT } from "./selftest-boot.js";
 import { loadChunk } from "./chunk.js";
-import { drawSpark } from "./charts.js";
+import { drawSpark, chartTokens } from "./charts.js";
+import { ChessProgressMetrics } from "./progress-metrics.js";
 
   /**
    * The one deliberate global: the seam the browser tests reach through.
@@ -81,7 +81,7 @@ import { drawSpark } from "./charts.js";
    */
   // `shapes`: the arrows and circles the board draws now — the player's, the premove's, the engine's (7.8 §2);
   // `board`: the renderer's counters (v8-0-plan F5); `puzzle`: the FEN of the puzzle on the board (A5); `analysisBoard`: the A1 flag
-  window.__chess = { engine: ChessEngine, shapes: () => shapesToDraw(), board: () => ChessBoardView.stats(),
+  window.__chess = { engine: ChessEngine, shapes: () => shapesToDraw(), board: () => ChessBoardView.stats(), flipped: () => !!store.game.flipped,
     puzzle: () => (store.session.puzzle && store.session.puzzle.g ? store.session.puzzle.g.fen() : null), analysisBoard: () => !!store.session.analysisBoard, audio: ChessAudio };
 
   const Host = ChessHost;
@@ -869,13 +869,16 @@ import { drawSpark } from "./charts.js";
       if (typeof s.soundOn === "boolean") store.ui.soundOn = s.soundOn;
       if (Audio2.SOUND_SETS.includes(s.soundSet)) Audio2.setSoundSet(store.ui.soundSet = s.soundSet);
       if (Number.isFinite(s.volume)) store.ui.volume = Math.max(0, Math.min(100, Math.round(s.volume)));
+      // 19.0 S4: one control — a volume of 0 is off, and an 18.0 「off」 is a volume of 0
+      if (store.ui.soundOn === false) store.ui.volume = 0;
+      store.ui.soundOn = store.ui.volume > 0;
       if (typeof s.coordsOn === "boolean") store.ui.coordsOn = s.coordsOn;
       if (typeof s.coordsIn === "boolean") store.ui.coordsInside = s.coordsIn;
       if (typeof s.showSoftMark === "boolean") store.ui.showSoftMark = s.showSoftMark;
       if (typeof s.engineArrows === "boolean") store.ui.engineArrows = s.engineArrows;
       if (typeof s.humanLine === "boolean") store.ui.humanLine = s.humanLine;
       if (typeof s.blindfold === "boolean") store.ui.blindfold = s.blindfold; if (s.ob && typeof s.ob === "object") store.ui.ob = { n: Number(s.ob.n) || 0, done: s.ob.done === true }; // 14.0 A3: the first-run question
-      if ([16, 32, 64, 128].includes(s.hash)) store.ui.hash = s.hash;
+      // 19.0 S4: no 引擎内存 control any more — the default, whatever an old file says
       if ([1, 2, 3, 5].includes(s.multipv)) store.ui.multipv = s.multipv;
       store.ui.bgWorker = s.bgWorker === true; // v8-1-plan F4: a second engine for passes, off unless set (§8.7)
       if (["s", "m", "l"].includes(s.textSize)) store.ui.textSize = s.textSize;
@@ -1027,7 +1030,12 @@ import { drawSpark } from "./charts.js";
     has: (_, k) => DIFF_IDS.includes(k),
   });
   // v8-0-plan B4: the personas, the engine's clock plan, resign and draw offers, your rating
-  const OppUI = createOpponentsLazy({ loadStats, saveStats, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), portrait: (slot, id) => setPortrait(slot, id), parseTc: (x) => parseTc(x), onReady: () => { syncSettingsUI(); store.commit("game", "action"); },
+  const OppUI = createOpponentsLazy({ loadStats, saveStats, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), portrait: (slot, id) => setPortrait(slot, id), parseTc: (x) => parseTc(x), onReady: () => {
+      // 19.0 S5: no 陪练风格 row — the style is the rung's persona's; an 18.0
+      // pick of a rung with another style reads as that persona
+      const own = OppUI.styleOf(store.session.difficulty);
+      if (own && own !== store.session.personaId) { store.session.personaId = own; saveSettings(); }
+      syncSettingsUI(); store.commit("game", "action"); },
     doc: document, store, t, tf, setText, afterPress, acceptDraw: () => acceptDraw(), diffName: (id) => diffName(id),
     repaint: () => syncSettingsUI(), saveSettings, saveGame, announce: (m) => announce(m),
     // game-controller.js is created further down (v8-1-plan F3): late bindings go in as forwarders
@@ -1521,7 +1529,7 @@ import { drawSpark } from "./charts.js";
   const { renderMistakeList, renderWhyLine, retryModel, retryClick, renderRetry } = Retry;
   // v8-0-plan A4: the key moments and 从错误中学 live in review/moments.js, a chunk
   const Moments = createMomentsLazy({ doc: document, store, t, tf, tdot, sideName, analysisFor, sanHistory, startFen, boardMoveNo,
-    setViewIndex, writeSan, inModal, Retry, Review: ChessReview, result: () => gameResultToken(), // 9.0 M2: the summary speaks as the game's opponent
+    setViewIndex, writeSan, inModal, Retry, Review: ChessReview, result: () => gameResultToken(), LESSONS, lessonText, openLesson: (i) => { store.session.learnState.last = i; Shell.openTrain("course"); }, // 9.0 M2: the summary speaks as the game's opponent
     oppName: () => { const o = store.game.opp; return OppUI.strip(o ? o.diff : store.session.difficulty, o ? o.style : store.session.personaId).name; } });
 
   // v8-0-plan F4: the eval gauge, the curve and the marks' colours live in
@@ -1632,75 +1640,14 @@ import { drawSpark } from "./charts.js";
     drawSpark(document, cv, ys, { lo, hi, ref: ys[0] });
   }
 
+  // 19.0 S3: 统计 left 我的 with four other blocks (me-page.js draws the four
+  // that stayed); the name stays for the callers: "the record changed"
   function renderStats() {
-    const el = document.getElementById("stats-body");
-    if (!el) return;
-    const s = loadStats();
-    const agg = {};
-    for (const g of s.games) {
-      const k = DIFF_NAMES[g.diff] ? g.diff : "normal";
-      const a = (agg[k] = agg[k] || { win: 0, loss: 0, draw: 0 });
-      a[g.result] = (a[g.result] || 0) + 1;
-    }
-    // accuracy of the most recent analysed games (only games the user analysed
-    // carry it, so this stays empty until they use 分析/精析)
-    const withAcc = s.games.filter((g) => typeof g.acc === "number");
-    el.replaceChildren();
-    let total = 0;
-    for (const k of DIFF_IDS) {
-      const a = agg[k];
-      if (!a) continue;
-      total += a.win + a.loss + a.draw;
-      const row = document.createElement("div");
-      row.className = "stat-row";
-      const name = document.createElement("span");
-      name.className = "stat-k";
-      name.textContent = DIFF_NAMES[k];
-      const val = document.createElement("span");
-      val.className = "stat-v num";
-      val.textContent = tf("stats.wld", [a.win, a.loss, a.draw]);
-      // 12.0 C: and as a bar — won, drawn, lost, in proportion
-      const bar = document.createElement("span");
-      bar.className = "wdl";
-      bar.setAttribute("aria-hidden", "true");
-      for (const [c, n] of [["w", a.win], ["d", a.draw], ["l", a.loss]]) bar.style.setProperty("--" + c, String(n));
-      bar.append(...["w", "d", "l"].map((c) => Object.assign(document.createElement("i"), { className: c })));
-      row.append(name, val, bar);
-      el.appendChild(row);
-    }
-    if (withAcc.length) {
-      const recent = withAcc.slice(-10);
-      const avg = Math.round(recent.reduce((n, g) => n + g.acc, 0) / recent.length);
-      const row = document.createElement("div");
-      row.className = "stat-row";
-      const name = document.createElement("span");
-      name.className = "stat-k";
-      name.textContent = tf("stats.recentAccN", [recent.length]);
-      const val = document.createElement("span");
-      val.className = "stat-v num";
-      val.textContent = tf("stats.accLine", [avg, recent[recent.length - 1].acc]);
-      row.append(name, val);
-      el.appendChild(row);
-    }
-    const hint = document.createElement("p");
-    hint.className = total ? "hint" : "hint empty-note";   // 7.7 §3: see .empty-note
-    hint.textContent = total
-      ? tdot(tf("stats.gamesN", [total]), t("stats.hint"), t(withAcc.length ? "stats.accFrom" : "stats.accHow"))
-      : t("stats.emptyHint");
-    el.appendChild(hint);
     renderLibrary();
     renderRepertoire();
     renderPuzzleTally();
-    renderTrends();
-    const rec = recommendation();
-    if (rec) {
-      const line = document.createElement("div");
-      line.className = "stat-hint stat-rec";
-      line.textContent = rec;
-      el.appendChild(line);
-    }
     const clearBtn = document.getElementById("stats-clear");
-    if (clearBtn) clearBtn.disabled = !total;
+    if (clearBtn) clearBtn.disabled = !loadStats().games.length;
     renderHistory();
   }
 
@@ -1792,15 +1739,13 @@ import { drawSpark } from "./charts.js";
     saveSettings, setSideTab, setViewIndex, stopLiveAnalysis, withMotifs, recallAnalysis,
     renderRecordEntry, loadStats, saveStats, copyText: (text, okMsg) => copyText(text, okMsg),
     exportText: (name, text, mime, title, recent) => exportText(name, text, mime, title, recent), loadHistoryRecord: (rec) => loadHistoryRecord(rec),
-    boardFen: () => viewGame().fen(), onLibraryLoaded: () => { renderStats(); sync(); },
+    boardFen: () => viewGame().fen(), onLibraryLoaded: () => { renderStats(); sync(); }, renderDiag: () => { if (MePage.real) MePage.real.renderDiag(); },
   });
   const LIB_MIN_GAMES = LibraryUI.LIB_MIN_GAMES;
-  const closeDiagnosis = () => LibraryUI.closeDiagnosis();
   const closeLibList = () => LibraryUI.closeLibList();
   const importPgnToLibrary = (text, label) => LibraryUI.importPgnToLibrary(text, label);
   const libNamesFrom = (text) => LibraryUI.libNamesFrom(text);
   const loadLibraryEntry = (entry) => LibraryUI.loadLibraryEntry(entry);
-  const openDiagnosis = () => LibraryUI.openDiagnosis();
   const openLibList = (pick, opts) => LibraryUI.openLibList(pick, opts);
   const reclaimLibrary = () => LibraryUI.reclaimLibrary();
   const renderLibrary = () => LibraryUI.renderLibrary();
@@ -1808,15 +1753,15 @@ import { drawSpark } from "./charts.js";
   const saveLibrary = () => LibraryUI.saveLibrary();
   // v8-0-plan F4: 今天的训练 and the puzzle tally (trainer/today.js)
   const TodayUI = createTodayUI({
-    ALL_PUZZLES, Icons, LESSONS, LIB_MIN_GAMES, Library, Picker, Planner, Progress, Srs, avail,
-    bookNow, drawRatingTrend, el, loadStats, motifKeyOf, owedNow, puzzlesInCat, ratingLabel,
-    ratingTip, runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
+    ALL_PUZZLES, Icons, LESSONS, LIB_MIN_GAMES, Library, Picker, Planner, Progress, avail,
+    bookNow, el, loadStats, motifKeyOf, owedNow, puzzlesInCat,
+    runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
     sync, t, tf, toast, pieceSrc: (k, px) => BoardView.pieceSrc(k, px), game, isOver: () => appGameOver(), isLive: () => isLive(),
     Shell: { go: (id) => Shell.go(id), openTrain: (g) => Shell.openTrain(g) }, rep: { due: () => (RepUI.booted() ? RepUI.dueDrills().length : 0), start: () => startRepDrills(true) }, ecoName: (e, n) => LibraryUI.libEcoName(e, n),
   });
   const {
-    renderPuzzleTally, libPlayedAt, dailySignals, dailyStepLabel, syncDailyUI,
+    libPlayedAt, dailySignals, dailyStepLabel, syncDailyUI,
     dailyStepIsHere, dailyJump,
   } = TodayUI;
 
@@ -2099,10 +2044,23 @@ import { drawSpark } from "./charts.js";
   }
 
   // v8-0-plan F4/B5: the 我的 page's renderers (me-page.js)
-  const MePage = createMePage({ Icons, Progress, evalAch, libPlayedAt, loadStats, store, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n), Endgames: LessonsUI.Endgames, startEndgame: (id) => LessonsUI.startEndgame(id), Vis: PuzzlesUI.Vis });
-  function renderTrends() { MePage.renderTrends(); }
-  function renderAchievements() { MePage.renderAchievements(); }
-  function renderRecordEntry() { MePage.renderRecordEntry(); }
+  // 19.0 S3: a chunk (chunk-me.js), fetched the first time 我的 opens; until
+  // then its renderers have no page to draw on and are skipped
+  const MePage = {
+    real: null,
+    // …and warmed in idle time after launch, so the page is drawn before anyone opens it
+    warm: (show) => loadChunk("chunk-me.js", "createMePage").then((create) => {
+      if (MePage.real) { if (show) MePage.real.onShow(); return; }
+      const m = MePage.real = create({ Icons, evalAch, libPlayedAt, loadStats, store, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName: (e, n) => LibraryUI.libEcoName(e, n), Endgames: LessonsUI.Endgames, Metrics: ChessProgressMetrics, tdot, chartTokens,
+        owedNow, Srs, ratingLabel, ratingTip, diag: { view: () => LibraryUI.diagView(), charts: () => LibraryUI.charts(), prep: (redraw) => LibraryUI.prepDiag(redraw), count: () => LibraryUI.diagCount() } });
+      m.renderAchievements(); m.renderRecordEntry(); if (show) m.onShow();
+    }, () => {}),
+    onShow: () => { if (MePage.real) MePage.real.onShow(); else MePage.warm(true); },
+  };
+  setTimeout(() => (window.requestIdleCallback || setTimeout)(() => MePage.warm(false)), 2000);
+  function renderPuzzleTally() { if (MePage.real) MePage.real.renderRatings(); }   // 19.0 S3: the rating block (was today.js's tally)
+  function renderAchievements() { if (MePage.real) MePage.real.renderAchievements(); }
+  function renderRecordEntry() { if (MePage.real) MePage.real.renderRecordEntry(); }
 
   // --- game flow ---
 
@@ -2145,8 +2103,8 @@ import { drawSpark } from "./charts.js";
       // the same moment. The lesson chip above already settled what a chip is
       // for: where you are, not what the thing is called. Same answer here.
       // Which puzzle, of what kind; the goal, the detail and where it came
-      // from stay on the card, which is a box that wraps.
-      return tdot(tf("pz.nth", [store.session.puzzle.idx + 1]), t("pz.cat." + store.session.puzzle.p.cat));
+      // from stay on the card, which is a box that wraps. 19.0 S6: of what kind only — the card's 「一步杀 #30」 is the one number
+      return t("pz.cat." + store.session.puzzle.p.cat);
     }
     const g = viewGame();
     if (!isLive()) return tf("st.replayAt", [store.game.viewIndex, sanHistory().length]);
@@ -2567,7 +2525,7 @@ import { drawSpark } from "./charts.js";
       // black drills swap the chairs: the book plays White, you answer
       const asBlack = !!(store.session.puzzle && store.session.puzzle.p.side === "b");
       const you = { icon: "user", name: t(asBlack ? "role.youB" : "role.you"), level: "" };
-      const pr = store.session.puzzle ? PuzzlesUI.puzzleRatingOf(store.session.puzzle.p) : null;
+      const pr = store.session.puzzle ? store.session.puzzle.shownR : null; // 19.0 S6: as the puzzle started
       const book = { icon: "puzzle", name: t("role.puzzle"), level: pr != null ? tf("pz.ratingOf", [pr]) : "" };
       return asBlack ? { w: book, b: you } : { w: you, b: book };
     }
@@ -2980,8 +2938,8 @@ import { drawSpark } from "./charts.js";
     const wants = card ? (unanalysed && !engineDown ? "go-analyse" : "go-again")
       : over && unanalysed ? "an-run" : null;
     for (const b of document.querySelectorAll(".act-btn.primary")) {
-      // not this function's: the pages' fills (7.9 §4a), 为你出一题 (9.0 S3), the trainers' bar (15.0 S3)
-      if (b.id !== wants && !b.closest(".page, .pz-hero, #tr-bar")) b.classList.remove("primary");
+      // not this function's: the pages' fills (7.9 §4a), the trainers' bar (15.0 S3)
+      if (b.id !== wants && !b.closest(".page, #tr-bar")) b.classList.remove("primary");
     }
     if (wants) {
       const b = el(wants);
@@ -3309,7 +3267,7 @@ import { drawSpark } from "./charts.js";
   // v10-0-plan T1: the first-run question and its placement (onboarding.js, chunk-onboarding.js)
   const runOnboarding = () => loadChunk("chunk-onboarding.js", "createOnboarding").then((create) => create({
     t, store, startLearn, setPanelOpen, panelCoversBoard, saveSettings, maybeEngineTurn,
-    pickFromList: (...a) => pickFromList(...a), startPlacement, goHome: () => Shell.go("home"),
+    pickFromList: (...a) => pickFromList(...a), startPlacement, savePuzzleState, goHome: () => Shell.go("home"),
   }).run(), () => {});
 
   // --- position editor + FEN loading ---
@@ -3811,10 +3769,6 @@ import { drawSpark } from "./charts.js";
   document.getElementById("undo").onclick = undo;
   document.getElementById("btn-hint").onclick = () => { requestHint(); };
   document.getElementById("btn-new").onclick = () => { requestNewGame(); };
-  document.getElementById("orient-seg").onclick = (ev) => {
-    const b = ev.target.closest("button[data-orient]");
-    if (b) setFlipped(b.dataset.orient === "b");
-  };
   document.getElementById("toggle-panel").onclick = togglePanel;
   // 7.9 §1b equal action cells; v8-0-plan A2 the play view stretches with its window
   watchPlayLayout({ app: appEl, view: appEl.querySelector(".stage"), side: el("side"), grip: el("sheet-grip"), close: () => setPanelOpen(false), list: el("move-list"), strip: el("move-strip"), opening: el("opening-line"), infoOpening: el("info-opening") });
@@ -4208,10 +4162,6 @@ import { drawSpark } from "./charts.js";
     if (impBtn) impBtn.onclick = () => { openPgnFile(importPgnToLibrary); };
     const anBtn = document.getElementById("lib-analyse");
     if (anBtn) anBtn.onclick = () => { runLibraryPass(); };
-    const dgBtn = document.getElementById("lib-diagnose");
-    if (dgBtn) dgBtn.onclick = openDiagnosis;
-    const closeBtn = document.getElementById("lib-modal-close");
-    if (closeBtn) closeBtn.onclick = closeDiagnosis;
     // 7.1: the list, and the three diagnosis rows that open a slice of it
     const openBtn = document.getElementById("lib-open");
     if (openBtn) openBtn.onclick = () => { openLibList(null, { src: "all" }); };
@@ -4225,14 +4175,11 @@ import { drawSpark } from "./charts.js";
         let pick = null;
         try { pick = JSON.parse(b.dataset.diagPick); } catch (_) { pick = null; }
         if (!pick) return;
-        closeDiagnosis();
-        openLibList(pick);
+        openLibList(pick);   // 19.0 S2: from 我的's diagnosis (it was a dialog's)
       };
     }
     const listModal = document.getElementById("lib-list-modal");
     if (listModal) listModal.onclick = (ev) => { if (ev.target === listModal) closeLibList(); };
-    const diagModal = document.getElementById("lib-modal");
-    if (diagModal) diagModal.onclick = (ev) => { if (ev.target === diagModal) closeDiagnosis(); };
     const names = document.getElementById("lib-names");
     if (names) {
       names.value = store.session.libNames.join(", ");
@@ -4305,7 +4252,7 @@ import { drawSpark } from "./charts.js";
     setFlipped: (v) => setFlipped(v),
     togglePanel: () => togglePanel(),
     setViewIndex: (n) => setViewIndex(n),
-    escapeKey: () => escapeKey(), go: (v) => Shell.go(v),   // v8-2-plan T4: 开局书 → the 棋谱库 page
+    escapeKey: () => escapeKey(), go: (v) => Shell.go(v), openTrain: (g) => Shell.openTrain(g),   // 19.0 S1: 开局书 → 训练 · 开局
   });
   const keysModal = NativeCmds.keysModal;
   const openKeyHelp = () => NativeCmds.openKeyHelp();
@@ -4340,12 +4287,13 @@ import { drawSpark } from "./charts.js";
   SettingsUI.wire();
   // v8-0-plan A1: the rail, the home page and the pages (shell.js)
   const Shell = createShell({ doc: document, store, appEl, switchMode, saveSettings, onSettings: (c) => PrefsUI.onCat(c),
-    onHome: () => { TodayPage.render(); syncDailyUI(); }, onMe: () => MePage.onShow(), learnSeg: () => LessonsUI.learnSeg(), openSeg: (g) => LessonsUI.openSeg(g) });
+    onHome: () => { TodayPage.render(); syncDailyUI(); }, onMe: () => MePage.onShow(), learnSeg: () => LessonsUI.learnSeg(), openSeg: (g) => LessonsUI.openSeg(g),
+    puzzles: { hasBook: () => RepUI.total() > 0, save: () => savePuzzleState(), restart: () => { stopPuzzles(); startPuzzles(); setSideTab("play", { top: true }); sync(); } } });
   Shell.wire();
   // 9.0 S1: 今天 — the page around the coach's card (today-page.js)
   const TodayPage = createTodayPage({ doc: document, store, t, tf, tdot, Chess, pieceSrc: (k, px) => BoardView.pieceSrc(k, px), LESSONS, lessonText, Endgames: LessonsUI.Endgames,
     CLASSICS: LessonsUI.CLASSICS, classicsTotal: LessonsUI.classicsTotal, classicText: LessonsUI.classicText, loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText: () => ratingLabel(),
-    drawRatingTrend, Shell, playNext: () => GameCtl.playNext() });
+    drawRatingTrend, Shell, playNext: () => GameCtl.playNext(), smartPuzzle: () => PuzzlesUI.smartNext() });
   TodayPage.wire();
   // v10-0-plan A1: 分析一局 — into the review in one step — and the blank analysis board
   const AnalyseEntry = createAnalyseEntry({ doc: document, t, Persist, Dlg, openPgnFile: (s) => openPgnFile(s), importPgnText: (x, l) => importPgnText(x, l, undefined, true),
@@ -4357,15 +4305,14 @@ import { drawSpark } from "./charts.js";
   AnalyseEntry.wire();
   // v10-0-plan A3: ⌘K — find a lesson, an endgame, a theme, a game or an action (palette.js, a chunk)
   const Palette = createPaletteLazy({ doc: document, t, tf, tdot, Dlg, store, LESSONS, lessonText, THEME_IDS, Endgames: LessonsUI.Endgames,
-    SETTING_CATS: ["general", "board", "sound", "game", "data", "advanced"], run: {
+    SETTING_CATS, run: {
       newGame: () => { Shell.go("play"); requestNewGame(); }, analyse: () => AnalyseEntry.open(), blank: () => document.getElementById("an-board").click(),
       paste: () => pastePgn(), editor: () => { Shell.go("play"); document.getElementById("editor-open").click(); }, fen: () => openFenModal(),
       exportPgn: () => downloadPgn(), flip: () => { Shell.go("play"); setFlipped(!store.game.flipped); }, go: (v) => Shell.go(v),
       train: (s) => Shell.openTrain(s), settings: (c) => { store.ui.setCat = c; Shell.go("settings"); }, lesson: (i) => dailyJump({ kind: "lesson", i }),
       theme: (id) => goTheme(id), endgame: (id) => LessonsUI.startEndgame(id), libGame: (e) => loadLibraryEntry(e) } });
   // v8-0-plan C3: 开局浏览器 — the key, the panel's state; the panel itself is a chunk
-  createExplorerLazy({ store, t, tf, tdot, viewGame, gameAt, setViewIndex, movePath, startClockIfIdle, saveSettings, library: LibraryUI, repertoire: RepUI, saved: Persist.read("settings").value,
-    toBoard: () => { Shell.go("play"); setSideTab("play"); }, toStart: () => { if (sanHistory().length && (appGameOver() || store.game.imported)) setViewIndex(0); } });
+  createExplorerLazy({ store, t, tf, tdot, viewGame, gameAt, setViewIndex, movePath, startClockIfIdle, saveSettings, library: LibraryUI, repertoire: RepUI, saved: Persist.read("settings").value });
   /**
    * Put a mode on the board: the mode segment's handler until v8-0-plan A1,
    * now the rail's (shell.js) and the new-game dialog's. It stops the engine,
@@ -4528,9 +4475,10 @@ import { drawSpark } from "./charts.js";
     fenModal.onclick = (ev) => { if (ev.target === fenModal) closeFenModal(); };
   }
 
-  // 14.0 E: the save slots and their dialog are save-slots.js
-  const Slots = createSaveSlots({ doc: document, store, Persist, t, tf, toast, Dlg, I18n, diffName, moveCount, sanHistory, startFen,
-    pgnForExport: () => pgnForExport(), importPgnText: (text, label, prompt) => importPgnText(text, label, prompt) });
+  // 19.0 S7: the save slots are gone; games left in them go into the library
+  // once, when it is in (save-slots.js), after the launch's quiet
+  setTimeout(() => LibraryUI.ready().then((c) => c && migrateSlots({ Persist, t, tf,
+    importPgnToLibrary: (text, label, opts) => LibraryUI.importPgnToLibrary(text, label, opts) })).catch(() => {}), 2500);
 
   {
     // v8-0-plan C1: 「全部 N 局」 opens the library on its 本机 games — the
@@ -4701,8 +4649,6 @@ import { drawSpark } from "./charts.js";
    */
   function wireDialogs() {
     Dlg.register(promoModal, () => finishPromotion(null));
-    Dlg.register(document.getElementById("slots-modal"), Slots.close);
-    Dlg.register(document.getElementById("lib-modal"), closeDiagnosis);
     Dlg.register(document.getElementById("lib-list-modal"), closeLibList);
     Dlg.register(document.getElementById("theme-modal"), () => PuzzlesUI.closeThemes());
     Dlg.register(pickModal, () => finishPick(null));

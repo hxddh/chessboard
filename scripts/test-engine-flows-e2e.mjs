@@ -295,7 +295,7 @@ async function openPgn(page, text) {
 async function setLive(page, on = true) {
   const from = await page.getAttribute("#app", "data-view");
   await page.click('#rail button[data-view="settings"]');
-  await page.click("#cat-advanced");
+  await page.click("#cat-game");
   if ((await page.getAttribute("#opt-live", "aria-pressed")) !== String(on)) await page.click("#opt-live");
   const pressed = await page.getAttribute("#opt-live", "aria-pressed");
   await page.click(`#rail button[data-view="${from}"]`);
@@ -337,7 +337,7 @@ const minesOf = (page) => page.evaluate(() =>
 
 /** Import LIB_PGN into the library, claim hxddh's games and run the pass to the end. */
 async function libraryPass(page, file) {
-  await page.click('#rail button[data-view="library"]');
+  await page.click('#rail button[data-view="me"]');
   await importVia(page, "#lib-import", LIB_PGN, file);
   await page.click("#lib-names");
   await page.keyboard.type("hxddh");
@@ -518,7 +518,7 @@ await scenario("持续分析", async () => {
 // --- 5. 棋谱库 ----------------------------------------------------------------
 await scenario("棋谱库", async () => {
   const { ctx, page, errs } = await openPage({ mode: "pvp" });
-  await page.click('#rail button[data-view="library"]').catch(() => {});
+  await page.click('#rail button[data-view="me"]').catch(() => {});
   await importVia(page, "#lib-import", LIB_PGN, "flows-lib.pgn");
   // the real path (v7-6-plan §6): type the name and go straight for 分析 —
   // the field's `change` fires on the way, as focus leaves it for the button
@@ -644,7 +644,7 @@ await scenario("持续分析+棋谱库", async () => {
     return !!el && !el.hidden && el.querySelectorAll(".pv-chip").length > 0;
   });
   assert(!!(await until(livePv, 6000, 100)), "持续分析+棋谱库：持续分析先跑起来了");
-  await page.click('#rail button[data-view="library"]');
+  await page.click('#rail button[data-view="me"]');
   await importVia(page, "#lib-import", LIB_PGN, "flows-lib-live.pgn");
   await page.click("#lib-names");
   await page.keyboard.type("hxddh");
@@ -763,7 +763,7 @@ await scenario("分析存盘", async () => {
   // search 7.5 already made and cancelled) — that is not what is measured here
   const p2 = await openPage({ mode: "pvp" },
     { "chess.analyses": kept, "chess.stats": JSON.stringify(stats) });
-  await p2.page.click('#rail button[data-view="library"]').catch(() => {});   // 9.0 S4: history is on 棋谱 (was 我的)
+  await p2.page.click('#rail button[data-view="me"]').catch(() => {});   // 9.0 S4: history is on 棋谱 (was 我的); 19.0 S1: on 我的 again
   const row = await until(() => p2.page.isVisible('#hist-body button[data-hist="0"]'), 3000, 100);
   if (row) await p2.page.click('#hist-body button[data-hist="0"]');
   const r2 = await until(() => readAn(p2.page).then((r) => (r.acc && r.tags.length ? r : null)), 3000, 100);
@@ -937,7 +937,7 @@ await scenario("多主变", async () => {
   // 「显示引擎箭头」 off: no engine arrow at all
   // 9.0 S5: the switch is on the settings page (高级), not the panel's 设置 tab
   await page.click('#rail button[data-view="settings"]');
-  await page.click("#cat-advanced");
+  await page.click("#cat-game");
   await page.click("#opt-engine-arrows");
   await page.click('#rail button[data-view="play"]');
   await page.waitForTimeout(300);
@@ -1021,6 +1021,18 @@ await scenario("为什么", async () => {
   const said = at.line || at.card;
   assert(/捉双/.test(said) && /车/.test(said) && !(at.line && at.card),
     "为什么：光标停在 9. a3 上，这一句说一次（引擎线下面，或关键时刻卡片）", JSON.stringify(at));
+  // 19.0 T2: the one thing to work on — 9. a3 walked into a fork, and the
+  // course has a lesson on it
+  const work = await page.evaluate(() => { const e = document.getElementById("rv-work"); return e && !e.hidden ? e.textContent : null; });
+  assert(!!work && /捉双/.test(work) && /第 \d+ 课 · 捉双/.test(work) && /去学这一课/.test(work), "19.0 T2：总结下面写这盘最该练的是捉双，连到「捉双」那一课", work);
+  if (work) {
+    await page.click("#rv-work .rv-work-go");
+    await page.waitForTimeout(500);
+    const at = await page.evaluate(() => ({ view: document.getElementById("app").dataset.view, title: document.getElementById("lesson-title").textContent }));
+    assert(at.view === "train" && /捉双/.test(at.title), "19.0 T2：点「去学这一课」打开「捉双」那一课", JSON.stringify(at));
+    await page.click('#rail button[data-view="play"]');
+    await page.waitForTimeout(400);
+  }
   if (process.env.FLOWS_SHOTS) await page.screenshot({ path: process.env.FLOWS_SHOTS + "/why-line.png" });
 
   // 再试一次: a3 again is wrong
@@ -1039,7 +1051,22 @@ await scenario("为什么", async () => {
       why: (document.querySelector("#retry-box .rt-why") || {}).textContent || "",
     } : null;
   }), 5000);
-  assert(!!wrong && !!wrong.best && /捉双/.test(wrong.why), "再试一次：再走 a3 判错，给出引擎最佳和那一句", JSON.stringify(wrong));
+  // 19.0 T1: the first miss keeps the answer back — no best move, no arrow,
+  // and two ways on: 再想想 and 看答案; 看答案 then gives the move and its reason
+  assert(!!wrong && !wrong.best &&
+    await page.evaluate(() => !!document.getElementById("rt-show") && /再想想/.test(document.getElementById("rt-again").textContent)),
+    "19.0 T1 再试一次：再走 a3 判错，先不给答案，给「再想想」「看答案」", JSON.stringify(wrong));
+  // …and what the move allows: the engine's reply, named
+  const reply = await until(() => page.evaluate(() => { const e = document.querySelector("#retry-box .rt-reply"); return e ? e.textContent : null; }), 15000);
+  assert(!!reply && /a3 之后，对方可以走 \S+/.test(reply), "19.0 T1 再试一次：走错时说这一步之后对方能走什么（「" + reply + "」）");
+  await page.click("#rt-show");
+  await page.waitForTimeout(150);
+  const shown = await page.evaluate(() => ({
+    best: (document.querySelector("#retry-box .rt-best .why-san") || {}).title || "",
+    why: (document.querySelector("#retry-box .rt-why") || {}).textContent || "",
+  }));
+  Object.assign(wrong || {}, shown);
+  assert(!!shown.best && /捉双/.test(shown.why), "再试一次：点「看答案」才给出引擎最佳和那一句", JSON.stringify(shown));
   if (process.env.FLOWS_SHOTS) await page.screenshot({ path: process.env.FLOWS_SHOTS + "/retry-wrong.png" });
   // …and the engine's move is right
   await page.click("#rt-again");
@@ -1334,32 +1361,36 @@ await scenario("对手角色", async () => {
   // 9.0 S2: was T1's three segments 入门 / 进阶 / 高手, opening on the pick's
   // one — now there are no segments: eight cards, the ladder around the pick
   const mid = shownIds(dlg);
-  assert(!dlg.seg && mid.join() === "ben,nico,vera,sol,leo,ivy,max,iris",
-    "对手角色（S2）：没有分段，打开时显示当前对手（中级·索尔）和他两边的八张卡", mid.join(","));
+  // 19.0 S5: five (eight through 18.0) — no rating yet, so around the pick
+  assert(!dlg.seg && mid.join() === "nico,vera,sol,leo,ivy",
+    "对手角色（S5）：没有分段，打开时显示当前对手（中级·索尔）和他两边的五张卡", mid.join(","));
   assert(dlg.cards.filter((c) => c.on).length === 1 && dlg.focus === dlg.cards.find((c) => c.on).id,
     "对手角色：空棋盘的「新局」打开时，当前的角色亮着、焦点在它上面", JSON.stringify({ focus: dlg.focus }));
   // a card by keyboard: focus it, Space (Enter in this dialog is 开始); the
   // window moves with the pick, and focus stays on the card
-  await page.focus('#op-grid .op-card[data-op="iris"]');
+  // 19.0 S5: a card on screen — 艾薇, the window's right end (艾瑞丝 is past it now)
+  await page.focus('#op-grid .op-card[data-op="ivy"]');
   await page.keyboard.press("Space");
   await page.waitForTimeout(150);
   const top = await dialog();
-  assert(top.cards.find((c) => c.id === "iris").on && shownIds(top).join() === "leo,ivy,max,iris,otto,hugo,zoe,lars" && top.focus === "iris",
-    "对手角色（S2）：键盘空格选艾瑞丝，八张卡挪到她两边，焦点留在她身上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
+  assert(top.cards.find((c) => c.id === "ivy").on && shownIds(top).join() === "sol,leo,ivy,max,iris" && top.focus === "ivy",
+    "对手角色（S5）：键盘空格选艾薇，五张卡挪到她两边，焦点留在她身上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
   // 10.0 M0: 更多选项 open is the whole ladder on the cards — the one place a
-  // rung is chosen; 莉娜 is at its foot
-  await page.click("#ng-custom > summary");
+  // rung is chosen; 莉娜 is at its foot. 19.0 S5: 「全部 21 位对手」 opens it too
+  const allBtn = await page.evaluate(() => { const b = document.getElementById("op-all"); return b && !b.hidden ? b.textContent.trim() : ""; });
+  assert(allBtn === "全部 21 位对手", "对手角色（S5）：五张卡下面是「全部 21 位对手」", allBtn);
+  await page.click("#op-all");
   await page.waitForTimeout(150);
   const all = await dialog();
-  assert(shownIds(all).length === 21 && all.cards.find((c) => c.id === "iris").on,
-    "对手角色（10.0 M0）：打开「更多选项」，二十一张卡全在，艾瑞丝还亮着", JSON.stringify(shownIds(all)));
+  assert(shownIds(all).length === 21 && all.cards.find((c) => c.id === "ivy").on,
+    "对手角色（10.0 M0）：打开「全部」，二十一张卡全在，艾薇还亮着", JSON.stringify(shownIds(all)));
   await page.click('#op-grid .op-card[data-op="lina"]');
   await page.waitForTimeout(150);
   await page.click("#ng-custom > summary");
   await page.waitForTimeout(150);
   const low = await dialog();
-  assert(shownIds(low).join() === "pip,tomo,lina,kai,ada,remy,ben,nico" && low.cards.find((c) => c.id === "lina").on,
-    "对手角色（S2）：选了莉娜再收起，八张卡挪到梯子底，莉娜亮着", JSON.stringify(shownIds(low)));
+  assert(shownIds(low).join() === "pip,tomo,lina,kai,ada" && low.cards.find((c) => c.id === "lina").on,
+    "对手角色（S5）：选了莉娜再收起，五张卡挪到梯子底，莉娜亮着", JSON.stringify(shownIds(low)));
   await page.click("#ng-start");
   await page.waitForTimeout(600);
   const st = await page.evaluate(() => ({
@@ -1378,8 +1409,11 @@ await scenario("对手角色", async () => {
   await clickMove(page, "e2", "e4");
   const n = await until(() => plies(page).then((p) => (p >= 2 ? p : 0)), 20000, 150);
   const uci = await page.evaluate(() => window.__uci);
-  assert(n >= 2 && uci.includes("setoption name MultiPV value 10") && uci.includes("go depth 2"),
-    "对手角色：练习档按自己的设置搜（MultiPV 10、depth 2）并应着", JSON.stringify(uci.filter((c) => /^go|MultiPV/.test(c))));
+  // 19.0 T5: 练习 is a Maia rung — the net draws the move; Stockfish only
+  // takes its depth-8 look (resign and draw rules), no MultiPV-10 search
+  const hm = await page.evaluate(() => window.__chess.engine.human());
+  assert(n >= 2 && uci.includes("go depth 8") && !uci.includes("go depth 2") && hm && hm.fails === 0 && hm.ms > 0,
+    "对手角色：练习档由 Maia 落子（引擎只看一眼 depth 8）并应着", JSON.stringify({ uci: uci.filter((c) => /^go|MultiPV/.test(c)), hm }));
   assert(!errs.length, "对手角色：页面没有报错", errs.join(" / "));
   await ctx.close();
 });
@@ -1414,6 +1448,34 @@ await scenario("引擎认输", async () => {
   const card2 = await page.evaluate(() => document.getElementById("go-reason").textContent.trim());
   assert(/黑方认输/.test(card2), "引擎认输：重开之后，结果仍是黑方认输", card2);
   assert(!errs.length, "引擎认输：页面没有报错", errs.join(" / "));
+  await ctx.close();
+});
+
+await scenario("领先时提和先问", async () => {
+  // 19.0 T5: +6.7 up, an offered draw was simply accepted — a queen and a
+  // rook up now (twenty quiet king moves in, so the offer is allowed), the
+  // app asks first; 继续下 keeps the game, the second time it is a draw
+  const save = JSON.stringify({ v: 1, savedAt: Date.now(), pgn: '[Event "flows"]\n[SetUp "1"]\n[FEN "4k3/8/8/8/8/8/8/R3K2Q w - - 0 1"]\n[Result "*"]\n\n' +
+    "1. Kf1 Kd8 2. Kg1 Ke8 3. Kg2 Kd8 4. Kf2 Ke8 5. Ke2 Kd8 6. Kd2 Ke8 7. Kd1 Kd8 8. Kc1 Ke8 9. Kb1 Kd8 10. Kc2 Ke8 *" });
+  const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w" }, { "chess.save": save });
+  await page.waitForTimeout(800);
+  const ask = async () => {
+    await page.evaluate(() => document.getElementById("btn-offerdraw").click());
+    await page.waitForFunction(() => document.getElementById("confirm-modal").classList.contains("show"), null, { timeout: 15000 }).catch(() => {});
+    return page.evaluate(() => document.getElementById("confirm-modal").classList.contains("show") ? document.getElementById("confirm-message").textContent : "");
+  };
+  const asked = await ask();
+  assert(/优势很大/.test(asked), "领先时提和先问：领先 5 分以上，先问一句", asked);
+  await page.click("#confirm-cancel");
+  await page.waitForTimeout(500);
+  const live = await page.evaluate(() => !(JSON.parse(localStorage.getItem("chess.save") || "{}").drawAgreed));
+  assert(live, "领先时提和先问：点「继续下」，这局接着下");
+  await ask();
+  await page.click("#confirm-ok");
+  await page.waitForTimeout(800);
+  const drawn = await page.evaluate(() => !!(JSON.parse(localStorage.getItem("chess.save") || "{}").drawAgreed));
+  assert(drawn, "领先时提和先问：确认之后才是和棋");
+  assert(!errs.length, "领先时提和先问：页面没有报错", errs.join(" / "));
   await ctx.close();
 });
 
@@ -1693,7 +1755,7 @@ const BG_PGN = GAMES.slice(0, 8).map((x, i) => {
 const F4_VIEW = { viewport: { width: 900, height: 700 } };
 /** Import BG_PGN, claim hxddh, start the pass; back on the board when `back`. */
 async function startBgPass(page, back) {
-  await page.click('#rail button[data-view="library"]');
+  await page.click('#rail button[data-view="me"]');
   await importVia(page, "#lib-import", BG_PGN, "flows-bg.pgn");
   await page.click("#lib-names");
   await page.keyboard.type("hxddh");
@@ -1821,7 +1883,8 @@ await scenario("第二个引擎", async () => {
     const { ctx, page } = await openPage({ mode: "pvp", hash: 64 }, null, F4_VIEW);
     await page.evaluate(() => window.__chess.engine.analyze("rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1", 120));
     const uci = await page.evaluate(() => window.__uci.filter((m) => /Hash/.test(m)));
-    assert(uci.length && uci.every((m) => m === "setoption name Hash value 64"), "第二个引擎：存着的 Hash 64 在启动时就交给了引擎（" + uci.join(", ") + "）");
+    // 19.0 S4: 引擎内存 is no longer a setting — an old file's Hash 64 reads as the default
+    assert(uci.length && uci.every((m) => m === "setoption name Hash value 32"), "第二个引擎：旧设置里存着的 Hash 64 不再生效，启动时交给引擎的是默认的 32（" + uci.join(", ") + "）");
     await ctx.close();
   }
   const mem = {};
@@ -1899,7 +1962,7 @@ await scenario("人会怎么走", async () => {
   assert(!!board && board.under === "live-line" && /e4 \d+%/.test(board.text), "人会怎么走：分析棋盘上在持续分析的线下面", JSON.stringify(board));
   // 设置·高级: off, and it stays off after a reload
   await page.click('#rail button[data-view="settings"]');
-  await page.click("#cat-advanced");
+  await page.click("#cat-game");
   const was = await page.getAttribute("#opt-human-line", "aria-pressed");
   await page.click("#opt-human-line");
   await page.click('#rail button[data-view="play"]');

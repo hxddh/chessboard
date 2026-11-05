@@ -26,15 +26,16 @@ const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", 
  * stop agreeing with it.
  */
 const RATING = {
-  beginner: 517, casual: 671, learner: 781, improver: 937, steady: 1063, solid: 1191, easy: 1268,
-  easyplus: 1397, normalminus: 1509, normal: 1606, normalplus: 1747, hardminus: 1908, hard: 1990,
-  hardplus: 2102, expert: 2240, expertplus: 2339, master: 2460, masterplus: 2573, strong: 2682,
-  strongplus: 2806, extreme: 2875,
+  beginner: 540, casual: 674, learner: 823, improver: 893, steady: 1055, solid: 1197, easy: 1260,
+  easyplus: 1393, normalminus: 1512, normal: 1607, normalplus: 1748, hardminus: 1909, hard: 1991,
+  hardplus: 2103, expert: 2240, expertplus: 2339, master: 2460, masterplus: 2573, strong: 2682,
+  strongplus: 2805, extreme: 2875,
 };
 const RATING_SE = {
-  beginner: 0, casual: 18, learner: 19, improver: 20, steady: 23, solid: 46, easy: 53, easyplus: 64,
-  normalminus: 73, normal: 81, normalplus: 89, hardminus: 95, hard: 100, hardplus: 102, expert: 104,
-  expertplus: 106, master: 108, masterplus: 111, strong: 113, strongplus: 115, extreme: 119,
+  beginner: 0, casual: 34, learner: 43, improver: 48, steady: 53, solid: 58, easy: 63,
+  easyplus: 69, normalminus: 76, normal: 84, normalplus: 92, hardminus: 98, hard: 102,
+  hardplus: 104, expert: 106, expertplus: 108, master: 110, masterplus: 113, strong: 115,
+  strongplus: 117, extreme: 121,
 };
 
 /**
@@ -47,8 +48,11 @@ const RATING_SE = {
  *
  * 13.0 H made seven rungs Maia and fitted the ladder again: ladder 3. A game
  * filed with `lad: 2` (8.1 … 12.0) keeps that ladder's numbers.
+ *
+ * 19.0 T5 made the five rungs below 1100 Maia too: ladder 4. A game filed
+ * with `lad: 3` (13.0 … 18.0) keeps that ladder's numbers.
  */
-const LADDER = 3;
+const LADDER = 4;
 // (8.0's twelve rungs as a string: a literal naming some of today's rungs
 // would read as a partial copy of the ladder — test-chess holds every such
 // literal to naming all of them)
@@ -60,6 +64,8 @@ const RATING_SE_80 = of80([0, 23, 24, 26, 28, 31, 95, 106, 119, 126, 144, 238]);
 const ofLevels = (xs) => Object.fromEntries(LEVELS.map((id, i) => [id, xs[i]]));
 const RATING_2 = ofLevels([514, 670, 785, 944, 1059, 1208, 1320, 1420, 1542, 1700, 1797, 1876, 1982, 2104, 2239, 2339, 2460, 2574, 2683, 2807, 2877]);
 const RATING_SE_2 = ofLevels([0, 18, 19, 21, 22, 25, 38, 43, 47, 53, 57, 60, 63, 66, 70, 72, 75, 79, 82, 85, 91]);
+const RATING_3 = ofLevels([517, 671, 781, 937, 1063, 1191, 1268, 1397, 1509, 1606, 1747, 1908, 1990, 2102, 2240, 2339, 2460, 2573, 2682, 2806, 2875]);
+const RATING_SE_3 = ofLevels([0, 18, 19, 20, 23, 46, 53, 64, 73, 81, 89, 95, 100, 102, 104, 106, 108, 111, 113, 115, 119]);
 
 /**
  * The personas: one per rung, each with a style from persona.js and an icon
@@ -234,9 +240,11 @@ function opponentOf(level, lad) {
   const old = lad == null && Number.isFinite(RATING_80[level]);
   // …and a ladder-2 game (8.1 … 12.0): that ladder's
   const two = lad === 2 && Number.isFinite(RATING_2[level]);
-  const r = old ? RATING_80[level] : two ? RATING_2[level] : ratingOf(level);
+  // …and a ladder-3 game (13.0 … 18.0)
+  const three = lad === 3 && Number.isFinite(RATING_3[level]);
+  const r = old ? RATING_80[level] : two ? RATING_2[level] : three ? RATING_3[level] : ratingOf(level);
   if (r == null) return null;
-  return { r, rd: Math.max(30, (old ? RATING_SE_80 : two ? RATING_SE_2 : RATING_SE)[level] || 0) };
+  return { r, rd: Math.max(30, (old ? RATING_SE_80 : two ? RATING_SE_2 : three ? RATING_SE_3 : RATING_SE)[level] || 0) };
 }
 
 const SCORE = { win: 1, draw: 0.5, loss: 0 };

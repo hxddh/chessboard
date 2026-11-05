@@ -170,42 +170,129 @@ const PLACEMENT = STUDY.split(" ")[0];
   await ctx.close();
 }
 
-// --- 3. a set-up position round-trips through a save slot ------------------
-// The slot writes a PGN and the loader reads one back through the ordinary
-// import path, so the same movetext-free shape has to survive both ends. It
-// used not to survive either: the slot refused to save a game with no moves,
-// and the importer called the result malformed.
+// --- 3. 19.0 S7: the save slots are gone; their games go into the library --
+// A profile from 18.0 with three slots holding games (and one holding a
+// set-up position with no moves) comes up with the three games in the
+// library, tagged 旧存档槽 n, openable onto the board; the set-up, which the
+// library cannot keep, stays in chess.slots for 导出全部数据.
 {
   const ctx = await freshContext();
+  await ctx.addInitScript(([study]) => {
+    if (sessionStorage.getItem("slotsSeeded")) return;
+    sessionStorage.setItem("slotsSeeded", "1");
+    const mk = (moves) => ({ pgn: '[Event "?"]\n[White "A"]\n[Black "B"]\n[Result "*"]\n\n' + moves + " *", savedAt: Date.now() - 1e7, mode: "pvp" });
+    localStorage.setItem("chess.slots", JSON.stringify({ v: 1, slots: [
+      mk("1. d4 d5 2. c4 e6"), null, mk("1. e4 c5 2. Nf3 d6 3. d4"), mk("1. c4 e5"),
+      { pgn: '[SetUp "1"]\n[FEN "' + study + '"]\n[Result "*"]\n\n*', savedAt: Date.now(), mode: "pvp" },
+    ] }));
+  }, [STUDY]);
   const { page, errs } = await open(ctx);
-  await page.click("#more-tools");
-  await page.click("#fen-load-open");
-  await page.fill("#fen-input", STUDY);
-  await page.click("#fen-load");
+  await page.waitForFunction(() => window.__chess.library && window.__chess.library().games.length >= 3, null, { timeout: 20000 }).catch(() => {});
+  const r = await page.evaluate(() => ({
+    events: window.__chess.library().games.map((g) => g.event).sort(),
+    slots: JSON.parse(localStorage.getItem("chess.slots") || "null"),
+    button: !!document.getElementById("slots-open"),
+  }));
+  assert(JSON.stringify(r.events) === JSON.stringify(["旧存档槽 1", "旧存档槽 3", "旧存档槽 4"]),
+    "S7: the three slot games are in the library, each tagged with its slot — " + JSON.stringify(r.events));
+  assert(r.slots && r.slots.slots.filter(Boolean).length === 1 && r.slots.slots[4] && r.slots.slots[4].pgn.includes(STUDY),
+    "S7: the slots that moved are cleared; the set-up with no moves stays in chess.slots");
+  assert(!r.button, "S7: the ⋯ menu has no 存档槽 any more");
+  // one of them opens onto the board, from the library's list (19.0 S1: on 我的)
+  await page.click('#rail button[data-view="me"]').catch(() => {});
   await page.waitForTimeout(400);
-
-  await page.click("#slots-open");
-  await page.click("#slots-list button[data-save='0']");
-  await page.waitForTimeout(300);
-  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.slots") || "{}"));
-  const slot0 = stored && stored.slots && stored.slots[0];
-  assert(!!slot0, "a position with no moves yet can be parked in a slot");
-  assert(slot0 && slot0.pgn.includes(STUDY), "…and the slot holds the position itself");
-  await page.click("#slots-close");
-
-  // wipe the board, then read the slot back
-  await surface(page, "btn-new");
-  await page.click("#ng-start");   // v7-8-plan §4: the new-game dialog, one step
-  await page.waitForTimeout(300);
-  await page.click("#slots-open");
-  await page.click("#slots-list button[data-load='0']");
-  await page.waitForTimeout(400);
-  await page.click("#confirm-ok").catch(() => {});
+  await page.click("#lib-open");
+  await page.waitForSelector("#lib-list button[data-lib]", { timeout: 8000 }).catch(() => {});
+  await page.click("#lib-list button[data-lib]");
   await page.waitForTimeout(500);
-  const live = await shownFen(page);
-  assert(live.split(" ")[0] === PLACEMENT,
-    "loading the slot puts the position back on the board — shows " + live);
-  assert(errs.length === 0, "no JS exception through the slot round trip — " + errs.join(" / "));
+  await page.click("#confirm-ok").catch(() => {});
+  await page.waitForTimeout(600);
+  const rows = await page.evaluate(() => document.querySelectorAll(".mlrow").length);
+  assert(rows >= 1, "S7: a slot game opens from the library onto the board (" + rows + " rows)");
+  // a second launch does not import them twice
+  await page.reload();
+  await page.waitForTimeout(4000);
+  const n2 = await page.evaluate(() => window.__chess.library ? window.__chess.library().games.length : -1);
+  assert(n2 === 3, "S7: the next launch finds nothing left to move (" + n2 + " games)");
+  assert(errs.length === 0, "no JS exception through the slot migration — " + errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 3b. 19.0 S4: an 18.0 settings file reads into the merged controls -------
+// The sound switch is the volume now (0 = off), and coordinates are one row of
+// 关 / 盘外 / 盘内: an old 「sound off, volume 80」 opens at 0 and stays silent,
+// an old 「coordinates off」 shows 关; dragging the volume up turns it on.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
+  await ctx.addInitScript(() => {
+    if (sessionStorage.getItem("s4Seeded")) return;
+    sessionStorage.setItem("s4Seeded", "1");
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", soundOn: false, volume: 80,
+      coordsOn: false, hash: 128, boardFrame: "frame", setCat: "sound", difficulty: "normal", personaId: "greedy" }));
+  });
+  const { page, errs } = await open(ctx);
+  await page.click('.rail-btn[data-view="settings"]');
+  await page.waitForTimeout(300);
+  const r = await page.evaluate(() => ({
+    cat: (document.querySelector(".set-cat[aria-selected='true']") || {}).dataset?.cat,
+    vol: document.getElementById("opt-volume").value,
+    coords: [...document.querySelectorAll("#coords-seg button.active")].map((b) => b.dataset.coords),
+  }));
+  assert(r.cat === "general" && r.vol === "0", "S4: an old 声音 category opens 通用, and an old 「off」 is a volume of 0 — " + JSON.stringify(r));
+  assert(r.coords.join() === "off", "S4: old 「coordinates off」 shows 关 — " + JSON.stringify(r));
+  await page.evaluate(() => { const v = document.getElementById("opt-volume"); v.value = "60"; v.dispatchEvent(new Event("input")); v.dispatchEvent(new Event("change")); });
+  await page.waitForTimeout(300);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}"));
+  assert(saved.soundOn === true && saved.volume === 60, "S4: dragging the volume up turns the sound on (" + saved.soundOn + " / " + saved.volume + ")");
+  // 19.0 S5: no 陪练风格 row — an 18.0 中级 + 贪吃子 reads as 索尔, whose style is none
+  await page.waitForFunction(() => (JSON.parse(localStorage.getItem("chess.settings") || "{}").personaId) === "off", null, { timeout: 10000 }).catch(() => {});
+  const persona = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}").personaId);
+  assert(persona === "off", "S5: an old style on a rung reads as that rung's opponent's own (" + persona + ")");
+  assert(errs.length === 0, "no JS exception reading an 18.0 settings file — " + errs.join(" / "));
+  await ctx.close();
+}
+
+// --- 3c. 19.0 S8: an 18.0 settings file naming a set and a board that went ----
+// 18.0 offered seven sets and five boards; 19.0 offers Merida / 伯内特 / 经典
+// and 木 / 绿 / 蓝. A picked Fantasy on marble opens on Merida and wood — the
+// default's chunk fetched, never the gone one's — and the pickers show it.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN", colorScheme: "light" });
+  await ctx.addInitScript(() => {
+    if (sessionStorage.getItem("s8Seeded")) return;
+    sessionStorage.setItem("s8Seeded", "1");
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false,
+      appearance: "light", boardId: "marble", boardFrame: "frame", pieceSet: "fantasy", pieceSetPicked: true }));
+  });
+  const { page, errs } = await open(ctx);
+  await page.waitForFunction(() => window.__chess && window.__chess.board().imageRedraws >= 1, null, { timeout: 10000 }).catch(() => {});
+  const r = await page.evaluate(() => ({
+    attrs: [document.documentElement.dataset.theme, document.documentElement.dataset.board, document.documentElement.dataset.frame].join("/"),
+    chunks: performance.getEntriesByType("resource").filter((e) => /chunk-(merida|pieces-\w+)\.js$/.test(e.name)).map((e) => e.name.split("/").pop()),
+    drawn: window.__chess.board().imageRedraws,
+  }));
+  assert(r.attrs === "day/wood/frame", "S8: an 18.0 marble board opens on wood, the rest of the look kept (" + r.attrs + ")");
+  assert(r.chunks.join() === "chunk-merida.js" && r.drawn >= 1,
+    "S8: an 18.0 Fantasy opens on Merida — its chunk fetched and drawn, no removed set's asked for (" + r.chunks.join(", ") + "; " + r.drawn + " draws)");
+  await page.click('.rail-btn[data-view="settings"]');
+  await page.waitForTimeout(300);
+  await page.click("#cat-board");
+  await page.waitForTimeout(300);
+  const ui = await page.evaluate(() => ({
+    boards: [...document.querySelectorAll("#board-pick-seg button")].map((b) => b.dataset.boardId).join(),
+    sets: [...document.querySelectorAll("#piece-pick-seg button")].map((b) => b.dataset.pieceSet).join(),
+    on: [...document.querySelectorAll("#board-pick-seg button.active, #piece-pick-seg button.active")].map((b) => b.dataset.boardId || b.dataset.pieceSet).join(),
+  }));
+  assert(ui.boards === "wood,green,blue" && ui.sets === "merida,cburnett,classic",
+    "S8: the pickers offer three boards and three sets (" + ui.boards + " / " + ui.sets + ")");
+  assert(ui.on === "wood,merida", "S8: …and show wood and Merida chosen (" + ui.on + ")");
+  // anything that saves settings writes the defaults back over the gone names
+  await page.evaluate(() => document.querySelector('#board-pick-seg button[data-board-id="green"]').click());
+  await page.evaluate(() => document.querySelector('#board-pick-seg button[data-board-id="wood"]').click());
+  await page.waitForTimeout(300);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.settings") || "{}"));
+  assert(saved.boardId === "wood" && saved.pieceSet === "merida", "S8: the next save writes wood / Merida (" + saved.boardId + " / " + saved.pieceSet + ")");
+  assert(errs.length === 0, "S8: no JS exception reading an 18.0 settings file with a removed set and board — " + errs.join(" / "));
   await ctx.close();
 }
 
@@ -366,9 +453,10 @@ const PLACEMENT = STUDY.split(" ")[0];
   await page.waitForTimeout(300);
   await page.click('#rail button[data-view="me"]');   // v8-0-plan A1: the record is the 我的 page
   await page.waitForTimeout(500);
-  const stats = await page.evaluate(() =>
-    (document.getElementById("sec-stats") || {}).textContent.replace(/\s+/g, " "));
-  assert(/1\s*胜/.test(stats) && /0\s*负/.test(stats), `统计段记到了这一胜(「${stats.slice(0, 40)}」)`);
+  // 19.0 S3: 统计 left 我的 — the game is a day on the calendar (and a row in the history, below)
+  await page.waitForFunction(() => { const e = document.getElementById("sec-cal"); return !!e && !e.hidden; }, null, { timeout: 5000 }).catch(() => {});
+  const cal = await page.evaluate(() => (document.getElementById("me-cal-meta") || {}).textContent || "");
+  assert(/1/.test(cal), `练习日历记到了今天这一局(「${cal}」)`);
   // the key is chess.achv — persist.js KEYS, not the name the section has
   const ach = await page.evaluate(() => {
     const raw = localStorage.getItem("chess.achv");
@@ -379,13 +467,13 @@ const PLACEMENT = STUDY.split(" ")[0];
   assert(ach >= 1, `成就真的落了盘(解锁 ${ach} 个)`);
 
   // v8-0-plan C1: 「全部 N 局」 opens the library's list on its 本机 games
-  // (9.0 S4: 对局历史 is on 棋谱 now, not on 我的)
-  await page.click('#rail button[data-view="library"]');
+  // (9.0 S4: 对局历史 is on 棋谱 now, not on 我的 — 19.0 S1: on 我的 again, 棋谱 having left the rail)
+  await page.click('#rail button[data-view="me"]');
   await page.waitForTimeout(400);
   const preview = await page.evaluate(() => ({
-    onLib: !!document.querySelector("#page-library #sec-history"),
+    onMe: !!document.querySelector("#page-me #sec-history"),
     rows: document.querySelectorAll("#hist-body [data-hist]").length }));
-  assert(preview.onLib && preview.rows === 1, `对局历史在「棋谱」页上，预览里就是这一局(${JSON.stringify(preview)})`);
+  assert(preview.onMe && preview.rows === 1, `对局历史在「我的」页上，预览里就是这一局(${JSON.stringify(preview)})`);
   await page.click("#hist-open");
   await page.waitForTimeout(800);
   const rows = await page.evaluate(() =>
@@ -533,8 +621,7 @@ const PLACEMENT = STUDY.split(" ")[0];
     };
   });
   const { page, errs } = await open(ctx);
-  const view = () => page.evaluate(() => [...document.querySelectorAll("#orient-seg button")]
-    .filter((b) => b.classList.contains("active")).map((b) => b.dataset.orient)[0]);
+  const view = () => page.evaluate(() => (window.__chess.flipped() ? "b" : "w"));
   const play = async (sqr) => {
     const flipped = (await view()) === "b";
     const pt = await page.evaluate(([x, fl]) => {
@@ -604,8 +691,7 @@ const PLACEMENT = STUDY.split(" ")[0];
 {
   const ctx = await freshContext();
   const { page, errs } = await open(ctx);
-  const view = () => page.evaluate(() => [...document.querySelectorAll("#orient-seg button")]
-    .filter((b) => b.classList.contains("active")).map((b) => b.dataset.orient)[0]);
+  const view = () => page.evaluate(() => (window.__chess.flipped() ? "b" : "w"));
   const play = async (sqr) => {
     const flipped = (await view()) === "b";
     const pt = await page.evaluate(([x, fl]) => {
@@ -1674,8 +1760,8 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
         saved: s.appearance + "/" + s.boardId, frameSaved: s.boardFrame, pieceSet: s.pieceSet };
     });
     // anything that saves settings writes the look back
-    await page.evaluate(() => document.getElementById("opt-coords").click());
-    await page.evaluate(() => document.getElementById("opt-coords").click());
+    await page.evaluate(() => document.querySelector('#coords-seg button[data-coords="off"]').click());
+    await page.evaluate(() => document.querySelector('#coords-seg button[data-coords="in"]').click());
     await page.waitForTimeout(300);
     const first = await read();
     assert(first.attrs === attrs && first.frame === "flat", `A3 ${tag}:打开是 ${attrs}、平盘(实际 ${first.attrs}、${first.frame})`);
@@ -1709,7 +1795,7 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   const toAdvanced = async () => {
     await page.click('#rail button[data-view="settings"]');
     await page.waitForTimeout(200);
-    await page.click("#cat-advanced");
+    await page.click("#cat-game");
     await page.waitForTimeout(200);
   };
   await toAdvanced();

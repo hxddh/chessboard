@@ -50,10 +50,10 @@ const PLAY = ["ai", "pvp"];
    row for the current mode does not run — the same answer its letter gives. */
 export const KEY_HELP = [
   { keys: ["P"], k: "keys.panel", in: ANY, cmd: ["view.panel"] },
-  // 9.0 S5: the settings page, every desktop app's key — and the five places
+  // 9.0 S5: the settings page, every desktop app's key — and the four places
   { keys: [], k: "keys.prefs", in: ANY, cmd: ["go.settings"] },
-  // one row for the five, in the rail's order: the sheet is one screen
-  { keys: [], k: "keys.go", in: ANY, cmd: ["go.home", "go.play", "go.train", "go.library", "go.me"] },
+  // one row for the four (19.0 S1: 棋谱 left), in the rail's order: the sheet is one screen
+  { keys: [], k: "keys.go", in: ANY, cmd: ["go.home", "go.play", "go.train", "go.me"] },
   { keys: ["N"], k: "keys.new", in: PLAY, cmd: ["game.new"] },
   { keys: ["N"], k: "keys.next", in: ["puzzle"] },
   { keys: ["R"], k: "keys.retry", in: ["learn", "puzzle"] },
@@ -106,8 +106,7 @@ export const MENU_ACCEL = {
   "go.home": { key: "1", mods: ["primary"] },
   "go.play": { key: "2", mods: ["primary"] },
   "go.train": { key: "3", mods: ["primary"] },
-  "go.library": { key: "4", mods: ["primary"] },
-  "go.me": { key: "5", mods: ["primary"] },
+  "go.me": { key: "4", mods: ["primary"] },
   "go.settings": { key: ",", mods: ["primary"] },
 };
 /**
@@ -221,16 +220,15 @@ export function createNativeCommands(d) {
     "view.next": () => d.setViewIndex(store.game.viewIndex + 1),
     "view.escape": () => d.escapeKey(),
     "help.keys": () => openKeyHelp(),
-    // v8-2-plan T4: the 棋谱库 page, at its 我的开局书 section
-    // 9.0 S5: the menu bar's 前往 — the rail's six doors
+    // 9.0 S5: the menu bar's 前往 — the rail's doors
     "go.home": () => d.go("home"),
     "go.play": () => d.go("play"),
     "go.train": () => d.go("train"),
-    "go.library": () => d.go("library"),
     "go.me": () => d.go("me"),
     "go.settings": () => d.go("settings"),
+    // v8-2-plan T4: 我的开局书 — 19.0 S1: under 训练 · 开局, not the 棋谱 page
     "view.repertoire": () => {
-      d.go("library");
+      d.openTrain("opening");
       const sec = doc.getElementById("sec-rep");
       if (sec) sec.scrollIntoView({ block: "start" });
     },
@@ -242,7 +240,9 @@ export function createNativeCommands(d) {
    * behind one, so it mirrors what "?" does: it closes the sheet when the
    * sheet is what is up, and stays out of the way of anything else.
    */
-  function run(id) {
+  function run(id0) {
+    // 19.0 S1: 棋谱 left the rail and the menu; an older shell's 棋谱 opens 我的
+    const id = id0 === "go.library" ? "go.me" : id0;
     if (!NATIVE_COMMANDS[id]) return;
     // Escape is the key that applies WITH a dialog open — it is how dialogs
     // close — so it passes neither gate below
@@ -255,7 +255,7 @@ export function createNativeCommands(d) {
     if (dialogOpen()) return;
     // …nor behind a page of the top level (v8-0-plan A1), as the letter keys
     // are not: the board and its panel are inert under it (Codex on #86).
-    // 开局书 goes to a page itself (v8-2-plan T4), so a page is no obstacle
+    // 开局书 goes to 训练 itself (v8-2-plan T4, 19.0 S1), so a page is no obstacle
     if (d.pageShown && d.pageShown() && id !== "view.repertoire" && !id.startsWith("go.")) return;
     if (!commandModes(id).has(store.session.mode)) return;
     NATIVE_COMMANDS[id]();

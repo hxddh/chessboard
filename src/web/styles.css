@@ -484,10 +484,11 @@
        follows the appearance and takes the board's warm or cool family. Five
        boards, each one its own thing — 7.x had four palettes and three
        boards, 日's squares sitting ΔE00 6.4 from 木's on the dark square and
-       2.8 on the light one. The closest two dark squares here are 10 apart
-       (docs/measured.json boardLook). 17.0 T: every board is two flat
+       2.8 on the light one. The closest two dark squares are at least 10
+       apart (docs/measured.json boardLook). 17.0 T: every board is two flat
        colours — the textures laid over them (wood's grain, paper's fibre,
-       marble's veins) are gone.
+       marble's veins) are gone. 19.0 S8: three boards — paper and marble
+       are gone, and with paper its ink-printed men (--piece-ink).
 
        Every mark on every board is held to two ceilings, over the light
        square AND the dark one (scripts/lib/mark-colour.mjs, test-chess):
@@ -510,7 +511,6 @@
          undoes 缺陷 17 (men sitting on flat colour with no contact at all);
          half keeps the contact at the base and loses the smudge. */
       --piece-shadow: rgba(38,20,4,.13);
-      --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #e0b07a, #c9965c 45%, #b8864e);
       --board-shadow: 0 0 0 1px rgba(0,0,0,.16), 0 3px 8px rgba(0,0,0,.18), 0 22px 56px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.22);
@@ -567,7 +567,6 @@
          at ΔL* 28 rather than Lichess's 35 (see the ceilings above). Marks
          in yellow and a dark olive, the way green boards mark a move. */
       --piece-shadow: rgba(10,26,4,.15);
-      --piece-ink: none;
 
       --board-frame: linear-gradient(145deg, #1a2e28, #15241f 50%, #101c18);
       --coord-ink: rgba(220,235,228,.55);
@@ -602,7 +601,6 @@
          last move on a blue board is a tint of the board — to a yellow-green
          and an orange hint. */
       --piece-shadow: rgba(30,44,54,.10);
-      --piece-ink: none;
 
       --board-frame: linear-gradient(180deg, #fffcf5, #f7f2e6);
       --coord-ink: rgba(42,49,64,.55);
@@ -631,77 +629,6 @@
       --engine-arrow-alt: rgba(255, 150, 0, var(--mark-soft));
       --board-shadow: 0 0 0 1px rgba(40,50,70,.08), 0 3px 8px rgba(40,50,70,.08), 0 20px 48px rgba(40,50,70,.14), inset 0 0 0 1px #d8d0c0;
     }
-    [data-board="paper"] {
-      /* 纸墨: the diagram page. Cream paper, dark squares a grey ink wash
-         (flat as of 17.0 T), and the men in ink (board-skin.js): their white is the paper's, their black the ink's (--piece-ink,
-         "ink paper"). The lowest-contrast board here (ΔL* 19), which is what
-         a printed diagram is — and so the marks are quiet too, an indigo
-         last move and a vermilion check, the two colours a printer has. */
-      --piece-shadow: rgba(40,34,20,.08);
-      --piece-ink: #1d2230 #f6f1e4;
-
-      --board-frame: linear-gradient(145deg, #efe6d2, #e3d7bd 50%, #d8caac);
-      --board-shadow: 0 0 0 1px rgba(60,48,20,.10), 0 3px 8px rgba(60,48,20,.10), 0 20px 48px rgba(60,48,20,.16), inset 0 1px 0 rgba(255,255,255,.6);
-      --coord-ink: rgba(40,36,30,.62);
-      --board-edge: rgba(60,50,30,.24);
-      --sq-light: #f3eee2;
-      --sq-dark: #c4b9a2;
-      --sq-sel: rgba(30, 60, 150, var(--mark-mid));
-      --sq-last: rgba(40, 90, 200, var(--mark-soft));
-      --sq-check: rgba(200, 40, 30, var(--mark-mid));
-      --sq-hint: rgba(20, 140, 90, var(--mark-mid));
-      --sq-star: rgba(200, 120, 0, var(--mark-strong));
-      --sq-star-edge: rgba(70, 40, 0, var(--mark-mid));
-      --sq-flash: rgba(20, 140, 90, var(--mark-mid));
-      --sq-cursor: rgba(255,255,255,.95);
-      --sq-cursor-edge: rgba(29,34,48,.60);
-      --sq-dot: rgba(29, 34, 48, var(--mark-soft));
-      --sq-ring: rgba(29, 34, 48, var(--mark-soft));
-      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
-      --shape-g: rgba(21, 120, 27, var(--mark-strong));
-      --shape-r: rgba(136, 32, 32, var(--mark-strong));
-      --shape-b: rgba(0, 48, 136, var(--mark-strong));
-      --shape-y: rgba(232, 143, 0, var(--mark-strong));
-      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
-         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
-      --engine-arrow: rgba(20, 140, 90, var(--mark-mid));
-      --engine-arrow-alt: rgba(20, 140, 90, var(--mark-soft));
-    }
-    [data-board="marble"] {
-      /* White Carrara and a grey bardiglio (flat as of 17.0 T). Neutral
-         where every other board has a hue, which is what sets it apart from
-         blue (ΔE00 10.8 on the dark square) at a similar lightness. */
-      --piece-shadow: rgba(20,20,24,.12);
-      --piece-ink: none;
-
-      --board-frame: linear-gradient(145deg, #d9d6d0, #bfbcb6 50%, #a9a6a0);
-      --board-shadow: 0 0 0 1px rgba(0,0,0,.12), 0 3px 8px rgba(0,0,0,.14), 0 22px 52px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.45);
-      --coord-ink: rgba(30,30,34,.62);
-      --board-edge: rgba(30,30,34,.26);
-      --sq-light: #e9e7e3;
-      --sq-dark: #989796;
-      --sq-sel: rgba(10, 95, 65, var(--mark-mid));
-      --sq-last: rgba(60, 170, 120, var(--mark-soft));
-      --sq-check: rgba(230, 40, 40, var(--mark-mid));
-      --sq-hint: rgba(40, 110, 240, var(--mark-mid));
-      --sq-star: rgba(230, 170, 20, var(--mark-strong));
-      --sq-star-edge: rgba(90, 60, 0, var(--mark-mid));
-      --sq-flash: rgba(10, 130, 80, var(--mark-mid));
-      --sq-cursor: rgba(255,255,255,.95);
-      --sq-cursor-edge: rgba(20,20,24,.58);
-      --sq-dot: rgba(24, 24, 30, var(--mark-soft));
-      --sq-ring: rgba(24, 24, 30, var(--mark-soft));
-      /* the player's arrows and circles, lichess's four letters (v6-plan Q2.4) */
-      --shape-g: rgba(21, 120, 27, var(--mark-strong));
-      --shape-r: rgba(136, 32, 32, var(--mark-strong));
-      --shape-b: rgba(0, 48, 136, var(--mark-strong));
-      --shape-y: rgba(232, 143, 0, var(--mark-strong));
-      /* 7.8 §2: the engine lines on the board — line 1 is the hint's own colour
-         (the review's mistake arrow draws the same move), 2 and 3 a step lighter */
-      --engine-arrow: rgba(40, 110, 240, var(--mark-mid));
-      --engine-arrow-alt: rgba(40, 110, 240, var(--mark-soft));
-    }
-
     /* Board mark strength — one scale, three steps, all four boards.
 
        The four palettes were each tuned by eye and drifted apart: the target
@@ -1470,7 +1397,6 @@
     }
     .side-h-row .side-h { margin: 0; height: auto; }
     .side-h-meta { font-size: 0.75rem; color: var(--muted); }
-    .side-h-end { display: inline-flex; align-items: center; gap: 12px; }
     /* A section that holds more than one heading — statistics, which stacks
        统计 / 对局历史 / 成就 — needs air above every heading but its first.
        This was three `style="margin-top:14px"` attributes in the markup, and
@@ -1779,8 +1705,6 @@
     .op-pick:not([hidden]) { display: block; margin-top: 8px; font-size: 0.875rem; color: var(--text); }
     .op-grid.full ~ #op-you { display: none; }
     #ng-custom-body { display: flex; flex-direction: column; gap: 12px; }
-    .setting-k.has-info { cursor: help; }
-    .setting-k.has-info::after { content: " ⓘ"; }
     /* the dialog is 512px inside: the extra clocks and the four styles each
        take one row, on the same grid as the clock row above them */
     @media (min-width: 600px) {
@@ -1814,9 +1738,8 @@
     }
     .offer-text { flex: 1 1 12em; font-size: 0.875rem; color: var(--text); }
     .offer-bar .act-btn { flex: none; }
-    /* seven sets: 4 + 3, not the 3 + 3 + 1 the five-or-more rule above
-       would give — no segment alone on a line (test-layout 3m3) */
-    #piece-pick-seg { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    /* 19.0 S8: three sets, one line of three — the wrap rule's own; the
+       4 + 3 override seven sets needed is gone */
     .look-name { line-height: var(--lh-tight); }
     /* the selected segment: the accent's one tint and its hairline — the
        selected state is one of the three places the accent is allowed */
@@ -2086,11 +2009,11 @@
        wide 「Win material」 and 「引き分け狙い」 broke inside an 83px cell;
        it steps down to two columns the same way (fit-row.js) */
     .theme-row.wrap.fit-row { grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); }
-    /* 7.7: 为你出一题 stands alone on its row, and one 70px track is narrower
+    /* 7.7: 按主题细分 stands alone on its row, and one 70px track is narrower
        than its five characters plus the 8px sides §1a gave every .act-btn —
-       it broke after 一, leaving 题 on a line of its own. Two tracks, still
-       not the full width (see auto-fill above). */
-    #puzzle-smart, #pz-themes-open { grid-column: span 2; }
+       it broke after the first character. Two tracks, still not the full
+       width (see auto-fill above). 19.0 S6 took 为你出一题, its row-mate. */
+    #pz-themes-open { grid-column: span 2; }
     /* The three weights this family has, and nothing else.
      *
      *   default   — a thing you can do
@@ -3317,6 +3240,12 @@
     .rv-summary {
       margin: 0 0 4px; font-size: 1rem; line-height: var(--lh-body); color: var(--text);
     }
+    /* 19.0 T2: the one thing to work on, and the way to the lesson */
+    .rv-work {
+      margin: 0 0 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+      font-size: 0.875rem; line-height: var(--lh-body); color: var(--text);
+    }
+    .rv-work[hidden] { display: none; }
     /* 9.0 M2: the second layer — accuracies, grades, 从错误中学 and every
        ? / ??, folded under one quiet heading, shut until asked for */
     .rv-full { margin-top: 12px; }
@@ -3573,8 +3502,6 @@
     .rt-acts .pv-act { margin-left: 0; }
 
     .ach-pg { font-size: 0.75rem; color: var(--muted); }
-    /* the "what next?" suggestion under the statistics */
-    .stat-rec { margin-top: 8px; color: var(--text); }
 
     .mvtag { margin-left: 2px; font-weight: 400; font-size: 0.6875rem; }
     .mvtag.t-soft { color: var(--judge-soft); }
@@ -3695,26 +3622,6 @@
        keyboard and a screen reader get it for free. */
     /* 9.0 V1: a door is told by the fill under the pointer, as every other
        row that can be pressed is — not by a dashed rule appearing */
-    /* 12.0 C: a difficulty's record as a bar under its row — won in
-       --chart-now, drawn in the data colour, lost in the mark colour */
-    .stat-row:has(> .wdl) { position: relative; }
-    /* drawn in the row's bottom padding, so the list keeps one row height */
-    .wdl {
-      --w: 0; --d: 0; --l: 0;
-      position: absolute; left: 2px; right: 2px; bottom: 0;
-      display: flex; height: 2px; border-radius: var(--radius-sm); overflow: hidden;
-    }
-    .wdl > i { flex: 0 1 0; min-width: 0; }
-    .wdl > .w { flex-grow: var(--w); background: var(--chart-now); }
-    .wdl > .d { flex-grow: var(--d); background: var(--chart-line); opacity: 0.5; }
-    .wdl > .l { flex-grow: var(--l); background: var(--judge-bad); }
-    /* …and a phase's share of mistakes, the worst one in the mark colour */
-    .me-bar {
-      --p: 0; flex: 0 0 100%; display: block; height: 4px; margin: 2px 0 4px;
-      border-radius: var(--radius-sm);
-      background: linear-gradient(90deg, var(--chart-line) calc(var(--p) * 1%), var(--chart-grid) 0);
-    }
-    .me-bar.is-weak { background: linear-gradient(90deg, var(--judge-bad) calc(var(--p) * 1%), var(--chart-grid) 0); }
     button.stat-row, button.hint-link {
       width: 100%; font: inherit; text-align: left;
       background: transparent; border: 0;
@@ -3766,8 +3673,8 @@
     /* One row shape for both lists of saved games — the history and the save
        slots. The slots built theirs from two inline styles saying the same
        thing, which is a copy the stylesheet cannot see. */
-    .hist-row, .pick-row { display: flex; gap: 8px; align-items: stretch; }
-    .hist-row .pick-item, .pick-row .pick-item { flex: 1; min-width: 0; padding: 8px 12px; }
+    .hist-row { display: flex; gap: 8px; align-items: stretch; }
+    .hist-row .pick-item { flex: 1; min-width: 0; padding: 8px 12px; }
     /* 7.3 §4C: a row's second action belongs to the row.
        「再深一遍」 and 「PGN」 were `.tool-btn` — the same filled, bordered,
        body-sized control the dialog's own footer uses — sitting in the gap
@@ -3930,10 +3837,10 @@ kbd.accel {
   display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 8px;
   padding: 2px; font-size: 0.875rem;
 }
+/* 19.0 S2: the library's part of the diagnosis, under 强项 / 弱项 */
+#me-sw:not([hidden]) + #diag-lib { margin-top: 16px; }
 .me-k { min-width: 0; color: var(--muted); overflow-wrap: anywhere; }
 .me-v { margin-left: auto; color: var(--text); font-size: 0.875rem; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
-.me-metric + .me-metric { margin-top: 8px; }
-.me-metric .hint { margin: 0 2px; }
 
 
 /* 6.0 (v6-plan Q3.6): a higher-contrast variant, from the same tokens. Muted
@@ -4285,6 +4192,15 @@ span[data-icon] { display: inline-grid; place-items: center; }
   margin: 0;
 }
 .rec-block.empty > .close-row > .btn-pair { display: contents; }
+/* 19.0 S1: 我的开局书 in the panel (训练 · 开局): its buttons wrap at the
+   panel's width; on the empty card the two imports are a pair under 生成 */
+#sec-rep .close-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+#sec-rep .btn-pair { display: contents; }
+#sec-rep .rec-block.empty > .close-row { display: grid; grid-template-columns: 1fr 1fr; }
+#sec-rep .rec-block.empty #rep-seed { grid-column: 1 / -1; }
+/* 19.0 S1: the library's empty card is half of 我的's width now, not a page —
+   four labels in one row ran edge to edge in English; two by two they breathe */
+#sec-library .rec-block.empty > .close-row { grid-auto-flow: row; grid-template-columns: 1fr 1fr; }
 .rec-block.empty > .stats-body:empty { display: none; }
 
 /* ------------------------------------------------------------------
@@ -4322,7 +4238,7 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .train-seg { margin: 12px 0 4px; }
 .classic-mode { margin: 12px 0; } /* 15.0 F: a step under the switch too, as under every segment */
 /* 9.0 S3 — the picker under the puzzle (v9.css .train__hero / .tiles /
-   .modes): the rating with its curve and 为你出一题 in one card, the review
+   .modes): the rating with its curve in one card (19.0 S6: 为你出一题 is 下一题's rule now), the review
    queue as a row, the six kinds as tiles, the runs as two labelled rows.
    The first block of the picker starts a group. */
 #sec-puzzle > .pz-hero { margin-top: 12px; }
@@ -4344,7 +4260,6 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .pz-hero-more { flex-basis: 100%; font-size: 0.875rem; font-weight: 400; color: var(--muted); }
 .pz-rating-soon { font-size: 0.75rem; color: var(--muted); align-self: center; }
 #pz-hero #pz-rating-curve { height: 40px; border-bottom: 0; }
-#puzzle-smart { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; }
 .pz-review {
   appearance: none; cursor: pointer; font: inherit; color: var(--text); text-align: left;
   display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 12px;
@@ -4397,9 +4312,6 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .pz-vis-row .tool-btn { height: var(--ctl-h); white-space: nowrap; }
 #pz-vis .lesson-controls { margin: 8px 0 0; }
 #pz-vis .lesson-controls:not(:has(> :not([hidden]))) { display: none; }
-/* the nudge's row with its one button hidden is still a box, and a flex
-   gap is paid for every box — an empty one is not a block of the page */
-#sec-puzzle > .link-row:not(:has(> :not([hidden]))) { display: none; }
 /* …nor is 重做 / 下一题's row while a run has hidden both (8 / 20, not 16) */
 #sec-puzzle > .lesson-controls:not(:has(> :not([hidden]))) { display: none; }
 

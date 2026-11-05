@@ -557,8 +557,9 @@ export async function run() {
       // 9.0 S5: one place — six categories, in the list's order, each naming a
       // pane that exists; no second settings surface in the panel or a window
       const cats = [...markup.matchAll(/role="tab" class="set-cat" id="cat-([a-z]+)" data-cat="\1"[^>]*aria-controls="set-\1"/g)].map((m) => m[1]);
-      assert(cats.join() === "general,board,sound,game,data,advanced",
-        "S5: the settings page runs 通用 → 棋盘 → 声音 → 对局 → 数据 → 高级 (" + cats.join(" → ") + ")");
+      // 19.0 S4: four — 声音 went into 通用 and 高级 into 对局
+      assert(cats.join() === "general,board,game,data",
+        "S4: the settings page runs 通用 → 棋盘 → 对局 → 数据 (" + cats.join(" → ") + ")");
       assert(cats.every((c) => markup.includes('<div class="set-pane" id="set-' + c + '"')),
         "S5: every category points at a pane that exists");
       assert(!/id="pane-setup"|id="prefs-modal"|id="tab-setup"/.test(markup),
@@ -569,7 +570,7 @@ export async function run() {
         "S5: the language is the first row of 通用");
       // the deletions are the last group of 数据: 2.1 had them in the middle
       // of a page, the only red on it
-      const data = markup.slice(markup.indexOf('id="set-data"'), markup.indexOf('id="set-advanced"'));
+      const data = markup.slice(markup.indexOf('id="set-data"'), markup.indexOf('</main>', markup.indexOf('id="set-data"')));
       const dHeads = [...data.matchAll(/data-i18n="((?:side|lib)\.[a-zA-Z]+)"[^>]*>/g)].map((m) => m[1])
         .filter((k) => ["lib.sync", "side.learning", "side.allData", "side.danger"].includes(k));
       assert(dHeads[dHeads.length - 1] === "side.danger",
@@ -578,9 +579,10 @@ export async function run() {
       const ng = markup.slice(markup.indexOf('id="newgame-modal"'), markup.indexOf('id="confirm-modal"'));
       // 10.0 M0: the rung is the opponent card (row-opponent); the two rows of
       // rung names that repeated the cards are gone
-      assert(["row-opponent", "row-persona", "row-color", "row-clock"].every((id) => ng.includes('id="' + id + '"')) &&
-        !ng.includes('data-diff="'),
-        "S5: opponent, style, side and clock live in the new-game dialog — the rung is chosen on the cards only");
+      // 19.0 S5: the style is the card's own — no 陪练风格 row
+      assert(["row-opponent", "row-color", "row-clock"].every((id) => ng.includes('id="' + id + '"')) &&
+        !ng.includes('data-diff="') && !ng.includes('id="row-persona"'),
+        "S5: opponent, side and clock live in the new-game dialog — the rung and its style are chosen on the cards only");
 
       // The heading is a promise about what is inside. 「外观」 once held the
       // language and the sound; since A1 each has its own group, and the rows
@@ -620,8 +622,9 @@ export async function run() {
       // One of the three doors is still spelled in app.js; the F key moved to
       // a11y.js and the native View menu to native-commands.js in 6.1, and both
       // are checked by pressing them (see the keyboard blocks above).
-      for (const caller of [/setFlipped\(b\.dataset\.orient === "b"\)/])
-        assert(caller.test(app), "…and it is what the three doors call — " + caller.source.slice(0, 26));
+      // 19.0 S4: the settings page's 棋盘方向 is gone; the palette's 翻转 is the door spelled here
+      for (const caller of [/flip: \(\) => \{ Shell\.go\("play"\); setFlipped\(!store\.game\.flipped\); \}/])
+        assert(caller.test(app), "…and it is what the doors call — " + caller.source.slice(0, 26));
       assert(writes <= 8, "no door writes store.game.flipped for itself (" + writes + " assignments)");
     }
 

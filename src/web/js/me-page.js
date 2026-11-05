@@ -1,111 +1,39 @@
 /**
- * 「我的」页：进步、成就，和什么都还没记下时的入口卡片。
+ * 「我的」页：四块记录、诊断、成就，和什么都还没记下时的入口卡片。
  *
- * v8-0-plan B5. The 我的 page's own renderers — the 进步 rows and the
- * accuracy sparkline, the achievements list, the empty-page entry card —
- * carved out of app.js (F4) without a change in behaviour, so the progress
- * page has a module of its own to grow in.
+ * v8-0-plan B5. The 我的 page's own renderers — carved out of app.js (F4)
+ * without a change in behaviour, so the progress page has a module of its
+ * own to grow in.
  *
  * Everything it needs from the app arrives in the bag handed to
  * `createMePage()` (createLibraryUI's shape); nothing here reaches back into
  * app.js.
  *
- * B5 adds 成长 (#sec-growth): the engine-game rating curve, the practice
- * calendar with its streak, strengths and weaknesses by theme, and three
- * cross-game figures. The arithmetic is progress-metrics.js; this is the
+ * 19.0 S3: four blocks — the two ratings with their curves, the practice
+ * calendar with its streak, the endgame camp, the badge that is next (B5's
+ * 成长 was one of nine). The arithmetic is progress-metrics.js; this is the
  * drawing, and the rule that a block with nothing to show is not there.
+ * 19.0 S2: and the one diagnosis — 强项 / 弱项, and what the library's games
+ * add up to (it was the 棋谱 page's sheet, library-ui.js's renderer).
  * @module me-page
  */
-import { ChessProgressMetrics as Metrics } from "./progress-metrics.js";
-import { tdot } from "./tdot.js";
-import { chartTokens, drawSpark } from "./charts.js";
+// 19.0 S3: a chunk now (chunk-me.js) — the helpers it shares with the
+// bundle come in through `d`, so the chunk carries only this page
 
 /**
  * @param {object} d everything this module borrows from app.js
  */
 export function createMePage(d) {
   const {
-    Icons, Progress, evalAch, libPlayedAt, loadStats, store, t, tf,
-    Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName, Endgames, Vis,
+    Icons, evalAch, libPlayedAt, loadStats, store, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName,
+    Endgames, Metrics, tdot, chartTokens, owedNow, Srs, ratingLabel, ratingTip, diag,
   } = d;
-
-  /**
-   * 进步 — change over time, on the record page (progress.js).
-   * Everything here draws only when it has data (P3): the sparkline needs
-   * two analysed games, the rows need a week with answers in it.
-   */
-  function renderTrends() {
-    invalidate();
-    const head = document.getElementById("trend-head");
-    const body = document.getElementById("trend-body");
-    const cv = document.getElementById("trend-acc");
-    const streakEl = document.getElementById("trend-streak");
-    if (!head || !body || !cv) return;
-    const prog = store.session.progress;
-    // 7.1: the games you played elsewhere are games you played. The library
-    // stores an accuracy per side once a game is analysed, which is the same
-    // measure `stats` records, so the two go on one axis in play order.
-    const libPoints = store.session.library
-      .filter((g) => g.side && g.an && g.an.acc && Number.isFinite(g.an.acc[g.side]))
-      .map((g) => ({ t: libPlayedAt(g), acc: g.an.acc[g.side] }));
-    const series = Progress.accSeries(loadStats().games.concat(libPoints), 30);
-    const rows = Progress.weekOverWeek(prog, Date.now())
-      .filter((r) => r.now != null || r.prev != null)
-      .sort((a, b) => (a.now ?? a.prev) - (b.now ?? b.prev)); // weakest first
-    const wk = prog.weeks[Progress.weekKey(Date.now())];
-    const showCurve = series.length >= 2;
-    const showRows = rows.length > 0 || !!wk;
-    head.hidden = !(showCurve || showRows);
-    cv.hidden = !showCurve;
-    body.hidden = !showRows;
-    const run = Progress.streak(prog, Date.now());
-    if (streakEl) {
-      streakEl.hidden = run < 2;
-      if (run >= 2) streakEl.textContent = tf("daily.streak", [run]);
-    }
-    if (showRows) {
-      body.replaceChildren();
-      for (const r of rows) {
-        const row = document.createElement("div");
-        row.className = "stat-row";
-        const name = document.createElement("span");
-        name.className = "stat-k";
-        name.textContent = t("pz.cat." + r.cat);
-        const val = document.createElement("span");
-        val.className = "stat-v num";
-        const pc = (x) => Math.round(x * 100) + "%";
-        val.textContent = r.now != null && r.prev != null ? tf("trend.row", [pc(r.now), pc(r.prev)])
-          : r.now != null ? tf("trend.rowNew", [pc(r.now)])
-          : tf("trend.rowPrev", [pc(r.prev)]);
-        row.append(name, val);
-        body.appendChild(row);
-      }
-      if (wk && (wk.mined || wk.red)) {
-        const row = document.createElement("div");
-        row.className = "stat-row";
-        const name = document.createElement("span");
-        name.className = "stat-k";
-        name.textContent = t("pz.cat.mine");
-        const val = document.createElement("span");
-        val.className = "stat-v num";
-        val.textContent = tf("trend.mines", [wk.mined, wk.red]);
-        row.append(name, val);
-        body.appendChild(row);
-      }
-    }
-    if (showCurve) drawAccTrend(cv, series);
-  }
-
-  /** The accuracy sparkline (charts.js): 50–100 %, the honest floor for a
-   *  metric that rarely dips below it, and a fixed scale so two visits to
-   *  this page are comparable; 75 % is the reference line. */
-  function drawAccTrend(cv, series) {
-    drawSpark(document, cv, series.map((g) => g.acc), { lo: 50, hi: 100, ref: 75, dots: true });
-  }
 
   function renderAchievements() {
     const el = document.getElementById("ach-body");
     if (!el) return;
+    // 19.0 S1: above the library's buttons — not rebuilt under a press (see invalidate)
+    if (store.ui.pointerPressed) { if (!growth.ach) growth.ach = setTimeout(() => { growth.ach = 0; renderAchievements(); }, 100); return; }
     const res = evalAch();
     const got = res.filter((r) => r.unlocked).length;
     const was = document.getElementById("ach-all");
@@ -199,9 +127,9 @@ export function createMePage(d) {
    * v8-0-plan §5 taught the entry card about the library — with 500 imported
    * games on this page it still opened on 「现在还空着」. It still counted
    * only three things (the library, the engine games, a badge), and the page
-   * draws more than that: one wrong first answer to a puzzle puts a tally
-   * row, a rating and a calendar day on it, under a card saying nothing had
-   * happened yet (B5). Everything the page draws from, then.
+   * draws more than that: one wrong first answer to a puzzle puts a rating
+   * and a calendar day on it, under a card saying nothing had happened yet
+   * (B5). Everything the page draws from, then.
    */
   function hasRecord() {
     const st = store.session.puzzleState || {};
@@ -213,34 +141,27 @@ export function createMePage(d) {
       evalAch().some((r) => r.unlocked);
   }
 
-  // --- 成长 (v8-0-plan B5) ----------------------------------------------------
+  // --- the blocks (v8-0-plan B5, 19.0 S3) --------------------------------------
   //
   // Drawn while the page shows, and then at most every 250 ms: a library
   // pass re-renders the record once a ply, and the diagnosis read here walks
   // every game. Hidden, the canvases have no width to draw at, so nothing is
   // drawn until the page opens (shell.js show → onShow).
-  const growth = { timer: null };
+  const growth = { timer: null, ach: 0 };
   const shownNow = () => store.ui.view === "me";
   function invalidate(now) {
     if (!shownNow()) return;
     if (now) { clearTimeout(growth.timer); growth.timer = null; renderGrowth(); return; }
     if (growth.timer) return;
-    growth.timer = setTimeout(() => { growth.timer = null; if (shownNow()) renderGrowth(); }, 250);
-  }
-
-  /** Every claimed, analysed library game and every analysed engine game, as the metrics read them. */
-  function gameFacts(stats) {
-    const out = [];
-    for (const g of store.session.library || []) {
-      if (!g.side || !g.an) continue;
-      out.push(Metrics.factsOf({ side: g.side, outcome: g.outcome, fen: g.fen, clk: g.clk, tc: g.tc,
-        scalars: g.an.scalars, tags: g.an.tags }));
-    }
-    // an engine game files its extremes when it is analysed (review/analysis.js)
-    for (const g of stats.games) {
-      if (Number.isFinite(g.hi)) out.push(Metrics.factsOf({ side: g.color, outcome: g.result, hi: g.hi, lo: g.lo }));
-    }
-    return out;
+    // 19.0 S1: the library's buttons are under these blocks now — a block
+    // that comes or goes while a pointer is down would move the button being
+    // pressed, and WebKit drops that click (7.6); it waits for the release
+    const tick = () => {
+      if (store.ui.pointerPressed) { growth.timer = setTimeout(tick, 100); return; }
+      growth.timer = null;
+      if (shownNow()) renderGrowth();
+    };
+    growth.timer = setTimeout(tick, 250);
   }
 
   /** The days something happened: games (here and imported), first answers, daily sessions. */
@@ -256,49 +177,55 @@ export function createMePage(d) {
 
   const byId = (id) => document.getElementById(id);
   const setTxt = (node, s) => { if (node && node.textContent !== s) node.textContent = s; };
-  const pct = (x) => Math.round(x * 100) + "%";
+
+  /**
+   * The puzzle rating, once a first answer has moved it, its curve, and the
+   * reviews owed with tomorrow's share (6.0, v6-plan Q3.1 / Q3.3 — the 做题战绩
+   * heading's line, before 19.0 S3 took the rows under it away).
+   */
+  function renderPzRating() {
+    const head = byId("me-pz-head"), meta = byId("rating-meta"), rcv = byId("trend-rating");
+    const st = store.session.puzzleState || {};
+    const hist = Array.isArray(st.rhist) ? st.rhist : [];
+    const owed = owedNow();
+    const tomorrow = Math.max(0, Srs.dueCount(st.missed || {}, Date.now() + 86400000) - owed);
+    const parts = [];
+    if (hist.length) parts.push(ratingLabel());
+    if (owed || tomorrow) parts.push(tf("rec.due", [owed, tomorrow]));
+    head.hidden = !parts.length;
+    setTxt(meta, tdot(...parts));
+    meta.title = hist.length ? ratingTip() : "";
+    rcv.hidden = hist.length < 2;
+    if (!rcv.hidden) drawRatingTrend(rcv, hist.map((h) => h.r));
+    return !head.hidden;
+  }
 
   function renderGrowth() {
-    const sec = byId("sec-growth");
-    if (!sec) return;
+    const rs = byId("sec-ratings");
+    if (!rs) return;
     const stats = loadStats();
+    // the two ratings: shown before drawn — a hidden canvas has no width to draw at
+    rs.hidden = false;
+    const pz = renderPzRating();
     // the engine-game rating: v8-0-plan B4 files one per game (Metrics.ratingAfter)
     const series = Metrics.gameRatingSeries(stats.games, 60);
     const showRating = series.length >= 2;
-    // shown before drawn: a hidden canvas has no width to draw at
-    sec.hidden = false;
     byId("me-rating-head").hidden = byId("me-rating").hidden = !showRating;
     if (showRating) {
       setTxt(byId("me-rating-meta"), String(series[series.length - 1].r));
       drawRatingTrend(byId("me-rating"), series.map((p) => p.r));
     }
+    rs.hidden = !pz && !showRating;
     // the calendar and its streak
     const grid = Metrics.heatGrid(activity(stats), Date.now(), Metrics.HEAT_WEEKS);
-    const cal = byId("me-cal");
-    byId("me-cal-head").hidden = cal.hidden = grid.active === 0;
+    const cs = byId("sec-cal"), cal = byId("me-cal");
+    cs.hidden = grid.active === 0;
     if (grid.active) {
       setTxt(byId("me-cal-meta"), tf("me.calMeta", [grid.cur, grid.best]));
       cal.setAttribute("aria-label", tf("aria.cal", [grid.weeks, grid.active]));
       drawHeat(cal, grid);
     }
-    // strengths and weaknesses, at the diagnosis page's own floor
-    const diag = Library.diagnose(store.session.library, LIB_MIN_GAMES);
-    const sw = Metrics.strengths((store.session.puzzleState || {}).themes, diag);
-    const swEl = byId("me-sw");
-    swEl.hidden = !(sw.strong.length || sw.weak.length);
-    if (!swEl.hidden) renderStrengths(swEl, sw);
-    // the three figures across games, once any game counts towards one
-    const m = Metrics.crossGame(gameFacts(stats));
-    const any = m.convert.n + m.resil.n + m.clock.n > 0;
-    byId("me-metrics-head").hidden = byId("me-metrics").hidden = !any;
-    if (any) renderMetrics(byId("me-metrics"), m);
-    // 12.0 C: where the mistakes fall — the share of moves that were ? or ??
-    // in each phase, as bars, at the same floor (a chart of three games is
-    // the diagnosis page's own warning)
-    const ph = diag.enough ? ["opening", "middle", "end"].filter((k) => diag.phase[k].badRate != null) : [];
-    byId("me-phase-head").hidden = byId("me-phase").hidden = ph.length < 2;
-    if (ph.length >= 2) renderPhase(byId("me-phase"), diag, ph);
-    sec.hidden = !showRating && !grid.active && swEl.hidden && !any && ph.length < 2;
+    renderDiag();
   }
 
   /**
@@ -324,6 +251,30 @@ export function createMePage(d) {
       ctx.fillRect(c.col * (cell + gap), c.row * (cell + gap), cell, cell);
     }
     ctx.globalAlpha = 1;
+  }
+
+  // --- 诊断 (19.0 S2) ------------------------------------------------------------
+  //
+  // One place: the same diagnosis was the 棋谱 page's 看诊断 sheet, and here
+  // twice more as 跨局指标 and 失误按阶段. 强项 / 弱项 read the puzzle themes
+  // with it; the library part is drawn from its sample floor up.
+
+  function renderDiag() {
+    const sec = byId("sec-diag"), box = byId("diag-lib"), swEl = byId("me-sw");
+    if (!sec || !box || !swEl) return;
+    // strengths and weaknesses, at the diagnosis's own floor
+    const sw = Metrics.strengths((store.session.puzzleState || {}).themes, Library.diagnose(store.session.library, LIB_MIN_GAMES));
+    swEl.hidden = !(sw.strong.length || sw.weak.length);
+    if (!swEl.hidden) renderStrengths(swEl, sw);
+    // v8-1-plan T5: any source with enough (the row picks which)
+    const enough = diag.count() >= LIB_MIN_GAMES;
+    box.hidden = !enough;
+    sec.hidden = swEl.hidden && !enough;
+    if (!enough) return;
+    diag.prep(() => invalidate(true));
+    const el = byId("lib-diag");
+    renderDiagnosisInto(el);
+    fitDiagColumn(el);
   }
 
   function renderStrengths(el, sw) {
@@ -358,49 +309,118 @@ export function createMePage(d) {
     return row;
   }
 
-  /**
-   * The three figures. Below its floor a figure has no number, only how
-   * many games it needs and how many it has (the acceptance: 每项指标都标明
-   * 最少需要多少局).
-   */
-  /** A bar per phase, as long as its share of mistakes against the worst one's. */
-  function renderPhase(el, diag, keys) {
-    const name = { opening: tf("diag.phaseOpening", [Library.OPENING_UNTIL]), middle: t("diag.phaseMiddle"), end: t("diag.phaseEnd") };
-    const max = Math.max(...keys.map((k) => diag.phase[k].badRate)) || 1;
-    el.replaceChildren(...keys.map((k) => {
-      const r = diag.phase[k].badRate;
-      const row = meRow(name[k], pct(r));
-      const bar = document.createElement("span");
-      bar.className = "me-bar" + (k === diag.weakestPhase ? " is-weak" : "");
-      bar.style.setProperty("--p", String(Math.round((r / max) * 100)));
-      bar.setAttribute("aria-hidden", "true");
-      row.appendChild(bar);
-      return row;
-    }));
+  /** What `diagnose()` found, in sentences (7.0–18.0 the dialog's; library-ui.js). */
+  function renderDiagnosisInto(el) {
+    el.replaceChildren();
+    // v8-1-plan T5: the games of the source row (导入的 until the chunk is in)
+    const view = diag.view();
+    const charts = diag.charts();
+    const d = Library.diagnose(view.games, LIB_MIN_GAMES);
+    const para = (text, cls) => {
+      const p = document.createElement("p");
+      p.className = cls || "hint";
+      p.textContent = text;
+      el.appendChild(p);
+    };
+    const row = (kText, vText, pick, full) => {
+      const r = document.createElement(pick ? "button" : "div");
+      r.className = "stat-row" + (pick ? " stat-row-link" : "");
+      if (pick) {
+        r.type = "button";
+        r.dataset.diagPick = JSON.stringify(pick);
+        r.title = t("diag.openThese");
+      }
+      const k = document.createElement("span");
+      k.className = "stat-k";
+      k.textContent = kText;
+      // `full` for a name that will not fit the name track: it is cut with an
+      // ellipsis there, so the whole of it goes on `title` (7.3 B3). Only the
+      // rows carrying data — an opening's name — need it; the fixed labels fit.
+      if (full) k.title = kText;
+      const v = document.createElement("span");
+      v.className = "stat-v num";
+      v.textContent = vText;
+      r.append(k, v);
+      el.appendChild(r);
+    };
+    // v7-plan §6.2: 「每一条都必须点到一个可执行的下一步；没有下一步的统计
+    // 不写进这一页」。7.0 写了统计，一条下一步都没接上。These three are the
+    // rows that name a subset of games, so each one is a door to that subset.
+    const pickPara = (text, cls, pick) => {
+      const p = document.createElement(pick ? "button" : "p");
+      p.className = (cls || "hint") + (pick ? " hint-link" : "");
+      if (pick) { p.type = "button"; p.dataset.diagPick = JSON.stringify(pick); }
+      p.textContent = text;
+      el.appendChild(p);
+    };
+    if (view.note) para(view.note);
+    if (!d.enough) { para(tf("lib.needMore", [d.need - d.have, d.have, d.need])); return; }
+    para(tf("diag.from", [d.games]));
+    row(t("diag.record"), tf("diag.wld", [d.outcome.win, d.outcome.loss, d.outcome.draw]));
+    if (d.acc != null) row(t("diag.acc"), d.acc + "%");
+    const phaseName = {
+      opening: tf("diag.phaseOpening", [Library.OPENING_UNTIL]),
+      middle: t("diag.phaseMiddle"),
+      end: t("diag.phaseEnd"),
+    };
+    for (const k of ["opening", "middle", "end"]) {
+      const p = d.phase[k];
+      if (p.acpl == null) continue;
+      row(phaseName[k], tdot(tf("diag.acpl", [p.acpl]), tf("diag.badRate", [Math.round((p.badRate || 0) * 1000) / 10])));
+    }
+    if (charts) charts.drawPhaseChart(el, d, phaseName);
+    if (d.weakestPhase) {
+      const best = ["opening", "middle", "end"].map((k) => d.phase[k].acpl).filter((n) => n != null);
+      para(tf("diag.weakest", [phaseName[d.weakestPhase], d.phase[d.weakestPhase].acpl,
+        d.phase[d.weakestPhase].acpl - Math.min(...best)]), "hint warn");
+    } else {
+      para(t("diag.noWeakest"));
+    }
+    const peakAxes = charts && charts.drawPeakChart(el, view.games);
+    // the chart is not the only place its numbers appear (v7-3-plan §4B)
+    if (peakAxes) para(tf("diag.peakRange", [1, peakAxes.last, peakAxes.max]));
+    if (d.peak) {
+      pickPara(tf("diag.peak", [d.peak.move, d.peak.n]), "hint",
+        { kind: "peak", value: d.peak.move, label: tf("diag.pickPeak", [d.peak.move]) });
+    }
+    if (d.motifs.length) {
+      row(t("diag.motifs"), "");
+      for (const m of d.motifs.slice(0, 6)) {
+        row(t("motif." + m.motif), tf("diag.motifN", [m.n]),
+          { kind: "motif", value: m.motif, label: tf("diag.pickMotif", [t("motif." + m.motif)]) });
+      }
+    }
+    if (d.ecos.length) {
+      row(t("diag.ecos"), "");
+      if (charts) charts.drawEcoChart(el, d.ecos);
+      for (const e of d.ecos.slice(0, 6)) {
+        const name = libEcoName(e.eco, e.name);
+        row(e.eco + (name ? " " + name : ""),
+          tf("diag.ecoRow", [e.n, Math.round((e.score || 0) * 100)]),
+          { kind: "eco", value: e.eco, label: tf("diag.pickEco", [e.eco + (name ? " " + name : "")]) },
+          true);
+      }
+    }
   }
 
-  function renderMetrics(el, m) {
-    el.replaceChildren();
-    const rows = [
-      ["convert", m.convert, () => tf("me.m.convertV", [m.convert.n, m.convert.won])],
-      ["resil", m.resil, () => tf("me.m.resilV", [m.resil.n, m.resil.won + m.resil.drawn, m.resil.won])],
-      ["clock", m.clock, () => (m.clock.press.n
-        ? tf("me.m.clockV", [m.clock.press.n, m.clock.press.b, pct(m.clock.calmRate || 0)])
-        : tf("me.m.clockNone", [m.clock.n]))],
-    ];
-    for (const [id, f, detail] of rows) {
-      const box = document.createElement("div");
-      box.className = "me-metric";
-      box.dataset.metric = id;
-      // what counts, on the row itself
-      box.title = tf("me.m." + id + "D", [f.need]);
-      const ready = f.n >= f.need;
-      box.appendChild(meRow(t("me.m." + id), ready ? (f.rate != null ? pct(f.rate) : "—") : ""));
-      const p = document.createElement("p");
-      p.className = "hint";
-      p.textContent = ready ? detail() : tf("me.m.need", [f.need, f.n]);
-      box.appendChild(p);
-      el.appendChild(box);
+  /**
+   * v8-0-plan §5: one value column as wide as the widest value in it, up to
+   * two thirds of the block — measured, because the values are sentences
+   * whose length depends on the language and the numbers.
+   */
+  function fitDiagColumn(el) {
+    el.style.removeProperty("--stat-v-w");
+    const vs = [...el.querySelectorAll(".stat-v")];
+    if (!vs.length || !el.clientWidth) return;
+    for (const v of vs) v.style.whiteSpace = "nowrap";
+    // scrollWidth is rounded; the extra pixel keeps a 152.4px value on one line
+    const need = Math.max(...vs.map((v) => v.scrollWidth)) + 1;
+    for (const v of vs) v.style.removeProperty("white-space");
+    const cap = Math.floor(el.clientWidth * 2 / 3);
+    el.style.setProperty("--stat-v-w", Math.min(need, cap) + "px");
+    // a narrow window can cut a fixed label too; it keeps itself on title
+    for (const k of el.querySelectorAll(".stat-k")) {
+      if (k.scrollWidth > k.clientWidth && !k.title) k.title = k.textContent;
     }
   }
 
@@ -416,9 +436,10 @@ export function createMePage(d) {
   }
 
   return {
-    renderTrends, renderAchievements, renderRecordEntry, renderEndgames,
+    renderAchievements, renderRecordEntry, renderEndgames,
+    /** 19.0 S3: the puzzle rating moved (an answer) — and S2: the diagnosis's source row changed */
+    renderRatings: () => invalidate(), renderDiag: () => invalidate(true),
     /** The page is opening (shell.js): draw it at the size it opens at. */
-    // …and v8-2-plan T2's 计算专项, once either mode has an answer filed
-    onShow: () => { invalidate(true); renderEndgames(); if (Vis) Vis.renderMe(); },
+    onShow: () => { invalidate(true); renderEndgames(); },
   };
 }

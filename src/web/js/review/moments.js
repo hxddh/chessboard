@@ -27,7 +27,7 @@
 export function createMoments(d) {
   const {
     doc, store, t, tf, tdot, sideName, analysisFor, sanHistory, startFen, boardMoveNo, setViewIndex, writeSan,
-    inModal, Retry, Grade, oppName, Review, result,
+    inModal, Retry, Grade, oppName, Review, result, LESSONS, lessonText, openLesson,
   } = d;
   const document = doc;
 
@@ -59,8 +59,10 @@ export function createMoments(d) {
       graded, firstMover, boardMoveNo);
     const me = you(), byPly = (x, y) => x.ply - y.ply;
     if (!me) return m.w.concat(m.b).sort(byPly);
-    const other = me === "w" ? "b" : "w";
-    return m[me].slice().sort(byPly).concat(m[other].slice().sort(byPly));
+    // 19.0 T2: against the engine, your moments only — the opponent's were
+    // three of five cards and none of them yours to replay; a chance you
+    // missed after one of its mistakes is already yours (错失良机)
+    return m[me].slice().sort(byPly);
   }
 
   /** The mark a moment carries: its glyph where it has one, else its tag. */
@@ -160,6 +162,9 @@ export function createMoments(d) {
     };
     const whyBtn = act("why", "rv.km.why", () => { v.whyOpen = !v.whyOpen; render(); });
     whyBtn.setAttribute("aria-expanded", whyOpen ? "true" : "false");
+    // 19.0 T2: no reason in words, no 为什么 — it only said the win chance again
+    const good0 = m.grade === "brilliant" || m.grade === "only";
+    whyBtn.hidden = !good0 && !Retry.mistakeFacts(m.ply);
     const retry = act("retry", "rv.retry", () => Retry.startRetry(m.ply));
     retry.hidden = !canRetry;
     act("lines", "rv.km.lines", () => {
@@ -178,14 +183,17 @@ export function createMoments(d) {
     if (whyOpen) {
       // what the move did to the game, in numbers, then — for a ? or ?? —
       // the coach's reason in words (explain.js, the mistakes list's own)
+      // 19.0 T2: the coach's reason alone — the card's own line above already
+      // says the win chance (「胜率 96% → 26%」), and 为什么 repeated it
       const good = m.grade === "brilliant" || m.grade === "only";
-      why.textContent = good ? tf("rv.km.whyGood", [Math.round(m.swing)]) : tf("rv.km.whyDrop", [Math.round(m.before), Math.round(m.after)]);
+      if (good) why.textContent = tf("rv.km.whyGood", [Math.round(m.swing)]);
       if (ex) {
         const coach = document.createElement("span");
         coach.className = "km-coach";
         Retry.writeWhy(coach, ex);
-        why.append(" ", coach);
+        why.append(coach);
       }
+      if (!good && !ex) why.hidden = true;
     }
     card.appendChild(why);
     body.appendChild(card);
@@ -240,12 +248,49 @@ export function createMoments(d) {
     if (!m) return t("rv.sum.calm");
     return tf("rv.sum.side", [Retry.plyLabel(m.ply) + m.san, sideName(m.side), pct(m.before), pct(m.after)]);
   }
+  /**
+   * 19.0 T2: one thing to work on — the motif behind most of your marked
+   * moves, and the lesson that teaches it. Chess.com's Coach and Aimchess end
+   * a review with one; this one ended on the numbers.
+   */
+  const LESSON_OF = { fork: "fork", pin: "pin", skewer: "skewer", discovered: "discovery", discoveredAttack: "discovery",
+    double: "discovery", hanging: "protect", backRank: "backrank", mateThreat: "mate", removeDefender: "remove",
+    overload: "overload", deflection: "deflect", decoy: "decoy", promotion: "promotion", loss: "defend" };
+  /** …and, where the reason names no motif, the kind of sentence it is */
+  const KIND_OF = (key) => !key ? null : /^ex\.allowsMate/.test(key) ? "mateThreat" : /^ex\.(hanging|hangingCheap|threatHanging|threatCheap)$/.test(key) ? "hanging"
+    : /^ex\.(loss|motifLoss)$/.test(key) ? "loss" : null;
+  function workOn() {
+    if (!LESSONS || !Retry.mistakePlies) return null;
+    const n = {};
+    for (const i of Retry.mistakePlies()) { const m = Retry.mistakeMotif(i) || KIND_OF(Retry.mistakeKey(i)); if (m && LESSON_OF[m]) n[m] = (n[m] || 0) + 1; }
+    const top = Object.keys(n).sort((x, y) => n[y] - n[x])[0];
+    const li = top ? LESSONS.findIndex((L) => L.id === LESSON_OF[top]) : -1;
+    return li < 0 ? null : { li, motif: top, times: n[top], title: lessonText(LESSONS[li]).title };
+  }
   function renderSummary(a, list) {
     const el = document.getElementById("rv-summary");
     if (!el) return;
     const text = a && !inModal() && !store.session.analyzing ? summaryText(a, list) : "";
     el.hidden = !text;
     if (el.textContent !== text) el.textContent = text;
+    // the one thing to work on, its own line under the summary
+    let box = document.getElementById("rv-work");
+    if (!box) { box = document.createElement("p"); box.id = "rv-work"; box.className = "rv-work"; el.after(box); }
+    const w = text ? workOn() : null;
+    box.hidden = !w;
+    const key = w ? w.li + ":" + w.times + "|" + store.ui.langId : "";
+    if (box.dataset.key === key) return;
+    box.dataset.key = key;
+    box.replaceChildren();
+    if (!w) return;
+    const line = document.createElement("span");
+    line.textContent = tf("rv.sum.work", [w.motif === "loss" ? t("rv.sum.workLoss") : t("motif." + w.motif), w.times, tf("today.lessonN", [w.li + 1, w.title])]);
+    const go = document.createElement("button");
+    go.type = "button";
+    go.className = "pv-act rv-work-go";
+    go.textContent = t("rv.sum.workGo");
+    go.onclick = () => openLesson(w.li);
+    box.append(line, " ", go);
   }
 
   /** 从错误中学, with how many there are to learn from — absent when none. */

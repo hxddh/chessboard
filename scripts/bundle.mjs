@@ -98,16 +98,15 @@ export const CHUNKS = [
   // 16.0 V: cburnett left the bundle when Merida became the default
   { entry: "src/web/js/pieces-cburnett.js", out: "src/web/js/chunk-pieces-cburnett.js", global: "CBURNETT_PIECE_SVGS", min: 7000 },
   { entry: "src/web/js/pieces.js", out: "src/web/js/chunk-pieces-classic.js", global: "CHESS_PIECE_SVGS", min: 10000 },
-  { entry: "src/web/js/pieces-chessnut.js", out: "src/web/js/chunk-pieces-chessnut.js", global: "CHESSNUT_PIECE_SVGS", min: 25000 },
-  { entry: "src/web/js/pieces-fantasy.js", out: "src/web/js/chunk-pieces-fantasy.js", global: "FANTASY_PIECE_SVGS", min: 60000 },
-  { entry: "src/web/js/pieces-celtic.js", out: "src/web/js/chunk-pieces-celtic.js", global: "CELTIC_PIECE_SVGS", min: 25000 },
-  { entry: "src/web/js/pieces-spatial.js", out: "src/web/js/chunk-pieces-spatial.js", global: "SPATIAL_PIECE_SVGS", min: 30000 },
+  // 19.0 S8: chessnut, fantasy, celtic and spatial left with their sets
   { entry: "src/web/js/boot.js", out: "src/web/js/chunk-boot.js", global: null, boot: true, min: 500 },
   // v8-0-plan A4 + F5: the review's picture and its key-moments card (lazy-content.js REVIEW_CHUNKS)
   { entry: "src/web/js/report.js", out: "src/web/js/chunk-report.js", global: "ChessReport", min: 3000 },
   { entry: "src/web/js/review/moments.js", out: "src/web/js/chunk-moments.js", global: "createMoments", min: 3000 },
   // v10-0-plan T1: the first-run question and its placement — a fresh install only
   { entry: "src/web/js/onboarding.js", out: "src/web/js/chunk-onboarding.js", global: "createOnboarding", min: 500 },
+  // 19.0 S3: 我的 is never the first page — its renderers come when it opens (app.js)
+  { entry: "src/web/js/me-page.js", out: "src/web/js/chunk-me.js", global: "createMePage", min: 5000 },
   // v10-0-plan A3: the ⌘K panel, on the key's first press (palette-lazy.js)
   { entry: "src/web/js/palette.js", out: "src/web/js/chunk-palette.js", global: "createPalette", min: 2000 },
   // v8-0-plan B4: the ladder, personas, rating and styles (opponents-lazy.js)

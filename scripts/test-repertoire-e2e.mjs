@@ -104,6 +104,15 @@ async function open(ctx, page0) {
   await page.click("#pick-cancel", { timeout: 1000 }).catch(() => {});
   return { page, errs };
 }
+/** 19.0 S1: 我的开局书 is under 训练 · 开局 (it was the 棋谱 page's) — the rail's 训练, then the segment. */
+async function toBook(page) {
+  if (await page.evaluate(() => { const e = document.getElementById("sec-rep"); return !!e && !e.hidden && e.getClientRects().length > 0; })) return;
+  await page.click('#rail button[data-view="train"]');
+  await page.waitForTimeout(300);
+  await page.click('#train-seg button[data-seg="opening"]');
+  await page.waitForFunction(() => { const e = document.getElementById("sec-rep"); return !!e && !e.hidden; }, null, { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(200);
+}
 /** Until chunk-rep.js has booted (after the library's chunk). */
 async function ready(page) {
   await page.waitForFunction(() => window.__chess && window.__chess.rep && window.__chess.rep(), null, { timeout: 20000 }).catch(() => {});
@@ -395,7 +404,7 @@ async function playRow(page, san) {
 {
   const ctx = await context({ view: "library" });
   const { page, errs } = await open(ctx);
-  await page.click('#rail button[data-view="library"]').catch(() => {});
+  await toBook(page);   // 19.0 S1: 训练 · 开局
   await page.waitForTimeout(300);
   const total = Object.values(await records(page)).filter((r) => r.card).length;
   const dueText = await page.textContent("#rep-due-n");
@@ -464,7 +473,7 @@ async function playRow(page, san) {
 {
   const ctx = await context({ view: "library", games: GAMES });
   const { page, errs } = await open(ctx);
-  await page.click('#rail button[data-view="library"]').catch(() => {});
+  await toBook(page);   // 19.0 S1: 训练 · 开局
   const cross = await waitFor(page, (p) => p.evaluate(() => [...document.querySelectorAll("#rep-cross li")].map((li) => li.textContent)),
     (r) => r && r.length > 0, 8000);
   assert(cross.length === 1 && cross[0] === "执白 · 1. e4 e5 2. Nf3 Nc6：你常走 Nc3（4 局里 3 局），开局书写的是 Bb5 / Bc4",
@@ -477,7 +486,7 @@ async function playRow(page, san) {
 {
   const ctx = await context({ view: "library" });
   const { page } = await open(ctx);
-  await page.click('#rail button[data-view="library"]').catch(() => {});
+  await toBook(page);   // 19.0 S1: 训练 · 开局
   await page.waitForTimeout(300);
   const want = await records(page);
   const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#rep-export")]);
@@ -487,7 +496,7 @@ async function playRow(page, san) {
   await ctx.close();
   const ctx2 = await context({ view: "library", book: null });
   const { page: p2, errs } = await open(ctx2);
-  await p2.click('#rail button[data-view="library"]').catch(() => {});
+  await toBook(p2);   // 19.0 S1: 训练 · 开局
   const pgn = path.join(HERE, "..", "node_modules", ".cache", "rep-e2e.pgn");
   fs.mkdirSync(path.dirname(pgn), { recursive: true });
   fs.writeFileSync(pgn, text);
@@ -593,9 +602,9 @@ const cacheFile = (name, text) => {
 };
 const shape = (rs) => Object.keys(rs).sort().map((id) => id + ":" + rs[id].moves.join(",")).join("\n");
 const clickHidden = (p, id) => p.evaluate((id) => document.getElementById(id).click(), id);
-/** Import a PGN through 「导入执白开局书」 (the 棋谱库 page's button). */
+/** Import a PGN through 「导入执白开局书」 (训练 · 开局's button as of 19.0 S1; the 棋谱库 page's before). */
 async function importWhite(page, file) {
-  await page.click('#rail button[data-view="library"]').catch(() => {});
+  await toBook(page);
   const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.click("#rep-import-w")]);
   await chooser.setFiles(file);
 }
@@ -627,7 +636,7 @@ let big = null;
   const card = await page.evaluate((id) => window.__chess.rep().records().get(id).card, p0.card);
   assert(p0.pre.length === 0 && card.s === 1 && card.due > Date.now() + 23 * 3600e3, "复习：答对一张，排到明天", JSON.stringify(card));
   // 导出 PGN
-  await page.click('#rail button[data-view="library"]');
+  await toBook(page);   // 19.0 S1: 训练 · 开局
   const want = await records(page);
   const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#rep-export")]);
   const text = fs.readFileSync(await dl.path(), "utf8");
@@ -711,16 +720,19 @@ let big = null;
   });
   const { page, errs } = await open(ctx);
   const fire = async (c) => { await page.evaluate((x) => window.__fire(x), c); await page.waitForTimeout(400); };
+  // 19.0 S1: the book is under 训练 · 开局 (it was the 棋谱 page's section)
   const where = () => page.evaluate(() => {
-    const pg = document.getElementById("page-library"), sec = document.getElementById("sec-rep");
+    const sec = document.getElementById("sec-rep");
     const r = sec.getBoundingClientRect();
-    return { shown: !!pg && !pg.hidden, view: (document.querySelector('#rail button[aria-current="page"]') || {}).dataset?.view, top: Math.round(r.top), h: innerHeight };
+    return { shown: !sec.hidden && sec.getClientRects().length > 0, view: (document.querySelector('#rail button[aria-current="page"]') || {}).dataset?.view,
+      seg: (document.querySelector('#train-seg button[aria-pressed="true"]') || {}).dataset?.seg, top: Math.round(r.top), h: innerHeight };
   });
   for (const from of ["play", "me"]) {
     if (from !== "play") { await page.click('#rail button[data-view="' + from + '"]'); await page.waitForTimeout(300); }
     await fire("view.repertoire");
+    await page.waitForTimeout(400);
     const w = await where();
-    assert(w.shown && w.view === "library" && w.top >= 0 && w.top < w.h, `从「${from}」按菜单「开局书」：到棋谱库页，「我的开局书」一节在眼前`, JSON.stringify(w));
+    assert(w.shown && w.view === "train" && w.seg === "opening" && w.top >= 0 && w.top < w.h, `从「${from}」按菜单「开局书」：到训练 · 开局，「我的开局书」一节在眼前`, JSON.stringify(w));
     await page.click('#rail button[data-view="play"]');
     await page.waitForTimeout(300);
   }
@@ -747,7 +759,7 @@ let big = null;
   await page.goto(`http://127.0.0.1:${PORT}/`);
   await ready(page);
   await page.click("#pick-cancel", { timeout: 1000 }).catch(() => {});
-  await page.click('#rail button[data-view="library"]').catch(() => {});
+  await toBook(page);   // 19.0 S1: 训练 · 开局
   await page.waitForTimeout(300);
   const dueText = () => page.textContent("#rep-due-n").then((s) => s.trim());
   // 所有卡都排到十天后；两张排在午夜后 20 秒，一张在 23:59:40
@@ -839,10 +851,12 @@ let big = null;
 // --- v10-0-plan T4: 从内置开局生成 —— a first book without a file ------------
 // Library page → 从内置开局生成 → 西西里防御: its lines go into Black's
 // book, own moves one per position, and 开始背 begins in Black's chair —
-// two clicks from an empty book to the first drill.
+// two clicks from an empty book to the first drill. 19.0 S1: from 训练 · 开局,
+// where the empty book's card sits under the built-in book's drill.
 {
   const ctx = await context({ book: null, view: "library" });
   const { page, errs } = await open(ctx);
+  await toBook(page);
   await page.click("#rep-seed");
   await page.waitForTimeout(400);
   const items = await page.evaluate(() => [...document.querySelectorAll("#pick-list .pick-item")].map((b) => b.textContent));

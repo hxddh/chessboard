@@ -71,6 +71,12 @@ export async function run() {
     const BUNDLE_BYTES_170 = 845000;
     assert(bundleBytes <= BUNDLE_BYTES_170,
       "17.0: bundle.js stays within v17-0-plan's 845,000 bytes (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_170 ? " ≤ " : " > ") + BUNDLE_BYTES_170 + " bytes)");
+    // 19.0 E: v19-0-plan §3 — S1–S8 took the 棋谱 page, the diagnosis dialog,
+    // four of 我的's blocks, the save slots and four piece sets out
+    // (824,253 bytes measured); the line is that and 2,747 bytes of room
+    const BUNDLE_BYTES_190 = 827000;
+    assert(bundleBytes <= BUNDLE_BYTES_190,
+      "19.0: bundle.js stays within v19-0-plan's 827,000 bytes (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_190 ? " ≤ " : " > ") + BUNDLE_BYTES_190 + " bytes)");
     // …minified without renaming: a player's stack trace still names the code
     assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
       "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");
@@ -112,8 +118,9 @@ export async function run() {
         // bundle for the player who chose it; the one inside it needs nothing.
         // 16.0 V: and the default, Merida, for everyone else — a 15.x save's
         // unpicked cburnett included (look.js readLook)
-        [{ pieceSet: "fantasy" }, null, "chunk-pieces-fantasy.js"],
-        [{ pieceSet: "chessnut" }, null, "chunk-pieces-chessnut.js"],
+        // 19.0 S8: a set 18.0 offered and this version does not is Merida
+        [{ pieceSet: "fantasy" }, null, "chunk-merida.js"],
+        [{ pieceSet: "chessnut", pieceSetPicked: true }, null, "chunk-merida.js"],
         [{ pieceSet: "cburnett" }, null, "chunk-merida.js"],
         [{ pieceSet: "cburnett", pieceSetPicked: true }, null, "chunk-pieces-cburnett.js"],
         [{ pieceSet: "classic" }, null, "chunk-pieces-classic.js"], // 17.0 F: out of the bundle too
@@ -142,9 +149,17 @@ export async function run() {
         const credits = ["i18n.js", "i18n-en.js", "i18n-ja.js"].map((f) =>
           /"about\.creditsText": "([^"]*)"/.exec(fs.readFileSync(path.join(root, "src/web/js", f), "utf8"))[1]);
         const LICENCE = /\b(GPLv[23]\+?|GPL|Apache (License )?2\.0|MIT|CC BY(-SA)? 4\.0)\b/;
-        const AUTHOR = { cburnett: "Burnett", classic: "Cburnett", merida: "Armando Hernandez Marroquin",
-          chessnut: "Alexis Luengas", fantasy: "Maurizio Monge", celtic: "Maurizio Monge", spatial: "Maurizio Monge" };
-        assert(ids.length >= 7 && ids[0] === "merida", "seven sets, the default first (" + ids.join(", ") + ")");
+        const AUTHOR = { cburnett: "Burnett", classic: "Cburnett", merida: "Armando Hernandez Marroquin" };
+        // 19.0 S8: three sets — Merida (the default), cburnett and classic
+        assert(ids.join() === "merida,cburnett,classic", "19.0 S8: three sets, the default first (" + ids.join(", ") + ")");
+        // …and the four that went are gone from the source, the chunk list and the About panel
+        for (const gone of ["chessnut", "fantasy", "celtic", "spatial"]) {
+          assert(!fs.existsSync(path.join(root, "src/web/js/pieces-" + gone + ".js")) && !lctx.PIECE_CHUNKS[gone]
+            && !CHUNKS.some((c) => c.entry.includes("pieces-" + gone)),
+            "19.0 S8: piece set " + gone + " has no module, no chunk and no loader entry");
+        }
+        assert(credits.every((c) => !/Chessnut|Fantasy|Maurizio Monge|Alexis Luengas/.test(c)),
+          "19.0 S8: the About panel no longer credits the removed sets");
         for (const id of ids) {
           const file = id === "classic" ? "pieces.js" : "pieces-" + id + ".js";
           const src = fs.existsSync(path.join(root, "src/web/js", file)) ? fs.readFileSync(path.join(root, "src/web/js", file), "utf8") : "";

@@ -20,68 +20,13 @@ import { ChessFocus as Focus } from "../focus.js";
  */
 export function createTodayUI(d) {
   const {
-    ALL_PUZZLES, Icons, LESSONS, LIB_MIN_GAMES, Library, Picker, Planner, Progress, Shell, Srs,
-    avail, bookNow, drawRatingTrend, el, loadStats, motifKeyOf, owedNow, puzzlesInCat, ratingLabel,
-    ratingTip, runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
+    ALL_PUZZLES, Icons, LESSONS, LIB_MIN_GAMES, Library, Picker, Planner, Progress, Shell,
+    avail, bookNow, el, loadStats, motifKeyOf, owedNow, puzzlesInCat,
+    runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
     sync, t, tf, toast, pieceSrc, game, isOver, isLive, rep, ecoName,
   } = d;
   const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-
-  /** 做题战绩 — the tally the picker reads, drawn for the player. */
-  function renderPuzzleTally() {
-    const head = document.getElementById("puzzle-tally-head");
-    const body = document.getElementById("puzzle-tally-body");
-    if (!head || !body) return;
-    const st = store.session.puzzleState;
-    const cats = [];
-    for (const p of bookNow()) if (!cats.includes(p.cat)) cats.push(p.cat);
-    // the tally outlives the list: a retired personal book keeps its row
-    for (const k of Object.keys(st.tally || {})) if (!cats.includes(k)) cats.push(k);
-    const rows = cats
-      .map((c) => Object.assign({ cat: c }, Picker.catTally(st, c)))
-      .filter((r) => r.attempts > 0);
-    head.hidden = body.hidden = !rows.length;
-
-    if (!rows.length) return;
-    // worst first, so the marker sits on top; the marker itself comes from
-    // Picker.weakest — the same rule the recommendation toast speaks from,
-    // so the two surfaces can never name different categories
-    rows.sort((a, b) => b.miss / b.attempts - a.miss / a.attempts || b.attempts - a.attempts);
-    const weak = Picker.weakest(st, cats);
-    // 6.0: the rating, once a first answer has moved it, its trend, and the
-    // review debt with tomorrow's share (v6-plan Q3.1 / Q3.3)
-    const meta = document.getElementById("rating-meta");
-    const rcv = document.getElementById("trend-rating");
-    const hist = Array.isArray(st.rhist) ? st.rhist : [];
-    if (meta) {
-      const owed = owedNow();
-      const tomorrow = Math.max(0, Srs.dueCount(st.missed, Date.now() + 86400000) - owed);
-      const parts = [];
-      if (hist.length) parts.push(tf("ui.pair", [t("rec.rating"), ratingLabel()]));
-      if (owed || tomorrow) parts.push(tf("rec.due", [owed, tomorrow]));
-      meta.hidden = !parts.length;
-      if (parts.length) { meta.textContent = tdot(...parts); head.hidden = false; }
-      meta.title = hist.length ? ratingTip() : "";
-    }
-    if (rcv) {
-      rcv.hidden = hist.length < 2;
-      if (hist.length >= 2) drawRatingTrend(rcv, hist.map((h) => h.r));
-    }
-    body.replaceChildren();
-    for (const r of rows) {
-      const row = document.createElement("div");
-      row.className = "stat-row";
-      const name = document.createElement("span");
-      name.className = "stat-k";
-      name.textContent = tdot(t("pz.cat." + r.cat), weak && weak.cat === r.cat && t("rec.weakMark"));
-      const val = document.createElement("span");
-      val.className = "stat-v num";
-      val.textContent = tf("rec.tally", [r.solve, r.miss]);
-      row.append(name, val);
-      body.appendChild(row);
-    }
-  }
 
   /** The counters the planner judges completion on (planner.js snap/stepDone). */
   function dailySnapSrc() {
@@ -199,7 +144,7 @@ export function createTodayUI(d) {
       row.type = "button";
       row.className = "daily-row";
       row.dataset.focus = String(i);
-      row.onclick = () => (it.kind === "need" ? Shell.go("library") : focusJump(it));
+      row.onclick = () => (it.kind === "need" ? Shell.go("me") : focusJump(it));   // 19.0 S1: the library is on 我的
       const dot = document.createElement("span");
       dot.className = "daily-dot";
       dot.setAttribute("aria-hidden", "true");
@@ -498,7 +443,7 @@ export function createTodayUI(d) {
     // show the section and start the pass, which is exactly what the player
     // would have done by hand
     if (step.kind === "lib") {
-      Shell.go("library");
+      Shell.go("me");   // 19.0 S1: the library is on 我的
       const sec = document.getElementById("lib-body");
       if (sec && sec.scrollIntoView) sec.scrollIntoView({ block: "center" });
       if (!store.session.libRun) runLibraryPass();
@@ -548,7 +493,7 @@ export function createTodayUI(d) {
   }
   return {
     wireDaily,
-    renderPuzzleTally, libPlayedAt, dailySignals, dailyStepLabel, syncDailyUI,
+    libPlayedAt, dailySignals, dailyStepLabel, syncDailyUI,
     dailyStepIsHere, dailyJump,
   };
 }

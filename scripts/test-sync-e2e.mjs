@@ -108,7 +108,8 @@ async function open({ bridge = true, lang = "zh-CN", seedSync = null, mode = "ai
   await page.click("#pick-cancel", { timeout: 500 }).catch(() => {});
   return { ctx, page, errs };
 }
-const toLibrary = async (page) => { await page.click('#rail [data-view="library"]'); await page.waitForTimeout(250); };
+// 19.0 S1: the library is on 我的 (棋谱 left the rail)
+const toLibrary = async (page) => { await page.click('#rail [data-view="me"]'); await page.waitForTimeout(250); };
 const openSync = async (page) => { await page.click("#lib-sync"); await page.waitForSelector("#sync-modal.show", { timeout: 3000 }); };
 const dlg = (page) => page.evaluate(() => {
   const m = document.getElementById("sync-modal");
@@ -248,7 +249,11 @@ const stored = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getIt
   assert(tags.length === 2 && tags.every((x) => x === "Chess.com"), "C2 × C1: 列表上两局都标着 Chess.com（" + JSON.stringify(tags) + "）");
   await page.keyboard.press("Escape");
   await page.waitForTimeout(200);
-  await page.click("#lib-explorer");
+  // 19.0 S1: the library page's door went with the page — the play panel's 开局 key
+  await page.click('#rail [data-view="play"]');
+  await page.waitForTimeout(250);
+  if (await page.isVisible("#explorer-open")) await page.click("#explorer-open");
+  else { await page.click("#more-tools"); await page.click("#more-explorer-open"); }
   await page.waitForTimeout(300);
   let xp = [];
   for (let i = 0; i < 60; i++) {

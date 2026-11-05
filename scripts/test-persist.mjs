@@ -1029,10 +1029,14 @@ for (const how of ["restore", "clear"]) {
     [{ appearance: "light", pieceSet: "merida" }, { appearance: "light", boardId: "wood", boardFrame: "flat", pieceSet: "merida" }, "day", "day"],
     // garbage falls back field by field
     [{ appearance: "toString", pieceSet: "nope" }, { appearance: "system", boardId: "wood", boardFrame: "flat", pieceSet: "merida" }, "day", "wood"],
-    [{ appearance: "light", boardId: "marble", boardFrame: "frame", pieceSet: "fantasy" },
-      { appearance: "light", boardId: "marble", boardFrame: "frame", pieceSet: "fantasy" }, "day", "day"],
+    // 19.0 S8: an 18.0 save naming a board or set that went (marble, paper;
+    // fantasy, chessnut…) reads as wood / Merida, the rest of it kept
+    [{ appearance: "light", boardId: "marble", boardFrame: "frame", pieceSet: "fantasy", pieceSetPicked: true },
+      { appearance: "light", boardId: "wood", boardFrame: "frame", pieceSet: "merida" }, "day", "day"],
     [{ appearance: "dark", boardId: "paper", boardFrame: "sideways", pieceSet: "classic" },
-      { appearance: "dark", boardId: "paper", boardFrame: "flat", pieceSet: "classic" }, "wood", "wood"],
+      { appearance: "dark", boardId: "wood", boardFrame: "flat", pieceSet: "classic" }, "wood", "wood"],
+    [{ appearance: "dark", boardId: "blue", pieceSet: "spatial", pieceSetPicked: true },
+      { appearance: "dark", boardId: "blue", boardFrame: "flat", pieceSet: "merida" }, "night", "night"],
     [{ appearance: "sepia", boardId: "blue" }, { appearance: "system", boardId: "blue", boardFrame: "flat", pieceSet: "merida" }, "notebook", "night"],
   ];
   for (const [stored, want, lightShell, darkShell] of cases) {
@@ -1053,8 +1057,18 @@ for (const how of ["restore", "clear"]) {
   // default written out, not a choice — unless 16.0 saw it picked
   assert(LOOK_DEFAULT.pieceSet === "merida", "16.0 V: the default set is Merida");
   assert(readLook({ pieceSet: "cburnett" }).pieceSet === "merida" && readLook({ pieceSet: "cburnett", pieceSetPicked: true }).pieceSet === "cburnett"
-    && readLook({ pieceSet: "fantasy" }).pieceSet === "fantasy",
+    && readLook({ pieceSet: "classic" }).pieceSet === "classic",
     "16.0 V: an unpicked cburnett (the 15.x default) becomes Merida; a picked one, or any other set, stays");
+  // 19.0 S8: three sets and three boards offered; the ones that went read as the defaults
+  assert(PIECE_SET_IDS.join() === "merida,cburnett,classic" && BOARD_IDS.join() === "wood,green,blue",
+    "19.0 S8: the pickers offer Merida / cburnett / classic and wood / green / blue");
+  for (const id of ["chessnut", "fantasy", "celtic", "spatial"]) {
+    assert(readLook({ pieceSet: id, pieceSetPicked: true }).pieceSet === "merida", "19.0 S8: a saved " + id + " reads as Merida");
+  }
+  for (const id of ["paper", "marble"]) {
+    const l = readLook({ boardId: id });
+    assert(l.boardId === "wood" && lookAttrs(l, false).board === "wood", "19.0 S8: a saved " + id + " board reads as wood");
+  }
   for (const id of BOARD_IDS) {
     assert(readLook({ appearance: "system", boardId: id }).boardId === id, "board " + id + " survives a save");
   }

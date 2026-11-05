@@ -88,6 +88,16 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * not drawn (1700 at 0.6, guard 300 ≈ 1805; 1900 at 0.6, guard 200 ≈
    * 2070). Each rung keeps its Stockfish row, which plays if Maia cannot.
    *
+   * 19.0 T5 — 新手 … 稳健 (`beginner` … `steady`) are Maia 1100 too: the
+   * Stockfish rungs below 1100 blundered like a dice roll (a knight sent out
+   * and back, a free bishop left), not like a person. Hotter draws and a
+   * lower `floor` (moves under it are never played; 1% elsewhere) make the
+   * rungs weaker; candidates were played against the old rungs first, then
+   * the ladder fitted again (20/20 steps at 60–75%). Each matches the 1100
+   * band's moves more often than the Stockfish rung it replaced: 10.0 /
+   * 13.5 / 14.8 / 17.5 / 18.8% → 15.0 / 15.8 / 26.0 / 31.3 / 28.5%
+   * (docs/v19-0-plan.md §10).
+   *
    * These notes sit here and not beside the rows: a comment inside the
    * literal ships in the bundle (esbuild keeps it), and F5's budget is bytes.
    */
@@ -133,11 +143,11 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // which is a worse tier bought with a worse mechanism. The plan's own
     // condition for making the change ("若相关性强" — if the candidate count
     // really tracks the phase) is not met, so it is not made.
-    beginner: { skill: 0, depth: 2, multipv: 10, worstBias: 0.15, minMs: 350 },
-    casual: { skill: 0, depth: 2, multipv: 8, worstBias: 0.12, minMs: 350 },
-    learner: { skill: 1, depth: 2, multipv: 10, winT: 37, minMs: 350 },
-    improver: { skill: 2, depth: 2, multipv: 10, winT: 24, minMs: 350 },
-    steady: { skill: 3, depth: 3, multipv: 8, winT: 19, minMs: 350 },
+    beginner: { maia: 1100, temp: 5.5, floor: 0.002, skill: 0, depth: 2, multipv: 10, worstBias: 0.15, minMs: 350 },
+    casual: { maia: 1100, temp: 4.75, floor: 0.00275, skill: 0, depth: 2, multipv: 8, worstBias: 0.12, minMs: 350 },
+    learner: { maia: 1100, temp: 4.6, floor: 0.003, skill: 1, depth: 2, multipv: 10, winT: 37, minMs: 350 },
+    improver: { maia: 1100, temp: 4.7, floor: 0.0033, skill: 2, depth: 2, multipv: 10, winT: 24, minMs: 350 },
+    steady: { maia: 1100, temp: 2.35, skill: 3, depth: 3, multipv: 8, winT: 19, minMs: 350 },
     solid: { maia: 1100, temp: 1.7, skill: 4, depth: 4, multipv: 8, winT: 14, minMs: 350 },
     easy: { maia: 1300, temp: 1.35, elo: 1320, depth: 1, minMs: 500 },
     easyplus: { maia: 1500, temp: 1.15, elo: 1500, depth: 2, multipv: 6, minMs: 550 },
