@@ -13,7 +13,7 @@ export default {
   "learn.yourMove": "轮到你", "learn.theirMove": "对方走 {0}", "learn.collect": "把所有目标都吃掉：{0} 个", "learn.left2": "还剩 {0} 个",
   "learn.drill": "实战：和电脑下完这个残局", "learn.drillWin": "目标：赢下来", "learn.drillDraw": "目标：守和", "learn.drillPromote": "目标：把兵升变",
   "learn.drillWon": "做到了", "learn.drillLost": "这次没守住 —— 再来一遍", "learn.drillFailed": "没能赢下来 —— 再来一遍",
-  "learn.game": "下一盘：对 {0}", "learn.gameAny": "下一盘：对一位和你水平相近的对手", "learn.reset": "重来", "learn.lessonReady": "先读一读右边这一段，再动手", "learn.gameWhy": "学了的东西，放到一盘真棋里用一用", "learn.play": "开始对局",
+  "learn.game": "下一盘：对 {0}", "learn.gameAny": "下一盘：对一位和你水平相近的对手", "learn.reset": "重来", "learn.lessonReady": "先读一读这一段讲解，再动手", "learn.gameWhy": "学了的东西，放到一盘真棋里用一用", "learn.play": "开始对局",
   "learn.opening": "{0}：按开局的走法走下去", "learn.classic": "名局：{0} —— 猜大师的下一步", "learn.classicWrong": "大师走的不是这步 —— 再猜一次",
   "learn.openingWrong": "这里常见的是另一步 —— 再想想开局的原则",
   "learn.mistake": "你在对局里走了 {0} —— 找出更好的一步", "learn.mistakePlain": "你自己对局里的一个局面 —— 找出更好的一步",
