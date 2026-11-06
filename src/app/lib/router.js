@@ -41,6 +41,8 @@ export function createRouter({ routes, outlet, fallback = "/play", context = {},
   let mounted = null;          // { path, el, unmount }
   let token = 0;
   let unlisten = null;
+  let seen = null;             // the hash last synced
+  let pending = Promise.resolve();
 
   function load(path) {
     let p = modules.get(path);
@@ -96,8 +98,6 @@ export function createRouter({ routes, outlet, fallback = "/play", context = {},
     mounted.unmount = mount(el, { ...context, route, router: api });
   }
 
-  let pending = Promise.resolve();
-  let seen = null;
   // go() syncs at once and the browser's hashchange follows later: one sync per hash
   const onChange = () => {
     if (env.hash === seen) return;

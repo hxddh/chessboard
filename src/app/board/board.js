@@ -109,6 +109,7 @@ export function createBoard(el, opts = {}) {
   // --- drawing ------------------------------------------------------------------
 
   let frameReq = 0;
+  const stats = { frames: 0 };
   function draw() {
     frameReq = 0;
     if (!canvas.width) return;
@@ -127,7 +128,6 @@ export function createBoard(el, opts = {}) {
     if (f.busy || drag) request();
   }
   function request() { if (!frameReq) frameReq = requestAnimationFrame(draw); }
-  const stats = { frames: 0 };
 
   function refresh(animate = true) {
     scene.setOverlays(overlays(), { now: now(), ms: animate ? ms() : 0 });
