@@ -1,0 +1,399 @@
+/* The 19.0 design tokens, copied as they were: shells ([data-theme]), board
+   palettes ([data-board]), mark strengths, type, radii, motion. Values only —
+   no component rules. The reasons behind each value are in src/web/styles.css
+   and the design notes; the app's own rules live in app.css. */
+
+@font-face {
+  font-family: "Inter Var";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../../web/fonts/inter-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "CJK Punct SC"; font-weight: 100 500;
+  src: local("PingFangSC-Regular"), local("PingFang SC Regular"), local("HiraginoSansGB-W3"),
+    local("Microsoft YaHei UI"), local("Microsoft YaHei"), local("MicrosoftYaHei"),
+    local("Noto Sans CJK SC Regular"), local("NotoSansCJKsc-Regular");
+  unicode-range: U+00B7, U+2013-2014, U+2018-2019, U+201C-201D, U+2026;
+}
+
+@font-face {
+  font-family: "CJK Punct SC"; font-weight: 501 900;
+  src: local("PingFangSC-Semibold"), local("PingFang SC Semibold"), local("HiraginoSansGB-W6"),
+    local("Microsoft YaHei UI Bold"), local("Microsoft YaHei Bold"), local("MicrosoftYaHei-Bold"),
+    local("Noto Sans CJK SC Bold"), local("NotoSansCJKsc-Bold");
+  unicode-range: U+00B7, U+2013-2014, U+2018-2019, U+201C-201D, U+2026;
+}
+
+@font-face {
+  font-family: "CJK Punct JA"; font-weight: 100 500;
+  src: local("HiraginoSans-W3"), local("HiraKakuProN-W3"), local("Yu Gothic UI"),
+    local("YuGothic-Medium"), local("Yu Gothic Medium"), local("Meiryo"),
+    local("Noto Sans CJK JP Regular"), local("NotoSansCJKjp-Regular");
+  unicode-range: U+00B7, U+2013-2014, U+2018-2019, U+201C-201D, U+2026;
+}
+
+@font-face {
+  font-family: "CJK Punct JA"; font-weight: 501 900;
+  src: local("HiraginoSans-W6"), local("HiraKakuProN-W6"), local("Yu Gothic UI Bold"),
+    local("YuGothic-Bold"), local("Yu Gothic Bold"), local("Meiryo Bold"),
+    local("Noto Sans CJK JP Bold"), local("NotoSansCJKjp-Bold");
+  unicode-range: U+00B7, U+2013-2014, U+2018-2019, U+201C-201D, U+2026;
+}
+
+:root, [data-theme="wood"] {
+  --wood-bg: #241a12;
+  --wood-panel: #30241a;
+  --wood-panel-border: #42332a;
+  --wood-line-strong: #56443a;
+  --wood-faint: #8f7c68;
+  --wood-text: #f3e9dc;
+  --wood-muted: #c3b099;
+  --wood-accent: #e8c39e;
+  --wood-btn: #30241a;
+  --wood-btn-hover: #3b2d22;
+  --wood-win: #6cc282;
+  --wood-chrome-bg: linear-gradient(180deg, rgba(36,26,18,.88), rgba(36,26,18,.4) 75%, transparent);
+  --wood-danger: #e07a6a;
+  --wood-on-accent: #2a1c10;
+  --wood-on-danger: #2a1613;
+  --wood-card: #382b20;
+  --wood-card-border: #42332a;
+  --wood-btn-ghost: rgba(243,233,220,.07);
+  --wood-brand: #eaa954;
+  --surface: var(--wood-bg);
+  --surface-raised: var(--wood-panel);
+  --line: var(--wood-panel-border);
+  --line-strong: var(--wood-line-strong);
+  --ink-faint: var(--wood-faint);
+  --ink: var(--wood-text);
+  --ink-muted: var(--wood-muted);
+  --accent: var(--wood-accent);
+  --control: var(--wood-btn);
+  --control-hover: var(--wood-btn-hover);
+  --success: var(--wood-win);
+  --veil: var(--wood-chrome-bg);
+  --danger: var(--wood-danger);
+  --on-accent: var(--wood-on-accent);
+  --on-danger: var(--wood-on-danger);
+  --card-fill: var(--wood-card);
+  --card-line: var(--wood-card-border);
+  --control-ghost: var(--wood-btn-ghost);
+  --brand: var(--wood-brand);
+  --judge-soft: #c9b458;
+  --judge-mid: #e0a03c;
+  --judge-bad: #e05252;
+  --judge-good: #5fbf73;
+  --side-white: #f2f2ee;
+  --side-black: #1d1d1b;
+}
+
+[data-theme="night"] {
+  --night-bg: #08120f;
+  --night-panel: #111d1a;
+  --night-panel-border: #21332c;
+  --night-line-strong: #2f463d;
+  --night-faint: #5d7369;
+  --night-text: #dce8e3;
+  --night-muted: #8aa399;
+  --night-accent: #7dcea0;
+  --night-btn: #111d1a;
+  --night-btn-hover: #1a2a25;
+  --night-win: #66c78a;
+  --night-chrome-bg: linear-gradient(180deg, rgba(8,18,15,.9), rgba(8,18,15,.35) 75%, transparent);
+  --night-danger: #e8705c;
+  --night-on-accent: #07130e;
+  --night-on-danger: #0b1210;
+  --night-card: #16241f;
+  --night-card-border: #21332c;
+  --night-btn-ghost: rgba(220,232,227,.06);
+  --night-brand: #eaa954;
+  --surface: var(--night-bg);
+  --surface-raised: var(--night-panel);
+  --line: var(--night-panel-border);
+  --line-strong: var(--night-line-strong);
+  --ink-faint: var(--night-faint);
+  --ink: var(--night-text);
+  --ink-muted: var(--night-muted);
+  --accent: var(--night-accent);
+  --control: var(--night-btn);
+  --control-hover: var(--night-btn-hover);
+  --success: var(--night-win);
+  --veil: var(--night-chrome-bg);
+  --danger: var(--night-danger);
+  --on-accent: var(--night-on-accent);
+  --on-danger: var(--night-on-danger);
+  --card-fill: var(--night-card);
+  --card-line: var(--night-card-border);
+  --control-ghost: var(--night-btn-ghost);
+  --brand: var(--night-brand);
+  --judge-soft: #d8c46a;
+  --judge-mid: #eaa94a;
+  --judge-bad: #e8705c;
+  --judge-good: #66c78a;
+  --side-white: #dfeae4;
+  --side-black: #0e1613;
+}
+
+[data-theme="day"] {
+  --day-bg: #ebe3d3;
+  --day-panel: #f8f1e4;
+  --day-panel-border: #d9cdb7;
+  --day-line-strong: #c7b89d;
+  --day-faint: #9b907f;
+  --day-text: #2c261e;
+  --day-muted: #665e52;
+  --day-accent: #8a5a24;
+  --day-btn: #f8f1e4;
+  --day-btn-hover: #ede5d6;
+  --day-win: #23813d;
+  --day-chrome-bg: linear-gradient(180deg, rgba(247,241,224,.95), rgba(247,241,224,.4) 75%, transparent);
+  --day-danger: #b8382a;
+  --day-on-accent: #ffffff;
+  --day-on-danger: #fdf6f4;
+  --day-card: #fdf9f2;
+  --day-card-border: #d9cdb7;
+  --day-btn-ghost: rgba(44,38,30,.06);
+  --day-brand: #95560f;
+  --surface: var(--day-bg);
+  --surface-raised: var(--day-panel);
+  --line: var(--day-panel-border);
+  --line-strong: var(--day-line-strong);
+  --ink-faint: var(--day-faint);
+  --ink: var(--day-text);
+  --ink-muted: var(--day-muted);
+  --accent: var(--day-accent);
+  --control: var(--day-btn);
+  --control-hover: var(--day-btn-hover);
+  --success: var(--day-win);
+  --veil: var(--day-chrome-bg);
+  --danger: var(--day-danger);
+  --on-accent: var(--day-on-accent);
+  --on-danger: var(--day-on-danger);
+  --card-fill: var(--day-card);
+  --card-line: var(--day-card-border);
+  --control-ghost: var(--day-btn-ghost);
+  --brand: var(--day-brand);
+  --judge-soft: #9a7b12;
+  --judge-mid: #b7690c;
+  --judge-bad: #c0392b;
+  --judge-good: #23813d;
+  --side-white: #fbfbf8;
+  --side-black: #23231f;
+}
+
+[data-theme="notebook"] {
+  --notebook-bg: #e0e7f2;
+  --notebook-panel: #f4f7fe;
+  --notebook-panel-border: #bfcbdd;
+  --notebook-line-strong: #a7b6cc;
+  --notebook-faint: #848da0;
+  --notebook-text: #2a3140;
+  --notebook-muted: #5b6474;
+  --notebook-accent: #3b6ea5;
+  --notebook-btn: #f4f7fe;
+  --notebook-btn-hover: #e8edf6;
+  --notebook-win: #257a44;
+  --notebook-chrome-bg: linear-gradient(180deg, rgba(244,247,254,.96), rgba(244,247,254,.45) 75%, transparent);
+  --notebook-danger: #b0301f;
+  --notebook-on-accent: #ffffff;
+  --notebook-on-danger: #fbf3f2;
+  --notebook-card: #fbfcff;
+  --notebook-card-border: #bfcbdd;
+  --notebook-btn-ghost: rgba(42,49,64,.06);
+  --notebook-brand: #95560f;
+  --surface: var(--notebook-bg);
+  --surface-raised: var(--notebook-panel);
+  --line: var(--notebook-panel-border);
+  --line-strong: var(--notebook-line-strong);
+  --ink-faint: var(--notebook-faint);
+  --ink: var(--notebook-text);
+  --ink-muted: var(--notebook-muted);
+  --accent: var(--notebook-accent);
+  --control: var(--notebook-btn);
+  --control-hover: var(--notebook-btn-hover);
+  --success: var(--notebook-win);
+  --veil: var(--notebook-chrome-bg);
+  --danger: var(--notebook-danger);
+  --on-accent: var(--notebook-on-accent);
+  --on-danger: var(--notebook-on-danger);
+  --card-fill: var(--notebook-card);
+  --card-line: var(--notebook-card-border);
+  --control-ghost: var(--notebook-btn-ghost);
+  --brand: var(--notebook-brand);
+  --judge-soft: #8a6d0f;
+  --judge-mid: #a85c08;
+  --judge-bad: #b3372a;
+  --judge-good: #257a44;
+  --side-white: #fdfdfa;
+  --side-black: #26261f;
+}
+
+html { --root-size: 16px; font-size: var(--root-size); }
+
+html[data-text="s"] { --root-size: 15px; }
+
+html[data-text="l"] { --root-size: 18px; }
+
+:root {
+  --bg: var(--surface);
+  --panel: var(--surface-raised);
+  --panel-border: var(--line);
+  --text: var(--ink);
+  --muted: var(--ink-muted);
+  --win: var(--success);
+  --btn: var(--control);
+  --btn-hover: var(--control-hover);
+  --btn-ghost: var(--control-ghost);
+  --card: var(--card-fill);
+  --card-border: var(--card-line);
+  --card-edge: var(--card-line);
+  --chrome-bg: var(--veil);
+  --btn-lift: var(--btn);
+  --btn-lift-hover: var(--btn-hover);
+  --btn-edge: var(--line-strong);
+  --elev-1: 0 1px 2px rgba(0,0,0,.14);
+  --seg-tray: var(--control-ghost);
+  --seg-on: var(--control-hover);
+  --elev-2: 0 0 0 1px rgba(0,0,0,.08), 0 6px 16px rgba(0,0,0,.16), 0 22px 56px rgba(0,0,0,.24);
+  --faint: var(--ink-faint);
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 55%, transparent);
+  --data: var(--muted);
+  --chart-line: var(--data);
+  --chart-area: 0.12;
+  --chart-grid: var(--line);
+  --chart-now: var(--accent);
+  --chart-label: var(--muted);
+}
+
+@supports (color: color-mix(in srgb, red 50%, blue)) {
+  :root {
+    --card-border: color-mix(in srgb, var(--card-line) 55%, var(--card-fill));
+    --card-edge: color-mix(in srgb, var(--card-line) 30%, var(--card-fill));
+    --btn-lift: color-mix(in srgb, var(--btn) 90%, white 10%);
+    --btn-lift-hover: color-mix(in srgb, var(--btn-hover) 86%, white 14%);
+    --btn-edge: color-mix(in srgb, var(--ink) 11%, transparent);
+    --seg-tray: color-mix(in srgb, var(--ink) 6%, transparent);
+    --seg-on: color-mix(in srgb, var(--surface-raised) 86%, white 14%);
+  }
+}
+
+:root, [data-board="wood"] {
+  --piece-shadow: rgba(38,20,4,.13);
+  --board-frame: linear-gradient(145deg, #e0b07a, #c9965c 45%, #b8864e);
+  --board-shadow: 0 0 0 1px rgba(0,0,0,.16), 0 3px 8px rgba(0,0,0,.18), 0 22px 56px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.22);
+  --coord-ink: rgba(48,28,12,.62);
+  --board-edge: rgba(60,34,12,.30);
+  --sq-light: #f0d9b5;
+  --sq-dark: #b58863;
+  --sq-sel: rgba(99, 77, 34, var(--mark-mid));
+  --sq-last: rgba(220, 170, 75, var(--mark-mid));
+  --sq-check: rgba(215, 55, 45, var(--mark-mid));
+  --sq-hint: rgba(5, 165, 255, var(--mark-mid));
+  --sq-star: rgba(255, 219, 38, var(--mark-strong));
+  --sq-star-edge: rgba(120, 80, 0, var(--mark-mid));
+  --sq-flash: rgba(0, 115, 36, var(--mark-mid));
+  --sq-cursor: rgba(255,255,255,.95);
+  --sq-cursor-edge: rgba(20,20,20,.55);
+  --sq-dot: rgba(30, 30, 30, var(--mark-soft));
+  --sq-ring: rgba(30, 30, 30, var(--mark-soft));
+  --shape-g: rgba(21, 120, 27, var(--mark-strong));
+  --shape-r: rgba(136, 32, 32, var(--mark-strong));
+  --shape-b: rgba(0, 48, 136, var(--mark-strong));
+  --shape-y: rgba(232, 143, 0, var(--mark-strong));
+  --engine-arrow: rgba(5, 165, 255, var(--mark-mid));
+  --engine-arrow-alt: rgba(5, 165, 255, var(--mark-soft));
+}
+
+[data-board="green"] {
+  --piece-shadow: rgba(10,26,4,.15);
+  --board-frame: linear-gradient(145deg, #1a2e28, #15241f 50%, #101c18);
+  --coord-ink: rgba(220,235,228,.55);
+  --board-edge: rgba(8,20,16,.34);
+  --sq-light: #e2ead6;
+  --sq-dark: #81a38a;
+  --sq-sel: rgba(140, 115, 0, var(--mark-mid));
+  --sq-last: rgba(220, 205, 40, var(--mark-soft));
+  --sq-check: rgba(235, 80, 20, var(--mark-mid));
+  --sq-hint: rgba(0, 95, 225, var(--mark-mid));
+  --sq-star: rgba(217, 144, 0, var(--mark-strong));
+  --sq-star-edge: rgba(60, 38, 0, var(--mark-mid));
+  --sq-flash: rgba(0, 110, 60, var(--mark-mid));
+  --sq-cursor: rgba(255,255,255,.95);
+  --sq-cursor-edge: rgba(8,18,6,.60);
+  --sq-dot: rgba(14, 26, 8, var(--mark-soft));
+  --sq-ring: rgba(14, 26, 8, var(--mark-soft));
+  --shape-g: rgba(21, 120, 27, var(--mark-strong));
+  --shape-r: rgba(136, 32, 32, var(--mark-strong));
+  --shape-b: rgba(0, 48, 136, var(--mark-strong));
+  --shape-y: rgba(232, 143, 0, var(--mark-strong));
+  --engine-arrow: rgba(0, 95, 225, var(--mark-mid));
+  --engine-arrow-alt: rgba(0, 95, 225, var(--mark-soft));
+  --board-shadow: 0 0 0 1px rgba(0,0,0,.22), 0 3px 8px rgba(0,0,0,.24), 0 22px 56px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+[data-board="blue"] {
+  --piece-shadow: rgba(30,44,54,.10);
+  --board-frame: linear-gradient(180deg, #fffcf5, #f7f2e6);
+  --coord-ink: rgba(42,49,64,.55);
+  --board-edge: rgba(42,49,64,.22);
+  --sq-light: #dfe5e8;
+  --sq-dark: #8ba3b0;
+  --sq-sel: rgba(55, 110, 0, var(--mark-mid));
+  --sq-last: rgba(150, 200, 30, var(--mark-soft));
+  --sq-check: rgba(240, 50, 40, var(--mark-mid));
+  --sq-hint: rgba(255, 150, 0, var(--mark-mid));
+  --sq-star: rgba(166, 110, 0, var(--mark-strong));
+  --sq-star-edge: rgba(60, 40, 0, var(--mark-mid));
+  --sq-flash: rgba(10, 150, 80, var(--mark-mid));
+  --sq-cursor: rgba(255,255,255,.95);
+  --sq-cursor-edge: rgba(28,33,44,.58);
+  --sq-dot: rgba(30, 40, 52, var(--mark-soft));
+  --sq-ring: rgba(30, 40, 52, var(--mark-soft));
+  --shape-g: rgba(21, 120, 27, var(--mark-strong));
+  --shape-r: rgba(136, 32, 32, var(--mark-strong));
+  --shape-b: rgba(0, 48, 136, var(--mark-strong));
+  --shape-y: rgba(232, 143, 0, var(--mark-strong));
+  --engine-arrow: rgba(255, 150, 0, var(--mark-mid));
+  --engine-arrow-alt: rgba(255, 150, 0, var(--mark-soft));
+  --board-shadow: 0 0 0 1px rgba(40,50,70,.08), 0 3px 8px rgba(40,50,70,.08), 0 20px 48px rgba(40,50,70,.14), inset 0 0 0 1px #d8d0c0;
+}
+
+:root {
+  --mark-strong: .72;
+  --mark-mid: .52;
+  --mark-soft: .28;
+}
+
+:root {
+  --ctl-h: 36px;
+  --ctl-h-sm: 32px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-inset: calc(var(--radius-sm) - 2px);
+  --radius-full: 999px;
+  --radius-board: 3px;
+  --lh-tight: 1.25;
+  --lh-body: 1.5;
+  --lh-prose: 1.75;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-quick: .12s;
+  --dur-base: .2s;
+  --dur-slow: .3s;
+  --row-h: 36px;
+  --row-h-sm: 24px;
+  --label-h: 16px;
+  --font-ui: "CJK Punct SC", -apple-system, "Inter Var", "PingFang SC", "Hiragino Sans GB", "Hiragino Sans",
+    "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC",
+    "Source Han Sans SC", system-ui, sans-serif;
+  --font-num: var(--font-ui);
+  --font-title: "Songti SC", "STSong", "Noto Serif CJK SC", "Noto Serif SC", "Source Han Serif SC",
+    "NSimSun", "SimSun", var(--font-ui);
+}
