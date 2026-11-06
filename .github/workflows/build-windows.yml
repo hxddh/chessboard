@@ -1,7 +1,7 @@
 name: build-windows
 
 # Builds chessboard.exe (x64) on a Windows runner using the system web engine
-# (Microsoft Edge WebView2, preinstalled on windows-latest). Native SDK comes
+# (Microsoft Edge WebView2, preinstalled on windows-2025). Native SDK comes
 # from npm (@native-sdk/cli), zig from ziglang.org. Optionally uploads the zip
 # to an existing release when release_tag is set. Exploratory: this is the
 # first non-macOS target — CI is the source of truth for whether it builds.
@@ -39,7 +39,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -201,7 +201,7 @@ jobs:
   # The smoke and scenario steps carry their own limits under the job's, so
   # a hang ends a step "failed" with its report, not the job "cancelled".
   automation:
-    runs-on: windows-latest
+    runs-on: windows-2025
     timeout-minutes: 20
     name: automation (not released)
     defaults:

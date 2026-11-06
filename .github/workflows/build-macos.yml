@@ -41,7 +41,7 @@ jobs:
   build:
     # macos-14 was retired on 2026-11-02 (github.blog changelog 2026-10-01):
     # its jobs got no runner and were cancelled, which cancelled the v19.0.0
-    # release. macos-26 is the image macos-latest maps to, the one checks.yml's
+    # release. macos-26 is the image macos-26 maps to, the one checks.yml's
     # macOS jobs build and test on; pinned so a later move of -latest is a
     # change here, not a surprise
     runs-on: macos-26

@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   engine:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # The whole sweep, and it is allowed to take as long as it takes.
     timeout-minutes: 240
     steps:
@@ -47,7 +47,7 @@ jobs:
   # the answer lands in the run's summary. So the header's rule still holds —
   # a red nightly is still only ever about the engine sweep.
   deps:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     continue-on-error: true
     steps:

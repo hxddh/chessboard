@@ -37,7 +37,7 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # ~90 requests a second apart, and a minute's wait on each 429
     timeout-minutes: 30
     steps:

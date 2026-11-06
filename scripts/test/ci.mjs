@@ -334,13 +334,26 @@ export async function run() {
       // v8-3-plan V4: in a job of its own (`mined`), no longer a step of static
       const minedAt = checksWf.search(/^  mined:\s*$/m);
       const minedJob = minedAt < 0 ? "" : checksWf.slice(minedAt).split(/\n  [\w-]+:\s*\n/)[0];
-      assert(/^    runs-on: ubuntu-latest\s*$/m.test(minedJob) && /run: node scripts\/test-mined\.mjs --sample=150/.test(minedJob) &&
+      assert(/^    runs-on: ubuntu-26.04\s*$/m.test(minedJob) && /run: node scripts\/test-mined\.mjs --sample=150/.test(minedJob) &&
         /run: python3 scripts\/test-verify-endgames\.py/.test(minedJob) &&
         (checksWf.match(/scripts\/test-mined\.mjs/g) || []).length === 1,
         "150 题抽样校验只在 ubuntu 上跑一遍（自己一个作业）—— 它和平台无关");
-      assert(/os: windows-latest\s*\n\s*flags: -Dplatform=windows/.test(zigJob) && /os: macos-latest/.test(zigJob) &&
+      assert(/os: windows-2025\s*\n\s*flags: -Dplatform=windows/.test(zigJob) && /os: macos-26/.test(zigJob) &&
         /run: zig build test \$\{\{ matrix\.flags \}\}/.test(zigJob) && /runs-on: \$\{\{ matrix\.os \}\}/.test(zigJob),
-        "checks.yml 的 zig job 在 windows-latest 上编译并跑 zig build test —— PR 上也编译 Windows 原生");
+        "checks.yml 的 zig job 在 windows-2025 上编译并跑 zig build test —— PR 上也编译 Windows 原生");
+    }
+    // v20-0-plan E4: macos-14's retirement (2026-11-02) cancelled the first
+    // v19.0.0 releases. Every runner is named by version, so a retirement or a
+    // move of a -latest label is a change in this repository, not a surprise
+    {
+      const wfDir = path.join(root, ".github", "workflows");
+      const floating = [];
+      for (const f of fs.readdirSync(wfDir).filter((n) => /\.ya?ml$/.test(n))) {
+        const src = fs.readFileSync(path.join(wfDir, f), "utf8");
+        for (const m of src.matchAll(/\b(ubuntu|macos|windows)-latest\b/g)) floating.push(f + ": " + m[0]);
+      }
+      assert(floating.length === 0,
+        "工作流里的构建机都写了版本号，没有 -latest（" + (floating.join(", ") || "无") + "）");
     }
     assert(/run: npm run test:engine$/m.test(nightlyWf),
       "全量那一趟有人跑 —— 抽样只覆盖 15%，剩下的 85% 在 nightly");

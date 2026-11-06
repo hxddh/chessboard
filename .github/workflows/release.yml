@@ -64,7 +64,7 @@ jobs:
   # and the tag is not already a published release. `publish` checks both
   # again — this job only makes a doomed run go red early.
   preflight:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       - name: notes exist, tag not yet published
@@ -86,7 +86,7 @@ jobs:
   # engine soundness gates (release-only) and both platform builds always
   # run. A rehearsal from a branch has no such run, and runs everything.
   reuse:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       green: ${{ steps.find.outputs.green }}
     steps:
@@ -103,7 +103,7 @@ jobs:
   static:
     needs: reuse
     if: needs.reuse.outputs.green != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -151,7 +151,7 @@ jobs:
   # (checks.yml), and anyone editing the bank runs `npm run test:engine` by
   # hand, which is what --fix already requires.
   engine:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -194,7 +194,7 @@ jobs:
   browser:
     needs: reuse
     if: needs.reuse.outputs.green != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # v8-2-plan V4: each group's own limit, the same numbers as checks.yml
     # (was 60 for every group)
     timeout-minutes: ${{ matrix.group.timeout }}
@@ -353,7 +353,7 @@ jobs:
     # static and browser are skipped when `reuse` found them green on this
     # commit already; anything failed or cancelled still stops the release
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       # v8 (v8-1-plan F1) decides whether to unzip by the blob's content-type
