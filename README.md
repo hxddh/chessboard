@@ -205,12 +205,13 @@ src/*.zig          # 原生壳:菜单、对话框、存档桥、同步、窗口�
 assets/            # 应用图标(骑士标,assets/logo.svg 为源)
 third_party/stockfish/   # Stockfish.js 19 lite-single（GPLv3）
 third_party/maia/        # Maia 1100–1900 的 lc0 权重（GPLv3）
+third_party/maia3/       # Maia-3 5M 权重，fp16 转换版（AGPL-3.0，20.0 的 src/app 用；转换说明见其 NOTICE）
 ```
 
 ## 许可
 
 GPLv3（见 LICENSE）。vendored chess.js 保留其 BSD-2-Clause 版权头；vendored Stockfish.js
-为 GPLv3（`third_party/stockfish/COPYING.txt`）；Maia 的权重为 GPLv3（`third_party/maia/LICENSE`，安装包里是 `licenses/maia-LICENSE.txt`）；界面的 Latin 字体 Inter 为 SIL Open Font License 1.1（`src/web/fonts/Inter-OFL.txt`，安装包里是 `licenses/Inter-OFL.txt`）；棋子矢量图形共三套（19.0 S8 由七套减到三套），逐套核过许可，应用内「关于」面板列的是同样的作者与许可：
+为 GPLv3（`third_party/stockfish/COPYING.txt`）；Maia 的权重为 GPLv3（`third_party/maia/LICENSE`，安装包里是 `licenses/maia-LICENSE.txt`）；20.0 的人类着法模型 Maia-3（CSSLab/maia3，Monroe 等，ICLR 2026）的 5M 权重为 **AGPL-3.0**（`third_party/maia3/LICENSE` 与 `NOTICE`，安装包里是 `licenses/maia3-LICENSE.txt` 与 `licenses/maia3-NOTICE.txt`）：随包的是 `scripts/gen-maia3.py` 从原始 `maia3-5m.pt`（Hugging Face `UofTCSSLab/Maia3-5M`，sha256 见 NOTICE）转出的 fp16 版，NOTICE 标明了改动，原始文件的地址与转换脚本就是它的源形式；GPLv3 §13 / AGPLv3 §13 明确允许两者组合分发，各部分仍按各自的许可；推理代码（`src/app/services/maia3/`）是本应用自己按论文写的，仍是 GPLv3；界面的 Latin 字体 Inter 为 SIL Open Font License 1.1（`src/web/fonts/Inter-OFL.txt`，安装包里是 `licenses/Inter-OFL.txt`）；棋子矢量图形共三套（19.0 S8 由七套减到三套），逐套核过许可，应用内「关于」面板列的是同样的作者与许可：
 
 - **伯内特 / cburnett（`js/pieces-cburnett.js`）**：作者 Colin M.L. Burnett，原样取自 lichess-org/lila 的 `public/piece/cburnett`，该仓库 COPYING.md 列其许可为 GPLv2+，本应用按 GPLv3 使用。
 - **经典（`js/pieces.js`）**：同一套设计的 Wikimedia Commons 重绘版（作者 Cburnett / Rfc1394，经 cm-chessboard 整理）。原作以 GFDL / BSD / **GPL** / CC BY-SA 3.0 多重许可发布；本仓库按其中的 GPL 一项使用，与本应用的 GPLv3 相容（CC BY-SA 3.0 单独一项并不与 GPLv3 相容，4.0 才加入单向相容，所以写清楚取的是哪一项）。

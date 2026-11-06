@@ -51,6 +51,17 @@
       "note": "13.0 H。没有新版；Maia-2 要 PyTorch 运行时，不换。"
     },
     {
+      "name": "Maia-3 5M（CSSLab/maia3，Hugging Face UofTCSSLab/Maia3-5M）",
+      "kind": "engine",
+      "current": "maia3-5m.pt @ b6559de2398d7140b985f28fd2c19fb5e47ddabe（sha256 ba14208b…524f），由 scripts/gen-maia3.py 转成 fp16 的 third_party/maia3/maia3-5m.f16（10.46 MB）",
+      "pinnedIn": ["third_party/maia3/maia3-5m.json", "scripts/gen-maia3.py"],
+      "latest": "5M / 23M / 79M 三个尺寸（2026-05）；代码 CSSLab/maia3 1e13597（2026-05-25）",
+      "source": ["https://huggingface.co/api/models/UofTCSSLab/Maia3-5M（sha b6559de，2026-11-06 查）", "https://github.com/CSSLab/maia3 LICENSE = AGPL-3.0"],
+      "checkedAt": "2026-11-06",
+      "recommendation": "not-needed",
+      "note": "20.0 P1。前向计算是自己写的（src/app/services/maia3，wasm SIMD），对着 PyTorch 原版做一致性测试（scripts/app/maia3-parity.mjs）；23M 约 4.6 倍算量，先不换。"
+    },
+    {
       "name": "Leela Chess Zero 的两张表（lc0 v0.30.0 kIdxToMove、kConvPolicyMap）",
       "kind": "data",
       "current": "v0.30.0，抄进 src/web/js/human/lc0-tables.js",

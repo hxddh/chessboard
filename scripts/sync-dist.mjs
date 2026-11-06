@@ -60,6 +60,9 @@ const FILES = [
   // 13.0 H: the five Maia nets (scripts/gen-maia-src.mjs), and their licence
   ...MAIA_BANDS.map((b) => ["src/web/js/maia-" + b + ".js", "js/maia-" + b + ".js"]),
   ["third_party/maia/LICENSE", "licenses/maia-LICENSE.txt"],
+  // 20.0 P1: Maia-3 (AGPL-3.0) — its licence and the notice that the weights are converted
+  ["third_party/maia3/LICENSE", "licenses/maia3-LICENSE.txt"],
+  ["third_party/maia3/NOTICE", "licenses/maia3-NOTICE.txt"],
   // 9.0 V2: the one bundled face, Inter (Latin, variable, ~48 KB), which
   // styles.css loads as fonts/…; its OFL travels with the other licences
   ["src/web/fonts/inter-latin-wght-normal.woff2", "fonts/inter-latin-wght-normal.woff2"],

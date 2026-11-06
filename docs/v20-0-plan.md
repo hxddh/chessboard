@@ -322,6 +322,7 @@ E4 先把 CI 版本写死 → A5 技术验证（SDK 0.11 上 ES modules / fetch�
 - 速度（单线程实测）：PyTorch 8.7 ms、onnxruntime 7.7 ms、onnxruntime-web WASM SIMD 27 ms 每次评估——都在现在 Maia-1 的 50–200 ms 之内。fp16 约 10 MB，比现在五张网合计 11.5 MB 还小。
 - 质量（论文表 1）：猜中真人着法 Maia-3-5M 55.4%、Maia-2 52.0%、Maia-1 51.6%。
 - 做法：构建时转换权重；自己写 JS/WASM 前向（不带 11 MB 的 onnxruntime-web），对着 PyTorch 做一致性测试；1100 以下五档直接传低等级分，不再靠温度和下限；阶梯重新对下标定。约 1–1.5 周。
+- **接入（2026-11-06）**：`scripts/gen-maia3.py`（开发时，要 PyTorch）把钉死版本的 `maia3-5m.pt` 转成 `third_party/maia3/maia3-5m.f16`（10.46 MB，fp16，线性层转置）+ 22 KB 的 JSON 头，AGPL 文本与 NOTICE 随附；前向在 `src/app/services/maia3/`（自己写的 JS，矩阵乘法是 2.7 KB 的 wasm SIMD 内核 `kernels.c`，另有纯 JS 后备）；`maia3Backend({ analyst })` 接进 `EngineService`：`humanMoves(fen, rating, history)` 是网络的分布，`bestMove` 对有等级分的 profile 按温度 / top-p 抽样，分析仍归 Stockfish。一致性（`scripts/app/maia3-parity.mjs`，60 个局面、600–2600、两种颜色、真实历史、升变 / 易位 / 吃过路兵）：首选着法 60/60 相同，最大 KL 2.6e-6，WDL 差 ≤ 7e-4。Chromium worker 里每次评估中位 38 ms、p90 40 ms，冷启动约 80 ms，wasm 堆 21.9 MB（Node：wasm 41 ms，纯 JS 418 ms）。还没做：默认对手换成 Maia-3、阶梯重新标定、1100 以下的档位直接传低等级分。
 
 **A5 / E1 SDK 核查（读 0.10.1 与 0.11.0 的源码，Linux 上对 0.11 试编译）**：
 - zero:// 的能力（macOS `appkit_host.m` 7694–7748、Windows `webview2_host.cpp` 5406–5426；两版逐字节相同）：同源，所以 `<script type="module">`、静态 `import`、`import()`、`fetch` 文本与二进制、`WebAssembly.instantiateStreaming` 都可以；`.wasm` 是 `application/wasm`，`.js/.mjs` 是 `text/javascript`；响应只带 Content-Type，**没有 COOP/COEP，所以没有 SharedArrayBuffer**，wasm 多线程做不了（原生引擎是唯一的多线程路）。`design-constraints.md` 里「zero:// 不能 fetch」在源码里找不到依据。
