@@ -8,6 +8,9 @@ import path from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import { createHarness } from "./app/harness.mjs";
 
+// src/web/js has no package.json saying "module"; Node's reparse notice is noise here
+process.removeAllListeners("warning");
+
 const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "app");
 const files = fs.readdirSync(DIR).filter((f) => f.endsWith(".test.mjs")).sort();
 const h = createHarness();
