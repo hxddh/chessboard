@@ -52,23 +52,4 @@ export default {
   "rv.noEngine": "这次没能复盘：{0}",
   "grade.blunder": "严重失误", "grade.mistake": "失误", "grade.miss": "错失良机", "grade.inaccuracy": "小失误",
   "grade.brilliant": "妙着", "grade.only": "仅此一着", "grade.best": "最佳", "grade.excellent": "优秀", "grade.good": "良好", "grade.book": "谱着",
-
-  // the explainer's sentences (src/web/js/explain.js keys)
-  "ex.mate1": "有 {0} 一步杀没走", "ex.mateN": "有 {0} 起的 {1} 步杀没走",
-  "ex.allowsMate": "让对方有 {0} 起的 {1} 步杀", "ex.allowsMate1": "让对方 {0} 一步杀",
-  "ex.motifLoss": "漏看了 {0} {1}，丢{2}", "ex.motif": "漏看了 {0} {1}", "ex.forkHits": "漏看了 {0} {1}，同时攻击{2}和{3}",
-  "ex.loss": "对方 {0} 之后丢{1}", "ex.betterMotif": "更好的是 {0}（{1}）", "ex.better": "更好的是 {0}",
-  "ex.betterWins": "更好的是 {0}，能赢下对方一个{1}", "ex.mate1Motif": "有 {0} 一步杀没走（{1}）",
-  "ex.mateNMotif": "有 {0} 起的 {1} 步杀没走（{2}）", "ex.threatMate": "没防住对方 {0} 一步杀的威胁",
-  "ex.allowsMate1Motif": "让对方 {0} 一步杀（{1}）", "ex.allowsMateMotif": "让对方有 {0} 起的 {1} 步杀（{2}）",
-  "ex.threatHanging": "没理会对方 {0} 的威胁，{1}没有保护住", "ex.perpetual": "让对方 {0} 起长将",
-  "ex.hanging": "漏看了 {0}，{1}没有保护住", "ex.betterHanging": "更好的是 {0}，吃掉没有保护住的{1}",
-  "ex.hangingCheap": "漏看了 {0}，{2}吃{1}，换不回来", "ex.threatCheap": "没理会对方 {0} 的威胁，{2}吃{1}，换不回来",
-  "ex.betterCheap": "更好的是 {0}，{2}吃{1}，净赚子力",
-  "motif.fork": "捉双", "motif.pin": "牵制", "motif.skewer": "串击", "motif.discovered": "闪将", "motif.double": "双将",
-  "motif.hanging": "挂着的子", "motif.backRank": "底线杀", "motif.mateThreat": "杀棋威胁", "motif.trapped": "困子",
-  "motif.removeDefender": "消除保护", "motif.overload": "过载", "motif.deflection": "引离", "motif.decoy": "引入",
-  "motif.xray": "X 光", "motif.zwischenzug": "中间着", "motif.desperado": "绝望子", "motif.promotion": "升变",
-  "motif.perpetual": "长将", "motif.discoveredAttack": "闪击",
-  "piece.p": "兵", "piece.n": "马", "piece.b": "象", "piece.r": "车", "piece.q": "后", "piece.k": "王",
 };

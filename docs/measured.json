@@ -948,6 +948,94 @@
       }
     }
   },
+  "explainCoverage": {
+    "what": "复盘里每一手 ? / ?? 的讲解（core/explain.js explainMove，按 review/review.js 的调用方式）：有原因、说出机制、只说「更好的是」的比例，与 100 条对照深搜的错误数",
+    "script": "scripts/audit-explain.mjs --audit --record",
+    "corpora": {
+      "corpus": "scripts/fixtures/corpus.mjs（28 局）",
+      "low": "scripts/fixtures/coach-games.mjs（低分段）"
+    },
+    "passMs": 200,
+    "oracleNodes": 1000000,
+    "acceptance": {
+      "reasonedPct": ">= 80 (all)",
+      "namedPct": ">= 60 (low)",
+      "barePct": "<= 10 (the 100 audited, as 14.0 counted its 25)",
+      "wrongPct": "<= 1 (audit)"
+    },
+    "before": {
+      "all": {
+        "mistakes": 211,
+        "reasoned": 122,
+        "reasonedPct": 57.8,
+        "named": 68,
+        "namedPct": 32.2,
+        "bare": 85,
+        "barePct": 40.3
+      },
+      "corpus": {
+        "mistakes": 99,
+        "reasoned": 53,
+        "reasonedPct": 53.5,
+        "named": 38,
+        "namedPct": 38.4,
+        "bare": 43,
+        "barePct": 43.4
+      },
+      "low": {
+        "mistakes": 112,
+        "reasoned": 69,
+        "reasonedPct": 61.6,
+        "named": 30,
+        "namedPct": 26.8,
+        "bare": 42,
+        "barePct": 37.5
+      },
+      "auditWrongPct": 1,
+      "auditBarePct": 25
+    },
+    "after": {
+      "all": {
+        "mistakes": 211,
+        "reasoned": 184,
+        "reasonedPct": 87.2,
+        "named": 167,
+        "namedPct": 79.1,
+        "bare": 23,
+        "barePct": 10.9
+      },
+      "corpus": {
+        "mistakes": 99,
+        "reasoned": 82,
+        "reasonedPct": 82.8,
+        "named": 81,
+        "namedPct": 81.8,
+        "bare": 14,
+        "barePct": 14.1
+      },
+      "low": {
+        "mistakes": 112,
+        "reasoned": 102,
+        "reasonedPct": 91.1,
+        "named": 86,
+        "namedPct": 76.8,
+        "bare": 9,
+        "barePct": 8
+      }
+    },
+    "audit": {
+      "n": 100,
+      "nodes": 1000000,
+      "wrong": 1,
+      "wrongPct": 1,
+      "wrong19": 1,
+      "wrong19Pct": 1,
+      "bare": 7,
+      "barePct": 7,
+      "bare19": 25,
+      "bare19Pct": 25
+    }
+  },
   "explorer": {
     "what": "v8-0-plan C3 开局浏览器：棋谱库索引耗时、内置大师树的来源与规模、包体积增量",
     "script": "scripts/test-explorer.mjs --record",
