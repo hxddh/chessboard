@@ -284,6 +284,10 @@ jobs:
           scripts/add-engine.sh dist-app-pkg/Chessboard.app build/stockfish
           test -f "$(find dist-app-pkg/Chessboard.app -path '*/licenses/stockfish-SOURCE.txt' | head -n1)"
           du -sh dist-app-pkg/Chessboard.app
+          # the package size, exactly (v20-0-plan §10 F3b: ≤ 40 MB): bytes, and the five largest files
+          echo "package: $(du -sk dist-app-pkg/Chessboard.app | cut -f1) KiB"
+          find dist-app-pkg/Chessboard.app -type f -exec du -k {} + | sort -rn | head -5
+          ditto -c -k --sequesterRsrc --keepParent dist-app-pkg/Chessboard.app dist-app-pkg/app.zip && echo "zipped: $(du -k dist-app-pkg/app.zip | cut -f1) KiB"
           echo "APP_EXE=dist-app-pkg/Chessboard.app/Contents/MacOS/chessboard" >> "$GITHUB_ENV"
       - name: the 20.0 app's scenarios
         timeout-minutes: 20

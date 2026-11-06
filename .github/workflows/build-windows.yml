@@ -319,6 +319,9 @@ jobs:
           scripts/add-engine.sh dist-app-pkg/Chessboard build/stockfish
           test -f "$(find dist-app-pkg/Chessboard -path '*/licenses/stockfish-SOURCE.txt' | head -n1)"
           du -sh dist-app-pkg/Chessboard
+          # the package size, exactly (v20-0-plan §10 F3b: ≤ 40 MB): bytes, and the five largest files
+          echo "package: $(du -sk dist-app-pkg/Chessboard | cut -f1) KiB"
+          find dist-app-pkg/Chessboard -type f -exec du -k {} + | sort -rn | head -5
           exe="$(find dist-app-pkg/Chessboard -name chessboard.exe | head -n1)"
           echo "APP_EXE=$exe" >> "$GITHUB_ENV"
       - name: the 20.0 app's scenarios
