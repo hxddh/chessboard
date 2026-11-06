@@ -622,6 +622,16 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
   const hostSrc = fs.readFileSync(path.join(ROOT, "src/web/js/host.js"), "utf8");
   const mainSrc = appZigSrc;
   const used = new Set([...hostSrc.matchAll(/zero\.invoke\(\s*"(chess\.[a-zA-Z]+)"/g)].map((m) => m[1]));
+  // 20.0 (v20-0-plan A1–A3): the new UI's services call the bridge too —
+  // the db (chess.db*), the native engine (chess.engine*), the self-test
+  const appJs = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) =>
+    d.isDirectory() ? appJs(path.join(dir, d.name)) : d.name.endsWith(".js") ? [path.join(dir, d.name)] : []);
+  const appUsed = new Set();
+  for (const f of appJs(path.join(ROOT, "src/app"))) {
+    for (const m of fs.readFileSync(f, "utf8").matchAll(/(?:invoke|call)\(\s*"(chess\.[a-zA-Z]+)"/g)) { appUsed.add(m[1]); used.add(m[1]); }
+  }
+  check(["chess.dbExec", "chess.dbQuery", "chess.engineStart", "chess.engineSend", "chess.engineStop"].every((c) => appUsed.has(c)),
+    "应用桥: 20.0 界面调用 db 与原生引擎的五个命令(" + [...appUsed].sort().join("、") + ")");
   const block = /const APP_COMMANDS = \[_\]AppCommand\{([\s\S]*?)\n\};/.exec(mainSrc);
   check(!!block, "应用桥: bridge.zig 里有 APP_COMMANDS 表");
   check((mainSrc.match(/const APP_COMMANDS = \[_\]/g) || []).length === 1, "应用桥: APP_COMMANDS 只有一份");

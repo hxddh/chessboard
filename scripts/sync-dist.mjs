@@ -24,6 +24,15 @@
  * engine-src must carry the full wasm payload, not a stub.
  *
  *   node scripts/sync-dist.mjs
+ *
+ * 20.0 (v20-0-plan A1): `--ui=app` packages the 20.0 frontend instead —
+ * scripts/build-app.mjs's dist-app/ (ES modules, split; the files it points
+ * at under assets/), copied whole, plus the same licences. What it checks:
+ * the page's CSP lets Workers start from 'self' as well as blob: (ADR 0001
+ * probe), no module reaches out of the package with a `../` URL, and every
+ * file the build copied is there and is not empty.
+ *
+ *   node scripts/sync-dist.mjs --ui=app     (zig build -Dui=app runs this)
  */
 import fs from "fs";
 import path from "path";
@@ -39,6 +48,40 @@ const ROOT = path.join(HERE, "..");
 const DIST = path.join(ROOT, "frontend", "dist");
 
 const run = (script) => execFileSync(process.execPath, [path.join(HERE, script)], { cwd: ROOT, stdio: "inherit" });
+
+/** [source relative to ROOT, destination relative to DIST]: the licences both UIs carry. */
+const LICENSES = [
+  ["LICENSE", "licenses/LICENSE.txt"],
+  ["third_party/stockfish/COPYING.txt", "licenses/stockfish-COPYING.txt"],
+  ["third_party/maia3/LICENSE", "licenses/maia3-LICENSE.txt"],
+  ["third_party/maia3/NOTICE", "licenses/maia3-NOTICE.txt"],
+  ["src/web/fonts/Inter-OFL.txt", "licenses/Inter-OFL.txt"],
+];
+
+if (process.argv.includes("--ui=app")) {
+  const { buildApp, OUT } = await import("./build-app.mjs");
+  const built = await buildApp({ quiet: true });
+  fs.rmSync(DIST, { recursive: true, force: true });
+  fs.cpSync(OUT, DIST, { recursive: true });
+  fs.mkdirSync(path.join(DIST, "licenses"), { recursive: true });
+  for (const [from, to] of LICENSES) fs.copyFileSync(path.join(ROOT, from), path.join(DIST, to));
+  const fail = (why) => { console.error("FAIL: frontend/dist（20.0 界面）" + why); process.exit(1); };
+  const html = fs.readFileSync(path.join(DIST, "index.html"), "utf8");
+  const csp = (/http-equiv="Content-Security-Policy"\s+content="([^"]+)"/.exec(html) || [])[1] || "";
+  if (!/worker-src 'self' blob:/.test(csp)) fail("的 CSP 没有 worker-src 'self' blob:（URL Worker 会先被页面自己挡掉，ADR 0001）：" + csp);
+  if (!/<script type="module" src="main.js">/.test(html)) fail("的 index.html 没有加载 main.js");
+  for (const f of fs.readdirSync(DIST).filter((n) => n.endsWith(".js"))) {
+    const m = /new URL\((["'])\.\.\//.exec(fs.readFileSync(path.join(DIST, f), "utf8"));
+    if (m) fail("里 " + f + " 有一个 ../ 的 URL —— 打包后它在包外面");
+  }
+  for (const a of built.assets) {
+    const p = path.join(DIST, a);
+    if (!fs.existsSync(p) || !fs.statSync(p).size) fail("少了 " + a);
+  }
+  const bytes = (dir) => fs.readdirSync(dir, { withFileTypes: true }).reduce((n, d) => n + (d.isDirectory() ? bytes(path.join(dir, d.name)) : fs.statSync(path.join(dir, d.name)).size), 0);
+  console.log("frontend/dist ← dist-app（20.0 界面，" + (bytes(DIST) / 1048576).toFixed(1) + " MB；" + built.assets.length + " 个资源文件在 assets/ 下）");
+  process.exit(0);
+}
 
 run("gen-engine-src.mjs");
 run("gen-maia-src.mjs");

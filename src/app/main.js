@@ -15,18 +15,20 @@ import { playActions, initialPlay } from "./state/play.js";
 import { settingsActions, SETTINGS_DEFAULT, shellFor, coachOn } from "./state/settings.js";
 import { DEFAULT_OPPONENT } from "./core/opponents.js";
 import { persist, restore } from "./state/persist.js";
-import { createDb, idbBackend, memoryBackend, newId } from "./services/db.js";
+import { createDb, newId } from "./services/db.js";
+import { analystBackend, openDbBackend, startSelftest } from "./services/native.js";
 import { createEngineService, fakeBackend, stockfishBackend } from "./services/engine.js";
 import { maia3Backend } from "./services/maia3/backend.js";
 
 const params = new URLSearchParams(location.search);
 const store = createStore({ play: initialPlay, settings: SETTINGS_DEFAULT }, { ...playActions, ...settingsActions });
 const engineName = params.get("engine") || "";
-const analyst = engineName.endsWith("fake") ? fakeBackend({ delayMs: Number(params.get("delay") ?? 30) }) : stockfishBackend();
+const analyst = engineName.endsWith("fake") ? fakeBackend({ delayMs: Number(params.get("delay") ?? 30) }) : analystBackend(() => stockfishBackend());
 const engine = createEngineService(engineName.startsWith("maia3") ? maia3Backend({ analyst }) : analyst);
 
 // the db opens while the first page paints; pages that need it wait on `ready`
-const ready = createDb(params.get("db") === "memory" ? memoryBackend() : idbBackend(params.get("dbname") || "chessboard"))
+// (in the app: the native SQLite store when the shell has it, services/native.js)
+const ready = openDbBackend(params).then((backend) => createDb(backend))
   .then(async (db) => {
     persist(store, db);
     // a first run: a game against the default opponent, White, no clock
@@ -65,3 +67,5 @@ effect(() => {
 router.start();
 // for the e2e and the console: the app's parts, not its state
 window.__app = { store, engine, router, ready };
+// in the packaged app with CHESS_SELFTEST=1 only (selftest.js)
+startSelftest({ store, engine, router, ready, analyst });
