@@ -65,16 +65,16 @@ async function runSuite(add, label) {
  * holds nothing: ms to the first card and to the finished pass, and per
  * level (scan / normal / deep) the searches, median depth and nodes/s.
  */
-async function reviewOnce(be, svc, game, positions) {
+async function reviewOnce(be, svc, game, positions, budget) {
   const per = { scan: [], normal: [], deep: [] };
   const recording = { ...svc, analyse: async (fen, o) => {
     const r = await svc.analyse(fen, o);
-    const lv = o && o.budget && o.budget.review;
+    const lv = o && o.budget && (o.budget.review || (budget && Object.keys(budget).find((k) => budget[k] === o.budget)));
     if (lv && be.info.last) per[lv].push(be.info.last);
     return r;
   } };
   const db = Promise.resolve({ query: async () => [], append: async () => {} });
-  const rv = createReview({ engine: recording, db, t: (k, ...a) => k + a.join(",") });
+  const rv = createReview({ engine: recording, db, t: (k, ...a) => k + a.join(","), ...(budget ? { budget } : {}) });
   await rv.open(game, { sides: ["w"] });
   await rv.whenFinished();
   const out = { plies: game.moves.length, positions: rv.data ? rv.data.fens.length : 0, firstCardMs: rv.timing.firstCardMs, fullMs: rv.timing.fullMs,
@@ -168,7 +168,10 @@ const SCENARIOS = {
     await be.clear();
     rep.review = await reviewOnce(be, svc, { id: "st-60", startFen: START, moves }, fens.length);
     rep.review.nodesPerThread = { ...REVIEW_NODES.native };
-    checks.review = { pass: rep.review.positions === fens.length && rep.review.firstCardMs != null && rep.review.fullMs != null, ...rep.review };
+    // gates with room for a slow runner: the targets are 3 s and 8 s (v20-0-plan §10 P5b);
+    // the 19.0 way took 28–29 s here, and the normal level must reach depth 16
+    checks.review = { pass: rep.review.positions === fens.length && rep.review.firstCardMs != null && rep.review.firstCardMs <= 4000 &&
+      rep.review.fullMs != null && rep.review.fullMs <= 25000 && rep.review.normal.medianDepth >= 16, ...rep.review };
     // the 19.0 way on the same game and engine: 200 ms a position (before / after)
     const stats = [];
     const recording = { ...svc, analyse: async (fen, o) => { const r = await svc.analyse(fen, o); if (be.info.last) stats.push(be.info.last); return r; } };
@@ -178,12 +181,13 @@ const SCENARIOS = {
     const quick = stats.filter((s) => s.ms < 600);
     rep.review19 = { budgetMs: 200, reviewS: round((performance.now() - t0) / 1000), searches: stats.length, deep: p19.deep.filter(Boolean).length,
       medianDepth: median(quick.map((s) => s.depth)), medianNps: median(quick.map((s) => s.nps)) };
-    // a lighter normal level, for the record (how much the budget buys)
-    const keep = { ...REVIEW_NODES.native };
-    Object.assign(REVIEW_NODES.native, { normal: keep.normal / 2, deep: keep.deep / 2 });
-    try { await be.clear(); rep.reviewHalf = await reviewOnce(be, svc, { id: "st-60h", startFen: START, moves }, fens.length); }
-    finally { Object.assign(REVIEW_NODES.native, keep); }
-    rep.reviewHalf.nodesPerThread = { ...keep, normal: keep.normal / 2, deep: keep.deep / 2 };
+    // a lighter budget, for the record (what the nodes buy): half of every level, as plain
+    // nodes (× Threads) — this bundle's REVIEW_NODES is a copy, not the page's
+    const T = be.info.threads, half = (n) => ({ nodes: Math.round(n / 2) * T });
+    const lighter = { scan: half(REVIEW_NODES.native.scan), normal: half(REVIEW_NODES.native.normal), deep: half(REVIEW_NODES.native.deep) };
+    await be.clear();
+    rep.reviewHalf = await reviewOnce(be, svc, { id: "st-60h", startFen: START, moves }, fens.length, lighter);
+    rep.reviewHalf.nodesPerThread = Object.fromEntries(Object.entries(lighter).map(([k, v]) => [k, v.nodes / T]));
     // one long look from the start: a ceiling for nodes/s on this machine
     await svc.analyse(START, { lines: 1, budget: { ms: 3000 } });
     rep.long = { ...be.info.last };
