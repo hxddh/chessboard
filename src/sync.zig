@@ -218,8 +218,10 @@ pub const Pending = struct {
         if (kind == .sync) self.progress.store(@as(u64, gen) << 32, .release);
         _ = self.live.fetchAdd(1, .acq_rel);
         // the job's thread only waits (the HTTP runs in its Io task), so a
-        // small stack does
-        const thread = std.Thread.spawn(.{ .stack_size = 256 * 1024 }, jobMain, .{job}) catch {
+        // small stack does — but not smaller than the binary's static TLS:
+        // glibc carves that out of the stack (pthread_create EINVAL), and the
+        // test binary, which links libc for SQLite since 20.0 A2, has 257 KiB
+        const thread = std.Thread.spawn(.{ .stack_size = 1024 * 1024 }, jobMain, .{job}) catch {
             job.release();
             return .failed;
         };

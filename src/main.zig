@@ -54,6 +54,15 @@ const languageTag = @import("menus.zig").languageTag;
 const menuText = @import("menus.zig").menuText;
 const windowTitleFor = @import("menus.zig").windowTitleFor;
 const Pending = @import("sync.zig").Pending;
+const engine = @import("engine.zig");
+
+// v20-0-plan A1: the 20.0 UI's manifest (gen-manifest.mjs --ui app). Its
+// db service needs the store (ADR 0003), and its asset reads need a missing
+// file to be missing (ADR 0001) — refused here rather than found on a device.
+comptime {
+    if (runner.ui_app and !runner.manifest_sqlite) @compileError("-Dui=app needs a manifest with the sqlite capability: node scripts/gen-manifest.mjs <platform> --ui app");
+    if (runner.ui_app and runner.manifest_spa_fallback) @compileError("-Dui=app needs spa_fallback = false: node scripts/gen-manifest.mjs <platform> --ui app");
+}
 
 /// The page's directory, relative: what app.zon's .frontend.dist names and
 /// what a dev run (or the macOS host, inside the .app) resolves.
@@ -162,6 +171,8 @@ pub const App = struct {
     pending: Pending = .{},
     /// v8-0-plan F3 — writes arriving in pieces, until their last piece.
     stages: Stages = .{},
+    /// v20-0-plan F3 — the native Stockfish process (engine.zig).
+    engine: engine.Engine = .{},
     /// Q1.6 — localized copies of the manifest menus, when the launch
     /// language is not Chinese. Same storage shape as runner.MenuStorage.
     menu_storage: runner.MenuStorage = .{},
@@ -368,7 +379,10 @@ fn onEvent(context: *anyopaque, runtime: *native_sdk.Runtime, event: native_sdk.
         // delivers the platform's `.wake` here as `.effects_wake`, on the loop
         // thread (runtime/flow.zig dispatchPlatformEvent), which is the one
         // thread that may answer the bridge
-        .effects_wake => self.pending.drain(),
+        .effects_wake => {
+            self.pending.drain();
+            self.engine.drain(self.io, engine.runtimeEmit(runtime));
+        },
         .command => |cmd| {
             var buf: [256]u8 = undefined;
             const detail = commandDetail(&buf, cmd.name, cmd.window_id) catch return;
@@ -388,6 +402,7 @@ fn onStop(context: *anyopaque, runtime: *native_sdk.Runtime) anyerror!void {
     _ = runtime;
     const self: *App = @ptrCast(@alignCast(context));
     self.pending.close();
+    self.engine.close(self.io);
 }
 
 extern fn chess_mac_chrome_init() void;
@@ -419,7 +434,9 @@ pub fn main(init: std.process.Init) !void {
     // v8-1-plan N1: a sync or update check still on the network. Returning
     // would reach std.start's Io.Threaded.deinit while its thread is inside
     // that Io, so leave here instead — the answer has nobody to go to.
-    if (app_state.pending.workersOut()) std.process.exit(if (ran) |_| 0 else |_| 1);
+    // v20-0-plan F3: the same for the engine's reader, which ends with the
+    // engine (asked to quit, its stdin closed by the stop hook).
+    if (app_state.pending.workersOut() or app_state.engine.readersOut()) std.process.exit(if (ran) |_| 0 else |_| 1);
     return ran;
 }
 
@@ -440,6 +457,8 @@ test "the whole app is semantically analysed by the test build" {
 
 test {
     _ = @import("chrome.zig");
+    _ = @import("db.zig");
+    _ = @import("engine.zig");
 }
 
 test "the packaged page sits in resources beside bin (v8-3-plan V1)" {

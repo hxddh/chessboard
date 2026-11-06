@@ -106,6 +106,15 @@ pub const APP_COMMANDS = [_]AppCommand{
     .{ .name = "chess.fetchProgress", .invoke_fn = fetchProgress },
     // 12.0 R: a sync answer too big for one frame, read in parts (sync.zig)
     .{ .name = "chess.fetchedPart", .invoke_fn = fetchedPart },
+    // v20-0-plan A2 (ADR 0003): the 20.0 UI's db service on the SDK's SQLite
+    // store (db.zig); {"error":"no_db"} without the capability
+    .{ .name = "chess.dbExec", .invoke_fn = @import("db.zig").dbExec },
+    .{ .name = "chess.dbQuery", .invoke_fn = @import("db.zig").dbQuery },
+    // v20-0-plan F3 (ADR 0004): the native Stockfish process (engine.zig);
+    // its output comes back as the "chess:engine" window event
+    .{ .name = "chess.engineStart", .invoke_fn = @import("engine.zig").engineStart },
+    .{ .name = "chess.engineSend", .invoke_fn = @import("engine.zig").engineSend },
+    .{ .name = "chess.engineStop", .invoke_fn = @import("engine.zig").engineStop },
     .{ .name = "chess.selftestMode", .invoke_fn = selftestMode },
     .{ .name = "chess.selftestReport", .invoke_fn = selftestReport },
 };
@@ -1317,7 +1326,7 @@ test "every app command has a chess. name and no two share one" {
         // a handler of one kind or the other, never both, never neither
         try std.testing.expect((cmd.invoke_fn == null) != (cmd.async_fn == null));
     }
-    try std.testing.expectEqual(@as(usize, 16), APP_COMMANDS.len);
+    try std.testing.expectEqual(@as(usize, 21), APP_COMMANDS.len);
 }
 
 test "the network commands are asynchronous and reach the SDK's async registry" {

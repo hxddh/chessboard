@@ -2,6 +2,7 @@ const std = @import("std");
 const build_options = @import("build_options");
 const native_sdk = @import("native_sdk");
 const app_manifest = @import("app_manifest_zon");
+const built_relational_migrations = @import("relational_migrations");
 const window_placement = @import("window_placement.zig");
 const manifest_commands = if (@hasField(@TypeOf(app_manifest), "commands")) app_manifest.commands else .{};
 const manifest_shortcuts = if (@hasField(@TypeOf(app_manifest), "shortcuts")) app_manifest.shortcuts else .{};
@@ -47,6 +48,19 @@ pub const RunOptions = struct {
     /// showSaveDialog, SDK 0.10.1 runtime/core.zig). Set before `run`, so no
     /// bridge call can arrive first.
     runtime_slot: ?*?*native_sdk.Runtime = null,
+    /// Filled by `runWithOptions` from the manifest capability. App entry
+    /// points do not set this themselves; the field only carries the owned
+    /// binding uniformly into each platform's runtime options.
+    record_store: ?native_sdk.RecordStoreBinding = null,
+    relational_store: ?native_sdk.RelationalStoreBinding = null,
+    credentials_enabled: bool = false,
+    file_access: ?native_sdk.FileAccessBinding = null,
+    /// Migration/testing switch. Shipping defaults to the final enforced
+    /// posture; set false for the preceding warn-only behavior.
+    file_access_enforce: bool = true,
+    /// Explicit compatibility capability for an app's former data identity.
+    legacy_data_directory: bool = false,
+    relational_migrations: []const native_sdk.relational_store.Migration = &built_relational_migrations.migrations,
 
     fn appInfo(self: RunOptions, buffers: *StateBuffers) native_sdk.AppInfo {
         var info: native_sdk.AppInfo = .{
@@ -479,6 +493,35 @@ fn manifestDeclaresTrayCapability() bool {
     return false;
 }
 
+/// Whether app.zon declares the Tier-2 record store. This is comptime so
+/// apps without the capability never analyze the SQLite open/deinit path.
+fn manifestDeclaresStore() bool {
+    if (comptime !@hasField(@TypeOf(app_manifest), "capabilities")) return false;
+    inline for (app_manifest.capabilities) |capability| {
+        const name: []const u8 = capability;
+        if (comptime std.mem.eql(u8, name, "store")) return true;
+    }
+    return false;
+}
+
+fn manifestDeclaresSqlite() bool {
+    if (comptime !@hasField(@TypeOf(app_manifest), "capabilities")) return false;
+    inline for (app_manifest.capabilities) |capability| {
+        const name: []const u8 = capability;
+        if (comptime std.mem.eql(u8, name, "sqlite")) return true;
+    }
+    return false;
+}
+
+fn manifestDeclaresCredentials() bool {
+    if (comptime !@hasField(@TypeOf(app_manifest), "capabilities")) return false;
+    inline for (app_manifest.capabilities) |capability| {
+        const name: []const u8 = capability;
+        if (comptime std.mem.eql(u8, name, "credentials")) return true;
+    }
+    return false;
+}
+
 fn windowRestorePolicy(comptime window: anytype) native_sdk.WindowRestorePolicy {
     if (comptime !@hasField(@TypeOf(window), "restore_policy")) return .clamp_to_visible_screen;
     const value = window.restore_policy;
@@ -531,19 +574,105 @@ pub const automation_build = build_options.automation;
 pub const mac_shell = std.mem.eql(u8, build_options.platform, "macos");
 /// 12.0 N: the same for the Windows platform's chrome (src/native/win_chrome.c).
 pub const win_shell = std.mem.eql(u8, build_options.platform, "windows");
+/// v20-0-plan A1: built with -Dui=app (the 20.0 frontend). main.zig holds
+/// the manifest to what that UI needs: the `sqlite` capability (ADR 0003)
+/// and spa_fallback off, so a missing file is a 404 (ADR 0001).
+pub const ui_app = build_options.ui_app;
+/// The schema the store is opened with (db_migrations.zig), for db.zig's tests.
+pub const db_migrations: []const native_sdk.relational_store.Migration = &built_relational_migrations.migrations;
+pub const manifest_sqlite = manifestDeclaresSqlite();
+pub const manifest_spa_fallback = if (@hasField(@TypeOf(app_manifest), "frontend") and @hasField(@TypeOf(app_manifest.frontend), "spa_fallback")) app_manifest.frontend.spa_fallback else false;
 
 pub fn runWithOptions(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {
     if (build_options.debug_overlay) {
         std.debug.print("debug-overlay=true backend={s} web-engine={s} trace={s}\n", .{ build_options.platform, build_options.web_engine, build_options.trace });
     }
+    const RecordStoreType = if (comptime manifestDeclaresStore()) native_sdk.RecordStore else void;
+    var record_store_value: RecordStoreType = undefined;
+    var record_store_open = false;
+    var resolved_options = options;
+    resolved_options.credentials_enabled = manifestDeclaresCredentials();
+    var file_root_buffers: [6][1024]u8 = undefined;
+    var file_roots: [7][]const u8 = undefined;
+    var legacy_data_buffer: [1024]u8 = undefined;
+    const resolved_file_dirs = native_sdk.app_dirs.resolve(
+        .{ .name = options.bundle_id },
+        native_sdk.app_dirs.currentPlatform(),
+        native_sdk.debug.envFromMap(init.environ_map),
+        native_sdk.app_dirs.Buffers.fromArray(1024, &file_root_buffers),
+    ) catch null;
+    var file_root_count: usize = 0;
+    if (resolved_file_dirs) |dirs| {
+        file_roots[0..6].* = .{ dirs.config, dirs.cache, dirs.data, dirs.state, dirs.logs, dirs.temp };
+        file_root_count = 6;
+    }
+    if (options.legacy_data_directory) {
+        if (native_sdk.app_dirs.resolveOne(
+            .{ .name = options.app_name }, native_sdk.app_dirs.currentPlatform(),
+            native_sdk.debug.envFromMap(init.environ_map), .data, &legacy_data_buffer,
+        )) |directory| {
+            file_roots[file_root_count] = directory;
+            file_root_count += 1;
+        } else |_| {}
+    }
+    // Fail closed if app-dir resolution is unavailable: a filesystem grant
+    // still opens arbitrary paths, while an ungranted app gets no accidental
+    // unrestricted fallback merely because HOME/XDG data was malformed.
+    resolved_options.file_access = .{
+        .roots = file_roots[0..file_root_count],
+        .permitted = native_sdk.security.hasPermission((options.security orelse manifestSecurity()).permissions, native_sdk.security.permission_filesystem),
+        .enforce = options.file_access_enforce,
+    };
+    if (comptime manifestDeclaresStore()) {
+        var data_dir_buffer: [512]u8 = undefined;
+        const app_data_dir = native_sdk.app_dirs.resolveOne(
+            .{ .name = options.bundle_id },
+            native_sdk.app_dirs.currentPlatform(),
+            native_sdk.debug.envFromMap(init.environ_map),
+            .data,
+            &data_dir_buffer,
+        ) catch return error.StoreDataDirUnavailable;
+        try std.Io.Dir.cwd().createDirPath(init.io, app_data_dir);
+        record_store_value = try native_sdk.RecordStore.open(std.heap.page_allocator, app_data_dir);
+        record_store_open = true;
+        resolved_options.record_store = record_store_value.binding();
+    }
+    defer if (comptime manifestDeclaresStore()) {
+        if (record_store_open) record_store_value.deinit();
+    };
+    const RelationalStoreType = if (comptime manifestDeclaresSqlite()) native_sdk.RelationalStore else void;
+    var relational_store_value: RelationalStoreType = undefined;
+    var relational_store_open = false;
+    if (comptime manifestDeclaresSqlite()) {
+        var data_dir_buffer: [512]u8 = undefined;
+        const app_data_dir = native_sdk.app_dirs.resolveOne(
+            .{ .name = options.bundle_id },
+            native_sdk.app_dirs.currentPlatform(),
+            native_sdk.debug.envFromMap(init.environ_map),
+            .data,
+            &data_dir_buffer,
+        ) catch return error.SqliteDataDirUnavailable;
+        try std.Io.Dir.cwd().createDirPath(init.io, app_data_dir);
+        const open_result = try native_sdk.RelationalStore.openMigrated(std.heap.page_allocator, app_data_dir, options.relational_migrations);
+        switch (open_result.outcome) {
+            .ok => relational_store_value = open_result.database.?,
+            .migrate_failed => return error.SqliteMigrationFailed,
+            .version_unknown => return error.SqliteVersionUnknown,
+        }
+        relational_store_open = true;
+        resolved_options.relational_store = relational_store_value.binding();
+    }
+    defer if (comptime manifestDeclaresSqlite()) {
+        if (relational_store_open) relational_store_value.deinit();
+    };
     if (comptime std.mem.eql(u8, build_options.platform, "macos")) {
-        try runMacos(app, options, init);
+        try runMacos(app, resolved_options, init);
     } else if (comptime std.mem.eql(u8, build_options.platform, "linux")) {
-        try runLinux(app, options, init);
+        try runLinux(app, resolved_options, init);
     } else if (comptime std.mem.eql(u8, build_options.platform, "windows")) {
-        try runWindows(app, options, init);
+        try runWindows(app, resolved_options, init);
     } else {
-        try runNull(app, options, init);
+        try runNull(app, resolved_options, init);
     }
 }
 
@@ -595,6 +724,10 @@ fn runNull(app: native_sdk.App, options: RunOptions, init: std.process.Init) !vo
         .shortcuts = shortcuts,
         .automation = if (build_options.automation) native_sdk.automation.Server.init(init.io, ".zig-cache/native-sdk-automation", app_info.resolvedWindowTitle()) else null,
         .window_state_store = store,
+        .record_store = options.record_store,
+        .relational_store = options.relational_store,
+        .credentials_enabled = options.credentials_enabled,
+        .file_access = options.file_access,
         .environ = init.minimal.environ,
     });
 
@@ -651,6 +784,10 @@ fn runMacos(app: native_sdk.App, options: RunOptions, init: std.process.Init) !v
         .shortcuts = shortcuts,
         .automation = if (build_options.automation) native_sdk.automation.Server.init(init.io, ".zig-cache/native-sdk-automation", app_info.resolvedWindowTitle()) else null,
         .window_state_store = store,
+        .record_store = options.record_store,
+        .relational_store = options.relational_store,
+        .credentials_enabled = options.credentials_enabled,
+        .file_access = options.file_access,
         .environ = init.minimal.environ,
     });
 
@@ -707,6 +844,10 @@ fn runLinux(app: native_sdk.App, options: RunOptions, init: std.process.Init) !v
         .shortcuts = shortcuts,
         .automation = if (build_options.automation) native_sdk.automation.Server.init(init.io, ".zig-cache/native-sdk-automation", app_info.resolvedWindowTitle()) else null,
         .window_state_store = store,
+        .record_store = options.record_store,
+        .relational_store = options.relational_store,
+        .credentials_enabled = options.credentials_enabled,
+        .file_access = options.file_access,
         .environ = init.minimal.environ,
     });
 
@@ -763,6 +904,10 @@ fn runWindows(app: native_sdk.App, options: RunOptions, init: std.process.Init) 
         .shortcuts = shortcuts,
         .automation = if (build_options.automation) native_sdk.automation.Server.init(init.io, ".zig-cache/native-sdk-automation", app_info.resolvedWindowTitle()) else null,
         .window_state_store = store,
+        .record_store = options.record_store,
+        .relational_store = options.relational_store,
+        .credentials_enabled = options.credentials_enabled,
+        .file_access = options.file_access,
         .environ = init.minimal.environ,
     });
 

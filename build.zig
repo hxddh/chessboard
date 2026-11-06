@@ -26,6 +26,15 @@ const WebLayerOption = enum {
     exclude,
 };
 
+/// v20-0-plan A1: which frontend the app serves. `web` is the 19.0 UI
+/// (src/web → frontend/dist, the default until parity is decided); `app` is
+/// the 20.0 one (src/app, built by scripts/build-app.mjs), which also opens
+/// the SQLite store (ADR 0003) and runs the native Stockfish (ADR 0004).
+const UiOption = enum {
+    web,
+    app,
+};
+
 const PackageTarget = enum {
     macos,
     windows,
@@ -64,6 +73,11 @@ pub fn build(b: *std.Build) void {
     // tray. So macOS builds compile a derived manifest — scripts/gen-manifest.mjs
     // writes it, this points both the runner import and `native package` at it.
     const manifest_path = b.option([]const u8, "manifest", "Manifest to build against (default app.zon)") orelse "app.zon";
+    // v20-0-plan A1: -Dui=app builds the 20.0 frontend in; it wants the
+    // manifest `node scripts/gen-manifest.mjs <platform> --ui app` writes
+    // (spa_fallback off, the sqlite capability), and main.zig refuses at
+    // comptime to build against one that is not.
+    const ui = b.option(UiOption, "ui", "Frontend: web (19.0, default) or app (20.0, src/app)") orelse .web;
     // D6: app.zon lists the dev server (http://127.0.0.1:5173) among its
     // trusted origins so `native dev` works. src/runner.zig drops every
     // http:// origin unless this is set; unset, it follows the exe's role —
@@ -109,6 +123,7 @@ pub fn build(b: *std.Build) void {
         .js_bridge = js_bridge_enabled,
         .web_layer = web_layer,
         .dev_origins = dev_origins_request orelse (optimize == .Debug),
+        .ui_app = ui == .app,
     };
     const options_mod = buildOptionsModule(b, build_opts);
 
@@ -116,10 +131,12 @@ pub fn build(b: *std.Build) void {
     runner_mod.addImport("native_sdk", native_sdk_mod);
     runner_mod.addImport("build_options", options_mod);
     runner_mod.addImport("app_manifest_zon", b.createModule(.{ .root_source_file = b.path(manifest_path) }));
+    addMigrations(b, target, optimize, runner_mod, native_sdk_mod);
 
     const app_mod = localModule(b, target, optimize, "src/main.zig");
     app_mod.addImport("native_sdk", native_sdk_mod);
     app_mod.addImport("runner", runner_mod);
+    if (ui == .app) addSqlite(b, app_mod, native_sdk_path);
     const exe = b.addExecutable(.{
         .name = app_exe_name,
         .root_module = app_mod,
@@ -154,7 +171,7 @@ pub fn build(b: *std.Build) void {
     // does exactly what scripts/package.sh and the two build workflows do:
     // generate engine-src.js, bundle the ES modules, copy index.html +
     // styles.css + js/bundle.js + js/engine-src.js, add licenses/.
-    const frontend_build = b.addSystemCommand(&.{ "node", "scripts/sync-dist.mjs" });
+    const frontend_build = b.addSystemCommand(if (ui == .app) &.{ "node", "scripts/sync-dist.mjs", "--ui=app" } else &.{ "node", "scripts/sync-dist.mjs" });
     const frontend_step = b.step("frontend-build", "Sync frontend/dist from src/web (node scripts/sync-dist.mjs)");
     frontend_step.dependOn(&frontend_build.step);
 
@@ -189,9 +206,11 @@ pub fn build(b: *std.Build) void {
         package_opts.dev_origins = dev_origins_request orelse (package_optimize == .Debug);
         package_runner_mod.addImport("build_options", buildOptionsModule(b, package_opts));
         package_runner_mod.addImport("app_manifest_zon", b.createModule(.{ .root_source_file = b.path(manifest_path) }));
+        addMigrations(b, target, package_optimize, package_runner_mod, package_sdk_mod);
         const package_app_mod = localModule(b, target, package_optimize, "src/main.zig");
         package_app_mod.addImport("native_sdk", package_sdk_mod);
         package_app_mod.addImport("runner", package_runner_mod);
+        if (ui == .app) addSqlite(b, package_app_mod, native_sdk_path);
         const built = b.addExecutable(.{
             .name = app_exe_name,
             .root_module = package_app_mod,
@@ -245,7 +264,15 @@ pub fn build(b: *std.Build) void {
     const package_step = b.step("package", "Create a local package artifact");
     package_step.dependOn(&package.step);
 
-    const tests = b.addTest(.{ .root_module = app_mod, .use_llvm = useLlvmWorkaround(target) });
+    // v20-0-plan A2: the test binary always links SQLite, whichever UI the
+    // exe has, so src/db.zig's tests run against a real RelationalStore.
+    // Its own root module (same imports): C sources belong to a module, and
+    // the 19.0 exe must not carry the amalgamation it never opens.
+    const test_mod = localModule(b, target, optimize, "src/main.zig");
+    test_mod.addImport("native_sdk", native_sdk_mod);
+    test_mod.addImport("runner", runner_mod);
+    addSqlite(b, test_mod, native_sdk_path);
+    const tests = b.addTest(.{ .root_module = test_mod, .use_llvm = useLlvmWorkaround(target) });
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
     // src/runner.zig is a module of its own, so the app's test binary never
@@ -266,6 +293,7 @@ const BuildOptionValues = struct {
     js_bridge: bool,
     web_layer: bool,
     dev_origins: bool,
+    ui_app: bool,
 };
 
 fn buildOptionsModule(b: *std.Build, values: BuildOptionValues) *std.Build.Module {
@@ -278,8 +306,36 @@ fn buildOptionsModule(b: *std.Build, values: BuildOptionValues) *std.Build.Modul
     options.addOption(bool, "js_bridge", values.js_bridge);
     options.addOption(bool, "web_layer", values.web_layer);
     options.addOption(bool, "dev_origins", values.dev_origins);
+    options.addOption(bool, "ui_app", values.ui_app);
     return options.createModule();
 }
+
+/// The runner's `relational_migrations` (SDK build/app.zig wires the same
+/// import from a generated file; ours is written by hand, ADR 0003).
+fn addMigrations(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, runner_mod: *std.Build.Module, native_sdk_mod: *std.Build.Module) void {
+    const migrations_mod = localModule(b, target, optimize, "src/db_migrations.zig");
+    migrations_mod.addImport("native_sdk", native_sdk_mod);
+    runner_mod.addImport("relational_migrations", migrations_mod);
+}
+
+/// The SQLite amalgamation the SDK vendors, with the SDK's own defines
+/// (build/app.zig sqlite_c_defines): what `store` / `sqlite` apps link.
+fn addSqlite(b: *std.Build, mod: *std.Build.Module, native_sdk_path: []const u8) void {
+    mod.addIncludePath(nativeSdkPath(b, native_sdk_path, "third_party/sqlite"));
+    mod.addCSourceFile(.{ .file = nativeSdkPath(b, native_sdk_path, "third_party/sqlite/sqlite3.c"), .flags = &sqlite_c_defines });
+    mod.link_libc = true;
+}
+
+const sqlite_c_defines = [_][]const u8{
+    "-DSQLITE_THREADSAFE=2",
+    "-DSQLITE_OMIT_LOAD_EXTENSION",
+    "-DSQLITE_DQS=0",
+    "-DSQLITE_ENABLE_FTS5",
+    "-DSQLITE_ENABLE_JSON1",
+    "-DSQLITE_ENABLE_UPDATE_HOOK",
+    "-DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1",
+    "-DSQLITE_DEFAULT_MEMSTATUS=0",
+};
 
 /// Zig 0.16.0's self-hosted x86_64 backend miscompiles the SysV C calling
 /// convention for f32-heavy signatures with interleaved pointer arguments
