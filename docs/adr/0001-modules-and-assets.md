@@ -1,6 +1,6 @@
 # 0001 · 代码用 ES modules 加载，大文件是真二进制
 
-**状态**：已定（2026-11-06）。真机探针结果出来后在文末补记。
+**状态**：已定（2026-11-06）；真机探针结果见文末补记。
 
 ## 背景
 
@@ -32,3 +32,23 @@
 
 - **继续 iife 分块，只是由一份清单自动生成 shim**：能少写手工代码，但保留了全局变量、文本化的二进制和 4 处同步，问题还在。
 - **一个巨大的单文件包**：首帧会把课程、题库、名局都带上，违背「快」。
+
+## 补记 · 真机探针（2026-11-06，CI 上的真应用，SDK 0.10.1 与 0.11.0 结果相同）
+
+| 能力 | macOS（WKWebView，`zero://app`） | Windows（WebView2） |
+|---|---|---|
+| module script、静态 `import`、`import()` | 可以 | 可以 |
+| `fetch` 文本与二进制的内容 | 可以 | 可以 |
+| `fetch` 的状态码与 Content-Type | **status 0，没有响应头** | 200，MIME 正确 |
+| `WebAssembly.instantiate(arrayBuffer)` | 可以 | 可以 |
+| `instantiateStreaming`（含 module worker 里） | **不行**（MIME 检查失败） | 可以 |
+| 缺失的文件（`spa_fallback`） | 答回 `index.html` | 答回 200 `text/html` |
+| 从 zero:// URL 起 classic / module Worker | 可以 | 可以 |
+| SharedArrayBuffer | 没有 | 没有 |
+
+由此定下的写法：
+- 应用自己的资源**不看 `r.ok` 和响应头**，看内容（长度、魔数、能否解析）。
+- wasm 一律 `WebAssembly.instantiate(await r.arrayBuffer())`，不用 streaming。
+- 关掉 `spa_fallback`；在关掉之前，读二进制必须校验魔数，读 JSON 必须能解析，否则当缺失处理。
+- Worker 直接 `new Worker(new URL(…, import.meta.url), { type: "module" })`，不需要 blob 退路。
+- CSP 的 `worker-src` 要加 `'self'`（19.0 的 `index.html` 只有 `blob:`，会先于 SDK 把 URL Worker 挡掉）。
