@@ -4,7 +4,7 @@
  *
  *   analyse(fen, { lines, budget })  → { lines: [{ moves, score, depth }] }
  *   bestMove(fen, profile)           → { move, thinkMs }        (move null when the game is over)
- *   humanMoves(fen, rating)          → [{ move, p }]           (a distribution, p sums to 1)
+ *   humanMoves(fen, rating, history) → [{ move, p }]           (a distribution, p sums to 1; history: earlier FENs, oldest first)
  *   review(game, { onPly, budget })  → [{ ply, move, best, before, after, loss }]
  *   tablebase(fen)                   → null | { wdl }          (−2…2 for the side to move)
  *
@@ -12,8 +12,9 @@
  *
  * Backends implement `search(fen, { multipv, depth, movetime, elo })` returning
  * lines from the side to move's point of view (as UCI does), plus optionally
- * `human(fen, rating)` and `tablebase(fen)`. Two today: a fake one for tests and
- * the 19.0 Stockfish wasm. Native Stockfish and Maia-3 come next, behind the same five calls.
+ * `human(fen, rating, history)`, `pick(fen, profile)` (an opponent's move, when the
+ * profile has a rating) and `tablebase(fen)`. Three today: a fake one for tests, the
+ * 19.0 Stockfish wasm, and Maia-3 (services/maia3/backend.js). Native Stockfish next.
  * @module services/engine
  */
 import { Chess } from "../core/chess.js";
@@ -50,14 +51,15 @@ export function createEngineService(backend) {
   async function bestMove(fen, profile = {}) {
     if (over(fen)) return { move: null, thinkMs: 0 };
     const t0 = Date.now();
+    if (backend.pick && profile.rating) return { move: await backend.pick(fen, profile), thinkMs: Date.now() - t0 };
     const r = await backend.search(fen, { multipv: 1, ...budgetOpts(profile.budget || { ms: profile.thinkMs || 300 }), elo: profile.rating });
     const move = r.lines[0] && r.lines[0].pv[0];
     return { move: move || null, thinkMs: Date.now() - t0 };
   }
 
-  async function humanMoves(fen, rating = 1500) {
+  async function humanMoves(fen, rating = 1500, history = []) {
     if (over(fen)) return [];
-    if (backend.human) return backend.human(fen, rating);
+    if (backend.human) return backend.human(fen, rating, history);
     // without a human model: the engine's top moves, softened by a temperature
     // that grows as the rating falls
     const r = await backend.search(fen, { multipv: 5, movetime: 200 });

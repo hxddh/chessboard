@@ -3,6 +3,8 @@
  *
  * URL switches for development and tests:
  *   ?engine=fake     the fake engine instead of Stockfish (&delay=ms: how long it "thinks")
+ *   ?engine=maia3    opponents' moves from Maia-3 (a worker), analysis from Stockfish;
+ *                    maia3-fake: the same with the fake engine doing the analysis
  *   ?db=memory       nothing persists;  ?dbname=x   a separate IndexedDB
  * @module main
  */
@@ -14,10 +16,13 @@ import { settingsActions, SETTINGS_DEFAULT, shellFor } from "./state/settings.js
 import { persist, restore } from "./state/persist.js";
 import { createDb, idbBackend, memoryBackend, newId } from "./services/db.js";
 import { createEngineService, fakeBackend, stockfishBackend } from "./services/engine.js";
+import { maia3Backend } from "./services/maia3/backend.js";
 
 const params = new URLSearchParams(location.search);
 const store = createStore({ play: initialPlay, settings: SETTINGS_DEFAULT }, { ...playActions, ...settingsActions });
-const engine = createEngineService(params.get("engine") === "fake" ? fakeBackend({ delayMs: Number(params.get("delay") ?? 30) }) : stockfishBackend());
+const engineName = params.get("engine") || "";
+const analyst = engineName.endsWith("fake") ? fakeBackend({ delayMs: Number(params.get("delay") ?? 30) }) : stockfishBackend();
+const engine = createEngineService(engineName.startsWith("maia3") ? maia3Backend({ analyst }) : analyst);
 
 // the db opens while the first page paints; pages that need it wait on `ready`
 const ready = createDb(params.get("db") === "memory" ? memoryBackend() : idbBackend(params.get("dbname") || "chessboard"))
