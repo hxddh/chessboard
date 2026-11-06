@@ -196,7 +196,7 @@
   - 人：「1500 的人这里常走 X」（Maia），用来说「这是一个自然的错」。
 - **F3 原生引擎**：
   - 由 Zig 壳启动一个原生 Stockfish 进程（完整 NNUE、线程数 = 核数、大哈希），经现有的异步桥流式收发 UCI；wasm 版留作后备。
-  - 3–4 子残局库随应用带（几 MB）；5 子（约 1 GB）做成可选下载，残局营的车兵残局用它给出精确判断。
+  - 3–4 子残局库随应用带（几 MB）；5 子（约 1 GB）做成可选下载。SDK 没有给 WebView 应用起长驻子进程的接口，原生引擎的进程管理在 `main.zig` 里自己写：`std.process.spawn` 接管道、读线程、经现有异步桥（N1）把输出送回网页，残局营的车兵残局用它给出精确判断。
 - **F4 名局**：猜着的分数改成「这盘你有 N 步想得和大师一样」，每步给大师的意图和「1500 的人会走什么」的对比。
 
 **验收**：
@@ -252,14 +252,14 @@
 
 **依据**：
 - **签名**：Mac 版是临时签名，README 里「右键打开」在 macOS 15 以后已经不管用；Windows 压缩包没签名，SmartScreen 会拦。没有自动更新，只有一个指向最新发布的链接。
-- **SDK**：停在 0.10.1；0.11.0（2026-10-13）有签名更新源、DMG 打包、窗口拖动区域；对 0.11.0 跑 `sdk-diff`，我们改过的地方有 18 处对不上。`runner.zig`（895 行）和 `build.zig`（765 行）的分叉让每次升级都要付这笔税。
+- **SDK**：停在 0.10.1（A5 核查后更正：签名更新源与 DMG 打包 0.10.1 里就有，0.11 在网页侧没有改动；更新源只支持 macOS；拖动区域只给 canvas 视图，WebView 用不上）；对 0.11.0 跑 `sdk-diff`，我们改过的地方有 18 处对不上。`runner.zig`（895 行）和 `build.zig`（765 行）的分叉让每次升级都要付这笔税。
 - **CI**：每次推送 39 个任务、209 任务分钟、约 18 分钟，PR 12–14 分钟，15 分钟的目标没守住；测试脚本 4.7 万行，和 5 万行应用逻辑差不多一样多。最近 30 次运行里 13 次被取消、4 次失败。
 - **只在发布时才跑的检查**：`test-strength`（19.0.0 第一次发布就挂在它上面）和 19 分钟的 `test-endgames-play`。
 - **定时炸弹**：`macos-latest` / `windows-latest` 标签会漂（macos-14 停用已经让一次发布失败）；SDK、Zig、Playwright 每次 CI 都现下载；Lichess / Chess.com 同步和 GitHub 发布接口（未认证每 IP 每小时 60 次）；测试夹具里写死的 2026 年日期。
 - **保护性检查**：守正确性的值得留（规则、对着引擎核过的内容、阶梯强度 ±3σ、性能曲线、首帧无长任务、存档崩溃安全、`sdk-diff`、三语齐全、对比度与截断）；把现在的设计锁死的要换掉（`app.js` 行数上限、各版本的打包字节线、精确的设计变量个数、「只减不增」的例外登记、33 条 README 数字断言、约 177 条按源码文字匹配的检查、布局空白比例）。
 
 **做什么**：
-- **E1 升 SDK 0.11**，同时把分叉缩到最小；用它的签名更新源做**自动更新**，用它的 DMG 打包。
+- **E1 升 SDK 0.11**，同时把分叉缩到最小（R03 改用上游、其余重新登记，约 1–1.5 天）；用 SDK 的签名更新源做 **macOS 自动更新**（要先有 E2 的签名），Windows 的自动更新自己写；DMG 改用 `native package --archive`。
 - **E2 签名与公证**：Mac 用 Developer ID 签名并公证，Windows 用代码签名证书出安装包（需要证书，§8 第 5 条）。
 - **E3 测试重置**：
   - 留下守正确性的门禁和性能、引擎门禁；按行为写 e2e，加视觉基线截图对照。
@@ -322,3 +322,10 @@ E4 先把 CI 版本写死 → A5 技术验证（SDK 0.11 上 ES modules / fetch�
 - 速度（单线程实测）：PyTorch 8.7 ms、onnxruntime 7.7 ms、onnxruntime-web WASM SIMD 27 ms 每次评估——都在现在 Maia-1 的 50–200 ms 之内。fp16 约 10 MB，比现在五张网合计 11.5 MB 还小。
 - 质量（论文表 1）：猜中真人着法 Maia-3-5M 55.4%、Maia-2 52.0%、Maia-1 51.6%。
 - 做法：构建时转换权重；自己写 JS/WASM 前向（不带 11 MB 的 onnxruntime-web），对着 PyTorch 做一致性测试；1100 以下五档直接传低等级分，不再靠温度和下限；阶梯重新对下标定。约 1–1.5 周。
+
+**A5 / E1 SDK 核查（读 0.10.1 与 0.11.0 的源码，Linux 上对 0.11 试编译）**：
+- zero:// 的能力（macOS `appkit_host.m` 7694–7748、Windows `webview2_host.cpp` 5406–5426；两版逐字节相同）：同源，所以 `<script type="module">`、静态 `import`、`import()`、`fetch` 文本与二进制、`WebAssembly.instantiateStreaming` 都可以；`.wasm` 是 `application/wasm`，`.js/.mjs` 是 `text/javascript`；响应只带 Content-Type，**没有 COOP/COEP，所以没有 SharedArrayBuffer**，wasm 多线程做不了（原生引擎是唯一的多线程路）。`design-constraints.md` 里「zero:// 不能 fetch」在源码里找不到依据。
+- 陷阱：`spa_fallback = true` 会把缺失的二进制文件答成 200 的 `index.html`，读到的是坏数据——改用真二进制文件时要关掉它。
+- 待真机探针确认：Windows 上 zero:// 的 Worker 是否被拦截（过滤器没设 RequestSourceKinds）；macOS 11 的 Safari 14 对 module worker 的支持。退路：页面 `fetch` 字节后交给 blob worker。
+- 对 0.11.0：`sdk-diff` 报 19 处登记对不上，没有一处在 0.11 里被上游取代；R03 ×4 改用上游的 `createWithOptions`，其余（R01、R02、R07、B01、B02 ×6、B03 ×2、B05 ×2、B06、B13）重新锚定即可。Linux 上不改源码对 0.11：`zig build test -Dplatform=null` 88/88，Windows 交叉编译通过，空平台自动化 4 个场景通过；macOS 要 Apple SDK，没在容器里编。
+- 结论：A5 走 ES modules，不再生成分块 shim；A5 不依赖 E1，在 0.10.1 上就能做。
