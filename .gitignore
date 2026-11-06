@@ -23,3 +23,6 @@ shots/
 
 # Python bytecode from scripts/verify-endgames.py and its test (they import scripts/lib/tablebase_api.py)
 __pycache__/
+
+# the split build of src/app (scripts/build-app.mjs)
+dist-app/

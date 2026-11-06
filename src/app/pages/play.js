@@ -17,6 +17,7 @@ import { h } from "../lib/dom.js";
 import { signal, computed, effect, untrack, batch } from "../lib/signal.js";
 import { createBoard } from "../board/board.js";
 import { loadSet } from "../board/pieces.js";
+import { readFen } from "../board/geometry.js";
 import { selectFen, selectFens, selectLastMove } from "../state/play.js";
 import { coachOn } from "../state/settings.js";
 import { turnOf, applyMove, claimable, parseUci } from "../core/rules.js";
@@ -24,7 +25,7 @@ import { Chess } from "../core/chess.js";
 import { left, format } from "../core/clock.js";
 import { opponentById, coachBudget, DEFAULT_OPPONENT } from "../core/opponents.js";
 import { dangerAfter, shouldAsk, threatNow, checksAndCaptures } from "../core/coach.js";
-import { explainMistake, lineMotif, figurine } from "../core/explain.js";
+import { explainMistake, lineMotif, sanText } from "../core/explain.js";
 import { sansOf } from "../core/pass.js";
 import { scalarOf, winPct } from "../core/winpct.js";
 import { newId } from "../services/db.js";
@@ -39,6 +40,16 @@ const other = (c) => (c === "w" ? "b" : "w");
 /** The side "you" play: the one the engine does not; null when two people share the board. */
 const humanOf = (g) => (g && g.mode === "engine" ? other(g.engineColor) : null);
 const COACH_MS = 150, HINT_MS = 400, RESULT_MS = 1600;
+
+/** One move apart (a castle with a capture changes four squares): slide; further, the board just changes. */
+function nearby(a, b) {
+  if (a === b) return true;
+  const p = readFen(a), q = readFen(b);
+  let diff = 0;
+  for (const [sq, c] of p) if (q.get(sq) !== c) diff++;
+  for (const sq of q.keys()) if (!p.has(sq)) diff++;
+  return diff <= 4;
+}
 
 export function mount(el, { store, engine, ready }) {
   const t = playText();
@@ -186,13 +197,13 @@ export function mount(el, { store, engine, ready }) {
     if (level === 1) {
       const th = threatNow(f);
       const text = !th ? t("hint.noThreat") : th.kind === "check" ? t("hint.threatCheck")
-        : th.kind === "mate" ? t("hint.threatMate", figurine(th.san, other(me)))
-        : t("hint.threatPiece", figurine(th.san, other(me)), t("piece." + th.piece));
+        : th.kind === "mate" ? t("hint.threatMate", sanText(th.san))
+        : t("hint.threatPiece", sanText(th.san), t("piece." + th.piece));
       setHint(f, 1, text, [], []);
     } else if (level === 2) {
       const cc = checksAndCaptures(f);
       const all = [...cc.checks, ...cc.captures];
-      const text = all.length ? t("hint.forcing", all.slice(0, 5).map((m) => figurine(m.san, me)).join("、")) : t("hint.noForcing");
+      const text = all.length ? t("hint.forcing", all.slice(0, 5).map((m) => sanText(m.san)).join("、")) : t("hint.noForcing");
       setHint(f, 2, text, [], [...new Set(all.map((m) => m.from))].map((sq) => ({ sq, color: "G" })));
     } else {
       setHint(f, level, t("hint.wait"), [], hint.peek().marks);
@@ -208,7 +219,7 @@ export function mount(el, { store, engine, ready }) {
             : /[+#]$/.test(sans[0]) ? t("hint.ideaCheck") : t("hint.ideaQuiet");
           setHint(f, 3, t("hint.idea", idea), [], []);
         } else {
-          setHint(f, 4, t("hint.move", figurine(sans[0], me)), [{ from: best.from, to: best.to, color: "G" }], [{ sq: best.from, color: "G" }]);
+          setHint(f, 4, t("hint.move", sanText(sans[0])), [{ from: best.from, to: best.to, color: "G" }], [{ sq: best.from, color: "G" }]);
         }
       });
     }
@@ -424,9 +435,12 @@ export function mount(el, { store, engine, ready }) {
     const movable = !g || g.result || mode.value !== "play" && mode.value !== "draw-wait" ? "none" : human ? COLOR[human] : "both";
     return { fen: f, lastMove: lastMove.value, movable, orientation, arrows: hv ? hv.arrows : [], marks: hv ? hv.marks : [] };
   });
+  let shownFen = fen.peek();
   stops.push(effect(() => {
     const v = view.value;
-    board.set({ fen: v.fen, lastMove: v.lastMove, movable: v.movable, orientation: v.orientation, arrows: v.arrows, marks: v.marks });
+    const animate = nearby(shownFen, v.fen);
+    shownFen = v.fen;
+    board.set({ fen: v.fen, lastMove: v.lastMove, movable: v.movable, orientation: v.orientation, arrows: v.arrows, marks: v.marks, animate });
     // the evaluation only once the game is over (v20-0-plan §3 P4)
     const showEval = v.evalAt != null && !!game.value && !!game.value.result;
     evalBar.hidden = !showEval;

@@ -19,7 +19,10 @@
  *               are events; a reload restores the review without a second pass (B1)
  *   measured    the time to review a 60-ply game
  *
- *   node scripts/test-play-e2e.mjs [--shots=dir]   (E2E_REQUIRED=1: a missing browser fails)
+ * Against the split build (scripts/build-app.mjs) unless --dev.
+ *
+ *   node scripts/test-play-e2e.mjs [--dev] [--shots=dir]   (E2E_REQUIRED=1: a missing browser fails)
+ *   REAL_ENGINE=1 …   also time the 60-ply review on Stockfish wasm
  */
 import { startServer } from "./serve-app.mjs";
 import { launchChromium } from "./app/browser.mjs";
@@ -32,7 +35,10 @@ let failed = 0, passed = 0;
 const assert = (cond, msg) => {
   if (cond) { passed++; console.log("ok:", msg); } else { failed++; console.error("FAIL:", msg); }
 };
+const DEV = process.argv.includes("--dev");
+if (!DEV) await (await import("./build-app.mjs")).buildApp({ quiet: true });
 const srv = await startServer();
+const BASE = DEV ? srv.url : srv.dist;
 const browser = await launchChromium();
 const errors = [];
 const report = {};
@@ -42,7 +48,7 @@ async function open(query = "", { w = 1440, h = 900, ctxOpts = {}, engine = "fak
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
-  await page.goto(srv.url + "?think=0" + (engine === "fake" ? "&engine=fake" : "") + query);
+  await page.goto(BASE + "?think=0" + (engine === "fake" ? "&engine=fake" : "") + query);
   await page.waitForSelector("[data-page=play] canvas");
   await page.waitForFunction(() => window.__app.store.get().play.game && window.__play);
   return { ctx, page };

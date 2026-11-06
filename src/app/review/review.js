@@ -20,7 +20,7 @@ import { signal, computed } from "../lib/signal.js";
 import { runPass, engineAnalyze, sansOf } from "../core/pass.js";
 import { gradeMoves, selectMoments, MARK } from "../core/grade.js";
 import { gameAccuracy, winPctDrop, scalarOf, moveNumber, WIN_MISTAKE } from "../core/winpct.js";
-import { explainMistake, explainText, explainMotif, explainKey, lineAfter, figurine } from "../core/explain.js";
+import { explainMistake, explainText, explainMotif, explainKey, lineAfter, sanText } from "../core/explain.js";
 import { applyMove, parseUci } from "../core/rules.js";
 import { dangerAfter } from "../core/coach.js";
 import { Chess } from "../core/chess.js";
@@ -63,7 +63,7 @@ export function whyNot(facts, fen, uci, t, { withBetter = true } = {}) {
   const d = dangerAfter(fen, uci);
   if (!d) return "";
   const them = sideOf(fen) === "w" ? "b" : "w";
-  return d.kind === "mate" ? t("rv.ruleMate", figurine(d.san, them)) : t("rv.rulePiece", figurine(d.san, them), t("piece." + d.piece));
+  return d.kind === "mate" ? t("rv.ruleMate", sanText(d.san)) : t("rv.rulePiece", sanText(d.san), t("piece." + d.piece));
 }
 
 /**
@@ -133,10 +133,10 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET_MS, later =
     const m = current();
     if (!m) return "";
     const no = moveNumber(m.ply, sideOf(data.fens[0]));
-    return t("rv.card", no, figurine(m.san, m.side)) + " " + (t("grade." + m.grade));
+    return t("rv.card", no, sanText(m.san), t("grade." + m.grade));
   }
 
-  const fig = (san, fen) => figurine(san, sideOf(fen));
+  const fig = (san) => sanText(san);
   const bestArrow = (m) => { const u = parseUci(m.best); return u ? [{ from: u.from, to: u.to, color: "G" }] : []; };
   const bestSan = (m) => { const mv = m.best && applyMove(data.fens[m.ply], m.best); return mv ? mv.san : null; };
 
