@@ -66,29 +66,36 @@ async function step(name, fn) {
 }
 const WANT = ${JSON.stringify(Array.from(DATA_BIN))};
 await step("dynamic import()", async () => { const m = await import("./dyn.js"); return { pass: m.dynamicImport === "dyn", detail: m.dynamicImport }; });
+// the body is the question; status and headers are their own row (WKWebView
+// hands a scheme handler's plain NSURLResponse to fetch as status 0, no headers)
 await step("fetch text", async () => {
   const r = await fetch("dep.js"); const t = await r.text();
-  return { pass: r.ok && t.includes("staticImport"), detail: r.status + " " + r.headers.get("content-type") + " " + t.length + " B" };
+  return { pass: t.includes("staticImport"), detail: t.length + " B (status " + r.status + ", " + r.headers.get("content-type") + ")" };
 });
 await step("fetch binary", async () => {
   const r = await fetch("data.bin"); const b = Array.from(new Uint8Array(await r.arrayBuffer()));
-  return { pass: r.ok && b.join() === WANT.join(), detail: r.status + " " + r.headers.get("content-type") + " [" + b.join(",") + "]" };
+  return { pass: b.join() === WANT.join(), detail: "[" + b.join(",") + "] (status " + r.status + ")" };
 });
-await step("fetch .wasm MIME", async () => {
+await step("fetch status 200 + Content-Type", async () => {
   const r = await fetch("add.wasm"); await r.arrayBuffer();
-  return { pass: r.ok && /application\\/wasm/.test(r.headers.get("content-type") || ""), detail: r.status + " " + r.headers.get("content-type") };
+  return { pass: r.status === 200 && /application\\/wasm/.test(r.headers.get("content-type") || ""), detail: r.status + " " + r.headers.get("content-type") };
+});
+await step("WebAssembly.instantiate(arrayBuffer)", async () => {
+  const { instance } = await WebAssembly.instantiate(await (await fetch("add.wasm")).arrayBuffer());
+  const v = instance.exports.add(2, 3); return { pass: v === 5, detail: "add(2,3) = " + v };
 });
 await step("instantiateStreaming", async () => {
   const { instance } = await WebAssembly.instantiateStreaming(fetch("add.wasm"));
   const v = instance.exports.add(2, 3); return { pass: v === 5, detail: "add(2,3) = " + v };
 });
-// spa_fallback = true in app.zon: what a missing file comes back as (a
-// 200 index.html is the trap — that is a FAIL here)
+// spa_fallback = true in app.zon: what a missing file comes back as (its
+// body being index.html is the trap — that is a FAIL here)
 await step("missing file (spa_fallback)", async () => {
   let r;
   try { r = await fetch("no-such-file.bin"); } catch (e) { return { pass: true, detail: "fetch rejected: " + (e && e.message || e) }; }
   const t = await r.text();
-  return { pass: !r.ok, detail: r.status + " " + r.headers.get("content-type") + (/<!doctype html>/i.test(t) ? " (index.html)" : " " + t.length + " B") };
+  const html = /<!doctype html>/i.test(t);
+  return { pass: !html && !r.ok, detail: r.status + " " + r.headers.get("content-type") + (html ? " (index.html)" : " " + t.length + " B") };
 });
 function viaWorker(url, opts) {
   return new Promise((resolve, reject) => {
@@ -115,6 +122,10 @@ await step("instantiateStreaming inside module Worker", async () => {
   const d = await viaWorker("worker-module.js", { type: "module" });
   return { pass: d.wasm === 5, detail: JSON.stringify(d.wasm) };
 });
+await step("instantiate(arrayBuffer) inside module Worker", async () => {
+  const d = await viaWorker("worker-module.js", { type: "module" });
+  return { pass: d.wasmBuf === 5, detail: JSON.stringify(d.wasmBuf) };
+});
 P.finish();
 `;
 
@@ -127,9 +138,10 @@ const WORKER_CLASSIC = `onmessage = async () => {
 
 const WORKER_MODULE = `import { staticImport } from "./dep.js";
 onmessage = async () => {
-  let wasm;
+  let wasm, wasmBuf;
   try { wasm = (await WebAssembly.instantiateStreaming(fetch("add.wasm"))).instance.exports.add(2, 3); } catch (e) { wasm = "ERR " + (e && e.message || e); }
-  postMessage({ module: staticImport, wasm });
+  try { wasmBuf = (await WebAssembly.instantiate(await (await fetch("add.wasm")).arrayBuffer())).instance.exports.add(2, 3); } catch (e) { wasmBuf = "ERR " + (e && e.message || e); }
+  postMessage({ module: staticImport, wasm, wasmBuf });
 };
 `;
 
