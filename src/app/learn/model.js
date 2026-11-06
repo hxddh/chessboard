@@ -79,10 +79,10 @@ const gradeOf = (e) => (e.revealed || !e.ok ? AGAIN : e.tries > 1 || e.hinted ? 
 function answer(st, e, tz) {
   const d = dayRec(st, dayOf(e.at, tz));
   const kind = e.kind || "line";
+  if (e.placement) return;            // a placement answer moves only the placement (learn.place)
   d.minutes += MINUTES[kind] || 1;
   d.items.push(e.item);
   if (kind === "lesson") { if (e.skill) skillOf(st, e.skill).lesson = true; return; }
-  if (e.placement) return;            // a placement answer moves only the placement (learn.place)
   d.answers++;
   if (e.ok && !e.revealed) d.ok++;
   const g = gradeOf(e);

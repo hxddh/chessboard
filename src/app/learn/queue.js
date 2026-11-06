@@ -6,6 +6,7 @@
  * asked again: the plan is never stored.
  *
  *   plan(st, now, { tz }) → [{ id, kind, skill, why }]   why: review | lesson | new | weak | drill | game
+ *   (and `ahead` from next(): a lit skill's position, when nothing else is left)
  *   next(st, now, { tz }) → the first of the plan, or of the day after it (more, when today's is done)
  * @module learn/queue
  */
@@ -56,7 +57,8 @@ function slot(st, now, tz, done) {
   if (isLit(st, "mate") && !day.games && !day.items.some((i) => i.startsWith("game:"))) {
     return { id: "game:" + Math.max(400, Math.round(visibleRating(st) / 100) * 100), why: "game" };
   }
-  // else an endgame drill of a reached skill not yet won
+  // else an endgame drill of a reached skill not yet won, one a day
+  if (day.items.some((i) => i.startsWith("dr:"))) return null;
   for (const s of SKILLS) {
     if (!isReached(st, s.id)) continue;
     for (const d of DRILLS[s.id] || []) if (!solved(st, d) && !done.has(d)) return { id: d, why: "drill" };
@@ -104,12 +106,28 @@ export function plan(st, now, { tz = 0, full = false } = {}) {
 }
 const pick = (it) => (it ? { kind: it.kind, skill: it.skill || null } : {});
 
+/**
+ * When nothing is due and every reachable skill is lit (a strong placement,
+ * or a long day): the positions of lit skills not yet tried, nearest your
+ * rating first; then the ones tried longest ago.
+ */
+export function practiceAhead(st) {
+  const r = visibleRating(st);
+  const lit = SKILLS.filter((s) => isLit(st, s.id)).flatMap((s) => PRACTICE[s.id] || []);
+  const fresh = lit.filter((id) => !tried(st, id)).sort((a, b) => Math.abs(ITEMS[a].rating - r) - Math.abs(ITEMS[b].rating - r) || (a < b ? -1 : 1));
+  if (fresh.length) return fresh[0];
+  const old = lit.sort((a, b) => st.items[a].last - st.items[b].last || (a < b ? -1 : 1));
+  return old[0] || null;
+}
+
 /** What to do now. `more`: today's lesson is done and this is from the rest of the queue. */
 export function next(st, now, o = {}) {
   const p = plan(st, now, o);
   if (p.length) return { ...p[0], more: false };
   const rest = plan(st, now, { ...o, full: true });
-  return rest.length ? { ...rest[0], more: true } : null;
+  if (rest.length) return { ...rest[0], more: true };
+  const id = practiceAhead(st);
+  return id ? { id, why: "ahead", kind: ITEMS[id].kind, skill: ITEMS[id].skill, more: true } : null;
 }
 
 /** Today's lesson: minutes done, minutes planned, items left. */

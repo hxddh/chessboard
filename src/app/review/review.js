@@ -11,7 +11,8 @@
  * The board stands on the first card's position as the review opens (B3).
  * The pass is stored in the `analysis` table and read back on reload, so a
  * review is never lost nor run twice (B1). Each turning point appends a
- * `review.finding` event for the learner model.
+ * `review.finding` event for the learner model, with the position and the
+ * engine's move, so the review card it becomes needs nothing else.
  *
  * No DOM here: the page renders `state` and `board`, and calls the verbs.
  * @module review/review
@@ -110,7 +111,7 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET_MS, later =
     data = { gameId: game.id, fens, sans, p, grades, moments, facts, sides, orientation };
     if (fresh) {
       append({ type: "review.analysis", gameId: game.id, budget, rows: passToRows(p, grades) });
-      moments.forEach((m, i) => append({ type: "review.finding", gameId: game.id, ply: m.ply, san: m.san, side: m.side,
+      moments.forEach((m, i) => append({ type: "review.finding", gameId: game.id, ply: m.ply, san: m.san, side: m.side, fen: fens[m.ply], best: m.best || null,
         severity: m.grade, swing: m.swing, motif: explainMotif(facts[i]) || null, fact: explainKey(facts[i]) || null }));
     }
     const row = await d.query("game.get", { id: game.id });

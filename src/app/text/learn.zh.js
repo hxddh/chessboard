@@ -13,11 +13,11 @@ export default {
   "learn.yourMove": "轮到你", "learn.theirMove": "对方走 {0}", "learn.collect": "把所有目标都吃掉：{0} 个", "learn.left2": "还剩 {0} 个",
   "learn.drill": "实战：和电脑下完这个残局", "learn.drillWin": "目标：赢下来", "learn.drillDraw": "目标：守和", "learn.drillPromote": "目标：把兵升变",
   "learn.drillWon": "做到了", "learn.drillLost": "这次没守住 —— 再来一遍", "learn.drillFailed": "没能赢下来 —— 再来一遍",
-  "learn.game": "下一盘：对 {0}", "learn.gameWhy": "学了的东西，放到一盘真棋里用一用", "learn.play": "开始对局",
+  "learn.game": "下一盘：对 {0}", "learn.gameAny": "下一盘：对一位和你水平相近的对手", "learn.reset": "重来", "learn.lessonReady": "先读一读右边这一段，再动手", "learn.gameWhy": "学了的东西，放到一盘真棋里用一用", "learn.play": "开始对局",
   "learn.opening": "{0}：按开局的走法走下去", "learn.openingWrong": "这里常见的是另一步 —— 再想想开局的原则",
   "learn.mistake": "你在对局里走了 {0} —— 找出更好的一步", "learn.mistakePlain": "你自己对局里的一个局面 —— 找出更好的一步",
   "learn.review": "复习", "learn.new": "新技能", "learn.weak": "再练练", "learn.lessonOf": "{0}",
-  "learn.why.review": "到期复习", "learn.why.lesson": "新技能", "learn.why.new": "新技能", "learn.why.weak": "最近漏过", "learn.why.drill": "残局", "learn.why.game": "对局",
+  "learn.why.review": "到期复习", "learn.why.lesson": "新技能", "learn.why.new": "新技能", "learn.why.weak": "最近漏过", "learn.why.drill": "残局", "learn.why.game": "对局", "learn.why.ahead": "加练",
   "goal.mate": "一步将死", "goal.check": "走一步将军", "goal.castle": "王车易位", "goal.ep": "吃过路兵", "goal.promote": "把兵升变",
   "puzzle.find": "找出最好的一步", "puzzle.findBlack": "黑方走 —— 找出最好的一步",
   // placement
