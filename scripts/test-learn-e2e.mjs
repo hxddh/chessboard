@@ -10,6 +10,8 @@
  *              skill not reached
  *   caps       six findings in one game → ≤ 3 review cards; twenty answers
  *              in a day → ≤ 15 new cards
+ *   你这一步   lessons, endgames, classics, openings: the feedback says a fact
+ *              about the move just played (v20-0-plan §4 F1), not the task again
  *   我         one rating on screen (no other rating-like number outside
  *              the stage goal and the games list), the curve, the stage,
  *              the weekly line from the events
@@ -155,6 +157,54 @@ async function solve(page, it) {
     await page.waitForFunction((id) => window.__learn.item && window.__learn.item.id !== id, it.id, { timeout: 6000 }).catch(() => page.evaluate(() => window.__learn.next()));
   }
   assert(wrong.length === 0, "40 items after placing ≥ 1200: no lesson of a lit skill " + JSON.stringify(kinds) + (wrong.length ? " — " + wrong.join(" ") : ""));
+  await ctx.close();
+}
+
+// --- 你这一步 (v20-0-plan §4 F1): the feedback states a fact about the move just played ----------
+{
+  const { ctx, page } = await open("#/learn");
+  await page.waitForSelector("[data-test=place]:not([hidden])");
+  await page.click("[data-test=place-new]");
+  await page.waitForFunction(() => window.__learn.item);
+  const barText = () => page.textContent("[data-test=learn-bar]");
+  const startItem = async (id) => {
+    await page.evaluate((id) => window.__learn.start(id), id);
+    await page.waitForFunction((id) => window.__learn.item && window.__learn.item.id === id && window.__learn.board().movable !== "none", id);
+    return item(page);
+  };
+  const waitBar = (re) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector("[data-test=learn-bar]").textContent), re.source, { timeout: 6000 })
+    .then(() => true, () => false);
+
+  // a lesson: 7k/Q7/6K1 — mate with the queen; Qf7 is not mate, it is stalemate, and the bar says so of Qf7
+  let it = await startItem("ls:goal:0");
+  await playUci(page, "a7f7");
+  assert(await waitBar(/Qf7 之后对方没有被将军，却一步也走不了/), "lesson: a wrong move is explained as what it did (" + await barText() + ")");
+  const txt = await barText();
+  assert(!txt.includes(it.prompt) && !(it.retry && txt.includes(it.retry)), "…not the task said again");
+  await shot(page, "09-lesson-why");
+
+  // an endgame: only Kg3 wins; Kh3 gives up the opposition and the drill stops on that move
+  it = await startItem("dr:kp-distant");
+  await playUci(page, "h2h3");
+  assert(await waitBar(/你让出了对王：Kh3 之后只能和棋/), "endgame: it stops at once, saying what Kh3 gave away (" + await barText() + ")");
+  assert(await page.evaluate(() => window.__learn.board().movable === "none"), "…and the drill is over");
+  await shot(page, "10-endgame-why");
+
+  // a classic: Morphy at the opera, 7.Qb3; guessing Nc3 is told what Nc3 does, then the master's move what it does
+  it = await startItem("cl:morphy-opera-1858:12");
+  await playUci(page, "b1c3");
+  assert(await waitBar(/Nc3 出动了马.*大师走的不是这步/), "classic: the wrong guess is told what it does (" + await barText() + ")");
+  await page.waitForFunction(() => window.__learn.board().fen.startsWith("rn1qkb1r/ppp2ppp/5n2/4p3/2B1P3/5Q2/PPP2PPP/RNB1K2R"));
+  await page.waitForFunction(() => window.__learn.board().movable !== "none");
+  await playUci(page, "f3b3");
+  assert(await waitBar(/Qb3 同时攻击 b7 和 f7，和大师想的一样/), "classic: the master's move, guessed, is told its intent (" + await barText() + ")");
+  await shot(page, "11-classic-why");
+
+  // an opening: the Italian; 1.d4 is off this book, and the bar names the book move and the move played
+  it = await startItem("op:italian-game");
+  await playUci(page, "d2d4");
+  assert(await waitBar(/d4 离开了你的开局书，常见的是 e4/), "opening: the move is said to leave the book, the common one named (" + await barText() + ")");
+  await shot(page, "12-opening-why");
   await ctx.close();
 }
 

@@ -16,6 +16,10 @@ export default {
   "learn.game": "下一盘：对 {0}", "learn.gameAny": "下一盘：对一位和你水平相近的对手", "learn.reset": "重来", "learn.lessonReady": "先读一读这一段讲解，再动手", "learn.gameWhy": "学了的东西，放到一盘真棋里用一用", "learn.play": "开始对局",
   "learn.opening": "{0}：按开局的走法走下去", "learn.classic": "名局：{0} —— 猜大师的下一步", "learn.classicWrong": "大师走的不是这步 —— 再猜一次",
   "learn.openingWrong": "这里常见的是另一步 —— 再想想开局的原则",
+  // 你这一步：讲解器（core/explain.js）说的事实，再请你再试
+  "learn.wrongWhy": "{0} —— 再想想", "learn.openingWrongWhy": "{0} —— 按开局书再走一次",
+  "learn.classicWrongWhy": "{0}。大师走的不是这步 —— 再猜一次", "learn.classicSame": "{0}，和大师想的一样。",
+  "learn.drillStop": "{0} —— 再来一遍",
   "learn.mistake": "你在对局里走了 {0} —— 找出更好的一步", "learn.mistakePlain": "你自己对局里的一个局面 —— 找出更好的一步",
   "learn.review": "复习", "learn.new": "新技能", "learn.weak": "再练练", "learn.lessonOf": "{0}",
   "learn.why.review": "到期复习", "learn.why.lesson": "新技能", "learn.why.new": "新技能", "learn.why.weak": "最近漏过", "learn.why.drill": "残局", "learn.why.game": "对局", "learn.why.ahead": "加练",

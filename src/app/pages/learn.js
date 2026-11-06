@@ -258,6 +258,8 @@ export function mount(el, { store, engine, ready, router }) {
       else if (c && c.item.kind === "game") L.record({ type: "learn.game", item: c.item.id }).then(showNext);
     },
     next: () => showNext(),
+    /** tests: put one item on the board (an id of content/practice.js) */
+    start: (id) => { view.value = "item"; start(ITEMS[id], "new"); },
     square: (sq) => board.squareCenter(sq),
     board: () => board.state(),
     lit: (id) => !!(L && isLit(L.model, id)),

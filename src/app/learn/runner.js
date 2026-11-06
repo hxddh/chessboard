@@ -19,6 +19,7 @@ import { signal } from "../lib/signal.js";
 import { Chess } from "../core/chess.js";
 import * as MG from "./minigame.js";
 import { judge } from "./goals.js";
+import { explainMove, explainText } from "../core/explain.js";
 
 const REPLY_MS = 450, RESET_MS = 900;
 const sideOf = (fen) => (fen.split(" ")[1] === "b" ? "b" : "w");
@@ -39,6 +40,17 @@ function tryMove(g, from, to, promo = "q") {
   const legal = g.moves({ verbose: true }).filter((m) => m.from === from && m.to === to);
   if (!legal.length) return null;
   return g.move(legal.find((m) => (m.promotion || "q") === promo) || legal[0]);
+}
+
+/**
+ * What the move just tried did — the one explainer (core/explain.js), from
+ * the board alone: the fact about *this* move (it is not mate: the king
+ * escapes to …; it leaves the queen to be taken; it left the book …), never
+ * the task again.
+ */
+function why(fen, move, ctx, t) {
+  const res = explainMove(fen, move, ctx);
+  return res && res.key ? { res, text: explainText(res, t, { extra: true }) } : null;
 }
 
 export function createRunner(item, { t, engine, later = (ms, fn) => setTimeout(fn, ms), onDone }) {
@@ -105,7 +117,8 @@ export function createRunner(item, { t, engine, later = (ms, fn) => setTimeout(f
           const r = judge(item.fen, uciOf(mv), item);
           show(r.fen, lastOf(mv));
           if (r.ok) { say(t("learn.right") + " —— " + r.san, "good", []); finish({ ok: true }); return; }
-          say(item.retry || (item.goal === "mate" ? t("learn.wrongMate", r.san) : t("learn.wrong")), "bad");
+          const w = why(item.fen, uciOf(mv), { kind: "lesson", goal: item.goal, expected: item.answer }, t);
+          say(w ? t("learn.wrongWhy", w.text) : item.retry || (item.goal === "mate" ? t("learn.wrongMate", r.san) : t("learn.wrong")), "bad");
           wait(RESET_MS, () => { if (!over) show(item.fen); });
         },
       };
@@ -116,6 +129,7 @@ export function createRunner(item, { t, engine, later = (ms, fn) => setTimeout(f
       const g = new Chess(item.fen);
       let k = 0;                                  // index into item.line: the next move to be played
       let last = null;
+      let intent = "";                            // a classic: what the master's move (just played by you) does
       const show = (arrows = []) => {
         const fen = g.fen();
         const yours = !over && sideOf(fen) === you && k < item.line.length;
@@ -133,7 +147,8 @@ export function createRunner(item, { t, engine, later = (ms, fn) => setTimeout(f
           last = lastOf(m);
           show();
           if (k >= item.line.length) { say(item.idea || t("learn.right"), "good", []); finish({ ok: true }); }
-          else say(t("learn.theirMove", m.san) + " —— " + t("learn.yourMove"));
+          else say((intent || "") + t("learn.theirMove", m.san) + " —— " + t("learn.yourMove"));
+          intent = "";
         });
       };
       const reveal = () => {
@@ -155,6 +170,13 @@ export function createRunner(item, { t, engine, later = (ms, fn) => setTimeout(f
           if (!tries) tries = 1;
           const mates = g.in_checkmate();
           if ((want && uciOf(mv) === uciOf(want)) || (mates && item.mode !== "opening")) {
+            if (item.mode === "classic" && !mates) {
+              // the master's intent, said of your move now that it is the master's
+              g.undo();
+              const x = why(g.fen(), uciOf(mv), { kind: "classic" }, t);
+              g.move(mv);
+              intent = x && x.res.reason === "describe" && x.res.key !== "ex.describe" ? t("learn.classicSame", x.text) : "";
+            }
             k++;
             last = lastOf(mv);
             if (mates) k = item.line.length;
@@ -162,12 +184,26 @@ export function createRunner(item, { t, engine, later = (ms, fn) => setTimeout(f
             reply();
             return;
           }
-          // wrong: shown a moment, taken back
+          // wrong: shown a moment, taken back — and said what *this* move does
           tries++;
           last = lastOf(mv);
           show();
           g.undo();
-          say(item.mode === "opening" ? t("learn.openingWrong") : item.mode === "classic" ? t("learn.classicWrong") : t("learn.wrong"), "bad");
+          const here = g.fen();
+          const w = item.mode === "opening" ? why(here, uciOf(mv), { kind: "opening", book: [item.line[k]] }, t)
+            : item.mode === "classic" ? why(here, uciOf(mv), { kind: "classic", expected: item.line[k] }, t)
+            : why(here, uciOf(mv), { kind: "lesson" }, t);
+          const plain = item.mode === "opening" ? t("learn.openingWrong") : item.mode === "classic" ? t("learn.classicWrong") : t("learn.wrong");
+          say(!w ? plain : item.mode === "opening" ? t("learn.openingWrongWhy", w.text) : item.mode === "classic" ? t("learn.classicWrongWhy", w.text) : t("learn.wrongWhy", w.text), "bad");
+          // a classic: what players of your level play here, when the engine knows (Maia)
+          if (item.mode === "classic" && engine && engine.humanMoves) {
+            const at = k, before = bar.peek().text;
+            Promise.resolve().then(() => engine.humanMoves(here, 1500)).then((dist) => {
+              if (!alive || over || k !== at || bar.peek().text !== before || !Array.isArray(dist) || !dist.length) return;
+              const x = explainMove(here, uciOf(mv), { kind: "classic", expected: item.line[at], human: dist, rating: 1500 });
+              if (x && x.key) say(t("learn.classicWrongWhy", explainText(x, t, { extra: true })), "bad");
+            }).catch(() => {});
+          }
           wait(RESET_MS, () => { if (!over) { last = null; show(); } });
         },
       };
@@ -193,8 +229,10 @@ export function createRunner(item, { t, engine, later = (ms, fn) => setTimeout(f
         if (moves >= 50) return item.goal === "draw";
         return null;
       };
+      let lastWhy = null;                         // the fact about your last move that cost the goal, if one is proved
       const end = (ok) => {
-        say(ok ? t("learn.drillWon") : item.goal === "draw" ? t("learn.drillLost") : t("learn.drillFailed"), ok ? "good" : "bad", []);
+        const plain = ok ? t("learn.drillWon") : item.goal === "draw" ? t("learn.drillLost") : t("learn.drillFailed");
+        say(!ok && lastWhy ? t("learn.drillStop", lastWhy) : plain, ok ? "good" : "bad", []);
         finish({ ok });
       };
       show();
@@ -202,12 +240,19 @@ export function createRunner(item, { t, engine, later = (ms, fn) => setTimeout(f
       return {
         async move(from, to) {
           if (over || busy || sideOf(g.fen()) !== you) return;
+          const before = g.fen();
           const mv = tryMove(g, from, to);
           if (!mv) return;
           moves++;
           last = lastOf(mv);
           busy = true;
           show();
+          // 残局丢胜当场停: a win the board proves gone (king and pawn against king, solved
+          // exactly) stops the drill on this move, and says what the move gave away
+          const w = why(before, uciOf(mv), { kind: "endgame", goal: item.goal }, t);
+          const E = w && w.res.facts.endgame;
+          if (E && (E.left7th || E.leftBehind || E.square || E.kpk && E.kpk.lost)) lastWhy = w.text;
+          if (E && E.kpk && E.kpk.lost && item.goal !== "draw") return end(false);
           let v = verdict(mv);
           if (v !== null) return end(v);
           let r = null;

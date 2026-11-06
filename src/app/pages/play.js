@@ -28,7 +28,7 @@ import { acceptsDraw, ownOf, surprised } from "../opponents/mind.js";
 import { oppText, sayLine } from "../opponents/lines.js";
 import { portrait } from "../opponents/portraits.js";
 import { dangerAfter, shouldAsk, threatNow, checksAndCaptures } from "../core/coach.js";
-import { explainMistake, lineMotif, sanText } from "../core/explain.js";
+import { explainMove, explainText, lineMotif, sanText } from "../core/explain.js";
 import { sansOf } from "../core/pass.js";
 import { scalarOf, winPct } from "../core/winpct.js";
 import { newId } from "../services/db.js";
@@ -177,11 +177,15 @@ export function mount(el, { store, engine, ready }) {
     } catch { /* the board's facts alone decide */ }
     if (!pending.peek() || pending.peek().uci !== uci || fen.peek() !== f) return;
     const b = before && before.lines[0], a = after && after.lines[0];
-    const facts = b && a ? explainMistake({ fen: f, played: mv.san, best: b.moves[0], line: sansOf(mv.fen, a.moves, 6) }) : null;
-    const d = shouldAsk({ rule, facts, before: b ? scalarOf(b.score) : null, after: a ? scalarOf(a.score) : null, side: turnOf(f) });
+    const beforeS = b ? scalarOf(b.score) : null, afterS = a ? scalarOf(a.score) : null;
+    // the same explainer as the review's, with what the board proves when the engine did not answer
+    const said = explainMove(f, mv.san, b && a ? { kind: "coach", best: b.moves[0], line: sansOf(mv.fen, a.moves, 6), evalBefore: beforeS, evalAfter: afterS, noBetter: true }
+      : { kind: "coach" });
+    const facts = said && said.facts.ex19;
+    const d = shouldAsk({ rule, facts, before: beforeS, after: afterS, side: turnOf(f) });
     if (!d.ask) { pending.value = null; commit(uci); return; }
     asked.set(g.id, (asked.get(g.id) || 0) + 1);
-    pending.value = { ...pending.peek(), why: d.why, drop: d.drop };
+    pending.value = { ...pending.peek(), why: d.why, drop: d.drop, said: said && said.key ? explainText(said, t) : null, fact: said && said.key };
     mode.value = "coach";
   }
 
@@ -189,9 +193,10 @@ export function mount(el, { store, engine, ready }) {
     const p = pending.peek(), g = game.peek();
     if (!p) return;
     ready.then((db) => db.append({ type: "coach.prompt", gameId: g.id, ply: g.moves.length, uci: p.uci, why: p.why || null,
-      choice: play ? "play" : "rethink" }));
+      fact: p.fact || null, choice: play ? "play" : "rethink" }));
     batch(() => { pending.value = null; mode.value = "play"; });
-    if (play) commit(p.uci);
+    // played anyway: now the coach says what the move allows (asking first, it only asked)
+    if (play) { commit(p.uci); if (p.said) note.value = { text: p.said, tone: "coach" }; }
   }
 
   // --- hints (P3): threat → checks and captures → the idea → the arrow ------------

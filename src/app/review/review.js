@@ -26,7 +26,7 @@ import { signal, computed } from "../lib/signal.js";
 import { runProgressive, engineAnalyze, sansOf, deeper } from "../core/pass.js";
 import { gradeMoves, selectMoments, MARK } from "../core/grade.js";
 import { gameAccuracy, winPctDrop, scalarOf, moveNumber, WIN_MISTAKE } from "../core/winpct.js";
-import { explainMistake, explainText, explainMotif, explainKey, lineAfter, sanText } from "../core/explain.js";
+import { explainMove, explainText, explainMotif, explainKey, lineAfter, sanText } from "../core/explain.js";
 import { applyMove, parseUci } from "../core/rules.js";
 import { dangerAfter } from "../core/coach.js";
 import { Chess } from "../core/chess.js";
@@ -66,12 +66,13 @@ function sanToUci(fen, san) {
 const sideOf = (fen) => (fen.split(" ")[1] === "b" ? "b" : "w");
 
 /**
- * Why a move was bad: the explainer's sentence when its facts carry one,
- * else what the board proves at once (a mate allowed, a man left to be
- * taken), else nothing.
+ * Why a move was bad: the explainer's sentence (core/explain.js explainMove)
+ * when its facts carry one, else what the board proves at once (a mate
+ * allowed, a man left to be taken), else nothing. `extra`: add what players
+ * of the rating play there, once the card has asked (humanMoves).
  */
-export function whyNot(facts, fen, uci, t, { withBetter = true } = {}) {
-  const said = facts ? explainText(withBetter ? facts : { ...facts, better: null }, t) : "";
+export function whyNot(facts, fen, uci, t, { extra = false } = {}) {
+  const said = facts ? explainText(facts, t, { extra }) : "";
   if (said) return said;
   const d = dangerAfter(fen, uci);
   if (!d) return "";
@@ -87,7 +88,7 @@ export function whyNot(facts, fen, uci, t, { withBetter = true } = {}) {
  * @param {number|object} [o.budget] REVIEW_BUDGET, or ms for the normal level
  * @param {(ms: number, fn: () => void) => any} [o.later]
  */
-export function createReview({ engine, db, t, budget = REVIEW_BUDGET, later = (ms, fn) => setTimeout(fn, ms), now = () => performance.now() }) {
+export function createReview({ engine, db, t, budget = REVIEW_BUDGET, later = (ms, fn) => setTimeout(fn, ms), now = () => performance.now(), rating = () => 1500 }) {
   const state = signal({ phase: "idle" });
   const levels = budgetsOf(budget);
   let data = null;      // { gameId, fens, sans, p, grades, moments, facts, sides, orientation, refining }
@@ -98,8 +99,9 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET, later = (m
   const patch = (x) => { state.value = { ...state.peek(), ...x }; };
   const append = async (e) => (await db).append(e);
 
-  const factsOf = (p, fens, sans, moments) => moments.map((m) => explainMistake({ fen: fens[m.ply], played: m.san, best: m.best,
-    bestLine: p.pvs[m.ply], line: lineAfter(p.pvs, sans, m.ply), evalBefore: p.scalars[m.ply], evalAfter: p.scalars[m.ply + 1] }));
+  const ctxOf = (p, sans, m) => ({ kind: "review", best: m.best, bestLine: p.pvs[m.ply], line: lineAfter(p.pvs, sans, m.ply),
+    evalBefore: p.scalars[m.ply], evalAfter: p.scalars[m.ply + 1] });
+  const factsOf = (p, fens, sans, moments) => moments.map((m) => explainMove(fens[m.ply], m.san, ctxOf(p, sans, m)));
 
   /** Open the review of a finished `game` (the store's shape). */
   async function open(game, { orientation = "white", sides = ["w", "b"] } = {}) {
@@ -188,6 +190,24 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET, later = (m
     const m = data.moments[k];
     state.value = { phase: "card", k, count, ply: m.ply, fen: data.fens[m.ply],
       note: null, tone: null, arrows: [], solved: false, shown: false, busy: false, tries: 0 };
+    natural(m);
+  }
+
+  /**
+   * What players of your rating play here (EngineService.humanMoves — Maia):
+   * when the game's move is one of theirs, the explanation adds that it is a
+   * natural mistake. Asked once per card, in the background; nothing waits.
+   */
+  function natural(m) {
+    const d = data;
+    if (!engine.humanMoves || m.human !== undefined) return;
+    m.human = null;
+    const r = rating();
+    Promise.resolve().then(() => engine.humanMoves(d.fens[m.ply], r)).then((dist) => {
+      const i = d.moments.indexOf(m);
+      if (data !== d || i < 0 || !Array.isArray(dist) || !dist.length) return;
+      d.facts[i] = explainMove(d.fens[m.ply], m.san, { ...ctxOf(d.p, d.sans, m), human: dist, rating: r });
+    }).catch(() => {});
   }
 
   const current = () => (state.peek().phase === "card" ? data.moments[state.peek().k] : null);
@@ -214,14 +234,15 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET, later = (m
     const k = s.k;
     const tries = s.tries + 1;
     const record = (ok) => append({ type: "review.retry", gameId: data.gameId, ply: m.ply, uci: mv.uci, ok });
-    const wrong = (note) => {
-      patch({ note, tone: "bad", tried: { fen: mv.fen, lastMove: { from: uci.slice(0, 2), to: uci.slice(2, 4) } }, busy: false, tries });
+    // the opponent's answer is drawn while the tried move stands; then the card's position comes back
+    const wrong = (note, arrows) => {
+      patch({ note, tone: "bad", tried: { fen: mv.fen, lastMove: { from: uci.slice(0, 2), to: uci.slice(2, 4) } }, arrows: arrows || [], busy: false, tries });
       record(false);
-      later(RESET_MS, () => { if (state.peek().phase === "card" && state.peek().k === k && !state.peek().solved) patch({ tried: null }); });
+      later(RESET_MS, () => { if (state.peek().phase === "card" && state.peek().k === k && !state.peek().solved) patch({ tried: null, arrows: [] }); });
     };
     if (mv.san === m.san) {
-      const why = whyNot(data.facts[k], fen, mv.uci, t);
-      return wrong(t("rv.same") + (why ? " " + why + "。" : ""));
+      const why = whyNot(data.facts[k], fen, mv.uci, t, { extra: true });
+      return wrong(t("rv.same") + (why ? " " + why + "。" : ""), data.facts[k] && data.facts[k].arrows);
     }
     if (m.best && mv.uci === applyMove(fen, m.best)?.uci) {
       patch({ note: t("rv.right", fig(mv.san, fen)), tone: "good", solved: true, arrows: bestArrow(m), busy: false, tries,
@@ -239,18 +260,18 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET, later = (m
       patch({ note: t("rv.alsoGood", fig(mv.san, fen), fig(bestSan(m) || "", fen)), tone: "good", solved: true, arrows: bestArrow(m), busy: false, tries });
       return record(true);
     }
-    // explained for the move just tried, not the game's (B6)
-    const facts = explainMistake({ fen, played: mv.san, best: m.best, bestLine: data.p.pvs[m.ply],
-      line: line ? sansOf(mv.fen, line.moves, 6) : [] });
-    const why = whyNot(facts && facts.refute ? facts : null, fen, mv.uci, t, { withBetter: false });
-    wrong(why ? t("rv.wrong", fig(mv.san, fen), why) : t("rv.wrongPlain", fig(mv.san, fen)));
+    // explained for the move just tried, not the game's (B6) — and never by naming the answer
+    const facts = explainMove(fen, mv.san, { kind: "retry", best: m.best, bestLine: data.p.pvs[m.ply], noBetter: true,
+      line: line ? sansOf(mv.fen, line.moves, 6) : [], evalBefore: data.p.scalars[m.ply], evalAfter: after });
+    const why = whyNot(facts, fen, mv.uci, t);
+    wrong(why ? t("rv.wrong", fig(mv.san, fen), why) : t("rv.wrongPlain", fig(mv.san, fen)), facts && facts.arrows);
   }
 
   /** 看答案: the engine's move as an arrow, and why the game's move was not it. */
   function answer() {
     const s = state.peek(), m = current();
     if (!m) return;
-    const why = whyNot(data.facts[s.k], data.fens[m.ply], sanToUci(data.fens[m.ply], m.san), t);
+    const why = whyNot(data.facts[s.k], data.fens[m.ply], sanToUci(data.fens[m.ply], m.san), t, { extra: true });
     const best = bestSan(m);
     const parts = [why ? why + "。" : "", best && !(why && why.includes(best.slice(1))) ? t("rv.better", fig(best, data.fens[m.ply])) : ""];
     patch({ note: parts.join(" ").trim(), tone: null, arrows: bestArrow(m), shown: true, tried: null });
