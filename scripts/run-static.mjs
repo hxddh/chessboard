@@ -22,7 +22,7 @@ const REST = ["test-pgn.mjs", "test-learning.mjs", "test-library.mjs", "test-lib
   "test-explorer.mjs", "test-sync.mjs", "test-brand.mjs", "test-progress-metrics.mjs", "test-persist.mjs",
   "test-repertoire.mjs", "test-rep-book.mjs", "test-eco.mjs", "test-review-winpct.mjs", "test-explain.mjs",
   "test-classics.mjs", "test-endgames.mjs", "test-lessons-adv.mjs", "test-engine.mjs", "test-human.mjs",
-  "test-deps.mjs", "test-sdk-diff.mjs", "manifest-check.mjs"];
+  "test-deps.mjs", "test-sdk-diff.mjs", "manifest-check.mjs", "test-app.mjs"];
 export const STATIC_FILES = [FIRST, ...REST];
 
 function run(file) {
