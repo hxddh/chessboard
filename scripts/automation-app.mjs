@@ -9,8 +9,9 @@
  *   app-move     a new game, e2e4 e7e5, into the native db
  *   app-restore  the next launch (same profile): that game is back
  *   app-db       the db contract in the app; append latency
- *   app-engine   the engine contract in the app; nodes/s, depth at the
- *                review budget, the 60-ply review, a kill survived; and,
+ *   app-engine   the engine contract in the app; the 60-ply review on the
+ *                board: time to the first card, the whole pass, depth per
+ *                level, and the 19.0 way for comparison; a kill survived; and,
  *                once the app is gone, no Stockfish left running
  *
  *   node scripts/automation-app.mjs <exe> [--out report.json] [--only app-db,app-engine]
@@ -29,7 +30,7 @@ const opt = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null
 const exe = args.find((a, i) => !a.startsWith("--") && !["--out", "--only"].includes(args[i - 1]));
 const outFile = opt("--out");
 const only = opt("--only") ? opt("--only").split(",") : null;
-const LAUNCH_MS = 240000;
+const LAUNCH_MS = 420000;
 
 const results = [];
 const check = (name, pass, detail) => { results.push({ name, pass: !!pass, detail }); console.log((pass ? "ok" : "FAIL") + ": " + name + " —— " + detail); };
@@ -113,10 +114,14 @@ async function main() {
   if (db && db.latency) console.log("append 延迟（每步一个任务、等它落盘）：中位 " + db.latency.appendMedianMs + " ms，p95 " + db.latency.appendP95Ms + " ms，最长 " + db.latency.appendMaxMs + " ms；100 条一批 " + db.latency.batch100Ms + " ms；读 200 步 " + db.latency.read200Ms + " ms");
   const eng = await scenario("app-engine");
   if (eng && eng.review) {
-    const r = eng.review, l = eng.long || {};
-    console.log("原生 Stockfish（" + (eng.checks.boot && eng.checks.boot.threads) + " 线程 / " + (eng.checks.boot && eng.checks.boot.cores) + " 核，Hash " + (eng.checks.boot && eng.checks.boot.hashMb) + " MB）：" +
-      "复盘预算 " + r.budgetMs + " ms 时深度中位 " + r.medianDepth + "（最低 " + r.minDepth + "）、" + Math.round(r.medianNps / 1000) + " knps；" +
-      r.plies + " 个半回合的复盘 " + r.reviewS + " s（" + r.searches + " 次搜索，深搜 " + r.deep + " 处）；3 s 从开局：深度 " + l.depth + "、" + Math.round((l.nps || 0) / 1000) + " knps");
+    const r = eng.review, l = eng.long || {}, b = eng.checks.boot || {}, o = eng.review19 || {}, h = eng.reviewHalf || {};
+    const lv = (x) => x ? x.searches + " 次、深度中位 " + x.medianDepth + "（最低 " + x.minDepth + "）、" + Math.round((x.medianNps || 0) / 1000) + " knps" : "—";
+    console.log("原生 Stockfish（" + b.threads + " 线程 / " + b.cores + " 核，Hash " + b.hashMb + " MB）：" + r.plies + " 个半回合的复盘——" +
+      "第一张卡 " + r.firstCardMs + " ms（快扫 " + r.scanMs + " ms），整盘 " + r.fullMs + " ms；快扫 " + lv(r.scan) + "；常规 " + lv(r.normal) + "；深搜 " + lv(r.deep) +
+      "；每线程节点 " + JSON.stringify(r.nodesPerThread) + "；卡片 " + JSON.stringify(r.moments));
+    console.log("对照：19.0 的做法（每个局面 " + o.budgetMs + " ms）" + o.reviewS + " s、" + o.searches + " 次搜索、深度中位 " + o.medianDepth + "；常规减半：第一张卡 " + h.firstCardMs + " ms、整盘 " + h.fullMs + " ms、常规深度中位 " + (h.normal && h.normal.medianDepth) +
+      "；3 s 从开局：深度 " + l.depth + "、" + Math.round((l.nps || 0) / 1000) + " knps");
+    console.log("MEASURED " + JSON.stringify({ firstCardMs: r.firstCardMs, fullMs: r.fullMs, normalDepth: r.normal && r.normal.medianDepth, review19S: o.reviewS, half: { firstCardMs: h.firstCardMs, fullMs: h.fullMs } }));
   }
   if (eng) {
     let left = engines();

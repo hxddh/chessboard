@@ -17,12 +17,12 @@
  *               the first card (B3); a wrong try is explained for that move (B6);
  *               no 为什么 toggle (B9); each move once in the report; findings
  *               are events; a reload restores the review without a second pass (B1)
- *   measured    the time to review a 60-ply game
+ *   measured    the time to the first card and to the whole pass of a 60-ply review
  *
  * Against the split build (scripts/build-app.mjs) unless --dev.
  *
  *   node scripts/test-play-e2e.mjs [--dev] [--shots=dir]   (E2E_REQUIRED=1: a missing browser fails)
- *   REAL_ENGINE=1 …   also time the 60-ply review on Stockfish wasm
+ *   REAL_ENGINE=1 …   also time the 60-ply review on Stockfish wasm (first card ≤ 5 s)
  */
 import { startServer } from "./serve-app.mjs";
 import { launchChromium } from "./app/browser.mjs";
@@ -284,8 +284,16 @@ const REVIEW_GAME = "e4 e5 Nf3 Nc6 Nd4 exd4 Ba6 bxa6 d3 Nf6".split(" ");   // 3.
   await page.click("[data-test=confirm]");
   await waitPhase(page, "result");
   await waitPhase(page, "review-card", 10000);
+  // progressive: the first card is up while the rest is still being refined (the fake
+  // engine takes 30 ms a search here), and the board does not move when it is done
+  const early = await page.evaluate(() => ({ refining: window.__play.review.data.refining, fen: window.__play.board.state().fen,
+    ply: window.__play.review.data.moments[0].ply, report: !!window.__play.review.report() }));
+  assert(early.refining && !early.report, "the first card shows before the pass is finished (and the report waits for it)");
+  await page.waitForFunction(() => !window.__play.review.data.refining, null, { timeout: 20000 });
   const fens = await page.evaluate(() => window.__play.review.data.fens);
   const moments = await page.evaluate(() => window.__play.review.data.moments);
+  const late = await page.evaluate(() => window.__play.board.state().fen);
+  assert(late === early.fen && moments[0].ply === early.ply, "refining behind the card does not move the board, nor change the first card");
   assert(moments.length >= 1 && moments.length <= 3, "≤ 3 turning points (" + moments.map((m) => m.ply + ":" + m.san + ":" + m.grade) + ")");
   assert(moments.every((m) => m.side === "w"), "only your own moves");
   assert(moments.every((m) => m.before >= 15), "only while the game was undecided");
@@ -358,6 +366,7 @@ const REVIEW_GAME = "e4 e5 Nf3 Nc6 Nd4 exd4 Ba6 bxa6 d3 Nf6".split(" ");   // 3.
   ({ ctx, page } = await open("&dbname=" + dbname + "-b"));
   await playLine(page, { id: "rv2" }, ucis, "w");
   await waitPhase(page, "review-card", 10000);
+  await page.waitForFunction(() => !window.__play.review.data.refining, null, { timeout: 20000 });
   await page.waitForTimeout(100);
   await page.reload();
   await waitPhase(page, "review-card", 10000);
@@ -416,13 +425,18 @@ const REVIEW_GAME = "e4 e5 Nf3 Nc6 Nd4 exd4 Ba6 bxa6 d3 Nf6".split(" ");   // 3.
     const t0 = await page.evaluate(() => performance.now());
     await playLine(page, { id: "m60" }, ucis, "w");
     await waitPhase(page, "review-card", 600000).catch(() => {});
-    const ms = (await page.evaluate(() => performance.now())) - t0 - 1600;   // less the result moment
-    report["review60_" + engine + "_ms"] = Math.round(ms);
+    await page.waitForFunction(() => window.__play.review.timing.fullMs != null, null, { timeout: 600000 }).catch(() => {});
+    const tm = await page.evaluate(() => ({ ...window.__play.review.timing }));
+    report["review60_" + engine + "_ms"] = tm.fullMs;
+    report["review60_" + engine + "_first_card_ms"] = tm.firstCardMs;
     const searches = await page.evaluate(() => window.__play.review.data && window.__play.review.data.p.deep.filter(Boolean).length + window.__play.review.data.fens.length);
-    console.log("review of a 60-ply game (" + engine + " engine, " + searches + " searches): " + (ms / 1000).toFixed(2) + " s after the result moment");
+    console.log("review of a 60-ply game (" + engine + " engine, ~" + searches + " searches): first card " + (tm.firstCardMs / 1000).toFixed(2) +
+      " s (scan " + (tm.scanMs / 1000).toFixed(2) + " s), whole pass " + (tm.fullMs / 1000).toFixed(2) + " s after the review opened");
     await ctx.close();
   }
   assert(report.review60_fake_ms < 3000, "the review's own work for 60 plies stays under 3 s (fake engine)");
+  assert(report.review60_fake_first_card_ms != null && report.review60_fake_first_card_ms <= report.review60_fake_ms, "the first card comes no later than the whole pass (fake engine)");
+  if (process.env.REAL_ENGINE) assert(report.review60_stockfish_first_card_ms <= 5000, "wasm Stockfish: the first card within 5 s (" + report.review60_stockfish_first_card_ms + " ms)");
 }
 
 const real = errors.filter((e) => !/favicon/.test(e));

@@ -13,9 +13,11 @@
  *   app-move     a new two-player game, e2e4 e7e5, written to the db
  *   app-restore  the next launch: the same game, with both moves, is back
  *   app-db       the db contract against the native SQLite store; append latency
- *   app-engine   the engine contract against native Stockfish; nodes/s and
- *                depth at the review's budget; a 60-ply review; a kill mid-
- *                search survived; Threads and Hash as asked
+ *   app-engine   the engine contract against native Stockfish; a 60-ply
+ *                review on the board (review/review.js, progressive): time to
+ *                the first card, the whole pass, depth and nodes/s per level;
+ *                the same game the 19.0 way (200 ms a position) for before /
+ *                after; a kill mid-search survived; Threads and Hash as asked
  * @module selftest
  */
 import { createHarness } from "../../scripts/app/harness.mjs";
@@ -24,10 +26,10 @@ import engineContract from "../../scripts/app/engine-contract.mjs";
 import { COACH_GAMES } from "../../scripts/fixtures/coach-games.mjs";
 import { createDb, newId } from "./services/db.js";
 import { nativeBackend } from "./services/db-native.js";
-import { createEngineService } from "./services/engine.js";
+import { createEngineService, REVIEW_NODES } from "./services/engine.js";
 import { nativeStockfishBackend } from "./services/engine-native.js";
 import { runPass, engineAnalyze } from "./core/pass.js";
-import { REVIEW_BUDGET_MS } from "./review/review.js";
+import { createReview } from "./review/review.js";
 import { Chess } from "./core/chess.js";
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -56,6 +58,33 @@ async function runSuite(add, label) {
   const t0 = performance.now();
   const r = await h.run(label);
   return { pass: r.failed === 0 && r.passed > 0, passed: r.passed, failed: r.failed, failures: r.failures, ms: Math.round(performance.now() - t0), log: lines.slice(0, 8) };
+}
+
+/**
+ * One review on the board (review/review.js) against `svc`, with a db that
+ * holds nothing: ms to the first card and to the finished pass, and per
+ * level (scan / normal / deep) the searches, median depth and nodes/s.
+ */
+async function reviewOnce(be, svc, game, positions) {
+  const per = { scan: [], normal: [], deep: [] };
+  const recording = { ...svc, analyse: async (fen, o) => {
+    const r = await svc.analyse(fen, o);
+    const lv = o && o.budget && o.budget.review;
+    if (lv && be.info.last) per[lv].push(be.info.last);
+    return r;
+  } };
+  const db = Promise.resolve({ query: async () => [], append: async () => {} });
+  const rv = createReview({ engine: recording, db, t: (k, ...a) => k + a.join(",") });
+  await rv.open(game, { sides: ["w"] });
+  await rv.whenFinished();
+  const out = { plies: game.moves.length, positions: rv.data ? rv.data.fens.length : 0, firstCardMs: rv.timing.firstCardMs, fullMs: rv.timing.fullMs,
+    scanMs: rv.timing.scanMs, moments: rv.data ? rv.data.moments.map((m) => m.ply + ":" + m.san + ":" + m.grade) : [], threads: be.info.threads };
+  for (const [lv, xs] of Object.entries(per)) {
+    out[lv] = { searches: xs.length, medianDepth: median(xs.map((s) => s.depth)), minDepth: xs.length ? Math.min(...xs.map((s) => s.depth)) : null,
+      medianNodes: median(xs.map((s) => s.nodes)), medianNps: median(xs.map((s) => s.nps)), medianMs: median(xs.map((s) => s.ms)) };
+  }
+  rv.close();
+  return out;
 }
 
 const SCENARIOS = {
@@ -130,23 +159,31 @@ const SCENARIOS = {
     const svc = createEngineService(be);
     checks.contract = await runSuite((test) => engineContract(test, () => svc, { budget: { ms: 200 } }), "native: ");
 
-    // the review's budget: nodes/s and depth per position over a 60-ply game
+    // a 60-ply review, the way the page runs it: progressive, at the review's levels
     const sans = COACH_GAMES[0].san.slice(0, 60);
     const g = new Chess();
     const fens = [g.fen()];
-    for (const s of sans) { g.move(s); fens.push(g.fen()); }
+    const moves = [];
+    for (const s of sans) { const m = g.move(s); fens.push(g.fen()); moves.push({ san: m.san, fen: g.fen() }); }
+    await be.clear();
+    rep.review = await reviewOnce(be, svc, { id: "st-60", startFen: START, moves }, fens.length);
+    rep.review.nodesPerThread = { ...REVIEW_NODES.native };
+    checks.review = { pass: rep.review.positions === fens.length && rep.review.firstCardMs != null && rep.review.fullMs != null, ...rep.review };
+    // the 19.0 way on the same game and engine: 200 ms a position (before / after)
     const stats = [];
     const recording = { ...svc, analyse: async (fen, o) => { const r = await svc.analyse(fen, o); if (be.info.last) stats.push(be.info.last); return r; } };
+    await be.clear();
     const t0 = performance.now();
-    const p = await runPass({ fens, sans, budget: REVIEW_BUDGET_MS, analyze: engineAnalyze(recording) });
-    const reviewMs = performance.now() - t0;
-    const quick = stats.filter((s) => s.ms < REVIEW_BUDGET_MS * 3);
-    rep.review = {
-      plies: sans.length, positions: fens.length, searches: stats.length, deep: p.deep.filter(Boolean).length, budgetMs: REVIEW_BUDGET_MS,
-      reviewS: round(reviewMs / 1000), medianDepth: median(quick.map((s) => s.depth)), minDepth: Math.min(...quick.map((s) => s.depth)),
-      medianNps: median(quick.map((s) => s.nps)), medianNodes: median(quick.map((s) => s.nodes)),
-    };
-    checks.review = { pass: p.scalars.filter((x) => x != null).length === fens.length, ...rep.review };
+    const p19 = await runPass({ fens, sans, budget: 200, analyze: engineAnalyze(recording) });
+    const quick = stats.filter((s) => s.ms < 600);
+    rep.review19 = { budgetMs: 200, reviewS: round((performance.now() - t0) / 1000), searches: stats.length, deep: p19.deep.filter(Boolean).length,
+      medianDepth: median(quick.map((s) => s.depth)), medianNps: median(quick.map((s) => s.nps)) };
+    // a lighter normal level, for the record (how much the budget buys)
+    const keep = { ...REVIEW_NODES.native };
+    Object.assign(REVIEW_NODES.native, { normal: keep.normal / 2, deep: keep.deep / 2 });
+    try { await be.clear(); rep.reviewHalf = await reviewOnce(be, svc, { id: "st-60h", startFen: START, moves }, fens.length); }
+    finally { Object.assign(REVIEW_NODES.native, keep); }
+    rep.reviewHalf.nodesPerThread = { ...keep, normal: keep.normal / 2, deep: keep.deep / 2 };
     // one long look from the start: a ceiling for nodes/s on this machine
     await svc.analyse(START, { lines: 1, budget: { ms: 3000 } });
     rep.long = { ...be.info.last };

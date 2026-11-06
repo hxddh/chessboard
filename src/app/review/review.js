@@ -9,6 +9,11 @@
  *   done     复盘完成。           (完整报告 on demand)
  *
  * The board stands on the first card's position as the review opens (B3).
+ * The pass is progressive (core/pass runProgressive): a quick scan of every
+ * position, then the first turning point is confirmed at the deep budget and
+ * its card shown at once; the rest is refined behind it. The card on the
+ * board never changes under the player: the later cards, the counts and the
+ * report are the finished pass's (`state.refining` until then; 下一处 waits).
  * The pass is stored in the `analysis` table and read back on reload, so a
  * review is never lost nor run twice (B1). Each turning point appends a
  * `review.finding` event for the learner model, with the position and the
@@ -18,7 +23,7 @@
  * @module review/review
  */
 import { signal, computed } from "../lib/signal.js";
-import { runPass, engineAnalyze, sansOf } from "../core/pass.js";
+import { runProgressive, engineAnalyze, sansOf, deeper } from "../core/pass.js";
 import { gradeMoves, selectMoments, MARK } from "../core/grade.js";
 import { gameAccuracy, winPctDrop, scalarOf, moveNumber, WIN_MISTAKE } from "../core/winpct.js";
 import { explainMistake, explainText, explainMotif, explainKey, lineAfter, sanText } from "../core/explain.js";
@@ -26,7 +31,14 @@ import { applyMove, parseUci } from "../core/rules.js";
 import { dangerAfter } from "../core/coach.js";
 import { Chess } from "../core/chess.js";
 
-export const REVIEW_BUDGET_MS = 200;
+/**
+ * The review's budget: three levels each engine backend turns into nodes of its
+ * own (services/engine.js REVIEW_NODES) — the scan that finds the turning points,
+ * the 19.0 pass's budget, and the deep re-search. A number instead is ms for the
+ * normal level (?review=ms in tests): the scan is a quarter of it, deep three times.
+ */
+export const REVIEW_BUDGET = { scan: { review: "scan" }, normal: { review: "normal" }, deep: { review: "deep" } };
+const budgetsOf = (b) => (typeof b === "number" ? { scan: { ms: Math.max(10, Math.round(b / 4)) }, normal: { ms: b }, deep: { ms: deeper(b) } } : b);
 /** How long a wrong try stays on the board before the card's position comes back. */
 export const RESET_MS = 1400;
 
@@ -72,58 +84,109 @@ export function whyNot(facts, fen, uci, t, { withBetter = true } = {}) {
  * @param {object} o.engine   EngineService
  * @param {Promise<object>} o.db the db service (ready)
  * @param {Function} o.t      the page dictionary
- * @param {number} [o.budget] ms per position
+ * @param {number|object} [o.budget] REVIEW_BUDGET, or ms for the normal level
  * @param {(ms: number, fn: () => void) => any} [o.later]
  */
-export function createReview({ engine, db, t, budget = REVIEW_BUDGET_MS, later = (ms, fn) => setTimeout(fn, ms) }) {
+export function createReview({ engine, db, t, budget = REVIEW_BUDGET, later = (ms, fn) => setTimeout(fn, ms), now = () => performance.now() }) {
   const state = signal({ phase: "idle" });
-  let data = null;      // { gameId, fens, sans, p, grades, moments, facts, sides, orientation }
+  const levels = budgetsOf(budget);
+  let data = null;      // { gameId, fens, sans, p, grades, moments, facts, sides, orientation, refining }
   let token = 0;
+  let finished = null;  // resolves when the open review's pass is complete
+  /** When the last review's first card showed and its pass finished (ms after open); for the measurements. */
+  const timing = { openedAt: null, firstCardMs: null, fullMs: null, scanMs: null };
   const patch = (x) => { state.value = { ...state.peek(), ...x }; };
   const append = async (e) => (await db).append(e);
+
+  const factsOf = (p, fens, sans, moments) => moments.map((m) => explainMistake({ fen: fens[m.ply], played: m.san, best: m.best,
+    bestLine: p.pvs[m.ply], line: lineAfter(p.pvs, sans, m.ply), evalBefore: p.scalars[m.ply], evalAfter: p.scalars[m.ply + 1] }));
 
   /** Open the review of a finished `game` (the store's shape). */
   async function open(game, { orientation = "white", sides = ["w", "b"] } = {}) {
     const my = ++token;
+    timing.openedAt = now(); timing.firstCardMs = timing.fullMs = timing.scanMs = null;
     const fens = [game.startFen, ...game.moves.map((m) => m.fen)];
     const sans = game.moves.map((m) => m.san);
     const d = await db;
     let rows = await d.query("analysis.get", { gameId: game.id });
     if (my !== token) return;
-    let p, grades, fresh = false;
-    if (rows.length === fens.length) ({ p, grades } = rowsToPass(rows, fens, sans));
-    else {
-      state.value = { phase: "running", done: 0, total: fens.length };
-      try {
-        p = await runPass({ fens, sans, budget, analyze: engineAnalyze(engine), halt: () => (my !== token ? "gone" : null),
-          progress: (done, total) => { if (my === token) patch({ done, total }); } });
-      } catch (e) {
-        if (my === token) state.value = { phase: "failed", error: String(e && e.message || e) };
-        return;
-      }
-      if (my !== token || p.halted) return;
-      grades = gradeMoves(p);
-      fresh = true;
+    const reviewed = async () => { const row = await d.query("game.get", { id: game.id }); return !!(row && row.reviewed); };
+    if (rows.length === fens.length) {
+      const { p, grades } = rowsToPass(rows, fens, sans);
+      const moments = selectMoments(p, grades, sides);
+      data = { gameId: game.id, fens, sans, p, grades, moments, facts: factsOf(p, fens, sans, moments), sides, orientation, refining: false };
+      const done = await reviewed();
+      if (my !== token) return;
+      if (done) state.value = { phase: "done", count: moments.length };
+      else if (!moments.length) state.value = { phase: "empty" };
+      else card(0);
+      return;
     }
-    const moments = selectMoments(p, grades, sides);
-    const facts = moments.map((m) => explainMistake({ fen: fens[m.ply], played: m.san, best: m.best,
-      bestLine: p.pvs[m.ply], line: lineAfter(p.pvs, sans, m.ply), evalBefore: p.scalars[m.ply], evalAfter: p.scalars[m.ply + 1] }));
-    data = { gameId: game.id, fens, sans, p, grades, moments, facts, sides, orientation };
-    if (fresh) {
-      append({ type: "review.analysis", gameId: game.id, budget, rows: passToRows(p, grades) });
-      moments.forEach((m, i) => append({ type: "review.finding", gameId: game.id, ply: m.ply, san: m.san, side: m.side, fen: fens[m.ply], best: m.best || null,
-        severity: m.grade, swing: m.swing, motif: explainMotif(facts[i]) || null, fact: explainKey(facts[i]) || null }));
+    state.value = { phase: "running", done: 0, total: fens.length };
+    let shown = null;   // the moment on the first card, once it is shown
+    let resolveFinished;
+    finished = new Promise((r) => { resolveFinished = r; });
+    const wasReviewed = reviewed();
+    let p;
+    try {
+      p = await runProgressive({ fens, sans, scan: levels.scan, budget: levels.normal, deepBudget: levels.deep,
+        analyze: engineAnalyze(engine), halt: () => (my !== token ? "gone" : null),
+        progress: (done, total) => { if (my === token && state.peek().phase === "running") patch({ done, total }); },
+        onPhase: (ph) => { if (ph === "scan") timing.scanMs = Math.round(now() - timing.openedAt); },
+        // the earliest of the scan's (≤ 3) turning points not tried yet
+        pick: (p, tried) => { const m = selectMoments(p, gradeMoves(p), sides).find((x) => !tried.has(x.ply)); return m ? m.ply : null; },
+        confirmed: (p, ply) => selectMoments(p, gradeMoves(p), sides, Infinity).some((m) => m.ply === ply),
+        onFirst: async (ply, p) => {
+          if (my !== token) return;
+          const grades = gradeMoves(p);
+          const sel = selectMoments(p, grades, sides, Infinity);
+          shown = sel.find((m) => m.ply === ply);
+          const moments = [shown];
+          data = { gameId: game.id, fens, sans, p, grades, moments, facts: factsOf(p, fens, sans, moments), sides, orientation, refining: true };
+          if (await wasReviewed || my !== token) return;
+          timing.firstCardMs = Math.round(now() - timing.openedAt);
+          card(0, Math.min(3, Math.max(1, selectMoments(p, grades, sides).length)));
+        } });
+    } catch (e) {
+      if (my === token) state.value = { phase: "failed", error: String(e && e.message || e) };
+      resolveFinished();
+      return;
     }
-    const row = await d.query("game.get", { id: game.id });
+    if (my !== token || p.halted) { resolveFinished(); return; }
+    timing.fullMs = Math.round(now() - timing.openedAt);
+    const grades = gradeMoves(p);
+    const moments = mergeMoments(shown, selectMoments(p, grades, sides));
+    const facts = factsOf(p, fens, sans, moments);
+    data = { gameId: game.id, fens, sans, p, grades, moments, facts, sides, orientation, refining: false };
+    append({ type: "review.analysis", gameId: game.id, budget: levels.normal, rows: passToRows(p, grades) });
+    moments.forEach((m, i) => append({ type: "review.finding", gameId: game.id, ply: m.ply, san: m.san, side: m.side, fen: fens[m.ply], best: m.best || null,
+      severity: m.grade, swing: m.swing, motif: explainMotif(facts[i]) || null, fact: explainKey(facts[i]) || null }));
+    resolveFinished();
+    const s = state.peek();
+    if (await wasReviewed) { if (my === token && s.phase === "running") state.value = { phase: "done", count: moments.length }; return; }
     if (my !== token) return;
-    if (row && row.reviewed) state.value = { phase: "done", count: moments.length };
-    else if (!moments.length) state.value = { phase: "empty" };
-    else card(0);
+    if (s.phase === "card") {
+      // the card on the board stays; only what comes after it is new
+      patch({ count: moments.length, waiting: false });
+      if (s.waiting) next();
+    } else if (s.phase === "running") {
+      if (!moments.length) state.value = { phase: "empty" };
+      else { timing.firstCardMs = timing.fullMs; card(0); }
+    }
   }
 
-  function card(k) {
+  /** The finished pass's turning points, with the one already on the board first and kept (≤ 3 in all). */
+  function mergeMoments(shown, sel) {
+    if (!shown) return sel;
+    const same = sel.find((m) => m.ply === shown.ply);
+    let rest = sel.filter((m) => m.ply !== shown.ply);
+    if (!same && rest.length > 2) rest = rest.slice().sort((x, y) => y.swing - x.swing || x.ply - y.ply).slice(0, 2).sort((x, y) => x.ply - y.ply);
+    return [same || shown, ...rest];
+  }
+
+  function card(k, count = data.moments.length) {
     const m = data.moments[k];
-    state.value = { phase: "card", k, count: data.moments.length, ply: m.ply, fen: data.fens[m.ply],
+    state.value = { phase: "card", k, count, ply: m.ply, fen: data.fens[m.ply],
       note: null, tone: null, arrows: [], solved: false, shown: false, busy: false, tries: 0 };
   }
 
@@ -167,7 +230,7 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET_MS, later =
     }
     patch({ busy: true, note: t("rv.checking", fig(mv.san, fen)), tone: null, tried: { fen: mv.fen, lastMove: { from: uci.slice(0, 2), to: uci.slice(2, 4) } } });
     let a = null;
-    try { a = await engine.analyse(mv.fen, { lines: 1, budget: { ms: budget } }); } catch { a = null; }
+    try { a = await engine.analyse(mv.fen, { lines: 1, budget: levels.normal }); } catch { a = null; }
     if (state.peek().phase !== "card" || state.peek().k !== k) return;
     const line = a && a.lines[0];
     const after = line ? scalarOf(line.score) : null;
@@ -196,6 +259,8 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET_MS, later =
   function next() {
     const s = state.peek();
     if (s.phase !== "card") return;
+    // the later cards are the finished pass's: wait for it, the board where it is
+    if (data.refining) { const p = state.peek(); patch({ waiting: true, note: t("rv.running", p.k + 1, p.count) }); return; }
     if (s.k + 1 < data.moments.length) card(s.k + 1);
     else finish();
   }
@@ -207,6 +272,9 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET_MS, later =
   }
 
   function close() { token++; data = null; state.value = { phase: "idle" }; }
+
+  /** Resolves when the open review's pass is complete (at once when there is none running). */
+  const whenFinished = () => finished || Promise.resolve();
 
   /** What the board shows while the review is open (null: the page's own view). */
   const board = computed(() => {
@@ -224,7 +292,7 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET_MS, later =
 
   /** The full report: every move once, with its grade; the turning points flagged. */
   function report() {
-    if (!data) return null;
+    if (!data || data.refining) return null;
     const first = sideOf(data.fens[0]);
     const at = new Set(data.moments.map((m) => m.ply));
     const rows = data.sans.map((san, i) => ({ ply: i, san, side: sideOf(data.fens[i]), moveNo: moveNumber(i, first),
@@ -233,6 +301,6 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET_MS, later =
     return { rows, accuracy: acc, sides: data.sides };
   }
 
-  return { state, board, open, tryMove, answer, next, finish, close, report, headline,
+  return { state, board, open, tryMove, answer, next, finish, close, report, headline, timing, whenFinished,
     get data() { return data; }, scalarAt: (i) => (data ? data.p.scalars[i] : null) };
 }

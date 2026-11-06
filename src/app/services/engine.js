@@ -36,7 +36,37 @@ export function scoreCp(s) {
   return s.cp;
 }
 
-const budgetOpts = (budget = {}) => (budget.depth ? { depth: budget.depth } : budget.nodes ? { nodes: budget.nodes } : { movetime: budget.ms || 1000 });
+/**
+ * A budget as search options: { depth } | { nodes } | { ms } — or { review: "scan" |
+ * "normal" | "deep" }, the review's three levels, which each Stockfish backend turns
+ * into nodes of its own (reviewNodes): the same level is the same depth whichever
+ * engine answers, and nobody above the service knows which one that is.
+ */
+const budgetOpts = (budget = {}) => (budget.review ? { review: budget.review } : budget.depth ? { depth: budget.depth }
+  : budget.nodes ? { nodes: budget.nodes } : { movetime: budget.ms || 1000 });
+
+/**
+ * The review's levels in nodes (v20-0-plan §10 F3b), per backend:
+ *   scan     every position once, to find the turning points (the first card waits on it)
+ *   normal   every position, the 19.0 pass's budget
+ *   deep     the positions core/grade deepTargets names, again (19.0: 3 × the budget)
+ * wasm: single-threaded, so nodes are depth: "normal" is what 19.0's 200 ms gave
+ * (median 135 k nodes, depth 14 in Node); native: per thread (engine-native.js
+ * multiplies by Threads), so the main thread reaches about the depth one thread
+ * reaches with that many nodes.
+ */
+export const REVIEW_NODES = {
+  wasm: { scan: 15000, normal: 135000, deep: 405000 },
+  native: { scan: 25000, normal: 300000, deep: 900000 },
+};
+/** Search options with a review level resolved to nodes (× `threads`). */
+export function reviewNodes(opts, table, threads = 1) {
+  if (!opts || !opts.review) return opts;
+  const { review, ...rest } = opts;
+  const n = table[review];
+  if (!n) throw new Error("engine: no review level " + review);
+  return { ...rest, nodes: n * threads };
+}
 
 export function createEngineService(backend) {
   const over = (fen) => new Chess(fen).moves().length === 0;
@@ -245,7 +275,8 @@ export function stockfishBackend({
   return {
     name: "stockfish-wasm",
     search(fen, opts = {}) {
-      const job = chain.then(() => boot()).then(() => run(fen, opts));
+      const o = reviewNodes(opts, REVIEW_NODES.wasm);
+      const job = chain.then(() => boot()).then(() => run(fen, o));
       chain = job.catch(() => {});
       return job;
     },

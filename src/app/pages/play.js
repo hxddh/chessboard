@@ -36,7 +36,7 @@ import { playText } from "../text/play.js";
 import { createSound, moveSound } from "./play-sound.js";
 import { openSheet } from "./play-sheet.js";
 import { createDrawer } from "./play-drawer.js";
-import { createReview, REVIEW_BUDGET_MS } from "../review/review.js";
+import { createReview } from "../review/review.js";
 
 const COLOR = { w: "white", b: "black" };
 const other = (c) => (c === "w" ? "b" : "w");
@@ -59,7 +59,7 @@ export function mount(el, { store, engine, ready }) {
   const t = playText();
   const params = new URLSearchParams(location.search);
   const thinkScale = params.has("think") ? Number(params.get("think")) : 1;
-  const review = createReview({ engine, db: ready, t, budget: Number(params.get("review")) || REVIEW_BUDGET_MS });
+  const review = createReview({ engine, db: ready, t, budget: Number(params.get("review")) || undefined });
   const sound = createSound(() => store.get().settings.sound !== "off");
 
   const game = store.select((s) => s.play.game);

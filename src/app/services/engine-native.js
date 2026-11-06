@@ -10,7 +10,8 @@
  *   "chess:engine" event               { gen, lines: [...] } | { gen, exit }
  *
  * Same backend interface as stockfishBackend (engine.js): `search(fen, { multipv,
- * depth, movetime, nodes, elo })`, one search at a time. Threads = cores − 1
+ * depth, movetime, nodes, review, elo })`, one search at a time; a review level
+ * is REVIEW_NODES.native per thread. Threads = cores − 1
  * (at least 1), Hash 256 MB.
  *
  * A process that dies is started again (a new generation) for the next
@@ -20,7 +21,7 @@
  * says so once through `onFallback` — the page's 「分析会慢一些」.
  * @module services/engine-native
  */
-import { parseInfo } from "./engine.js";
+import { parseInfo, reviewNodes, REVIEW_NODES } from "./engine.js";
 
 /** The app's bridge: invoke + the engine's window event. Null outside the app. */
 export function zeroBridge(g = globalThis) {
@@ -161,11 +162,21 @@ export function nativeStockfishBackend({
       // the process can be gone before its exit event is here (a kill, a
       // crash between two searches): the shell says not_running, and the
       // search goes to a new process once
-      const attempt = () => boot().then(() => run(fen, opts));
+      const attempt = () => boot().then(() => run(fen, reviewNodes(opts, REVIEW_NODES.native, info.threads)));
       const job = chain.then(attempt).catch((e) => {
         if (!/not_running/.test(String(e && e.message))) throw e;
         ready = null;
         return attempt();
+      });
+      chain = job.catch(() => {});
+      return job;
+    },
+    /** A fresh hash (ucinewgame), queued after the searches already asked for. */
+    clear() {
+      const job = chain.then(() => boot()).then(async () => {
+        const ok = until((l) => l === "readyok", bootMs, "readyok");
+        await send("ucinewgame", "isready");
+        await ok;
       });
       chain = job.catch(() => {});
       return job;
