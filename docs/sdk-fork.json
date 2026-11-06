@@ -5104,7 +5104,7 @@
     "    const cef_dir = cef_dir_override orelse defaultCefDir(selected_platform, app_config.cef_dir);",
     "    const cef_auto_install = cef_auto_install_override orelse app_config.cef_auto_install;"
    ],
-   "_emptyAt": 88
+   "_emptyAt": 102
   },
   {
    "group": "B08",
@@ -5615,7 +5615,10 @@
     "    test_mod.addImport(\"native_sdk\", native_sdk_mod);",
     "    test_mod.addImport(\"runner\", runner_mod);",
     "    addSqlite(b, test_mod, native_sdk_path);",
-    "    const tests = b.addTest(.{ .root_module = test_mod, .use_llvm = useLlvmWorkaround(target) });"
+    "    const tests = b.addTest(.{ .root_module = test_mod, .use_llvm = useLlvmWorkaround(target) });",
+    "    // the same platform sources and links the exe's module gets (the macOS",
+    "    // host .m, mac_chrome.m, AppKit/WebKit…): the test binary links main()",
+    "    linkPlatform(b, target, test_mod, tests, selected_platform, web_engine, web_layer, native_sdk_path, cef_dir, cef_auto_install);"
    ],
    "after": [
     "    const test_step = b.step(\"test\", \"Run tests\");",
@@ -5951,7 +5954,7 @@
     "fn macosSdkPath(b: *std.Build) ?[]const u8 {",
     "    if (b.graph.environ_map.get(\"SDKROOT\")) |sdkroot| {"
    ],
-   "_emptyAt": 343
+   "_emptyAt": 399
   },
   {
    "group": "B05",
@@ -6103,7 +6106,7 @@
     "fn nativeSdkTarget(b: *std.Build) std.Build.ResolvedTarget {",
     "    const target = b.standardTargetOptions(.{});"
    ],
-   "_emptyAt": 329
+   "_emptyAt": 385
   },
   {
    "group": "B01",
@@ -6250,7 +6253,7 @@
     "    return native_sdk_mod;",
     "}"
    ],
-   "_emptyAt": 399
+   "_emptyAt": 455
   },
   {
    "group": "B01",
@@ -6426,7 +6429,7 @@
     "        app_mod.linkFramework(\"AVFoundation\", .{});",
     "        app_mod.linkFramework(\"CoreMedia\", .{});"
    ],
-   "_emptyAt": 444
+   "_emptyAt": 500
   },
   {
    "group": "B08",
@@ -6469,7 +6472,7 @@
     "        app_mod.linkFramework(\"CoreVideo\", .{});",
     "        // Spectrum analysis of the app's own playback: the MediaToolbox"
    ],
-   "_emptyAt": 454
+   "_emptyAt": 510
   },
   {
    "group": "B08",
@@ -6489,7 +6492,7 @@
     "        app_mod.linkFramework(\"MediaToolbox\", .{});",
     "        app_mod.linkFramework(\"Accelerate\", .{});"
    ],
-   "_emptyAt": 455
+   "_emptyAt": 511
   },
   {
    "group": "B14",
@@ -6856,7 +6859,7 @@
     "/// The vendored WebView2Loader.dll for the target architecture, relative",
     "/// to the framework root."
    ],
-   "_emptyAt": 603
+   "_emptyAt": 659
   },
   {
    "group": "B01",
@@ -7102,7 +7105,7 @@
     "    web_engine: WebEngineOption = .system,",
     "    cef_dir: []const u8 = \"third_party/cef/macos\","
    ],
-   "_emptyAt": 699
+   "_emptyAt": 755
   },
   {
    "group": "B11",
@@ -7192,7 +7195,7 @@
     "    capabilities: []const []const u8 = &.{},",
     "    permissions: []const []const u8 = &.{},"
    ],
-   "_emptyAt": 714
+   "_emptyAt": 770
   },
   {
    "group": "B11",
@@ -7211,7 +7214,7 @@
     "    web_engine: []const u8 = \"system\",",
     "    webview_layer: []const u8 = \"auto\","
    ],
-   "_emptyAt": 715
+   "_emptyAt": 771
   },
   {
    "group": "B11",
@@ -7229,7 +7232,7 @@
     "    cef: struct {",
     "        dir: []const u8 = \"third_party/cef/macos\","
    ],
-   "_emptyAt": 717
+   "_emptyAt": 773
   },
   {
    "group": "B11",
@@ -7256,7 +7259,7 @@
     "    shell: struct {",
     "        windows: []const struct {"
    ],
-   "_emptyAt": 722
+   "_emptyAt": 778
   },
   {
    "group": "B11",
@@ -7521,7 +7524,7 @@
    "after": [
     "}"
    ],
-   "_emptyAt": 809
+   "_emptyAt": 865
   },
   {
    "group": "R07",

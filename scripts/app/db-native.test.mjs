@@ -14,7 +14,8 @@ import { nativeBackend, encodeKey, nativeDbAvailable } from "../../src/app/servi
 import dbContract from "./db-contract.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const MIGRATIONS_ZIG = fs.readFileSync(path.join(ROOT, "src/db_migrations.zig"), "utf8");
+// a Windows checkout has CRLF; the parse below is line by line on "\n"
+const MIGRATIONS_ZIG = fs.readFileSync(path.join(ROOT, "src/db_migrations.zig"), "utf8").replace(/\r\n/g, "\n");
 
 /** The SQL of each migration in src/db_migrations.zig (multiline `\\` strings). */
 export function migrationSql(zig = MIGRATIONS_ZIG) {

@@ -88,7 +88,7 @@ export async function run() {
       assert(!/root_source_file = b\.path\("app\.zon"\)/.test(buildZig),
         "every manifest import goes through -Dmanifest, not a hardcoded app.zon");
       const macWf = fs.readFileSync(path.join(root, ".github/workflows/build-macos.yml"), "utf8");
-      const winWf = fs.readFileSync(path.join(root, ".github/workflows/build-windows.yml"), "utf8");
+      const winWf = fs.readFileSync(path.join(root, ".github/workflows/build-windows.yml"), "utf8").replace(/\r\n/g, "\n");
       assert(/gen-manifest\.mjs macos/.test(macWf) && /-Dmanifest=build\/app\.macos\.zon/.test(macWf),
         "the macOS build compiles against the derived manifest");
       assert(/--manifest build\/app\.macos\.zon/.test(macWf),

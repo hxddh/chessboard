@@ -273,6 +273,9 @@ pub fn build(b: *std.Build) void {
     test_mod.addImport("runner", runner_mod);
     addSqlite(b, test_mod, native_sdk_path);
     const tests = b.addTest(.{ .root_module = test_mod, .use_llvm = useLlvmWorkaround(target) });
+    // the same platform sources and links the exe's module gets (the macOS
+    // host .m, mac_chrome.m, AppKit/WebKit…): the test binary links main()
+    linkPlatform(b, target, test_mod, tests, selected_platform, web_engine, web_layer, native_sdk_path, cef_dir, cef_auto_install);
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
     // src/runner.zig is a module of its own, so the app's test binary never
