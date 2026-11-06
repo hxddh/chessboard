@@ -329,3 +329,14 @@ E4 先把 CI 版本写死 → A5 技术验证（SDK 0.11 上 ES modules / fetch�
 - 待真机探针确认：Windows 上 zero:// 的 Worker 是否被拦截（过滤器没设 RequestSourceKinds）；macOS 11 的 Safari 14 对 module worker 的支持。退路：页面 `fetch` 字节后交给 blob worker。
 - 对 0.11.0：`sdk-diff` 报 19 处登记对不上，没有一处在 0.11 里被上游取代；R03 ×4 改用上游的 `createWithOptions`，其余（R01、R02、R07、B01、B02 ×6、B03 ×2、B05 ×2、B06、B13）重新锚定即可。Linux 上不改源码对 0.11：`zig build test -Dplatform=null` 88/88，Windows 交叉编译通过，空平台自动化 4 个场景通过；macOS 要 Apple SDK，没在容器里编。
 - 结论：A5 走 ES modules，不再生成分块 shim；A5 不依赖 E1，在 0.10.1 上就能做。
+
+**A1–A4 骨架（`src/app/`，不碰 `src/web/`）**：信号（signal / computed / effect / batch）、hash 路由（页面首次进入时 `import()`）、不可变 store（具名动作、每个动作记前后状态）、`db` 服务（ADR 0003 的接口，内存与 IndexedDB 两种实现，同一套契约测试；schema v1 九张表，只往前迁移）、棋盘组件（一页多块；子有身份，易位两个子一起滑、吃子淡出、升变的兵滑进去变后；250 ms 三次方缓入缓出，低于 70 ms 或「减少动态效果」下不动画；点选、3 px 拖动加影子、键盘、预走、右键箭头与标记；三套棋子三种棋盘）、`EngineService`（假后端 + 19.0 的 wasm Stockfish，直接读 `.wasm`，不再 base64）、最简下棋页（双人 / 人机，刷新后还原）。单元 95 项、浏览器 41 项全过；`test:static` 仍绿。
+
+| 实测（Chromium，同一台机器） | 20.0 骨架 | 19.0 |
+|---|---|---|
+| 首帧 | 48 ms | 约 76 ms |
+| 棋盘画好 | 约 105 ms | — |
+| 每步脚本开销（100 步） | 中位 2.2 ms（p90 3.1），第 1 步到第 100 步持平 | 中位 5.7 ms |
+| 每步写入 | 169 B（160 个半回合约 27 KB） | 20.6 KB（3.3 MB） |
+
+棋盘比首帧晚，是没打包的模块分四轮加载；用 esbuild 的 ESM 分包试打：首屏 9.5 KB + 共享 26.6 KB + 下棋页 19.6 KB，棋子按需加载。下一步把它接上，首帧门禁改成「棋盘画好」。
