@@ -80,6 +80,12 @@ export default function (test) {
     }
   });
 
+  test("skills: every item type is in the graph", (a) => {
+    const kinds = new Set(Object.values(ITEMS).map((it) => it.kind + (it.mode ? ":" + it.mode : "")));
+    for (const k of ["stars", "move", "line:puzzle", "line:opening", "line:classic", "drill"]) a.ok(kinds.has(k), k);
+    a.ok(SKILLS.some((s) => s.game), "a targeted game");
+  });
+
   test("skills: the placement pool spans 600–2400", (a) => {
     const r = PLACEMENT.map((id) => ITEMS[id].rating);
     a.ok(PLACEMENT.length >= 30, "pool " + PLACEMENT.length);

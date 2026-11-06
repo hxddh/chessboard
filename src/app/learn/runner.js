@@ -123,15 +123,16 @@ export function createRunner(item, { t, engine, later = (ms, fn) => setTimeout(f
           arrows, lastMove: last, check: true };
       };
       const prompt = () => item.mode === "opening" ? t("learn.opening", item.name)
+        : item.mode === "classic" ? t("learn.classic", item.name)
         : item.mode === "mistake" ? (item.played ? t("learn.mistake", item.played) : t("learn.mistakePlain"))
         : you === "b" ? t("puzzle.findBlack") : t("puzzle.find");
       const reply = () => {
-        if (k >= item.line.length) { say(item.mode === "opening" && item.idea ? item.idea : t("learn.right"), "good", []); finish({ ok: true }); return; }
+        if (k >= item.line.length) { say(item.idea ? item.idea : t("learn.right"), "good", []); finish({ ok: true }); return; }
         wait(REPLY_MS, () => {
           const m = g.move(item.line[k++]);
           last = lastOf(m);
           show();
-          if (k >= item.line.length) { say(t("learn.right"), "good", []); finish({ ok: true }); }
+          if (k >= item.line.length) { say(item.idea || t("learn.right"), "good", []); finish({ ok: true }); }
           else say(t("learn.theirMove", m.san) + " —— " + t("learn.yourMove"));
         });
       };
@@ -166,7 +167,7 @@ export function createRunner(item, { t, engine, later = (ms, fn) => setTimeout(f
           last = lastOf(mv);
           show();
           g.undo();
-          say(item.mode === "opening" ? t("learn.openingWrong") : t("learn.wrong"), "bad");
+          say(item.mode === "opening" ? t("learn.openingWrong") : item.mode === "classic" ? t("learn.classicWrong") : t("learn.wrong"), "bad");
           wait(RESET_MS, () => { if (!over) { last = null; show(); } });
         },
       };

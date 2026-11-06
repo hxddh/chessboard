@@ -55,7 +55,10 @@ export function skillItems(st, skill, max = MAX_NEW) {
 function slot(st, now, tz, done) {
   const day = today(st, now, tz);
   if (isLit(st, "mate") && !day.games && !day.items.some((i) => i.startsWith("game:"))) {
-    return { id: "game:" + Math.max(400, Math.round(visibleRating(st) / 100) * 100), why: "game" };
+    // the new skill's own game when it names one (将死: a first game you can win), else your level
+    const f = frontier(st)[0];
+    const r = f && SKILL[f].game ? SKILL[f].game.rating : visibleRating(st);
+    return { id: "game:" + Math.max(400, Math.round(r / 100) * 100), why: "game" };
   }
   // else an endgame drill of a reached skill not yet won, one a day
   if (day.items.some((i) => i.startsWith("dr:"))) return null;

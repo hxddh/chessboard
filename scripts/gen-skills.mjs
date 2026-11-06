@@ -13,7 +13,9 @@
  *      mini-games ("move the rook to take every pawn"), castling, en passant,
  *      check, the stalemate trap, the basic mates — found by search, every
  *      one proved the same way;
- *   3. puzzles from the existing pools — the 168 hand-written, the 980 mined,
+ *   3. a stretch of a 19.0 classic game to guess (src/web/js/classics.js), where
+ *      the skill names one;
+ *   4. puzzles from the existing pools — the 168 hand-written, the 980 mined,
  *      the 40 000 Lichess (CC0) — by theme, motif or line motif
  *      (src/web/js/motif.js lineMotif) and by rating around the skill's level.
  *      Each passes scripts/lib/puzzle-gate.mjs again (legal, canonical SAN,
@@ -51,6 +53,7 @@ const { CHESS_PUZZLES } = await imp("src/web/js/puzzles.js");
 const { MINED_PUZZLES } = await imp("src/web/js/puzzles-mined.js");
 const { CHESS_ENDGAMES } = await imp("src/web/js/endgames.js");
 const { CHESS_OPENINGS, CHESS_OPENING_NAMES } = await imp("src/web/js/openings.js");
+const { CHESS_CLASSICS } = await imp("src/web/js/classics.js");
 const { CHESS_OPENING_IDEAS_ZH_CN } = await imp("src/web/js/openings-ideas-zh.js");
 const { SKILLS, SKILL, ancestors } = await imp("src/app/content/skills.js");
 const MG = await imp("src/app/learn/minigame.js");
@@ -430,6 +433,23 @@ function openingItems(skill, specs) {
   return out;
 }
 
+/** A stretch of a 19.0 classic game to guess, move by move, from the winner's chair. */
+function classicItem(skill, { id, from, plies }) {
+  const c = CHESS_CLASSICS.find((x) => x.id === id);
+  if (!c) { fail(skill + ": no classic " + id); return null; }
+  const sans = c.pgn.replace(/\d+\.(\.\.)?/g, " ").replace(/\s(1-0|0-1|1\/2-1\/2)\s*$/, "").trim().split(/\s+/);
+  const g = new Chess();
+  for (const san of sans.slice(0, from)) if (!g.move(san)) { fail(skill + ": classic " + id + " illegal"); return null; }
+  const line = sans.slice(from, from + plies);
+  const w = walk(g.fen(), line);
+  if (!w) { fail(skill + ": classic " + id + " line illegal"); return null; }
+  if (!fits(skill, w.needs)) { fail(skill + ": classic " + id + " needs " + [...w.needs].join(",")); return null; }
+  const note = (c.notes || []).find((n) => n.ply >= from && n.ply < from + plies);
+  return { id: "cl:" + id + ":" + from, kind: "line", mode: "classic", skill, fen: g.fen(), line, side: w.side,
+    name: c.white + " — " + c.black + "，" + c.event + " " + c.year, idea: note ? note.text : null,
+    rating: SKILL[skill].level + 100, needs: [...w.needs].sort(), src: "classic" };
+}
+
 const EG = Object.fromEntries(CHESS_ENDGAMES.ITEMS.map((e) => [e.id, e]));
 function drillItem(skill, ref) {
   const it = drillOf(skill, ref);
@@ -468,6 +488,7 @@ for (const s of SKILLS) {
   const cap = list.length ? 2 : s.pool || s.lines ? 3 : MAX;
   list = [...lessonFirst.slice(0, cap), ...list].slice(0, MAX);
   if (s.lines) list.push(...openingItems(s.id, s.lines).slice(0, MAX - list.length));
+  if (s.classic) { const c = classicItem(s.id, s.classic); if (c && list.length < MAX) list.push(c); }
   if (s.pool) list.push(...poolItems(s.id, s.pool, list.length));
   list = list.slice(0, MAX);
   // ratings: the lesson tasks below the rest, then non-decreasing

@@ -17,6 +17,7 @@
  *            hand/mined categories and motifs, line motifs, the moving piece
  *   drills   endgame drills (19.0 endgames.js ids, or lesson drills)
  *   lines    opening lines to play ({ prefix, side, n })
+ *   classic  a stretch of a 19.0 classic game to guess ({ id, from: ply, plies })
  *   game     a targeted game: the opponent's rating
  * Its words are in text/learn.<lang>.js under sk.<id> (name) and
  * sk.<id>.why (one sentence). The positions themselves are generated into
@@ -93,7 +94,7 @@ export const SKILLS = [
   // —— 开局原则 ——
   S("op-center", "opening", 500, ["mate"], { lessons: ["opening", "op-firstmove"],
     lines: [{ prefix: "e4 e5 Nf3", side: "w", n: 1 }, { prefix: "d4 d5 c4", side: "w", n: 1 }] }),
-  S("op-develop", "opening", 550, ["op-center"], { lessons: ["op-knights", "op-tempo"] }),
+  S("op-develop", "opening", 550, ["op-center"], { lessons: ["op-knights", "op-tempo"], classic: { id: "morphy-opera-1858", from: 12, plies: 8 } }),
   S("op-castle", "opening", 600, ["op-develop", "castling"], { lessons: ["op-castle", "op-pawnmoves"] }),
   S("op-first", "opening", 650, ["op-castle"], { lessons: ["op-italian", "firstgame"], lines: [{ prefix: "e4 e5 Nf3 Nc6 Bc4", side: "w", n: 3 }] }),
   S("op-e4", "opening", 900, ["op-first"], { lines: [{ prefix: "e4 e5", side: "w", n: 4 }] }),

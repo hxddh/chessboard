@@ -4,8 +4,8 @@
  *
  * Lichess puzzles: https://database.lichess.org/#puzzles, CC0 1.0; ids are
  * the Lichess ids (lichess.org/training/<id>) after "lc:".
- * {"skills":79,"positions":366,"drills":28,"placement":57,"items":451}
- * by source: {"lesson":175,"gen":48,"hand":17,"lichess":172,"endgame":21,"mined":2,"opening":16}
+ * {"skills":79,"positions":367,"drills":28,"placement":57,"items":452}
+ * by source: {"lesson":175,"gen":48,"hand":17,"lichess":172,"endgame":21,"mined":2,"opening":16,"classic":1}
  * @module content/practice
  */
 export const ITEMS = {
@@ -256,6 +256,7 @@ export const ITEMS = {
   "ls:op-knights:2": {"id":"ls:op-knights:2","kind":"move","skill":"op-develop","fen":"rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1","goal":"one-of","accept":["Nf3","Nc3"],"answer":"Nf3","prompt":"e4 已经走了 —— 把马跳到该去的地方","retry":"Na3 / Nh3 都在边上，控制的格子少一半，下一步还得再挪。往中心跳：Nf3 或 Nc3。","needs":["knight"],"src":"lesson","rating":400},
   "ls:op-tempo:0": {"id":"ls:op-tempo:0","kind":"move","skill":"op-develop","fen":"rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2","goal":"one-of","accept":["Nf3","Nc3","Bc4","Bb5","d4","d3","Be2"],"answer":"Nf3","prompt":"轮白走 —— 带一个新的子出来","retry":"再动一次已经走过的 e 兵、或者早早把后放出去，都不叫出子。让一个还没动过的子上场。","needs":["knight"],"src":"lesson","rating":415},
   "ls:op-tempo:2": {"id":"ls:op-tempo:2","kind":"move","skill":"op-develop","fen":"rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2","goal":"one-of","accept":["Nc6","Nf6","d6","Bc5","Be7","d5"],"answer":"Nc6","prompt":"换黑方 —— 同样的道理，带个新子出来（顺手护住 e5 兵更好）","retry":"别再推兵或者把刚走过的子挪一遍。让一个新的子上场，比如马跳 c6 顺便看住 e5。","needs":["knight"],"src":"lesson","rating":430},
+  "cl:morphy-opera-1858:12": {"id":"cl:morphy-opera-1858:12","kind":"line","mode":"classic","skill":"op-develop","fen":"rn1qkb1r/ppp2ppp/5n2/4p3/2B1P3/5Q2/PPP2PPP/RNB1K2R w KQkq - 2 7","line":["Qb3","Qe7","Nc3","c6","Bg5","b5","Nxb5","cxb5"],"side":"w","name":"保罗·莫菲 — 布伦瑞克公爵与伊苏阿尔伯爵，巴黎歌剧院 1858","idea":"7.Qb3 一子攻两处：f7 和 b7。黑方只救得了一个。","rating":650,"needs":["bishop","capture","knight","pawn","queen"],"src":"classic"},
   "ls:op-castle:0": {"id":"ls:op-castle:0","kind":"move","skill":"op-castle","fen":"r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 6 5","goal":"castle-k","answer":"O-O","prompt":"白方三个轻子已经出来了，王翼也空了 —— 该做的事只有一件","retry":"再出子当然也行，但王还留在 e1、中路随时会开。先把王送进角落：王翼易位。","needs":["castling","king"],"src":"lesson","rating":450},
   "ls:op-castle:2": {"id":"ls:op-castle:2","kind":"move","skill":"op-castle","fen":"r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 7 5","goal":"castle-k","answer":"O-O","prompt":"轮到黑方了 —— 做同样的事","retry":"黑方也是三个轻子出来了、王翼空了。把王送进角落。","needs":["castling","king"],"src":"lesson","rating":465},
   "ls:op-pawnmoves:2": {"id":"ls:op-pawnmoves:2","kind":"move","skill":"op-castle","fen":"rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2","goal":"one-of","accept":["Nc6","Nf6","d6","Bc5","Be7"],"answer":"Nc6","prompt":"轮黑走 —— 别再推兵了，出个子","retry":"a6、h6、b6 这类边兵推出去既不占中心也不放子，还留下永久的洞。出子。","needs":["knight"],"src":"lesson","rating":480},
@@ -513,7 +514,7 @@ export const PRACTICE = {"rook":["ls:rook:0","ls:rook:1","gen:rook:0","gen:rook:
   "pawn-race":["ls:cl-race:0","ls:cl-race:1","ls:cl-race:2"],
   "calc-deep":["ls:cl-end:0","ls:cl-end:1","ls:cl-end:2","ls:cl-replies:0","ls:cl-replies:1"],
   "op-center":["ls:opening:1","ls:op-firstmove:1","op:italian-game","op:queens-gambit-declined"],
-  "op-develop":["ls:op-knights:2","ls:op-tempo:0","ls:op-tempo:2"],
+  "op-develop":["ls:op-knights:2","ls:op-tempo:0","ls:op-tempo:2","cl:morphy-opera-1858:12"],
   "op-castle":["ls:op-castle:0","ls:op-castle:2","ls:op-pawnmoves:2"],
   "op-first":["ls:op-italian:0","ls:op-italian:1","ls:op-italian:2","op:two-knights-defense","op:evans-gambit"],
   "op-e4":["op:scotch-game","op:four-knights-game","op:ruy-lopez-berlin-defense","op:four-knights-game-spanish-variation"],

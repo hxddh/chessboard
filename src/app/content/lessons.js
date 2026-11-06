@@ -4,8 +4,8 @@
  *
  * Lichess puzzles: https://database.lichess.org/#puzzles, CC0 1.0; ids are
  * the Lichess ids (lichess.org/training/<id>) after "lc:".
- * {"skills":79,"positions":366,"drills":28,"placement":57,"items":451}
- * by source: {"lesson":175,"gen":48,"hand":17,"lichess":172,"endgame":21,"mined":2,"opening":16}
+ * {"skills":79,"positions":367,"drills":28,"placement":57,"items":452}
+ * by source: {"lesson":175,"gen":48,"hand":17,"lichess":172,"endgame":21,"mined":2,"opening":16,"classic":1}
  * @module content/lessons
  */
 export const LESSONS = {
