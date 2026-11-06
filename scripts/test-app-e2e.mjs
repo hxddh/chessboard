@@ -8,7 +8,9 @@
  *   play       two players and against the engine; a reload restores the game
  *   db         the contract suite against IndexedDB
  *   engine     the wasm Stockfish backend returns legal best moves
- *   measured   first paint, script time per move over 100 moves, bytes per move
+ *   measured   on the split build (scripts/build-app.mjs, ADR 0001): first paint and
+ *              board drawn, the modules the first paint loads, script time per
+ *              move over 100 moves, bytes per move
  *
  *   node scripts/test-app-e2e.mjs          (E2E_REQUIRED=1: a missing browser fails)
  */
@@ -30,12 +32,12 @@ const srv = await startServer();
 const browser = await launchChromium();
 const errors = [];
 
-async function open(query = "?engine=fake", { hash = "", ctxOpts = {} } = {}) {
+async function open(query = "?engine=fake", { hash = "", ctxOpts = {}, base = srv.url } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, ...ctxOpts });
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
-  await page.goto(srv.url + query + hash);
+  await page.goto(base + query + hash);
   await page.waitForSelector("[data-page]");
   return { ctx, page };
 }
@@ -289,6 +291,14 @@ async function drag(page, from, to, sel) {
 // --- engine: Stockfish wasm ------------------------------------------------------
 {
   const { ctx, page } = await open("?engine=fake&db=memory");
+  // the way WKWebView's zero:// answers (ADR 0001 probe): the body, but no
+  // headers — so no application/wasm, and streaming compilation would refuse it
+  let stripped = 0;
+  await ctx.route(/stockfish-19-lite-single\.wasm/, async (route) => {
+    const r = await route.fetch();
+    stripped++;
+    await route.fulfill({ status: 200, headers: {}, body: await r.body() });
+  });
   const r = await page.evaluate(async () => {
     const { createHarness } = await import("/scripts/app/harness.mjs");
     const { default: engineContract } = await import("/scripts/app/engine-contract.mjs");
@@ -303,33 +313,48 @@ async function drag(page, from, to, sel) {
     return { ...out, logs, ms: performance.now() - t0 };
   });
   for (const l of r.logs) console.error(l);
-  assert(r.failed === 0 && r.passed >= 7, "engine contract on Stockfish wasm: " + r.passed + " passed, " + r.failed + " failed (" + (r.ms / 1000).toFixed(1) + " s)");
+  assert(stripped > 0, "the .wasm was served without headers (" + stripped + ")");
+  assert(r.failed === 0 && r.passed >= 7, "engine contract on Stockfish wasm, its .wasm served without headers: " + r.passed + " passed, " + r.failed + " failed (" + (r.ms / 1000).toFixed(1) + " s)");
   await ctx.close();
 }
 
-// --- measured --------------------------------------------------------------------
+// --- measured, on the split build ---------------------------------------------------
 const report = {};
+const { buildApp } = await import("./build-app.mjs");
+const built = await buildApp({ quiet: true });
+report.firstPaintKB = Math.round(built.firstBytes / 102.4) / 10;
 {
-  // first paint: a cold context each time, median of five
+  // first paint and board drawn: a cold context each time, median of five
   const paints = [], boards = [];
+  let fetched = [];
   for (let i = 0; i < 5; i++) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } });
     const page = await ctx.newPage();
-    await page.goto(srv.url + "?engine=fake&db=memory");
+    const got = [];
+    page.on("request", (r) => { const m = /\/dist-app\/([^?]+)/.exec(r.url()); if (m) got.push(m[1]); });
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(srv.dist + "?engine=fake&db=memory");
     await page.waitForSelector("[data-page=play] canvas");
+    await page.waitForFunction(() => performance.getEntriesByName("app:board").length > 0);
     await frames(page);
     const t = await page.evaluate(() => ({
       fcp: performance.getEntriesByName("first-contentful-paint")[0]?.startTime,
       board: performance.getEntriesByName("app:board")[0]?.startTime,
     }));
     paints.push(t.fcp); boards.push(t.board);
+    fetched = got;
     await ctx.close();
   }
   report.firstPaintMs = median(paints);
   report.boardReadyMs = median(boards);
   console.log("first contentful paint: median " + report.firstPaintMs.toFixed(0) + " ms (" + paints.map((x) => x.toFixed(0)).join(", ") +
-    ") · board drawn: " + report.boardReadyMs.toFixed(0) + " ms");
+    ") · board drawn (pieces on it): " + report.boardReadyMs.toFixed(0) + " ms (" + boards.map((x) => x.toFixed(0)).join(", ") + ")" +
+    " · first paint loads " + built.first.length + " modules, " + report.firstPaintKB + " KB");
   assert(report.firstPaintMs <= 220, "first paint ≤ 220 ms (v20-0-plan §1)");
+  assert(report.boardReadyMs <= 250, "board drawn ≤ 250 ms on the split build (ADR 0001)");
+  const pages = fetched.filter((f) => /^(learn|me|settings)-/.test(f));
+  assert(pages.length === 0 && fetched.some((f) => /^play-/.test(f)), "the first paint loads the play page and no other page (" + fetched.join(" ") + ")");
+  assert(fetched.filter((f) => /^pieces-/.test(f)).length === 1, "and one piece set");
 }
 {
   // 100 moves through the real input path, as scripts/perf-e2e.mjs measures 19.0
@@ -353,7 +378,7 @@ const report = {};
     }
     throw new Error("no clean game");
   })();
-  const { ctx, page } = await open("?engine=fake&dbname=e2e-perf-" + Date.now(), { ctxOpts: { reducedMotion: "reduce" } });
+  const { ctx, page } = await open("?engine=fake&think=0&dbname=e2e-perf-" + Date.now(), { ctxOpts: { reducedMotion: "reduce" }, base: srv.dist });
   await page.waitForFunction(() => window.__app.store.get().play.game);
   await newGame(page, "pvp");
   const cdp = await ctx.newCDPSession(page);
@@ -379,7 +404,7 @@ const report = {};
   console.log("script time per move: median " + report.scriptMsMedian.toFixed(2) + " ms · p90 " + report.scriptMsP90.toFixed(2) +
     " ms · moves 1–20 " + report.scriptMsFirst20.toFixed(2) + " ms · moves 81–100 " + report.scriptMsLast20.toFixed(2) + " ms");
   console.log("db: " + report.bytesPerMove.toFixed(0) + " bytes written per move (" + (st.bytes - bytes0) + " B for " + PLIES + " plies, " + st.writes + " transactions in all)");
-  assert(report.scriptMsMedian <= 6.5, "≤ 6.5 ms of script per move (v20-0-plan §1)");
+  assert(report.scriptMsMedian <= 6.5, "≤ 6.5 ms of script per move on the split build (v20-0-plan §1)");
   assert(report.scriptMsLast20 <= report.scriptMsFirst20 * 1.5 + 0.5, "a late move costs no more than an early one");
   assert(report.bytesPerMove * 160 <= 100 * 1024, "a 160-ply game would write ≤ 100 KB");
   await ctx.close();

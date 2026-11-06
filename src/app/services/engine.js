@@ -170,12 +170,16 @@ export function parseInfo(line) {
 }
 
 /**
- * The 19.0 Stockfish (lite, single-threaded NNUE) as a worker. The loader
- * finds its .wasm beside itself, so the worker is started from the file's
- * own URL. One search at a time; later ones wait their turn.
+ * The 19.0 Stockfish (lite, single-threaded NNUE) as a worker, started
+ * through stockfish-worker.js, which serves the loader its .wasm in a form
+ * WKWebView's zero:// can give (status 0, no headers there). One search at a
+ * time; later ones wait their turn.
  */
 export function stockfishBackend({
-  url = new URL("../../../third_party/stockfish/stockfish-19-lite-single.js", import.meta.url).href,
+  loader = new URL("../../../third_party/stockfish/stockfish-19-lite-single.js", import.meta.url).href,
+  wasm = new URL("../../../third_party/stockfish/stockfish-19-lite-single.wasm", import.meta.url).href,
+  shim = new URL("./stockfish-worker.js", import.meta.url).href,
+  url = shim + "#" + [wasm, "main", loader].map(encodeURIComponent).join(","),
   bootMs = 30000,
 } = {}) {
   let worker = null, ready = null;

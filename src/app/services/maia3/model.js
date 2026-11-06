@@ -11,6 +11,7 @@
 import { Chess } from "../../core/chess.js";
 import { features, legalPolicy, readFen, wdl } from "./encode.js";
 import { createNet } from "./net.js";
+import { fetchBytes, fetchJson, WASM_MAGIC } from "../asset.js";
 
 export const FILES = {
   header: new URL("../../../../third_party/maia3/maia3-5m.json", import.meta.url).href,
@@ -18,11 +19,6 @@ export const FILES = {
   wasm: new URL("./kernels.wasm", import.meta.url).href,
 };
 
-async function bytes(url) {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error("maia3: " + url + " → " + r.status);
-  return r.arrayBuffer();
-}
 
 /**
  * @param {{ header?: object, weights?: ArrayBuffer, wasm?: ArrayBuffer|null, files?: object }} [o]
@@ -31,9 +27,10 @@ async function bytes(url) {
 export async function loadMaia3(o = {}) {
   const files = { ...FILES, ...o.files };
   const [header, weights, wasm] = await Promise.all([
-    o.header || bytes(files.header).then((b) => JSON.parse(new TextDecoder().decode(b))),
-    o.weights || bytes(files.weights),
-    o.wasm !== undefined ? o.wasm : bytes(files.wasm).catch(() => null),
+    // no r.ok here: WKWebView's zero:// answers status 0 with the body (services/asset.js)
+    o.header || fetchJson(files.header),
+    o.weights || fetchBytes(files.weights),
+    o.wasm !== undefined ? o.wasm : fetchBytes(files.wasm, { magic: WASM_MAGIC }).catch(() => null),
   ]);
   const net = await createNet({ header, weights, wasm });
   return { ...evaluator(net), kernel: net.kernel, heapBytes: net.heapBytes };
