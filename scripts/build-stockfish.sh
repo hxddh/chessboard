@@ -57,6 +57,13 @@ if [ "$got" != "$COMMIT" ]; then
   exit 1
 fi
 
+# the one change made here: stockfish.js v19.0.1's native main() calls
+# loop() on the unique_ptr (`uci.loop()`) and does not compile outside
+# Emscripten; `uci->loop()` is what sf_19 has. Refuse if the line moved.
+grep -q '^    uci\.loop();' "$work/src/src/main.cpp"
+sed -i.orig 's/^    uci\.loop();/    uci->loop();/' "$work/src/src/main.cpp"
+rm -f "$work/src/src/main.cpp.orig"
+grep -q '^    uci->loop();' "$work/src/src/main.cpp"
 make -C "$work/src/src" -j"$jobs" profile-build ARCH="$arch" COMP="$comp" LITE_NET=yes
 strip "$work/src/src/$exe" || true
 cp "$work/src/src/$exe" "$out/$exe"
@@ -78,7 +85,8 @@ Source: $REPO/tree/$COMMIT
         src/evaluate.h) and WebAssembly glue the native build does not use.
 Build:  make -C src profile-build ARCH=$arch COMP=$comp LITE_NET=yes
 Network: $net (embedded; https://tests.stockfishchess.org/api/nn/$net)
-Not modified further for this app.
+Modified for this app: one line of src/main.cpp, "uci.loop();" to
+"uci->loop();" (as in sf_19), so the native build compiles.
 EOF
 "$out/$exe" bench 16 1 10 default depth > "$work/bench.txt" 2>&1 || true
 echo "build-stockfish: $out/$exe ($(du -h "$out/$exe" | cut -f1)), $TAG $COMMIT, ARCH=$arch, $(grep -i 'Nodes/second' "$work/bench.txt" || echo 'no bench')"
