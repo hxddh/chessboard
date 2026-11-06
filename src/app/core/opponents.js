@@ -10,7 +10,8 @@
  *   play     Maia-3: { maia: the rating the net is given, temperature?, topP?,
  *                      style?: "attacker" | "principled", sees?: mates it spots
  *                      when converting, convertT? }
- *            Stockfish: { elo: UCI_Elo, nodes } · 全力: { nodes } (no limit)
+ *            Stockfish: { elo: UCI_Elo, nodes }, or full strength on a few hundred or
+ *            thousand nodes (19.0's 大师+ … 强力+ rungs did the same) · 全力: { nodes: 400000 }
  *   pace     think-time scale (opponents/think.js), 1 = average
  *   resign   { cp, n, after }: resigns when its own look is ≤ −cp on n moves
  *            running, not before ply `after`; null: plays on to the end
@@ -19,21 +20,21 @@
  * @module core/opponents
  */
 export const OPPONENTS = [
-  { id: "pip", rating: 600, play: { maia: 600 }, pace: 0.7, resign: null, draw: { worse: 400 } },
-  { id: "tomo", rating: 800, play: { maia: 800 }, pace: 0.75, resign: null, draw: { worse: 300 } },
-  { id: "lina", rating: 1000, play: { maia: 1000, style: "principled" }, pace: 0.85, resign: { cp: 1500, n: 4, after: 40 }, draw: { worse: 250 } },
-  { id: "kai", rating: 1150, play: { maia: 1150, style: "attacker" }, pace: 0.8, resign: { cp: 1500, n: 4, after: 40 }, draw: { worse: 300 } },
-  { id: "ada", rating: 1300, play: { maia: 1300 }, pace: 0.9, resign: { cp: 1200, n: 3, after: 30 }, draw: { worse: 200 } },
-  { id: "ben", rating: 1450, play: { maia: 1450 }, pace: 0.9, resign: { cp: 1200, n: 3, after: 30 }, draw: { worse: 200 } },
-  { id: "vera", rating: 1650, play: { maia: 1650, sees: 2 }, pace: 1, resign: { cp: 1000, n: 3, after: 24 }, draw: { worse: 150 } },
-  { id: "sol", rating: 1900, play: { maia: 1900, sees: 2 }, pace: 1.15, resign: { cp: 1000, n: 3, after: 24 }, draw: { worse: 120 } },
-  { id: "leo", rating: 2200, play: { maia: 2200, sees: 2 }, pace: 0.8, resign: { cp: 900, n: 3, after: 24 }, draw: { worse: 150 } },
-  { id: "ivy", rating: 2600, play: { maia: 2600, sees: 3 }, pace: 1.05, resign: { cp: 800, n: 3, after: 20 }, draw: { worse: 100 } },
-  { id: "max", rating: 2700, play: { maia: 2600, temperature: 0.6, sees: 3 }, pace: 1.1, resign: { cp: 800, n: 2, after: 20 }, draw: { worse: 100 } },
-  { id: "iris", rating: 2800, play: { elo: 2400, nodes: 60000 }, pace: 1.1, resign: { cp: 700, n: 2, after: 20 }, draw: { worse: 80 } },
-  { id: "otto", rating: 2900, play: { elo: 2700, nodes: 120000 }, pace: 1.1, resign: { cp: 700, n: 2, after: 20 }, draw: { worse: 80 } },
-  { id: "zoe", rating: 3000, play: { elo: 3000, nodes: 200000 }, pace: 1.05, resign: { cp: 600, n: 2, after: 20 }, draw: { worse: 60 } },
-  { id: "fish", rating: 3100, play: { nodes: 400000 }, pace: 0.9, resign: { cp: 600, n: 2, after: 20 }, draw: { worse: 50 } },
+  { id: "pip", rating: 1100, play: { maia: 600 }, pace: 0.7, resign: null, draw: { worse: 400 } },
+  { id: "tomo", rating: 1250, play: { maia: 800 }, pace: 0.75, resign: null, draw: { worse: 300 } },
+  { id: "lina", rating: 1400, play: { maia: 1050, style: "principled" }, pace: 0.85, resign: { cp: 1500, n: 4, after: 40 }, draw: { worse: 250 } },
+  { id: "kai", rating: 1500, play: { maia: 1300, style: "attacker" }, pace: 0.8, resign: { cp: 1500, n: 4, after: 40 }, draw: { worse: 300 } },
+  { id: "ada", rating: 1600, play: { maia: 1600 }, pace: 0.9, resign: { cp: 1200, n: 3, after: 30 }, draw: { worse: 200 } },
+  { id: "vera", rating: 1700, play: { maia: 2000, sees: 2 }, pace: 1, resign: { cp: 1000, n: 3, after: 24 }, draw: { worse: 150 } },
+  { id: "leo", rating: 1900, play: { maia: 2200, sees: 2 }, pace: 0.8, resign: { cp: 900, n: 3, after: 24 }, draw: { worse: 150 } },
+  { id: "ivy", rating: 2000, play: { maia: 2600, sees: 3 }, pace: 1.05, resign: { cp: 800, n: 3, after: 20 }, draw: { worse: 100 } },
+  { id: "max", rating: 2100, play: { maia: 2600, temperature: 0.6, sees: 3 }, pace: 1.1, resign: { cp: 800, n: 2, after: 20 }, draw: { worse: 100 } },
+  { id: "iris", rating: 2250, play: { elo: 2400, nodes: 60000 }, pace: 1.1, resign: { cp: 700, n: 2, after: 20 }, draw: { worse: 80 } },
+  { id: "otto", rating: 2400, play: { elo: 2700, nodes: 120000 }, pace: 1.1, resign: { cp: 700, n: 2, after: 20 }, draw: { worse: 80 } },
+  { id: "zoe", rating: 2600, play: { elo: 2850, nodes: 150000 }, pace: 1.05, resign: { cp: 600, n: 2, after: 20 }, draw: { worse: 60 } },
+  { id: "nora", rating: 2800, play: { nodes: 300 }, pace: 1.05, resign: { cp: 600, n: 2, after: 20 }, draw: { worse: 60 } },
+  { id: "kit", rating: 3000, play: { nodes: 2500 }, pace: 1, resign: { cp: 600, n: 2, after: 20 }, draw: { worse: 50 } },
+  { id: "fish", rating: 3200, play: { nodes: 400000 }, pace: 0.9, resign: { cp: 600, n: 2, after: 20 }, draw: { worse: 50 } },
   { id: "friend", rating: null },
 ];
 export const DEFAULT_OPPONENT = "ada";

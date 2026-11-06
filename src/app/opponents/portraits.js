@@ -25,13 +25,14 @@ export const FACES = {
   ada: [3, 0, "bun", 5, 3, "g"],
   ben: [0, 2, "cap", 6, 0, "k"],
   vera: [1, 6, "long", 0, 5, "e"],
-  sol: [4, 0, "curly", 3, 2, "e"],
   leo: [0, 3, "side", 2, 7, "b"],
   ivy: [2, 0, "bun", 1, 1, ""],
   max: [1, 0, "short", 6, 5, "g"],
   iris: [0, 5, "long", 5, 6, "g"],
   otto: [1, 5, "bald", 4, 0, "gb"],
   zoe: [4, 0, "bun", 6, 7, "e"],
+  nora: [2, 4, "long", 4, 3, "g"],
+  kit: [1, 2, "cap", 0, 6, ""],
 };
 
 const r1 = (n) => Math.round(n * 10) / 10;

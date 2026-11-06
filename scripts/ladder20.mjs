@@ -53,7 +53,8 @@ const MIND = TUNING;
 const settingsOf = (id) => {
   if (id.startsWith("19:")) return { ladder19: id.slice(3) };
   const p = LADDER.find((o) => o.id === id);
-  return { play: p.play, resign: p.resign, mind: MIND };
+  // (a Stockfish profile's look and converting changed after the first runs: `sf` marks the games played since)
+  return p.play.maia == null ? { play: p.play, resign: p.resign, mind: MIND, sf: 2 } : { play: p.play, resign: p.resign, mind: MIND };
 };
 
 const OPENINGS = [
@@ -189,6 +190,7 @@ async function play() {
 
 // --- fit ---------------------------------------------------------------------------
 
+const ANY = process.argv.includes("--any") && !RECORDING;
 function fit() {
   const dirs = arg("in", "").split(",").filter(Boolean);
   if (!dirs.length) { console.error("--in=DIR[,DIR]"); process.exit(2); }
@@ -201,7 +203,8 @@ function fit() {
       const g = JSON.parse(line);
       if (seen.has(g.key)) continue;
       seen.add(g.key);
-      const ok = (id, s) => (id.startsWith("19:") ? ANCHORS.includes(id.slice(3)) : IDS.includes(id)) && JSON.stringify(s) === now(id);
+      // (--any: every game by name, whatever it was played with — for looking at an old run, never for --record)
+      const ok = (id, s) => (id.startsWith("19:") ? ANCHORS.includes(id.slice(3)) : IDS.includes(id)) && (ANY || JSON.stringify(s) === now(id));
       if (!ok(g.a, g.sa) || !ok(g.b, g.sb)) { stale++; continue; }
       games.push(g);
     }
