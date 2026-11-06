@@ -162,4 +162,24 @@ export default function dbContract(test, open, label = "") {
     a.ok(bytes / 160 < 400, (bytes / 160).toFixed(0) + " bytes per move");
     await db.close();
   });
+
+  t("a review is kept: analysis rows per position, survive a reopen, replaced by a later one", async (a) => {
+    const name = fresh();
+    let db = await open(name);
+    const gameId = "000000000rvw1";
+    await db.append({ type: "game.start", gameId, mode: "engine", engineColor: "b", startFen: "x" });
+    await db.append({ type: "review.analysis", gameId, budget: 100,
+      rows: [{ scalar: 20, best: "e2e4" }, { scalar: -15, best: "e7e5", grade: "best" }, { scalar: 400, best: null }] });
+    await db.close();
+    db = await open(name);
+    const rows = await db.query("analysis.get", { gameId });
+    a.deepEqual(rows.map((r) => [r.ply, r.scalar]), [[0, 20], [1, -15], [2, 400]]);
+    a.ok((await db.query("game.get", { id: gameId })).analysed, "the game row says it was analysed");
+    await db.append({ type: "review.analysis", gameId, rows: [{ scalar: 1 }] });
+    a.equal((await db.query("analysis.get", { gameId })).length, 1, "a second review replaces the first");
+    a.deepEqual(await db.query("analysis.get", { gameId: "nope" }), []);
+    await db.append({ type: "review.done", gameId });
+    a.ok((await db.query("game.get", { id: gameId })).reviewed);
+    await db.close();
+  });
 }

@@ -5,13 +5,26 @@
  */
 import { PIECE_SET_IDS, BOARD_THEMES, DEFAULT_PIECE_SET } from "../core/pieces.js";
 
-export const SETTINGS_DEFAULT = Object.freeze({ appearance: "system", boardTheme: "wood", pieceSet: DEFAULT_PIECE_SET });
+/**
+ * `level`: the player's own strength, until the learner model knows it.
+ * `coach`: the question before a move (v20-0-plan §3 P2) — "auto" follows
+ * the level (beginners on, from 1500 off).
+ */
+export const LEVELS = [600, 1000, 1500, 2000];
+export const SETTINGS_DEFAULT = Object.freeze({ appearance: "system", boardTheme: "wood", pieceSet: DEFAULT_PIECE_SET,
+  sound: "on", coach: "auto", level: 1000 });
 
 const VALID = {
   appearance: (v) => ["system", "light", "dark"].includes(v),
   boardTheme: (v) => BOARD_THEMES.includes(v),
   pieceSet: (v) => PIECE_SET_IDS.includes(v),
+  sound: (v) => ["on", "off"].includes(v),
+  coach: (v) => ["auto", "on", "off"].includes(v),
+  level: (v) => LEVELS.includes(v),
 };
+
+/** Is the coach's question on, for these settings? */
+export const coachOn = (s) => s.coach === "on" || (s.coach === "auto" && s.level < 1500);
 
 export const settingsActions = {
   "settings.set": (s, { key, value }) => {

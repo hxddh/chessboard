@@ -42,14 +42,22 @@ const MAX = Infinity;
 /** Event → the writes that keep the projections in step. */
 const PROJECT = {
   "game.start": (e) => [{ put: "games", value: { id: e.gameId, mode: e.mode, engineColor: e.engineColor || null,
-    startFen: e.startFen, startedAt: e.at, result: null } }],
-  "game.move": (e) => [{ put: "moves", value: { gameId: e.gameId, ply: e.ply, uci: e.uci, san: e.san } }],
+    startFen: e.startFen, opponent: e.opponent || null, coach: !!e.coach, tc: e.tc || null, startedAt: e.at, result: null } }],
+  "game.move": (e) => [{ put: "moves", value: e.clock ? { gameId: e.gameId, ply: e.ply, uci: e.uci, san: e.san, clock: e.clock }
+    : { gameId: e.gameId, ply: e.ply, uci: e.uci, san: e.san } }],
   "game.undo": (e) => [
     { delRange: "moves", lower: [e.gameId, e.ply], upper: [e.gameId, MAX] },
     { merge: "games", key: e.gameId, patch: { result: null } },
   ],
   "game.end": (e) => [{ merge: "games", key: e.gameId, patch: { result: { result: e.result, reason: e.reason }, endedAt: e.at } }],
   "settings.set": (e) => [{ put: "settings", value: { key: e.key, value: e.value } }],
+  /** A finished review: one row per position of the game (ply = position index, 0 the start). */
+  "review.analysis": (e) => [
+    { delRange: "analysis", lower: [e.gameId, 0], upper: [e.gameId, MAX] },
+    ...e.rows.map((r, i) => ({ put: "analysis", value: { ...r, gameId: e.gameId, ply: i } })),
+    { merge: "games", key: e.gameId, patch: { analysed: { at: e.at, budget: e.budget || null } } },
+  ],
+  "review.done": (e) => [{ merge: "games", key: e.gameId, patch: { reviewed: e.at } }],
 };
 
 /** Named reads. `r` is the backend's reader: get, range, count. */
@@ -63,6 +71,8 @@ const QUERIES = {
     if (!game) return null;
     return { game, moves: await r.range("moves", [game.id, 0], [game.id, MAX]) };
   },
+  /** The review's rows for a game, by position; [] when it was never reviewed. */
+  "analysis.get": (r, { gameId }) => r.range("analysis", [gameId, 0], [gameId, MAX]),
   "events.since": (r, { after = 0, limit = 1000 } = {}) => r.range("events", after + 1, MAX, { limit }),
   "settings.all": async (r) => Object.fromEntries((await r.range("settings", null, null)).map((s) => [s.key, s.value])),
   "table.count": (r, { table }) => {

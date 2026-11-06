@@ -40,7 +40,9 @@ async function open(query = "?engine=fake", { hash = "", ctxOpts = {} } = {}) {
   return { ctx, page };
 }
 const frames = (page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-const plies = (page) => page.$$eval("[data-test=moves] li", (els) => els.map((e) => e.textContent.replace(/^\d+\.\s*/, "")));
+const plies = (page) => page.evaluate(() => (window.__app.store.get().play.game?.moves || []).map((m) => m.san));
+const newGame = (page, mode) => page.evaluate((mode) => window.__app.store.dispatch("play.new",
+  { id: Date.now().toString(36).padStart(9, "0") + Math.random().toString(36).slice(2, 6), mode, engineColor: mode === "engine" ? "b" : null, opponent: "lin" }), mode);
 
 /** Client centre of `sq` on the play page's board (orientation read from the page). */
 async function centre(page, sq, sel = "[data-test=board] canvas") {
@@ -94,9 +96,11 @@ async function drag(page, from, to, sel) {
 
 // --- play: click, drag, keyboard; legal moves only; reload restores ------------------
 {
-  const q = "?engine=fake&dbname=e2e-play-" + Date.now();
+  const q = "?engine=fake&think=0&dbname=e2e-play-" + Date.now();
   const { ctx, page } = await open(q);
   await page.waitForFunction(() => window.__app.store.get().play.game);
+  await newGame(page, "pvp");
+  await frames(page);
   await clickMove(page, "e2e4");
   await clickMove(page, "e7e5");
   await frames(page);
@@ -125,16 +129,16 @@ async function drag(page, from, to, sel) {
   const moves = await page.evaluate(() => window.__app.store.get().play.game.moves.map((m) => m.uci));
   const g = new Chess();
   assert(moves.every((u) => g.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] })), "every move made is legal");
-  await page.click("[data-test=undo]");
+  await page.evaluate(() => window.__app.store.dispatch("play.undo", { plies: 1 }));
   assert((await plies(page)).length === 3, "undo takes one ply back in a two-player game");
   await page.waitForTimeout(50);
   await page.reload();
   await page.waitForFunction(() => window.__app.store.get().play.game);
-  await page.waitForSelector("[data-test=moves] li:nth-child(3)");
+  await page.waitForSelector("[data-test=moves] li:nth-child(3)", { state: "attached" });
   assert((await plies(page)).join(" ") === "e4 e5 Nf3", "a reload restores the game, undo included");
 
   // against the engine
-  await page.click("[data-test=new-engine]");
+  await newGame(page, "engine");
   await clickMove(page, "d2d4");
   await page.waitForFunction(() => window.__app.store.get().play.game.moves.length === 2);
   const reply = (await plies(page))[1];
@@ -144,6 +148,7 @@ async function drag(page, from, to, sel) {
   await page.waitForTimeout(50);
   await page.reload();
   await page.waitForFunction(() => window.__app.store.get().play.game?.moves.length === 4);
+  await page.waitForSelector("[data-test=board] canvas");
   const g2 = await page.evaluate(() => window.__app.store.get().play.game);
   assert(g2.mode === "engine" && g2.engineColor === "b", "a reload restores a game against the engine");
   await clickMove(page, "g1f3");
@@ -154,9 +159,9 @@ async function drag(page, from, to, sel) {
 
 // --- premove against a slow engine ---------------------------------------------
 {
-  const { ctx, page } = await open("?engine=fake&delay=600&db=memory");
+  const { ctx, page } = await open("?engine=fake&delay=600&db=memory&think=0");
   await page.waitForFunction(() => window.__app.store.get().play.game);
-  await page.click("[data-test=new-engine]");
+  await newGame(page, "engine");
   await clickMove(page, "d2d4");
   await page.waitForFunction(() => window.__app.store.get().play.game.moves.length === 2);
   await clickMove(page, "b1c3");
@@ -350,7 +355,7 @@ const report = {};
   })();
   const { ctx, page } = await open("?engine=fake&dbname=e2e-perf-" + Date.now(), { ctxOpts: { reducedMotion: "reduce" } });
   await page.waitForFunction(() => window.__app.store.get().play.game);
-  await page.click("[data-test=new-pvp]");
+  await newGame(page, "pvp");
   const cdp = await ctx.newCDPSession(page);
   await cdp.send("Performance.enable");
   const scriptMs = async () => (await cdp.send("Performance.getMetrics")).metrics.find((m) => m.name === "ScriptDuration").value * 1000;

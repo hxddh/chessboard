@@ -7,10 +7,13 @@ export function persist(store, db) {
   return store.subscribe(({ name, payload, prev, next }) => {
     const g = next.play && next.play.game, was = prev.play && prev.play.game;
     if (name === "play.new") {
-      db.append({ type: "game.start", gameId: g.id, mode: g.mode, engineColor: g.engineColor, startFen: g.startFen });
+      db.append({ type: "game.start", gameId: g.id, mode: g.mode, engineColor: g.engineColor, startFen: g.startFen,
+        opponent: g.opponent, coach: g.coach, tc: g.clock ? g.clock.id : null });
     } else if (name === "play.move") {
       const m = g.moves[g.moves.length - 1];
-      db.append({ type: "game.move", gameId: g.id, ply: g.moves.length - 1, uci: m.uci, san: m.san });
+      const e = { type: "game.move", gameId: g.id, ply: g.moves.length - 1, uci: m.uci, san: m.san };
+      if (m.clock) e.clock = m.clock;
+      db.append(e);
     } else if (name === "play.undo") {
       if (g.moves.length < was.moves.length) db.append({ type: "game.undo", gameId: g.id, ply: g.moves.length });
     } else if (name === "settings.set") {
@@ -22,11 +25,11 @@ export function persist(store, db) {
   });
 }
 
-/** The latest game back into the store; a fresh one if there is none. */
-export async function restore(store, db, newId) {
+/** The latest game back into the store; a fresh one (`fresh`: play.new's payload, or a function of the settings) if there is none. */
+export async function restore(store, db, newId, fresh = { mode: "pvp" }) {
   const [saved, cur] = await Promise.all([db.query("settings.all"), db.query("game.current")]);
   store.dispatch("settings.load", saved);
   if (store.get().play.game) return;
   if (cur) store.dispatch("play.restore", cur);
-  else store.dispatch("play.new", { id: newId(), mode: "pvp" });
+  else store.dispatch("play.new", { ...(typeof fresh === "function" ? fresh(store.get().settings) : fresh), id: newId() });
 }

@@ -22,6 +22,7 @@
  *   theme          "wood" | "green" | "blue" — sets data-board on the element
  *   coords         true
  *   onMove({ from, to, drop, premove }), onShapes({ arrows, marks })
+ *   onReady()      once, after the first frame drawn with the piece set
  * @module board
  */
 import { createScene } from "./scene.js";
@@ -41,7 +42,7 @@ export function createBoard(el, opts = {}) {
   const o = {
     fen: START_FEN, orientation: "white", movable: "both", dests: null, lastMove: null, check: true,
     premove: true, arrows: [], marks: [], animation: DEFAULT_MS, pieceSet: DEFAULT_PIECE_SET, theme: "wood",
-    coords: true, onMove: () => {}, onShapes: () => {}, ...opts,
+    coords: true, onMove: () => {}, onShapes: () => {}, onReady: null, ...opts,
   };
   let placement = readFen(o.fen);
   let dests = o.dests || legalDests(o.fen);
@@ -109,6 +110,7 @@ export function createBoard(el, opts = {}) {
   // --- drawing ------------------------------------------------------------------
 
   let frameReq = 0;
+  let setReady = false;
   const stats = { frames: 0 };
   function draw() {
     frameReq = 0;
@@ -125,6 +127,7 @@ export function createBoard(el, opts = {}) {
       ghost: drag ? drag.from : null,
     });
     stats.frames++;
+    if (setReady && o.onReady) { const cb = o.onReady; o.onReady = null; cb(); }
     if (f.busy || drag) request();
   }
   function request() { if (!frameReq) frameReq = requestAnimationFrame(draw); }
@@ -224,7 +227,7 @@ export function createBoard(el, opts = {}) {
 
   scene.setPieces(placement, { now: now(), ms: 0 });
   refresh(false);
-  loadSet(o.pieceSet).then(request);
+  loadSet(o.pieceSet).then(() => { setReady = true; request(); });
   resize();
 
   return {
@@ -234,7 +237,8 @@ export function createBoard(el, opts = {}) {
       const s = input.state;
       return { fen: o.fen, orientation: o.orientation, selected: s.selected && s.selected.sq,
         premove: s.premove, shapes: s.shapes, cursor: s.cursor, dragging: !!(s.drag && s.drag.active),
-        targets: input.targets(), animating: scene.frame(now()).busy, frames: stats.frames };
+        targets: input.targets(), animating: scene.frame(now()).busy, frames: stats.frames,
+        check: o.check === true ? kingInCheck() : o.check || null, arrows: o.arrows, marks: o.marks, movable: o.movable };
     },
     /** Client coordinates of a square's centre. */
     squareCenter(sq) {

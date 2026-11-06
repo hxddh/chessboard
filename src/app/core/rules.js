@@ -74,3 +74,22 @@ export function outcome(fens) {
   if (ChessFide.halfmoveClock(fen) >= 150) return { result: "1/2-1/2", reason: "seventy-five" };
   return null;
 }
+
+/**
+ * A draw the player to move may claim (FIDE 9.2, 9.3) after the last of
+ * `fens`: "threefold" | "fifty" | null.
+ */
+export function claimable(fens) {
+  const fen = fens[fens.length - 1];
+  const key = ChessFide.positionKey(fen, null, Chess);
+  let reps = 0;
+  for (const f of fens) if (ChessFide.positionKey(f, null, Chess) === key) reps++;
+  if (reps >= 3) return "threefold";
+  if (ChessFide.halfmoveClock(fen) >= 100) return "fifty";
+  return null;
+}
+
+/** FIDE 6.9: `color` ran out of time; does the other side still have mating material? */
+export function canMateAfterFlag(fen, color) {
+  return ChessFide.hasMatingMaterial(new Chess(fen).board(), color === "w" ? "b" : "w");
+}

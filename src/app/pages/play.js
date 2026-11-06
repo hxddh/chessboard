@@ -1,102 +1,564 @@
 /**
- * The play page, minimal: a board, the moves, and four buttons. Two players
- * on one board, or against the engine. Every move is an event in the db, so
- * a reload brings the game back where it was.
+ * 下 — the play screen (v20-0-plan §3 P2–P5). Board first; under it one
+ * context bar that holds only what the moment needs; the move list is a
+ * drawer; no evaluation while a game is on; toasts only for receipts.
+ *
+ *   playing     提示 · 和棋 · 认输 · 着法 · 新对局
+ *   the coach   a move that hangs a man or allows mate is held *before* it is
+ *               committed: 对方在威胁什么？ [再想想] [就走这步]
+ *   hints       threat → checks and captures → the idea → the arrow
+ *   the end     one quiet moment, then the review on the board (review/review.js)
+ *
+ * State lives in the store (state/play.js); this page keeps only what is on
+ * screen: which bar, which hint, which position is being looked at.
  * @module pages/play
  */
 import { h } from "../lib/dom.js";
-import { signal, effect, untrack } from "../lib/signal.js";
+import { signal, computed, effect, untrack, batch } from "../lib/signal.js";
 import { createBoard } from "../board/board.js";
-import { selectFen, selectLastMove } from "../state/play.js";
-import { turnOf } from "../core/rules.js";
+import { loadSet } from "../board/pieces.js";
+import { selectFen, selectFens, selectLastMove } from "../state/play.js";
+import { coachOn } from "../state/settings.js";
+import { turnOf, applyMove, claimable, parseUci } from "../core/rules.js";
+import { Chess } from "../core/chess.js";
+import { left, format } from "../core/clock.js";
+import { opponentById, coachBudget, DEFAULT_OPPONENT } from "../core/opponents.js";
+import { dangerAfter, shouldAsk, threatNow, checksAndCaptures } from "../core/coach.js";
+import { explainMistake, lineMotif, figurine } from "../core/explain.js";
+import { sansOf } from "../core/pass.js";
+import { scalarOf, winPct } from "../core/winpct.js";
 import { newId } from "../services/db.js";
+import { playText } from "../text/play.js";
+import { createSound, moveSound } from "./play-sound.js";
+import { openSheet } from "./play-sheet.js";
+import { createDrawer } from "./play-drawer.js";
+import { createReview, REVIEW_BUDGET_MS } from "../review/review.js";
 
-const REASON = { checkmate: "将死", stalemate: "逼和", insufficient: "子力不足", fivefold: "五次重复", "seventy-five": "七十五步", resign: "认输" };
-const SIDE = { w: "白方", b: "黑方" };
+const COLOR = { w: "white", b: "black" };
+const other = (c) => (c === "w" ? "b" : "w");
+/** The side "you" play: the one the engine does not; null when two people share the board. */
+const humanOf = (g) => (g && g.mode === "engine" ? other(g.engineColor) : null);
+const COACH_MS = 150, HINT_MS = 400, RESULT_MS = 1600;
 
 export function mount(el, { store, engine, ready }) {
+  const t = playText();
+  const params = new URLSearchParams(location.search);
+  const thinkScale = params.has("think") ? Number(params.get("think")) : 1;
+  const review = createReview({ engine, db: ready, t, budget: Number(params.get("review")) || REVIEW_BUDGET_MS });
+  const sound = createSound(() => store.get().settings.sound !== "off");
+
   const game = store.select((s) => s.play.game);
   const fen = store.select(selectFen);
   const lastMove = store.select(selectLastMove);
   const settings = store.select((s) => s.settings);
-  const flipped = signal(false);
-  const thinking = signal(false);
 
-  const status = h("p", { class: "status", "data-test": "status", "aria-live": "polite" });
-  const list = h("ol", { class: "moves", "data-test": "moves" });
+  // what is on screen, and nothing else
+  const mode = signal("play");        // play | checking | coach | confirm-resign | confirm-draw | confirm-claim | draw-wait | result
+  const note = signal(null);          // { text, tone } in the bar while playing
+  const hint = signal({ fen: null, level: 0, arrows: [], marks: [] });
+  const viewAt = signal(null);        // a position index being looked at; null: the live one
+  const pending = signal(null);       // the move the coach holds: { uci, san, fen, lastMove, rule }
+  const thinking = signal(false);
+  const reportShown = signal(false);
+  const asked = new Map();            // gameId → questions asked
+  const timers = new Set();
+  const later = (ms, fn) => { const id = setTimeout(() => { timers.delete(id); fn(); }, ms); timers.add(id); return id; };
+
+  // --- layout ------------------------------------------------------------------
   const boardEl = h("div", { class: "board-box", "data-test": "board" });
-  const newGame = (mode) => store.dispatch("play.new", { id: newId(), mode, engineColor: mode === "engine" ? "b" : null });
-  const undo = () => {
-    const g = store.get().play.game;
-    if (!g || !g.moves.length) return;
-    // against the engine, take back the engine's reply too
-    const plies = g.mode === "engine" && turnOf(selectFen(store.get())) !== g.engineColor && g.moves.length > 1 ? 2 : 1;
-    store.dispatch("play.undo", { plies });
+  const evalFill = h("div", { class: "eval-fill" });
+  const evalBar = h("div", { class: "evalbar", "data-test": "evalbar", hidden: true, "aria-hidden": "true" }, evalFill);
+  const strip = (pos) => {
+    const name = h("span", { class: "who" }), clock = h("span", { class: "clock", "data-test": "clock-" + pos });
+    return { el: h("div", { class: "strip " + pos }, name, clock), name, clock };
   };
-  const controls = h("div", { class: "controls" },
-    h("button", { "data-test": "new-pvp", onclick: () => newGame("pvp") }, "双人对弈"),
-    h("button", { "data-test": "new-engine", onclick: () => newGame("engine") }, "对电脑"),
-    h("button", { "data-test": "undo", onclick: undo }, "悔棋"),
-    h("button", { "data-test": "flip", onclick: () => flipped.update((v) => !v) }, "翻转"));
-  el.append(h("div", { class: "play" }, boardEl, h("aside", { class: "side" }, status, controls, list)));
+  const top = strip("top"), bottom = strip("bottom");
+  const barText = h("p", { class: "bar-text", "data-test": "bar-text", "aria-live": "polite" });
+  const barActions = h("div", { class: "bar-actions" });
+  const bar = h("div", { class: "bar", "data-test": "bar" }, barText, barActions);
+  const toastEl = h("div", { class: "toast", role: "status", "data-test": "toast", hidden: true });
+  const drawer = createDrawer({ t, onPick: (i) => look(i), onStep: (d) => step(d), onCopy: copyPgn });
+  const stage = h("div", { class: "stage" }, top.el, h("div", { class: "board-row" }, evalBar, boardEl), bottom.el, bar);
+  const root = h("div", { class: "play" }, stage, drawer.el, toastEl);
+  el.append(root);
 
   const s0 = settings.peek();
   const board = createBoard(boardEl, {
     fen: fen.peek(), pieceSet: s0.pieceSet, theme: s0.boardTheme, movable: "none",
-    onMove({ from, to }) {
-      try { store.dispatch("play.move", { uci: from + to }); } catch (e) { console.warn(e.message); }
-    },
+    onMove: ({ from, to, premove }) => onBoardMove(from, to, premove),
+    onReady: () => performance.mark("app:board"),
   });
-  performance.mark("app:board");
+
+  // --- actions -----------------------------------------------------------------
+  const fensNow = () => selectFens(store.get());
+  const yourTurn = (g, f) => !!g && !g.result && (g.mode === "pvp" || turnOf(f) === humanOf(g));
+
+  function commit(uci) {
+    const g = store.get().play.game;
+    const before = selectFen(store.get());
+    let next;
+    try { next = store.dispatch("play.move", { uci, now: Date.now() }); } catch (e) { console.warn(e.message); return; }
+    const m = next.play.game.moves[next.play.game.moves.length - 1];
+    const piece = new Chess(before).get(uci.slice(0, 2));
+    sound.play(moveSound(m.san), piece && piece.type);
+    batch(() => { note.value = null; hint.value = { fen: null, level: 0, arrows: [], marks: [] }; if (g) mode.value = mode.peek() === "draw-wait" ? "draw-wait" : "play"; });
+  }
+
+  function onBoardMove(from, to, premove) {
+    const g = game.peek();
+    if (!g) return;
+    if (review.state.peek().phase === "card") {
+      return promotion(review.board.peek().fen, from, to, premove).then((p) => p != null && review.tryMove(from + to + p));
+    }
+    if (viewAt.peek() != null || pending.peek()) return;
+    promotion(fen.peek(), from, to, premove).then((p) => { if (p != null) attempt(from + to + p); });
+  }
+
+  /** The piece a pawn becomes: "" for no promotion, null when the picker was dismissed. Synchronous when there is nothing to ask. */
+  function promotion(f, from, to, premove) {
+    const g = new Chess(f);
+    const p = g.get(from);
+    const promo = p && p.type === "p" && (to[1] === "8" || to[1] === "1");
+    if (!promo) return { then: (fn) => fn("") };
+    if (premove) return { then: (fn) => fn("q") };
+    return pickPromotion(to, p.color);
+  }
+
+  function attempt(uci) {
+    const g = game.peek(), f = fen.peek();
+    const human = humanOf(g);
+    const left = (asked.get(g.id) || 0) < budgetFor(g);
+    if (g.coach && human && turnOf(f) === human && left) {
+      const rule = dangerAfter(f, uci);
+      if (rule) return hold(uci, rule);
+    }
+    commit(uci);
+  }
+
+  /** Questions per game: by level, and at least three when the player switched them on for a strong level. */
+  const budgetFor = (g) => (g.coach ? coachBudget(store.get().settings.level) || 3 : 0);
+
+  /** The coach looks before the move goes in: the board shows it, nothing is committed. */
+  async function hold(uci, rule) {
+    const g = game.peek(), f = fen.peek();
+    const mv = applyMove(f, uci);
+    batch(() => {
+      pending.value = { uci, san: mv.san, fen: mv.fen, lastMove: { from: uci.slice(0, 2), to: uci.slice(2, 4) }, rule };
+      mode.value = "checking";
+    });
+    let before = null, after = null;
+    try {
+      [before, after] = await Promise.all([
+        engine.analyse(f, { lines: 1, budget: { ms: COACH_MS } }),
+        engine.analyse(mv.fen, { lines: 1, budget: { ms: COACH_MS } }),
+      ]);
+    } catch { /* the board's facts alone decide */ }
+    if (!pending.peek() || pending.peek().uci !== uci || fen.peek() !== f) return;
+    const b = before && before.lines[0], a = after && after.lines[0];
+    const facts = b && a ? explainMistake({ fen: f, played: mv.san, best: b.moves[0], line: sansOf(mv.fen, a.moves, 6) }) : null;
+    const d = shouldAsk({ rule, facts, before: b ? scalarOf(b.score) : null, after: a ? scalarOf(a.score) : null, side: turnOf(f) });
+    if (!d.ask) { pending.value = null; commit(uci); return; }
+    asked.set(g.id, (asked.get(g.id) || 0) + 1);
+    pending.value = { ...pending.peek(), why: d.why, drop: d.drop };
+    mode.value = "coach";
+  }
+
+  function coachAnswer(play) {
+    const p = pending.peek(), g = game.peek();
+    if (!p) return;
+    ready.then((db) => db.append({ type: "coach.prompt", gameId: g.id, ply: g.moves.length, uci: p.uci, why: p.why || null,
+      choice: play ? "play" : "rethink" }));
+    batch(() => { pending.value = null; mode.value = "play"; });
+    if (play) commit(p.uci);
+  }
+
+  // --- hints (P3): threat → checks and captures → the idea → the arrow ------------
+  let hintLine = null;
+  function nextHint() {
+    const f = fen.peek(), g = game.peek();
+    const h0 = hint.peek();
+    const level = h0.fen === f ? Math.min(4, h0.level + 1) : 1;
+    if (level === 1 || !hintLine || hintLine.fen !== f) {
+      hintLine = { fen: f, p: engine.analyse(f, { lines: 1, budget: { ms: HINT_MS } }).then((a) => a.lines[0] || null).catch(() => null) };
+    }
+    ready.then((db) => db.append({ type: "hint.used", gameId: g.id, ply: g.moves.length, level }));
+    const me = turnOf(f);
+    if (level === 1) {
+      const th = threatNow(f);
+      const text = !th ? t("hint.noThreat") : th.kind === "check" ? t("hint.threatCheck")
+        : th.kind === "mate" ? t("hint.threatMate", figurine(th.san, other(me)))
+        : t("hint.threatPiece", figurine(th.san, other(me)), t("piece." + th.piece));
+      setHint(f, 1, text, [], []);
+    } else if (level === 2) {
+      const cc = checksAndCaptures(f);
+      const all = [...cc.checks, ...cc.captures];
+      const text = all.length ? t("hint.forcing", all.slice(0, 5).map((m) => figurine(m.san, me)).join("、")) : t("hint.noForcing");
+      setHint(f, 2, text, [], [...new Set(all.map((m) => m.from))].map((sq) => ({ sq, color: "G" })));
+    } else {
+      setHint(f, level, t("hint.wait"), [], hint.peek().marks);
+      hintLine.p.then((line) => {
+        if (fen.peek() !== f || hint.peek().fen !== f) return;
+        if (!line) { setHint(f, level, t("hint.noThreat"), [], []); return; }
+        const sans = sansOf(f, line.moves, 6);
+        const best = parseUci(line.moves[0]);
+        if (level === 3) {
+          const lm = lineMotif(f, sans);
+          const mates = line.score.mate != null && (line.score.mate > 0) === (me === "w");
+          const idea = lm ? t("motif." + lm.motif) : mates ? t("hint.ideaMate") : /x/.test(sans[0]) ? t("hint.ideaCapture")
+            : /[+#]$/.test(sans[0]) ? t("hint.ideaCheck") : t("hint.ideaQuiet");
+          setHint(f, 3, t("hint.idea", idea), [], []);
+        } else {
+          setHint(f, 4, t("hint.move", figurine(sans[0], me)), [{ from: best.from, to: best.to, color: "G" }], [{ sq: best.from, color: "G" }]);
+        }
+      });
+    }
+  }
+  function setHint(f, level, text, arrows, marks) {
+    batch(() => { hint.value = { fen: f, level, arrows, marks }; note.value = { text, tone: "hint" }; });
+  }
+
+  // --- draw, resign ------------------------------------------------------------------
+  function offerDraw() {
+    const g = game.peek();
+    const claim = claimable(fensNow());
+    mode.value = claim ? "confirm-claim" : "confirm-draw";
+  }
+  async function confirmDraw() {
+    const g = game.peek();
+    if (mode.peek() === "confirm-claim") { store.dispatch("play.draw", { reason: claimable(fensNow()), now: Date.now() }); return; }
+    if (g.mode === "pvp") { store.dispatch("play.draw", { reason: "agreement", now: Date.now() }); return; }
+    mode.value = "draw-wait";
+    const f = fen.peek();
+    let a = null;
+    try { a = (await engine.analyse(f, { lines: 1, budget: { ms: 200 } })).lines[0]; } catch { a = null; }
+    const cur = game.peek();
+    if (!cur || cur.id !== g.id || cur.result) return;
+    const s = a ? scalarOf(a.score) : 0;
+    const forEngine = g.engineColor === "w" ? s : -s;
+    if (forEngine <= -150 || (cur.moves.length >= 60 && Math.abs(forEngine) <= 30)) {
+      store.dispatch("play.draw", { reason: "agreement", now: Date.now() });
+    } else {
+      batch(() => { mode.value = "play"; note.value = { text: t("draw.declined", t("opp." + g.opponent)), tone: null }; });
+    }
+  }
+  function resign() {
+    const g = game.peek();
+    store.dispatch("play.resign", { color: humanOf(g) || turnOf(fen.peek()), now: Date.now() });
+  }
+
+  // --- new game ------------------------------------------------------------------------
+  let closeSheet = null;
+  function newGame() {
+    if (closeSheet) return;
+    const g = game.peek(), st = store.get().settings;
+    const last = {
+      opponent: g && g.mode === "engine" ? g.opponent || DEFAULT_OPPONENT : g ? "friend" : DEFAULT_OPPONENT,
+      color: g && g.mode === "engine" ? humanOf(g) : "w", tc: g && g.clock ? g.clock.id : "none",
+      coach: g && g.mode === "engine" ? g.coach : coachOn(st),
+    };
+    closeSheet = openSheet(root, {
+      t, last,
+      onClose: () => { closeSheet = null; },
+      onStart: (c) => {
+        closeSheet = null;
+        const color = c.color === "random" ? (Math.random() < 0.5 ? "w" : "b") : c.color;
+        const friend = c.opponent === "friend";
+        review.close();
+        batch(() => { mode.value = "play"; note.value = null; viewAt.value = null; pending.value = null; reportShown.value = false; });
+        store.dispatch("play.new", { id: newId(), mode: friend ? "pvp" : "engine", engineColor: friend ? null : other(color),
+          opponent: friend ? null : c.opponent, tc: c.tc === "none" ? null : c.tc, coach: !friend && c.coach });
+        sound.play("start");
+      },
+    });
+  }
+
+  // --- looking back -----------------------------------------------------------------------
+  function look(i) {
+    const n = fensNow().length - 1;
+    const idx = Math.max(0, Math.min(n, i));
+    viewAt.value = idx === n && !game.peek().result ? null : idx;
+  }
+  function step(d) {
+    const n = fensNow().length - 1;
+    const cur = viewAt.peek() ?? n;
+    look(cur + d);
+  }
+  function copyPgn() {
+    const g = game.peek();
+    const sans = g.moves.map((m, i) => (i % 2 === 0 ? (i / 2 + 1) + ". " : "") + m.san).join(" ");
+    const text = sans + (g.result ? " " + g.result.result : "");
+    Promise.resolve(navigator.clipboard && navigator.clipboard.writeText(text)).catch(() => {}).then(() => toast(t("toast.copied")));
+  }
+  function toast(text) {
+    toastEl.textContent = text;
+    toastEl.hidden = false;
+    later(1800, () => { toastEl.hidden = true; });
+  }
+  function toggleDrawer() {
+    drawer.open = !drawer.open;
+    reportShown.value = drawer.open;
+    if (!drawer.open) viewAt.value = null;
+    else drawer.setCursor(viewAt.peek() ?? fensNow().length - 1);
+  }
+
+  // --- promotion picker -----------------------------------------------------------------
+  let promoClose = null;
+  function pickPromotion(to, color) {
+    if (promoClose) promoClose(null);
+    return new Promise((resolve) => {
+      const s = store.get().settings;
+      const orient = board.state().orientation;
+      const file = to.charCodeAt(0) - 97;
+      const col = orient === "black" ? 7 - file : file;
+      const pickEl = h("div", { class: "promo", role: "dialog", "aria-label": t("promo.title"), "data-test": "promo",
+        style: `left:${col * 12.5}%;${(to[1] === "8") === (orient === "white") ? "top:0" : "bottom:0"}` });
+      const done = (p) => { pickEl.remove(); removeEventListener("keydown", onKey); promoClose = null; resolve(p); };
+      for (const p of ["q", "n", "r", "b"]) {
+        const img = h("img", { alt: t("piece." + p) });
+        loadSet(s.pieceSet).then((imgs) => { img.src = imgs[color + p].src; });
+        pickEl.append(h("button", { type: "button", "data-test": "promo-" + p, "aria-label": t("piece." + p), onclick: () => done(p) }, img));
+      }
+      const onKey = (e) => { if (e.key === "Escape") done(null); };
+      addEventListener("keydown", onKey);
+      promoClose = done;
+      boardEl.append(pickEl);
+      pickEl.querySelector("button").focus();
+    });
+  }
+
+  // --- the bar --------------------------------------------------------------------------
+  const btn = (id, label, onclick, cls = "") => h("button", { type: "button", "data-test": id, class: cls, onclick }, label);
+  const barModel = computed(() => {
+    const g = game.value, f = fen.value, m = mode.value, rv = review.state.value;
+    if (!g) return { phase: "idle", text: "…", actions: [] };
+    const human = humanOf(g);
+    const oppName = g.mode === "engine" ? t("opp." + (g.opponent || DEFAULT_OPPONENT)) : "";
+    const moves = btn("moves", t("act.moves"), toggleDrawer, "quiet");
+    const fresh = btn("new", t("act.new"), newGame, "quiet");
+    if (rv.phase !== "idle" && m !== "result") return reviewBar(rv, g, moves, fresh);
+    if (m === "result" || g.result) {
+      return { phase: "result", text: resultText(g), tone: "moment", actions: [moves, fresh] };
+    }
+    if (viewAt.value != null) {
+      return { phase: "viewing", text: t("bar.viewing", viewAt.value), actions: [btn("live", t("bar.live"), () => { viewAt.value = null; }, "primary"), moves] };
+    }
+    if (m === "checking") return { phase: "checking", text: t("coach.checking"), actions: [] };
+    if (m === "coach") {
+      return { phase: "coach", text: t("coach.ask"), tone: "coach", actions: [
+        btn("rethink", t("coach.rethink"), () => coachAnswer(false), "primary"), btn("play-anyway", t("coach.play"), () => coachAnswer(true))] };
+    }
+    if (m === "confirm-resign") {
+      return { phase: "confirm", text: t("confirm.resign"), actions: [
+        btn("confirm", t("act.confirmResign"), resign, "danger"), btn("cancel", t("act.cancel"), () => { mode.value = "play"; })] };
+    }
+    if (m === "confirm-draw" || m === "confirm-claim") {
+      const claim = m === "confirm-claim" ? claimable(selectFens(store.state.value)) : null;
+      return { phase: "confirm", text: claim ? t("confirm.claim", t("claim." + claim)) : t("confirm.draw"), actions: [
+        btn("confirm", claim ? t("act.claimDraw") : t("act.offerDraw"), confirmDraw, "primary"), btn("cancel", t("act.cancel"), () => { mode.value = "play"; })] };
+    }
+    const n = note.value;
+    const mine = yourTurn(g, f);
+    const text = n ? n.text : m === "draw-wait" ? t("draw.thinking", oppName) : !mine && g.mode === "engine" ? t("bar.theirTurn", oppName)
+      : g.mode === "pvp" ? t("bar.toMove", t("side." + turnOf(f))) : new Chess(f).in_check() ? t("bar.check") : t("bar.yourTurn");
+    const hintLabel = hint.value.fen === f && hint.value.level > 0 && hint.value.level < 4 ? t("act.hintMore") : t("act.hint");
+    const hintBtn = btn("hint", hintLabel, nextHint, "");
+    hintBtn.disabled = !mine || hint.value.fen === f && hint.value.level >= 4;
+    return { phase: "play", text, tone: n ? n.tone : null, actions: [hintBtn,
+      btn("draw", t("act.draw"), offerDraw, "quiet"), btn("resign", t("act.resign"), () => { mode.value = "confirm-resign"; }, "quiet"), moves, fresh] };
+  });
+
+  function reviewBar(rv, g, moves, fresh) {
+    const report = btn("report", t("rv.report"), () => { if (!drawer.open) toggleDrawer(); }, "quiet");
+    if (rv.phase === "running") return { phase: "review-running", text: t("rv.running", rv.done, rv.total), actions: [moves, fresh] };
+    if (rv.phase === "failed") return { phase: "review-failed", text: t("rv.noEngine", rv.error), actions: [moves, fresh] };
+    if (rv.phase === "empty") return { phase: "review-empty", text: resultText(g) + " · " + t("rv.clean"), actions: [report, fresh] };
+    if (rv.phase === "done") return { phase: "review-done", text: resultText(g) + " · " + t("rv.done"), actions: [report, btn("new", t("act.new"), newGame, "primary")] };
+    // a card
+    const last = rv.k + 1 >= rv.count;
+    const text = rv.note || review.headline() + " " + t("rv.tryAgain");
+    const next = btn("rv-next", last ? t("rv.finish") : t("rv.next"), () => review.next(), rv.solved || rv.shown ? "primary" : "quiet");
+    const actions = rv.solved || rv.shown ? [next, report] : [btn("rv-answer", t("rv.answer"), () => review.answer(), "primary"), next, report];
+    return { phase: "review-card", text, tone: rv.tone, count: t("rv.cardOf", rv.k + 1, rv.count), actions };
+  }
+
+  function resultText(g) {
+    const r = g.result;
+    if (!r) return "";
+    const human = humanOf(g);
+    const head = r.result === "1/2-1/2" ? t("res.draw") : !human ? t(r.result === "1-0" ? "res.white" : "res.black")
+      : (r.result === "1-0") === (human === "w") ? t("res.win") : t("res.loss");
+    return head + " · " + t("reason." + r.reason);
+  }
 
   const stops = [];
+  stops.push(effect(() => {
+    const b = barModel.value;
+    bar.dataset.phase = b.phase;
+    bar.dataset.tone = b.tone || "";
+    barText.replaceChildren(b.count ? h("span", { class: "bar-count", text: b.count }) : "", b.text);
+    barActions.replaceChildren(...b.actions);
+  }));
+
+  // --- the board ----------------------------------------------------------------------------
   stops.push(effect(() => {
     const s = settings.value;
     board.set({ pieceSet: s.pieceSet, theme: s.boardTheme });
   }));
 
-  stops.push(effect(() => {
-    const g = game.value;
-    const f = fen.value;
-    const human = g && g.mode === "engine" ? (g.engineColor === "w" ? "black" : "white") : null;
-    const orientation = (human === "black") !== flipped.value ? "black" : "white";
-    const movable = !g || g.result ? "none" : human || "both";
-    board.set({ fen: f, lastMove: lastMove.value, movable, orientation });
-
-    const turn = turnOf(f);
-    status.textContent = !g ? "…" :
-      g.result ? g.result.result + " · " + (REASON[g.result.reason] || g.result.reason) :
-      (thinking.value ? "电脑思考中…" : SIDE[turn] + "走棋");
-  }));
-
-  // the move list grows by one row per move; rebuilt only on undo or a new game
-  let shown = [], shownId = null;
-  stops.push(effect(() => {
-    const g = game.value;
-    const moves = g ? g.moves : [];
-    const append = g && g.id === shownId && moves.length >= shown.length && shown.every((m, i) => m === moves[i]);
-    if (!append) list.replaceChildren();
-    for (let i = append ? shown.length : 0; i < moves.length; i++) {
-      list.append(h("li", { "data-ply": i }, (i % 2 === 0 ? (i / 2 + 1) + ". " : "") + moves[i].san));
+  const view = computed(() => {
+    const g = game.value, f = fen.value;
+    const human = humanOf(g);
+    const orientation = human === "b" ? "black" : "white";
+    const rb = review.board.value;
+    if (rb) return { ...rb, marks: [] };
+    const p = pending.value;
+    if (p) return { fen: p.fen, lastMove: p.lastMove, movable: "none", orientation, arrows: [], marks: [] };
+    const at = viewAt.value;
+    if (at != null && g) {
+      const fens = selectFens(store.state.value);
+      const m = g.moves[at - 1];
+      return { fen: fens[at], lastMove: m ? { from: m.uci.slice(0, 2), to: m.uci.slice(2, 4) } : null, movable: "none", orientation,
+        arrows: [], marks: [], evalAt: review.data ? review.scalarAt(at) : undefined };
     }
-    shown = moves; shownId = g && g.id;
+    const hv = hint.value.fen === f ? hint.value : null;
+    const movable = !g || g.result || mode.value !== "play" && mode.value !== "draw-wait" ? "none" : human ? COLOR[human] : "both";
+    return { fen: f, lastMove: lastMove.value, movable, orientation, arrows: hv ? hv.arrows : [], marks: hv ? hv.marks : [] };
+  });
+  stops.push(effect(() => {
+    const v = view.value;
+    board.set({ fen: v.fen, lastMove: v.lastMove, movable: v.movable, orientation: v.orientation, arrows: v.arrows, marks: v.marks });
+    // the evaluation only once the game is over (v20-0-plan §3 P4)
+    const showEval = v.evalAt != null && !!game.value && !!game.value.result;
+    evalBar.hidden = !showEval;
+    if (showEval) {
+      const w = winPct(v.evalAt);
+      evalFill.style.height = (v.orientation === "black" ? 100 - w : w).toFixed(1) + "%";
+      evalBar.dataset.side = v.orientation;
+    }
+    untrack(() => drawer.setCursor(viewAt.value ?? (review.board.value ? null : fensNow().length - 1)));
   }));
 
-  // the engine answers when it is its turn; a reply for a position no longer
-  // on the board is dropped
+  // the drawer's rows: one appended per move; the report's marks once the review has them
+  stops.push(effect(() => {
+    const g = game.value;
+    drawer.setMoves(g ? g.moves : [], g && g.id);
+  }));
+  stops.push(effect(() => {
+    const rv = review.state.value, g = game.value;
+    const has = rv.phase === "card" || rv.phase === "done" || rv.phase === "empty";
+    untrack(() => drawer.setReport(has ? review.report() : null, g && (humanOf(g) || null)));
+  }));
+
+  // --- names and clocks ----------------------------------------------------------------------
+  stops.push(effect(() => {
+    const g = game.value;
+    if (!g) return;
+    const human = humanOf(g);
+    const bottomColor = human || "w";
+    const opp = g.mode === "engine" ? opponentById(g.opponent) : null;
+    top.name.textContent = g.mode === "engine" ? t("opp." + opp.id) + " · " + opp.rating : t("side." + other(bottomColor));
+    bottom.name.textContent = g.mode === "engine" ? t("side.you") : t("side." + bottomColor);
+    top.el.dataset.color = other(bottomColor);
+    bottom.el.dataset.color = bottomColor;
+  }));
+  let tick = null;
+  function drawClocks() {
+    const g = store.get().play.game;
+    if (!g || !g.clock) { top.clock.textContent = bottom.clock.textContent = ""; return; }
+    const now = Date.now();
+    const bottomColor = humanOf(g) || "w";
+    for (const [s, c] of [[bottom, bottomColor], [top, other(bottomColor)]]) {
+      const ms = left(g.clock, c, now);
+      const txt = format(ms);
+      if (s.clock.textContent !== txt) s.clock.textContent = txt;
+      s.clock.classList.toggle("running", g.clock.since != null && g.clock.turn === c && !g.result);
+      s.clock.classList.toggle("low", ms < 20000);
+    }
+    if (!g.result && g.clock.since != null && left(g.clock, g.clock.turn, now) <= 0) {
+      store.dispatch("play.flag", { color: g.clock.turn, now });
+    }
+  }
+  stops.push(effect(() => {
+    const g = game.value;
+    untrack(drawClocks);
+    const running = !!(g && g.clock && !g.result);
+    if (running && !tick) tick = setInterval(drawClocks, 100);
+    if (!running && tick) { clearInterval(tick); tick = null; }
+  }));
+
+  // --- the engine's moves --------------------------------------------------------------------
   stops.push(effect(() => {
     const g = game.value, f = fen.value;
-    if (!g || g.mode !== "engine" || g.result || turnOf(f) !== g.engineColor) return;
+    if (!g || g.mode !== "engine" || g.result || turnOf(f) !== g.engineColor || pending.value) return;
     untrack(() => { thinking.value = true; });
     let live = true;
-    engine.bestMove(f, { rating: 1500, thinkMs: 300 }).then(({ move }) => {
+    const prof = opponentById(g.opponent);
+    const [lo, hi] = prof.thinkMs || [300, 300];
+    const legal = new Chess(f).moves().length;
+    let target = g.moves.length < 16 ? lo : lo + (hi - lo) * Math.min(1, legal / 40);
+    if (g.clock) target = Math.min(target, left(g.clock, g.engineColor, Date.now()) / 30);
+    target *= thinkScale;
+    const t0 = Date.now();
+    engine.bestMove(f, { id: prof.id, rating: prof.rating, thinkMs: Math.max(50, Math.min(target, 1500)) }).then(({ move }) => {
       if (!live || selectFen(store.get()) !== f || !move) return;
-      store.dispatch("play.move", { uci: move });
-    }).catch((e) => console.warn("engine:", e.message)).finally(() => { if (live) thinking.value = false; });
-    return () => { live = false; thinking.value = false; };
+      const wait = Math.max(0, target - (Date.now() - t0));
+      const play = () => {
+        if (!live || selectFen(store.get()) !== f || store.get().play.game.result) return;
+        untrack(() => { thinking.value = false; });
+        commit(move);
+      };
+      if (wait > 5) later(wait, play); else play();
+    }).catch((e) => console.warn("engine:", e.message));
+    return () => { live = false; untrack(() => { thinking.value = false; }); };
   }));
 
-  ready.then(() => { if (!store.get().play.game) newGame("pvp"); });
+  // --- the end, once; then the review --------------------------------------------------------
+  // A game that ends here gets its moment (a sound, the result in the bar)
+  // and then the review; one that comes back finished from the db goes
+  // straight to its stored review.
+  const openReview = (g) => review.open(g, { orientation: humanOf(g) === "b" ? "black" : "white", sides: humanOf(g) ? [humanOf(g)] : ["w", "b"] });
+  function moment(g) {
+    const human = humanOf(g);
+    sound.play(g.result.result === "1/2-1/2" ? "draw" : !human || (g.result.result === "1-0") === (human === "w") ? "win" : "loss");
+    batch(() => { mode.value = "result"; pending.value = null; note.value = null; viewAt.value = null; });
+    later(RESULT_MS, () => {
+      if (store.get().play.game !== g) return;
+      mode.value = "play";
+      openReview(g);
+    });
+  }
+  stops.push(store.subscribe(({ name, prev, next }) => {
+    const g = next.play.game, was = prev.play.game;
+    if (!g || !g.result || (was && was.id === g.id && was.result)) return;
+    if (name === "play.restore") openReview(g); else moment(g);
+  }));
+  if (game.peek() && game.peek().result) openReview(game.peek());
 
-  return () => { stops.forEach((s) => s()); board.destroy(); };
+  // keys: ← → walk the moves when nothing else has the keyboard
+  function onKey(e) {
+    if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+    if (e.key === "ArrowLeft" && document.activeElement !== board.canvas) { step(-1); e.preventDefault(); }
+    else if (e.key === "ArrowRight" && document.activeElement !== board.canvas) { step(1); e.preventDefault(); }
+  }
+  addEventListener("keydown", onKey);
+
+  ready.then(() => {
+    const g = store.get().play.game;
+    if (!g) return;
+    store.dispatch("play.resume", { now: Date.now() });
+  });
+
+  // for the e2e and the console
+  window.__play = { board, review, sound, get mode() { return mode.peek(); }, hint, pending };
+
+  return () => {
+    stops.forEach((s) => s());
+    timers.forEach(clearTimeout);
+    if (tick) clearInterval(tick);
+    removeEventListener("keydown", onKey);
+    if (closeSheet) closeSheet();
+    review.close();
+    sound.close();
+    board.destroy();
+  };
 }

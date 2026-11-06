@@ -12,7 +12,8 @@ import { createRouter } from "./lib/router.js";
 import { effect, signal } from "./lib/signal.js";
 import { createStore } from "./state/store.js";
 import { playActions, initialPlay } from "./state/play.js";
-import { settingsActions, SETTINGS_DEFAULT, shellFor } from "./state/settings.js";
+import { settingsActions, SETTINGS_DEFAULT, shellFor, coachOn } from "./state/settings.js";
+import { DEFAULT_OPPONENT } from "./core/opponents.js";
 import { persist, restore } from "./state/persist.js";
 import { createDb, idbBackend, memoryBackend, newId } from "./services/db.js";
 import { createEngineService, fakeBackend, stockfishBackend } from "./services/engine.js";
@@ -28,7 +29,8 @@ const engine = createEngineService(engineName.startsWith("maia3") ? maia3Backend
 const ready = createDb(params.get("db") === "memory" ? memoryBackend() : idbBackend(params.get("dbname") || "chessboard"))
   .then(async (db) => {
     persist(store, db);
-    await restore(store, db, newId);
+    // a first run: a game against the default opponent, White, no clock
+    await restore(store, db, newId, (s) => ({ mode: "engine", engineColor: "b", opponent: DEFAULT_OPPONENT, coach: coachOn(s) }));
     addEventListener("pagehide", () => db.flush());
     return db;
   });
