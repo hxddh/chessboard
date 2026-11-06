@@ -43,12 +43,12 @@ const browser = await launchChromium();
 const errors = [];
 const report = {};
 
-async function open(query = "", { w = 1440, h = 900, ctxOpts = {}, engine = "fake" } = {}) {
+async function open(query = "", { w = 1440, h = 900, ctxOpts = {}, engine = "fake", think = 0 } = {}) {
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, ...ctxOpts });
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
-  await page.goto(BASE + "?think=0" + (engine === "fake" ? "&engine=fake" : "") + query);
+  await page.goto(BASE + "?think=" + think + (engine === "fake" ? "&engine=fake" : "") + query);
   await page.waitForSelector("[data-page=play] canvas");
   await page.waitForFunction(() => window.__app.store.get().play.game && window.__play);
   return { ctx, page };
@@ -61,11 +61,16 @@ const bar = (page) => page.$eval("[data-test=bar]", (e) => ({ phase: e.dataset.p
 const waitPhase = (page, phase, timeout = 8000) => page.waitForFunction((p) => document.querySelector("[data-test=bar]")?.dataset.phase === p, phase, { timeout });
 /** A new game straight into the store, the way the sheet makes one. */
 const newGame = (page, o) => page.evaluate((o) => {
-  window.__app.store.dispatch("play.new", { id: "g" + Math.random().toString(36).slice(2), mode: "engine", engineColor: "b", opponent: "lin", ...o });
+  window.__app.store.dispatch("play.new", { id: "g" + Math.random().toString(36).slice(2), mode: "engine", engineColor: "b", opponent: "ada", ...o });
 }, o);
 const controls = (page) => page.$$eval("[data-page=play] :is(button, select, input, a, canvas, [tabindex]):not([hidden] *)", (els) =>
   els.filter((e) => e.offsetParent !== null && !e.closest("[hidden]")).map((e) => e.dataset.test || e.tagName.toLowerCase()));
 
+/** Step the sheet's opponent card (‹ ›) to `id`. */
+async function pickOpponent(page, id) {
+  for (let i = 0; i < 20 && !(await page.$eval("[data-test=opp-prev]", (b) => b.disabled)); i++) await page.click("[data-test=opp-prev]");
+  for (let i = 0; i < 20 && (await page.$eval("[data-test=opp-card]", (c) => c.dataset.id)) !== id; i++) await page.click("[data-test=opp-next]");
+}
 async function centre(page, sq) {
   return page.evaluate((sq) => window.__play.board.squareCenter(sq), sq);
 }
@@ -81,7 +86,7 @@ async function drag(page, from, to) {
 /** A game played straight into the store (and so into the db), move by move. */
 const playLine = (page, o, ucis, resign) => page.evaluate(([o, ucis, resign]) => {
   const st = window.__app.store;
-  st.dispatch("play.new", { mode: "engine", engineColor: "b", opponent: "lin", ...o });
+  st.dispatch("play.new", { mode: "engine", engineColor: "b", opponent: "ada", ...o });
   for (const uci of ucis) st.dispatch("play.move", { uci, now: Date.now() });
   if (resign) st.dispatch("play.resign", { color: resign, now: Date.now() });
 }, [o, ucis, resign]);
@@ -106,7 +111,10 @@ const sansToUci = (sans, fen) => { const g = new Chess(fen); return sans.map((s)
   assert(c3 <= 12, "the new-game sheet has ≤ 12 controls (" + c3 + ")");
   await shot(page, "new-game-sheet");
   // vera, Black, 3+2
-  await page.click("[data-test=opp-vera]");
+  await pickOpponent(page, "vera");
+  assert(/^薇拉$/.test(await page.textContent("[data-test=opp-name]")) && /\d/.test(await page.textContent("[data-test=opp-rating]")) &&
+    (await page.textContent("[data-test=opp-note]")).length > 4 && await page.$("[data-test=opp-card] .portrait svg"),
+    "the sheet shows one opponent at a time: face, name, rating, a line of character");
   await page.click("[data-test=color-b]");
   await page.selectOption("[data-test=clock]", "3+2");
   await page.click("[data-test=start]");
@@ -355,6 +363,45 @@ const REVIEW_GAME = "e4 e5 Nf3 Nc6 Nd4 exd4 Ba6 bxa6 d3 Nf6".split(" ");   // 3.
   await waitPhase(page, "review-card", 10000);
   const st2 = await page.evaluate(() => ({ fen: window.__play.board.state().fen, f0: window.__play.review.data.fens[window.__play.review.data.moments[0].ply] }));
   assert(st2.fen === st2.f0, "a review left on a card comes back on its first card (B1 + B3)");
+  await ctx.close();
+}
+
+// --- P1 the opponent: a quiet 在想, its lines, resigning a hopeless game ------------------------
+{
+  // the human pace on (?think=1): the fake engine answers at once, the page holds the reply for the think time
+  const { ctx, page } = await open("&db=memory", { think: 1 });
+  await newGame(page, { opponent: "pip" });
+  await page.waitForSelector("[data-test=opp-line]:not([hidden])", { timeout: 3000 });
+  const hello = await page.textContent("[data-test=opp-line]");
+  assert(/^皮普：/.test(hello), "the opponent greets you when the game starts (" + hello + ")");
+  assert(await page.$eval("[data-test=thinking]", (e) => e.hidden), "no 在想 while it is your move");
+  await clickMove(page, "e2e4");
+  const seen = await page.waitForSelector("[data-test=thinking]:not([hidden])", { timeout: 2000 }).then(() => true).catch(() => false);
+  const t0 = Date.now();
+  const barWhile = (await bar(page)).text;
+  assert(seen && /在想/.test(await page.textContent("[data-test=thinking]")) && /皮普在想/.test(barWhile), "while it thinks, its strip shows a quiet 在想 (" + barWhile + ")");
+  await page.waitForFunction(() => window.__app.store.get().play.game.moves.length === 2, null, { timeout: 8000 });
+  const took = Date.now() - t0;
+  assert(took >= 400 && await page.$eval("[data-test=thinking]", (e) => e.hidden), "it replies after a human pause (" + took + " ms), and 在想 goes");
+  await shot(page, "opponent-thinking");
+  await ctx.close();
+}
+{
+  // a queen and two rooks down: 马克斯 resigns (two hopeless looks running); its line says so
+  const { ctx, page } = await open("&db=memory");
+  await newGame(page, { opponent: "max", startFen: "4k3/8/8/8/8/8/8/RR1QK3 w - - 0 40" });
+  for (const uci of ["a1a2", "a2a3", "a3a4"]) {
+    const g = await game(page);
+    if (g.result) break;
+    await page.waitForFunction(() => { const g = window.__app.store.get().play.game; return g.result || g.moves.length % 2 === 0; }, null, { timeout: 5000 });
+    if ((await game(page)).result) break;
+    await page.evaluate((u) => window.__app.store.dispatch("play.move", { uci: u, now: Date.now() }), uci);
+  }
+  await page.waitForFunction(() => window.__app.store.get().play.game.result, null, { timeout: 8000 }).catch(() => {});
+  const g = await game(page);
+  const line = await page.textContent("[data-test=opp-line]");
+  assert(g.result && g.result.reason === "resign" && g.result.result === "1-0", "the opponent resigns a hopeless position (" + JSON.stringify(g.result) + ", " + g.moves.length + " plies)");
+  assert(/^马克斯：.*(赢|认输)/.test(line), "with its one line at the end (" + line + ")");
   await ctx.close();
 }
 

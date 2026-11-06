@@ -122,10 +122,42 @@ select { background: var(--btn-lift); border: 1px solid var(--btn-edge); border-
 }
 .sheet header { display: flex; align-items: center; justify-content: space-between; }
 .sheet h2 { margin: 0; font-family: var(--font-title); font-weight: 600; font-size: 1.25rem; }
-.opps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
-.play .opp { height: auto; padding: 8px 4px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.opp small { color: var(--muted); font-size: .75rem; }
-.play .opp[aria-pressed="true"], .play .seg button[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+/* the opponent: one person at a time, ‹ › along the ladder */
+.opps { display: flex; align-items: stretch; gap: 4px; }
+.play .opps .step { height: auto; width: 32px; padding: 0; font-size: 1.5rem; line-height: 1; }
+.opp-card {
+  flex: 1; display: flex; gap: 12px; align-items: center; padding: 10px 12px; min-height: 92px;
+  background: var(--card); border: 1px solid var(--card-edge); border-radius: var(--radius-md);
+  transition: opacity var(--dur-quick) var(--ease);
+}
+.opp-card.off { opacity: .4; }
+.opp-face .portrait { width: 56px; height: 56px; }
+.opp-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.opp-head { display: flex; align-items: baseline; gap: 8px; }
+.opp-head small { color: var(--muted); font-variant-numeric: tabular-nums; }
+.opp-note { color: var(--muted); font-size: .875rem; line-height: var(--lh-tight); }
+.opp-dots { display: flex; gap: 3px; margin-top: 3px; }
+.opp-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--line); }
+.opp-dots i.on { background: var(--accent); }
+.portrait { display: inline-block; flex: none; border-radius: 50%; overflow: hidden; }
+.portrait svg { display: block; width: 100%; height: 100%; }
+.portrait.small { width: 24px; height: 24px; }
+.play .seg button[aria-pressed="true"], .play .friend[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+
+/* the opponent's strip: a face, a quiet 在想 while it thinks, its line */
+.strip-id { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.thinking { display: inline-flex; align-items: center; gap: 3px; color: var(--muted); font-size: .8125rem; }
+.thinking[hidden] { display: none; }
+.thinking i { width: 3px; height: 3px; border-radius: 50%; background: currentColor; animation: think 1.4s var(--ease) infinite; }
+.thinking i:nth-of-type(2) { animation-delay: .2s; }
+.thinking i:nth-of-type(3) { animation-delay: .4s; }
+@keyframes think { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .thinking i { animation: none; opacity: .6; } }
+.say {
+  flex: 1; margin: 0 12px; color: var(--muted); font-size: .875rem; text-align: right;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; animation: moment var(--dur-slow, 400ms) var(--ease) 1;
+}
+.say[hidden] { display: none; }
 .sheet-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .sheet-row > span { color: var(--muted); }
 .seg { display: flex; gap: 4px; }

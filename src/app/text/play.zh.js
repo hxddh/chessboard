@@ -1,8 +1,7 @@
 /** 下 — the play screen and the review on the board, in Chinese. Keys are semantic; {0} {1} are arguments. */
 export default {
-  // opponents (core/opponents.js ids)
-  "opp.pip": "皮普", "opp.lin": "小林", "opp.vera": "薇拉", "opp.max": "马克斯", "opp.friend": "朋友",
-  "opp.friend.note": "两个人，一块棋盘",
+  // opponents: names and lines are opponents/lines.zh.js
+  "opp.thinking": "在想", "new.weaker": "弱一点的对手", "new.stronger": "强一点的对手",
   "side.you": "你", "side.w": "白方", "side.b": "黑方",
 
   // the context bar while playing

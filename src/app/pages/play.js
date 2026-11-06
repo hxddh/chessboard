@@ -24,6 +24,9 @@ import { turnOf, applyMove, claimable, parseUci } from "../core/rules.js";
 import { Chess } from "../core/chess.js";
 import { left, format } from "../core/clock.js";
 import { opponentById, coachBudget, DEFAULT_OPPONENT } from "../core/opponents.js";
+import { acceptsDraw, ownOf, surprised } from "../opponents/mind.js";
+import { oppText, sayLine } from "../opponents/lines.js";
+import { portrait } from "../opponents/portraits.js";
 import { dangerAfter, shouldAsk, threatNow, checksAndCaptures } from "../core/coach.js";
 import { explainMistake, lineMotif, sanText } from "../core/explain.js";
 import { sansOf } from "../core/pass.js";
@@ -39,7 +42,8 @@ const COLOR = { w: "white", b: "black" };
 const other = (c) => (c === "w" ? "b" : "w");
 /** The side "you" play: the one the engine does not; null when two people share the board. */
 const humanOf = (g) => (g && g.mode === "engine" ? other(g.engineColor) : null);
-const COACH_MS = 150, HINT_MS = 400, RESULT_MS = 1600;
+const COACH_MS = 150, HINT_MS = 400, RESULT_MS = 1600, SAY_MS = 7000;
+const oppName = (g) => (g && g.mode === "engine" ? oppText(opponentById(g.opponent).id, "name") : "");
 
 /** One move apart (a castle with a capture changes four squares): slide; further, the board just changes. */
 function nearby(a, b) {
@@ -70,6 +74,10 @@ export function mount(el, { store, engine, ready }) {
   const viewAt = signal(null);        // a position index being looked at; null: the live one
   const pending = signal(null);       // the move the coach holds: { uci, san, fen, lastMove, rule }
   const thinking = signal(false);
+  const said = signal(null);          // the opponent's line on screen: { text, key }
+  /** per game: the opponent's looks (opponents/mind.js), which of its ≤ 3 lines it has said */
+  const minds = new Map();
+  const mindOf = (g) => { let m = minds.get(g.id); if (!m) minds.set(g.id, m = { looks: [], said: new Set() }); return m; };
   const reportShown = signal(false);
   const asked = new Map();            // gameId → questions asked
   const timers = new Set();
@@ -80,8 +88,11 @@ export function mount(el, { store, engine, ready }) {
   const evalFill = h("div", { class: "eval-fill" });
   const evalBar = h("div", { class: "evalbar", "data-test": "evalbar", hidden: true, "aria-hidden": "true" }, evalFill);
   const strip = (pos) => {
-    const name = h("span", { class: "who" }), clock = h("span", { class: "clock", "data-test": "clock-" + pos });
-    return { el: h("div", { class: "strip " + pos }, name, clock), name, clock };
+    const face = h("span", { class: "strip-face" }), name = h("span", { class: "who" });
+    const clock = h("span", { class: "clock", "data-test": "clock-" + pos });
+    const think = h("span", { class: "thinking", "data-test": pos === "top" ? "thinking" : null, hidden: true }, t("opp.thinking"), h("i"), h("i"), h("i"));
+    const say = h("span", { class: "say", "data-test": pos === "top" ? "opp-line" : null, hidden: true });
+    return { el: h("div", { class: "strip " + pos }, h("span", { class: "strip-id" }, face, name, think), say, clock), name, clock, face, think, say };
   };
   const top = strip("top"), bottom = strip("bottom");
   const barText = h("p", { class: "bar-text", "data-test": "bar-text", "aria-live": "polite" });
@@ -244,12 +255,12 @@ export function mount(el, { store, engine, ready }) {
     try { a = (await engine.analyse(f, { lines: 1, budget: { ms: 200 } })).lines[0]; } catch { a = null; }
     const cur = game.peek();
     if (!cur || cur.id !== g.id || cur.result) return;
-    const s = a ? scalarOf(a.score) : 0;
-    const forEngine = g.engineColor === "w" ? s : -s;
-    if (forEngine <= -150 || (cur.moves.length >= 60 && Math.abs(forEngine) <= 30)) {
+    // its own look, from its side: it takes the draw when it is worse, by its character (core/opponents.js)
+    const own = a ? (turnOf(f) === g.engineColor ? 1 : -1) * ownOf(a.score, f) : 0;
+    if (acceptsDraw(opponentById(g.opponent), own, cur.moves.length)) {
       store.dispatch("play.draw", { reason: "agreement", now: Date.now() });
     } else {
-      batch(() => { mode.value = "play"; note.value = { text: t("draw.declined", t("opp." + g.opponent)), tone: null }; });
+      batch(() => { mode.value = "play"; note.value = { text: t("draw.declined", oppName(g)), tone: null }; });
     }
   }
   function resign() {
@@ -275,7 +286,7 @@ export function mount(el, { store, engine, ready }) {
         const color = c.color === "random" ? (Math.random() < 0.5 ? "w" : "b") : c.color;
         const friend = c.opponent === "friend";
         review.close();
-        batch(() => { mode.value = "play"; note.value = null; viewAt.value = null; pending.value = null; reportShown.value = false; });
+        batch(() => { mode.value = "play"; note.value = null; viewAt.value = null; pending.value = null; reportShown.value = false; said.value = null; });
         store.dispatch("play.new", { id: newId(), mode: friend ? "pvp" : "engine", engineColor: friend ? null : other(color),
           opponent: friend ? null : c.opponent, tc: c.tc === "none" ? null : c.tc, coach: !friend && c.coach });
         sound.play("start");
@@ -343,7 +354,7 @@ export function mount(el, { store, engine, ready }) {
     const g = game.value, f = fen.value, m = mode.value, rv = review.state.value;
     if (!g) return { phase: "idle", text: "…", actions: [] };
     const human = humanOf(g);
-    const oppName = g.mode === "engine" ? t("opp." + (g.opponent || DEFAULT_OPPONENT)) : "";
+    const opp = oppName(g);
     const moves = btn("moves", t("act.moves"), toggleDrawer, "quiet");
     const fresh = btn("new", t("act.new"), newGame, "quiet");
     if (rv.phase !== "idle" && m !== "result") return reviewBar(rv, g, moves, fresh);
@@ -369,7 +380,7 @@ export function mount(el, { store, engine, ready }) {
     }
     const n = note.value;
     const mine = yourTurn(g, f);
-    const text = n ? n.text : m === "draw-wait" ? t("draw.thinking", oppName) : !mine && g.mode === "engine" ? t("bar.theirTurn", oppName)
+    const text = n ? n.text : m === "draw-wait" ? t("draw.thinking", opp) : !mine && g.mode === "engine" ? t("bar.theirTurn", opp)
       : g.mode === "pvp" ? t("bar.toMove", t("side." + turnOf(f))) : new Chess(f).in_check() ? t("bar.check") : t("bar.yourTurn");
     const hintLabel = hint.value.fen === f && hint.value.level > 0 && hint.value.level < 4 ? t("act.hintMore") : t("act.hint");
     const hintBtn = btn("hint", hintLabel, nextHint, "");
@@ -470,7 +481,8 @@ export function mount(el, { store, engine, ready }) {
     const human = humanOf(g);
     const bottomColor = human || "w";
     const opp = g.mode === "engine" ? opponentById(g.opponent) : null;
-    top.name.textContent = g.mode === "engine" ? t("opp." + opp.id) + " · " + opp.rating : t("side." + other(bottomColor));
+    top.name.textContent = opp ? oppText(opp.id, "name") + " · " + opp.rating : t("side." + other(bottomColor));
+    top.face.replaceChildren(...(opp ? [portrait(opp.id, "portrait small")] : []));
     bottom.name.textContent = g.mode === "engine" ? t("side.you") : t("side." + bottomColor);
     top.el.dataset.color = other(bottomColor);
     bottom.el.dataset.color = bottomColor;
@@ -500,30 +512,65 @@ export function mount(el, { store, engine, ready }) {
     if (!running && tick) { clearInterval(tick); tick = null; }
   }));
 
-  // --- the engine's moves --------------------------------------------------------------------
+  // --- the opponent's moves ----------------------------------------------------------------
+  // engine.bestMove plays the profile's whole turn (opponents/mind.js): the
+  // move, how long a person would think over it, its look, a resignation.
+  // The page shows the thinking, waits the rest of the think time, and says
+  // at most three lines a game: hello, one reaction, the result.
+  function say(g, key) {
+    const m = mindOf(g);
+    const end = (k) => k !== "hello" && k !== "react";
+    if (m.said.has(key) || (end(key) && [...m.said].some(end))) return;
+    const text = sayLine(opponentById(g.opponent).id, key);
+    if (!text) return;
+    m.said.add(key);
+    said.value = { text, key };
+    if (key === "hello" || key === "react") later(SAY_MS, () => { if (said.peek() && said.peek().text === text) said.value = null; });
+  }
   stops.push(effect(() => {
     const g = game.value, f = fen.value;
     if (!g || g.mode !== "engine" || g.result || turnOf(f) !== g.engineColor || pending.value) return;
     untrack(() => { thinking.value = true; });
     let live = true;
     const prof = opponentById(g.opponent);
-    const [lo, hi] = prof.thinkMs || [300, 300];
-    const legal = new Chess(f).moves().length;
-    let target = g.moves.length < 16 ? lo : lo + (hi - lo) * Math.min(1, legal / 40);
-    if (g.clock) target = Math.min(target, left(g.clock, g.engineColor, Date.now()) / 30);
-    target *= thinkScale;
+    const mind = mindOf(g);
+    const fens = selectFens(store.get());
+    const ctx = { history: fens.slice(0, -1), looks: mind.looks.slice() };
+    if (g.clock) { ctx.clockMs = left(g.clock, g.engineColor, Date.now()); ctx.incMs = (g.clock.inc || 0); }
     const t0 = Date.now();
-    engine.bestMove(f, { id: prof.id, rating: prof.rating, thinkMs: Math.max(50, Math.min(target, 1500)) }).then(({ move }) => {
-      if (!live || selectFen(store.get()) !== f || !move) return;
-      const wait = Math.max(0, target - (Date.now() - t0));
+    engine.bestMove(f, prof, ctx).then((r) => {
+      if (!live || selectFen(store.get()) !== f) return;
+      const prev = mind.looks[mind.looks.length - 1];
+      if (Number.isFinite(r.look)) mind.looks.push(r.look);
+      const wait = Math.max(0, (r.thinkMs || 0) * thinkScale - (Date.now() - t0));
       const play = () => {
-        if (!live || selectFen(store.get()) !== f || store.get().play.game.result) return;
+        const cur = store.get().play.game;
+        if (!live || selectFen(store.get()) !== f || !cur || cur.result) return;
         untrack(() => { thinking.value = false; });
-        commit(move);
+        if (r.resign) { say(cur, "resign"); store.dispatch("play.resign", { color: cur.engineColor, now: Date.now() }); return; }
+        if (!r.move) return;
+        if (surprised(prev, r.look)) say(cur, "react");
+        commit(r.move);
       };
       if (wait > 5) later(wait, play); else play();
     }).catch((e) => console.warn("engine:", e.message));
     return () => { live = false; untrack(() => { thinking.value = false; }); };
+  }));
+  // a game that starts on your move still gets its hello
+  stops.push(effect(() => {
+    const g = game.value;
+    if (g && g.mode === "engine" && !g.result && !g.moves.length) untrack(() => say(g, "hello"));
+  }));
+  stops.push(effect(() => {
+    const on = thinking.value;
+    top.think.hidden = !on;
+    top.el.toggleAttribute("data-thinking", on);
+  }));
+  stops.push(effect(() => {
+    const s = said.value;
+    top.say.hidden = !s;
+    top.say.textContent = s ? s.text : "";
+    if (s) top.say.dataset.key = s.key;
   }));
 
   // --- the end, once; then the review --------------------------------------------------------
@@ -533,6 +580,11 @@ export function mount(el, { store, engine, ready }) {
   const openReview = (g) => review.open(g, { orientation: humanOf(g) === "b" ? "black" : "white", sides: humanOf(g) ? [humanOf(g)] : ["w", "b"] });
   function moment(g) {
     const human = humanOf(g);
+    if (human) {
+      // its one line at the end (none after its own resignation: that was the line)
+      const r = g.result.result;
+      say(g, r === "1/2-1/2" ? "drawn" : (r === "1-0") === (g.engineColor === "w") ? "won" : "lost");
+    }
     sound.play(g.result.result === "1/2-1/2" ? "draw" : !human || (g.result.result === "1-0") === (human === "w") ? "win" : "loss");
     batch(() => { mode.value = "result"; pending.value = null; note.value = null; viewAt.value = null; });
     later(RESULT_MS, () => {

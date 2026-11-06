@@ -2,9 +2,9 @@
  * Start-up: the store, the db, the engine, the router — and nothing else.
  *
  * URL switches for development and tests:
- *   ?engine=fake     the fake engine instead of Stockfish (&delay=ms: how long it "thinks")
- *   ?engine=maia3    opponents' moves from Maia-3 (a worker), analysis from Stockfish;
- *                    maia3-fake: the same with the fake engine doing the analysis
+ *   (default)        opponents' moves from Maia-3 (a worker), analysis from Stockfish
+ *   ?engine=fake     the fake engine alone (&delay=ms: how long it "thinks"); maia3-fake: Maia-3
+ *                    for the opponents, the fake engine for analysis; stockfish: Stockfish alone
  *   ?db=memory       nothing persists;  ?dbname=x   a separate IndexedDB
  * @module main
  */
@@ -24,7 +24,7 @@ const params = new URLSearchParams(location.search);
 const store = createStore({ play: initialPlay, settings: SETTINGS_DEFAULT }, { ...playActions, ...settingsActions });
 const engineName = params.get("engine") || "";
 const analyst = engineName.endsWith("fake") ? fakeBackend({ delayMs: Number(params.get("delay") ?? 30) }) : analystBackend(() => stockfishBackend());
-const engine = createEngineService(engineName.startsWith("maia3") ? maia3Backend({ analyst }) : analyst);
+const engine = createEngineService(engineName === "fake" || engineName === "stockfish" ? analyst : maia3Backend({ analyst }));
 
 // the db opens while the first page paints; pages that need it wait on `ready`
 // (in the app: the native SQLite store when the shell has it, services/native.js)

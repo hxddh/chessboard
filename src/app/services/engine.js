@@ -3,14 +3,15 @@
  * it knows which engine did the work.
  *
  *   analyse(fen, { lines, budget })  → { lines: [{ moves, score, depth }] }
- *   bestMove(fen, profile)           → { move, thinkMs }        (move null when the game is over)
+ *   bestMove(fen, profile, ctx)      → { move, thinkMs, … }    (move null when the game is over; a ladder
+ *                                                                 profile also gets look, resign, converting)
  *   humanMoves(fen, rating, history) → [{ move, p }]           (a distribution, p sums to 1; history: earlier FENs, oldest first)
  *   review(game, { onPly, budget })  → [{ ply, move, best, before, after, loss }]
  *   tablebase(fen)                   → null | { wdl }          (−2…2 for the side to move)
  *
  * Every score is White's: { cp } or { mate } (mate > 0: White mates). Moves are UCI.
  *
- * Backends implement `search(fen, { multipv, depth, movetime, elo })` returning
+ * Backends implement `search(fen, { multipv, depth, movetime, nodes, elo })` returning
  * lines from the side to move's point of view (as UCI does), plus optionally
  * `human(fen, rating, history)`, `pick(fen, profile)` (an opponent's move, when the
  * profile has a rating) and `tablebase(fen)`. Three today: a fake one for tests, the
@@ -19,6 +20,7 @@
  */
 import { Chess } from "../core/chess.js";
 import { applyMove, START_FEN } from "../core/rules.js";
+import { opponentMove } from "../opponents/mind.js";
 
 const sideToMove = (fen) => (String(fen).split(" ")[1] === "b" ? "b" : "w");
 
@@ -34,7 +36,7 @@ export function scoreCp(s) {
   return s.cp;
 }
 
-const budgetOpts = (budget = {}) => (budget.depth ? { depth: budget.depth } : { movetime: budget.ms || 1000 });
+const budgetOpts = (budget = {}) => (budget.depth ? { depth: budget.depth } : budget.nodes ? { nodes: budget.nodes } : { movetime: budget.ms || 1000 });
 
 export function createEngineService(backend) {
   const over = (fen) => new Chess(fen).moves().length === 0;
@@ -48,8 +50,14 @@ export function createEngineService(backend) {
     };
   }
 
-  async function bestMove(fen, profile = {}) {
+  /**
+   * A ladder profile (core/opponents.js, with `play`) gets the opponent's
+   * whole turn — move, think time, its look, resignation — from
+   * opponents/mind.js; `ctx` is the game so far ({ history, looks, plies, clockMs, incMs }).
+   */
+  async function bestMove(fen, profile = {}, ctx = {}) {
     if (over(fen)) return { move: null, thinkMs: 0 };
+    if (profile.play) return opponentMove({ analyse, humanMoves, search: (f, o) => backend.search(f, o) }, fen, profile, ctx);
     const t0 = Date.now();
     if (backend.pick && profile.rating) return { move: await backend.pick(fen, profile), thinkMs: Date.now() - t0 };
     const r = await backend.search(fen, { multipv: 1, ...budgetOpts(profile.budget || { ms: profile.thinkMs || 300 }), elo: profile.rating });
@@ -63,7 +71,8 @@ export function createEngineService(backend) {
     // without a human model: the engine's top moves, softened by a temperature
     // that grows as the rating falls
     const r = await backend.search(fen, { multipv: 5, movetime: 200 });
-    const temp = Math.max(30, (2600 - rating) / 6);
+    const self = typeof rating === "object" && rating ? rating.self ?? 1500 : rating;
+    const temp = Math.max(30, (2600 - self) / 6);
     const best = scoreCp(r.lines[0].score);
     const w = r.lines.map((l) => Math.exp((scoreCp(l.score) - best) / temp));
     const sum = w.reduce((a, b) => a + b, 0);
@@ -202,11 +211,11 @@ export function stockfishBackend({
   }
   const send = (cmd) => worker.postMessage(cmd);
 
-  function run(fen, { multipv = 1, depth, movetime = 1000, elo }) {
+  function run(fen, { multipv = 1, depth, movetime = 1000, nodes, elo }) {
     return new Promise((resolve, reject) => {
       const lines = new Map();
       const timer = setTimeout(() => { listener = null; send("stop"); reject(new Error("stockfish: no answer")); },
-        (depth ? 60000 : movetime) + 10000);
+        (depth || nodes ? 60000 : movetime) + 10000);
       listener = (l) => {
         const info = parseInfo(l);
         if (info) { lines.set(info.multipv, info); return; }
@@ -216,6 +225,8 @@ export function stockfishBackend({
           const out = [...lines.values()].sort((a, b) => a.multipv - b.multipv);
           const bm = l.split(" ")[1];
           if (!out.length && bm && bm !== "(none)") out.push({ multipv: 1, depth: 0, score: { cp: 0 }, pv: [bm] });
+          // UCI_LimitStrength plays its own (weakened) pick: `bestmove`, not the first line's best
+          if (want && bm && out[0] && out[0].pv[0] !== bm) out[0] = { ...out[0], pv: [bm] };
           resolve({ lines: out });
         }
       };
@@ -227,7 +238,7 @@ export function stockfishBackend({
       }
       send("setoption name MultiPV value " + multipv);
       send("position fen " + fen);
-      send(depth ? "go depth " + depth : "go movetime " + movetime);
+      send(depth ? "go depth " + depth : nodes ? "go nodes " + nodes : "go movetime " + movetime);
     });
   }
 
