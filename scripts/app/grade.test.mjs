@@ -10,7 +10,7 @@ import { ChessReviewGrade as G19 } from "../../src/web/js/review-grade.js";
 import { ChessReviewPass as P19 } from "../../src/web/js/review-pass.js";
 import * as W from "../../src/app/core/winpct.js";
 import * as G from "../../src/app/core/grade.js";
-import { runPass, engineAnalyze, evalScalar } from "../../src/app/core/pass.js";
+import { runPass, runProgressive, engineAnalyze, evalScalar, deeper } from "../../src/app/core/pass.js";
 import * as C from "../../src/app/core/clock.js";
 import { threatNow, dangerAfter, checksAndCaptures, shouldAsk } from "../../src/app/core/coach.js";
 import { createEngineService, fakeBackend } from "../../src/app/services/engine.js";
@@ -59,6 +59,32 @@ export default function (test) {
       a.ok(sel.every((m) => m.before >= G.DECIDED_LOW && m.after <= G.DECIDED_HIGH), "only while undecided");
     });
   }
+
+  for (const game of FIXED) {
+    test("progressive pass: the same grades and moments as runPass, the first card among them: " + game.name, async (a) => {
+      const fens = fensOf(game.san);
+      const analyze = engineAnalyze(createEngineService(fakeBackend()));
+      const whole = await runPass({ fens, sans: game.san, budget: 100, analyze });
+      let first = null;
+      const prog = await runProgressive({ fens, sans: game.san, scan: 25, budget: 100, analyze,
+        pick: (p, tried) => { const m = G.selectMoments(p, G.gradeMoves(p), ["w"]).find((x) => !tried.has(x.ply)); return m ? m.ply : null; },
+        confirmed: (p, ply) => G.selectMoments(p, G.gradeMoves(p), ["w"], Infinity).some((m) => m.ply === ply),
+        onFirst: (ply) => { first = ply; } });
+      for (const k of ["scalars", "bests", "pvs", "terminal"]) a.deepEqual(prog[k], whole[k], k);
+      a.deepEqual(G.gradeMoves(prog), G.gradeMoves(whole), "grades");
+      const sel = G.selectMoments(prog, G.gradeMoves(prog), ["w"]);
+      a.deepEqual(sel, G.selectMoments(whole, G.gradeMoves(whole), ["w"]), "moments");
+      a.ok(first == null ? sel.length === 0 : sel.some((m) => m.ply === first), "the first card is a final turning point (" + first + ")");
+    });
+  }
+
+  test("deeper: each kind of budget, three times", (a) => {
+    a.equal(deeper(200), 600);
+    a.deepEqual(deeper({ nodes: 1000 }), { nodes: 3000 });
+    a.deepEqual(deeper({ ms: 50 }), { ms: 150 });
+    a.deepEqual(deeper({ depth: 16 }), { depth: 18 });
+    a.deepEqual(deeper({ review: "normal" }), { review: "deep" });
+  });
 
   test("selectMoments: decided games are left alone, the largest swings kept", (a) => {
     // White: 50 → 20 (blunder, undecided), 10 → 0 (lost already), 95 → 90 (won stays won), 60 → 45, 55 → 30, 50 → 35

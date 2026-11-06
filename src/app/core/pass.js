@@ -106,10 +106,15 @@ function startPass(o) {
   }
   const quickMpv = Math.max(2, view), deepMpv = Math.max(DEEP_MULTIPV, view);
   /** Search position i at level 0 (scan), 1 (the budget) or 2 (deep). A failed search keeps what was there, except on the first look. */
+  // MultiPV per level: runPass's are 19.0's (2, then 3 deep); runProgressive's come in o.mpv
+  const mpvAt = o.mpv ? (lv) => Math.max(lv === 1 ? 1 : 2, view, o.mpv[lv]) : (lv) => (lv === 2 ? deepMpv : quickMpv);
   const at = async (i, level, b) => {
-    const e = await search(i, b, level === 2 ? deepMpv : quickMpv);
-    if (level === 2) { if (scalarOfE(e) != null) take(i, e); p.deep[i] = true; }
-    else if (scalarOfE(e) != null || p.level[i] < 0) take(i, e);
+    const e = await search(i, b, mpvAt(level));
+    // a one-line search keeps the second line an earlier look found (it only nominates deep targets)
+    const second = p.seconds[i];
+    const keep = (x) => { take(i, x); if (p.seconds[i] == null && !(x && x.lines && x.lines[1])) p.seconds[i] = second; };
+    if (level === 2) { if (scalarOfE(e) != null) keep(e); p.deep[i] = true; }
+    else if (scalarOfE(e) != null || p.level[i] < 0) keep(e);
     p.level[i] = Math.max(p.level[i], level);
   };
   return { p, todo, at, stop: () => (o.halt ? o.halt() : null), n };
@@ -169,15 +174,24 @@ export async function runPass(o) {
  * first keeps the deep answer, as runPass's deep round would have replaced
  * the normal one with it.
  *
+ * MultiPV (o.mpv, default PROGRESSIVE_MPV): 2 in the scan, so the grader's
+ * second line is there to nominate only-move candidates; 1 at the normal
+ * level, where it is not needed — grade.js uses a second line only on a
+ * position searched deep — and the same nodes then reach two plies deeper;
+ * 2 deep, where it is (19.0 asked for 3; the third line only fed a view).
+ *
  * @param {object} o  runPass's, plus
  * @param {number|object} o.scan
+ * @param {{scan, normal, deep}} [o.mpv]
  * @param {(p) => number|null} o.pick         the next turning point to confirm (a ply), null: none
  * @param {(p, ply) => boolean} o.confirmed   after its two positions are searched deep
  * @param {(ply, p) => void} [o.onFirst]      the first confirmed one
  * @param {(phase, p) => void} [o.onPhase]    "scan" done, "confirm" done (first card or none), "refine" done
  */
+export const PROGRESSIVE_MPV = { scan: 2, normal: 1, deep: 2 };
 export async function runProgressive(o) {
-  const s = startPass(o);
+  const mpv = o.mpv || PROGRESSIVE_MPV;
+  const s = startPass({ ...o, mpv: [mpv.scan, mpv.normal, mpv.deep] });
   const { p, todo, n } = s;
   const deepBudget = o.deepBudget ?? deeper(o.budget);
   let done = n - todo.length, total = n + todo.length;

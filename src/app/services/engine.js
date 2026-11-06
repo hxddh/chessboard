@@ -50,14 +50,16 @@ const budgetOpts = (budget = {}) => (budget.review ? { review: budget.review } :
  *   scan     every position once, to find the turning points (the first card waits on it)
  *   normal   every position, the 19.0 pass's budget
  *   deep     the positions core/grade deepTargets names, again (19.0: 3 × the budget)
- * wasm: single-threaded, so nodes are depth: "normal" is what 19.0's 200 ms gave
- * (median 135 k nodes, depth 14 in Node); native: per thread (engine-native.js
- * multiplies by Threads), so the main thread reaches about the depth one thread
- * reaches with that many nodes.
+ * The review asks the scan and deep levels for two lines and the normal level for
+ * one (core/pass PROGRESSIVE_MPV); one line at 100 k nodes is depth 16 (median,
+ * on the 60-ply coach game in Node), where 19.0's 200 ms with two lines was 135 k
+ * nodes and depth 14. wasm: single-threaded, so nodes are depth; native: per
+ * thread (engine-native.js multiplies by Threads), so the main thread reaches
+ * about the depth one thread reaches with that many nodes.
  */
 export const REVIEW_NODES = {
-  wasm: { scan: 15000, normal: 135000, deep: 405000 },
-  native: { scan: 25000, normal: 300000, deep: 900000 },
+  wasm: { scan: 15000, normal: 100000, deep: 300000 },
+  native: { scan: 20000, normal: 100000, deep: 300000 },
 };
 /** Search options with a review level resolved to nodes (× `threads`). */
 export function reviewNodes(opts, table, threads = 1) {
