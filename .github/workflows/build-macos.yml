@@ -219,3 +219,78 @@ jobs:
           name: automation-report-macOS
           path: automation-macos.json
           if-no-files-found: ignore
+
+  # v20-0-plan A1–A3, F3: the 20.0 app — src/app (scripts/build-app.mjs),
+  # the SDK's SQLite store, a native Stockfish beside the executable — built
+  # with -Dui=app against the manifest `gen-manifest.mjs macos --ui app`
+  # writes (spa_fallback off, sqlite on), packaged and ad-hoc signed with the
+  # engine inside (scripts/add-engine.sh), and driven through its self-test
+  # scenarios (scripts/automation-app.mjs). An automation build, like the
+  # job above, so it uploads no package and nothing to a release — only its
+  # report. A hand dispatch runs it; release.yml's call does not, so the
+  # 19.0 release path is unchanged until the 20.0 UI becomes the default.
+  app:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-26
+    timeout-minutes: 45
+    name: 20.0 app (-Dui=app, not released)
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - name: install build deps
+        run: npm ci
+      - name: install Native SDK CLI
+        env:
+          SDK_VERSION: ${{ inputs.sdk_version || '0.11.0' }}
+        run: |
+          npm install -g "@native-sdk/cli@${SDK_VERSION}"
+          echo "resolved: $(npm ls -g --depth=0 @native-sdk/cli || true)"
+          echo "SDK_PATH=$(npm root -g)/@native-sdk/cli" >> "$GITHUB_ENV"
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      # Stockfish from source at the pinned tag and commit (the script
+      # refuses another); cached on the script, which names both
+      - name: restore Stockfish
+        id: sf
+        uses: actions/cache/restore@v6
+        with:
+          path: build/stockfish
+          key: stockfish-${{ runner.os }}-arm64-${{ hashFiles('scripts/build-stockfish.sh') }}
+      - name: build Stockfish
+        if: steps.sf.outputs.cache-hit != 'true'
+        timeout-minutes: 20
+        run: scripts/build-stockfish.sh build/stockfish
+      - name: cache Stockfish
+        if: steps.sf.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: build/stockfish
+          key: stockfish-${{ runner.os }}-arm64-${{ hashFiles('scripts/build-stockfish.sh') }}
+      - name: the 20.0 frontend (dist-app) and its licences
+        run: |
+          node scripts/sync-dist.mjs --ui=app
+          cp build/stockfish/stockfish-SOURCE.txt build/stockfish/stockfish-AUTHORS.txt frontend/dist/licenses/
+      - name: derive the macOS manifest for the 20.0 UI
+        run: node scripts/gen-manifest.mjs macos --ui app
+      - name: zig build (-Dui=app, automation)
+        run: zig build -Doptimize=ReleaseFast -Dui=app -Dautomation=true -Dmanifest=build/app.macos-app.zon -Dnative-sdk-path="$SDK_PATH" --prefix zig-out-app
+      - name: package, with the engine, ad-hoc signed (never uploaded)
+        run: |
+          native package --target macos --signing adhoc --manifest build/app.macos-app.zon --output dist-app-pkg/Chessboard.app --binary zig-out-app/bin/chessboard
+          scripts/add-pgn-doctype.sh dist-app-pkg/Chessboard.app
+          scripts/add-engine.sh dist-app-pkg/Chessboard.app build/stockfish
+          test -f "$(find dist-app-pkg/Chessboard.app -path '*/licenses/stockfish-SOURCE.txt' | head -n1)"
+          du -sh dist-app-pkg/Chessboard.app
+          echo "APP_EXE=dist-app-pkg/Chessboard.app/Contents/MacOS/chessboard" >> "$GITHUB_ENV"
+      - name: the 20.0 app's scenarios
+        timeout-minutes: 20
+        run: node scripts/automation-app.mjs "$APP_EXE" --out automation-app-macos.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: app-report-macOS
+          path: automation-app-macos.json
+          if-no-files-found: ignore

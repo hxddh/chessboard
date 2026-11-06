@@ -37,7 +37,12 @@ export async function run() {
       const jobs = jobsOf(code(rel));
       const auto = Object.entries(jobs).filter(([, j]) => /-Dautomation=true/.test(j));
       const shipping = Object.entries(jobs).filter(([, j]) => /name: Chessboard-/.test(j) || /gh release upload/.test(j));
-      assert(auto.length === 1 && auto[0][0] === "automation", rel + ": one job builds with -Dautomation=true, `automation` (" + auto.map(([n]) => n).join(", ") + ")");
+      // v20-0-plan A1: and `app`, the 20.0 UI's automation build (a hand dispatch only)
+      assert(auto.map(([n]) => n).join(",") === "automation,app", rel + ": two jobs build with -Dautomation=true, `automation` and `app` (" + auto.map(([n]) => n).join(", ") + ")");
+      const app = jobs.app || "";
+      assert(/if: github\.event_name == 'workflow_dispatch'/.test(app) && !/name: Chessboard-|gh release|upload-artifact[\s\S]*?path: dist/.test(app) &&
+        /--output dist-app-pkg\//.test(app) && /node scripts\/automation-app\.mjs/.test(app) && /scripts\/add-engine\.sh/.test(app) && /-Dui=app/.test(app),
+        rel + ": the `app` job (dispatch only) builds -Dui=app, adds the engine, packages into dist-app-pkg/, runs automation-app.mjs and uploads only its report");
       assert(shipping.length === 1 && shipping[0][0] === "build", rel + ": only `build` uploads a Chessboard-* artifact or to a release (" + shipping.map(([n]) => n).join(", ") + ")");
       assert(!/-Dautomation/.test(jobs.build || ""), rel + ": the shipped package is built without automation");
       const a = jobs.automation || "";

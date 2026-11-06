@@ -93,8 +93,12 @@ export async function run() {
         "the macOS build compiles against the derived manifest");
       assert(/--manifest build\/app\.macos\.zon/.test(macWf),
         "and packages against it too — the exe and the bundle must agree");
-      assert(!/gen-manifest|-Dmanifest/.test(winWf),
+      // v20-0-plan A1: the `app` job (the 20.0 UI) derives its own, without close_policy
+      const winRest = winWf.slice(0, winWf.indexOf("\n  app:\n") > 0 ? winWf.indexOf("\n  app:\n") : winWf.length);
+      assert(!/gen-manifest|-Dmanifest/.test(winRest),
         "the windows build stays on app.zon, where close_policy is the default quit");
+      assert(!/gen-manifest\.mjs windows(?! --ui app)/.test(winWf) && !/close_policy/.test(fs.readFileSync(path.join(root, "scripts/gen-manifest.mjs"), "utf8").split("windows: [")[1].split("]")[0]),
+        "…and the 20.0 UI's windows manifest (gen-manifest.mjs windows --ui app) adds no close_policy either");
     }
 
     // No declared menu item may claim a key the macOS app menu already owns.

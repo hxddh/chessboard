@@ -250,3 +250,83 @@ jobs:
           name: automation-report-Windows
           path: automation-windows.json
           if-no-files-found: ignore
+
+  # v20-0-plan A1–A3, F3: the 20.0 app — see the same job in build-macos.yml.
+  # Stockfish is built in MSYS2's MINGW64 shell (GCC, ARCH=x86-64-avx2) and
+  # goes into bin\ beside chessboard.exe; the shell starts it with
+  # CREATE_NO_WINDOW (src/engine.zig).
+  app:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-2025
+    timeout-minutes: 45
+    name: 20.0 app (-Dui=app, not released)
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - name: install build deps
+        run: npm ci
+      - name: install Native SDK CLI
+        env:
+          SDK_VERSION: ${{ inputs.sdk_version || '0.11.0' }}
+        run: |
+          npm install -g "@native-sdk/cli@${SDK_VERSION}"
+          echo "resolved: $(npm ls -g --depth=0 @native-sdk/cli || true)"
+          echo "SDK_PATH=$(npm root -g)/@native-sdk/cli" >> "$GITHUB_ENV"
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: restore Stockfish
+        id: sf
+        uses: actions/cache/restore@v6
+        with:
+          path: build/stockfish
+          key: stockfish-${{ runner.os }}-x64-${{ hashFiles('scripts/build-stockfish.sh') }}
+      - name: MSYS2 (MinGW-w64 GCC) for Stockfish
+        if: steps.sf.outputs.cache-hit != 'true'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: mingw-w64-x86_64-gcc make git
+      - name: build Stockfish
+        if: steps.sf.outputs.cache-hit != 'true'
+        timeout-minutes: 25
+        shell: msys2 {0}
+        run: scripts/build-stockfish.sh build/stockfish
+      - name: cache Stockfish
+        if: steps.sf.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: build/stockfish
+          key: stockfish-${{ runner.os }}-x64-${{ hashFiles('scripts/build-stockfish.sh') }}
+      - name: the 20.0 frontend (dist-app) and its licences
+        run: |
+          node scripts/sync-dist.mjs --ui=app
+          cp build/stockfish/stockfish-SOURCE.txt build/stockfish/stockfish-AUTHORS.txt frontend/dist/licenses/
+      - name: derive the Windows manifest for the 20.0 UI
+        run: node scripts/gen-manifest.mjs windows --ui app
+      - name: zig build (-Dui=app, automation)
+        run: zig build -Doptimize=ReleaseFast -Dui=app -Dautomation=true -Dplatform=windows -Dmanifest=build/app.windows-app.zon -Dnative-sdk-path="$SDK_PATH" --prefix zig-out-app
+      - name: package, with the engine (never uploaded)
+        run: |
+          native package --target windows --manifest build/app.windows-app.zon --output dist-app-pkg/Chessboard --binary zig-out-app/bin/chessboard.exe
+          cp assets/icon.ico dist-app-pkg/Chessboard/resources/icon.ico
+          scripts/add-engine.sh dist-app-pkg/Chessboard build/stockfish
+          test -f "$(find dist-app-pkg/Chessboard -path '*/licenses/stockfish-SOURCE.txt' | head -n1)"
+          du -sh dist-app-pkg/Chessboard
+          exe="$(find dist-app-pkg/Chessboard -name chessboard.exe | head -n1)"
+          echo "APP_EXE=$exe" >> "$GITHUB_ENV"
+      - name: the 20.0 app's scenarios
+        timeout-minutes: 20
+        run: node scripts/automation-app.mjs "$APP_EXE" --out automation-app-windows.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: app-report-Windows
+          path: automation-app-windows.json
+          if-no-files-found: ignore

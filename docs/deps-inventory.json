@@ -121,7 +121,7 @@
     {
       "name": "actions/checkout",
       "kind": "GitHub Action",
-      "current": "@v7（全部 19 处）",
+      "current": "@v7（全部 21 处）",
       "pinnedIn": [".github/workflows/*.yml"],
       "latest": "v7.0.1",
       "source": ["git ls-remote --tags https://github.com/actions/checkout"],
@@ -163,13 +163,35 @@
     {
       "name": "actions/cache",
       "kind": "GitHub Action",
-      "current": "@v6（restore / save 两个子 action，全部 6 处）",
-      "pinnedIn": [".github/workflows/checks.yml（browser、shots）", ".github/workflows/release.yml（browser）"],
+      "current": "@v6（restore / save 两个子 action，全部 10 处）",
+      "pinnedIn": [".github/workflows/checks.yml（browser、shots）", ".github/workflows/release.yml（browser）", ".github/workflows/build-macos.yml / build-windows.yml（app：原生 Stockfish，20.0 F3）"],
       "latest": "v6.1.0",
       "source": ["git ls-remote --tags https://github.com/actions/cache"],
       "checkedAt": "2026-10-08",
       "recommendation": "not-needed",
       "note": "v8-4-plan V2 新加：浏览器作业的系统依赖（.deb）按 Playwright 版本 + 引擎 + runner 镜像缓存（scripts/ci-browser-deps.mjs），不再每次 --with-deps 从 apt 镜像下。用 restore / save 分开写，是为了装完依赖就存、不等测试跑完，也只在缓存没命中且这次真从 apt 下了包时才存。"
+    },
+    {
+      "name": "msys2/setup-msys2",
+      "kind": "GitHub Action",
+      "current": "@v2（浮动主版本）",
+      "pinnedIn": [".github/workflows/build-windows.yml（app：MinGW-w64 GCC 编原生 Stockfish）"],
+      "latest": "v2",
+      "source": ["git ls-remote --tags https://github.com/msys2/setup-msys2"],
+      "checkedAt": "2026-11-06",
+      "recommendation": "not-needed",
+      "note": "20.0 F3 新加：Stockfish 官方 CI 用同一个 action 编 Windows 版；只在 Stockfish 缓存没命中时运行。"
+    },
+    {
+      "name": "Stockfish（原生）",
+      "kind": "source build",
+      "current": "sf_19 @ edb0d9db6731067ec50ce619ff372b463bc4dd5d，网络 nn-1a298aa575a0（内嵌）",
+      "pinnedIn": ["scripts/build-stockfish.sh"],
+      "latest": "sf_19",
+      "source": ["git ls-remote --tags https://github.com/official-stockfish/Stockfish"],
+      "checkedAt": "2026-11-06",
+      "recommendation": "done-20.0",
+      "note": "20.0 F3：CI 从源码编（macOS apple-silicon / Windows x86-64-avx2，profile-build），脚本拒绝 tag 指向别的提交。GPLv3：licenses/ 里带 COPYING、AUTHORS 与 stockfish-SOURCE.txt（tag、提交、仓库）。"
     },
     {
       "name": "mlugg/setup-zig",
