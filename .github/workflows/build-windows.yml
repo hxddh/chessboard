@@ -226,6 +226,10 @@ jobs:
           version: 0.16.0
       - name: sync frontend dist
         run: node scripts/sync-dist.mjs
+      # v20-0-plan A5: the zero:// probe page, into this package only (the
+      # shipped one never has it); the `zero-probe` scenario prints its table
+      - name: zero:// probe page (automation package only)
+        run: node scripts/zero-probe.mjs
       - name: zig build (automation)
         run: zig build -Doptimize=ReleaseFast -Dautomation=true -Dplatform=windows -Dnative-sdk-path="$SDK_PATH" --prefix zig-out-auto
       - name: package (automation build, never uploaded)

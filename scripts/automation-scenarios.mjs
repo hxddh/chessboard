@@ -38,6 +38,10 @@
  *   prefetch-read  the page: the boot's prefetch answered with all of them
  *   menus          menu-command game.new → 新对局 opens; view.repertoire →
  *                  训练 · 开局's 我的开局书 (B1–B5's command path; 19.0 S1)
+ *   zero-probe     (v20-0-plan A5) the page's probe/ iframe (scripts/zero-probe.mjs,
+ *                  written into the automation package only): what the SDK's
+ *                  asset handler serves — printed as a PASS/FAIL table and
+ *                  kept in the report, informational (never fails the run)
  *
  *   node scripts/automation-scenarios.mjs <exe> [--manifest build/app.macos.zon] [--out report.json] [--only sync,menus] [--real-profile-ok]
  *   node scripts/automation-scenarios.mjs <null-platform exe> --null
@@ -338,10 +342,27 @@ async function runLive() {
     }
   });
 
+  await scenario("zero-probe");
+  if (reports["zero-probe"]) {
+    const probe = extra.zeroProbe = reports["zero-probe"].probe || { results: [], err: "the page reported no probe" };
+    console.log(probeTable(probe, process.platform));
+  }
+
   if (notLaunched.length) {
     check("page:silent", false, "页面在 " + silentAt + " 的启动里一份报告都没写（页面没在运行？），其后 " + notLaunched.length + " 个场景没有再启动：" + notLaunched.join("、"));
   }
   await fake.close();
   fs.rmSync(work, { recursive: true, force: true });
   finish(Object.assign(extra, { reports }));
+}
+
+/** The zero-probe answer as a table, one feature a row (v20-0-plan A5). */
+export function probeTable(probe, platform) {
+  const rows = (probe.results || []).map((r) => [r.pass ? "PASS" : "FAIL", r.name, r.detail]);
+  const w = rows.reduce((m, r) => Math.max(m, r[1].length), 7);
+  const lines = ["zero:// probe on " + platform + " — page " + (probe.page || "?") + ", frame " + (probe.href || "?"), "  " + "feature".padEnd(w) + "  result  detail"];
+  for (const [res, name, detail] of rows) lines.push("  " + name.padEnd(w) + "  " + res.padEnd(6) + "  " + detail);
+  if (probe.err) lines.push("  (" + probe.err + ")");
+  if (probe.ua) lines.push("  ua: " + probe.ua);
+  return lines.join("\n");
 }

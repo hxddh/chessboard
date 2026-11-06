@@ -34,6 +34,9 @@
  *   menus        the native menu commands reach the page and do what the
  *                menu says: game.new opens 新对局, view.repertoire goes to
  *                训练 · 开局's 我的开局书 (B1–B5's command path; 19.0 S1)
+ *   zero-probe   (v20-0-plan A5) the probe page scripts/zero-probe.mjs puts
+ *                in the automation package: modules, import(), fetch, wasm
+ *                streaming, Workers from zero:// URLs — facts, not checks
  *
  * The page reports facts and judges only what is not a timing; the timing
  * thresholds live with the driver. Checks say `pass`, never `ok`.
@@ -307,6 +310,26 @@ const SCENARIOS = {
       return {};
     });
   },
+  // v20-0-plan A5: what the SDK's asset handler lets a page load — modules,
+  // import(), fetch, wasm streaming, Workers from zero:// URLs. The page is
+  // scripts/zero-probe.mjs's probe/, which only the automation package
+  // carries; it answers in a hidden iframe under its own CSP. Its entries are
+  // facts for the driver's table (`probe`, not `checks`): an answer the SDK
+  // gives is not a failure of this app.
+  async "zero-probe"(d, c, report, rep) {
+    const frame = document.createElement("iframe");
+    frame.hidden = true;
+    const answer = await new Promise((resolve) => {
+      const done = (v) => { clearTimeout(timer); removeEventListener("message", onMsg); resolve(v); };
+      const timer = setTimeout(() => done({ results: [], err: "probe/index.html did not answer in 45 s" }), 45000);
+      const onMsg = (e) => { if (e.source === frame.contentWindow && e.data && e.data.zeroProbe) done(e.data.zeroProbe); };
+      addEventListener("message", onMsg);
+      frame.src = "probe/index.html";
+      document.body.appendChild(frame);
+    });
+    frame.remove();
+    rep.probe = Object.assign({ page: location.href }, answer);
+  },
 };
 
 /**
@@ -344,7 +367,7 @@ export async function runScenario(name, d) {
   if (!run) rep.checks.scenario = { pass: false, err: "no scenario " + JSON.stringify(name) + " (" + SCENARIO_NAMES.join(", ") + ")" };
   else {
     await report("running");
-    try { await run(d, check, report); } catch (err) { rep.checks.scenario = { pass: false, err: d.errText(err) }; }
+    try { await run(d, check, report, rep); } catch (err) { rep.checks.scenario = { pass: false, err: d.errText(err) }; }
     if (WRITES.has(name)) await sleep(SETTLE_MS);
   }
   await report("done");

@@ -187,6 +187,10 @@ jobs:
           version: 0.16.0
       - name: sync frontend dist
         run: node scripts/sync-dist.mjs
+      # v20-0-plan A5: the zero:// probe page, into this package only (the
+      # shipped one never has it); the `zero-probe` scenario prints its table
+      - name: zero:// probe page (automation package only)
+        run: node scripts/zero-probe.mjs
       - name: derive the macOS manifest
         run: node scripts/gen-manifest.mjs macos
       - name: zig build (automation)
