@@ -158,7 +158,15 @@ export function nativeStockfishBackend({
     /** Start (or reach) the process now; rejects when it cannot be had. */
     boot,
     search(fen, opts = {}) {
-      const job = chain.then(() => boot()).then(() => run(fen, opts));
+      // the process can be gone before its exit event is here (a kill, a
+      // crash between two searches): the shell says not_running, and the
+      // search goes to a new process once
+      const attempt = () => boot().then(() => run(fen, opts));
+      const job = chain.then(attempt).catch((e) => {
+        if (!/not_running/.test(String(e && e.message))) throw e;
+        ready = null;
+        return attempt();
+      });
       chain = job.catch(() => {});
       return job;
     },

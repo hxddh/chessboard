@@ -21,7 +21,7 @@ import engineContract from "./engine-contract.mjs";
  * The bridge, with `spawnEngine()` making the process: an object with
  * write(text), onLine(fn), onExit(fn), kill().
  */
-export function fakeShellBridge(spawnEngine, { cores = 4 } = {}) {
+export function fakeShellBridge(spawnEngine, { cores = 4, exitDelayMs = 0 } = {}) {
   let gen = 0, proc = null;
   const handlers = [];
   const emit = (d) => setTimeout(() => handlers.forEach((h) => h(d)), 0);
@@ -40,7 +40,7 @@ export function fakeShellBridge(spawnEngine, { cores = 4 } = {}) {
         const mine = gen;
         proc = p;
         p.onLine((l) => emit({ gen: mine, lines: [l] }));
-        p.onExit((code) => { if (proc === p) proc = null; emit({ gen: mine, exit: code }); });
+        p.onExit((code) => { if (proc === p) proc = null; setTimeout(() => emit({ gen: mine, exit: code }), exitDelayMs); });
         return { gen, cores, started: true };
       }
       if (cmd === "chess.engineSend") {
@@ -49,7 +49,10 @@ export function fakeShellBridge(spawnEngine, { cores = 4 } = {}) {
         return { ok: true };
       }
       if (cmd === "chess.engineStop") {
-        if (proc && payload.gen === gen) { if (payload.kill) proc.kill(); else proc.write("quit\n"); }
+        // as src/engine.zig: stdin is dropped at once, so a send is
+        // not_running and a start is a new generation, though the old
+        // process's exit event is still to come
+        if (proc && payload.gen === gen) { if (payload.kill) proc.kill(); else proc.write("quit\n"); proc = null; }
         return { ok: true };
       }
       throw new Error("no such command " + cmd);
@@ -136,6 +139,16 @@ export default function (test) {
     a.ok(r.lines[0].pv[0], "answered by the second process");
     a.equal(made.length, 2);
     a.equal(be.restarts, 1);
+  });
+
+  test("engine-native: a search right after a kill, before its exit event, goes to a new process (Windows CI)", async (a) => {
+    const made = [];
+    const bridge = fakeShellBridge(() => { const e = scriptedEngine(); made.push(e); return e; }, { exitDelayMs: 200 });
+    const be = nativeStockfishBackend({ bridge });
+    await be.search(START, { movetime: 10 });
+    await be.kill();
+    const r = await be.search(START, { movetime: 10 });
+    a.ok(r.lines.length && made.length === 2, "answered by a second process (" + made.length + ")");
   });
 
   test("engine-native: nativeOrWasm retries a crash natively, falls back once when it cannot start", async (a) => {

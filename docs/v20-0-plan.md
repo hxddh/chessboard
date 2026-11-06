@@ -363,3 +363,21 @@ E4 先把 CI 版本写死 → A5 技术验证（SDK 0.11 上 ES modules / fetch�
 - 学页：一块大棋盘，做完自动接下一件；课、小游戏、一步目标、谜题、开局、名局、你自己对局里的错、残局、对局都是条目类型；技能图一下就到。我页：一个「你的水平」、成长曲线、下一阶段（800 / 1000 / 1200 / 1500）和还差的技能、一句本周的证据、棋谱库（导入 PGN 占位）。
 - 验收：`scripts/test-learn-e2e.mjs`（20 项，进 `test:app:e2e`）与 `scripts/app/{fsrs,skills,learn-model}.test.mjs`（22 项）。
 - 还没做：英日文；导入 PGN；模型每次进页面从头折叠事件（几万条以内够快，之后要快照）；`gen-skills.mjs --check` 还没进 CI；残局练习没有残局库判定（守和 = 50 步内没输）。
+
+**A1–A3 / F3 原生化（`-Dui=app`：新界面、SQLite、原生 Stockfish）**：
+- 打包：`zig build -Dui=app` 把 `dist-app`（`build-app.mjs`，引用到的 wasm / 权重 / 加载器复制到 `assets/` 下，包里没有 `../`）打进 `frontend/dist`；派生清单 `gen-manifest.mjs <macos|windows> --ui app` 关掉 `spa_fallback`、声明 `sqlite`，`main.zig` 在 comptime 拒绝不满足的清单；页面 CSP `worker-src 'self' blob:`。19.0 界面仍是默认。
+- 存储（ADR 0003）：sdk-fork R01 改为照抄上游（RelationalStore 等），`sdk-diff` 对 0.11.0 干净；`chess.dbExec`（一批一次事务）/ `chess.dbQuery`，表结构在 `src/db_migrations.zig`；`db-native.js` 原样通过 `db-contract.mjs`（Node 里对 node:sqlite，应用里对真库）。
+- 引擎（ADR 0004）：sf_19（提交 edb0d9d，完整 NNUE 内嵌）在 CI 里从源码编，放在可执行文件旁边（macOS 先单独临时签名再签整包，`codesign --verify --deep --strict` 过）；`main.zig` 起进程（管道、Windows `CREATE_NO_WINDOW`），读线程经 N1 的唤醒把 UCI 行作为 `chess:engine` 事件送给页面；Threads = 核数 − 1、Hash 256 MB；关应用即退出（应用结束后无残留进程，两平台都验过），崩溃后下一次搜索起新进程，起不来或反复崩溃退回 wasm 并提示一句「分析会慢一些」。
+- 自检（`selftest.js` + `scripts/automation-app.mjs`，`build-*.yml` 的 `app` 作业，手动触发）：冒烟（棋盘、原生库、原生引擎）、走一步重启还原、应用内跑 db 契约 14/14、引擎契约 8/8、杀进程后恢复。
+
+| CI 实测（GitHub 构建机） | macOS（arm64，3 核，2 线程） | Windows（x64，4 核，3 线程） |
+|---|---|---|
+| 运行 | 42257377631 全绿 | 42257382871（除杀进程恢复外全过，见下） |
+| 追加一步并等落盘 | 中位 1 ms，p95 2 ms，最长 32 ms | 中位 1.2 ms，p95 1.5 ms，最长 184 ms |
+| 复盘预算 200 ms：深度 / 速度 | 中位 14（最低 11），1.25 M nps | 中位 14（最低 11），1.69 M nps |
+| 开局 3 s | 深度 27，1.52 M nps | 深度 26，1.78 M nps |
+| 60 个半回合复盘 | 27.7 s（86 次搜索） | 29.3 s（89 次搜索） |
+| 包体 | 114 MB（引擎 95 MB） | 116 MB（引擎 96 MB） |
+
+- 复盘时间没降：每个局面按时间预算（200 ms）搜，换成原生只是同样的时间搜得更深（wasm 约 15 层上限 → 原生中位 14、长搜 26–27）；要变快得改预算设计（按深度或节点、先出卡片），另行处理。
+- Windows 上杀进程后的那次搜索报 `not_running`：杀进程时壳先写了 `quit`，正在搜的 Stockfish 先回了 bestmove，页面以为进程还在，退出事件到之前就发了下一条命令。修法：杀就是杀（不先写 quit）；进程已不可写时 `chess.engineStart` 直接起新一代（旧的退出事件只认自己那一代）；页面遇到 `not_running` 重启一次再搜。各有一条测试（`engine.zig`、`engine-native.test.mjs`）。

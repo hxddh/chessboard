@@ -82,6 +82,8 @@ pub const Engine = struct {
     wake_pending: bool = false,
     /// the running process, for a kill; null once its reader is reaping it
     pid: ?std.process.Child.Id = null,
+    /// the generation `pid` belongs to: an old reader never clears a newer one's
+    pid_gen: u32 = 0,
     // shared, lock-free
     live: std.atomic.Value(u32) = .init(0),
     // the loop thread's alone
@@ -99,7 +101,10 @@ pub const Engine = struct {
 
     /// Loop thread: start `argv` as the next generation, or say why not.
     pub fn start(self: *Engine, io: std.Io, argv: []const []const u8, window_id: u64) !u32 {
-        if (self.running) return self.gen;
+        // running and still ours to write to: the same generation. Stopped or
+        // killed but its exit not drained yet: a new one now (the old one's
+        // exit event names its own generation)
+        if (self.running and self.stdin != null) return self.gen;
         {
             self.lock.lock();
             defer self.lock.unlock();
@@ -132,6 +137,7 @@ pub const Engine = struct {
             self.lock.lock();
             defer self.lock.unlock();
             self.pid = child.id;
+            self.pid_gen = self.gen;
         }
         _ = self.live.fetchAdd(1, .acq_rel);
         const thread = std.Thread.spawn(.{ .stack_size = 1024 * 1024 }, Reader.main, .{reader}) catch {
@@ -168,9 +174,11 @@ pub const Engine = struct {
     /// Loop thread: ask it to go (quit, EOF), or kill it.
     pub fn stop(self: *Engine, io: std.Io, gen: u32, kill: bool) void {
         if (!self.running or gen != self.gen) return;
-        if (self.stdin) |f| f.writeStreamingAll(io, "quit\n") catch {};
-        self.dropStdin(io);
+        // a kill is a kill: no `quit` first, which a searching Stockfish
+        // answers with a bestmove the page would take for its search's answer
+        if (!kill) if (self.stdin) |f| f.writeStreamingAll(io, "quit\n") catch {};
         if (kill) self.killNow();
+        self.dropStdin(io);
         // the exit event marks the generation over; until then a new start
         // answers this generation
     }
@@ -254,7 +262,7 @@ pub const Engine = struct {
         if (exit) |e| {
             self.exit_code = e.code;
             self.exit_gen = e.gen;
-            self.pid = null;
+            if (self.pid_gen == e.gen) self.pid = null;
         }
         const wake = if (self.wake_pending) null else self.wake_fn;
         const ctx = self.wake_ctx;
@@ -328,7 +336,7 @@ const Reader = struct {
         {
             engine.lock.lock();
             defer engine.lock.unlock();
-            engine.pid = null;
+            if (engine.pid_gen == self.gen) engine.pid = null;
         }
         const code: i64 = if (self.child.wait(self.io)) |term| switch (term) {
             .exited => |c| c,
@@ -365,7 +373,7 @@ pub fn engineStart(context: *anyopaque, invocation: native_sdk.bridge.Invocation
     const self: *App = @ptrCast(@alignCast(context));
     bindFrom(self);
     const cores = std.Thread.getCpuCount() catch 1;
-    if (self.engine.running) return std.fmt.bufPrint(output, "{{\"gen\":{d},\"cores\":{d},\"started\":false}}", .{ self.engine.gen, cores });
+    if (self.engine.running and self.engine.stdin != null) return std.fmt.bufPrint(output, "{{\"gen\":{d},\"cores\":{d},\"started\":false}}", .{ self.engine.gen, cores });
     var path_buf: [4200]u8 = undefined;
     const path = enginePath(self.io, &path_buf) orelse return std.fmt.bufPrint(output, "{{\"error\":\"missing\"}}", .{});
     const gen = self.engine.start(self.io, &.{path}, invocation.source.window_id) catch |err|
@@ -443,6 +451,13 @@ const TestEvents = struct {
     }
 };
 
+/// Close, and wait for every reader to be gone (they point at `engine`, which is on the test's stack).
+fn closeAndJoin(engine: *Engine) void {
+    engine.close(std.testing.io);
+    var spins: usize = 0;
+    while (engine.readersOut() and spins < 500) : (spins += 1) std.Io.sleep(std.testing.io, std.Io.Duration.fromMilliseconds(10), .awake) catch {};
+}
+
 /// Drain until `want` shows up in the events (or 5 s pass).
 fn drainUntil(engine: *Engine, events: *TestEvents, want: []const u8) !void {
     var i: usize = 0;
@@ -492,7 +507,28 @@ test "F3 engine: lines stream back as events, a quit ends it with its code" {
     var spins: usize = 0;
     while (engine.readersOut() and spins < 500) : (spins += 1) std.Io.sleep(std.testing.io, std.Io.Duration.fromMilliseconds(10), .awake) catch {};
     try std.testing.expect(!engine.readersOut());
-    engine.close(std.testing.io);
+    closeAndJoin(&engine);
+}
+
+test "F3 engine: a start right after a kill is a new generation, before the old exit is drained" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+    var wake = TestWake{};
+    var engine = Engine{};
+    engine.bindWake(&wake, TestWake.wake);
+    var events = TestEvents{};
+    defer events.deinit();
+    const g1 = try engine.start(std.testing.io, &FAKE, 1);
+    engine.stop(std.testing.io, g1, true);
+    const g2 = try engine.start(std.testing.io, &FAKE, 1);
+    try std.testing.expectEqual(g1 + 1, g2);
+    try engine.send(std.testing.io, g2, "hello\n");
+    try drainUntil(&engine, &events, "got hello");
+    try drainUntil(&engine, &events, "{\"gen\":1,\"exit\":-9}");
+    // the old exit leaves the new one running
+    try std.testing.expect(engine.running);
+    try engine.send(std.testing.io, g2, "again\n");
+    try drainUntil(&engine, &events, "got again");
+    closeAndJoin(&engine);
 }
 
 test "F3 engine: a crash is an exit event; nothing is emitted after close" {
@@ -518,6 +554,9 @@ test "F3 engine: a crash is an exit event; nothing is emitted after close" {
     engine.drain(std.testing.io, events.sink());
     try std.testing.expectEqual(before, events.list.items.len);
     try std.testing.expectError(error.Closed, engine.start(std.testing.io, &FAKE, 1));
+    var spins: usize = 0;
+    while (engine.readersOut() and spins < 500) : (spins += 1) std.Io.sleep(std.testing.io, std.Io.Duration.fromMilliseconds(10), .awake) catch {};
+    try std.testing.expect(!engine.readersOut());
 }
 
 test "F3 engine: events stay within the window-event bound and keep every line" {
