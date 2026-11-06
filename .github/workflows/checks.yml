@@ -478,7 +478,7 @@ jobs:
       - name: install Native SDK CLI
         env:
           # the same pin the platform builds and release.yml carry
-          SDK_VERSION: "0.10.1"
+          SDK_VERSION: "0.11.0"
         run: |
           npm install -g "@native-sdk/cli@${SDK_VERSION}"
           native --version || true

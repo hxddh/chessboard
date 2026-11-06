@@ -123,6 +123,18 @@ pub fn build(b: *std.Build) void {
     const exe = b.addExecutable(.{
         .name = app_exe_name,
         .root_module = app_mod,
+        // The app executable crosses the platform C seam on every host
+        // call (the GTK host's `native_sdk_gtk_create_view` is a
+        // 22-parameter mix of pointers, sizes, ints, and doubles), and
+        // Zig 0.16.0's self-hosted x86_64 backend miscompiles exactly
+        // that calling-convention shape (see useLlvmWorkaround below):
+        // a Debug `native dev` on x86_64 Linux placed the stack-passed
+        // string arguments one slot off, so the host read a garbage
+        // `role` pointer and crashed in `native_sdk_strndup` while the
+        // register-passed `label` arrived intact. Every other artifact
+        // in this graph already forces LLVM on x86_64; the app exe —
+        // the one binary users actually run — must too.
+        .use_llvm = useLlvmWorkaround(target),
     });
     // Windows subsystem posture (mirrors the Native SDK build graph):
     // release-shaped exes are GUI-subsystem so the app never flashes a
@@ -183,6 +195,8 @@ pub fn build(b: *std.Build) void {
         const built = b.addExecutable(.{
             .name = app_exe_name,
             .root_module = package_app_mod,
+            // the same x86_64 LLVM workaround as the dev exe (B12)
+            .use_llvm = useLlvmWorkaround(target),
         });
         // Same subsystem posture as the dev exe above, keyed on this
         // exe's own mode: release-shaped Windows exes are GUI-subsystem.
@@ -231,13 +245,13 @@ pub fn build(b: *std.Build) void {
     const package_step = b.step("package", "Create a local package artifact");
     package_step.dependOn(&package.step);
 
-    const tests = b.addTest(.{ .root_module = app_mod });
+    const tests = b.addTest(.{ .root_module = app_mod, .use_llvm = useLlvmWorkaround(target) });
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
     // src/runner.zig is a module of its own, so the app's test binary never
     // runs its tests: the window-restore one (v8-2-plan M4, sdk-fork-notes R15)
     // and those of the SDK's window_placement.zig it imports.
-    const runner_tests = b.addTest(.{ .root_module = runner_mod });
+    const runner_tests = b.addTest(.{ .root_module = runner_mod, .use_llvm = useLlvmWorkaround(target) });
     test_step.dependOn(&b.addRunArtifact(runner_tests).step);
 }
 
@@ -265,6 +279,37 @@ fn buildOptionsModule(b: *std.Build, values: BuildOptionValues) *std.Build.Modul
     options.addOption(bool, "web_layer", values.web_layer);
     options.addOption(bool, "dev_origins", values.dev_origins);
     return options.createModule();
+}
+
+/// Zig 0.16.0's self-hosted x86_64 backend miscompiles the SysV C calling
+/// convention for f32-heavy signatures with interleaved pointer arguments
+/// (`native_sdk_app_viewport`: 11 f32s + 2 pointers): both the caller and
+/// the callee place/read the wrong registers and stack slots, so safe-area
+/// insets arrive as garbage on x86_64 Debug builds while every LLVM-backed
+/// build is correct. Minimal repro (fails under `zig test`, passes with
+/// `-fllvm` on x86_64-linux):
+///
+///   fn take(a: ?*anyopaque, w: f32, h: f32, s: f32, p: ?*anyopaque,
+///           t: f32, r: f32, bo: f32, l: f32, kt: f32, kr: f32, kb: f32,
+///           kl: f32) callconv(.c) void { ... }
+///
+/// The same backend also mis-places STACK-passed integer/pointer arguments
+/// in long mixed signatures with interleaved doubles: calling the GTK
+/// host's `native_sdk_gtk_create_view` (22 params: 6 register ints, 4
+/// doubles, 12 stack ints/pointers/sizes) from self-hosted Debug code
+/// hands the clang-compiled callee arguments shifted by one stack slot
+/// from `visible` onward — the callee's `role` pointer reads as the
+/// caller's `enabled` value (a 4-byte 1 under 0xAA undefined fill,
+/// faulting at 0xaaaaaaaa00000001) and `role_len` reads as the role
+/// pointer. Register-passed arguments (`label`) arrive intact, which is
+/// why the crash appears only at the first stack-passed string. Verified
+/// against zig 0.16.0 on x86_64-linux with a standalone caller/callee
+/// pair: self-hosted Debug corrupts, `-fllvm` is correct.
+///
+/// Force the LLVM backend on x86_64 until the upstream backend is fixed;
+/// Release modes already default to LLVM, so this only changes Debug.
+pub fn useLlvmWorkaround(target: std.Build.ResolvedTarget) ?bool {
+    return if (target.result.cpu.arch == .x86_64) true else null;
 }
 
 // Resolve the optimize mode for one exe role (mirrors the Native SDK
