@@ -166,9 +166,14 @@ pub fn queueArgs(args: []const [:0]const u8) usize {
 }
 
 pub fn isFileArg(a: []const u8) bool {
+    return isFileArgFor(a, builtin.os.tag == .windows);
+}
+
+/// `windows`: a Windows switch ("/u", "/flag") starts with a slash and has
+/// no other separator and no dot after it; "/Users/me/a.pgn" is a path.
+pub fn isFileArgFor(a: []const u8, windows: bool) bool {
     if (a.len == 0 or a[0] == '-') return false;
-    // a Windows switch ("/u") is short and has no separator after its slash
-    if (a[0] == '/' and builtin.os.tag == .windows) return false;
+    if (windows and a[0] == '/' and std.mem.indexOfAny(u8, a[1..], "/\\.") == null) return false;
     return std.fs.path.isAbsolute(a) or std.mem.indexOfAny(u8, a, "/\\") != null or std.mem.indexOfScalar(u8, a, '.') != null;
 }
 
@@ -367,6 +372,14 @@ test "the command line's files are the arguments that name one, not switches" {
     try std.testing.expect(!isFileArg("-psn_0_12345"));
     try std.testing.expect(!isFileArg(""));
     try std.testing.expect(!isFileArg("verbose"));
+    // the same answers on both platforms, and a Windows switch is not a file there
+    for ([_]bool{ false, true }) |w| {
+        try std.testing.expect(isFileArgFor("/Users/me/game.pgn", w));
+        try std.testing.expect(isFileArgFor("C:\\a\\b.pgn", w));
+        try std.testing.expect(!isFileArgFor("--x", w));
+    }
+    try std.testing.expect(!isFileArgFor("/u", true));
+    try std.testing.expect(!isFileArgFor("/flag", true));
     const before = queue.waiting();
     const args = [_][:0]const u8{ "chessboard.exe", "--flag", "C:\\a b\\one.pgn", "two.pgn" };
     try std.testing.expectEqual(@as(usize, 2), queueArgs(&args));

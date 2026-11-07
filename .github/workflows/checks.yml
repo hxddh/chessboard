@@ -222,6 +222,8 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
+          # a new key: the caches saved before the cleanup step below can be half-built
+          cache-key: e3-clean
       - name: derive the macOS manifest
         if: matrix.os == 'macos-26'
         run: node scripts/gen-manifest.mjs macos
@@ -238,6 +240,15 @@ jobs:
         run: |
           zig build -Dplatform=null -Dautomation=true -Dnative-sdk-path="$SDK_PATH" --prefix zig-out-null
           node scripts/automation-smoke.mjs zig-out-null/bin/chessboard --null
+      # setup-zig saves .zig-cache in its post step even for a cancelled or
+      # failed job: a build cut off mid-way left a cache whose manifests name
+      # outputs it never wrote (zig (windows-2025) on 1bfc29f: native-sdk.manifest.res
+      # missing, restored from run 42336843004, cancelled mid-build by a push).
+      # Such a job saves an empty cache instead; the next one builds cold.
+      - name: no half-built zig cache for the next run
+        if: cancelled() || failure()
+        shell: bash
+        run: rm -rf .zig-cache
 
   changed:
     runs-on: ubuntu-26.04

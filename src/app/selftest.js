@@ -229,8 +229,10 @@ const SCENARIOS = {
       { before: async () => { store.dispatch("settings.set", { key: "lang", value: "zh" }); await sleep(1500); },
         expectMenu: "新对局", cmd: "go.play", ok: () => route().path === "/play" },
     ];
-    for (const st of steps) {
+    for (const [i, st] of steps.entries()) {
       if (st.before) await st.before();
+      // the step number: the same command can come twice (go.play), and the driver answers each step once
+      rep.step = i;
       rep.stage = "await:" + st.cmd;
       rep.expectMenu = st.expectMenu || null;
       await report();
@@ -249,7 +251,8 @@ const SCENARIOS = {
     checks.shell = { pass: !!(await window.__app.shell) };
     const count = () => db.query("table.count", { table: "library" });
     // open-1.pgn holds two games, open-2.pgn one (scripts/automation-app.mjs OPEN_FILES)
-    for (const [stage, want] of [["open-1", 2], ["open-2", 3]]) {
+    for (const [i, [stage, want]] of [["open-1", 2], ["open-2", 3]].entries()) {
+      rep.step = i;
       rep.stage = "await:" + stage;
       await report();
       const t0 = Date.now();

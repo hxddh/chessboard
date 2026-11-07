@@ -88,7 +88,8 @@ async function main() {
 
   /**
    * One scenario. `onStage(stage, rep, app, env)` answers each `await:<x>`
-   * stage the page reports, once (the menu command, the file to open).
+   * stage the page reports, once per step (`rep.step`: the menu command, the
+   * file to open).
    */
   async function scenario(name, { args = [], onStage = null } = {}) {
     if (!run(name)) return null;
@@ -105,8 +106,10 @@ async function main() {
       while (Date.now() - t0 < LAUNCH_MS) {
         rep = readReport(out);
         if (rep && rep.stage === "done") break;
-        if (onStage && rep && typeof rep.stage === "string" && rep.stage.startsWith("await:") && !answered.has(rep.stage)) {
-          answered.add(rep.stage);
+        // each step once: a step is its stage and its number (the same command can be asked twice)
+        const step = rep && typeof rep.stage === "string" && rep.stage.startsWith("await:") ? rep.stage + "#" + (rep.step ?? "") : null;
+        if (onStage && step && !answered.has(step)) {
+          answered.add(step);
           await onStage(rep.stage.slice(6), rep, app, env);
         }
         if (app.state.exited !== null) throw new Error("应用退出了（" + app.state.exited + "）");

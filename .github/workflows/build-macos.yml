@@ -65,6 +65,8 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
+          # a new key: the caches saved before the cleanup step below can be half-built
+          cache-key: e3-clean
       - name: restore Stockfish
         id: sf
         uses: actions/cache/restore@v6
@@ -121,6 +123,15 @@ jobs:
           path: |
             dist/Chessboard-macOS-arm64.zip
             dist/Chessboard-macOS-arm64.dmg
+      # setup-zig saves .zig-cache in its post step even for a cancelled or
+      # failed job: a build cut off mid-way left a cache whose manifests name
+      # outputs it never wrote (zig (windows-2025) on 1bfc29f: native-sdk.manifest.res
+      # missing, restored from run 42336843004, cancelled mid-build by a push).
+      # Such a job saves an empty cache instead; the next one builds cold.
+      - name: no half-built zig cache for the next run
+        if: cancelled() || failure()
+        shell: bash
+        run: rm -rf .zig-cache
 
   scenarios:
     runs-on: macos-26
@@ -142,6 +153,8 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
+          # a new key: the caches saved before the cleanup step below can be half-built
+          cache-key: e3-clean
       - name: restore Stockfish
         id: sf
         uses: actions/cache/restore@v6
@@ -175,3 +188,12 @@ jobs:
           name: app-report-macOS
           path: automation-app-macos.json
           if-no-files-found: ignore
+      # setup-zig saves .zig-cache in its post step even for a cancelled or
+      # failed job: a build cut off mid-way left a cache whose manifests name
+      # outputs it never wrote (zig (windows-2025) on 1bfc29f: native-sdk.manifest.res
+      # missing, restored from run 42336843004, cancelled mid-build by a push).
+      # Such a job saves an empty cache instead; the next one builds cold.
+      - name: no half-built zig cache for the next run
+        if: cancelled() || failure()
+        shell: bash
+        run: rm -rf .zig-cache
