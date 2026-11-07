@@ -649,7 +649,7 @@ const wordsText = (lang) => [
 ].join("\n");
 
 if (CHECK) {
-  const same = (f, t) => fs.existsSync(f) && fs.readFileSync(f, "utf8") === t;
+  const same = (f, t) => fs.existsSync(f) && fs.readFileSync(f, "utf8").replace(/\r\n/g, "\n") === t;
   if (!same(OUT_PRACTICE, practiceText) || !same(OUT_LESSONS, lessonsText) || Object.keys(WORDS).some((l) => !same(OUT_WORDS(l), wordsText(l)))) {
     console.error("gen-skills --check: src/app/content is out of date; run node scripts/gen-skills.mjs");
     process.exit(1);
