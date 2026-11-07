@@ -18,7 +18,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { startServer } from "./serve-app.mjs";
-import { launchChromium } from "./app/browser.mjs";
+import { launchBrowser, PERF_SLACK } from "./app/browser.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 let failed = 0, passed = 0;
@@ -31,7 +31,7 @@ const stats = (xs) => {
 };
 
 const srv = await startServer();
-const browser = await launchChromium();
+const browser = await launchBrowser();
 const errors = [];
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } });
 const page = await ctx.newPage();
@@ -86,7 +86,7 @@ console.log("maia3 in a Chromium worker: kernel " + report.kernel + ", cold load
 assert(m.kernel === "wasm-simd", "the wasm SIMD kernel runs in the worker");
 assert(m.parity.bad.length === 0 && m.parity.top1 === m.parity.n && m.parity.worstKl < 1e-3,
   "parity in the browser: top-1 " + m.parity.top1 + "/" + m.parity.n + ", worst KL " + m.parity.worstKl.toExponential(2) + (m.parity.bad.length ? " — " + m.parity.bad.join(", ") : ""));
-assert(report.evalMsMedian <= 60, "median evaluation ≤ 60 ms (" + report.evalMsMedian + ")");
+assert(report.evalMsMedian <= 60 * PERF_SLACK, "median evaluation ≤ " + 60 * PERF_SLACK + " ms (" + report.evalMsMedian + ")");
 
 // --- contract ----------------------------------------------------------------------
 {

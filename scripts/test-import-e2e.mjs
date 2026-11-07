@@ -20,7 +20,7 @@ import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { startServer } from "./serve-app.mjs";
-import { launchChromium } from "./app/browser.mjs";
+import { launchBrowser, PERF_SLACK } from "./app/browser.mjs";
 
 process.removeAllListeners("warning");
 let failed = 0, passed = 0;
@@ -29,7 +29,7 @@ const DEV = process.argv.includes("--dev");
 if (!DEV) await (await import("./build-app.mjs")).buildApp({ quiet: true });
 const srv = await startServer();
 const BASE = DEV ? srv.url : srv.dist;
-const browser = await launchChromium();
+const browser = await launchBrowser();
 const errors = [];
 const FIX = path.join(path.dirname(fileURLToPath(import.meta.url)), "app", "fixtures");
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "import-e2e-"));
@@ -167,7 +167,7 @@ const rating = (page) => page.$eval("[data-test=rating]", (e) => Number(e.datase
   const ms = Date.now() - t0;
   const gap = await page.evaluate(() => { cancelAnimationFrame(window.__raf); return window.__gap; });
   assert(await count(page) === 3000, "3,000 games in the library (" + ms + " ms)");
-  assert(gap < 250, "the page kept painting while it read and saved them (longest frame gap " + Math.round(gap) + " ms)");
+  assert(gap < 250 * PERF_SLACK, "the page kept painting while it read and saved them (longest frame gap " + Math.round(gap) + " ms, < " + 250 * PERF_SLACK + ")");
   console.log("MEASURED " + JSON.stringify({ import3000_ms: ms, import3000_max_frame_gap_ms: Math.round(gap) }));
   await ctx.close();
 }

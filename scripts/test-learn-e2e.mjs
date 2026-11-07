@@ -22,7 +22,7 @@
 import fs from "fs";
 import path from "path";
 import { startServer } from "./serve-app.mjs";
-import { launchChromium } from "./app/browser.mjs";
+import { launchBrowser } from "./app/browser.mjs";
 
 process.removeAllListeners("warning");
 const MG = await import("../src/app/learn/minigame.js");
@@ -35,7 +35,7 @@ if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + ".png") }); };
 
 const srv = await startServer();
-const browser = await launchChromium();
+const browser = await launchBrowser();
 const errors = [];
 
 async function open(hash, { query = "?engine=fake&db=memory&chain=60", size = { width: 1280, height: 860 } } = {}) {

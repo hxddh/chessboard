@@ -18,7 +18,7 @@
 import fs from "fs";
 import path from "path";
 import { startServer } from "./serve-app.mjs";
-import { launchChromium } from "./app/browser.mjs";
+import { launchBrowser } from "./app/browser.mjs";
 
 process.removeAllListeners("warning");
 let failed = 0, passed = 0;
@@ -28,7 +28,7 @@ if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + ".png") }); };
 
 const srv = await startServer();
-const browser = await launchChromium();
+const browser = await launchBrowser();
 const errors = [];
 const SIZE = { width: 1024, height: 700 };
 const LOCALE = { zh: "zh-CN", en: "en-US", ja: "ja-JP" };

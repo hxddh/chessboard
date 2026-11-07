@@ -19,7 +19,7 @@
  *   node scripts/test-takeback-e2e.mjs [--dev]   (E2E_REQUIRED=1: a missing browser fails)
  */
 import { startServer } from "./serve-app.mjs";
-import { launchChromium } from "./app/browser.mjs";
+import { launchBrowser } from "./app/browser.mjs";
 
 process.removeAllListeners("warning");
 let failed = 0, passed = 0;
@@ -28,7 +28,7 @@ const DEV = process.argv.includes("--dev");
 if (!DEV) await (await import("./build-app.mjs")).buildApp({ quiet: true });
 const srv = await startServer();
 const BASE = DEV ? srv.url : srv.dist;
-const browser = await launchChromium();
+const browser = await launchBrowser();
 const errors = [];
 
 async function open(query = "", { w = 1280, h = 860, think = 0, delay = 30, dbname = null } = {}) {

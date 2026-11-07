@@ -28,7 +28,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { startServer } from "./serve-app.mjs";
-import { launchChromium } from "./app/browser.mjs";
+import { launchBrowser, chromiumOnly } from "./app/browser.mjs";
 
 process.removeAllListeners("warning");
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -46,8 +46,9 @@ const FIXED_TIME = "2026-11-07T10:00:00+08:00";
 let failed = 0, passed = 0;
 const assert = (cond, msg) => { if (cond) { passed++; console.log("ok:", msg); } else { failed++; console.error("FAIL:", msg); } };
 
+if (chromiumOnly("the visual baseline", "its shots are drawn by CI's Chromium; another engine's text rendering differs in every glyph")) process.exit(0);
 const srv = await startServer();
-const browser = await launchChromium();
+const browser = await launchBrowser();
 fs.mkdirSync(OUT, { recursive: true });
 if (UPDATE) fs.mkdirSync(BASELINE, { recursive: true });
 const errors = [];

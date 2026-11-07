@@ -1,5 +1,7 @@
 /**
- * Browser checks for v20-0-plan §5 H (手感) on the 20.0 app, in Chromium:
+ * Browser checks for v20-0-plan §5 H (手感) on the 20.0 app, in Chromium or
+ * WebKit (BROWSER=webkit; the drag's script time and layout counts are
+ * Chromium only — they come over the DevTools protocol):
  *
  *   figurines   moves print as Merida figurines in the move list and in the
  *               sentences (bar, lessons): the glyph is in the text's colour in
@@ -22,7 +24,7 @@
  * Prints MEASURED {...} for docs/v20-0-plan.md §10.
  */
 import { startServer } from "./serve-app.mjs";
-import { launchChromium } from "./app/browser.mjs";
+import { launchBrowser, chromiumOnly, PERF_SLACK } from "./app/browser.mjs";
 
 process.removeAllListeners("warning");
 
@@ -35,7 +37,7 @@ const SHOTS = (process.argv.find((a) => a.startsWith("--shots=")) || "").slice(8
 if (!DEV) await (await import("./build-app.mjs")).buildApp({ quiet: true });
 const srv = await startServer();
 const BASE = DEV ? srv.url : srv.dist;
-const browser = await launchChromium();
+const browser = await launchBrowser();
 const errors = [];
 const report = {};
 const median = (xs) => { const a = xs.slice().sort((p, q) => p - q); return a.length ? a[a.length >> 1] : NaN; };
@@ -184,10 +186,11 @@ const animatingFor = (page) => page.evaluate(() => new Promise((res) => {
   report.settleMs = Math.round(settle);
   assert((await plies(page)).length === 4 && settle >= 60 && settle <= 200, "a legal drop settles from where it was let go (" + settle.toFixed(0) + " ms)");
 
-  // drag cost: 60 pointermoves
-  const cdp = await ctx.newCDPSession(page);
-  await cdp.send("Performance.enable");
-  const metrics = async () => Object.fromEntries((await cdp.send("Performance.getMetrics")).metrics.map((m) => [m.name, m.value]));
+  // drag cost: 60 pointermoves (script time and layouts over the DevTools protocol; the drag itself runs on both)
+  const cdp = chromiumOnly("a drag's script time and layout count", "ScriptDuration / LayoutCount are read over the Chrome DevTools Protocol (Performance.getMetrics)")
+    ? null : await ctx.newCDPSession(page);
+  if (cdp) await cdp.send("Performance.enable");
+  const metrics = async () => cdp ? Object.fromEntries((await cdp.send("Performance.getMetrics")).metrics.map((m) => [m.name, m.value])) : {};
   const f1 = await centre(page, "f1"), a6 = await centre(page, "a6");
   await page.mouse.move(f1.x, f1.y); await page.mouse.down();
   await page.mouse.move(f1.x + 6, f1.y - 6);
@@ -201,12 +204,16 @@ const animatingFor = (page) => page.evaluate(() => new Promise((res) => {
   for (let i = 1; i <= 60; i++) await page.mouse.move(f1.x + (a6.x - f1.x) * i / 60, f1.y + (a6.y - f1.y) * i / 60);
   const m1 = await metrics();
   const gaps = await frameGaps;
+  const held = await bstate(page);
   await page.mouse.up();
-  const perMove = (m1.ScriptDuration - m0.ScriptDuration) * 1000 / 60;
-  report.drag = { scriptMsPerPointermove: +perMove.toFixed(3), layouts: m1.LayoutCount - m0.LayoutCount, styleRecalcs: m1.RecalcStyleCount - m0.RecalcStyleCount,
-    frameGapMedianMs: +median(gaps.slice(1)).toFixed(1) };
-  assert(perMove < 2, "a pointermove in a drag costs < 2 ms of script (" + perMove.toFixed(3) + " ms)");
-  assert(report.drag.layouts <= 2, "a 60-step drag lays out ≤ 2 times (" + report.drag.layouts + ")");
+  assert(held.dragging && (await plies(page)).slice(-1)[0] === "Ba6", "a 60-step drag carries the bishop f1 → a6 (" + (await plies(page)).slice(-1)[0] + ")");
+  report.drag = { frameGapMedianMs: +median(gaps.slice(1)).toFixed(1) };
+  if (cdp) {
+    const perMove = (m1.ScriptDuration - m0.ScriptDuration) * 1000 / 60;
+    Object.assign(report.drag, { scriptMsPerPointermove: +perMove.toFixed(3), layouts: m1.LayoutCount - m0.LayoutCount, styleRecalcs: m1.RecalcStyleCount - m0.RecalcStyleCount });
+    assert(perMove < 2, "a pointermove in a drag costs < 2 ms of script (" + perMove.toFixed(3) + " ms)");
+    assert(report.drag.layouts <= 2, "a 60-step drag lays out ≤ 2 times (" + report.drag.layouts + ")");
+  }
   console.log("drag: " + JSON.stringify(report.drag));
   await ctx.close();
 }
@@ -249,9 +256,9 @@ const animatingFor = (page) => page.evaluate(() => new Promise((res) => {
   assert(st.played.slice(-1)[0] === "castle", "O-O sounds as a castle");
   if (hasAudio) {
     assert(st.cold <= 1, "the every-move takes were rendered ahead: at most the first sound renders on the move (" + st.cold + ")");
-    assert(st.worstWarmMs < 4, "starting a warm sound costs < 4 ms of script (" + st.worstWarmMs.toFixed(2) + ")");
+    assert(st.worstWarmMs < 4 * PERF_SLACK, "starting a warm sound costs < " + 4 * PERF_SLACK + " ms of script (" + st.worstWarmMs.toFixed(2) + ")");
     // the first play makes the AudioContext, and a take not rendered ahead renders on the spot
-    assert(st.worstColdMs < 12, "the cold play (first, or rendered on the move) costs < 12 ms (" + st.worstColdMs.toFixed(2) + ")");
+    assert(st.worstColdMs < 12 * PERF_SLACK, "the cold play (first, or rendered on the move) costs < " + 12 * PERF_SLACK + " ms (" + st.worstColdMs.toFixed(2) + ")");
   }
   await page.evaluate(() => window.__app.store.dispatch("settings.set", { key: "sound", value: "off" }));
   const before = await page.evaluate(() => window.__play.sound.stats.plays);

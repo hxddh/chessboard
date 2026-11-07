@@ -1,5 +1,5 @@
 /**
- * Browser checks for the 20.0 app (src/app), in Chromium, served as ES
+ * Browser checks for the 20.0 app (src/app), in Chromium or WebKit (BROWSER=webkit), served as ES
  * modules by scripts/serve-app.mjs:
  *
  *   router     #/learn #/play #/me #/settings, each page fetched on first visit only
@@ -15,7 +15,7 @@
  *   node scripts/test-app-e2e.mjs          (E2E_REQUIRED=1: a missing browser fails)
  */
 import { startServer } from "./serve-app.mjs";
-import { launchChromium } from "./app/browser.mjs";
+import { launchBrowser, chromiumOnly, PERF_SLACK, ENGINE } from "./app/browser.mjs";
 
 process.removeAllListeners("warning");
 const { Chess } = await import("../src/app/core/chess.js");
@@ -28,7 +28,7 @@ const median = (xs) => { const a = xs.slice().sort((p, q) => p - q); return a.le
 const p90 = (xs) => { const a = xs.slice().sort((p, q) => p - q); return a[Math.min(a.length - 1, Math.floor(a.length * 0.9))]; };
 
 const srv = await startServer();
-const browser = await launchChromium();
+const browser = await launchBrowser();
 const errors = [];
 
 async function open(query = "?engine=fake", { hash = "", ctxOpts = {}, base = srv.url } = {}) {
@@ -339,6 +339,8 @@ report.firstPaintKB = Math.round(built.firstBytes / 102.4) / 10;
         new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__longTasks.push({ start: e.startTime, ms: e.duration }); })
           .observe({ type: "longtask", buffered: true });
       } catch { window.__longTasks = null; }
+      // an entry type the engine does not know is ignored, not thrown: no list then, not an empty one
+      if (!(PerformanceObserver.supportedEntryTypes || []).includes("longtask")) window.__longTasks = null;
     });
     await page.goto(srv.dist + "?engine=fake&db=memory");
     await page.waitForSelector("[data-page=play] canvas");
@@ -360,12 +362,14 @@ report.firstPaintKB = Math.round(built.firstBytes / 102.4) / 10;
   console.log("first contentful paint: median " + report.firstPaintMs.toFixed(0) + " ms (" + paints.map((x) => x.toFixed(0)).join(", ") +
     ") · board drawn (pieces on it): " + report.boardReadyMs.toFixed(0) + " ms (" + boards.map((x) => x.toFixed(0)).join(", ") + ")" +
     " · first paint loads " + built.first.length + " modules, " + report.firstPaintKB + " KB");
-  assert(report.firstPaintMs <= 220, "first paint ≤ 220 ms (v20-0-plan §1)");
-  assert(report.boardReadyMs <= 250, "board drawn ≤ 250 ms on the split build (ADR 0001)");
-  report.longTasksAtFirstPaint = longTasks.filter(Boolean).length;
-  assert(!longTasks.includes(null) && longTasks.length === 0,
-    "no long task (≥ 50 ms) before the board is drawn, in five cold starts" +
-    (longTasks.length ? " — " + JSON.stringify(longTasks.map((x) => x && Math.round(x.ms))) : ""));
+  assert(report.firstPaintMs <= 220 * PERF_SLACK, "first paint ≤ " + 220 * PERF_SLACK + " ms (v20-0-plan §1: 220 ms" + (PERF_SLACK > 1 ? ", ×" + PERF_SLACK + " on " + ENGINE : "") + ")");
+  assert(report.boardReadyMs <= 250 * PERF_SLACK, "board drawn ≤ " + 250 * PERF_SLACK + " ms on the split build (ADR 0001: 250 ms" + (PERF_SLACK > 1 ? ", ×" + PERF_SLACK + " on " + ENGINE : "") + ")");
+  if (!chromiumOnly("no long task before the board is drawn", "the longtask entry type is Chromium's (WebKit has no Long Tasks API)")) {
+    report.longTasksAtFirstPaint = longTasks.filter(Boolean).length;
+    assert(!longTasks.includes(null) && longTasks.length === 0,
+      "no long task (≥ 50 ms) before the board is drawn, in five cold starts" +
+      (longTasks.length ? " — " + JSON.stringify(longTasks.map((x) => x && Math.round(x.ms))) : ""));
+  }
   const pages = fetched.filter((f) => /^(learn|me|settings)-/.test(f));
   assert(pages.length === 0 && fetched.some((f) => /^play-/.test(f)), "the first paint loads the play page and no other page (" + fetched.join(" ") + ")");
   assert(fetched.filter((f) => /^(merida|cburnett|classic)-/.test(f)).length === 1, "and one piece set");
@@ -395,9 +399,11 @@ report.firstPaintKB = Math.round(built.firstBytes / 102.4) / 10;
   const { ctx, page } = await open("?engine=fake&think=0&dbname=e2e-perf-" + Date.now(), { ctxOpts: { reducedMotion: "reduce" }, base: srv.dist });
   await page.waitForFunction(() => window.__app.store.get().play.game);
   await newGame(page, "pvp");
-  const cdp = await ctx.newCDPSession(page);
-  await cdp.send("Performance.enable");
-  const scriptMs = async () => (await cdp.send("Performance.getMetrics")).metrics.find((m) => m.name === "ScriptDuration").value * 1000;
+  // script time comes from the DevTools protocol: on WebKit the 100 moves still go in, unmeasured
+  const cdp = chromiumOnly("script time per move", "ScriptDuration is read over the Chrome DevTools Protocol (Performance.getMetrics)")
+    ? null : await ctx.newCDPSession(page);
+  if (cdp) await cdp.send("Performance.enable");
+  const scriptMs = async () => cdp ? (await cdp.send("Performance.getMetrics")).metrics.find((m) => m.name === "ScriptDuration").value * 1000 : 0;
   const bytes0 = await page.evaluate(async () => (await window.__app.ready).stats().bytes);
   const per = [];
   for (let i = 0; i < line.length; i++) {
@@ -410,16 +416,18 @@ report.firstPaintKB = Math.round(built.firstBytes / 102.4) / 10;
   const n = (await plies(page)).length;
   assert(n === PLIES, "100 moves went in through the board (" + n + ")");
   const st = await page.evaluate(async () => { const db = await window.__app.ready; await db.flush(); return db.stats(); });
-  report.scriptMsMedian = median(per);
-  report.scriptMsP90 = p90(per);
-  report.scriptMsLast20 = median(per.slice(-20));
-  report.scriptMsFirst20 = median(per.slice(0, 20));
   report.bytesPerMove = (st.bytes - bytes0) / PLIES;
-  console.log("script time per move: median " + report.scriptMsMedian.toFixed(2) + " ms · p90 " + report.scriptMsP90.toFixed(2) +
-    " ms · moves 1–20 " + report.scriptMsFirst20.toFixed(2) + " ms · moves 81–100 " + report.scriptMsLast20.toFixed(2) + " ms");
+  if (cdp) {
+    report.scriptMsMedian = median(per);
+    report.scriptMsP90 = p90(per);
+    report.scriptMsLast20 = median(per.slice(-20));
+    report.scriptMsFirst20 = median(per.slice(0, 20));
+    console.log("script time per move: median " + report.scriptMsMedian.toFixed(2) + " ms · p90 " + report.scriptMsP90.toFixed(2) +
+      " ms · moves 1–20 " + report.scriptMsFirst20.toFixed(2) + " ms · moves 81–100 " + report.scriptMsLast20.toFixed(2) + " ms");
+    assert(report.scriptMsMedian <= 6.5, "≤ 6.5 ms of script per move on the split build (v20-0-plan §1)");
+    assert(report.scriptMsLast20 <= report.scriptMsFirst20 * 1.5 + 0.5, "a late move costs no more than an early one");
+  }
   console.log("db: " + report.bytesPerMove.toFixed(0) + " bytes written per move (" + (st.bytes - bytes0) + " B for " + PLIES + " plies, " + st.writes + " transactions in all)");
-  assert(report.scriptMsMedian <= 6.5, "≤ 6.5 ms of script per move on the split build (v20-0-plan §1)");
-  assert(report.scriptMsLast20 <= report.scriptMsFirst20 * 1.5 + 0.5, "a late move costs no more than an early one");
   assert(report.bytesPerMove * 160 <= 100 * 1024, "a 160-ply game would write ≤ 100 KB");
   await ctx.close();
 }

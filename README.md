@@ -42,13 +42,14 @@ scripts/package.sh                                          # macOS：打包、�
 npm test                           # = 下面三项
 npm run test:static                # 单测、内容核对、工作流、sdk-diff、清单、钉住的版本、图标（并行，约 40 秒）
 npm run test:app:e2e               # Chromium 里的整套行为测试（首帧、每步开销、三语、对局、复盘、学、导入……）
+BROWSER=webkit npm run test:app:e2e  # 同一套在 WebKit 里（macOS 的 WKWebView；只有 Chromium 量得到的脚本耗时等跳过并注明）
 npm run test:visual                # 每个页面三种尺寸的截图对照基线；接受改动：node scripts/test-visual-e2e.mjs --update
 zig build test -Dnative-sdk-path=… # 原生壳的单测
 ```
 
 没有 Playwright / Chromium 时浏览器测试打印「跳过」；`E2E_REQUIRED=1`（CI 里）跳过即失败。
 
-CI（`.github/workflows/`）：`checks.yml` 在每个 PR 上跑上面全部，外加 Zig 壳（macOS、Windows）；改到对手、Maia-3、引擎服务时跑「每个对手都收得了官」；改到原生一侧时调 `build-macos.yml` / `build-windows.yml` 打出两个平台的安装包、自检、跑自动化场景。`release.yml` 就是 `checks.yml` 全量 + 发布，没有只在发布时才跑的检查（`scripts/ci-check.mjs` 守着）。
+CI（`.github/workflows/`）：`checks.yml` 在每个 PR 上跑上面全部（浏览器测试 Chromium、WebKit 各一遍），外加 Zig 壳（macOS、Windows）；改到对手、Maia-3、引擎服务时跑「每个对手都收得了官」；改到原生一侧时调 `build-macos.yml` / `build-windows.yml` 打出两个平台的安装包、自检、跑自动化场景。`release.yml` 就是 `checks.yml` 全量 + 发布，没有只在发布时才跑的检查（`scripts/ci-check.mjs` 守着）。
 
 ## 结构
 

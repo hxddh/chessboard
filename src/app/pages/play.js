@@ -106,7 +106,18 @@ export function mount(el, { store, engine, ready }) {
   const root = h("div", { class: "play" }, stage, drawer.el, toastEl);
   el.append(root);
   // the board gives the bar the room it takes (two rows in a language with longer words: styles/app.css --board)
-  const barSize = new ResizeObserver(() => root.style.setProperty("--bar-h", bar.offsetHeight + "px"));
+  // The bar's height sets the board's width, which sets the bar's width (and so its height): written
+  // inside the observer's callback, that is a loop WebKit reports as an error (ResizeObserver loop
+  // completed with undelivered notifications). Write it on the next frame, and only when it changed.
+  let barH = "", barFrame = 0;
+  const barSize = new ResizeObserver(() => {
+    if (barFrame) return;
+    barFrame = requestAnimationFrame(() => {
+      barFrame = 0;
+      const v = bar.offsetHeight + "px";
+      if (v !== barH) { barH = v; root.style.setProperty("--bar-h", v); }
+    });
+  });
   barSize.observe(bar);
 
   const s0 = settings.peek();
@@ -686,7 +697,7 @@ export function mount(el, { store, engine, ready }) {
   window.__play = { board, review, sound, get mode() { return mode.peek(); }, hint, pending, flipped, undo, flip };
 
   return () => {
-    barSize.disconnect();
+    barSize.disconnect(); cancelAnimationFrame(barFrame);
     stops.forEach((s) => s());
     timers.forEach(clearTimeout);
     if (tick) clearInterval(tick);

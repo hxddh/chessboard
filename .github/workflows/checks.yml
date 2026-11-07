@@ -11,6 +11,11 @@ name: checks
 #   browser     npm run test:app:e2e in Chromium (WebView2 is Chromium): the
 #               pages, the board, play, review, learn, import, three
 #               languages, first paint and the per-move cost
+#   webkit      the same suites in Playwright's WebKit (macOS ships on
+#               WKWebView): everything they check about behaviour; what only
+#               Chromium can measure (the DevTools protocol's script time and
+#               layout counts, long tasks) is skipped there and says so
+#               (scripts/app/browser.mjs)
 #   visual      every page at 1440×900, 1024×700 and 600×900 against the
 #               committed baseline (scripts/test-visual-e2e.mjs)
 #   zig         the shell: manifest keys read, sdk-diff against the SDK on
@@ -99,6 +104,44 @@ jobs:
           npx --yes playwright@1.64.0 install chromium
           echo "CHROME_PATH=$(node -e "console.log(require('playwright').chromium.executablePath())")" >> "$GITHUB_ENV"
       - name: the app in the browser
+        run: npm run test:app:e2e
+
+  webkit:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    name: browser (WebKit)
+    env:
+      E2E_REQUIRED: "1"
+      BROWSER: webkit
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - name: install build deps
+        run: npm ci
+      - name: install playwright
+        id: pw
+        run: |
+          npm install --no-save playwright@1.64.0
+          node scripts/ci-browser-deps.mjs key webkit
+      - name: restore WebKit's system packages
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pw.outputs.dir }}
+          key: ${{ steps.pw.outputs.key }}
+      - name: system packages for WebKit
+        id: deps
+        run: node scripts/ci-browser-deps.mjs install webkit
+      - name: cache WebKit's system packages
+        if: steps.deps.outputs.save == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.pw.outputs.dir }}
+          key: ${{ steps.pw.outputs.key }}
+      - name: install WebKit
+        run: npx --yes playwright@1.64.0 install webkit
+      - name: the app in WebKit
         run: npm run test:app:e2e
 
   visual:

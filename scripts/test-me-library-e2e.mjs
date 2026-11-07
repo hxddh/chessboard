@@ -21,7 +21,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { startServer } from "./serve-app.mjs";
-import { launchChromium } from "./app/browser.mjs";
+import { launchBrowser } from "./app/browser.mjs";
 
 process.removeAllListeners("warning");
 let failed = 0, passed = 0;
@@ -30,7 +30,7 @@ const DEV = process.argv.includes("--dev");
 if (!DEV) await (await import("./build-app.mjs")).buildApp({ quiet: true });
 const srv = await startServer();
 const BASE = DEV ? srv.url : srv.dist;
-const browser = await launchChromium();
+const browser = await launchBrowser();
 const errors = [];
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "me-library-e2e-"));
 const file = (name, text) => { const p = path.join(TMP, name); fs.writeFileSync(p, text); return p; };
