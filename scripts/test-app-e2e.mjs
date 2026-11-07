@@ -9,7 +9,7 @@
  *   db         the contract suite against IndexedDB
  *   engine     the wasm Stockfish backend returns legal best moves
  *   measured   on the split build (scripts/build-app.mjs, ADR 0001): first paint and
- *              board drawn, the modules the first paint loads, script time per
+ *              board drawn, no long task before it, the modules the first paint loads, script time per
  *              move over 100 moves, bytes per move
  *
  *   node scripts/test-app-e2e.mjs          (E2E_REQUIRED=1: a missing browser fails)
@@ -324,7 +324,7 @@ const built = await buildApp({ quiet: true });
 report.firstPaintKB = Math.round(built.firstBytes / 102.4) / 10;
 {
   // first paint and board drawn: a cold context each time, median of five
-  const paints = [], boards = [];
+  const paints = [], boards = [], longTasks = [];
   let fetched = [];
   for (let i = 0; i < 5; i++) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } });
@@ -332,6 +332,14 @@ report.firstPaintKB = Math.round(built.firstBytes / 102.4) / 10;
     const got = [];
     page.on("request", (r) => { const m = /\/dist-app\/([^?]+)/.exec(r.url()); if (m) got.push(m[1]); });
     page.on("pageerror", (e) => errors.push(e.message));
+    // long tasks (≥ 50 ms on the main thread) from the very start of the page
+    await page.addInitScript(() => {
+      window.__longTasks = [];
+      try {
+        new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__longTasks.push({ start: e.startTime, ms: e.duration }); })
+          .observe({ type: "longtask", buffered: true });
+      } catch { window.__longTasks = null; }
+    });
     await page.goto(srv.dist + "?engine=fake&db=memory");
     await page.waitForSelector("[data-page=play] canvas");
     await page.waitForFunction(() => performance.getEntriesByName("app:board").length > 0);
@@ -339,8 +347,11 @@ report.firstPaintKB = Math.round(built.firstBytes / 102.4) / 10;
     const t = await page.evaluate(() => ({
       fcp: performance.getEntriesByName("first-contentful-paint")[0]?.startTime,
       board: performance.getEntriesByName("app:board")[0]?.startTime,
+      long: window.__longTasks,
     }));
     paints.push(t.fcp); boards.push(t.board);
+    if (t.long) longTasks.push(...t.long.filter((x) => x.start <= t.board));
+    else longTasks.push(null);
     fetched = got;
     await ctx.close();
   }
@@ -351,6 +362,10 @@ report.firstPaintKB = Math.round(built.firstBytes / 102.4) / 10;
     " · first paint loads " + built.first.length + " modules, " + report.firstPaintKB + " KB");
   assert(report.firstPaintMs <= 220, "first paint ≤ 220 ms (v20-0-plan §1)");
   assert(report.boardReadyMs <= 250, "board drawn ≤ 250 ms on the split build (ADR 0001)");
+  report.longTasksAtFirstPaint = longTasks.filter(Boolean).length;
+  assert(!longTasks.includes(null) && longTasks.length === 0,
+    "no long task (≥ 50 ms) before the board is drawn, in five cold starts" +
+    (longTasks.length ? " — " + JSON.stringify(longTasks.map((x) => x && Math.round(x.ms))) : ""));
   const pages = fetched.filter((f) => /^(learn|me|settings)-/.test(f));
   assert(pages.length === 0 && fetched.some((f) => /^play-/.test(f)), "the first paint loads the play page and no other page (" + fetched.join(" ") + ")");
   assert(fetched.filter((f) => /^(merida|cburnett|classic)-/.test(f)).length === 1, "and one piece set");
