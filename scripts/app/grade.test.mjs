@@ -1,21 +1,23 @@
 /**
- * The review core extracted into src/app/core (winpct, grade, pass) against
- * 19.0's review.js / review-grade.js / review-pass.js on fixed games: the same
- * pass arrays, the same grades, the same moments, the same accuracy. Plus the
- * new pieces: selectMoments, clock, coach facts.
+ * The review core in src/app/core (winpct, grade, pass) against what 19.0's
+ * review.js / review-grade.js / review-pass.js gave on fixed games — the same
+ * pass arrays, the same grades, the same moments, the same accuracy —
+ * recorded from v19.0.0 into scripts/fixtures/review19.json when 19.0 was
+ * removed. Plus the new pieces: selectMoments, clock, coach facts.
  */
-import { Chess } from "../../src/web/js/chess.js";
-import { ChessReview as R19 } from "../../src/web/js/review.js";
-import { ChessReviewGrade as G19 } from "../../src/web/js/review-grade.js";
-import { ChessReviewPass as P19 } from "../../src/web/js/review-pass.js";
+import fs from "fs";
+import { Chess } from "../../src/app/core/chess.js";
 import * as W from "../../src/app/core/winpct.js";
 import * as G from "../../src/app/core/grade.js";
-import { runPass, runProgressive, engineAnalyze, evalScalar, deeper } from "../../src/app/core/pass.js";
+import { runPass, runProgressive, engineAnalyze, deeper } from "../../src/app/core/pass.js";
 import * as C from "../../src/app/core/clock.js";
 import { threatNow, dangerAfter, checksAndCaptures, shouldAsk } from "../../src/app/core/coach.js";
 import { createEngineService, fakeBackend } from "../../src/app/services/engine.js";
 import { GAMES } from "../fixtures/corpus.mjs";
 import { COACH_GAMES } from "../fixtures/coach-games.mjs";
+
+const R19 = JSON.parse(fs.readFileSync(new URL("../fixtures/review19.json", import.meta.url), "utf8"));
+const plain = (x) => JSON.parse(JSON.stringify(x));
 
 const fensOf = (sans) => {
   const g = new Chess(), fens = [g.fen()];
@@ -27,32 +29,33 @@ const FIXED = [GAMES[0], GAMES[1], GAMES[2], { name: "coach 1 (60 plies)", san: 
 export default function (test) {
   test("winPct, drops, tags and accuracy match 19.0", (a) => {
     for (const cp of [-20000, -9000, -1234, -300, -50, 0, 7, 50, 120, 300, 999, 9000, 20000, null]) {
-      a.equal(W.winPct(cp), R19.winPct(cp), "winPct " + cp);
-      a.equal(W.accuracyWinPct(cp), R19.accuracyWinPct(cp), "accuracyWinPct " + cp);
+      a.equal(W.winPct(cp), R19.winPct[String(cp)], "winPct " + cp);
+      a.equal(W.accuracyWinPct(cp), R19.accuracyWinPct[String(cp)], "accuracyWinPct " + cp);
     }
-    for (const [x, y] of [[0, -300], [200, 150], [-50, 400], [9000, 0]]) for (const s of ["w", "b"]) {
-      a.equal(W.winPctDrop(x, y, s), R19.winPctDrop(x, y, s));
-      a.equal(W.classifyByWinPct(W.winPctDrop(x, y, s)), R19.classifyByWinPct(R19.winPctDrop(x, y, s)));
+    for (const { x, y, s, drop, cls } of R19.drops) {
+      a.equal(W.winPctDrop(x, y, s), drop);
+      a.equal(W.classifyByWinPct(W.winPctDrop(x, y, s)), cls);
     }
     a.equal(W.WIN_MISTAKE, R19.WIN_MISTAKE);
-    a.equal(W.moveNumber(5, "w"), R19.moveNumber(5, "w"));
+    a.equal(W.moveNumber(5, "w"), R19.moveNumber5w);
   });
 
   for (const game of FIXED) {
     test("pass and grades match 19.0: " + game.name, async (a) => {
+      const old = R19.games[game.name];
+      a.ok(old, "recorded");
       const fens = fensOf(game.san);
       const engine = createEngineService(fakeBackend());
       const analyze = engineAnalyze(engine);
       const mine = await runPass({ fens, sans: game.san, budget: 100, analyze });
-      const old = await P19.runPass({ fens, sans: game.san, budget: 100, analyze, evalScalar });
-      for (const k of ["scalars", "bests", "pvs", "seconds", "deep", "terminal"]) a.deepEqual(mine[k], old[k], k);
+      for (const k of ["scalars", "bests", "pvs", "seconds", "deep", "terminal"]) a.deepEqual(plain(mine[k]), old.pass[k], k);
       const grades = G.gradeMoves(mine);
-      a.deepEqual(grades, G19.gradeMoves(old, Chess), "grades");
-      a.deepEqual(G.deepTargets(mine), G19.deepTargets(old, Chess), "deep targets");
+      a.deepEqual(plain(grades), old.grades, "grades");
+      a.deepEqual(plain(G.deepTargets(mine)), old.deepTargets, "deep targets");
       const no = (i) => W.moveNumber(i, "w");
-      a.deepEqual(G.keyMoments(mine, grades, "w", no), G19.keyMoments(old, grades, "w", no), "moments");
-      a.deepEqual(W.gameAccuracy(mine.scalars, "w"), R19.gameAccuracy(old.scalars, "w"), "accuracy");
-      a.deepEqual(G.countGrades(grades, "w"), G19.countGrades(grades, "w"), "counts");
+      a.deepEqual(plain(G.keyMoments(mine, grades, "w", no)), old.moments, "moments");
+      a.deepEqual(plain(W.gameAccuracy(mine.scalars, "w")), old.accuracy, "accuracy");
+      a.deepEqual(plain(G.countGrades(grades, "w")), old.counts, "counts");
       const sel = G.selectMoments(mine, grades, ["w"]);
       a.ok(sel.length <= 3, "at most three moments");
       a.ok(sel.every((m, i) => m.side === "w" && G.MOMENT_GRADES.includes(m.grade) && (!i || sel[i - 1].ply < m.ply)), "white's, graded, in order");

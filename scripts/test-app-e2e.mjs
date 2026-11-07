@@ -17,9 +17,8 @@
 import { startServer } from "./serve-app.mjs";
 import { launchChromium } from "./app/browser.mjs";
 
-// src/web/js has no package.json saying "module"; Node's reparse notice is noise here
 process.removeAllListeners("warning");
-const { Chess } = await import("../src/web/js/chess.js");
+const { Chess } = await import("../src/app/core/chess.js");
 
 let failed = 0, passed = 0;
 const assert = (cond, msg) => {
@@ -354,7 +353,7 @@ report.firstPaintKB = Math.round(built.firstBytes / 102.4) / 10;
   assert(report.boardReadyMs <= 250, "board drawn ≤ 250 ms on the split build (ADR 0001)");
   const pages = fetched.filter((f) => /^(learn|me|settings)-/.test(f));
   assert(pages.length === 0 && fetched.some((f) => /^play-/.test(f)), "the first paint loads the play page and no other page (" + fetched.join(" ") + ")");
-  assert(fetched.filter((f) => /^pieces-/.test(f)).length === 1, "and one piece set");
+  assert(fetched.filter((f) => /^(merida|cburnett|classic)-/.test(f)).length === 1, "and one piece set");
 }
 {
   // 100 moves through the real input path, as scripts/perf-e2e.mjs measures 19.0

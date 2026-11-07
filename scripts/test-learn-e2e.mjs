@@ -26,7 +26,7 @@ import { launchChromium } from "./app/browser.mjs";
 
 process.removeAllListeners("warning");
 const MG = await import("../src/app/learn/minigame.js");
-const { Chess } = await import("../src/web/js/chess.js");
+const { Chess } = await import("../src/app/core/chess.js");
 
 let failed = 0, passed = 0;
 const assert = (cond, msg) => { if (cond) { passed++; console.log("ok:", msg); } else { failed++; console.error("FAIL:", msg); } };

@@ -3,4 +3,4 @@
  * pure). Recorded sounds replace it later behind the same names.
  * @module core/sounds
  */
-export { SOUND_NAMES, renderSound, heftOf, STRIKES } from "../../web/js/sound-bank.js";
+export { SOUND_NAMES, renderSound, heftOf, STRIKES } from "./sound-bank.js";

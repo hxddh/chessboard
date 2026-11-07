@@ -28,7 +28,7 @@ import { startServer } from "./serve-app.mjs";
 import { launchChromium } from "./app/browser.mjs";
 
 process.removeAllListeners("warning");
-const { Chess } = await import("../src/web/js/chess.js");
+const { Chess } = await import("../src/app/core/chess.js");
 const SHOTS = (process.argv.find((a) => a.startsWith("--shots=")) || "").slice(8) || null;
 
 let failed = 0, passed = 0;

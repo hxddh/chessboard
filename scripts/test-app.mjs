@@ -8,7 +8,7 @@ import path from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import { createHarness } from "./app/harness.mjs";
 
-// src/web/js has no package.json saying "module"; Node's reparse notice is noise here
+// Node's experimental-feature notices (node:sqlite) are noise here
 process.removeAllListeners("warning");
 
 const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "app");

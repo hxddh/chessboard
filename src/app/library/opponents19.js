@@ -9,7 +9,7 @@
  * ends and the ratings the dialog shows are the ones the harness measured.
  * @module opponents
  */
-import { ChessRating } from "./rating.js";
+import { ChessRating } from "../core/rating.js";
 
 /** The rungs, weakest first. Every id has a row in engine.js TIERS. */
 const LEVELS = ["beginner", "casual", "learner", "improver", "steady", "solid", "easy", "easyplus", "normalminus", "normal", "normalplus", "hardminus", "hard", "hardplus", "expert", "expertplus", "master", "masterplus", "strong", "strongplus", "extreme"];

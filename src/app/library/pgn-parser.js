@@ -17,7 +17,7 @@
  * the comment; `[%clk]` / `[%eval]` stay in the comment text verbatim.
  * @module pgn-parser
  */
-import { Chess } from "./chess.js";
+import { Chess } from "../core/chessjs.js";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const RESULTS = new Set(["1-0", "0-1", "1/2-1/2", "*"]);

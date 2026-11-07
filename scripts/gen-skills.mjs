@@ -5,7 +5,7 @@
  *   node scripts/gen-skills.mjs --check   → fails if either file would change
  *
  * For every node of src/app/content/skills.js, 3–5 positions, easy to hard:
- *   1. its 19.0 lessons' tasks (src/web/js/lessons*.js): a star task becomes a
+ *   1. its 19.0 lessons' tasks (data/v19/lessons*.js): a star task becomes a
  *      move mini-game (src/app/learn/minigame.js proves the stored path and
  *      finds the fewest moves); a move task is held to its goal
  *      (src/app/learn/goals.js) by its own solution;
@@ -13,11 +13,11 @@
  *      mini-games ("move the rook to take every pawn"), castling, en passant,
  *      check, the stalemate trap, the basic mates — found by search, every
  *      one proved the same way;
- *   3. a stretch of a 19.0 classic game to guess (src/web/js/classics.js), where
+ *   3. a stretch of a 19.0 classic game to guess (data/v19/classics.js), where
  *      the skill names one;
  *   4. puzzles from the existing pools — the 168 hand-written, the 980 mined,
  *      the 40 000 Lichess (CC0) — by theme, motif or line motif
- *      (src/web/js/motif.js lineMotif) and by rating around the skill's level.
+ *      (src/app/core/motif.js lineMotif) and by rating around the skill's level.
  *      Each passes scripts/lib/puzzle-gate.mjs again (legal, canonical SAN,
  *      mates forced and needing their whole budget, material swings real);
  *      a mate-in-two is kept only when its first move is the only one that
@@ -41,28 +41,28 @@ import { fileURLToPath } from "url";
 
 process.removeAllListeners("warning");
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const WEB = path.join(ROOT, "src/web/js");
+const V19 = path.join(ROOT, "data/v19");
 const imp = (rel) => import(path.join(ROOT, rel));
 
-const { Chess } = await imp("src/web/js/chess.js");
+const { Chess } = await imp("src/app/core/chess.js");
 const { gate, whiteHasForcedMate } = await imp("scripts/lib/puzzle-gate.mjs");
-const { lineMotif } = await imp("src/web/js/motif.js");
-const { CHESS_LESSONS } = await imp("src/web/js/lessons.js");
-const { CHESS_LESSONS_ADV_ZH } = await imp("src/web/js/lessons-adv.js");
-const { CHESS_PUZZLES } = await imp("src/web/js/puzzles.js");
-const { MINED_PUZZLES } = await imp("src/web/js/puzzles-mined.js");
-const { CHESS_ENDGAMES } = await imp("src/web/js/endgames.js");
-const { CHESS_OPENINGS, CHESS_OPENING_NAMES } = await imp("src/web/js/openings.js");
-const { CHESS_CLASSICS } = await imp("src/web/js/classics.js");
-const { CHESS_OPENING_IDEAS_ZH_CN } = await imp("src/web/js/openings-ideas-zh.js");
+const { lineMotif } = await imp("src/app/core/motif.js");
+const { CHESS_LESSONS } = await imp("data/v19/lessons.js");
+const { CHESS_LESSONS_ADV_ZH } = await imp("data/v19/lessons-adv.js");
+const { CHESS_PUZZLES } = await imp("data/v19/puzzles.js");
+const { MINED_PUZZLES } = await imp("data/v19/puzzles-mined.js");
+const { CHESS_ENDGAMES } = await imp("data/v19/endgames.js");
+const { CHESS_OPENINGS, CHESS_OPENING_NAMES } = await imp("data/v19/openings.js");
+const { CHESS_CLASSICS } = await imp("data/v19/classics.js");
+const { CHESS_OPENING_IDEAS_ZH_CN } = await imp("data/v19/openings-ideas-zh.js");
 // the same content's English and Japanese, by the same ids (19.0's chunk-lang-en / -ja)
 const TR = {
-  en: { lessons: { ...(await imp("src/web/js/lessons-en.js")).CHESS_LESSONS_EN, ...(await imp("src/web/js/lessons-adv-en.js")).CHESS_LESSONS_ADV_EN },
-    openings: (await imp("src/web/js/openings-en.js")).CHESS_OPENINGS_EN, ideas: (await imp("src/web/js/openings-en.js")).CHESS_OPENING_IDEAS_EN,
-    classics: (await imp("src/web/js/classics-en.js")).CHESS_CLASSICS_EN, n: 1, sep: ", " },
-  ja: { lessons: { ...(await imp("src/web/js/lessons-ja.js")).CHESS_LESSONS_JA, ...(await imp("src/web/js/lessons-adv-ja.js")).CHESS_LESSONS_ADV_JA },
-    openings: (await imp("src/web/js/openings-ja.js")).CHESS_OPENINGS_JA, ideas: (await imp("src/web/js/openings-ja.js")).CHESS_OPENING_IDEAS_JA,
-    classics: (await imp("src/web/js/classics-ja.js")).CHESS_CLASSICS_JA, n: 2, sep: "、" },
+  en: { lessons: { ...(await imp("data/v19/lessons-en.js")).CHESS_LESSONS_EN, ...(await imp("data/v19/lessons-adv-en.js")).CHESS_LESSONS_ADV_EN },
+    openings: (await imp("data/v19/openings-en.js")).CHESS_OPENINGS_EN, ideas: (await imp("data/v19/openings-en.js")).CHESS_OPENING_IDEAS_EN,
+    classics: (await imp("data/v19/classics-en.js")).CHESS_CLASSICS_EN, n: 1, sep: ", " },
+  ja: { lessons: { ...(await imp("data/v19/lessons-ja.js")).CHESS_LESSONS_JA, ...(await imp("data/v19/lessons-adv-ja.js")).CHESS_LESSONS_ADV_JA },
+    openings: (await imp("data/v19/openings-ja.js")).CHESS_OPENINGS_JA, ideas: (await imp("data/v19/openings-ja.js")).CHESS_OPENING_IDEAS_JA,
+    classics: (await imp("data/v19/classics-ja.js")).CHESS_CLASSICS_JA, n: 2, sep: "、" },
 };
 const { SKILLS, SKILL, ancestors } = await imp("src/app/content/skills.js");
 const MG = await imp("src/app/learn/minigame.js");
@@ -82,8 +82,8 @@ const LESSONS = Object.fromEntries([...CHESS_LESSONS, ...CHESS_LESSONS_ADV_ZH].m
 
 function lichess() {
   const out = [];
-  for (const f of fs.readdirSync(path.join(WEB, "lichess")).sort()) {
-    const text = fs.readFileSync(path.join(WEB, "lichess", f), "utf8");
+  for (const f of fs.readdirSync(path.join(V19, "lichess")).sort()) {
+    const text = fs.readFileSync(path.join(V19, "lichess", f), "utf8");
     const rows = JSON.parse(text.slice(text.indexOf("["), text.lastIndexOf("]") + 1).replace(/,\s*\]$/, "]"));
     for (const [id, fen, line, rating, cat, themes, n] of rows) {
       out.push({ id: "lc:" + id, fen, solution: line.split(" "), rating, cat, themes: themes ? themes.split(" ") : [],
@@ -621,7 +621,7 @@ const practiceText = [
   "",
 ].join("\n");
 const lessonsText = [
-  ...HEAD("Lessons' text (zh), from src/web/js/lessons*.js by id"),
+  ...HEAD("Lessons' text (zh), from data/v19/lessons*.js by id"),
   "export const LESSONS = {",
   ...Object.entries(LESSON_TEXT).map(([id, l]) => "  " + JSON.stringify(id) + ": " + JSON.stringify(l) + ","),
   "};",
@@ -632,7 +632,7 @@ const NAMES = { en: "English", ja: "Japanese" };
 const wordsText = (lang) => [
   "/**",
   " * The content's words in " + NAMES[lang] + " — generated by scripts/gen-skills.mjs from 19.0's",
-  " * translations by the same ids (src/web/js/lessons-" + lang + ".js, lessons-adv-" + lang + ".js,",
+  " * translations by the same ids (data/v19/lessons-" + lang + ".js, lessons-adv-" + lang + ".js,",
   " * openings-" + lang + ".js, classics-" + lang + ".js, endgames.js), do not edit. Loaded with the",
   " * language (text/lang.js); content/practice.js and lessons.js keep the Chinese.",
   " * @module content/words." + lang,

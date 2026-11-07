@@ -23,15 +23,15 @@
  *   expected    the move the item wanted (a lesson's answer, the master's move)
  *   book        an opening drill's move(s) here, most common first (SAN)
  *
- * The 19.0 module (src/web/js/explain.js, motif.js) stays the source of the
+ * The 19.0 modules (core/explain-mistake.js, core/motif.js) stay the source of the
  * tactical motifs; its exports are passed through for the callers that
  * still use them directly.
  * @module core/explain
  */
 import { Chess } from "./chess.js";
 import { explainMistake as explain19, explainParts as parts19, explainKey as key19, explainMotif as motif19, figurine, lineAfter, retryQuick, LOSS_PLIES }
-  from "../../web/js/explain.js";
-import { lineMotif as lineMotif19, threatOf as threatOf19 } from "../../web/js/motif.js";
+  from "./explain-mistake.js";
+import { lineMotif as lineMotif19, threatOf as threatOf19 } from "./motif.js";
 import { winPctDrop, WIN_MISTAKE } from "./winpct.js";
 import * as F from "./facts.js";
 import { kpk } from "./facts-kpk.js";
@@ -41,11 +41,11 @@ const { VALUE, other, load, play, after: afterMove } = F;
 
 /** A move as the app prints it, for now its SAN (the font has no chess glyphs yet). */
 export const sanText = (san) => san;
-/** @see src/web/js/explain.js explainMistake — the 19.0 facts, still the tactical core */
+/** @see core/explain-mistake.js explainMistake — the 19.0 facts, still the tactical core */
 export const explainMistake = (x) => explain19(x, Chess);
-/** @see src/web/js/motif.js lineMotif */
+/** @see core/motif.js lineMotif */
 export const lineMotif = (fen, sans, opts) => lineMotif19(fen, sans, Chess, opts);
-/** @see src/web/js/motif.js threatOf */
+/** @see core/motif.js threatOf */
 export const threatOf = (fenBefore, reply, best) => threatOf19(fenBefore, reply, best, Chess);
 
 const sansOf = (line) => (Array.isArray(line) ? line.filter((s) => typeof s === "string" && s)

@@ -14,7 +14,7 @@
  *   setNotation(el, text)         → el's children replaced with the above
  * @module lib/notation
  */
-import { figurineSvg } from "../../web/js/figurines.js";
+import { figurineSvg } from "./figurines.js";
 
 // No look-behind: Safari 14 (macOS 11) has none. Group 1 is what precedes.
 // A piece move, or a pawn move that promotes; then check or mate.

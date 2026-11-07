@@ -10,7 +10,7 @@ import { LESSONS } from "../../src/app/content/lessons.js";
 import { judge } from "../../src/app/learn/goals.js";
 import * as MG from "../../src/app/learn/minigame.js";
 import { Chess } from "../../src/app/core/chess.js";
-import { LINE_MOTIF_KEYS } from "../../src/web/js/motif.js";
+import { LINE_MOTIF_KEYS } from "../../src/app/core/motif.js";
 import zh from "../../src/app/text/learn.zh.js";
 
 export default function (test) {

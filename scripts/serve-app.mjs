@@ -16,7 +16,7 @@ import { fileURLToPath } from "url";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 /** What the app may load: its own tree, the 19.0 core it reuses, engine assets, the browser-side test suites. */
-const ALLOWED = ["/dist-app/", "/src/app/", "/src/web/js/", "/src/web/fonts/", "/third_party/stockfish/", "/third_party/maia3/", "/scripts/app/"];
+const ALLOWED = ["/dist-app/", "/src/app/", "/third_party/stockfish/", "/third_party/maia3/", "/scripts/app/"];
 const MIME = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript",
   ".css": "text/css", ".json": "application/json", ".wasm": "application/wasm",

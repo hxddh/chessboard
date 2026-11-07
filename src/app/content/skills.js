@@ -10,7 +10,7 @@
  *   needs    prerequisites — a skill is reached once all of them are lit
  *   motifs   the review's motif keys (core/explain, `review.finding`) that
  *            count as evidence against it
- *   lessons  19.0 lessons (src/web/js/lessons*.js) whose text explains it and
+ *   lessons  19.0 lessons (data/v19/lessons*.js) whose text explains it and
  *            whose move tasks become its first positions
  *   stars    a generated move mini-game for this kind of man
  *   pool     how scripts/gen-skills.mjs picks puzzles for it: Lichess themes,

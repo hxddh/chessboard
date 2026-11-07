@@ -1,8 +1,8 @@
 /**
- * The rules core, reused unchanged from src/web/js (ADR 0002: the pure logic
- * stays). Everything in src/app imports it from here, so the day src/web goes
- * this is the one file that changes.
+ * The rules core (ADR 0002: the pure logic stays): chess.js, vendored
+ * (chessjs.js), and the FIDE draw rules on top of it (fide.js). Everything in
+ * src/app imports the rules from here.
  * @module core/chess
  */
-export { Chess } from "../../web/js/chess.js";
-export { ChessFide } from "../../web/js/fide.js";
+export { Chess } from "./chessjs.js";
+export { ChessFide } from "./fide.js";

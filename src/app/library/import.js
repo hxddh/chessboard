@@ -12,15 +12,15 @@
  *
  * Pure apart from `pause` (it yields between slices so a large file never
  * holds the page: ~12 ms of work, then a macrotask). The text itself is the
- * 19.0 parser's job (src/web/js/pgn-parser.js: comments, variations, NAGs,
+ * 19.0 parser's job (library/pgn-parser.js: comments, variations, NAGs,
  * `0-0`, figurines, `[%clk]`; chess.js the judge of every move); only the
  * mainline is kept. Re-importing is the normal case: a game has the same id
  * every time (a hash of its start, moves and players), and one the library
  * has is counted, not added again.
  * @module library/import
  */
-import { parsePgn, START_FEN } from "../../web/js/pgn-parser.js";
-import { Opponents } from "../../web/js/opponents.js";
+import { parsePgn, START_FEN } from "./pgn-parser.js";
+import { Opponents } from "./opponents19.js";
 
 /** The most read from a file: 19.0's ALL_DATA_MAX (a PGN is never near it). */
 export const IMPORT_MAX = 64 * 1024 * 1024;

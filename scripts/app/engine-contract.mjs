@@ -7,7 +7,7 @@
  * @param {() => object} make a fresh EngineService
  * @param {{ budget?: object, label?: string, quick?: boolean }} [o]
  */
-import { Chess } from "../../src/web/js/chess.js";
+import { Chess } from "../../src/app/core/chess.js";
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const MATE_IN_1 = "6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1";        // Rd8#
