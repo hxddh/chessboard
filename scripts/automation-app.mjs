@@ -1,8 +1,10 @@
 /**
- * Drive the 20.0 app (`zig build -Dui=app -Dautomation=true`, packaged with
+ * Drive the 20.0 app (`zig build -Dautomation=true`, packaged with
  * its Stockfish) through its self-test scenarios (src/app/selftest.js) and
- * judge what only the outside sees — v20-0-plan A1–A3, F3, the build jobs'
- * `app` step (build-macos.yml, build-windows.yml).
+ * judge what only the outside sees — v20-0-plan A1–A3, F3: the build
+ * workflows' `scenarios` jobs (build-macos.yml, build-windows.yml), and with
+ * `--only smoke` their `package` jobs' self-test of the package as shipped
+ * (a release build: the smoke needs no automation seam).
  *
  *   smoke        CHESS_SELFTEST=1 alone: the page reports and the app exits
  *                0 — board drawn, the native db and the native engine answer

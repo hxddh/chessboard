@@ -12,8 +12,9 @@
  * The scale: 19.0's ladder (docs/measured.json `ladder`) is on the scale the
  * app has always shown — UCI_Elo 1320 / 1700 in 8.0, then each re-fit held to
  * the rungs that had not changed. Six of its rungs play here as anchors
- * (`19:<id>`: 19.0's own engine.js tiers and Maia-1 nets, through
- * scripts/lib/ladder-player.mjs, 19.0's resign rule) against the 20.0
+ * (`19:<id>`: 19.0's own engine.js tiers and Maia-1 nets, through its
+ * scripts/lib/ladder-player.mjs, 19.0's resign rule — from a v19.0.0 checkout,
+ * see ladder19 below) against the 20.0
  * opponents nearest them; the fit is put on the 19.0 scale by a least-squares
  * line through the anchors at their recorded ratings. So a 1500 here is a
  * 1500 there.
@@ -31,6 +32,7 @@
  */
 import fs from "fs";
 import path from "path";
+import { pathToFileURL } from "url";
 import { LADDER } from "../src/app/core/opponents.js";
 import { TUNING } from "../src/app/opponents/mind.js";
 import { Chess } from "../src/app/core/chess.js";
@@ -100,10 +102,23 @@ function schedule() {
 
 // --- play --------------------------------------------------------------------------
 
-/** 19.0's rungs, as test-ladder.mjs plays them (only loaded when an anchor plays). */
+/**
+ * 19.0's rungs, as its test-ladder.mjs played them (only loaded when an anchor
+ * plays). 19.0 is not in this tree any more: the anchors run from a checkout
+ * of the v19.0.0 tag — its engine.js tiers, Maia-1 nets and resign rule,
+ * through its own scripts/lib/ladder-player.mjs — at LADDER19 (default
+ * .ladder19/ here), made with
+ *   git worktree add .ladder19 v19.0.0 && ln -s "$PWD/node_modules" .ladder19/node_modules
+ * (ladder.yml does this).
+ */
 async function ladder19() {
-  const { loadAppModules } = await import("./lib/app-module.mjs");
-  const { startPlayer } = await import("./lib/ladder-player.mjs");
+  const root19 = path.resolve(process.env.LADDER19 || ".ladder19");
+  if (!fs.existsSync(path.join(root19, "src/web/js/engine.js"))) {
+    throw new Error("19.0 anchors need a checkout of v19.0.0 at " + root19 +
+      ": git worktree add .ladder19 v19.0.0 && ln -s \"$PWD/node_modules\" .ladder19/node_modules (or LADDER19=dir)");
+  }
+  const { loadAppModules } = await import(pathToFileURL(path.join(root19, "scripts/lib/app-module.mjs")).href);
+  const { startPlayer } = await import(pathToFileURL(path.join(root19, "scripts/lib/ladder-player.mjs")).href);
   const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/engine.js", "src/web/js/persona.js", "src/web/js/opponents.js", "src/web/js/human/maia-net.js", "src/web/js/human/pick.js"]);
   const { Chess: Chess19, ChessEngine, ChessPersona, Opponents, parseNet, movePolicy } = ctx;
   const player = await startPlayer({ Chess: Chess19, ChessEngine, ChessPersona, parseNet, movePolicy,

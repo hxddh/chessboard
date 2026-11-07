@@ -1,6 +1,6 @@
 /**
  * The Native SDK automation server's file dropbox, from the driver's side —
- * shared by scripts/automation-smoke.mjs and scripts/automation-scenarios.mjs
+ * shared by scripts/automation-smoke.mjs and scripts/automation-app.mjs
  * (v8-2-plan V1; the protocol is described in automation-smoke.mjs's header
  * and in v8-2-plan §9 M1).
  */
@@ -14,7 +14,7 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /**
  * A fresh working directory (the dropbox is resolved against the app's
  * current directory) and a profile — HOME, and APPDATA on Windows — under
- * the system temp folder, as scripts/selftest-app.mjs makes one.
+ * the system temp folder.
  */
 export function makeWork(prefix) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), prefix));

@@ -34,7 +34,9 @@
  */
 import fs from "fs";
 import path from "path";
-import { ROOT, loadAppModules } from "./lib/app-module.mjs";
+import { ROOT } from "./lib/app-module.mjs";
+import * as X19 from "../src/app/core/explain-mistake.js";
+import { Chess as Chess19 } from "../src/app/core/chess.js";
 import { read as readMeasured, record } from "./measurements.mjs";
 import { GAMES } from "./fixtures/corpus.mjs";
 import { COACH_GAMES } from "./fixtures/coach-games.mjs";
@@ -56,8 +58,6 @@ const DEEP = path.join(ROOT, "scripts/fixtures/explain-deep.json");
 const t = playText("zh");
 
 // the 19.0 explainer for the "before" column, exactly as the 19.0 review called it
-const ctx19 = loadAppModules(["src/web/js/chess.js", "src/web/js/explain.js"]);
-const X19 = ctx19.ChessExplain;
 
 const cache = JSON.parse(fs.readFileSync(CACHE, "utf8"));
 function cached(fen) {
@@ -107,7 +107,7 @@ for (const [set, games] of [["corpus", GAMES], ["low", COACH_GAMES]]) {
       const line = X.lineAfter(p.pvs, game.san, i);
       const ctx = { kind: "review", best: p.bests[i], bestLine: p.pvs[i], line, evalBefore: a, evalAfter: b };
       const res = X.explainMove(p.fens[i], game.san[i], ctx);
-      const old = X19.explainMistake({ fen: p.fens[i], played: game.san[i], best: p.bests[i], bestLine: p.pvs[i], line, evalBefore: a, evalAfter: b }, ctx19.Chess);
+      const old = X19.explainMistake({ fen: p.fens[i], played: game.san[i], best: p.bests[i], bestLine: p.pvs[i], line, evalBefore: a, evalAfter: b }, Chess19);
       rows.push({ set, game: game.name, ply: i, tag, fen: p.fens[i], played: game.san[i], line, bestLine: p.pvs[i], evalBefore: a, evalAfter: b,
         res, key: res && res.key, reason: res && res.reason, zh: X.explainText(res, t),
         oldKey: X19.explainKey(old), oldZh: X19.explainText(old, (k) => t(k)), old });
