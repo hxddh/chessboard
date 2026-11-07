@@ -30,7 +30,7 @@ import { createInput } from "./input.js";
 import { paint, readPaint } from "./render.js";
 import { loadSet } from "./pieces.js";
 import { readFen, premoveDests, fromScreen, sqFile, sqRank } from "./geometry.js";
-import { DEFAULT_MS, effectiveMs } from "./tween.js";
+import { DEFAULT_MS, effectiveMs, snapbackMs, hoverMs } from "./tween.js";
 import { legalDests, checkSquare, START_FEN, turnOf } from "../core/rules.js";
 import { DEFAULT_PIECE_SET } from "../core/pieces.js";
 
@@ -53,22 +53,23 @@ export function createBoard(el, opts = {}) {
   canvas.className = "cb-canvas";
   canvas.tabIndex = 0;
   canvas.setAttribute("role", "application");
-  canvas.setAttribute("aria-label", "棋盘");
+  canvas.setAttribute("aria-label", o.label || "棋盘");
   el.classList.add("cb-board");
   el.dataset.board = o.theme;
   el.append(canvas);
   const ctx = canvas.getContext("2d");
 
   const turn = () => (turnOf(o.fen) === "w" ? "white" : "black");
+  function canPick(sq) {
+    const code = placement.get(sq);
+    if (!code || o.movable === "none") return null;
+    const side = code[0] === "w" ? "white" : "black";
+    if (side === turn() && (o.movable === "both" || o.movable === side)) return "move";
+    if (o.premove && o.movable === side) return "premove";
+    return null;
+  }
   const input = createInput({
-    canPick(sq) {
-      const code = placement.get(sq);
-      if (!code || o.movable === "none") return null;
-      const side = code[0] === "w" ? "white" : "black";
-      if (side === turn() && (o.movable === "both" || o.movable === side)) return "move";
-      if (o.premove && o.movable === side) return "premove";
-      return null;
-    },
+    canPick,
     dests: (from) => dests.get(from) || [],
     premoveDests: (from) => premoveDests(placement, from),
     orientation: () => o.orientation,
@@ -92,6 +93,9 @@ export function createBoard(el, opts = {}) {
     if (o.lastMove) { sq("last:" + o.lastMove.from, o.lastMove.from, "last"); sq("last:" + o.lastMove.to, o.lastMove.to, "last"); }
     if (s.premove) { sq("pre:" + s.premove.from, s.premove.from, "premove"); sq("pre:" + s.premove.to, s.premove.to, "premove"); }
     if (s.selected) sq("sel:" + s.selected.sq, s.selected.sq, s.selected.mode === "move" ? "sel" : "premove");
+    // the legal square under a man in the hand
+    if (s.drag && s.drag.active && s.drag.over && s.drag.over !== s.drag.from && input.targets().includes(s.drag.over))
+      sq("hover:" + s.drag.over, s.drag.over, "hover");
     const chk = o.check === true ? kingInCheck() : o.check;
     if (chk) list.push({ key: "check:" + chk, kind: "check", ...xy(chk) });
     for (const t of input.targets()) list.push({ key: "hint:" + t, kind: placement.has(t) ? "ring" : "dot", ...xy(t) });
@@ -132,14 +136,19 @@ export function createBoard(el, opts = {}) {
   }
   function request() { if (!frameReq) frameReq = requestAnimationFrame(draw); }
 
-  function refresh(animate = true) {
-    scene.setOverlays(overlays(), { now: now(), ms: animate ? ms() : 0 });
+  function refresh(animate = true, dur = ms()) {
+    scene.setOverlays(overlays(), { now: now(), ms: animate ? dur : 0 });
     request();
   }
 
   // --- geometry -----------------------------------------------------------------
 
+  // While a pointer is down the canvas does not move: its box is read once
+  // at the press, not on every pointermove and frame (no layout reads in the drag).
+  let rect = null;
+  const box = () => rect || canvas.getBoundingClientRect();
   function resize() {
+    rect = null;
     const r = canvas.getBoundingClientRect();
     const px = Math.max(64, Math.round(r.width * (devicePixelRatio || 1)));
     if (canvas.width !== px) { canvas.width = canvas.height = px; draw(); }
@@ -148,28 +157,47 @@ export function createBoard(el, opts = {}) {
   ro.observe(el);
 
   function toCanvas(clientX, clientY) {
-    const r = canvas.getBoundingClientRect();
+    const r = box();
     return { x: (clientX - r.left) * canvas.width / r.width, y: (clientY - r.top) * canvas.height / r.height };
   }
+  /** Client coordinates → board space (float file, rank; square centres on integers). */
+  function boardXY(clientX, clientY) {
+    const r = box();
+    const col = (clientX - r.left) / (r.width / 8) - 0.5, row = (clientY - r.top) / (r.height / 8) - 0.5;
+    return o.orientation === "black" ? { x: 7 - col, y: row } : { x: col, y: 7 - row };
+  }
   function squareAt(clientX, clientY) {
-    const r = canvas.getBoundingClientRect();
+    const r = box();
     const col = Math.floor((clientX - r.left) / (r.width / 8)), row = Math.floor((clientY - r.top) / (r.height / 8));
     return col >= 0 && col < 8 && row >= 0 && row < 8 ? fromScreen(col, row, o.orientation) : null;
   }
 
   // --- commands from input ---------------------------------------------------
 
+  let ptr = null; // the last pointer position, client coordinates
   function run(commands) {
     for (const c of commands) {
       if (c.type === "move") {
         // a dropped man is already where it lands: the set() the page makes in
-        // answer, synchronously, must not slide it there again
-        snap = c.drop ? [c.to] : [];
+        // answer, synchronously, must not slide it there again — it settles
+        // from where it was let go
+        snap = c.drop ? [ptr ? { sq: c.to, ...boardXY(ptr.x, ptr.y) } : c.to] : [];
         o.onMove({ from: c.from, to: c.to, drop: !!c.drop, premove: !!c.premove });
         snap = [];
+      } else if (c.type === "snapback") {
+        if (ptr) { const p = boardXY(ptr.x, ptr.y); scene.release(c.from, p.x, p.y, { now: now(), ms: snapbackMs(ms()) }); }
       } else if (c.type === "shapes") o.onShapes(input.state.shapes);
     }
     refresh();
+  }
+
+  // the pointer's shape says what a press would do: pick up, put down, nothing
+  let cursorNow = "";
+  function setCursor(c) { if (c !== cursorNow) { cursorNow = c; canvas.style.cursor = c; } }
+  function hoverCursor(sq) {
+    if (!sq) return setCursor("");
+    if (input.targets().includes(sq)) return setCursor("pointer");
+    setCursor(canPick(sq) ? "grab" : "");
   }
 
   const mods = (e) => ({ shiftKey: e.shiftKey, altKey: e.altKey || e.ctrlKey || e.metaKey });
@@ -178,16 +206,32 @@ export function createBoard(el, opts = {}) {
     e.preventDefault();
     canvas.focus({ preventScroll: true });
     canvas.setPointerCapture(e.pointerId);
+    rect = canvas.getBoundingClientRect();
+    ptr = { x: e.clientX, y: e.clientY };
     run(input.down(squareAt(e.clientX, e.clientY), e.clientX, e.clientY, e.button, mods(e)));
   }
   function onMovePointer(e) {
-    if (input.move(squareAt(e.clientX, e.clientY), e.clientX, e.clientY)) request();
+    const sq = squareAt(e.clientX, e.clientY);
+    const d = input.state.drag;
+    if (!d) return hoverCursor(sq);
+    ptr = { x: e.clientX, y: e.clientY };
+    const wasActive = d.active, overBefore = d.over;
+    if (input.move(sq, e.clientX, e.clientY)) {
+      setCursor("grabbing");
+      // the hover square changes only when the square under the man does
+      if (!wasActive || d.over !== overBefore) refresh(true, hoverMs(ms()));
+      else request();
+    }
   }
   function onUp(e) {
     if (e.button !== 0 && e.button !== 2) return;
-    run(input.up(squareAt(e.clientX, e.clientY), e.clientX, e.clientY, e.button, mods(e)));
+    ptr = { x: e.clientX, y: e.clientY };
+    const sq = squareAt(e.clientX, e.clientY);
+    run(input.up(sq, e.clientX, e.clientY, e.button, mods(e)));
+    rect = null;
+    hoverCursor(sq);
   }
-  function onCancel() { input.cancel(); refresh(); }
+  function onCancel() { run(input.cancel()); rect = null; setCursor(""); }
   function onKey(e) {
     const r = input.key(e.key, o.orientation === "black" ? "e7" : "e2");
     if (!r.handled) return;
@@ -202,6 +246,7 @@ export function createBoard(el, opts = {}) {
   canvas.addEventListener("contextmenu", noMenu);
   canvas.addEventListener("keydown", onKey);
   canvas.addEventListener("blur", request);
+  canvas.addEventListener("pointerleave", () => { if (!input.state.drag) setCursor(""); });
 
   // --- public -------------------------------------------------------------------
 
@@ -237,7 +282,9 @@ export function createBoard(el, opts = {}) {
       const s = input.state;
       return { fen: o.fen, orientation: o.orientation, selected: s.selected && s.selected.sq,
         premove: s.premove, shapes: s.shapes, cursor: s.cursor, dragging: !!(s.drag && s.drag.active),
-        targets: input.targets(), animating: scene.frame(now()).busy, frames: stats.frames,
+        targets: input.targets(), animating: scene.frame(now()).busy, moving: scene.frame(now()).moving, frames: stats.frames,
+        hover: s.drag && s.drag.active && s.drag.over !== s.drag.from && input.targets().includes(s.drag.over) ? s.drag.over : null,
+        pointer: cursorNow,
         check: o.check === true ? kingInCheck() : o.check || null, arrows: o.arrows, marks: o.marks, movable: o.movable };
     },
     /** Client coordinates of a square's centre. */

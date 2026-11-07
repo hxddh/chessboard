@@ -13,7 +13,7 @@
  * them to the screen, so flipping the board never animates.
  * @module board/scene
  */
-import { cubicInOut, progress, lerpProps } from "./tween.js";
+import { cubicInOut, progress, lerpProps, LIFT_SCALE, CAPTURE_SCALE, settleMs } from "./tween.js";
 import { sqFile, sqRank } from "./geometry.js";
 
 export function createScene() {
@@ -35,12 +35,14 @@ export function createScene() {
 
   /**
    * @param {Map<string, string>} placement square → piece code
-   * @param {{ now: number, ms: number, snap?: Iterable<string> }} o
-   *   `snap`: squares whose arriving piece lands without a tween (a drop)
+   * @param {{ now: number, ms: number, snap?: Iterable<string | {sq: string, x?: number, y?: number}> }} o
+   *   `snap`: squares whose arriving piece was dropped there by hand: it does
+   *   not slide from its old square but settles — from where it was let go
+   *   (board space x, y) and from the lifted size, in settleMs(ms)
    * @returns {{ moved: Array<{id: number, from: string, to: string}>, captured: string[], appeared: string[] }}
    */
   function setPieces(placement, { now, ms, snap = [] }) {
-    const snapSet = new Set(snap);
+    const snapAt = new Map([...snap].map((e) => (typeof e === "string" ? [e, {}] : [e.sq, e])));
     const dur = placed ? ms : 0;
     placed = true;
     const keep = new Map(), missing = [];
@@ -65,7 +67,12 @@ export function createScene() {
         out.moved.push({ id: n.id, from: n.sq, to: sq });
         n.code = code;
         n.sq = sq;
-        retarget(n, at(sq), now, snapSet.has(sq) ? 0 : dur);
+        const drop = snapAt.get(sq);
+        if (drop) {
+          const t = at(sq);
+          n.from = { ...t, x: drop.x ?? t.x, y: drop.y ?? t.y, scale: LIFT_SCALE };
+          n.to = t; n.start = now; n.dur = settleMs(dur);
+        } else retarget(n, at(sq), now, dur);
         keep.set(sq, n.id);
       } else {
         const id = nextId++;
@@ -78,7 +85,7 @@ export function createScene() {
       out.captured.push(n.sq);
       n.leaving = true;
       if (dur <= 0) pieces.delete(n.id);
-      else retarget(n, at(n.sq, 0, 0.8), now, dur);
+      else retarget(n, at(n.sq, 0, CAPTURE_SCALE), now, dur);
     }
     bySq.clear();
     for (const [sq, id] of keep) bySq.set(sq, id);
@@ -111,14 +118,17 @@ export function createScene() {
     }
   }
 
-  /** Everything as it stands at `now`, leaving nodes first so arrivals draw over them. */
+  /**
+   * Everything as it stands at `now`, leaving nodes first so arrivals draw over
+   * them; `busy` while anything tweens, `moving` while a man does.
+   */
   function frame(now) {
-    let busy = false;
+    let busy = false, moving = false;
     const ps = [], os = [];
     for (const n of pieces.values()) {
       const p = progress(n.start, n.dur, now);
       if (p >= 1 && n.leaving) { pieces.delete(n.id); continue; }
-      if (p < 1) busy = true;
+      if (p < 1) busy = moving = true;
       ps.push({ id: n.id, code: n.code, sq: n.sq, leaving: n.leaving, ...valueOf(n, now) });
     }
     ps.sort((a, b) => (b.leaving - a.leaving));
@@ -128,7 +138,20 @@ export function createScene() {
       if (p < 1) busy = true;
       os.push({ key: n.key, kind: n.kind, color: n.color, ...valueOf(n, now) });
     }
-    return { pieces: ps, overlays: os, busy };
+    return { pieces: ps, overlays: os, busy, moving };
+  }
+
+  /**
+   * A man let go anywhere but a legal square goes home: from the pointer
+   * (board space x, y), lifted, back to its square in `ms`.
+   */
+  function release(sq, x, y, { now, ms }) {
+    const id = bySq.get(sq);
+    if (!id) return false;
+    const n = pieces.get(id);
+    n.from = { ...at(sq), x, y, scale: LIFT_SCALE };
+    n.to = at(sq); n.start = now; n.dur = ms;
+    return true;
   }
 
   /** Stop every tween where it would end (reduced motion switched on mid-flight). */
@@ -136,5 +159,5 @@ export function createScene() {
     for (const n of [...pieces.values(), ...overlays.values()]) n.dur = 0;
   }
 
-  return { setPieces, setOverlays, frame, finish, pieceAt: (sq) => (bySq.has(sq) ? pieces.get(bySq.get(sq)) : null) };
+  return { setPieces, setOverlays, frame, finish, release, pieceAt: (sq) => (bySq.has(sq) ? pieces.get(bySq.get(sq)) : null) };
 }

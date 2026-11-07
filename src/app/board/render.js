@@ -5,6 +5,7 @@
  * @module board/render
  */
 import { sprite } from "./pieces.js";
+import { LIFT_SCALE } from "./tween.js";
 import { toScreen, FILES } from "./geometry.js";
 
 /** CSS custom properties the board paints with, and their fallbacks. */
@@ -15,6 +16,7 @@ const PAINT = {
   last: ["--sq-last", "rgba(220, 170, 75, .52)"],
   check: ["--sq-check", "rgba(215, 55, 45, .52)"],
   premove: ["--sq-hint", "rgba(5, 165, 255, .52)"],
+  hover: ["--sq-hover", "rgba(20, 85, 30, .3)"],
   dot: ["--sq-dot", "rgba(30, 30, 30, .28)"],
   ring: ["--sq-ring", "rgba(30, 30, 30, .28)"],
   cursor: ["--sq-cursor", "rgba(255, 255, 255, .95)"],
@@ -202,7 +204,7 @@ export function paint(ctx, size, frame, v) {
     ctx.shadowColor = "rgba(0,0,0,.38)";
     ctx.shadowBlur = step * 0.14;
     ctx.shadowOffsetY = step * 0.06;
-    drawMan(v.drag.code, v.drag.x, v.drag.y, 1, 1.1, false);
+    drawMan(v.drag.code, v.drag.x, v.drag.y, 1, LIFT_SCALE, false);
     ctx.restore();
   }
 }

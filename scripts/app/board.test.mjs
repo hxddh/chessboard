@@ -1,6 +1,7 @@
 import { createScene } from "../../src/app/board/scene.js";
 import { createInput } from "../../src/app/board/input.js";
-import { cubicInOut, effectiveMs, DEFAULT_MS, MIN_MS, DRAG_THRESHOLD_PX, progress } from "../../src/app/board/tween.js";
+import { cubicInOut, effectiveMs, DEFAULT_MS, MIN_MS, DRAG_THRESHOLD_PX, progress, LIFT_SCALE, CAPTURE_SCALE,
+  settleMs, snapbackMs, hoverMs, SETTLE_MAX_MS, SNAPBACK_MAX_MS, HOVER_MAX_MS } from "../../src/app/board/tween.js";
 import { readFen, premoveDests, toScreen, fromScreen } from "../../src/app/board/geometry.js";
 import { START_FEN, applyMove, legalDests } from "../../src/app/core/rules.js";
 
@@ -46,6 +47,44 @@ export default function (test) {
     a.equal(effectiveMs(70), 70);
     a.equal(effectiveMs(500, true), 0);
     a.equal(progress(100, 0, 50), 1, "zero duration is already there");
+  });
+
+  test("feel parameters (v20-0-plan §5 H): lift, settle, snap-back, capture, hover scale with the move", (a) => {
+    a.equal(LIFT_SCALE, 1.1);
+    a.equal(CAPTURE_SCALE, 0.8);
+    a.equal(SETTLE_MAX_MS, 120);
+    a.equal(SNAPBACK_MAX_MS, 180);
+    a.equal(HOVER_MAX_MS, 90);
+    a.equal(settleMs(250), 120); a.equal(settleMs(120), 60); a.equal(settleMs(0), 0);
+    a.equal(snapbackMs(250), 175); a.equal(snapbackMs(500), 180); a.equal(snapbackMs(120), 84); a.equal(snapbackMs(0), 0);
+    a.equal(hoverMs(250), 90); a.equal(hoverMs(70), 70); a.equal(hoverMs(0), 0);
+    a.equal(snapbackMs(effectiveMs(250, true)), 0, "reduced motion: no snap-back tween either");
+  });
+
+  test("scene: a man let go off a legal square slides home from the pointer", (a) => {
+    const sc = createScene();
+    sc.setPieces(readFen(START_FEN), { now: 0, ms: 250 });
+    a.ok(sc.release("g1", 6.4, 3.1, { now: 100, ms: 175 }));
+    const p0 = pieceOn(sc.frame(100), "g1");
+    a.ok(Math.abs(p0.x - 6.4) < 1e-9 && Math.abs(p0.y - 3.1) < 1e-9 && p0.scale === LIFT_SCALE, "starts at the pointer, lifted");
+    const mid = pieceOn(sc.frame(187), "g1");
+    a.ok(mid.x > 6 && mid.x < 6.4 && mid.y > 0 && mid.y < 3.1, "on the way");
+    const p1 = pieceOn(sc.frame(275), "g1");
+    a.ok(p1.x === 6 && p1.y === 0 && p1.scale === 1 && !sc.frame(275).busy, "home in 175 ms");
+    a.equal(sc.release("e4", 0, 0, { now: 0, ms: 100 }), false, "nothing there, nothing to do");
+    sc.release("b1", 3, 3, { now: 0, ms: 0 });
+    a.equal(pieceOn(sc.frame(0), "b1").x, 1, "no duration: home at once");
+  });
+
+  test("input: snap-back for a premove drop and a cancelled drag; none for a click", (a) => {
+    const c = inputOn(play(START_FEN, "e2e4"), { movable: "white" });
+    c.input.down("g1", 0, 0); c.input.move("f3", 50, 50);
+    a.deepEqual(c.input.up("f3", 50, 50), [{ type: "premove", from: "g1", to: "f3" }, { type: "snapback", from: "g1" }], "a premove waits at home");
+    c.input.down("b1", 0, 0); c.input.move("c3", 50, 50);
+    a.deepEqual(c.input.cancel(), [{ type: "snapback", from: "b1" }], "a cancelled drag goes home");
+    c.input.down("b1", 0, 0);
+    a.deepEqual(c.input.cancel(), [], "a press that never dragged has nothing to bring back");
+    a.deepEqual(click(c.input, "b1").filter((x) => x.type === "snapback"), []);
   });
 
   test("geometry: FEN, screen mapping both ways", (a) => {
@@ -129,11 +168,19 @@ export default function (test) {
     a.equal(pieceOn(sc2.frame(10), "a8").code, "wq");
   });
 
-  test("scene: a drop snaps, a retarget starts from where the man is", (a) => {
+  test("scene: a drop settles where it lands, a retarget starts from where the man is", (a) => {
     const sc = createScene();
     sc.setPieces(readFen(START_FEN), { now: 0, ms: 250 });
-    sc.setPieces(readFen(play(START_FEN, "g1f3")), { now: 0, ms: 250, snap: ["f3"] });
-    a.equal(sc.frame(1).busy, false, "dropped: no tween");
+    sc.setPieces(readFen(play(START_FEN, "g1f3")), { now: 0, ms: 250, snap: [{ sq: "f3", x: 5.3, y: 2.2 }] });
+    const f0 = pieceOn(sc.frame(0), "f3");
+    a.ok(Math.abs(f0.x - 5.3) < 1e-9 && Math.abs(f0.y - 2.2) < 1e-9 && f0.scale === LIFT_SCALE, "dropped: starts where it was let go, lifted, not from g1");
+    a.equal(sc.frame(settleMs(250) - 1).busy, true, "it settles");
+    const f1 = pieceOn(sc.frame(settleMs(250)), "f3");
+    a.ok(f1.x === 5 && f1.y === 2 && f1.scale === 1 && !sc.frame(settleMs(250)).busy, "in " + settleMs(250) + " ms, on the square at 1×");
+    const sc0 = createScene();
+    sc0.setPieces(readFen(START_FEN), { now: 0, ms: 0 });
+    sc0.setPieces(readFen(play(START_FEN, "g1f3")), { now: 0, ms: 0, snap: [{ sq: "f3", x: 5.3, y: 2.2 }] });
+    a.equal(sc0.frame(0).busy, false, "with motion off a drop lands at once");
     // move a man, then take it back halfway: it returns from mid-flight
     sc.setPieces(readFen(play(START_FEN, "g1f3", "e7e5")), { now: 0, ms: 250 });
     const f = play(START_FEN, "g1f3", "e7e5");
@@ -207,14 +254,14 @@ export default function (test) {
     a.equal(c.input.move("g1", 102, 101), false, "2.2 px is still a click");
     a.equal(c.input.move("g1", 102, 102.3), true, "3 px is a drag");
     a.ok(c.input.state.drag.active);
-    a.deepEqual(c.input.up("g3", 150, 150), [], "an illegal drop");
+    a.deepEqual(c.input.up("g3", 150, 150), [{ type: "snapback", from: "g1" }], "an illegal drop goes home");
     a.equal(c.input.state.selected, null);
     a.equal(c.input.state.drag, null);
     c.input.down("g1", 100, 100);
     c.input.move("f3", 140, 60);
     a.deepEqual(c.input.up("f3", 140, 60), [{ type: "move", from: "g1", to: "f3", drop: true }]);
     c.input.down("b1", 0, 0); c.input.move("b1", 10, 0);
-    a.deepEqual(c.input.up("b1", 10, 0), [], "dropped back on its square");
+    a.deepEqual(c.input.up("b1", 10, 0), [{ type: "snapback", from: "b1" }], "dropped back on its square");
     a.equal(c.input.state.selected.sq, "b1", "stays selected");
   });
 

@@ -10,7 +10,10 @@
  *   keys            arrows move a cursor, Enter/Space click on it, Escape cancels
  *   premove         a piece of the side waiting may be given a move in advance
  *
- * Commands returned: { type: "move", from, to, drop } and { type: "shapes" }.
+ * Commands returned: { type: "move", from, to, drop }, { type: "premove", from, to },
+ * { type: "shapes" }, and { type: "snapback", from } — a man dragged and let
+ * go where it does not move now (an illegal square, its own, a premove, off
+ * the board, a cancelled pointer) goes home from where it was let go.
  * @module board/input
  */
 import { DRAG_THRESHOLD_PX } from "./tween.js";
@@ -119,6 +122,7 @@ export function createInput(rules) {
       const hit = tryTarget(sq, true);
       if (hit) out.push(hit);
       else if (sq !== d.from) s.selected = null;
+      if (!hit || hit.type !== "move") out.push({ type: "snapback", from: d.from });
     } else if (toggleOff) {
       s.selected = null;
     }
@@ -126,7 +130,11 @@ export function createInput(rules) {
     return out;
   }
 
-  function cancel() { s.drag = null; s.right = null; toggleOff = false; }
+  function cancel() {
+    const d = s.drag;
+    s.drag = null; s.right = null; toggleOff = false;
+    return d && d.active ? [{ type: "snapback", from: d.from }] : [];
+  }
 
   /** @returns {{ handled: boolean, commands: object[] }} */
   function key(k, origin = "e2") {
