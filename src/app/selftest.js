@@ -246,7 +246,10 @@ const SCENARIOS = {
 
   async "app-open"(ctx, checks, rep) {
     const { router, ready, report } = ctx;
-    await boardDrawn();
+    // Not boardDrawn(): on Windows the first file is on this launch's command
+    // line, so the shell opens 我 as soon as the first page is mounted — the
+    // play board may never be drawn (job 128306275065 waited 30 s for it).
+    // What this scenario needs is the store and the shell.
     const db = await ready;
     checks.shell = { pass: !!(await window.__app.shell) };
     const count = () => db.query("table.count", { table: "library" });
