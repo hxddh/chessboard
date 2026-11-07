@@ -1,0 +1,918 @@
+{
+ "params": {
+  "source": "lichess_db_standard_rated_2026-08",
+  "licence": "CC0",
+  "minElo": 2200,
+  "speeds": [
+   "Blitz",
+   "Rapid",
+   "Classical"
+  ],
+  "plies": 16,
+  "minGames": 2,
+  "games": 120000,
+  "read": 7096686,
+  "positions": 82529,
+  "moves": 122279,
+  "buckets": [
+   [
+    0,
+    7
+   ],
+   [
+    8,
+    9
+   ],
+   [
+    10,
+    11
+   ],
+   [
+    12,
+    12
+   ],
+   [
+    13,
+    14
+   ],
+   [
+    15,
+    15
+   ]
+  ],
+  "bytes": [
+   547358,
+   494378,
+   588867,
+   304630,
+   575853,
+   255803
+  ]
+ },
+ "positions": [
+  {
+   "key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+   "ply": 0,
+   "moves": {
+    "e4": {
+     "n": 58849,
+     "w": 27753,
+     "d": 5845,
+     "b": 25251
+    },
+    "g3": {
+     "n": 1360,
+     "w": 635,
+     "d": 121,
+     "b": 604
+    },
+    "c4": {
+     "n": 6622,
+     "w": 3267,
+     "d": 575,
+     "b": 2780
+    },
+    "d4": {
+     "n": 37718,
+     "w": 18144,
+     "d": 3505,
+     "b": 16069
+    },
+    "Nf3": {
+     "n": 10506,
+     "w": 5123,
+     "d": 1009,
+     "b": 4374
+    },
+    "b3": {
+     "n": 1428,
+     "w": 711,
+     "d": 108,
+     "b": 609
+    },
+    "Nc3": {
+     "n": 777,
+     "w": 368,
+     "d": 52,
+     "b": 357
+    },
+    "c3": {
+     "n": 173,
+     "w": 78,
+     "d": 18,
+     "b": 77
+    },
+    "e3": {
+     "n": 545,
+     "w": 255,
+     "d": 50,
+     "b": 240
+    },
+    "Na3": {
+     "n": 23,
+     "w": 5,
+     "d": 10,
+     "b": 8
+    },
+    "d3": {
+     "n": 478,
+     "w": 247,
+     "d": 26,
+     "b": 205
+    },
+    "f4": {
+     "n": 803,
+     "w": 361,
+     "d": 52,
+     "b": 390
+    },
+    "a3": {
+     "n": 80,
+     "w": 39,
+     "d": 5,
+     "b": 36
+    },
+    "b4": {
+     "n": 346,
+     "w": 160,
+     "d": 31,
+     "b": 155
+    },
+    "h4": {
+     "n": 67,
+     "w": 36,
+     "d": 3,
+     "b": 28
+    },
+    "h3": {
+     "n": 34,
+     "w": 11,
+     "d": 2,
+     "b": 21
+    },
+    "f3": {
+     "n": 41,
+     "w": 19,
+     "d": 1,
+     "b": 21
+    },
+    "Nh3": {
+     "n": 19,
+     "w": 10,
+     "d": 1,
+     "b": 8
+    },
+    "g4": {
+     "n": 106,
+     "w": 52,
+     "d": 3,
+     "b": 51
+    },
+    "a4": {
+     "n": 21,
+     "w": 11,
+     "d": 0,
+     "b": 10
+    },
+    "": {
+     "n": 4,
+     "w": 2,
+     "d": 0,
+     "b": 2
+    }
+   }
+  },
+  {
+   "key": "rnbqkb1r/pp2pppp/3p4/2pP4/4nB2/5P2/PPP1P1PP/RN1QKBNR b KQkq -",
+   "ply": 9,
+   "moves": {
+    "Nf6": {
+     "n": 2,
+     "w": 1,
+     "d": 0,
+     "b": 1
+    }
+   }
+  },
+  {
+   "key": "rnb1kb1r/ppq2ppp/2p1pn2/8/3P4/2NB1N2/PPPB1PPP/R2QK2R w KQkq -",
+   "ply": 14,
+   "moves": {
+    "O-O": {
+     "n": 2,
+     "w": 0,
+     "d": 0,
+     "b": 2
+    }
+   }
+  },
+  {
+   "key": "rnbq1rk1/pppp1ppp/4pn2/6B1/1bPP4/2N5/PP2PPPP/R2QKBNR w KQ -",
+   "ply": 8,
+   "moves": {
+    "e3": {
+     "n": 7,
+     "w": 2,
+     "d": 0,
+     "b": 5
+    },
+    "Rc1": {
+     "n": 1,
+     "w": 0,
+     "d": 0,
+     "b": 1
+    },
+    "f3": {
+     "n": 1,
+     "w": 1,
+     "d": 0,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "r1bqk1nr/p2pppbp/2p3p1/8/4PP2/8/PPP3PP/RNBQKB1R w KQkq -",
+   "ply": 12,
+   "moves": {
+    "c3": {
+     "n": 1,
+     "w": 0,
+     "d": 0,
+     "b": 1
+    },
+    "Bd3": {
+     "n": 2,
+     "w": 1,
+     "d": 0,
+     "b": 1
+    },
+    "c4": {
+     "n": 1,
+     "w": 1,
+     "d": 0,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "r2qk2r/pbpnbppp/1p1ppn2/6B1/2PP4/2N1PN2/PP2BPPP/R2QK2R w KQkq -",
+   "ply": 14,
+   "moves": {
+    "O-O": {
+     "n": 2,
+     "w": 2,
+     "d": 0,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "r1bqk2r/ppp1bppp/2np1n2/1B2p3/4P3/2N2N2/PPPP1PPP/R1BQ1RK1 w kq -",
+   "ply": 10,
+   "moves": {
+    "d4": {
+     "n": 4,
+     "w": 1,
+     "d": 1,
+     "b": 2
+    },
+    "d3": {
+     "n": 1,
+     "w": 1,
+     "d": 0,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "rn1qk1nr/pbppbppp/1p2p3/6B1/3P4/2P2N2/PP2PPPP/RN1QKB1R w KQkq -",
+   "ply": 8,
+   "moves": {
+    "Bxe7": {
+     "n": 2,
+     "w": 2,
+     "d": 0,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "r1bqkb1r/1p3ppp/p1n1p3/2pn4/3P4/2N1PN2/PP2BPPP/R1BQ1RK1 b kq -",
+   "ply": 15,
+   "moves": {
+    "cxd4": {
+     "n": 2,
+     "w": 1,
+     "d": 0,
+     "b": 1
+    }
+   }
+  },
+  {
+   "key": "rnbqk2r/ppp1ppbp/6p1/8/2BPP3/2P5/P4PPP/R1BQK1NR b KQkq -",
+   "ply": 13,
+   "moves": {
+    "c5": {
+     "n": 59,
+     "w": 25,
+     "d": 8,
+     "b": 26
+    },
+    "O-O": {
+     "n": 35,
+     "w": 15,
+     "d": 5,
+     "b": 15
+    }
+   }
+  },
+  {
+   "key": "rnq1kb1r/ppp1pppp/5n2/5b2/2pP4/1Q3N2/PP2PPPP/RNB1KB1R w KQkq -",
+   "ply": 10,
+   "moves": {
+    "Qxc4": {
+     "n": 4,
+     "w": 1,
+     "d": 0,
+     "b": 3
+    }
+   }
+  },
+  {
+   "key": "r1bq1rk1/ppp2ppp/2n1pn2/3p4/1bPP4/2N1PN2/PPQ2PPP/R1B1KB1R b KQ -",
+   "ply": 13,
+   "moves": {
+    "a6": {
+     "n": 1,
+     "w": 0,
+     "d": 0,
+     "b": 1
+    },
+    "Re8": {
+     "n": 17,
+     "w": 3,
+     "d": 12,
+     "b": 2
+    },
+    "h6": {
+     "n": 1,
+     "w": 0,
+     "d": 0,
+     "b": 1
+    },
+    "dxc4": {
+     "n": 3,
+     "w": 2,
+     "d": 0,
+     "b": 1
+    },
+    "Ne4": {
+     "n": 1,
+     "w": 1,
+     "d": 0,
+     "b": 0
+    },
+    "Ne7": {
+     "n": 1,
+     "w": 0,
+     "d": 1,
+     "b": 0
+    },
+    "b6": {
+     "n": 1,
+     "w": 0,
+     "d": 1,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "rnbqkb1r/ppp1pppp/1n6/8/3PP3/2N5/PP3PPP/R1BQKBNR b KQkq -",
+   "ply": 9,
+   "moves": {
+    "e6": {
+     "n": 8,
+     "w": 3,
+     "d": 0,
+     "b": 5
+    },
+    "e5": {
+     "n": 3,
+     "w": 0,
+     "d": 1,
+     "b": 2
+    },
+    "g6": {
+     "n": 7,
+     "w": 6,
+     "d": 1,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "rnbqk1nr/pp2ppbp/3p2p1/2p5/2PPPP2/8/PP4PP/RNBQKBNR w KQkq -",
+   "ply": 8,
+   "moves": {
+    "d5": {
+     "n": 2,
+     "w": 0,
+     "d": 0,
+     "b": 2
+    }
+   }
+  },
+  {
+   "key": "rn1qkbnr/1b1p1ppp/p3p3/1p6/3NP3/2N2B2/PPP2PPP/R1BQK2R b KQkq -",
+   "ply": 13,
+   "moves": {
+    "Qc7": {
+     "n": 2,
+     "w": 2,
+     "d": 0,
+     "b": 0
+    },
+    "Nc6": {
+     "n": 1,
+     "w": 1,
+     "d": 0,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "rnbqk2r/ppppbppp/4pn2/6B1/3PP3/8/PPP2PPP/RN1QKBNR w KQkq -",
+   "ply": 6,
+   "moves": {
+    "e5": {
+     "n": 25,
+     "w": 15,
+     "d": 1,
+     "b": 9
+    },
+    "Bxf6": {
+     "n": 2,
+     "w": 1,
+     "d": 0,
+     "b": 1
+    },
+    "Bd3": {
+     "n": 3,
+     "w": 3,
+     "d": 0,
+     "b": 0
+    },
+    "Nc3": {
+     "n": 1,
+     "w": 1,
+     "d": 0,
+     "b": 0
+    },
+    "Nd2": {
+     "n": 1,
+     "w": 1,
+     "d": 0,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "r1bqkbnr/ppp2p1p/2n5/3p4/3P2p1/8/PPP1PPPP/RNBQKBNR w KQkq -",
+   "ply": 10,
+   "moves": {
+    "c3": {
+     "n": 2,
+     "w": 2,
+     "d": 0,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "r1bqk2r/ppp2ppp/2n2n2/2b1p3/4P3/5NP1/PPPN1P1P/R1BQKB1R w KQkq -",
+   "ply": 12,
+   "moves": {
+    "Bg2": {
+     "n": 2,
+     "w": 1,
+     "d": 1,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "r1b1kbnr/pp3ppp/2n1p3/1Bpq4/3P4/5N2/PPPN1PPP/R1BQK2R b KQkq -",
+   "ply": 11,
+   "moves": {
+    "cxd4": {
+     "n": 2,
+     "w": 0,
+     "d": 0,
+     "b": 2
+    }
+   }
+  },
+  {
+   "key": "rnbqkbnr/ppp1p1pp/8/3p1p2/3P2P1/8/PPP1PP1P/RNBQKBNR w KQkq -",
+   "ply": 4,
+   "moves": {
+    "Nc3": {
+     "n": 2,
+     "w": 1,
+     "d": 0,
+     "b": 1
+    },
+    "g5": {
+     "n": 1,
+     "w": 1,
+     "d": 0,
+     "b": 0
+    },
+    "Qd3": {
+     "n": 1,
+     "w": 1,
+     "d": 0,
+     "b": 0
+    },
+    "gxf5": {
+     "n": 1,
+     "w": 0,
+     "d": 0,
+     "b": 1
+    }
+   }
+  },
+  {
+   "key": "r1bqkbnr/pp1ppppp/2n5/2p5/8/3P1NP1/PPP1PP1P/RNBQKB1R b KQkq -",
+   "ply": 5,
+   "moves": {
+    "d5": {
+     "n": 3,
+     "w": 2,
+     "d": 0,
+     "b": 1
+    },
+    "g6": {
+     "n": 6,
+     "w": 1,
+     "d": 0,
+     "b": 5
+    }
+   }
+  },
+  {
+   "key": "rnbqk2r/ppp1ppbp/5np1/8/2BP4/4PN2/PP3PPP/RNBQK2R w KQkq -",
+   "ply": 10,
+   "moves": {
+    "Nc3": {
+     "n": 1,
+     "w": 0,
+     "d": 0,
+     "b": 1
+    },
+    "O-O": {
+     "n": 3,
+     "w": 1,
+     "d": 0,
+     "b": 2
+    },
+    "Ne5": {
+     "n": 1,
+     "w": 1,
+     "d": 0,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "r1bq1rk1/pp1nppbp/3p1np1/2p5/3P1B2/4PN1P/PPP1BPP1/RN1Q1RK1 w - -",
+   "ply": 14,
+   "moves": {
+    "c3": {
+     "n": 5,
+     "w": 2,
+     "d": 1,
+     "b": 2
+    },
+    "c4": {
+     "n": 1,
+     "w": 0,
+     "d": 1,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "r1bqkb1r/1p3ppp/p1np1n2/4p3/2P1P3/N7/PP3PPP/RNBQKB1R w KQkq -",
+   "ply": 14,
+   "moves": {
+    "Nc3": {
+     "n": 3,
+     "w": 2,
+     "d": 1,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "r1bqk1nr/ppp2ppp/2n5/3p4/1b1P4/2NB4/PPP2PPP/R1BQK1NR w KQkq -",
+   "ply": 10,
+   "moves": {
+    "a3": {
+     "n": 3,
+     "w": 0,
+     "d": 1,
+     "b": 2
+    },
+    "Ne2": {
+     "n": 6,
+     "w": 5,
+     "d": 0,
+     "b": 1
+    },
+    "Nf3": {
+     "n": 2,
+     "w": 0,
+     "d": 0,
+     "b": 2
+    }
+   }
+  },
+  {
+   "key": "rnbqkbnr/pppp1ppp/4p3/4P3/8/8/PPPP1PPP/RNBQKBNR b KQkq -",
+   "ply": 3,
+   "moves": {
+    "b6": {
+     "n": 1,
+     "w": 1,
+     "d": 0,
+     "b": 0
+    },
+    "d6": {
+     "n": 4,
+     "w": 1,
+     "d": 0,
+     "b": 3
+    },
+    "d5": {
+     "n": 7,
+     "w": 1,
+     "d": 2,
+     "b": 4
+    },
+    "c5": {
+     "n": 3,
+     "w": 2,
+     "d": 0,
+     "b": 1
+    }
+   }
+  },
+  {
+   "key": "rnbqkb1r/pp2pppp/3p1n2/2p5/3P1B2/2P1P3/PP3PPP/RN1QKBNR b KQkq -",
+   "ply": 7,
+   "moves": {
+    "cxd4": {
+     "n": 3,
+     "w": 0,
+     "d": 1,
+     "b": 2
+    }
+   }
+  },
+  {
+   "key": "rnbqkb1r/pp3ppp/4pn2/3p2B1/2PN4/2N5/PP2PPPP/R2QKB1R b KQkq -",
+   "ply": 11,
+   "moves": {
+    "dxc4": {
+     "n": 2,
+     "w": 1,
+     "d": 1,
+     "b": 0
+    },
+    "e5": {
+     "n": 6,
+     "w": 5,
+     "d": 0,
+     "b": 1
+    },
+    "Qb6": {
+     "n": 1,
+     "w": 0,
+     "d": 1,
+     "b": 0
+    },
+    "Nc6": {
+     "n": 3,
+     "w": 2,
+     "d": 0,
+     "b": 1
+    },
+    "Be7": {
+     "n": 1,
+     "w": 1,
+     "d": 0,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "rnbqkb1r/pp3ppp/2p2p2/8/2B5/5N2/PPPP1PPP/R1BQK2R b KQkq -",
+   "ply": 11,
+   "moves": {
+    "Bd6": {
+     "n": 18,
+     "w": 9,
+     "d": 2,
+     "b": 7
+    },
+    "Be6": {
+     "n": 1,
+     "w": 0,
+     "d": 0,
+     "b": 1
+    }
+   }
+  },
+  {
+   "key": "rnbqk2r/p3ppbp/3p1np1/2pP4/2B1P3/2N2N2/PPQ2PPP/R1B1K2R b KQkq -",
+   "ply": 15,
+   "moves": {
+    "O-O": {
+     "n": 3,
+     "w": 2,
+     "d": 0,
+     "b": 1
+    }
+   }
+  },
+  {
+   "key": "r1bqkb1r/1p2pppp/1np2n2/p7/P1p5/N4NP1/1PQPPPBP/R1B2RK1 b kq -",
+   "ply": 15,
+   "moves": {
+    "Be6": {
+     "n": 3,
+     "w": 1,
+     "d": 1,
+     "b": 1
+    },
+    "Qd5": {
+     "n": 1,
+     "w": 0,
+     "d": 0,
+     "b": 1
+    }
+   }
+  },
+  {
+   "key": "rnbq1rk1/pp2ppbp/2p2np1/8/2QP4/5NP1/PP2PPBP/RNB1K2R w KQ -",
+   "ply": 14,
+   "moves": {
+    "O-O": {
+     "n": 2,
+     "w": 2,
+     "d": 0,
+     "b": 0
+    },
+    "Nc3": {
+     "n": 1,
+     "w": 0,
+     "d": 0,
+     "b": 1
+    }
+   }
+  },
+  {
+   "key": "rnbqk2r/ppp2ppp/3bpn2/3p4/3P4/2P1PN2/PP3PPP/RNBQKB1R w KQkq -",
+   "ply": 8,
+   "moves": {
+    "a4": {
+     "n": 1,
+     "w": 1,
+     "d": 0,
+     "b": 0
+    },
+    "Bd3": {
+     "n": 2,
+     "w": 0,
+     "d": 0,
+     "b": 2
+    }
+   }
+  },
+  {
+   "key": "rn1qkbnr/pbp1pppp/3p4/1p6/8/5NP1/PPPPPPBP/RNBQ1RK1 b kq -",
+   "ply": 7,
+   "moves": {
+    "Nd7": {
+     "n": 2,
+     "w": 1,
+     "d": 0,
+     "b": 1
+    }
+   }
+  },
+  {
+   "key": "2rqkbnr/p2npppp/2Q3b1/8/2pPP3/2N5/PP3PPP/R1B1KBNR w KQk -",
+   "ply": 14,
+   "moves": {
+    "Qa4": {
+     "n": 2,
+     "w": 2,
+     "d": 0,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "r1bqkb1r/pp2np1p/2n1p1p1/2pp4/4P3/3P1NP1/PPPN1PBP/R1BQ1RK1 b kq -",
+   "ply": 13,
+   "moves": {
+    "Bg7": {
+     "n": 3,
+     "w": 1,
+     "d": 0,
+     "b": 2
+    }
+   }
+  },
+  {
+   "key": "rnbqk2r/pp3ppp/2p2n2/3p2B1/1b1P4/2N1P3/PP3PPP/R2QKBNR w KQkq -",
+   "ply": 12,
+   "moves": {
+    "Bd3": {
+     "n": 5,
+     "w": 3,
+     "d": 1,
+     "b": 1
+    },
+    "Qc2": {
+     "n": 1,
+     "w": 0,
+     "d": 0,
+     "b": 1
+    },
+    "Nf3": {
+     "n": 1,
+     "w": 1,
+     "d": 0,
+     "b": 0
+    },
+    "Rc1": {
+     "n": 1,
+     "w": 0,
+     "d": 0,
+     "b": 1
+    },
+    "a3": {
+     "n": 1,
+     "w": 1,
+     "d": 0,
+     "b": 0
+    }
+   }
+  },
+  {
+   "key": "r1bqk2r/ppp1bppp/1nnp4/8/2PP4/2NB4/PP3PPP/R1BQK1NR w KQkq -",
+   "ply": 14,
+   "moves": {
+    "Nge2": {
+     "n": 4,
+     "w": 1,
+     "d": 0,
+     "b": 3
+    },
+    "Nf3": {
+     "n": 1,
+     "w": 0,
+     "d": 0,
+     "b": 1
+    }
+   }
+  },
+  {
+   "key": "rnbqkb1r/1p3ppp/p2pPn2/2p5/P4B2/2N5/1PP1PPPP/R2QKBNR b KQkq -",
+   "ply": 11,
+   "moves": {
+    "Bxe6": {
+     "n": 2,
+     "w": 0,
+     "d": 0,
+     "b": 2
+    }
+   }
+  },
+  {
+   "key": "rn1qkbnr/1b1p1ppp/p3p3/2p5/1p2PP2/2NP1NP1/PPP4P/R1BQKB1R w KQkq -",
+   "ply": 12,
+   "moves": {
+    "Ne2": {
+     "n": 2,
+     "w": 2,
+     "d": 0,
+     "b": 0
+    }
+   }
+  }
+ ]
+}

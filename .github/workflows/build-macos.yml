@@ -1,142 +1,173 @@
 name: build-macos
 
-# The macOS app (arm64): src/app built into frontend/dist (scripts/sync-dist.mjs),
-# the Zig shell with the SDK's SQLite store, a native Stockfish beside the
-# executable (scripts/build-stockfish.sh, cached by its script), packaged by
-# the Native SDK CLI. Two jobs, side by side:
-#
-#   package    the release build: packaged, the engine added, a zip and a
-#              DMG, and the package as shipped launched once in self-test mode
-#              (CHESS_SELFTEST=1: board drawn, native db and native engine
-#              answer — scripts/automation-app.mjs --only smoke). Its zip and
-#              DMG are the Chessboard-macOS-arm64 artifact release.yml publishes.
-#   scenarios  the same commit built with -Dautomation=true (the SDK's
-#              automation server: a file dropbox any local process could drive,
-#              so this package is never uploaded) and driven from outside:
-#              a move written and found again after a restart, the db and engine contracts in the
-#              app, a 60-ply review, a killed engine survived, no engine left
-#              running (scripts/automation-app.mjs).
-#
-# checks.yml runs this workflow on a PR that changes the native side, and
-# release.yml runs it (through checks.yml) on every release.
-#
-# Signing (v20-0-plan §7 E2) is not here yet: the package is ad-hoc signed.
-# Developer ID signing and notarization need the owner's certificate and an
-# App Store Connect key as repository secrets; the step goes where the TODO
-# below says, after add-engine.sh (which signs the engine on its own first)
-# and before the zip and the DMG are made.
-
+# Builds Chessboard.app (arm64, adhoc-signed) on a macOS runner: Native SDK comes
+# from npm (@native-sdk/cli), zig from ziglang.org. Optionally uploads the
+# zip to an existing release when release_tag is set.
 on:
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: "Existing release tag to upload the zip to (optional)"
+        required: false
+        default: ""
       sdk_version:
+        # Pinned, like release.yml's input of the same name (see the comment
+        # there). D7: this used to default to "latest", and the `|| '0.10.1'`
+        # below only catches an EMPTY string — so every hand-dispatched build
+        # got whatever npm had that day, while the step's comment claimed the
+        # opposite. The fallback stays for a caller that passes "".
         description: "@native-sdk/cli version (npm dist-tag or exact version)"
         required: false
-        default: "0.11.0"
+        default: "0.10.1"
+  # 7.6: release.yml calls this workflow directly, in parallel with its test
+  # jobs, and takes the package from the uploaded artifact once every test is
+  # green. It passes no release_tag, so nothing is uploaded from here; a hand
+  # dispatch works as before.
   workflow_call:
     inputs:
+      release_tag:
+        type: string
+        required: false
+        default: ""
       sdk_version:
         type: string
         required: false
-        default: "0.11.0"
+        default: "0.10.1"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  package:
+  build:
+    # macos-14 was retired on 2026-11-02 (github.blog changelog 2026-10-01):
+    # its jobs got no runner and were cancelled, which cancelled the v19.0.0
+    # release. macos-26 is the image macos-latest maps to, the one checks.yml's
+    # macOS jobs build and test on; pinned so a later move of -latest is a
+    # change here, not a surprise
     runs-on: macos-26
-    timeout-minutes: 45
-    name: macOS package
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 26
+      # esbuild, and nothing else. It bundles the ES modules under src/web/js
+      # into the one classic script zero:// can load; `npm ci` rather than
+      # `npm install` so the same commit gets the same bundler.
       - name: install build deps
         run: npm ci
+      - name: unit tests
+        run: node scripts/test-chess.mjs
+      # The SDK version is an input rather than a bare `npm install -g`, so a
+      # release can pin it and get the same toolchain twice. Whatever it
+      # resolves to is echoed into the log: an unrecorded dependency is one
+      # that cannot be blamed later.
       - name: install Native SDK CLI
         env:
-          SDK_VERSION: ${{ inputs.sdk_version || '0.11.0' }}
+          # see release.yml's sdk_version input for why this is not 'latest'
+          SDK_VERSION: ${{ inputs.sdk_version || '0.10.1' }}
         run: |
           npm install -g "@native-sdk/cli@${SDK_VERSION}"
           native --version || true
+          echo "resolved: $(npm ls -g --depth=0 @native-sdk/cli || true)"
           echo "SDK_PATH=$(npm root -g)/@native-sdk/cli" >> "$GITHUB_ENV"
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
-          # a new key: the caches saved before the cleanup step below can be half-built
-          cache-key: e3-clean
-      - name: restore Stockfish
-        id: sf
-        uses: actions/cache/restore@v6
-        with:
-          path: build/stockfish
-          key: stockfish-${{ runner.os }}-arm64-${{ hashFiles('scripts/build-stockfish.sh') }}
-      - name: build Stockfish
-        if: steps.sf.outputs.cache-hit != 'true'
-        timeout-minutes: 20
-        run: scripts/build-stockfish.sh build/stockfish
-      - name: cache Stockfish
-        if: steps.sf.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: build/stockfish
-          key: stockfish-${{ runner.os }}-arm64-${{ hashFiles('scripts/build-stockfish.sh') }}
-      - name: frontend (src/app → frontend/dist) and its licences
+      - name: sync frontend dist
         run: |
+          # One script, not a hand-copied list. 6.1 added an on-demand chunk
+          # (chunk-eco.js) to the bundler and to sync-dist.mjs, and these
+          # workflow copies kept naming two files — the packaged app would
+          # have shipped without it and lost every opening name. The list
+          # lives in scripts/bundle.mjs CHUNKS and is read, never retyped.
           node scripts/sync-dist.mjs
-          cp build/stockfish/stockfish-SOURCE.txt build/stockfish/stockfish-AUTHORS.txt frontend/dist/licenses/
       - name: derive the macOS manifest
+        # close_policy = "hide" is macOS-only: on windows it is a comptime
+        # error without a tray, and app.zon has to stay portable. (The dev-
+        # server origin app.zon lists is dropped by src/runner.zig in every
+        # non-Debug exe — D6 — not by this step: the derived manifest stays
+        # app.zon plus exactly the close policy.)
         run: node scripts/gen-manifest.mjs macos
       - name: manifest keys are actually read
+        # src/runner.zig is a fork of the SDK's app_runner and does not
+        # complain when it lags: an unread key silently takes the SDK
+        # default. That is how close_policy = "hide" shipped dead in 1.18.
         run: node scripts/manifest-check.mjs --sdk "$SDK_PATH"
+      # src/main.zig has carried `test` blocks since 1.21.2 and nothing has ever
+      # run them — `zig build test` exists in build.zig and no workflow, and no
+      # script, called it. That includes the guard written for the JSON
+      # unescaping fix, which shipped in two releases described as guarded.
+      #
+      # It is worse than an unrun test: Zig only analyses a `test` block when
+      # building tests, so one that does not even compile leaves `zig build`
+      # perfectly green. This step is the first time these are known to work.
+      #
+      # It lives here rather than in checks.yml because the test module imports
+      # the Native SDK, which only the platform runners have.
       - name: zig build test
         run: zig build test -Dmanifest=build/app.macos.zon -Dnative-sdk-path="$SDK_PATH"
       - name: zig build
         run: zig build -Doptimize=ReleaseFast -Dmanifest=build/app.macos.zon -Dnative-sdk-path="$SDK_PATH"
-      - name: package .app with the engine
+      - name: package .app + zip
         run: |
           mkdir -p dist
           native package --target macos --signing adhoc --manifest build/app.macos.zon --output dist/Chessboard.app --binary zig-out/bin/chessboard
+          # .pgn document type (Info.plist) — a plist edit after packaging,
+          # re-signed adhoc; see the script for why it is not an app.zon key
           scripts/add-pgn-doctype.sh dist/Chessboard.app
-          scripts/add-engine.sh dist/Chessboard.app build/stockfish
+          # the licences made it into the bundle next to index.html
           test -f "$(find dist/Chessboard.app -path '*/licenses/LICENSE.txt' | head -n1)"
-          test -f "$(find dist/Chessboard.app -path '*/licenses/stockfish-SOURCE.txt' | head -n1)"
-          echo "package: $(du -sk dist/Chessboard.app | cut -f1) KiB"
-      # TODO(v20-0-plan E2): Developer ID signing and notarization, once the
-      # owner's certificate and notary key are repository secrets — codesign
-      # --options runtime --timestamp (the engine first, then the bundle),
-      # `xcrun notarytool submit --wait`, `xcrun stapler staple`. Until then
-      # the package stays ad-hoc signed (above) and Gatekeeper asks.
-      - name: zip + DMG
-        run: |
           ditto -c -k --sequesterRsrc --keepParent dist/Chessboard.app dist/Chessboard-macOS-arm64.zip
+          # 6.0: a disk image beside the zip — the shape Mac users expect to
+          # drag into Applications. Unsigned like the zip (v6-plan Q1.5 minus
+          # the Developer ID part, which is out of scope for this release);
+          # the Gatekeeper right-click-open dance is the same for both.
           hdiutil create -volname Chessboard -srcfolder dist/Chessboard.app -ov -format UDZO dist/Chessboard-macOS-arm64.dmg
           ls -lh dist
-      - name: self-test the package as shipped
-        timeout-minutes: 8
-        run: node scripts/automation-app.mjs dist/Chessboard.app/Contents/MacOS/chessboard --only smoke
+      # 7.5: the one step that launches the packaged app. CHESS_SELFTEST=1
+      # makes the page start Stockfish and ask for a move, and the app exits
+      # with the verdict (scripts/selftest-app.mjs). 6.0 to 7.3 shipped an app
+      # whose engine never started, with every check above this line green.
+      # 7.6: it also round trips the native save file, loads the eco chunk
+      # over zero://, and launches twice to see localStorage survive a restart;
+      # a red run names the check that failed.
+      # v8-1-plan N3: and IndexedDB on zero:// (kept across the restart), the
+      # language chunks document.write()n before bundle.js, and the native
+      # file commands chess.openPgn / chess.saveText (probed, no dialog).
+      - name: self-test the packaged app
+        run: |
+          exe="$(find dist/Chessboard.app/Contents/MacOS -type f -perm -u+x | head -n1)"
+          node scripts/selftest-app.mjs "$exe"
       - uses: actions/upload-artifact@v7
         with:
           name: Chessboard-macOS-arm64
           path: |
             dist/Chessboard-macOS-arm64.zip
             dist/Chessboard-macOS-arm64.dmg
-      # setup-zig saves .zig-cache in its post step even for a cancelled or
-      # failed job: a build cut off mid-way left a cache whose manifests name
-      # outputs it never wrote (zig (windows-2025) on 1bfc29f: native-sdk.manifest.res
-      # missing, restored from run 42336843004, cancelled mid-build by a push).
-      # Such a job saves an empty cache instead; the next one builds cold.
-      - name: no half-built zig cache for the next run
-        if: cancelled() || failure()
-        shell: bash
-        run: rm -rf .zig-cache
+      - name: upload to release
+        if: ${{ inputs.release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+        run: gh release upload "$TAG" dist/Chessboard-macOS-arm64.zip dist/Chessboard-macOS-arm64.dmg --clobber
 
-  scenarios:
+  # v8-2-plan V1 step 2: the packaged app driven from outside (§9 M1 "第 2 步
+  # 设计", §9 M4). A second build of the same commit, the same manifest and the
+  # same packaging command, with -Dautomation=true: the SDK's automation
+  # server, a file dropbox under the app's working directory through which
+  # any local process could call chess.*. That is why it is its own job and
+  # its own package (dist-auto/), and why nothing here is uploaded as a
+  # Chessboard-* artifact or to a release: release.yml takes the packages
+  # from the `build` job above, and scripts/test-chess.mjs holds that this
+  # job never produces one.
+  #
+  # It runs beside `build`, not after it, so the release package does not
+  # wait for it; a release still needs it green (release.yml's publish needs
+  # this whole workflow).
+  automation:
     runs-on: macos-26
-    timeout-minutes: 45
-    name: macOS scenarios (automation build, not released)
+    timeout-minutes: 20
+    name: automation (not released)
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -146,29 +177,16 @@ jobs:
         run: npm ci
       - name: install Native SDK CLI
         env:
-          SDK_VERSION: ${{ inputs.sdk_version || '0.11.0' }}
+          SDK_VERSION: ${{ inputs.sdk_version || '0.10.1' }}
         run: |
           npm install -g "@native-sdk/cli@${SDK_VERSION}"
+          echo "resolved: $(npm ls -g --depth=0 @native-sdk/cli || true)"
           echo "SDK_PATH=$(npm root -g)/@native-sdk/cli" >> "$GITHUB_ENV"
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
-          # a new key: the caches saved before the cleanup step below can be half-built
-          cache-key: e3-clean
-      - name: restore Stockfish
-        id: sf
-        uses: actions/cache/restore@v6
-        with:
-          path: build/stockfish
-          key: stockfish-${{ runner.os }}-arm64-${{ hashFiles('scripts/build-stockfish.sh') }}
-      - name: build Stockfish
-        if: steps.sf.outputs.cache-hit != 'true'
-        timeout-minutes: 20
-        run: scripts/build-stockfish.sh build/stockfish
-      - name: frontend (src/app → frontend/dist) and its licences
-        run: |
-          node scripts/sync-dist.mjs
-          cp build/stockfish/stockfish-SOURCE.txt build/stockfish/stockfish-AUTHORS.txt frontend/dist/licenses/
+      - name: sync frontend dist
+        run: node scripts/sync-dist.mjs
       - name: derive the macOS manifest
         run: node scripts/gen-manifest.mjs macos
       - name: zig build (automation)
@@ -176,24 +194,24 @@ jobs:
       - name: package (automation build, never uploaded)
         run: |
           native package --target macos --signing adhoc --manifest build/app.macos.zon --output dist-auto/Chessboard.app --binary zig-out-auto/bin/chessboard
-          scripts/add-pgn-doctype.sh dist-auto/Chessboard.app
-          scripts/add-engine.sh dist-auto/Chessboard.app build/stockfish
-          echo "AUTO_EXE=dist-auto/Chessboard.app/Contents/MacOS/chessboard" >> "$GITHUB_ENV"
-      - name: the app's scenarios
-        timeout-minutes: 25
-        run: node scripts/automation-app.mjs "$AUTO_EXE" --out automation-app-macos.json
+          exe="$(find dist-auto/Chessboard.app/Contents/MacOS -type f -perm -u+x | head -n1)"
+          echo "AUTO_EXE=$exe" >> "$GITHUB_ENV"
+      # first the channel itself (ready, menus, bridge, the loop turning) —
+      # a red here says automation does not work on this runner at all
+      - name: automation smoke
+        timeout-minutes: 3
+        run: node scripts/automation-smoke.mjs "$AUTO_EXE" --manifest build/app.macos.zon
+      # then the scenarios (scripts/automation-scenarios.mjs header): the
+      # repertoire's databases across restarts, sync against a local fake
+      # server with the main loop timed meanwhile, the library prefetch, the
+      # menu commands
+      - name: automation scenarios
+        timeout-minutes: 12
+        run: node scripts/automation-scenarios.mjs "$AUTO_EXE" --manifest build/app.macos.zon --out automation-macos.json
+      # the numbers §9 M4's provisional thresholds are to be replaced with
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: app-report-macOS
-          path: automation-app-macos.json
+          name: automation-report-macOS
+          path: automation-macos.json
           if-no-files-found: ignore
-      # setup-zig saves .zig-cache in its post step even for a cancelled or
-      # failed job: a build cut off mid-way left a cache whose manifests name
-      # outputs it never wrote (zig (windows-2025) on 1bfc29f: native-sdk.manifest.res
-      # missing, restored from run 42336843004, cancelled mid-build by a push).
-      # Such a job saves an empty cache instead; the next one builds cold.
-      - name: no half-built zig cache for the next run
-        if: cancelled() || failure()
-        shell: bash
-        run: rm -rf .zig-cache

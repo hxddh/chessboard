@@ -1,0 +1,508 @@
+/**
+ * Post-game review — turns a finished analysis into the handful of numbers
+ * worth reading: how accurate each side was, how the mistakes were spread,
+ * and which single move cost the most.
+ *
+ * Pure arithmetic over the analysis arrays, no engine and no DOM, so the
+ * thresholds can be read and tested on their own. The app owns rendering.
+ * @module review
+ */
+  /**
+   * The same cut-offs the move list annotates with ?! / ? / ??.
+   *
+   * **Measured, and deliberately not moved.** 缺陷 23 was right that 50cp is
+   * the same size as the quick scan's own noise: scanning twenty-eight decided
+   * games twice at 120ms/position (1320 plies — the corpus was four games and
+   * 168 plies until 6.1, which was too small to conclude anything from), the
+   * evaluation of the *same* position moves by a median 9cp between runs, 42cp
+   * at the ninth percentile — and a move's loss is a difference of two of
+   * those. The consequence is measured too: of every ply either run called
+   * `?!`, both runs called it 40% of the time. `?` reaches 62% and `??` 77%.
+   *
+   * **7.0 re-measured all of this**, because Stockfish 18 → 19 lite-single is
+   * a different engine and therefore a different noise floor — and it is a
+   * noisier one at a fixed millisecond budget, which is what a 1 MB net buys
+   * its size with. The 6.1 figures at 120ms were 8cp / 33cp and 37 / 63 / 97;
+   * the numbers above are the same measurement on 19.
+   *
+   * The defect proposed scaling the thresholds with movetime. Still refuted —
+   * the three budgets this app could plausibly spend, over the whole corpus
+   * (docs/measured.json, `scanNoise` / `winPctNoise`):
+   *
+   *            120ms      200ms      400ms
+   *     ?!   40 / 38    35 / 45    38 / 45      (centipawn / win-%)
+   *     ?    62 / 58    66 / 64    68 / 77
+   *     ??   77 / 80    88 / 82    82 / 88
+   *
+   * More search does not make `?!` reproducible on either measure, so there is
+   * no movetime-dependent noise floor to track and no budget this app could
+   * ship that would fix it. `?` and `??` are sound and get better with depth
+   * on the win-% measure that actually ships (58 → 64 → 77 and 80 → 82 → 88),
+   * which is what a real signal does; the centipawn column wobbles for `??`
+   * because it is the measure this app stopped classifying by in 6.0.
+   *
+   * That improvement is why 7.0 raised the 分析 budget from 120 to 200ms —
+   * see SCAN_BUDGET in app.js, which reads the three runs paired rather than
+   * pooled, because the run-to-run spread is as wide as the effect.
+   *
+   * Raising the `?!` cut is refuted too: swept over the recorded tracks at
+   * 40/50/60/70/80/90cp, agreement wanders (45/40/28/31/10/0) with no trend,
+   * because a hard cut on a noisy quantity always has about half its members
+   * sitting on the edge, wherever the edge is put.
+   *
+   * The conclusion 6.0 should have drawn, and 6.1 writes down: `?!` is the one
+   * annotation this app cannot stand behind. It stays off the evaluation
+   * curve's mistake dots (app.js) and out of the verdict, where it already
+   * was, and nothing anywhere claims it is reproducible.
+   *
+   * So the numbers stay, and what changed is that they are now known rather
+   * than assumed: docs/measured.json `scanNoise`, written by
+   * scripts/test-analysis.mjs --record, and scripts/test-chess.mjs fails if
+   * these three constants stop matching what that run was taken against.
+   * `?!` is already kept off the evaluation curve's mistake dots (app.js) —
+   * which turns out to have been the right instinct.
+   */
+  const INACCURACY = 50, MISTAKE = 100, BLUNDER = 300;
+  /** Win-% accuracy cut-offs for the one-line verdict — see verdictKey (6.1). */
+  // v8-0-plan B2: 94 / 86 → 95 / 87. The accuracy became lichess's full
+  // formula, whose "+ 1" bonus lifts a uniform game one point; the lines stay
+  // at the same play (14 and 36 cp a move), which is what they are pinned to.
+  const VERDICT_EXCELLENT = 95, VERDICT_SOLID = 87;
+
+  /**
+   * How many of a side's own moves have to be measured before the report is
+   * allowed to say anything about how that side *plays* — as opposed to what
+   * happened in this fragment. Ten own moves is the length of a book opening:
+   * two players who recite 1.e4 e5 2.Nf3 Nc6 both score 99% and neither has
+   * shown anything yet. Until 5.0.0 verdictKey read only the counts and the
+   * accuracy, so 1.e4 e5 earned both sides 「可以挑战更高难度了」 (audit F5).
+   * The same floor decides whether the evaluation curve is drawn: below it the
+   * curve is an empty box with a flat line in it.
+   *
+   * 5.1 wrote 10 here unmeasured. 5.2 measured it (scripts/test-mines.mjs,
+   * docs/measured.json → verdictFloor): on the four fixture games the
+   * accuracy after the first N own moves differs from the whole-game figure
+   * by 23 points at N=5, 15 at N=10, 10 at N=15 and 2 at N=20 — and those
+   * games are 17–25 moves long, so N=20 is nearly the whole game. Fifteen is
+   * the smallest floor at which the verdict is usually within a grade of the
+   * final one; ten still swings by a grade and a half.
+   */
+  const MIN_JUDGED = 15;
+
+  /**
+   * How much a move cost the side that played it, in centipawns.
+   *
+   * Always measured from the mover's point of view, and clamped: an eval track
+   * runs to ±mate scores, and one lost queen and one lost game should not be
+   * ten thousand times apart in an average.
+   *
+   * @param {number} before evaluation before the move (+ = good for White)
+   * @param {number} after  evaluation after it
+   * @param {"w"|"b"} side  who played it
+   */
+  /**
+   * The window a centipawn evaluation is compared inside. A mate score is
+   * 9500–9990 on the app's scalar track, so before 6.1 a ply where a fast
+   * search announced mate and the next where it only reported a large plus
+   * differed by ~8000 — clamped to the full 1000, i.e. the worst blunder the
+   * scale can express, charged to a player who did nothing wrong. Both ends
+   * are pulled into the window first, so "winning" and "winning by mate" are
+   * the same thing here, exactly as they are on the win-% track.
+   */
+  const EVAL_WINDOW = 1000;
+  const inWindow = (cp) => Math.max(-EVAL_WINDOW, Math.min(EVAL_WINDOW, cp));
+  function lossOf(before, after, side) {
+    const b = inWindow(before), a = inWindow(after);
+    return Math.max(0, Math.min(1000, side === "w" ? b - a : a - b));
+  }
+
+  /**
+   * Average loss and the accuracy score derived from it, for one side.
+   *
+   * The curve is the usual exponential decay — 100% at zero loss, ~60% around
+   * 60cp average. It is a readable summary, not an official rating, and the UI
+   * labels it as such (see also 缺陷 22: online sites compute an
+   * identically-named number from win probability and get 60–75% where this
+   * gets 37%).
+   *
+   * This is the *only* copy. It used to exist twice — here and as
+   * app.js accuracyFrom() — with the same clamp, the same mean and the same
+   * exponential, differing only in how each decided whose move a ply was. This
+   * module's own header already said three copies are how they begin to
+   * drift; two was not better. 缺陷 6.
+   *
+   * @param {number[]} losses centipawn losses for one side
+   * @returns {{acpl: number|null, acc: number|null}}
+   */
+  function accuracyOf(losses) {
+    if (!losses || !losses.length) return { acpl: null, acc: null };
+    const mean = losses.reduce((a, b) => a + b, 0) / losses.length;
+    return { acpl: Math.round(mean), acc: Math.round(100 * Math.exp(-mean / 120)) };
+  }
+
+  /**
+   * Split an eval track into each side's losses.
+   *
+   * `sideAt` is the caller's, because the two callers genuinely know it two
+   * different ways: the review derives it from the first mover and the parity
+   * of the ply, the app reads it off the FEN it already has in hand. Those must
+   * agree, and scripts/test-chess.mjs checks that they do on a real game —
+   * which is the part that was never checked while the arithmetic was doubled.
+   *
+   * @param {Array<number|null>} scalars evaluation after each ply, [0] = start
+   * @param {(i: number) => "w"|"b"} sideAt who played ply `i`
+   */
+  function lossesBySide(scalars, sideAt) {
+    const out = { w: [], b: [] };
+    for (let i = 0; i + 1 < scalars.length; i++) {
+      const before = scalars[i], after = scalars[i + 1];
+      if (before == null || after == null) continue;
+      const s = sideAt(i);
+      out[s].push(lossOf(before, after, s));
+    }
+    return out;
+  }
+
+  /**
+   * Move number in algebraic notation for ply `i`.
+   *
+   * A game edited to start with Black to move opens at "1…" — Black's move is
+   * still move 1, and White's reply is move 2. Counting pairs from ply 0 would
+   * put White's first move in move 1 alongside it.
+   *
+   * 7.1: and a game that starts from a `[FEN]` opens at THAT position's
+   * full-move number, not at 1. A study or an endgame handed to you at move
+   * 30 was being listed as move 1 in every version up to here — harmless
+   * while `[SetUp]` games were something you loaded by hand once, and
+   * immediately visible now that the library opens them by the dozen.
+   * Omitting `startNo` keeps the old answer exactly.
+   * @param {number} i ply index, 0-based
+   * @param {"w"|"b"} firstMover side that played ply 0
+   * @param {number} [startNo] the starting position's full-move number
+   */
+  function moveNumber(i, firstMover, startNo) {
+    const base = Number.isFinite(startNo) && startNo >= 1 ? Math.floor(startNo) : 1;
+    return base + Math.floor((i + (firstMover === "b" ? 1 : 0)) / 2);
+  }
+
+  /**
+   * @param {number[]} scalars evaluation after each ply, index 0 = start
+   *   (centipawns, positive = good for White; null where unmeasured)
+   * @param {string[]} history SAN moves
+   * @param {"w"|"b"} firstMover side that played history[0] — not always White,
+   *   since a game can start from an edited position
+   * @returns {object|null} null when nothing measurable was analysed
+   */
+  /** centipawn loss of the move at ply `i`, or null where a scalar is missing */
+  function lossAt(scalars, i, side) {
+    if (!scalars || scalars[i] == null || scalars[i + 1] == null) return null;
+    return lossOf(scalars[i], scalars[i + 1], side);
+  }
+
+  function summarize(scalars, history, firstMover) {
+    if (!scalars || scalars.length < 2 || !history || !history.length) return null;
+    const side = (i) => ((i % 2 === 0) === (firstMover !== "b") ? "w" : "b");
+    const losses = { w: [], b: [] };
+    const counts = { w: { inaccuracy: 0, mistake: 0, blunder: 0 }, b: { inaccuracy: 0, mistake: 0, blunder: 0 } };
+    let worst = null;
+
+    for (let i = 0; i < history.length; i++) {
+      const before = scalars[i], after = scalars[i + 1];
+      if (before == null || after == null) continue;
+      const s = side(i);
+      const loss = lossOf(before, after, s);
+      losses[s].push(loss);
+      if (loss >= BLUNDER) counts[s].blunder++;
+      else if (loss >= MISTAKE) counts[s].mistake++;
+      else if (loss >= INACCURACY) counts[s].inaccuracy++;
+      // the turning point is the single costliest move of the game, either side
+      if (loss >= MISTAKE && (!worst || loss > worst.loss)) {
+        worst = { ply: i, san: history[i], loss, side: s, moveNo: moveNumber(i, firstMover) };
+      }
+    }
+
+    const acpl = {}, acc = {};
+    for (const s of ["w", "b"]) {
+      const a = accuracyOf(losses[s]);
+      acpl[s] = a.acpl;
+      acc[s] = a.acc;
+    }
+    const measured = losses.w.length + losses.b.length;
+    if (!measured) return null;
+    const judged = { w: losses.w.length, b: losses.b.length };
+    return { acpl, acc, counts, worst, measured, judged, plies: history.length };
+  }
+
+  /**
+   * A one-line verdict key for the human side, chosen from its blunder count
+   * and accuracy. Returns an i18n key so this module stays language-free.
+   */
+  function verdictKey(summary, side) {
+    if (!summary || !summary.acc || summary.acc[side] == null) return null;
+    // a fragment is described as a fragment — the blunder lines below are
+    // about moves that were actually made and still apply; the three
+    // "how you play" lines need a sample.
+    //
+    // 6.1: the cut-offs used to be 90 / 75. Those were read off the centipawn
+    // accuracy curve, but 6.0 changed what is handed in here to the win-%
+    // accuracy (app.js renderReview passes summarizeWinPct's summary), and
+    // that curve sits 10–17 points higher — see the note on accuracyOf. Every
+    // player was being graded a band too generously: 25 cp/move, an ordinary
+    // club game, scored 81 on the old scale ("solid") and 90 on the new one,
+    // which the unchanged cut-off read as "excellent". The numbers below are
+    // where the win-% curve sits at the same play the old ones described:
+    // 90 on the cp curve is 14 cp/move, which is 94 on this one (95 under v8-0-plan B2's lichess formula); 75 is
+    // 36 cp/move, which is 86 (87). Measured by scripts/test-review-winpct.mjs.
+    const c = summary.counts[side];
+    const enough = !summary.judged || summary.judged[side] >= MIN_JUDGED;
+    if (!enough && c.blunder === 0 && c.mistake < 3) return "rv.verdict.tooShort";
+    if (c.blunder >= 3) return "rv.verdict.blunders";
+    if (c.blunder >= 1) return "rv.verdict.oneBlunder";
+    if (c.mistake >= 3) return "rv.verdict.mistakes";
+    if (summary.acc[side] >= VERDICT_EXCELLENT) return "rv.verdict.excellent";
+    if (summary.acc[side] >= VERDICT_SOLID) return "rv.verdict.solid";
+    return "rv.verdict.roomToGrow";
+  }
+
+  /**
+   * Where an evaluation sits on a 0..1 bar, 0 = Black winning, 1 = White.
+   *
+   * Deliberately returns null rather than 0.5 for an unmeasured position. The
+   * two mean opposite things — "the engine says this is level" and "nobody
+   * asked the engine" — and a bar that renders them identically is the most
+   * confident kind of lie a review can tell. The caller has to show the
+   * difference; making it impossible to forget is why this is not 0.5.
+   *
+   * @param {number|null} cp centipawns, positive = good for White
+   * @returns {number|null} 0..1, or null when there is nothing to show
+   */
+  function evalBar(cp) {
+    if (cp == null || !Number.isFinite(cp)) return null;
+    // ±6 pawns is already decisive; past that the bar has nothing left to say
+    // and only the mate score itself is interesting.
+    const CAP = 600;
+    return 0.5 + (Math.max(-CAP, Math.min(CAP, cp)) / CAP) * 0.5;
+  }
+
+  /**
+   * The tag a move earns for giving up `loss` centipawns, or null for a move
+   * that costs little enough to leave unremarked.
+   *
+   * Shared so the move list, the curve markers and the "you should have
+   * played" arrow can never disagree about what counts as a mistake — three
+   * copies of one threshold is how they start drifting.
+   * @returns {"?!"|"?"|"??"|null}
+   */
+  function markFor(loss) {
+    if (!Number.isFinite(loss)) return null;
+    if (loss >= BLUNDER) return "??";
+    if (loss >= MISTAKE) return "?";
+    if (loss >= INACCURACY) return "?!";
+    return null;
+  }
+
+  /**
+   * The same evaluation as a win percentage for White, 0–100.
+   *
+   * lichess's mapping: 50 + 50 · (2 / (1 + e^(−0.00368208·cp)) − 1). It is
+   * steep near zero and flat past ±5 pawns, which is the whole point of
+   * classifying by it instead of by centipawns (v6-plan Q2.5): a 50cp swing
+   * in a level position is a real change of fortune, the same 50cp at +900
+   * is noise the engine would not bother to distinguish. Mate scores map to
+   * the ends.
+   *
+   * `opts.ply` is accepted for a later model that needs it (Stockfish's WDL
+   * depends on the move number) and unused by this one, so the callers do
+   * not change when the model does.
+   *
+   * @param {number|null} cp centipawns, positive = good for White
+   * @param {{ply?: number}} [opts]
+   * @returns {number|null} 0..100, null when unmeasured
+   */
+  function winPct(cp, opts) { // opts reserved, see above
+    if (cp == null || !Number.isFinite(cp)) return null;
+    if (cp >= 9000) return 100;
+    if (cp <= -9000) return 0;
+    return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1);
+  }
+
+  /**
+   * Win-percentage points a move gave away, from the mover's side, ≥ 0.
+   * @param {number} before evaluation before the move (cp, White's view)
+   * @param {number} after  evaluation after it
+   * @param {"w"|"b"} side  who played it
+   */
+  function winPctDrop(before, after, side) {
+    const a = winPct(before), b = winPct(after);
+    if (a == null || b == null) return null;
+    return Math.max(0, side === "w" ? a - b : b - a);
+  }
+
+  /**
+   * Cut-offs in win-percentage points, alongside — not instead of — the
+   * centipawn ones. The three constants above stay: they are measured, and
+   * `?!` at 50cp is what the move list prints today. These are the starting
+   * values from the plan, and the same rule applies to them: scanNoise's
+   * method, re-run as `winPctNoise` in docs/measured.json, decides whether
+   * they can be trusted before anything renders them.
+   */
+  const WIN_INACCURACY = 5, WIN_MISTAKE = 10, WIN_BLUNDER = 20;
+
+  /** markFor(), on a win-percentage drop. */
+  function classifyByWinPct(drop) {
+    if (!Number.isFinite(drop)) return null;
+    if (drop >= WIN_BLUNDER) return "??";
+    if (drop >= WIN_MISTAKE) return "?";
+    if (drop >= WIN_INACCURACY) return "?!";
+    return null;
+  }
+
+  /**
+   * One move's accuracy from the win percentage before and after it, both
+   * from the mover's side. lichess (modules/analyse AccuracyPercent.scala,
+   * fromWinPercents): 103.1668… · e^(−0.043544…·drop) − 3.16692… + 1, clamped
+   * to 0–100; a move that loses nothing is 100. The "+ 1" is lichess's own
+   * "uncertainty bonus (due to imperfect analysis)". The formula is taken
+   * whole (v8-0-plan B2); 6.0 had copied it without that term.
+   * @param {number} before mover's win % before the move
+   * @param {number} after  mover's win % after it
+   */
+  function accuracyFromWinPct(before, after) {
+    if (before == null || after == null) return null;
+    if (after >= before) return 100;
+    const raw = 103.1668100711649 * Math.exp(-0.04354415386753951 * (before - after)) - 3.166924740191411 + 1;
+    return Math.max(0, Math.min(100, raw));
+  }
+
+  /**
+   * lichess's win % for the accuracy figure: the same curve as winPct, but on
+   * a centipawn value first clamped to ±1000, mates included (scalachess
+   * WinPercent.fromCentiPawns on `Cp.ceiled`, mates via `forceAsCp`). The
+   * classification keeps winPct — its cut-offs were measured on it.
+   */
+  function accuracyWinPct(cp) {
+    if (cp == null || !Number.isFinite(cp)) return null;
+    const c = Math.max(-1000, Math.min(1000, cp));
+    return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * c)) - 1);
+  }
+
+  /**
+   * Both sides' game accuracy, lichess's full formula (v8-0-plan B2). Up to
+   * 7.9 this module took the plain mean of the per-move figures and said so.
+   *
+   * Ported line for line from AccuracyPercent.gameAccuracy:
+   *   - the win % track is every evaluation, the start position's included;
+   *   - window = ⌊moves / 10⌋ clamped to 2..8; every move is weighted by the
+   *     population standard deviation of the win % over the window ending at
+   *     it (the first few share the first window), clamped to 0.5..12 — so a
+   *     move made while the game was swinging counts more than one in a dead
+   *     position, where any move is "accurate";
+   *   - per side: (volatility-weighted mean + harmonic mean) / 2, the harmonic
+   *     mean taken over max(1, accuracy) — it is what makes one blunder in an
+   *     otherwise perfect game cost far more than a plain mean would;
+   *   - a move whose before/after, or any evaluation in its window, is
+   *     unmeasured is left out, as lichess leaves out a missing eval.
+   * lichess prepends its fixed initial evaluation (15 cp); here `scalars[0]`
+   * is the start position as actually measured, which is also right for a
+   * game that starts from a FEN.
+   *
+   * @param {Array<number|null>} scalars evaluation (cp, White's view) before
+   *   ply 0, then after each ply
+   * @param {"w"|"b"} firstMover
+   * @returns {{w: number|null, b: number|null}} unrounded, 0..100
+   */
+  function gameAccuracy(scalars, firstMover) {
+    const out = { w: null, b: null };
+    if (!scalars || scalars.length < 2) return out;
+    const wins = scalars.map(accuracyWinPct);
+    const moves = wins.length - 1;
+    const size = Math.max(2, Math.min(8, Math.floor(moves / 10)));
+    const windows = [];
+    for (let k = 0; k < Math.min(size, wins.length) - 2; k++) windows.push(wins.slice(0, size));
+    // Scala's sliding: a list shorter than the window is one window
+    if (wins.length <= size) windows.push(wins.slice());
+    else for (let k = 0; k + size <= wins.length; k++) windows.push(wins.slice(k, k + size));
+    const weightOf = (xs) => {
+      if (xs.some((x) => x == null)) return null;
+      const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+      const sd = Math.sqrt(xs.reduce((a, x) => a + (x - mean) * (x - mean), 0) / xs.length);
+      return Math.max(0.5, Math.min(12, sd));
+    };
+    const per = { w: [], b: [] };
+    for (let i = 0; i < moves && i < windows.length; i++) {
+      const p = wins[i], n = wins[i + 1], w = weightOf(windows[i]);
+      if (p == null || n == null || w == null) continue;
+      const white = (i % 2 === 0) === (firstMover !== "b");
+      per[white ? "w" : "b"].push([white ? accuracyFromWinPct(p, n) : accuracyFromWinPct(n, p), w]);
+    }
+    for (const s of ["w", "b"]) {
+      const xs = per[s];
+      if (!xs.length) continue;
+      const sw = xs.reduce((a, [, w]) => a + w, 0);
+      const weighted = xs.reduce((a, [acc, w]) => a + acc * w, 0) / sw;
+      const harmonic = xs.length / xs.reduce((a, [acc]) => a + 1 / Math.max(1, acc), 0);
+      out[s] = (weighted + harmonic) / 2;
+    }
+    return out;
+  }
+
+  /**
+   * summarize(), with the win-percentage measures: `acc` is lichess's game
+   * accuracy (gameAccuracy above), `drop` the mean points given away,
+   * `counts` and `worst` use the win-percentage cut-offs. Same shape and the
+   * same side rule, so a caller can swap one for the other.
+   * @returns {object|null}
+   */
+  function summarizeWinPct(scalars, history, firstMover) {
+    if (!scalars || scalars.length < 2 || !history || !history.length) return null;
+    const side = (i) => ((i % 2 === 0) === (firstMover !== "b") ? "w" : "b");
+    const drops = { w: [], b: [] };
+    const counts = { w: { inaccuracy: 0, mistake: 0, blunder: 0 }, b: { inaccuracy: 0, mistake: 0, blunder: 0 } };
+    let worst = null;
+    for (let i = 0; i < history.length; i++) {
+      const before = scalars[i], after = scalars[i + 1];
+      if (before == null || after == null) continue;
+      const s = side(i);
+      const drop = winPctDrop(before, after, s);
+      drops[s].push(drop);
+      const tag = classifyByWinPct(drop);
+      if (tag === "??") counts[s].blunder++;
+      else if (tag === "?") counts[s].mistake++;
+      else if (tag === "?!") counts[s].inaccuracy++;
+      if (drop >= WIN_MISTAKE && (!worst || drop > worst.drop)) {
+        worst = { ply: i, san: history[i], drop, side: s, moveNo: moveNumber(i, firstMover) };
+      }
+    }
+    const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+    const acc = {}, drop = {};
+    const ga = gameAccuracy(scalars.slice(0, history.length + 1), firstMover);
+    for (const s of ["w", "b"]) {
+      const a = ga[s], d = mean(drops[s]);
+      acc[s] = a == null ? null : Math.round(a);
+      drop[s] = d == null ? null : Math.round(d * 10) / 10;
+    }
+    const measured = drops.w.length + drops.b.length;
+    if (!measured) return null;
+    const judged = { w: drops.w.length, b: drops.b.length };
+    return { acc, drop, counts, worst, measured, judged, plies: history.length };
+  }
+
+  /** Is the game long enough for the curve and the verdicts to mean anything? */
+  function longEnough(summary) {
+    return !!summary && summary.measured >= MIN_JUDGED * 2;
+  }
+
+  /** Is this a tag the player is meant to learn something from? */
+  function isMistake(tag) {
+    return tag === "?!" || tag === "?" || tag === "??";
+  }
+
+  export const ChessReview = {
+    summarize, lossAt, verdictKey, longEnough, moveNumber, evalBar, markFor, isMistake,
+    lossOf, accuracyOf, lossesBySide,
+    INACCURACY, MISTAKE, BLUNDER, MIN_JUDGED,
+    winPct, winPctDrop, classifyByWinPct, accuracyFromWinPct, summarizeWinPct,
+    accuracyWinPct, gameAccuracy,
+    WIN_INACCURACY, WIN_MISTAKE, WIN_BLUNDER,
+    VERDICT_EXCELLENT, VERDICT_SOLID, EVAL_WINDOW,
+  };

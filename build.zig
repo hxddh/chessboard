@@ -116,27 +116,13 @@ pub fn build(b: *std.Build) void {
     runner_mod.addImport("native_sdk", native_sdk_mod);
     runner_mod.addImport("build_options", options_mod);
     runner_mod.addImport("app_manifest_zon", b.createModule(.{ .root_source_file = b.path(manifest_path) }));
-    addMigrations(b, target, optimize, runner_mod, native_sdk_mod);
 
     const app_mod = localModule(b, target, optimize, "src/main.zig");
     app_mod.addImport("native_sdk", native_sdk_mod);
     app_mod.addImport("runner", runner_mod);
-    addSqlite(b, app_mod, native_sdk_path);
     const exe = b.addExecutable(.{
         .name = app_exe_name,
         .root_module = app_mod,
-        // The app executable crosses the platform C seam on every host
-        // call (the GTK host's `native_sdk_gtk_create_view` is a
-        // 22-parameter mix of pointers, sizes, ints, and doubles), and
-        // Zig 0.16.0's self-hosted x86_64 backend miscompiles exactly
-        // that calling-convention shape (see useLlvmWorkaround below):
-        // a Debug `native dev` on x86_64 Linux placed the stack-passed
-        // string arguments one slot off, so the host read a garbage
-        // `role` pointer and crashed in `native_sdk_strndup` while the
-        // register-passed `label` arrived intact. Every other artifact
-        // in this graph already forces LLVM on x86_64; the app exe —
-        // the one binary users actually run — must too.
-        .use_llvm = useLlvmWorkaround(target),
     });
     // Windows subsystem posture (mirrors the Native SDK build graph):
     // release-shaped exes are GUI-subsystem so the app never flashes a
@@ -152,11 +138,12 @@ pub fn build(b: *std.Build) void {
     // The web side has no npm project of its own (D12: `frontend/` never
     // existed — these steps were `npm --prefix frontend` from the template
     // and made `zig build run/dev/package` fail locally for twenty releases).
-    // frontend/dist is the split build of src/app (scripts/build-app.mjs)
-    // plus the licences, produced by one script that does exactly what
-    // scripts/package.sh and the two build workflows do.
+    // frontend/dist is a plain copy of src/web, produced by one script that
+    // does exactly what scripts/package.sh and the two build workflows do:
+    // generate engine-src.js, bundle the ES modules, copy index.html +
+    // styles.css + js/bundle.js + js/engine-src.js, add licenses/.
     const frontend_build = b.addSystemCommand(&.{ "node", "scripts/sync-dist.mjs" });
-    const frontend_step = b.step("frontend-build", "Build frontend/dist from src/app (node scripts/sync-dist.mjs)");
+    const frontend_step = b.step("frontend-build", "Sync frontend/dist from src/web (node scripts/sync-dist.mjs)");
     frontend_step.dependOn(&frontend_build.step);
 
     const run = b.addRunArtifact(exe);
@@ -190,16 +177,12 @@ pub fn build(b: *std.Build) void {
         package_opts.dev_origins = dev_origins_request orelse (package_optimize == .Debug);
         package_runner_mod.addImport("build_options", buildOptionsModule(b, package_opts));
         package_runner_mod.addImport("app_manifest_zon", b.createModule(.{ .root_source_file = b.path(manifest_path) }));
-        addMigrations(b, target, package_optimize, package_runner_mod, package_sdk_mod);
         const package_app_mod = localModule(b, target, package_optimize, "src/main.zig");
         package_app_mod.addImport("native_sdk", package_sdk_mod);
         package_app_mod.addImport("runner", package_runner_mod);
-        addSqlite(b, package_app_mod, native_sdk_path);
         const built = b.addExecutable(.{
             .name = app_exe_name,
             .root_module = package_app_mod,
-            // the same x86_64 LLVM workaround as the dev exe (B12)
-            .use_llvm = useLlvmWorkaround(target),
         });
         // Same subsystem posture as the dev exe above, keyed on this
         // exe's own mode: release-shaped Windows exes are GUI-subsystem.
@@ -248,24 +231,13 @@ pub fn build(b: *std.Build) void {
     const package_step = b.step("package", "Create a local package artifact");
     package_step.dependOn(&package.step);
 
-    // v20-0-plan A2: the test binary always links SQLite, whichever UI the
-    // exe has, so src/db.zig's tests run against a real RelationalStore.
-    // Its own root module (same imports): C sources belong to a module, and
-    // the 19.0 exe must not carry the amalgamation it never opens.
-    const test_mod = localModule(b, target, optimize, "src/main.zig");
-    test_mod.addImport("native_sdk", native_sdk_mod);
-    test_mod.addImport("runner", runner_mod);
-    addSqlite(b, test_mod, native_sdk_path);
-    const tests = b.addTest(.{ .root_module = test_mod, .use_llvm = useLlvmWorkaround(target) });
-    // the same platform sources and links the exe's module gets (the macOS
-    // host .m, mac_chrome.m, AppKit/WebKit…): the test binary links main()
-    linkPlatform(b, target, test_mod, tests, selected_platform, web_engine, web_layer, native_sdk_path, cef_dir, cef_auto_install);
+    const tests = b.addTest(.{ .root_module = app_mod });
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
     // src/runner.zig is a module of its own, so the app's test binary never
     // runs its tests: the window-restore one (v8-2-plan M4, sdk-fork-notes R15)
     // and those of the SDK's window_placement.zig it imports.
-    const runner_tests = b.addTest(.{ .root_module = runner_mod, .use_llvm = useLlvmWorkaround(target) });
+    const runner_tests = b.addTest(.{ .root_module = runner_mod });
     test_step.dependOn(&b.addRunArtifact(runner_tests).step);
 }
 
@@ -293,64 +265,6 @@ fn buildOptionsModule(b: *std.Build, values: BuildOptionValues) *std.Build.Modul
     options.addOption(bool, "web_layer", values.web_layer);
     options.addOption(bool, "dev_origins", values.dev_origins);
     return options.createModule();
-}
-
-/// The runner's `relational_migrations` (SDK build/app.zig wires the same
-/// import from a generated file; ours is written by hand, ADR 0003).
-fn addMigrations(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, runner_mod: *std.Build.Module, native_sdk_mod: *std.Build.Module) void {
-    const migrations_mod = localModule(b, target, optimize, "src/db_migrations.zig");
-    migrations_mod.addImport("native_sdk", native_sdk_mod);
-    runner_mod.addImport("relational_migrations", migrations_mod);
-}
-
-/// The SQLite amalgamation the SDK vendors, with the SDK's own defines
-/// (build/app.zig sqlite_c_defines): what `store` / `sqlite` apps link.
-fn addSqlite(b: *std.Build, mod: *std.Build.Module, native_sdk_path: []const u8) void {
-    mod.addIncludePath(nativeSdkPath(b, native_sdk_path, "third_party/sqlite"));
-    mod.addCSourceFile(.{ .file = nativeSdkPath(b, native_sdk_path, "third_party/sqlite/sqlite3.c"), .flags = &sqlite_c_defines });
-    mod.link_libc = true;
-}
-
-const sqlite_c_defines = [_][]const u8{
-    "-DSQLITE_THREADSAFE=2",
-    "-DSQLITE_OMIT_LOAD_EXTENSION",
-    "-DSQLITE_DQS=0",
-    "-DSQLITE_ENABLE_FTS5",
-    "-DSQLITE_ENABLE_JSON1",
-    "-DSQLITE_ENABLE_UPDATE_HOOK",
-    "-DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1",
-    "-DSQLITE_DEFAULT_MEMSTATUS=0",
-};
-
-/// Zig 0.16.0's self-hosted x86_64 backend miscompiles the SysV C calling
-/// convention for f32-heavy signatures with interleaved pointer arguments
-/// (`native_sdk_app_viewport`: 11 f32s + 2 pointers): both the caller and
-/// the callee place/read the wrong registers and stack slots, so safe-area
-/// insets arrive as garbage on x86_64 Debug builds while every LLVM-backed
-/// build is correct. Minimal repro (fails under `zig test`, passes with
-/// `-fllvm` on x86_64-linux):
-///
-///   fn take(a: ?*anyopaque, w: f32, h: f32, s: f32, p: ?*anyopaque,
-///           t: f32, r: f32, bo: f32, l: f32, kt: f32, kr: f32, kb: f32,
-///           kl: f32) callconv(.c) void { ... }
-///
-/// The same backend also mis-places STACK-passed integer/pointer arguments
-/// in long mixed signatures with interleaved doubles: calling the GTK
-/// host's `native_sdk_gtk_create_view` (22 params: 6 register ints, 4
-/// doubles, 12 stack ints/pointers/sizes) from self-hosted Debug code
-/// hands the clang-compiled callee arguments shifted by one stack slot
-/// from `visible` onward — the callee's `role` pointer reads as the
-/// caller's `enabled` value (a 4-byte 1 under 0xAA undefined fill,
-/// faulting at 0xaaaaaaaa00000001) and `role_len` reads as the role
-/// pointer. Register-passed arguments (`label`) arrive intact, which is
-/// why the crash appears only at the first stack-passed string. Verified
-/// against zig 0.16.0 on x86_64-linux with a standalone caller/callee
-/// pair: self-hosted Debug corrupts, `-fllvm` is correct.
-///
-/// Force the LLVM backend on x86_64 until the upstream backend is fixed;
-/// Release modes already default to LLVM, so this only changes Debug.
-pub fn useLlvmWorkaround(target: std.Build.ResolvedTarget) ?bool {
-    return if (target.result.cpu.arch == .x86_64) true else null;
 }
 
 // Resolve the optimize mode for one exe role (mirrors the Native SDK
@@ -495,11 +409,11 @@ fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.B
         app_mod.linkFramework("ScreenCaptureKit", .{ .weak = true });
         app_mod.linkFramework("CoreVideo", .{});
         app_mod.linkFramework("MediaToolbox", .{});
-        // 11.0 W, 20.0 E3: the app's own AppKit glue — the 'odoc' Apple
-        // event (a .pgn double-clicked or dropped on the Dock icon) and the
-        // Mac's own menus around app.zon's (src/native/mac_chrome.m; main.zig
-        // and menus.zig call it on macOS). Plain ObjC whichever web engine is
-        // built.
+        // 11.0 W: the app's own window shell — traffic lights inside the
+        // content, a native drag strip over the top 28 pt, the appearance from
+        // the theme (src/native/mac_chrome.m; main.zig calls it on macOS).
+        // Plain ObjC whichever web engine is built; it looks for a WKWebView
+        // to tell the page about full screen and finds none under CEF.
         {
             const sdk_include = if (b.sysroot) |sysroot| b.fmt("-I{s}/usr/include", .{sysroot}) else "";
             const chrome_flags: []const []const u8 = if (b.sysroot) |sysroot| &.{ "-fobjc-arc", "-fno-sanitize=builtin", "-ObjC", "-mmacosx-version-min=11.0", "-isysroot", sysroot, sdk_include } else &.{ "-fobjc-arc", "-fno-sanitize=builtin", "-ObjC", "-mmacosx-version-min=11.0" };
@@ -606,6 +520,10 @@ fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.B
                 app_mod.addLibraryPath(b.path(b.fmt("{s}/Release", .{cef_dir})));
             },
         }
+        // 12.0 N: the app's own window chrome — the title bar dark or light
+        // with the theme, Mica on Windows 11 (src/native/win_chrome.c; chrome.zig
+        // calls it on Windows). dwmapi is loaded at run time, not linked.
+        app_mod.addCSourceFile(.{ .file = b.path("src/native/win_chrome.c"), .flags = &.{} });
         app_mod.linkSystemLibrary("c", .{});
         app_mod.linkSystemLibrary("c++", .{});
         app_mod.linkSystemLibrary("user32", .{});

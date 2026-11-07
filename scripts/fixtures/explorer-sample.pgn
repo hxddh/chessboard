@@ -1,0 +1,3599 @@
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/Z94COHpB"]
+[Result "0-1"]
+[WhiteElo "2237"]
+[BlackElo "2363"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nf6 3. d4 Nxe4 4. Bd3 d5 5. Nxe5 Bd6 6. Nd2 Nxd2 7. Bxd2 O-O 8. O-O c5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/bPMy5tNl"]
+[Result "0-1"]
+[WhiteElo "2300"]
+[BlackElo "2494"]
+[Termination "Time forfeit"]
+
+1. g3 d5 2. f3 c6 3. Nh3 e5 4. Nf2 Bd6 5. Bg2 f5 6. d3 Nf6 7. e4 h6 8. Nc3 O-O 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/zUuhnidn"]
+[Result "1-0"]
+[WhiteElo "2227"]
+[BlackElo "2214"]
+[Termination "Time forfeit"]
+
+1. e4 c6 2. d4 d5 3. e5 Bf5 4. h4 h5 5. Bg5 Qc7 6. Bd3 Bxd3 7. Qxd3 e6 8. Nd2 Ne7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/dAxZF9xr"]
+[Result "1-0"]
+[WhiteElo "2347"]
+[BlackElo "2278"]
+[Termination "Normal"]
+
+1. e4 c5 2. c3 Nf6 3. e5 Nd5 4. d4 cxd4 5. Bc4 e6 6. Bxd5 exd5 7. Qxd4 d6 8. Qxd5 Nc6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/AQtQdii1"]
+[Result "1/2-1/2"]
+[WhiteElo "2980"]
+[BlackElo "2905"]
+[Termination "Normal"]
+
+1. c4 g6 2. g3 Bg7 3. Bg2 c5 4. Nc3 Nc6 5. Nf3 e6 6. d3 Nge7 7. Bg5 h6 8. Bd2 b6 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/UmKCcmAu"]
+[Result "1-0"]
+[WhiteElo "2313"]
+[BlackElo "2289"]
+[Termination "Normal"]
+
+1. c4 c6 2. Nc3 d5 3. cxd5 cxd5 4. d4 Nf6 5. g3 Nc6 6. Bg2 Bf5 7. a3 e6 8. Nf3 Bd6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/n93Sydt1"]
+[Result "1-0"]
+[WhiteElo "2272"]
+[BlackElo "2268"]
+[Termination "Normal"]
+
+1. d4 g6 2. e4 Bg7 3. f4 d6 4. Nf3 Bg4 5. c3 Nf6 6. Bd3 O-O 7. e5 Nd5 8. h3 Bxf3 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/Xzlyta0p"]
+[Result "0-1"]
+[WhiteElo "2339"]
+[BlackElo "2425"]
+[Termination "Normal"]
+
+1. g3 d5 2. Bg2 e5 3. d4 e4 4. c4 c6 5. cxd5 cxd5 6. Nc3 h5 7. h4 Nf6 8. Bg5 Be7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/YPfWjhbc"]
+[Result "0-1"]
+[WhiteElo "2227"]
+[BlackElo "2324"]
+[Termination "Time forfeit"]
+
+1. e4 c5 2. Nf3 Nc6 3. d4 cxd4 4. Nxd4 g6 5. Nc3 Bg7 6. Nxc6 bxc6 7. Bc4 d6 8. Qf3 Nf6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/WZLevtsE"]
+[Result "0-1"]
+[WhiteElo "2291"]
+[BlackElo "2349"]
+[Termination "Normal"]
+
+1. e4 Nf6 2. Nc3 d6 3. d4 e5 4. Nf3 Nbd7 5. Bc4 Be7 6. O-O O-O 7. Re1 c6 8. Bb3 exd4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/BtEr6K8f"]
+[Result "1-0"]
+[WhiteElo "2204"]
+[BlackElo "2219"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 e6 3. Nc3 Bb4 4. a3 Bxc3+ 5. bxc3 c5 6. e3 O-O 7. Bd3 d6 8. Ne2 b6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/l0pO4roA"]
+[Result "1/2-1/2"]
+[WhiteElo "2439"]
+[BlackElo "2403"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 g6 3. Nc3 Bg7 4. e4 d6 5. h3 O-O 6. Be3 c6 7. Nf3 e5 8. d5 c5 1/2-1/2
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/LrUUviof"]
+[Result "1/2-1/2"]
+[WhiteElo "2973"]
+[BlackElo "3018"]
+[Termination "Normal"]
+
+1. e4 e6 2. d4 d5 3. e5 c5 4. c3 Nc6 5. Nf3 Bd7 6. Be2 Nge7 7. O-O Ng6 8. g3 f6 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/EU02Y8xg"]
+[Result "0-1"]
+[WhiteElo "2217"]
+[BlackElo "2309"]
+[Termination "Normal"]
+
+1. e4 g6 2. d4 Bg7 3. c3 b6 4. h4 Bb7 5. Nd2 c5 6. d5 e6 7. d6 e5 8. h5 Nh6 0-1
+
+[Event "Rated Classical game"]
+[Site "https://lichess.org/XMummiwg"]
+[Result "1/2-1/2"]
+[WhiteElo "2299"]
+[BlackElo "2847"]
+[Termination "Insufficient material"]
+
+1. d4 d5 2. c4 e6 3. Nc3 Nf6 4. Bg5 Be7 5. Nf3 h6 6. Bh4 O-O 7. e3 b6 8. cxd5 Nxd5 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/E7Attcv1"]
+[Result "0-1"]
+[WhiteElo "2414"]
+[BlackElo "2388"]
+[Termination "Normal"]
+
+1. e4 c5 2. Be2 Nc6 3. f4 g6 4. Nf3 Bg7 5. d3 e6 6. c3 Nge7 7. O-O d5 8. Be3 d4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/GaN40Lv8"]
+[Result "1-0"]
+[WhiteElo "2376"]
+[BlackElo "2385"]
+[Termination "Normal"]
+
+1. d4 d5 2. c4 e6 3. Nc3 c5 4. cxd5 exd5 5. Nf3 Nc6 6. g3 Nf6 7. Bg2 Be7 8. O-O O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/mGlDKptf"]
+[Result "1-0"]
+[WhiteElo "2204"]
+[BlackElo "2320"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nf6 3. Bc4 Nc6 4. d3 h6 5. O-O Be7 6. c3 O-O 7. Be3 d6 8. h3 Be6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/9uTBo1cK"]
+[Result "1-0"]
+[WhiteElo "2316"]
+[BlackElo "2340"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 g6 3. c4 Nc6 4. d4 cxd4 5. Nxd4 Nf6 6. Nc3 d6 7. Be2 Nxd4 8. Qxd4 Bg7 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/dq2svYTW"]
+[Result "1-0"]
+[WhiteElo "2254"]
+[BlackElo "2213"]
+[Termination "Normal"]
+
+1. c4 e6 2. Nc3 d5 3. d4 Nf6 4. cxd5 exd5 5. Bg5 Be7 6. e3 O-O 7. Bd3 c6 8. Qc2 Nbd7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/JiTvYWjJ"]
+[Result "0-1"]
+[WhiteElo "2445"]
+[BlackElo "2408"]
+[Termination "Normal"]
+
+1. d4 d5 2. c4 e6 3. Nf3 f5 4. Nc3 c6 5. Bg5 Be7 6. Bxe7 Qxe7 7. e3 Nf6 8. Bd3 Ne4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/GO2b2x7E"]
+[Result "0-1"]
+[WhiteElo "2342"]
+[BlackElo "2520"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 6. Be3 e5 7. Nf3 Qc7 8. a4 Nbd7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/yc2YUXUx"]
+[Result "1-0"]
+[WhiteElo "2487"]
+[BlackElo "2366"]
+[Termination "Normal"]
+
+1. e4 c6 2. d4 d5 3. e5 e6 4. f4 f5 5. exf6 gxf6 6. Bd3 Bd6 7. Qh5+ Kd7 8. Nf3 Qe7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/BPfETEn1"]
+[Result "1-0"]
+[WhiteElo "2426"]
+[BlackElo "2449"]
+[Termination "Time forfeit"]
+
+1. Nf3 f5 2. d3 Nc6 3. e4 e5 4. exf5 d5 5. g4 h5 6. Ng5 Nh6 7. Ne6 Bxe6 8. Bxh6 Rxh6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/DKnXbBzR"]
+[Result "0-1"]
+[WhiteElo "2303"]
+[BlackElo "2269"]
+[Termination "Time forfeit"]
+
+1. e4 c5 2. b3 Nf6 3. Nc3 d5 4. exd5 Nxd5 5. Bb5+ Bd7 6. Bxd7+ Qxd7 7. Bb2 Nb4 8. a3 N4c6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/slHnZNth"]
+[Result "1-0"]
+[WhiteElo "2293"]
+[BlackElo "2324"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 e6 3. c3 d5 4. e5 Nc6 5. d4 Nge7 6. Bd3 cxd4 7. cxd4 Nf5 8. Be3 Qb6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/ow4DrdKL"]
+[Result "0-1"]
+[WhiteElo "2249"]
+[BlackElo "2227"]
+[Termination "Normal"]
+
+1. d4 d5 2. c4 dxc4 3. Nf3 c5 4. d5 e6 5. Nc3 exd5 6. Qxd5 Bd6 7. e4 Nf6 8. Qg5 O-O 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/F2RRsfLY"]
+[Result "0-1"]
+[WhiteElo "2410"]
+[BlackElo "2513"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Nf3 d5 3. c4 e6 4. Nc3 Be7 5. Bf4 O-O 6. e3 Nbd7 7. c5 c6 8. Bd3 b6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/FywTix3u"]
+[Result "0-1"]
+[WhiteElo "2356"]
+[BlackElo "2238"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Bf4 d5 3. e3 c5 4. dxc5 e6 5. b4 b6 6. Bxb8 Rxb8 7. Bb5+ Ke7 8. c6 Qd6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/DRBvFyBW"]
+[Result "0-1"]
+[WhiteElo "2583"]
+[BlackElo "2394"]
+[Termination "Normal"]
+
+1. Nf3 d5 2. a4 c5 3. a5 Nc6 4. a6 bxa6 5. c3 e5 6. d3 Nf6 7. Qa4 Qb6 8. Nxe5 Bb7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/T2zhLCsV"]
+[Result "1-0"]
+[WhiteElo "2551"]
+[BlackElo "2547"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Nf3 g6 3. c4 Bg7 4. Nc3 O-O 5. e4 d6 6. Be2 e5 7. d5 a5 8. Bg5 Qe8 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/c1bhKn2x"]
+[Result "1-0"]
+[WhiteElo "2406"]
+[BlackElo "2468"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 e6 3. c3 d5 4. exd5 Qxd5 5. d4 Nf6 6. Be3 Ng4 7. Bc1 Nc6 8. Na3 Be7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/ZoCBJHcn"]
+[Result "0-1"]
+[WhiteElo "2307"]
+[BlackElo "2374"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 d6 3. Nc3 Bf5 4. Qb3 Qc8 5. g3 c6 6. Bg2 e5 7. e3 Nfd7 8. Nge2 Bg6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/mOFZcnTM"]
+[Result "1-0"]
+[WhiteElo "2411"]
+[BlackElo "2286"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 d6 3. Bc4 e6 4. O-O Nf6 5. Re1 Be7 6. e5 dxe5 7. Nxe5 Nbd7 8. Nxf7 Kxf7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/xpGsn3h6"]
+[Result "1-0"]
+[WhiteElo "2461"]
+[BlackElo "2479"]
+[Termination "Normal"]
+
+1. d4 c5 2. d5 d6 3. Nc3 g6 4. e4 Bg7 5. Nf3 e5 6. h3 Ne7 7. Bd3 O-O 8. g4 f5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/LR7DR955"]
+[Result "0-1"]
+[WhiteElo "2309"]
+[BlackElo "2656"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nc3 Bc5 3. Nf3 d6 4. Na4 Nf6 5. Nxc5 dxc5 6. Bc4 Nc6 7. d3 a6 8. O-O O-O 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/WP1HOQ9b"]
+[Result "0-1"]
+[WhiteElo "2305"]
+[BlackElo "2309"]
+[Termination "Normal"]
+
+1. d4 d5 2. c4 c6 3. Nf3 Nf6 4. g3 g6 5. Bg2 Bg7 6. O-O O-O 7. Nc3 e6 8. Qc2 Nbd7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/q9xzx87w"]
+[Result "0-1"]
+[WhiteElo "2441"]
+[BlackElo "2397"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 e6 3. g3 d5 4. Bg2 Be7 5. Nf3 O-O 6. O-O c5 7. cxd5 Nxd5 8. e4 Nf6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/HECCBmo1"]
+[Result "0-1"]
+[WhiteElo "2251"]
+[BlackElo "2214"]
+[Termination "Normal"]
+
+1. b3 c6 2. Bb2 d5 3. g3 Bf5 4. Bg2 e6 5. e3 Nf6 6. Ne2 Bd6 7. O-O h5 8. d3 h4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/PQjrbYFS"]
+[Result "1-0"]
+[WhiteElo "2261"]
+[BlackElo "2305"]
+[Termination "Time forfeit"]
+
+1. d4 c5 2. d5 d6 3. c4 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/kKroRK35"]
+[Result "0-1"]
+[WhiteElo "2215"]
+[BlackElo "2306"]
+[Termination "Normal"]
+
+1. e4 d5 2. exd5 Nf6 3. d4 Qxd5 4. c4 Qe4+ 5. Be3 Ng4 6. Nc3 Nxe3 7. Nxe4 Nxd1 8. Rxd1 g6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/RGfunhTN"]
+[Result "0-1"]
+[WhiteElo "2263"]
+[BlackElo "2274"]
+[Termination "Time forfeit"]
+
+1. c4 e5 2. Nc3 Nf6 3. Nf3 Nc6 4. e3 Bb4 5. Nd5 e4 6. Nxb4 Nxb4 7. Nd4 c5 8. Nc2 Nd3+ 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/WO4o8T4m"]
+[Result "1-0"]
+[WhiteElo "2333"]
+[BlackElo "2332"]
+[Termination "Normal"]
+
+1. Nc3 c5 2. e4 Nc6 3. Bc4 e6 4. Nge2 g6 5. d4 cxd4 6. Nxd4 a6 7. Nxc6 bxc6 8. Qd4 Qf6 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/iuKpNIgb"]
+[Result "1-0"]
+[WhiteElo "2342"]
+[BlackElo "2296"]
+[Termination "Time forfeit"]
+
+1. d4 Nf6 2. c4 e6 3. Nc3 Bb4 4. Qc2 d6 5. e4 Bxc3+ 6. bxc3 Nbd7 7. Bd3 b6 8. Ne2 e5 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/HPX5IYrW"]
+[Result "1-0"]
+[WhiteElo "2370"]
+[BlackElo "2202"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 b6 3. Nc3 Bb7 4. f3 e6 5. e4 Bb4 6. Bd3 c5 7. d5 exd5 8. cxd5 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/BsmHjOYt"]
+[Result "1-0"]
+[WhiteElo "2635"]
+[BlackElo "2651"]
+[Termination "Time forfeit"]
+
+1. Nf3 c5 2. g3 Nf6 3. Bg2 g6 4. O-O Bg7 5. c4 O-O 6. Nc3 d6 7. d4 cxd4 8. Nxd4 Qc7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/i6r7j4zZ"]
+[Result "0-1"]
+[WhiteElo "2238"]
+[BlackElo "2232"]
+[Termination "Normal"]
+
+1. d4 d5 2. c4 dxc4 3. e3 Nf6 4. Bxc4 e6 5. a3 c5 6. dxc5 Qxd1+ 7. Kxd1 Bxc5 8. b4 Be7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/E1WsWK8M"]
+[Result "1/2-1/2"]
+[WhiteElo "2251"]
+[BlackElo "2359"]
+[Termination "Normal"]
+
+1. e4 c6 2. d4 d5 3. e5 Bf5 4. h4 h5 5. Bd3 Bxd3 6. Qxd3 Qa5+ 7. c3 e6 8. Nf3 Be7 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/oDbiGbDu"]
+[Result "1-0"]
+[WhiteElo "2223"]
+[BlackElo "2204"]
+[Termination "Normal"]
+
+1. Nf3 d5 2. e3 c5 3. d4 Nc6 4. a3 Bg4 5. Be2 e6 6. dxc5 Bxc5 7. b4 Bd6 8. Bb2 Nf6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/T8XCjXRx"]
+[Result "1-0"]
+[WhiteElo "2287"]
+[BlackElo "2385"]
+[Termination "Normal"]
+
+1. e4 e5 2. d4 d6 3. Nf3 Nd7 4. dxe5 dxe5 5. Nc3 Ngf6 6. Bc4 Be7 7. O-O O-O 8. a3 c6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/SinokbVC"]
+[Result "0-1"]
+[WhiteElo "2360"]
+[BlackElo "2341"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nc3 g6 3. f4 Bg7 4. Nf3 Nc6 5. a4 d6 6. Bb5 Bd7 7. d3 a6 8. Bxc6 Bxc6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/nqikINeM"]
+[Result "0-1"]
+[WhiteElo "2202"]
+[BlackElo "2252"]
+[Termination "Normal"]
+
+1. d4 g6 2. Nf3 Bg7 3. c3 d6 4. e4 Nd7 5. h3 e5 6. Bd3 Ngf6 7. O-O O-O 8. Be3 exd4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/W3xOv9IU"]
+[Result "0-1"]
+[WhiteElo "2472"]
+[BlackElo "2480"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 g6 6. Be3 Bg7 7. Qd2 Ng4 8. Bg5 h6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/pulkad02"]
+[Result "1-0"]
+[WhiteElo "2510"]
+[BlackElo "2502"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 e6 3. Bf4 Bb4+ 4. Nd2 d5 5. e3 O-O 6. a3 Be7 7. Ngf3 b6 8. Rc1 Bb7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/at1H2Mmf"]
+[Result "0-1"]
+[WhiteElo "2286"]
+[BlackElo "2292"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 Nc6 3. Bb5 g6 4. Bxc6 bxc6 5. O-O Bg7 6. Re1 e5 7. c3 Ne7 8. d4 cxd4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/wWuFh3c4"]
+[Result "1-0"]
+[WhiteElo "2623"]
+[BlackElo "2328"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Nf3 d5 3. c4 e6 4. Nc3 c6 5. e3 Nbd7 6. Qc2 Bd6 7. Bd3 O-O 8. O-O h6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/1OVm4c37"]
+[Result "0-1"]
+[WhiteElo "2339"]
+[BlackElo "2308"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 Nc6 3. d4 cxd4 4. Nxd4 e6 5. Nc3 Qc7 6. Be3 a6 7. Qd2 Nf6 8. f4 Bb4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/mnjZJ4Ci"]
+[Result "0-1"]
+[WhiteElo "2731"]
+[BlackElo "3019"]
+[Termination "Normal"]
+
+1. e4 c6 2. d4 d5 3. Nd2 dxe4 4. Nxe4 Nd7 5. Bd3 Ngf6 6. c3 Nxe4 7. Bxe4 Nf6 8. Bd3 Qd5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/ydxaEulq"]
+[Result "0-1"]
+[WhiteElo "2390"]
+[BlackElo "2494"]
+[Termination "Time forfeit"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 Nf6 4. Nc3 Nd4 5. Bc4 Bc5 6. d3 c6 7. h3 d6 8. a4 O-O 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/2SV9cS1l"]
+[Result "1-0"]
+[WhiteElo "2427"]
+[BlackElo "2243"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Nc3 Nf6 4. d4 exd4 5. Nxd4 Bc5 6. Be3 Bb6 7. Bc4 d6 8. Qd2 h6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/jXcb68Yw"]
+[Result "1/2-1/2"]
+[WhiteElo "2658"]
+[BlackElo "2554"]
+[Termination "Normal"]
+
+1. e4 e6 2. d4 d5 3. Nc3 Nf6 4. e5 Nfd7 5. Nf3 c5 6. Bf4 Nc6 7. dxc5 Bxc5 8. Bd3 f6 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/CqWNkUY6"]
+[Result "0-1"]
+[WhiteElo "2326"]
+[BlackElo "2375"]
+[Termination "Normal"]
+
+1. c4 e5 2. g3 Nc6 3. Bg2 Nf6 4. Nc3 d6 5. e3 Be7 6. Nge2 O-O 7. O-O Be6 8. d4 Bxc4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/rpiaJaIC"]
+[Result "1-0"]
+[WhiteElo "2504"]
+[BlackElo "2336"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 c5 3. d5 e5 4. Nc3 d6 5. e4 Be7 6. Bd3 O-O 7. Nf3 Ne8 8. h3 a6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/6r42XlcU"]
+[Result "1-0"]
+[WhiteElo "2362"]
+[BlackElo "2352"]
+[Termination "Normal"]
+
+1. Nf3 c5 2. g3 e6 3. Bg2 d5 4. O-O Nf6 5. d4 Nc6 6. dxc5 Bxc5 7. c4 h6 8. cxd5 exd5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/NjNyUZLM"]
+[Result "0-1"]
+[WhiteElo "2379"]
+[BlackElo "2210"]
+[Termination "Time forfeit"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. d3 d6 6. c4 g6 7. Nc3 Bg7 8. O-O O-O 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/1uw9Ef9R"]
+[Result "1-0"]
+[WhiteElo "2465"]
+[BlackElo "2406"]
+[Termination "Time forfeit"]
+
+1. d4 Nf6 2. Nf3 g6 3. c4 c5 4. Nc3 Bg7 5. d5 a6 6. e4 b5 7. cxb5 O-O 8. a4 d6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/wGV3Z0tH"]
+[Result "0-1"]
+[WhiteElo "2311"]
+[BlackElo "2322"]
+[Termination "Time forfeit"]
+
+1. g3 g6 2. Bg2 Bg7 3. c4 c5 4. Nc3 Nc6 5. e3 f5 6. Nge2 Nf6 7. O-O O-O 8. d3 d6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/4FF2NgAA"]
+[Result "1-0"]
+[WhiteElo "2301"]
+[BlackElo "2223"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 Nf6 4. O-O Nxe4 5. Re1 Nd6 6. Bxc6 dxc6 7. Nxe5 Be7 8. d4 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/TPuL45a1"]
+[Result "0-1"]
+[WhiteElo "2477"]
+[BlackElo "2580"]
+[Termination "Normal"]
+
+1. e4 e5 2. Bc4 Nc6 3. Nf3 Bc5 4. d3 Nf6 5. O-O O-O 6. Re1 d5 7. exd5 Nxd5 8. Nxe5 Nxe5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/G9FjM4Fa"]
+[Result "1-0"]
+[WhiteElo "2267"]
+[BlackElo "2265"]
+[Termination "Normal"]
+
+1. d4 d5 2. c4 c6 3. Nf3 e6 4. e3 Nf6 5. Nbd2 Bd6 6. Bd3 Nbd7 7. O-O O-O 8. b3 Qe7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/5iPU1AJ5"]
+[Result "0-1"]
+[WhiteElo "2467"]
+[BlackElo "2431"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Nc3 Nf6 4. Bb5 Ne7 5. O-O c6 6. Ba4 d6 7. h3 Ng6 8. d4 Qc7 0-1
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/8VE9A0J3"]
+[Result "0-1"]
+[WhiteElo "2412"]
+[BlackElo "2218"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 d6 5. c3 Bd7 6. O-O Nge7 7. d4 g6 8. Bg5 Bg7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/UYhJ67ab"]
+[Result "0-1"]
+[WhiteElo "2292"]
+[BlackElo "2269"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 g6 6. Be3 Bg7 7. Qd2 O-O 8. f3 Nc6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/O2kW82M2"]
+[Result "1-0"]
+[WhiteElo "2310"]
+[BlackElo "2284"]
+[Termination "Normal"]
+
+1. c4 c5 2. Nc3 Nf6 3. g3 g6 4. Bg2 Bg7 5. e3 O-O 6. Nge2 Nc6 7. d4 d6 8. O-O Qc7 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/vbn8xR22"]
+[Result "0-1"]
+[WhiteElo "2220"]
+[BlackElo "2234"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 g6 4. O-O Bg7 5. c3 d6 6. d4 Nge7 7. d5 Nb8 8. Re1 h6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/gYvrbwuK"]
+[Result "1-0"]
+[WhiteElo "2232"]
+[BlackElo "2283"]
+[Termination "Normal"]
+
+1. e4 c5 2. Ne2 d6 3. g3 Nf6 4. Bg2 Nc6 5. O-O g6 6. c3 Bg7 7. d4 cxd4 8. cxd4 O-O 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/9hSbM5Or"]
+[Result "0-1"]
+[WhiteElo "2264"]
+[BlackElo "2249"]
+[Termination "Normal"]
+
+1. e4 g6 2. d4 Bg7 3. f4 d5 4. e5 c5 5. c3 cxd4 6. cxd4 Nc6 7. Nf3 Nh6 8. Nc3 Bg4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/eISxR4hB"]
+[Result "0-1"]
+[WhiteElo "2296"]
+[BlackElo "2234"]
+[Termination "Normal"]
+
+1. e4 e6 2. d4 d5 3. Nd2 f5 4. e5 c5 5. c3 Nc6 6. Ngf3 Bd7 7. Be2 c4 8. O-O Nge7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/RemFY0NC"]
+[Result "0-1"]
+[WhiteElo "2438"]
+[BlackElo "2441"]
+[Termination "Normal"]
+
+1. d4 d5 2. Bg5 Qd6 3. c3 h6 4. Bh4 e5 5. dxe5 Qxe5 6. Nf3 Qd6 7. Nbd2 Be6 8. Bg3 Qb6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/OSvNtqOD"]
+[Result "1-0"]
+[WhiteElo "2235"]
+[BlackElo "2333"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Bxc6 dxc6 5. O-O Bg4 6. h3 h5 7. d3 Qc8 8. hxg4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/nLMBuH8h"]
+[Result "1-0"]
+[WhiteElo "2251"]
+[BlackElo "2296"]
+[Termination "Time forfeit"]
+
+1. Nf3 Nf6 2. d3 g6 3. g3 Bg7 4. Bg2 O-O 5. O-O d6 6. Nc3 b6 7. e4 Bb7 8. h3 Nbd7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/RPcjWD6d"]
+[Result "0-1"]
+[WhiteElo "2343"]
+[BlackElo "2295"]
+[Termination "Normal"]
+
+1. e4 c6 2. d4 d5 3. e5 Bf5 4. Bd3 Bxd3 5. Qxd3 e6 6. Nf3 Qa5+ 7. c3 Qa6 8. Qxa6 Nxa6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/l5i0nRit"]
+[Result "1-0"]
+[WhiteElo "2614"]
+[BlackElo "2593"]
+[Termination "Normal"]
+
+1. Nf3 d5 2. d4 Nf6 3. Bf4 e6 4. e3 Be7 5. Nbd2 O-O 6. c3 b6 7. Bd3 Ba6 8. Bxa6 Nxa6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/aAx017iy"]
+[Result "1-0"]
+[WhiteElo "2331"]
+[BlackElo "2209"]
+[Termination "Time forfeit"]
+
+1. e4 e6 2. d4 d5 3. Nd2 Nf6 4. e5 Nfd7 5. Ngf3 a6 6. c4 c5 7. cxd5 exd5 8. Nb3 c4 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/57cKzY53"]
+[Result "1/2-1/2"]
+[WhiteElo "2255"]
+[BlackElo "2331"]
+[Termination "Normal"]
+
+1. e4 d6 2. d4 e5 3. Nf3 exd4 4. Qxd4 Nf6 5. Nc3 Be7 6. Bf4 Nc6 7. Bb5 O-O 8. Bxc6 bxc6 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/VWapOgoB"]
+[Result "1-0"]
+[WhiteElo "2405"]
+[BlackElo "2444"]
+[Termination "Normal"]
+
+1. e4 c5 2. d4 cxd4 3. c3 dxc3 4. Nxc3 Nc6 5. Nf3 e6 6. Bc4 Bb4 7. O-O Nge7 8. Qc2 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/qMBkerY9"]
+[Result "1-0"]
+[WhiteElo "2396"]
+[BlackElo "2362"]
+[Termination "Normal"]
+
+1. d4 c6 2. Nf3 d5 3. c4 Qb6 4. Nc3 e6 5. a3 f5 6. g4 g6 7. gxf5 gxf5 8. e3 Nf6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/fZvGG5s3"]
+[Result "1/2-1/2"]
+[WhiteElo "2446"]
+[BlackElo "2286"]
+[Termination "Normal"]
+
+1. e4 c6 2. c4 d5 3. exd5 cxd5 4. cxd5 Nf6 5. Nc3 Nxd5 6. Nf3 Nc6 7. Bc4 Nb6 8. Bb3 g6 1/2-1/2
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/eKlgI5HB"]
+[Result "0-1"]
+[WhiteElo "2280"]
+[BlackElo "2546"]
+[Termination "Time forfeit"]
+
+1. d4 c5 2. e3 d5 3. f4 Nf6 4. Nf3 Bg4 5. Be2 e6 6. O-O Bxf3 7. Bxf3 Nc6 8. c3 Be7 0-1
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/hZt98eMg"]
+[Result "0-1"]
+[WhiteElo "2200"]
+[BlackElo "2212"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 e6 3. Bg5 Bb4+ 4. Nc3 h6 5. Bxf6 Qxf6 6. e3 b6 7. Nf3 Bb7 8. Be2 O-O 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/GoaMOY2b"]
+[Result "1-0"]
+[WhiteElo "2283"]
+[BlackElo "2232"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Bg5 d5 3. Bxf6 exf6 4. e3 Bd6 5. g3 O-O 6. Bg2 c6 7. Ne2 Re8 8. O-O Bg4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/MQMsRASX"]
+[Result "0-1"]
+[WhiteElo "2392"]
+[BlackElo "2353"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Nf3 g6 3. g3 Bg7 4. Bg2 O-O 5. O-O d6 6. Re1 c6 7. e4 Qa5 8. Bg5 Bg4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/fJ8wvN0X"]
+[Result "1-0"]
+[WhiteElo "2482"]
+[BlackElo "2574"]
+[Termination "Time forfeit"]
+
+1. e4 a5 2. d4 a4 3. Nf3 c6 4. d5 d6 5. c4 e5 6. Nc3 Qa5 7. Bd2 Nf6 8. Bd3 Bg4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/tieb4Daq"]
+[Result "0-1"]
+[WhiteElo "2258"]
+[BlackElo "2307"]
+[Termination "Time forfeit"]
+
+1. e4 d6 2. Nc3 e5 3. g3 Nf6 4. Bg2 g6 5. h3 Bg7 6. Nf3 c6 7. d4 Nbd7 8. O-O a5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/4BGmZfTZ"]
+[Result "0-1"]
+[WhiteElo "2224"]
+[BlackElo "2287"]
+[Termination "Time forfeit"]
+
+1. Nf3 d5 2. d4 Nf6 3. Bf4 e6 4. e3 Bd6 5. Ne5 O-O 6. Nd2 Nbd7 7. Bd3 h6 8. Qf3 Bxe5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/hOyXNBzl"]
+[Result "1-0"]
+[WhiteElo "2221"]
+[BlackElo "2340"]
+[Termination "Normal"]
+
+1. e4 Nc6 2. Nf3 Nf6 3. e5 Ng8 4. d4 Nb8 5. Nc3 d5 6. h3 e6 7. Bd3 c5 8. dxc5 Bxc5 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/PuxlxrwP"]
+[Result "1-0"]
+[WhiteElo "2364"]
+[BlackElo "2266"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 O-O 8. d4 d6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/tVVppUU4"]
+[Result "1-0"]
+[WhiteElo "2287"]
+[BlackElo "2313"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 Nd4 4. Bc4 Bc5 5. Nxe5 d5 6. Bxd5 Qf6 7. f4 Qxf4 8. Nf3 Bg4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/eUUBI4RE"]
+[Result "0-1"]
+[WhiteElo "2497"]
+[BlackElo "2597"]
+[Termination "Normal"]
+
+1. e4 Nf6 2. e5 Nd5 3. c4 Nb6 4. d4 d6 5. f4 dxe5 6. fxe5 Nc6 7. Be3 Bf5 8. Nc3 e6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/aXPozHuA"]
+[Result "0-1"]
+[WhiteElo "2266"]
+[BlackElo "2377"]
+[Termination "Normal"]
+
+1. e4 d5 2. exd5 Qxd5 3. Nc3 Qd8 4. d4 Nf6 5. Nf3 e6 6. Bf4 Be7 7. Qd2 O-O 8. Bd3 Nbd7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/50tM3Kb8"]
+[Result "1/2-1/2"]
+[WhiteElo "2440"]
+[BlackElo "2294"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Bb5+ Bd7 6. c4 a6 7. Bxd7+ Nbxd7 8. Nc3 e6 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/sDAAXIwC"]
+[Result "1-0"]
+[WhiteElo "2257"]
+[BlackElo "2355"]
+[Termination "Normal"]
+
+1. e4 d5 2. Nc3 d4 3. Nce2 c5 4. d3 Nc6 5. f4 h5 6. Nf3 h4 7. c3 h3 8. g3 Bg4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/lyt7kgJi"]
+[Result "0-1"]
+[WhiteElo "2556"]
+[BlackElo "2521"]
+[Termination "Normal"]
+
+1. Nf3 d5 2. c4 c6 3. e3 Nf6 4. d4 e6 5. Nc3 Nbd7 6. Qc2 Bd6 7. g4 Nxg4 8. Rg1 f5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/T5zPZoaf"]
+[Result "0-1"]
+[WhiteElo "2341"]
+[BlackElo "2289"]
+[Termination "Normal"]
+
+1. d4 d6 2. c4 Nf6 3. Nc3 Nbd7 4. e4 e5 5. Nf3 Be7 6. Be2 c6 7. O-O O-O 8. Re1 Qc7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/CBgQXgX3"]
+[Result "0-1"]
+[WhiteElo "2351"]
+[BlackElo "2216"]
+[Termination "Time forfeit"]
+
+1. e4 d5 2. exd5 Nf6 3. d4 Nxd5 4. c4 Nb6 5. Nc3 g6 6. h3 Bg7 7. Nf3 O-O 8. Be2 Nc6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/O4rqDoYm"]
+[Result "1-0"]
+[WhiteElo "2461"]
+[BlackElo "2267"]
+[Termination "Time forfeit"]
+
+1. e4 e5 2. Nf3 Nc6 3. d4 exd4 4. Nxd4 d5 5. Nxc6 bxc6 6. Nc3 Bb4 7. exd5 cxd5 8. Qe2+ Qe7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/qDl8QynN"]
+[Result "0-1"]
+[WhiteElo "2337"]
+[BlackElo "2276"]
+[Termination "Time forfeit"]
+
+1. d4 d5 2. Bg5 Nc6 3. e3 f6 4. Bh4 e5 5. dxe5 Nxe5 6. Nc3 c6 7. Nf3 Bg4 8. Be2 Bd6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/pJWU4pul"]
+[Result "0-1"]
+[WhiteElo "2319"]
+[BlackElo "2231"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 c5 3. d5 e6 4. Nc3 exd5 5. cxd5 d6 6. Nf3 g6 7. Nd2 Bg7 8. e4 O-O 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/BAVCF1OQ"]
+[Result "1-0"]
+[WhiteElo "2507"]
+[BlackElo "2490"]
+[Termination "Time forfeit"]
+
+1. e4 Nc6 2. Nf3 e5 3. Bb5 Nf6 4. O-O Nxe4 5. Re1 d5 6. Nxe5 Bd6 7. Rxe4 dxe4 8. Nxc6 bxc6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/QS3qOqJD"]
+[Result "1-0"]
+[WhiteElo "2335"]
+[BlackElo "2389"]
+[Termination "Time forfeit"]
+
+1. g3 c5 2. Bg2 Nc6 3. Bxc6 dxc6 4. Nf3 Nf6 5. O-O Bh3 6. Re1 Bg4 7. c3 h5 8. h4 e6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/q5OItAGx"]
+[Result "1-0"]
+[WhiteElo "2386"]
+[BlackElo "2232"]
+[Termination "Time forfeit"]
+
+1. d4 Nf6 2. c4 e6 3. Nf3 b6 4. Bg5 Bb7 5. e3 h6 6. Bh4 c5 7. Be2 cxd4 8. exd4 d5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/jnIe34z5"]
+[Result "0-1"]
+[WhiteElo "2252"]
+[BlackElo "2208"]
+[Termination "Normal"]
+
+1. e4 c6 2. d3 d5 3. Nd2 dxe4 4. dxe4 Nf6 5. Ngf3 g6 6. Bd3 Bg7 7. O-O O-O 8. Qe2 b6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/DkeJ3dHh"]
+[Result "0-1"]
+[WhiteElo "2405"]
+[BlackElo "2469"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 e5 6. Nb3 Be7 7. Bg5 O-O 8. Bc4 Be6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/kIARBRS9"]
+[Result "1-0"]
+[WhiteElo "2367"]
+[BlackElo "2277"]
+[Termination "Normal"]
+
+1. e4 e5 2. c3 d5 3. Nf3 dxe4 4. Nxe5 Bd6 5. Nc4 Nf6 6. Nxd6+ Qxd6 7. Be2 Nc6 8. Na3 Be6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/0ki0FAnB"]
+[Result "1-0"]
+[WhiteElo "2452"]
+[BlackElo "2357"]
+[Termination "Normal"]
+
+1. Nf3 c6 2. c4 d5 3. b3 e6 4. Bb2 f6 5. g3 Bd6 6. d3 Ne7 7. Bg2 O-O 8. O-O Nd7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/kxxlvqwn"]
+[Result "0-1"]
+[WhiteElo "2240"]
+[BlackElo "2298"]
+[Termination "Normal"]
+
+1. e4 d5 2. exd5 Qxd5 3. Nc3 Qd6 4. d4 c6 5. Bc4 Nf6 6. Nf3 Bg4 7. Be3 Nbd7 8. O-O e6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/OvY1Qlu8"]
+[Result "1-0"]
+[WhiteElo "2359"]
+[BlackElo "2315"]
+[Termination "Normal"]
+
+1. e4 c6 2. Nf3 d6 3. d4 Bg4 4. c4 Nd7 5. Nc3 e6 6. Be2 Qc7 7. O-O Ngf6 8. Be3 e5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/PUSZ2zRf"]
+[Result "1-0"]
+[WhiteElo "2517"]
+[BlackElo "2556"]
+[Termination "Time forfeit"]
+
+1. d4 d5 2. c4 e6 3. Nf3 Nf6 4. Nc3 c6 5. e3 Nbd7 6. Be2 dxc4 7. a4 Bb4 8. Bxc4 a6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/JfmyFfVb"]
+[Result "1-0"]
+[WhiteElo "2541"]
+[BlackElo "2510"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 Nc6 3. Bb5 Nf6 4. Bxc6 dxc6 5. e5 Nd5 6. O-O g6 7. c4 Nc7 8. d4 cxd4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/blUKZyhU"]
+[Result "0-1"]
+[WhiteElo "2298"]
+[BlackElo "2200"]
+[Termination "Time forfeit"]
+
+1. d4 Nf6 2. c4 c5 3. d5 e6 4. Nc3 exd5 5. cxd5 d6 6. Nf3 g6 7. g3 Bg7 8. Bg2 O-O 0-1
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/7oQYoT2o"]
+[Result "1-0"]
+[WhiteElo "2419"]
+[BlackElo "2290"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 g6 3. d4 cxd4 4. Nxd4 Nc6 5. c4 Bg7 6. Be3 Nf6 7. Nc3 d6 8. Be2 Bd7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/z8Zz0KIQ"]
+[Result "0-1"]
+[WhiteElo "2915"]
+[BlackElo "2728"]
+[Termination "Normal"]
+
+1. e4 g6 2. d4 Bg7 3. Nc3 d6 4. Bc4 a6 5. a4 Nc6 6. Nge2 Nf6 7. Bb3 e5 8. dxe5 dxe5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/aWRqDqa9"]
+[Result "0-1"]
+[WhiteElo "2405"]
+[BlackElo "2482"]
+[Termination "Time forfeit"]
+
+1. d4 Nf6 2. Nf3 e6 3. c4 d5 4. Nc3 Be7 5. Bf4 O-O 6. e3 c6 7. c5 b6 8. b4 a5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/yGGm8zQT"]
+[Result "1-0"]
+[WhiteElo "2321"]
+[BlackElo "2318"]
+[Termination "Time forfeit"]
+
+1. c4 c5 2. g3 Nc6 3. Bg2 b6 4. Nf3 Bb7 5. Nc3 Nd4 6. O-O Nxf3+ 7. exf3 g6 8. d4 Bg7 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/0zbSN10E"]
+[Result "1/2-1/2"]
+[WhiteElo "2971"]
+[BlackElo "3031"]
+[Termination "Normal"]
+
+1. d4 d5 2. Nf3 Nf6 3. c4 e6 4. Nc3 Bb4 5. Bg5 h6 6. Bxf6 Qxf6 7. e3 O-O 8. Rc1 dxc4 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/mZPrBM9N"]
+[Result "1/2-1/2"]
+[WhiteElo "2403"]
+[BlackElo "2454"]
+[Termination "Normal"]
+
+1. Nf3 d5 2. g3 e6 3. Bg2 h6 4. O-O Nf6 5. d3 Bc5 6. c4 O-O 7. Nc3 a6 8. d4 Bb4 1/2-1/2
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/n4pdIfJt"]
+[Result "0-1"]
+[WhiteElo "2586"]
+[BlackElo "2864"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 f5 4. Bxc6 dxc6 5. Nc3 Nf6 6. exf5 Bd6 7. Qe2 Bxf5 8. d4 e4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/xYcWeHGE"]
+[Result "1-0"]
+[WhiteElo "2394"]
+[BlackElo "2497"]
+[Termination "Normal"]
+
+1. e4 Nf6 2. e5 Nd5 3. c4 Nb6 4. c5 Nd5 5. Bc4 c6 6. Nc3 Qa5 7. Bxd5 cxd5 8. d4 e6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/ZiMqr26a"]
+[Result "0-1"]
+[WhiteElo "2578"]
+[BlackElo "2749"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Bxc6 dxc6 5. O-O Qd6 6. Na3 Be6 7. Qe2 c5 8. Nc4 Bxc4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/aUhPR9ze"]
+[Result "0-1"]
+[WhiteElo "2269"]
+[BlackElo "2349"]
+[Termination "Normal"]
+
+1. g3 d5 2. Bg2 Nf6 3. Nf3 Nc6 4. O-O e5 5. d3 Bd6 6. Nbd2 h6 7. Re1 O-O 8. h3 e4 0-1
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/uDbTqbwO"]
+[Result "1/2-1/2"]
+[WhiteElo "2458"]
+[BlackElo "2480"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nc3 Nc6 3. Bb5 Nd4 4. Bc4 e6 5. Nge2 Nf6 6. O-O a6 7. a4 d5 8. exd5 exd5 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/yZTFUUls"]
+[Result "1-0"]
+[WhiteElo "2299"]
+[BlackElo "2297"]
+[Termination "Normal"]
+
+1. e4 g6 2. d4 f6 3. f4 Nh6 4. Nf3 Nf7 5. e5 Bg7 6. Bc4 e6 7. O-O d6 8. exf6 Qxf6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/B2f4OPiy"]
+[Result "0-1"]
+[WhiteElo "2412"]
+[BlackElo "2453"]
+[Termination "Time forfeit"]
+
+1. d4 d5 2. c4 dxc4 3. Nc3 Nf6 4. e4 c5 5. e5 cxd4 6. exf6 dxc3 7. Qxd8+ Kxd8 8. bxc3 Be6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/FJOPFGBA"]
+[Result "1-0"]
+[WhiteElo "2234"]
+[BlackElo "2302"]
+[Termination "Time forfeit"]
+
+1. d4 Nf6 2. c4 e6 3. Nf3 d5 4. cxd5 exd5 5. Nc3 c6 6. Bg5 Bf5 7. e3 Nbd7 8. Qb3 Qb6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/ohuxDUBe"]
+[Result "1-0"]
+[WhiteElo "2233"]
+[BlackElo "2227"]
+[Termination "Time forfeit"]
+
+1. d4 Nf6 2. Nf3 d5 3. Bf4 c6 4. e3 Bf5 5. c4 e6 6. Nc3 Bd6 7. Bxd6 Qxd6 8. a3 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/PtxDufhS"]
+[Result "1-0"]
+[WhiteElo "2312"]
+[BlackElo "2306"]
+[Termination "Normal"]
+
+1. e4 c5 2. d4 cxd4 3. c3 dxc3 4. Nxc3 Nc6 5. Nf3 d6 6. Bc4 a6 7. Ng5 e6 8. O-O Nf6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/ckPZ9ft5"]
+[Result "1-0"]
+[WhiteElo "2210"]
+[BlackElo "2214"]
+[Termination "Time forfeit"]
+
+1. d4 Nf6 2. Nc3 d5 3. Bg5 Ne4 4. Nxe4 dxe4 5. e3 g6 6. h4 Bg7 7. h5 c5 8. h6 Bf6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/mPh53oBP"]
+[Result "0-1"]
+[WhiteElo "2379"]
+[BlackElo "2408"]
+[Termination "Time forfeit"]
+
+1. e4 e6 2. d4 d5 3. exd5 exd5 4. Nc3 Nf6 5. Bg5 Be7 6. Bd3 Bg4 7. f3 Bh5 8. h4 Bg6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/2y52hvNo"]
+[Result "1-0"]
+[WhiteElo "2214"]
+[BlackElo "2209"]
+[Termination "Normal"]
+
+1. e4 c6 2. d4 d5 3. e5 Bf5 4. Bd3 Bxd3 5. Qxd3 e6 6. Ne2 Ne7 7. f4 h5 8. O-O Nf5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/539MDAsp"]
+[Result "1-0"]
+[WhiteElo "2674"]
+[BlackElo "2607"]
+[Termination "Normal"]
+
+1. d4 c5 2. d5 Nf6 3. Nc3 a6 4. e4 d6 5. Nf3 g6 6. a4 Bg7 7. h3 O-O 8. Bc4 e6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/wo0do877"]
+[Result "1-0"]
+[WhiteElo "2435"]
+[BlackElo "2490"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 e6 3. g3 d5 4. Bg2 Bd6 5. Nf3 O-O 6. O-O h6 7. Nbd2 b6 8. cxd5 exd5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/ZAwDMB62"]
+[Result "1-0"]
+[WhiteElo "2346"]
+[BlackElo "2310"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nc3 Nc6 3. f4 g6 4. Nf3 Bg7 5. d3 d6 6. Be2 e6 7. O-O Nge7 8. Be3 b6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/RjT5bVHL"]
+[Result "1-0"]
+[WhiteElo "2367"]
+[BlackElo "2462"]
+[Termination "Normal"]
+
+1. Nf3 Nf6 2. c4 g6 3. d4 Bg7 4. Nc3 d6 5. e4 O-O 6. e5 Nfd7 7. exd6 exd6 8. Be2 c5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/g6RJiNFg"]
+[Result "0-1"]
+[WhiteElo "2305"]
+[BlackElo "2377"]
+[Termination "Normal"]
+
+1. d4 e6 2. e4 d5 3. e5 c5 4. Qg4 cxd4 5. Bd3 Nc6 6. Nf3 g6 7. O-O h5 8. Qg3 Bh6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/WX9hHUsR"]
+[Result "0-1"]
+[WhiteElo "2581"]
+[BlackElo "2800"]
+[Termination "Normal"]
+
+1. Nf3 d5 2. c4 d4 3. g3 c5 4. e3 Nc6 5. exd4 cxd4 6. Bg2 Nf6 7. O-O e5 8. d3 Nd7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/PgjRFCs0"]
+[Result "1-0"]
+[WhiteElo "2243"]
+[BlackElo "2275"]
+[Termination "Normal"]
+
+1. e4 e5 2. d4 Nc6 3. d5 Nce7 4. f4 d6 5. Nf3 exf4 6. Bxf4 Ng6 7. Bg3 Bg4 8. c4 Nf6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/OZUvQOtI"]
+[Result "1-0"]
+[WhiteElo "2456"]
+[BlackElo "2601"]
+[Termination "Time forfeit"]
+
+1. c3 Nf6 2. d4 d5 3. Nd2 Bf5 4. Ngf3 h6 5. e3 e6 6. Nb3 a5 7. a4 Ne4 8. Bd3 Nd7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/q2kyjbYA"]
+[Result "1-0"]
+[WhiteElo "2414"]
+[BlackElo "2438"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nc3 e6 3. f4 a6 4. a4 Nc6 5. Nf3 d5 6. d3 Nf6 7. Bd2 Be7 8. g3 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/tkKvG3N6"]
+[Result "1-0"]
+[WhiteElo "2228"]
+[BlackElo "2248"]
+[Termination "Normal"]
+
+1. g3 g6 2. Bg2 Bg7 3. d4 d6 4. e3 Nf6 5. c4 O-O 6. Ne2 e5 7. h3 exd4 8. Nxd4 Re8 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/xnAUfeOT"]
+[Result "0-1"]
+[WhiteElo "2379"]
+[BlackElo "2406"]
+[Termination "Time forfeit"]
+
+1. e4 Nf6 2. Nc3 d5 3. exd5 Nxd5 4. Bc4 Nb6 5. Bb3 Bf5 6. d4 e6 7. Nf3 c6 8. h3 Bd6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/E4GGLvTQ"]
+[Result "1-0"]
+[WhiteElo "2490"]
+[BlackElo "2467"]
+[Termination "Time forfeit"]
+
+1. e4 d5 2. exd5 Nf6 3. d4 Bg4 4. Be2 Bxe2 5. Qxe2 Qxd5 6. Nf3 Nc6 7. Be3 O-O-O 8. c4 Qf5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/ICD9ZBfY"]
+[Result "1-0"]
+[WhiteElo "2212"]
+[BlackElo "2232"]
+[Termination "Time forfeit"]
+
+1. d4 d5 2. Bf4 Nf6 3. Nf3 e6 4. e3 c5 5. c3 Nc6 6. Bd3 Bd6 7. Ne5 Qc7 8. Nxc6 bxc6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/G6CzPxnK"]
+[Result "1-0"]
+[WhiteElo "2242"]
+[BlackElo "2295"]
+[Termination "Time forfeit"]
+
+1. e4 c5 2. Nf3 Nc6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 d6 6. Bg5 Qa5 7. Bxf6 gxf6 8. Qd2 h5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/seLXGrXT"]
+[Result "0-1"]
+[WhiteElo "2284"]
+[BlackElo "2264"]
+[Termination "Normal"]
+
+1. Nf3 e5 2. c4 e4 3. Ng1 Nf6 4. d4 exd3 5. Qxd3 Bb4+ 6. Bd2 Bxd2+ 7. Nxd2 O-O 8. g3 c6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/kffRMhHP"]
+[Result "1-0"]
+[WhiteElo "2659"]
+[BlackElo "2607"]
+[Termination "Time forfeit"]
+
+1. c4 e5 2. Nf3 Nc6 3. d4 exd4 4. Nxd4 Nf6 5. Nc3 Bb4 6. g3 O-O 7. Bg2 d5 8. cxd5 Nxd5 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/CIDMbLzA"]
+[Result "0-1"]
+[WhiteElo "2256"]
+[BlackElo "2346"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nc3 Nc6 3. Bb5 Nd4 4. Nf3 Nxb5 5. Nxb5 a6 6. Nc3 b5 7. d4 cxd4 8. Qxd4 Bb7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/O6rAs5ud"]
+[Result "0-1"]
+[WhiteElo "2432"]
+[BlackElo "2445"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Nc3 d5 3. Bf4 a6 4. e3 b5 5. a3 Nbd7 6. h4 c5 7. g4 Bb7 8. g5 Ne4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/4YT0vfbP"]
+[Result "0-1"]
+[WhiteElo "2206"]
+[BlackElo "2308"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 6. Bg5 Nbd7 7. f4 Qc7 8. Be2 b5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/OAvrTuWm"]
+[Result "1/2-1/2"]
+[WhiteElo "2349"]
+[BlackElo "2546"]
+[Termination "Normal"]
+
+1. Nf3 d5 2. e3 Nf6 3. c4 e6 4. d4 Be7 5. Be2 O-O 6. Nc3 dxc4 7. Bxc4 a6 8. O-O c5 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/hWPMekvT"]
+[Result "0-1"]
+[WhiteElo "2286"]
+[BlackElo "2255"]
+[Termination "Normal"]
+
+1. e4 d5 2. exd5 Qxd5 3. Nc3 Qa5 4. d4 c6 5. Bc4 Nf6 6. Bd2 Qc7 7. Nf3 Bg4 8. h3 Bh5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/utaAmzpm"]
+[Result "0-1"]
+[WhiteElo "2215"]
+[BlackElo "2348"]
+[Termination "Time forfeit"]
+
+1. d4 Nf6 2. Nf3 e6 3. c4 c5 4. Nc3 cxd4 5. Nxd4 a6 6. g3 d6 7. Bg2 Qc7 8. Qd3 Nbd7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/HRtK9en2"]
+[Result "0-1"]
+[WhiteElo "2437"]
+[BlackElo "2459"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Bb6 5. d4 d6 6. O-O Qe7 7. Ng5 Nh6 8. dxe5 Nxe5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/6BD0Di06"]
+[Result "1-0"]
+[WhiteElo "2347"]
+[BlackElo "2461"]
+[Termination "Normal"]
+
+1. e4 c6 2. d4 d5 3. Nc3 dxe4 4. Nxe4 Nd7 5. Ng3 Ngf6 6. Nf3 e6 7. Bc4 Bd6 8. c3 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/k1A62ekD"]
+[Result "1-0"]
+[WhiteElo "2328"]
+[BlackElo "2320"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 g6 3. Nc3 Bg7 4. Nf3 d6 5. e4 O-O 6. Be2 e5 7. O-O Nc6 8. d5 Ne7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/SvsMS0JB"]
+[Result "1-0"]
+[WhiteElo "2275"]
+[BlackElo "2244"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 Nc6 3. Bb5 g5 4. Nxg5 Nf6 5. d3 Rg8 6. O-O h6 7. Nf3 d5 8. e5 Nh7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/xFG2pW5E"]
+[Result "1/2-1/2"]
+[WhiteElo "2314"]
+[BlackElo "2220"]
+[Termination "Normal"]
+
+1. e4 c5 2. d4 cxd4 3. c3 dxc3 4. Nxc3 Nc6 5. Nf3 e6 6. Be2 a6 7. Be3 Nge7 8. O-O Ng6 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/smy9Aekp"]
+[Result "0-1"]
+[WhiteElo "2279"]
+[BlackElo "2307"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 e6 3. d4 cxd4 4. Nxd4 Nc6 5. Nc3 d6 6. Be3 Nf6 7. f3 Be7 8. Qd2 O-O 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/EBG2cTKN"]
+[Result "0-1"]
+[WhiteElo "2318"]
+[BlackElo "2302"]
+[Termination "Normal"]
+
+1. c4 e6 2. g3 d5 3. Nf3 Nf6 4. Bg2 Be7 5. O-O O-O 6. b3 b6 7. Bb2 Bb7 8. d3 c5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/3D5FhWPp"]
+[Result "0-1"]
+[WhiteElo "2256"]
+[BlackElo "2232"]
+[Termination "Time forfeit"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. O-O Bb6 6. d4 d6 7. d5 Ne7 8. Nfd2 O-O 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/xRfrnFLv"]
+[Result "1-0"]
+[WhiteElo "2308"]
+[BlackElo "2272"]
+[Termination "Time forfeit"]
+
+1. d4 d5 2. c4 dxc4 3. Nf3 Nf6 4. e3 e6 5. Bxc4 c5 6. O-O Nc6 7. Qe2 a6 8. Rd1 b5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/HqvsLvRY"]
+[Result "1-0"]
+[WhiteElo "2340"]
+[BlackElo "2265"]
+[Termination "Normal"]
+
+1. e4 d6 2. d4 Nf6 3. Nc3 g6 4. Be3 c6 5. h4 b5 6. h5 Nxh5 7. Rxh5 gxh5 8. Qxh5 b4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/oNm4izDF"]
+[Result "0-1"]
+[WhiteElo "2498"]
+[BlackElo "2411"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 e6 3. g3 d5 4. Bg2 dxc4 5. Nf3 Nc6 6. O-O Rb8 7. a4 Bb4 8. Bd2 a5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/DbAKMzBt"]
+[Result "1-0"]
+[WhiteElo "2437"]
+[BlackElo "2295"]
+[Termination "Normal"]
+
+1. e4 e6 2. d4 d5 3. Nd2 dxe4 4. Nxe4 Nf6 5. Nxf6+ Qxf6 6. Nf3 h6 7. Bd3 Bd6 8. c3 Nc6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/74i1XyxN"]
+[Result "0-1"]
+[WhiteElo "2240"]
+[BlackElo "2219"]
+[Termination "Normal"]
+
+1. e4 Nf6 2. d4 Nxe4 3. Nc3 Nf6 4. g4 e6 5. g5 Nd5 6. Nxd5 exd5 7. h4 c5 8. dxc5 Bxc5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/ALdNDwbf"]
+[Result "1/2-1/2"]
+[WhiteElo "2233"]
+[BlackElo "2310"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Bg5 c5 3. Nc3 cxd4 4. Qxd4 Nc6 5. Qh4 Qa5 6. Bxf6 gxf6 7. e4 d6 8. Bd3 Bd7 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/oE1LxDdZ"]
+[Result "1-0"]
+[WhiteElo "2473"]
+[BlackElo "2444"]
+[Termination "Normal"]
+
+1. d4 e6 2. Nf3 c5 3. g3 cxd4 4. Nxd4 Nc6 5. Nb3 d5 6. Bg2 Nf6 7. O-O Bd7 8. c4 dxc4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/wfPGgvKN"]
+[Result "0-1"]
+[WhiteElo "2477"]
+[BlackElo "2417"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 g6 3. Nc3 d5 4. cxd5 Nxd5 5. e4 Nxc3 6. bxc3 Bg7 7. Bc4 c5 8. Ne2 Nc6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/3oLFW2JH"]
+[Result "1-0"]
+[WhiteElo "2377"]
+[BlackElo "2289"]
+[Termination "Time forfeit"]
+
+1. d4 e6 2. c4 d5 3. Nc3 Nf6 4. cxd5 exd5 5. Bg5 c6 6. Qc2 Be7 7. e3 h6 8. Bh4 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/zP17NCVe"]
+[Result "1/2-1/2"]
+[WhiteElo "2257"]
+[BlackElo "2354"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 g6 3. c3 Bg7 4. d4 cxd4 5. cxd4 d5 6. e5 Bg4 7. Be2 e6 8. Nc3 Nc6 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/9V364DCZ"]
+[Result "1/2-1/2"]
+[WhiteElo "2296"]
+[BlackElo "2392"]
+[Termination "Normal"]
+
+1. d4 f5 2. Nf3 Nf6 3. Bf4 e6 4. e3 b6 5. Be2 Bb7 6. h3 Be7 7. O-O O-O 8. c4 d6 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/MLr96jy2"]
+[Result "1-0"]
+[WhiteElo "2257"]
+[BlackElo "2299"]
+[Termination "Normal"]
+
+1. Nf3 d5 2. d3 g6 3. g3 Bg7 4. Bg2 e5 5. O-O f5 6. Nc3 Ne7 7. e4 d4 8. Ne2 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/WfbtZII1"]
+[Result "1-0"]
+[WhiteElo "2229"]
+[BlackElo "2206"]
+[Termination "Normal"]
+
+1. e3 e5 2. c4 d5 3. cxd5 Qxd5 4. Nc3 Qd8 5. Nf3 Nc6 6. d4 exd4 7. exd4 Nf6 8. d5 Ne7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/vEKGurIV"]
+[Result "0-1"]
+[WhiteElo "2398"]
+[BlackElo "2386"]
+[Termination "Time forfeit"]
+
+1. e4 c5 2. Nf3 a6 3. b3 Nc6 4. Bb2 d6 5. d4 cxd4 6. Nxd4 Nf6 7. Nc3 g6 8. Nxc6 bxc6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/n2SHwLxh"]
+[Result "1-0"]
+[WhiteElo "2660"]
+[BlackElo "2657"]
+[Termination "Normal"]
+
+1. e4 e6 2. d4 d5 3. Nd2 c5 4. Ngf3 cxd4 5. Nxd4 Nc6 6. Bb5 Bd7 7. Nxc6 bxc6 8. Bd3 Bd6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/XHSeh0mB"]
+[Result "1/2-1/2"]
+[WhiteElo "2430"]
+[BlackElo "2412"]
+[Termination "Time forfeit"]
+
+1. e4 e6 2. d4 d5 3. Nd2 c5 4. exd5 Qxd5 5. Ngf3 cxd4 6. Bc4 Qd8 7. O-O Nf6 8. Nb3 Nc6 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/JELAXjXy"]
+[Result "1-0"]
+[WhiteElo "2365"]
+[BlackElo "2351"]
+[Termination "Time forfeit"]
+
+1. e4 e5 2. f4 d6 3. Nf3 Nc6 4. Nc3 Nf6 5. Bb5 exf4 6. d4 Bd7 7. Bxf4 Be7 8. O-O O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/Ohu3StWZ"]
+[Result "1-0"]
+[WhiteElo "2341"]
+[BlackElo "2336"]
+[Termination "Normal"]
+
+1. Nf3 Nf6 2. g3 e6 3. Bg2 d6 4. O-O Be7 5. d4 O-O 6. c4 c5 7. Nc3 cxd4 8. Nxd4 a6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/Af9vYxXy"]
+[Result "1-0"]
+[WhiteElo "2280"]
+[BlackElo "2279"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 g6 3. d4 cxd4 4. Nxd4 Bg7 5. Be3 Nc6 6. Bc4 Nf6 7. Nc3 O-O 8. Bb3 d6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/uuuRJmnq"]
+[Result "1-0"]
+[WhiteElo "2428"]
+[BlackElo "2315"]
+[Termination "Normal"]
+
+1. d4 f5 2. c4 Nf6 3. Nc3 g6 4. g3 Bg7 5. Bg2 O-O 6. Nf3 d6 7. O-O Qe8 8. d5 a5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/HYAcNOJt"]
+[Result "0-1"]
+[WhiteElo "2241"]
+[BlackElo "2282"]
+[Termination "Time forfeit"]
+
+1. d4 Nf6 2. e3 e6 3. Bd3 d5 4. f4 a6 5. Nf3 c5 6. c3 Nc6 7. a4 Bd6 8. Ne5 Qc7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/GNVFkMJf"]
+[Result "1-0"]
+[WhiteElo "2556"]
+[BlackElo "2645"]
+[Termination "Time forfeit"]
+
+1. d4 d5 2. c4 c6 3. Nf3 Nf6 4. Nc3 dxc4 5. a4 Bf5 6. e3 e6 7. Bxc4 Be7 8. b3 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/w5KuymrM"]
+[Result "1-0"]
+[WhiteElo "2322"]
+[BlackElo "2298"]
+[Termination "Normal"]
+
+1. e4 c6 2. c4 d5 3. cxd5 cxd5 4. exd5 Nf6 5. Nc3 Nxd5 6. Nf3 e6 7. d4 Be7 8. Bd3 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/lQg3TSB5"]
+[Result "1-0"]
+[WhiteElo "2521"]
+[BlackElo "2386"]
+[Termination "Normal"]
+
+1. e4 d5 2. exd5 Qxd5 3. Nc3 Qd8 4. d4 Nf6 5. Nf3 e6 6. Bg5 Be7 7. Bd3 Nbd7 8. Qe2 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/fxjLRUq3"]
+[Result "0-1"]
+[WhiteElo "2556"]
+[BlackElo "2546"]
+[Termination "Time forfeit"]
+
+1. d4 Nf6 2. Bf4 g6 3. e3 Bg7 4. h3 O-O 5. Nf3 d5 6. c3 c5 7. Nbd2 cxd4 8. exd4 Nc6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/x6rYgI68"]
+[Result "1-0"]
+[WhiteElo "2315"]
+[BlackElo "2233"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 Nc6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 e6 6. Ndb5 Bb4 7. a3 Bxc3+ 8. Nxc3 d5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/M0Ne4uuw"]
+[Result "0-1"]
+[WhiteElo "2276"]
+[BlackElo "2264"]
+[Termination "Normal"]
+
+1. e4 Nf6 2. e5 Nd5 3. c4 Nb6 4. c5 d6 5. Bc4 Nxc4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/VByqvOIN"]
+[Result "0-1"]
+[WhiteElo "2302"]
+[BlackElo "2235"]
+[Termination "Normal"]
+
+1. c4 e5 2. Nf3 e4 3. Nd4 Nc6 4. Nc2 Nf6 5. Nc3 Bc5 6. g3 O-O 7. Bg2 Re8 8. O-O d6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/yKhbiHEr"]
+[Result "1-0"]
+[WhiteElo "2238"]
+[BlackElo "2247"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 e6 3. Nc3 Nc6 4. d4 cxd4 5. Nxd4 Nf6 6. Nxc6 bxc6 7. e5 Nd5 8. Ne4 Qb6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/lCn2xS8m"]
+[Result "0-1"]
+[WhiteElo "2270"]
+[BlackElo "2271"]
+[Termination "Normal"]
+
+1. e4 Nf6 2. e5 Nd5 3. c4 Nb6 4. c5 Nd5 5. Bc4 c6 6. Nc3 g6 7. Bxd5 cxd5 8. Nxd5 Bg7 0-1
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/0m4priK0"]
+[Result "1/2-1/2"]
+[WhiteElo "2442"]
+[BlackElo "2379"]
+[Termination "Normal"]
+
+1. e4 d6 2. d4 Nf6 3. Nc3 g6 4. f4 Bg7 5. Nf3 O-O 6. Be2 c6 7. Be3 b5 8. h3 a5 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/ihcBv1xH"]
+[Result "0-1"]
+[WhiteElo "2274"]
+[BlackElo "2223"]
+[Termination "Normal"]
+
+1. e4 e6 2. d4 d5 3. e5 c5 4. c3 Nc6 5. Nf3 Qb6 6. Bd3 cxd4 7. O-O Bd7 8. Re1 Nge7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/KW0sXDRw"]
+[Result "0-1"]
+[WhiteElo "2357"]
+[BlackElo "2348"]
+[Termination "Normal"]
+
+1. e4 e6 2. d4 d5 3. Nc3 Nf6 4. e5 Nfd7 5. f4 c5 6. Nf3 Nc6 7. Bd3 Be7 8. O-O O-O 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/FyC21rlB"]
+[Result "1/2-1/2"]
+[WhiteElo "2401"]
+[BlackElo "2441"]
+[Termination "Normal"]
+
+1. e4 d5 2. exd5 Nf6 3. Nc3 Nxd5 4. Bc4 c6 5. Bb3 Bf5 6. Nxd5 cxd5 7. Ne2 e6 8. O-O Be7 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/Mm0YJ5o5"]
+[Result "1-0"]
+[WhiteElo "2481"]
+[BlackElo "2490"]
+[Termination "Time forfeit"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 6. Be3 b5 7. a4 b4 8. Nd5 e6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/Xb3JrxZa"]
+[Result "0-1"]
+[WhiteElo "2282"]
+[BlackElo "2248"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 Nc6 3. d4 cxd4 4. Nxd4 e5 5. Nb5 d6 6. N1c3 a6 7. Na3 Be6 8. Nc4 b5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/DHf2Qejd"]
+[Result "0-1"]
+[WhiteElo "2238"]
+[BlackElo "2347"]
+[Termination "Normal"]
+
+1. Nf3 b6 2. g3 Bb7 3. Bg2 g5 4. O-O g4 5. Nh4 Bxg2 6. Nxg2 Nc6 7. d4 Bg7 8. c3 e5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/ntAXG9xx"]
+[Result "0-1"]
+[WhiteElo "2274"]
+[BlackElo "2216"]
+[Termination "Time forfeit"]
+
+1. e4 c6 2. d4 d5 3. Nc3 dxe4 4. Nxe4 Nf6 5. Nxf6+ exf6 6. Nf3 Bg4 7. Be2 Bd6 8. Be3 Nd7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/L4e4Tpn1"]
+[Result "1-0"]
+[WhiteElo "2469"]
+[BlackElo "2335"]
+[Termination "Normal"]
+
+1. Nf3 d5 2. c4 c6 3. g3 Nf6 4. Bg2 e6 5. O-O Be7 6. b3 O-O 7. Bb2 Re8 8. d3 Nbd7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/tOOllkec"]
+[Result "1/2-1/2"]
+[WhiteElo "2505"]
+[BlackElo "2550"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nf6 3. Nc3 Nc6 4. d4 Bb4 5. Nxe5 Qe7 6. Nxc6 Qxe4+ 7. Qe2 dxc6 8. Bd2 Qxe2+ 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/NaPCoURY"]
+[Result "1-0"]
+[WhiteElo "2556"]
+[BlackElo "2588"]
+[Termination "Normal"]
+
+1. e4 c5 2. c3 Nf6 3. e5 Nd5 4. d4 cxd4 5. cxd4 d6 6. exd6 Qxd6 7. Nf3 Nc6 8. Nc3 g6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/7SbEmpwY"]
+[Result "1-0"]
+[WhiteElo "2242"]
+[BlackElo "2252"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Bf4 d6 3. e3 g6 4. h3 Bg7 5. Nf3 Kf8 6. Be2 Kg8 7. O-O Nbd7 8. Bh2 h6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/PAcKb8Md"]
+[Result "1/2-1/2"]
+[WhiteElo "2246"]
+[BlackElo "2322"]
+[Termination "Normal"]
+
+1. c4 Nf6 2. Nc3 e6 3. e4 c5 4. e5 Ng8 5. Nf3 Nc6 6. d4 cxd4 7. Nxd4 Nxe5 8. Ndb5 a6 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/K3KWDdxT"]
+[Result "1-0"]
+[WhiteElo "2451"]
+[BlackElo "2311"]
+[Termination "Normal"]
+
+1. c4 e5 2. Nc3 Nc6 3. a3 Nf6 4. e3 e4 5. d3 exd3 6. Bxd3 d5 7. Nf3 dxc4 8. Bxc4 Qxd1+ 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/HsxdJjl1"]
+[Result "0-1"]
+[WhiteElo "2246"]
+[BlackElo "2290"]
+[Termination "Normal"]
+
+1. c4 b6 2. Nc3 Bb7 3. e4 e6 4. g3 Bb4 5. Nge2 f5 6. Bg2 Nf6 7. Qc2 Bxc3 8. Nxc3 Nc6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/nQ1WtWjU"]
+[Result "1-0"]
+[WhiteElo "2315"]
+[BlackElo "2332"]
+[Termination "Time forfeit"]
+
+1. d4 d5 2. c4 c6 3. Nc3 Nf6 4. Nf3 dxc4 5. a4 Bf5 6. e3 e6 7. Bxc4 Bb4 8. O-O Nbd7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/oDFWCKjf"]
+[Result "1-0"]
+[WhiteElo "2524"]
+[BlackElo "2507"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 g6 4. O-O Bg7 5. d3 Nge7 6. c3 O-O 7. Re1 d6 8. Nbd2 a6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/YG8V21LH"]
+[Result "0-1"]
+[WhiteElo "2432"]
+[BlackElo "2263"]
+[Termination "Time forfeit"]
+
+1. e4 e6 2. d4 d5 3. Nc3 Bb4 4. Ne2 Nf6 5. a3 Be7 6. e5 Nfd7 7. Nf4 c5 8. Nce2 cxd4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/kViY436u"]
+[Result "1/2-1/2"]
+[WhiteElo "2335"]
+[BlackElo "2395"]
+[Termination "Normal"]
+
+1. Nf3 d6 2. d4 Nd7 3. g3 e5 4. Bg2 e4 5. Nfd2 f5 6. c4 Ngf6 7. Nc3 Be7 8. O-O O-O 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/wkM3njDx"]
+[Result "1-0"]
+[WhiteElo "2359"]
+[BlackElo "2281"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 e6 3. Nc3 d5 4. cxd5 exd5 5. Bg5 Be7 6. e3 c6 7. Bd3 Nbd7 8. Nge2 Nf8 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/WhLNscVL"]
+[Result "1-0"]
+[WhiteElo "2474"]
+[BlackElo "2383"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 e6 3. c3 Nf6 4. e5 Nd5 5. d4 cxd4 6. cxd4 d6 7. Nc3 Nxc3 8. bxc3 Nc6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/q2H95K9g"]
+[Result "1-0"]
+[WhiteElo "2550"]
+[BlackElo "2523"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Nf3 d5 3. c4 e6 4. g3 dxc4 5. Bg2 Bd7 6. Ne5 Bc6 7. Nxc6 Nxc6 8. e3 Qd7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/XMBA7Yuf"]
+[Result "0-1"]
+[WhiteElo "2283"]
+[BlackElo "2253"]
+[Termination "Normal"]
+
+1. d4 d6 2. Nf3 g6 3. Bg5 Bg7 4. e4 Nc6 5. c3 h6 6. Bh4 Nf6 7. Bd3 O-O 8. O-O e5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/I20KzaaT"]
+[Result "1-0"]
+[WhiteElo "2260"]
+[BlackElo "2279"]
+[Termination "Normal"]
+
+1. e4 c5 2. d4 cxd4 3. c3 dxc3 4. Nxc3 Nc6 5. Bc4 e6 6. Nf3 Bb4 7. O-O Nge7 8. Qe2 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/Wx4voOnB"]
+[Result "1-0"]
+[WhiteElo "2292"]
+[BlackElo "2205"]
+[Termination "Normal"]
+
+1. c4 e6 2. Nc3 d5 3. d4 c6 4. h4 Nf6 5. h5 h6 6. Nf3 Bb4 7. Bf4 Bxc3+ 8. bxc3 Ne4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/EkTwz3Tf"]
+[Result "0-1"]
+[WhiteElo "2351"]
+[BlackElo "2312"]
+[Termination "Normal"]
+
+1. e4 d6 2. d4 Nf6 3. Nc3 e5 4. Nf3 Nbd7 5. h3 g6 6. Be3 Bg7 7. Be2 O-O 8. O-O c6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/HiVx1sQb"]
+[Result "0-1"]
+[WhiteElo "2228"]
+[BlackElo "2245"]
+[Termination "Normal"]
+
+1. e4 g6 2. d4 Bg7 3. c3 d6 4. Bc4 Nf6 5. Qe2 O-O 6. Bg5 h6 7. Bh4 Nc6 8. Nd2 e5 0-1
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/ywKe4IgO"]
+[Result "1-0"]
+[WhiteElo "2312"]
+[BlackElo "2393"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 Nd4 4. Nxd4 exd4 5. O-O Bc5 6. Bc4 Qf6 7. d3 d6 8. f4 Ne7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/3bew6Li7"]
+[Result "1-0"]
+[WhiteElo "2201"]
+[BlackElo "2206"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 g6 3. Nc3 Bg7 4. e4 d6 5. h3 O-O 6. Be3 e5 7. d5 a5 8. Nge2 Na6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/cszUjEZn"]
+[Result "0-1"]
+[WhiteElo "2432"]
+[BlackElo "2458"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d4 exd4 6. e5 d5 7. Bb5 Ne4 8. cxd4 Bb4+ 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/JUK1uvJ3"]
+[Result "0-1"]
+[WhiteElo "2228"]
+[BlackElo "2276"]
+[Termination "Time forfeit"]
+
+1. Nf3 e6 2. g3 d5 3. Bg2 c5 4. O-O b5 5. d4 Nc6 6. Nbd2 Qb6 7. dxc5 Bxc5 8. Nb3 Nf6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/k6VvybCv"]
+[Result "1/2-1/2"]
+[WhiteElo "2332"]
+[BlackElo "2215"]
+[Termination "Normal"]
+
+1. e4 c6 2. Nf3 d5 3. Nc3 dxe4 4. Nxe4 Nf6 5. Qe2 Nxe4 6. Qxe4 Nd7 7. Bc4 Nf6 8. Ne5 e6 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/PJObduPu"]
+[Result "1-0"]
+[WhiteElo "2200"]
+[BlackElo "2200"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 a6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 d6 6. Bc4 Nc6 7. Nxc6 bxc6 8. e5 dxe5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/nLURPkiA"]
+[Result "1-0"]
+[WhiteElo "2208"]
+[BlackElo "2330"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. d3 Be7 5. Rg1 d6 6. h3 h6 7. g4 Nd4 8. c3 Nxf3+ 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/LF2btiuW"]
+[Result "0-1"]
+[WhiteElo "2383"]
+[BlackElo "2310"]
+[Termination "Normal"]
+
+1. Nf3 Nf6 2. b3 d6 3. Bb2 Nbd7 4. d4 e6 5. Nbd2 Be7 6. e4 O-O 7. Bd3 b6 8. e5 Nd5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/Zbh3mZ1i"]
+[Result "1-0"]
+[WhiteElo "2455"]
+[BlackElo "2485"]
+[Termination "Time forfeit"]
+
+1. e4 Nc6 2. d4 e5 3. Nf3 exd4 4. Bc4 Nf6 5. e5 d5 6. Bb5 Ne4 7. Nxd4 Bc5 8. Be3 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/4rXs4nQA"]
+[Result "0-1"]
+[WhiteElo "2291"]
+[BlackElo "2312"]
+[Termination "Time forfeit"]
+
+1. d4 d5 2. Nf3 c6 3. Bf4 Bf5 4. c4 e6 5. Nc3 Nd7 6. Qb3 Qb6 7. c5 Qxb3 8. axb3 a6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/KA7hX2DZ"]
+[Result "1-0"]
+[WhiteElo "2489"]
+[BlackElo "2512"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 6. f3 e5 7. Nb3 Be7 8. Be3 Be6 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/h02RLL8I"]
+[Result "0-1"]
+[WhiteElo "2240"]
+[BlackElo "2251"]
+[Termination "Time forfeit"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 g6 5. c3 d6 6. h3 Bd7 7. d4 Bg7 8. d5 Nce7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/UwCCrqzz"]
+[Result "0-1"]
+[WhiteElo "2218"]
+[BlackElo "2234"]
+[Termination "Time forfeit"]
+
+1. Nf3 d5 2. d4 Bf5 3. c4 e6 4. Nc3 Nf6 5. Bf4 dxc4 6. Qa4+ Nbd7 7. Qxc4 c6 8. e3 Nd5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/8cW8fqEp"]
+[Result "0-1"]
+[WhiteElo "2424"]
+[BlackElo "2287"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 Nc6 3. d4 cxd4 4. Nxd4 g6 5. c4 Nf6 6. Nc3 d6 7. Be2 Nxd4 8. Qxd4 Bg7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/vpcn7jY2"]
+[Result "1-0"]
+[WhiteElo "2527"]
+[BlackElo "2737"]
+[Termination "Normal"]
+
+1. d4 d5 2. Nf3 Nf6 3. c4 dxc4 4. e3 e6 5. Bxc4 a6 6. a4 b6 7. O-O Bb7 8. Nc3 Nbd7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/XKNKN4vY"]
+[Result "1/2-1/2"]
+[WhiteElo "2839"]
+[BlackElo "3027"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 g6 3. Nc3 d5 4. cxd5 Nxd5 5. e4 Nxc3 6. bxc3 Bg7 7. Be3 c5 8. Qd2 O-O 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/hnAMy9yE"]
+[Result "1-0"]
+[WhiteElo "2327"]
+[BlackElo "2304"]
+[Termination "Time forfeit"]
+
+1. c4 c5 2. g3 Nc6 3. Bg2 g6 4. Nf3 Bg7 5. Nc3 Nf6 6. O-O O-O 7. e3 e6 8. d4 b6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/uMbAFeM5"]
+[Result "1-0"]
+[WhiteElo "2311"]
+[BlackElo "2336"]
+[Termination "Time forfeit"]
+
+1. d4 Nf6 2. c4 c5 3. d5 b5 4. cxb5 a6 5. e3 axb5 6. Bxb5 Ba6 7. Nc3 Bxb5 8. Nxb5 g6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/C3TTxzee"]
+[Result "1-0"]
+[WhiteElo "2370"]
+[BlackElo "2470"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 d6 3. Bb5+ Bd7 4. Bxd7+ Qxd7 5. O-O Nc6 6. c3 d5 7. exd5 Qxd5 8. d4 e6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/TgjCbiil"]
+[Result "1-0"]
+[WhiteElo "2302"]
+[BlackElo "2393"]
+[Termination "Normal"]
+
+1. Nf3 Nf6 2. c4 g6 3. d4 a6 4. g3 b5 5. Bg2 Bb7 6. cxb5 axb5 7. O-O Bg7 8. Re1 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/S14N7eij"]
+[Result "1-0"]
+[WhiteElo "2413"]
+[BlackElo "2398"]
+[Termination "Normal"]
+
+1. e4 c5 2. Be2 d6 3. f4 Nc6 4. Nf3 g6 5. d3 Bg7 6. c3 Nf6 7. O-O O-O 8. Kh1 b5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/88SuhcHb"]
+[Result "1-0"]
+[WhiteElo "2744"]
+[BlackElo "2596"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 e6 3. d4 cxd4 4. Nxd4 a6 5. c4 Bc5 6. Nb3 Bb6 7. Bf4 Ne7 8. c5 Ba7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/HFewkNbT"]
+[Result "1-0"]
+[WhiteElo "2374"]
+[BlackElo "2332"]
+[Termination "Time forfeit"]
+
+1. e4 c5 2. Nc3 e6 3. Be2 d5 4. exd5 exd5 5. d4 Nf6 6. Bg5 Be6 7. Nf3 Be7 8. Bxf6 Bxf6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/teORvq8E"]
+[Result "0-1"]
+[WhiteElo "2454"]
+[BlackElo "2401"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 g6 3. d4 cxd4 4. Nxd4 Nc6 5. Nc3 Bg7 6. Be3 Nf6 7. Bc4 O-O 8. Bb3 d6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/AzepgYhT"]
+[Result "1-0"]
+[WhiteElo "2664"]
+[BlackElo "2619"]
+[Termination "Normal"]
+
+1. c4 Nf6 2. Nc3 c6 3. e4 e5 4. Nf3 Bb4 5. Nxe5 O-O 6. Nd3 Bxc3 7. dxc3 Nxe4 8. Be2 d5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/zdZdKfpI"]
+[Result "1-0"]
+[WhiteElo "2276"]
+[BlackElo "2264"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nc3 g6 3. Nf3 Bg7 4. Bc4 e6 5. d3 Nc6 6. Be3 d5 7. exd5 Bxc3+ 8. bxc3 exd5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/e1KqSw1i"]
+[Result "1-0"]
+[WhiteElo "2222"]
+[BlackElo "2220"]
+[Termination "Time forfeit"]
+
+1. Nf3 c5 2. g3 g6 3. Bg2 Bg7 4. O-O Nc6 5. d4 cxd4 6. Na3 Nf6 7. Nxd4 O-O 8. c4 a6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/ZFCnDpf7"]
+[Result "0-1"]
+[WhiteElo "2203"]
+[BlackElo "2351"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 e6 3. Nc3 Nc6 4. d4 cxd4 5. Nxd4 Nf6 6. Nxc6 bxc6 7. e5 Nd5 8. Nxd5 cxd5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/btXyRN8r"]
+[Result "1-0"]
+[WhiteElo "2441"]
+[BlackElo "2428"]
+[Termination "Normal"]
+
+1. d4 f5 2. Nf3 Nf6 3. Bf4 g6 4. e3 Bg7 5. Be2 d6 6. h3 e6 7. c4 Qe7 8. Nc3 Nc6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/j8a020Tz"]
+[Result "0-1"]
+[WhiteElo "2276"]
+[BlackElo "2288"]
+[Termination "Normal"]
+
+1. e4 c6 2. d4 d5 3. e5 Bf5 4. Nf3 e6 5. Be2 c5 6. Be3 Qb6 7. Nc3 c4 8. Rb1 Nc6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/sD6rWjrC"]
+[Result "0-1"]
+[WhiteElo "2313"]
+[BlackElo "2422"]
+[Termination "Normal"]
+
+1. e4 c5 2. d4 cxd4 3. c3 d5 4. exd5 Nf6 5. Nf3 Nxd5 6. Nxd4 e6 7. Be2 Be7 8. O-O O-O 0-1
+
+[Event "Rated Classical game"]
+[Site "https://lichess.org/2C8ANruM"]
+[Result "1-0"]
+[WhiteElo "2294"]
+[BlackElo "2254"]
+[Termination "Normal"]
+
+1. c4 e5 2. Nc3 Nf6 3. g3 d5 4. cxd5 Nxd5 5. Bg2 Nxc3 6. bxc3 Nc6 7. Rb1 Bc5 8. Qc2 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/p0m3m10j"]
+[Result "0-1"]
+[WhiteElo "2289"]
+[BlackElo "2280"]
+[Termination "Normal"]
+
+1. c4 Nf6 2. Nc3 g6 3. d4 d5 4. cxd5 Nxd5 5. e4 Nxc3 6. bxc3 Bg7 7. Bc4 c5 8. Ne2 Nc6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/S2g8MJob"]
+[Result "1-0"]
+[WhiteElo "2243"]
+[BlackElo "2235"]
+[Termination "Normal"]
+
+1. e4 c6 2. d4 d5 3. Nc3 dxe4 4. Nxe4 Nf6 5. Nxf6+ exf6 6. c3 Be7 7. Bd3 O-O 8. Qc2 h6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/wWXUdsvZ"]
+[Result "0-1"]
+[WhiteElo "2584"]
+[BlackElo "2453"]
+[Termination "Time forfeit"]
+
+1. e4 c5 2. Nf3 a6 3. c3 Qa5 4. Bc4 e6 5. O-O b5 6. Bb3 Bb7 7. Re1 Nf6 8. d4 cxd4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/VpBEvJ3q"]
+[Result "0-1"]
+[WhiteElo "2484"]
+[BlackElo "2490"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 Nc6 3. d4 cxd4 4. Nxd4 e6 5. Nc3 Qc7 6. Be3 Nf6 7. g4 Bb4 8. Bg2 d5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/Cx0pzfZZ"]
+[Result "0-1"]
+[WhiteElo "2295"]
+[BlackElo "2291"]
+[Termination "Normal"]
+
+1. d4 g6 2. c4 f6 3. e4 Nh6 4. Nc3 Nf7 5. h4 Bg7 6. h5 g5 7. Be2 h6 8. Bg4 e6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/eF7wSonl"]
+[Result "0-1"]
+[WhiteElo "2355"]
+[BlackElo "2374"]
+[Termination "Normal"]
+
+1. e4 c6 2. d4 d5 3. Nc3 dxe4 4. Nxe4 Nf6 5. Ng3 e6 6. f4 h6 7. Nf3 Bd6 8. Bd3 O-O 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/tehSwOjl"]
+[Result "0-1"]
+[WhiteElo "2389"]
+[BlackElo "2475"]
+[Termination "Normal"]
+
+1. d4 b6 2. e4 Bb7 3. Bd3 g6 4. Ne2 Bg7 5. O-O e6 6. c4 f5 7. Nbc3 fxe4 8. Nxe4 Nf6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/NVf3L1Hw"]
+[Result "1-0"]
+[WhiteElo "2352"]
+[BlackElo "2341"]
+[Termination "Normal"]
+
+1. e4 d5 2. exd5 Qxd5 3. d4 Nc6 4. Nf3 Bg4 5. Be2 O-O-O 6. c4 Qh5 7. Be3 e6 8. Nbd2 Nf6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/qh9ojGRn"]
+[Result "1-0"]
+[WhiteElo "2462"]
+[BlackElo "2496"]
+[Termination "Time forfeit"]
+
+1. d4 d5 2. Bf4 Nf6 3. e3 e6 4. Nf3 Bd6 5. Bg3 Nbd7 6. Nbd2 Qe7 7. Ne5 O-O 8. f4 Re8 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/Q9XWrTX8"]
+[Result "1-0"]
+[WhiteElo "3036"]
+[BlackElo "2850"]
+[Termination "Normal"]
+
+1. e4 c6 2. d4 d5 3. e5 Bf5 4. Nf3 e6 5. Be2 Nd7 6. O-O h6 7. a4 Ne7 8. a5 c5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/EpZen9pN"]
+[Result "0-1"]
+[WhiteElo "2278"]
+[BlackElo "2209"]
+[Termination "Normal"]
+
+1. Nf3 c5 2. c4 Nc6 3. Nc3 g6 4. d4 cxd4 5. Nxd4 Bg7 6. Nc2 Nf6 7. g3 h5 8. Bg2 h4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/r9czNXij"]
+[Result "0-1"]
+[WhiteElo "2404"]
+[BlackElo "2438"]
+[Termination "Normal"]
+
+1. Nf3 Nf6 2. g3 c5 3. Bg2 Nc6 4. O-O e5 5. d3 d5 6. c4 Be7 7. cxd5 Nxd5 8. Nc3 Nc7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/MBmcPkPy"]
+[Result "1-0"]
+[WhiteElo "2215"]
+[BlackElo "2255"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Bf4 g6 3. Nc3 Bg7 4. e4 d6 5. Qd2 Nbd7 6. O-O-O O-O 7. e5 dxe5 8. dxe5 Nh5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/mzboQi9M"]
+[Result "0-1"]
+[WhiteElo "2222"]
+[BlackElo "2259"]
+[Termination "Normal"]
+
+1. e4 e6 2. c4 d5 3. cxd5 exd5 4. exd5 Nf6 5. Nc3 Nxd5 6. Bc4 c6 7. Nf3 Be6 8. O-O Nxc3 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/ahoykT4c"]
+[Result "0-1"]
+[WhiteElo "2570"]
+[BlackElo "2562"]
+[Termination "Normal"]
+
+1. e4 e6 2. d4 d5 3. Nc3 Nf6 4. e5 Nfd7 5. Nce2 c5 6. c3 Nc6 7. a3 cxd4 8. cxd4 f6 0-1
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/gJTPcrY0"]
+[Result "1-0"]
+[WhiteElo "2318"]
+[BlackElo "2292"]
+[Termination "Normal"]
+
+1. e4 g6 2. d4 Bg7 3. c4 d6 4. Nc3 e5 5. Nf3 Nc6 6. Be3 Bg4 7. d5 Bxf3 8. Qxf3 Nd4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/BDRQEfkA"]
+[Result "0-1"]
+[WhiteElo "2270"]
+[BlackElo "2310"]
+[Termination "Normal"]
+
+1. g3 c6 2. Bg2 d6 3. Nf3 Nd7 4. O-O Ngf6 5. d3 g6 6. Nbd2 Bg7 7. Re1 O-O 8. e4 Qc7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/jmr0Ps9z"]
+[Result "1-0"]
+[WhiteElo "2471"]
+[BlackElo "2439"]
+[Termination "Normal"]
+
+1. d4 d5 2. Nf3 Nc6 3. c4 Bg4 4. Nc3 Nf6 5. Bg5 e6 6. e3 Bb4 7. Qa4 O-O 8. cxd5 exd5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/EjRtFrYz"]
+[Result "1-0"]
+[WhiteElo "2261"]
+[BlackElo "2296"]
+[Termination "Normal"]
+
+1. e4 c5 2. Ne2 Nc6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 d6 6. Bc4 e6 7. Bb3 Be7 8. Be3 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/L0uEeZtx"]
+[Result "0-1"]
+[WhiteElo "2447"]
+[BlackElo "2411"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Bg5 Ne4 3. Bf4 d5 4. f3 Nf6 5. Nd2 c5 6. e3 cxd4 7. exd4 Nc6 8. c3 h6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/9nvEzulT"]
+[Result "0-1"]
+[WhiteElo "2224"]
+[BlackElo "2318"]
+[Termination "Normal"]
+
+1. Nf3 d5 2. d4 Nf6 3. Bf4 Bg4 4. Ne5 Bf5 5. c4 c6 6. Nc3 e6 7. Qb3 Qb6 8. c5 Qxb3 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/5o2U0B8R"]
+[Result "0-1"]
+[WhiteElo "2747"]
+[BlackElo "2665"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 Nc6 6. Bg5 e6 7. Qd3 a6 8. Nxc6 bxc6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/K6uS1PLn"]
+[Result "1-0"]
+[WhiteElo "2248"]
+[BlackElo "2253"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Bxc6 dxc6 5. O-O Bg4 6. h3 h5 7. d3 Qf6 8. Nbd2 g5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/DyAuzNyo"]
+[Result "0-1"]
+[WhiteElo "2594"]
+[BlackElo "2491"]
+[Termination "Time forfeit"]
+
+1. Nf3 d5 2. d4 Nf6 3. Bf4 c5 4. c3 Nc6 5. e3 Qb6 6. Qb3 c4 7. Qc2 Bf5 8. Qc1 Nh5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/7Pyfo5nP"]
+[Result "0-1"]
+[WhiteElo "2238"]
+[BlackElo "2234"]
+[Termination "Normal"]
+
+1. e4 e6 2. d3 d5 3. Nd2 Nf6 4. g3 c5 5. Bg2 Nc6 6. Ngf3 Be7 7. O-O O-O 8. Re1 b5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/qS1KLdo9"]
+[Result "1-0"]
+[WhiteElo "2473"]
+[BlackElo "2486"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nc3 e6 3. g3 Nc6 4. Bg2 g6 5. d3 Bg7 6. Be3 d6 7. Qd2 h6 8. Nge2 Nd4 1-0
+
+[Event "Rated Blitz tournament https://lichess.org/tournament/1DQB7w5v"]
+[Site "https://lichess.org/y92C767q"]
+[Result "1-0"]
+[WhiteElo "2281"]
+[BlackElo "2293"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Bf4 g6 3. e3 Bg7 4. Nd2 d6 5. c3 b6 6. Bc4 Ba6 7. Bxa6 Nxa6 8. Qa4+ Qd7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/7pHCmZpn"]
+[Result "1-0"]
+[WhiteElo "2307"]
+[BlackElo "2293"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nc3 Nf6 3. f4 d5 4. fxe5 Nxe4 5. Qf3 f5 6. d3 Nxc3 7. bxc3 Be7 8. d4 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/4xN79C3f"]
+[Result "0-1"]
+[WhiteElo "2419"]
+[BlackElo "2441"]
+[Termination "Normal"]
+
+1. b3 e5 2. Bb2 d6 3. e3 g6 4. d3 Bg7 5. Nd2 c5 6. g3 Nc6 7. Bg2 Nge7 8. Ne2 O-O 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/5vIJh931"]
+[Result "1-0"]
+[WhiteElo "2250"]
+[BlackElo "2218"]
+[Termination "Normal"]
+
+1. d4 d5 2. Nf3 c6 3. c4 Bf5 4. Nc3 e6 5. Bf4 Nf6 6. e3 Bd6 7. Bg5 Nbd7 8. Bd3 Bxd3 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/wjTMgDHf"]
+[Result "0-1"]
+[WhiteElo "2352"]
+[BlackElo "2233"]
+[Termination "Time forfeit"]
+
+1. d4 c6 2. e4 d5 3. Nc3 dxe4 4. f3 exf3 5. Nxf3 Nf6 6. Bc4 e6 7. Bd3 Bd6 8. Bg5 Nbd7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/WORKvgMu"]
+[Result "0-1"]
+[WhiteElo "2241"]
+[BlackElo "2340"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 6. h3 e5 7. Nf3 Be7 8. Bc4 b5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/CgYD11Go"]
+[Result "1-0"]
+[WhiteElo "2201"]
+[BlackElo "2211"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d3 d6 6. h3 a6 7. Be3 Ba7 8. Nbd2 Be6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/adl5oRWn"]
+[Result "1/2-1/2"]
+[WhiteElo "2957"]
+[BlackElo "2759"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 b5 5. Bb3 Bb7 6. O-O Nf6 7. d3 Be7 8. Nc3 d6 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/T4Ht0Gel"]
+[Result "1-0"]
+[WhiteElo "2337"]
+[BlackElo "2297"]
+[Termination "Time forfeit"]
+
+1. d4 d6 2. Nf3 Bg4 3. c4 c6 4. Nc3 Nd7 5. e3 Ngf6 6. Be2 e5 7. O-O Be7 8. h3 Bh5 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/ysvh5Yxg"]
+[Result "1-0"]
+[WhiteElo "2301"]
+[BlackElo "2364"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 g6 3. Nc3 Bg7 4. Nf3 O-O 5. e4 d6 6. h3 Qe8 7. Be3 e5 8. d5 Na6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/6TWGvgLJ"]
+[Result "1-0"]
+[WhiteElo "2318"]
+[BlackElo "2297"]
+[Termination "Normal"]
+
+1. Nf3 Nf6 2. g3 e6 3. Bg2 d5 4. O-O Bd6 5. d3 O-O 6. Nbd2 c5 7. e4 dxe4 8. dxe4 Bc7 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/VbbgYZaz"]
+[Result "1-0"]
+[WhiteElo "2250"]
+[BlackElo "2295"]
+[Termination "Normal"]
+
+1. d4 d5 2. Nc3 Nf6 3. Bf4 a6 4. e3 e6 5. Nf3 c5 6. a3 Nc6 7. dxc5 Bxc5 8. Bd3 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/7QV9hmPy"]
+[Result "1-0"]
+[WhiteElo "2654"]
+[BlackElo "2602"]
+[Termination "Normal"]
+
+1. d4 c5 2. d5 Nf6 3. Nc3 a6 4. a4 d6 5. e4 g6 6. f4 Bg7 7. Nf3 O-O 8. e5 dxe5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/ZtgyYq25"]
+[Result "0-1"]
+[WhiteElo "2304"]
+[BlackElo "2323"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. d3 Be7 5. h3 d6 6. O-O a6 7. a4 Na5 8. Ba2 c5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/YXqNYaxU"]
+[Result "0-1"]
+[WhiteElo "2391"]
+[BlackElo "2379"]
+[Termination "Time forfeit"]
+
+1. e4 d5 2. exd5 Qxd5 3. Nc3 Qd8 4. Nf3 Nf6 5. h3 e6 6. Bc4 Be7 7. d3 O-O 8. O-O a6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/akEaWiqJ"]
+[Result "0-1"]
+[WhiteElo "2242"]
+[BlackElo "2265"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d3 d6 6. Nbd2 O-O 7. Bb3 Ne7 8. Qe2 c6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/fcaucr17"]
+[Result "1-0"]
+[WhiteElo "2418"]
+[BlackElo "2429"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Nc3 c5 3. d5 g6 4. g3 Bg7 5. Bg2 O-O 6. Nf3 d6 7. O-O e6 8. dxe6 Bxe6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/l8imRJ9k"]
+[Result "1/2-1/2"]
+[WhiteElo "2651"]
+[BlackElo "2661"]
+[Termination "Normal"]
+
+1. e4 c5 2. d4 cxd4 3. Qxd4 Nc6 4. Qd3 Nf6 5. Nc3 d6 6. Nf3 g6 7. Be2 Bg7 8. O-O O-O 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/HCUZbo4F"]
+[Result "1-0"]
+[WhiteElo "2382"]
+[BlackElo "2392"]
+[Termination "Normal"]
+
+1. d4 c5 2. d5 e5 3. Nc3 d6 4. e4 a6 5. h3 b5 6. a4 b4 7. Nce2 f5 8. exf5 Bxf5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/k4ZSvrb3"]
+[Result "1-0"]
+[WhiteElo "2458"]
+[BlackElo "2286"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 e6 3. Nc3 Bb4 4. Qc2 c5 5. dxc5 O-O 6. Nf3 Na6 7. Bd2 Nxc5 8. e3 b6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/mVrHzXNu"]
+[Result "0-1"]
+[WhiteElo "2567"]
+[BlackElo "2426"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 g6 3. Nf3 Bg7 4. g3 O-O 5. Bg2 d5 6. cxd5 Nxd5 7. e4 Nb6 8. O-O Nc6 0-1
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/ivBwRZGu"]
+[Result "1-0"]
+[WhiteElo "2381"]
+[BlackElo "2336"]
+[Termination "Normal"]
+
+1. d4 d6 2. c4 e5 3. Nf3 Nd7 4. Nc3 Ngf6 5. g3 c6 6. Bg2 Qc7 7. O-O g6 8. e4 Bg7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/2yQiAbKe"]
+[Result "1-0"]
+[WhiteElo "2363"]
+[BlackElo "2286"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 c5 3. d5 b5 4. cxb5 a6 5. e3 g6 6. a4 Bg7 7. Nc3 d6 8. e4 Bb7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/M98sPoAj"]
+[Result "0-1"]
+[WhiteElo "2346"]
+[BlackElo "2317"]
+[Termination "Normal"]
+
+1. c4 e6 2. Nc3 d5 3. cxd5 exd5 4. d4 Nf6 5. Nf3 Bd6 6. h3 c6 7. e3 O-O 8. Bd3 Re8 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/ObrF2WhK"]
+[Result "1-0"]
+[WhiteElo "2296"]
+[BlackElo "2233"]
+[Termination "Normal"]
+
+1. c4 b6 2. Nf3 Bb7 3. d4 Nf6 4. Nc3 e6 5. Bg5 Be7 6. e3 O-O 7. Bd3 d5 8. Ne5 c5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/FawCd6hu"]
+[Result "1-0"]
+[WhiteElo "2374"]
+[BlackElo "2364"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. Qe2 b5 6. Bb3 Bc5 7. c3 O-O 8. O-O d5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/FvZL71Sn"]
+[Result "1-0"]
+[WhiteElo "2408"]
+[BlackElo "2401"]
+[Termination "Time forfeit"]
+
+1. d4 d5 2. c4 dxc4 3. Nf3 Nf6 4. e3 e6 5. Bxc4 c5 6. O-O Be7 7. Qe2 O-O 8. Rd1 Nbd7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/U3DivmBO"]
+[Result "1-0"]
+[WhiteElo "2256"]
+[BlackElo "2233"]
+[Termination "Time forfeit"]
+
+1. Nf3 Nf6 2. g3 g6 3. Bg2 Bg7 4. O-O d6 5. c4 O-O 6. Nc3 Nc6 7. Rb1 a5 8. a3 e5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/hnOnEOji"]
+[Result "0-1"]
+[WhiteElo "2549"]
+[BlackElo "2447"]
+[Termination "Time forfeit"]
+
+1. Nf3 d5 2. c4 c6 3. cxd5 cxd5 4. d4 Nc6 5. Nc3 Nf6 6. Bf4 a6 7. Ne5 Nxe5 8. Bxe5 e6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/Ahu3e8nI"]
+[Result "1-0"]
+[WhiteElo "2265"]
+[BlackElo "2270"]
+[Termination "Normal"]
+
+1. g3 d5 2. Bg2 c6 3. Nf3 Nf6 4. O-O Bg4 5. d3 e6 6. Nbd2 Nbd7 7. Re1 Be7 8. e4 dxe4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/xgmzHTOU"]
+[Result "0-1"]
+[WhiteElo "2282"]
+[BlackElo "2225"]
+[Termination "Time forfeit"]
+
+1. e4 Nf6 2. Nc3 d5 3. exd5 Nxd5 4. Bc4 Nxc3 5. dxc3 Qxd1+ 6. Kxd1 Nc6 7. Bf4 e5 8. Bg3 f6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/aYPtPAqk"]
+[Result "1-0"]
+[WhiteElo "2463"]
+[BlackElo "2377"]
+[Termination "Time forfeit"]
+
+1. d4 d5 2. Nc3 Nf6 3. Bf4 a6 4. e3 b5 5. h4 e6 6. g4 c5 7. g5 Nfd7 8. Nf3 Bb7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/K92zd77W"]
+[Result "1-0"]
+[WhiteElo "2315"]
+[BlackElo "2250"]
+[Termination "Normal"]
+
+1. b3 c5 2. Bb2 Nc6 3. e3 d5 4. Bb5 Bd7 5. Nf3 a6 6. Bxc6 Bxc6 7. Ne5 Qc7 8. O-O Nf6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/MVo3ZI45"]
+[Result "1-0"]
+[WhiteElo "2293"]
+[BlackElo "2222"]
+[Termination "Normal"]
+
+1. d4 g6 2. c4 Bg7 3. e4 e6 4. Nc3 Ne7 5. f4 d5 6. e5 c5 7. cxd5 Nxd5 8. Bb5+ Nc6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/GfXZzQwD"]
+[Result "1-0"]
+[WhiteElo "2263"]
+[BlackElo "2289"]
+[Termination "Normal"]
+
+1. Nf3 d5 2. d3 Nf6 3. g3 e6 4. Bg2 Bd6 5. O-O c5 6. Nc3 O-O 7. e4 Nc6 8. Ne1 d4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/MM9LRkNl"]
+[Result "1-0"]
+[WhiteElo "2550"]
+[BlackElo "2638"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Bf4 g6 3. e3 Bg7 4. h3 O-O 5. Nf3 d6 6. c3 Nc6 7. Bh2 Qe8 8. a4 e5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/Nrsbof7Q"]
+[Result "0-1"]
+[WhiteElo "2391"]
+[BlackElo "2249"]
+[Termination "Time forfeit"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 6. f4 Nbd7 7. f5 b5 8. g4 Bb7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/Xz5y3OyT"]
+[Result "1-0"]
+[WhiteElo "2451"]
+[BlackElo "2407"]
+[Termination "Normal"]
+
+1. e4 c6 2. d4 d6 3. c3 d5 4. e5 Bf5 5. g4 Bd7 6. Bd3 Qc8 7. h3 c5 8. Ne2 Nc6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/VOcDIywg"]
+[Result "0-1"]
+[WhiteElo "2343"]
+[BlackElo "2360"]
+[Termination "Normal"]
+
+1. d4 d5 2. Nf3 c5 3. c3 Nc6 4. Bf4 Nf6 5. e3 Qb6 6. Qc1 Bf5 7. Nh4 Bg6 8. Nd2 e6 0-1
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/thP4XxAF"]
+[Result "1-0"]
+[WhiteElo "2346"]
+[BlackElo "2253"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 g6 3. d4 cxd4 4. Nxd4 Nc6 5. Be3 Bg7 6. Nc3 Nf6 7. Bc4 Qa5 8. O-O O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/xDrhIqyW"]
+[Result "0-1"]
+[WhiteElo "2310"]
+[BlackElo "2280"]
+[Termination "Time forfeit"]
+
+1. e4 c5 2. Nf3 Nc6 3. Nc3 e6 4. d4 d5 5. Bb5 dxe4 6. Nxe4 Qa5+ 7. Nc3 Bd7 8. O-O Nf6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/ZQZrARus"]
+[Result "1-0"]
+[WhiteElo "2484"]
+[BlackElo "2478"]
+[Termination "Time forfeit"]
+
+1. d4 d6 2. Nf3 Nd7 3. c4 g6 4. Nc3 Bg7 5. e4 e5 6. d5 h6 7. Bd3 Ne7 8. O-O O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/U3hhSEjv"]
+[Result "0-1"]
+[WhiteElo "2381"]
+[BlackElo "2347"]
+[Termination "Normal"]
+
+1. Nf3 d5 2. g3 c6 3. Bg2 Bf5 4. d4 Nd7 5. O-O e6 6. c4 h6 7. Nc3 Ngf6 8. b3 Bb4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/mbXJQHyk"]
+[Result "1-0"]
+[WhiteElo "2276"]
+[BlackElo "2210"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Nf3 d6 3. e3 g6 4. Be2 Bg7 5. O-O O-O 6. b3 Re8 7. Bb2 Nbd7 8. Nbd2 e5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/8QB0slvU"]
+[Result "0-1"]
+[WhiteElo "2230"]
+[BlackElo "2274"]
+[Termination "Time forfeit"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 g6 6. Bg5 Bg7 7. Bb5+ Bd7 8. Qe2 a6 0-1
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/VD21Elyw"]
+[Result "0-1"]
+[WhiteElo "2776"]
+[BlackElo "3007"]
+[Termination "Normal"]
+
+1. Nf3 c5 2. e4 e6 3. c3 Nf6 4. e5 Nd5 5. g3 Nc6 6. Bg2 d6 7. exd6 Bxd6 8. O-O O-O 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/s0tnFXAQ"]
+[Result "1-0"]
+[WhiteElo "2299"]
+[BlackElo "2231"]
+[Termination "Normal"]
+
+1. e4 c6 2. Nf3 d5 3. exd5 cxd5 4. d4 Nc6 5. Bd3 Bg4 6. c3 e6 7. O-O Bd6 8. Re1 Nge7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/RO7J39Bm"]
+[Result "1/2-1/2"]
+[WhiteElo "2222"]
+[BlackElo "2213"]
+[Termination "Normal"]
+
+1. e4 e5 2. d4 d6 3. Bc4 exd4 4. c3 d3 5. Bxd3 g6 6. Nf3 Bg7 7. O-O Bg4 8. e5 Bxe5 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/sTyrn7xZ"]
+[Result "0-1"]
+[WhiteElo "2264"]
+[BlackElo "2245"]
+[Termination "Normal"]
+
+1. e4 c6 2. c4 d5 3. exd5 cxd5 4. d4 e6 5. Nc3 Nf6 6. Nf3 Be7 7. Be2 O-O 8. O-O Nc6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/TcWZA1mJ"]
+[Result "1-0"]
+[WhiteElo "2555"]
+[BlackElo "2536"]
+[Termination "Normal"]
+
+1. d4 d5 2. Nf3 c6 3. c4 e6 4. Nc3 dxc4 5. g3 b5 6. Bg2 Bb7 7. Ne5 Qb6 8. a4 a5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/PE3p1f4o"]
+[Result "0-1"]
+[WhiteElo "2518"]
+[BlackElo "2523"]
+[Termination "Normal"]
+
+1. d4 d5 2. c4 e6 3. Nf3 c6 4. Nc3 dxc4 5. e3 b5 6. a4 Bb4 7. Bd2 Qe7 8. axb5 Bxc3 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/y0BHv26J"]
+[Result "0-1"]
+[WhiteElo "2320"]
+[BlackElo "2269"]
+[Termination "Time forfeit"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. d4 Nxd4 6. Nxd4 exd4 7. e5 Ne4 8. Qxd4 Nc5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/53qKocYc"]
+[Result "1-0"]
+[WhiteElo "2347"]
+[BlackElo "2230"]
+[Termination "Time forfeit"]
+
+1. e4 c5 2. Nf3 e6 3. d4 cxd4 4. Nxd4 a6 5. c4 Qc7 6. Nc3 Nf6 7. Qd3 Nc6 8. a3 Bc5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/XQwPZSL9"]
+[Result "1-0"]
+[WhiteElo "2290"]
+[BlackElo "2321"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Bg5 Ne4 3. Bh4 d5 4. f3 Nf6 5. e4 dxe4 6. fxe4 Nxe4 7. Nc3 Nf6 8. Nf3 e6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/XxxDkkiQ"]
+[Result "0-1"]
+[WhiteElo "2216"]
+[BlackElo "2271"]
+[Termination "Time forfeit"]
+
+1. e4 c5 2. Nf3 d6 3. Bb5+ Bd7 4. Qe2 g6 5. O-O Bg7 6. Re1 e6 7. c3 Ne7 8. d4 cxd4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/y4xeTXlf"]
+[Result "0-1"]
+[WhiteElo "2313"]
+[BlackElo "2240"]
+[Termination "Normal"]
+
+1. d4 d5 2. c4 dxc4 3. Nf3 Nf6 4. e3 e6 5. Bxc4 c5 6. O-O Nc6 7. Qe2 cxd4 8. Rd1 Qa5 0-1
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/qID5VFCi"]
+[Result "1-0"]
+[WhiteElo "2360"]
+[BlackElo "2355"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Nc3 e6 3. e4 d5 4. e5 Nfd7 5. f4 c5 6. Nf3 Nc6 7. Be3 Rb8 8. Bd3 cxd4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/chyNLPNk"]
+[Result "0-1"]
+[WhiteElo "2267"]
+[BlackElo "2317"]
+[Termination "Time forfeit"]
+
+1. d4 Nf6 2. c4 g6 3. Nc3 Bg7 4. Nf3 d6 5. Bg5 h6 6. Bh4 Nbd7 7. e3 c5 8. d5 a6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/wXbsnrbK"]
+[Result "0-1"]
+[WhiteElo "2478"]
+[BlackElo "2479"]
+[Termination "Normal"]
+
+1. e4 d6 2. d4 Nf6 3. Nc3 Nbd7 4. Nf3 e5 5. Bc4 Be7 6. O-O O-O 7. Re1 c6 8. a4 h6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/JpeCEBSz"]
+[Result "1/2-1/2"]
+[WhiteElo "2212"]
+[BlackElo "2330"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 e6 3. d4 cxd4 4. c3 d3 5. Bxd3 d6 6. O-O Nf6 7. Bg5 Be7 8. Qe2 O-O 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/dMFkA4Lj"]
+[Result "1-0"]
+[WhiteElo "2331"]
+[BlackElo "2403"]
+[Termination "Normal"]
+
+1. Nf3 d5 2. d4 Nf6 3. e3 Bg4 4. Be2 e6 5. Nbd2 c5 6. h3 Bh5 7. O-O Nc6 8. b3 cxd4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/dm987zro"]
+[Result "1-0"]
+[WhiteElo "2297"]
+[BlackElo "2450"]
+[Termination "Normal"]
+
+1. g3 c5 2. f3 d5 3. Nh3 e5 4. Nf2 Nc6 5. Bg2 f5 6. d3 Nf6 7. e4 fxe4 8. fxe4 Bg4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/oyMoyTSl"]
+[Result "1-0"]
+[WhiteElo "2487"]
+[BlackElo "2317"]
+[Termination "Normal"]
+
+1. Nf3 Nf6 2. d4 e6 3. c3 b6 4. g3 Bb7 5. Bg2 Be7 6. O-O O-O 7. Nbd2 d6 8. Re1 Nbd7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/18QQDnQ5"]
+[Result "1-0"]
+[WhiteElo "2877"]
+[BlackElo "2878"]
+[Termination "Normal"]
+
+1. Na3 e5 2. e3 d5 3. c4 d4 4. d3 Nf6 5. Be2 c5 6. Bf3 Bd6 7. Ne2 Nc6 8. O-O O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/VO0u9fMO"]
+[Result "0-1"]
+[WhiteElo "2224"]
+[BlackElo "2234"]
+[Termination "Time forfeit"]
+
+1. d4 c5 2. dxc5 Na6 3. c4 Nxc5 4. Nc3 b6 5. e4 Bb7 6. f3 g6 7. b4 Bg7 8. Bb2 Ne6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/pSCtPU5p"]
+[Result "1-0"]
+[WhiteElo "2376"]
+[BlackElo "2229"]
+[Termination "Normal"]
+
+1. Nf3 Nf6 2. Nc3 c6 3. e4 d5 4. e5 Ng8 5. d4 Bf5 6. Bd3 Bxd3 7. Qxd3 e6 8. O-O Ne7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/tiGRm3CY"]
+[Result "0-1"]
+[WhiteElo "2234"]
+[BlackElo "2250"]
+[Termination "Normal"]
+
+1. d4 e6 2. c4 d5 3. Nf3 c6 4. g3 Nf6 5. Bg2 Bb4+ 6. Bd2 a5 7. O-O O-O 8. b3 Nbd7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/Dq0JWIWg"]
+[Result "0-1"]
+[WhiteElo "2273"]
+[BlackElo "2226"]
+[Termination "Normal"]
+
+1. Nf3 Nf6 2. d4 d5 3. c4 c5 4. cxd5 cxd4 5. Qxd4 Qxd5 6. Nc3 Qxd4 7. Nxd4 a6 8. g3 e5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/a6Ris1FQ"]
+[Result "0-1"]
+[WhiteElo "2205"]
+[BlackElo "2255"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 Nc6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 e5 6. Ndb5 d6 7. Bg5 a6 8. Na3 b5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/iTmRZf8P"]
+[Result "1-0"]
+[WhiteElo "2315"]
+[BlackElo "2285"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 c5 3. d5 b5 4. cxb5 a6 5. bxa6 g6 6. b3 Bxa6 7. g3 Bg7 8. Bb2 O-O 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/l8dh1yj5"]
+[Result "0-1"]
+[WhiteElo "2227"]
+[BlackElo "2220"]
+[Termination "Normal"]
+
+1. Nf3 c5 2. g3 Nc6 3. Bg2 g6 4. O-O Bg7 5. c3 d6 6. Na3 e5 7. Nc2 Nge7 8. d4 cxd4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/NcGn2Tg6"]
+[Result "1-0"]
+[WhiteElo "2223"]
+[BlackElo "2340"]
+[Termination "Normal"]
+
+1. Nf3 d5 2. d4 Nf6 3. g3 c5 4. Bg2 Nc6 5. O-O cxd4 6. Nxd4 e5 7. Nxc6 bxc6 8. c4 e4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/UXd4urlO"]
+[Result "0-1"]
+[WhiteElo "2323"]
+[BlackElo "2205"]
+[Termination "Normal"]
+
+1. e4 d5 2. exd5 Nf6 3. d4 Bg4 4. Be2 Bxe2 5. Nxe2 Qxd5 6. O-O Nc6 7. Be3 e6 8. Nd2 Bd6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/P3cPQuUu"]
+[Result "1-0"]
+[WhiteElo "2446"]
+[BlackElo "2506"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 e6 3. g3 d5 4. Bg2 Be7 5. Nf3 O-O 6. O-O dxc4 7. Qc2 c6 8. Qxc4 b5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/BpQD2vUq"]
+[Result "0-1"]
+[WhiteElo "2336"]
+[BlackElo "2347"]
+[Termination "Normal"]
+
+1. g3 e6 2. Bg2 d5 3. Nf3 Nf6 4. O-O Be7 5. d4 O-O 6. c3 c5 7. Re1 Nc6 8. e4 dxe4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/Y999gqjW"]
+[Result "1-0"]
+[WhiteElo "2479"]
+[BlackElo "2446"]
+[Termination "Normal"]
+
+1. Nc3 d5 2. Nf3 e6 3. g3 Nf6 4. Bg2 g6 5. O-O Bg7 6. d3 O-O 7. e4 c5 8. Bf4 Nc6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/u7C3Cin1"]
+[Result "1-0"]
+[WhiteElo "2229"]
+[BlackElo "2300"]
+[Termination "Normal"]
+
+1. Nf3 d5 2. e3 f6 3. d4 e5 4. dxe5 Nc6 5. exf6 Nxf6 6. Nc3 Bg4 7. Be2 Qd7 8. Nd4 Ne5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/kcF3ZUVY"]
+[Result "0-1"]
+[WhiteElo "2326"]
+[BlackElo "2333"]
+[Termination "Time forfeit"]
+
+1. d4 d5 2. Nf3 Nf6 3. Bf4 e6 4. e3 Bd6 5. Bg3 O-O 6. Bd3 c5 7. c3 Qc7 8. Nbd2 Nbd7 0-1
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/xzRBdgZo"]
+[Result "1/2-1/2"]
+[WhiteElo "2797"]
+[BlackElo "2795"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O b5 6. Bb3 Bb7 7. d3 Be7 8. Re1 d6 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/1NTebz3I"]
+[Result "0-1"]
+[WhiteElo "2206"]
+[BlackElo "2257"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 c5 3. d5 e5 4. dxe6 fxe6 5. Nc3 Be7 6. e4 Nc6 7. Nf3 d6 8. Be2 O-O 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/vU4Joa8H"]
+[Result "1-0"]
+[WhiteElo "2286"]
+[BlackElo "2318"]
+[Termination "Normal"]
+
+1. e4 c6 2. d4 d5 3. Nd2 dxe4 4. Nxe4 Bf5 5. Ng3 Bg6 6. h4 h6 7. Nh3 e6 8. Nf4 Bh7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/uGCC7mKg"]
+[Result "0-1"]
+[WhiteElo "2418"]
+[BlackElo "2367"]
+[Termination "Time forfeit"]
+
+1. e4 e6 2. d4 d5 3. e5 c5 4. Qg4 Nc6 5. Nf3 cxd4 6. Bd3 Qc7 7. Bf4 Nb4 8. Nxd4 Nxd3+ 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/UjTPqVon"]
+[Result "0-1"]
+[WhiteElo "2728"]
+[BlackElo "2632"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Bg5 e6 3. Nd2 h6 4. Bf4 c5 5. e3 Nc6 6. c3 b6 7. Ngf3 Bb7 8. h3 g5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/C1mouwNm"]
+[Result "0-1"]
+[WhiteElo "2320"]
+[BlackElo "2240"]
+[Termination "Time forfeit"]
+
+1. b3 e6 2. Bb2 d5 3. e3 Nf6 4. f4 Be7 5. Nf3 O-O 6. Bd3 c5 7. O-O a6 8. Ne5 b5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/t2wBtVMF"]
+[Result "1-0"]
+[WhiteElo "2358"]
+[BlackElo "2379"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 d6 3. Nc3 Bf5 4. g3 c6 5. Bg2 e5 6. e4 Bg4 7. Qd3 Nfd7 8. Nge2 Be7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/6qj9642m"]
+[Result "0-1"]
+[WhiteElo "2461"]
+[BlackElo "2495"]
+[Termination "Normal"]
+
+1. e4 e5 2. d4 Nc6 3. Nf3 exd4 4. Bc4 Nf6 5. O-O Nxe4 6. Nc3 Nxc3 7. Re1+ Be7 8. bxc3 d5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/YMnV6rqE"]
+[Result "0-1"]
+[WhiteElo "2286"]
+[BlackElo "2253"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 c5 3. d5 d6 4. Nc3 g6 5. e4 Bg7 6. h3 Nbd7 7. Nf3 O-O 8. Bd3 a6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/hKk9GAUq"]
+[Result "1-0"]
+[WhiteElo "2422"]
+[BlackElo "2479"]
+[Termination "Normal"]
+
+1. d3 d5 2. f4 g6 3. Nf3 Bg7 4. g3 Nh6 5. Bg2 Bg4 6. O-O c5 7. Na3 Nc6 8. c3 Nf5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/njGgPCQd"]
+[Result "0-1"]
+[WhiteElo "2483"]
+[BlackElo "2413"]
+[Termination "Normal"]
+
+1. Nf3 d5 2. c4 e6 3. b3 Nf6 4. Bb2 Be7 5. g3 O-O 6. Bg2 c6 7. O-O b6 8. d3 a5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/wPFQykGS"]
+[Result "0-1"]
+[WhiteElo "2492"]
+[BlackElo "2673"]
+[Termination "Normal"]
+
+1. e4 c5 2. c3 d5 3. exd5 Qxd5 4. d4 Nf6 5. Nf3 e6 6. Be3 cxd4 7. cxd4 Nc6 8. Nc3 Bb4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/S048NS6R"]
+[Result "1-0"]
+[WhiteElo "2236"]
+[BlackElo "2333"]
+[Termination "Normal"]
+
+1. e4 c6 2. d4 d5 3. e5 Bf5 4. h4 h5 5. Bg5 Qb6 6. Bd3 Bxd3 7. Qxd3 e6 8. Nd2 Ne7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/12kW7dtZ"]
+[Result "1-0"]
+[WhiteElo "2386"]
+[BlackElo "2202"]
+[Termination "Normal"]
+
+1. e4 e6 2. d4 d5 3. exd5 exd5 4. Bd3 Nf6 5. c3 Bd6 6. Ne2 O-O 7. Bf4 c5 8. Bxd6 Qxd6 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/A8UyRP3q"]
+[Result "1-0"]
+[WhiteElo "2387"]
+[BlackElo "2434"]
+[Termination "Normal"]
+
+1. d4 e5 2. dxe5 d6 3. Nf3 Nc6 4. Bg5 Qd7 5. exd6 Bxd6 6. Nbd2 Qg4 7. h3 Qh5 8. Ne4 Bb4+ 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/SwUsqPNj"]
+[Result "0-1"]
+[WhiteElo "2330"]
+[BlackElo "2327"]
+[Termination "Time forfeit"]
+
+1. e4 c5 2. Nf3 e6 3. d4 cxd4 4. Nxd4 a6 5. Bd3 Bc5 6. Nb3 Ba7 7. Qe2 Qc7 8. Be3 Nc6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/52FqyRvF"]
+[Result "1/2-1/2"]
+[WhiteElo "2379"]
+[BlackElo "2349"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nc3 Nc6 3. g3 g6 4. Bg2 Bg7 5. d3 d6 6. Be3 Bd7 7. Qd2 Rb8 8. Nge2 b5 1/2-1/2
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/BRrmFb04"]
+[Result "0-1"]
+[WhiteElo "2226"]
+[BlackElo "2247"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 g6 3. d4 cxd4 4. Qxd4 Nf6 5. e5 Nc6 6. Qd1 Nxe5 7. Nxe5 Qa5+ 8. Bd2 Qxe5+ 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/x3OFrPjR"]
+[Result "0-1"]
+[WhiteElo "2490"]
+[BlackElo "2468"]
+[Termination "Time forfeit"]
+
+1. e4 d5 2. exd5 Nf6 3. d4 Bg4 4. Be2 Bxe2 5. Qxe2 Qxd5 6. Nf3 Nc6 7. Be3 O-O-O 8. c4 Qf5 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/hCsFdkSn"]
+[Result "1-0"]
+[WhiteElo "2297"]
+[BlackElo "2269"]
+[Termination "Normal"]
+
+1. d4 d6 2. c4 Nf6 3. Nc3 g6 4. e4 Bg7 5. Be2 Nc6 6. d5 Ne5 7. f4 Ned7 8. g4 c6 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/3yvOVA0j"]
+[Result "0-1"]
+[WhiteElo "2309"]
+[BlackElo "2317"]
+[Termination "Normal"]
+
+1. d4 d5 2. c4 c5 3. cxd5 Qxd5 4. Nf3 cxd4 5. Nc3 Qa5 6. Nxd4 Nf6 7. g3 e5 8. Nb3 Qc7 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/H2OzspH9"]
+[Result "1-0"]
+[WhiteElo "2390"]
+[BlackElo "2385"]
+[Termination "Normal"]
+
+1. d4 c6 2. Nf3 d5 3. e3 Nf6 4. Be2 g6 5. b3 Bg7 6. Bb2 Bf5 7. Nbd2 O-O 8. O-O Nbd7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/46wdiqlU"]
+[Result "0-1"]
+[WhiteElo "2385"]
+[BlackElo "2379"]
+[Termination "Time forfeit"]
+
+1. e4 c5 2. f4 Nc6 3. Nf3 e6 4. c3 d5 5. e5 d4 6. d3 Nge7 7. c4 Nf5 8. g4 Nh4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/gpFnPuls"]
+[Result "1-0"]
+[WhiteElo "2238"]
+[BlackElo "2347"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. Nc3 d5 3. Bf4 g6 4. e3 Bg7 5. h4 h5 6. Bd3 O-O 7. Nf3 Bg4 8. Qd2 Bxf3 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/5VCunEXg"]
+[Result "1-0"]
+[WhiteElo "2316"]
+[BlackElo "2231"]
+[Termination "Normal"]
+
+1. c4 Nf6 2. g3 e6 3. Bg2 d5 4. Nf3 Be7 5. O-O O-O 6. b3 b6 7. Bb2 Bb7 8. d3 Nbd7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/H4OcPMeq"]
+[Result "0-1"]
+[WhiteElo "2237"]
+[BlackElo "2258"]
+[Termination "Normal"]
+
+1. e4 e6 2. d4 d5 3. e5 c5 4. c3 Nc6 5. Nf3 Nge7 6. Bd3 Nf5 7. Bxf5 exf5 8. O-O Be6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/jDaKnX6B"]
+[Result "0-1"]
+[WhiteElo "2353"]
+[BlackElo "2332"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nc3 Nc6 3. Nf3 Nf6 4. Bc4 Be7 5. O-O O-O 6. Nd5 Nxe4 7. Re1 Nd6 8. Bb3 Bf6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/YZICIBO0"]
+[Result "1-0"]
+[WhiteElo "2202"]
+[BlackElo "2232"]
+[Termination "Normal"]
+
+1. e4 c5 2. Nf3 d6 3. Bb5+ Bd7 4. a4 Nf6 5. Nc3 a6 6. Bxd7+ Nbxd7 7. O-O Ne5 8. Nxe5 dxe5 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/bpjVLVv9"]
+[Result "0-1"]
+[WhiteElo "2328"]
+[BlackElo "2243"]
+[Termination "Time forfeit"]
+
+1. d4 Nf6 2. Bg5 Ne4 3. Bf4 c5 4. d5 Qb6 5. Bc1 e6 6. f3 Nf6 7. c4 exd5 8. cxd5 c4 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/bMst6lh6"]
+[Result "1-0"]
+[WhiteElo "2488"]
+[BlackElo "2476"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O b5 6. Bb3 Bc5 7. Nxe5 Nxe5 8. d4 Bxd4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/f5TZALnK"]
+[Result "1-0"]
+[WhiteElo "2586"]
+[BlackElo "2271"]
+[Termination "Normal"]
+
+1. Nf3 Nc6 2. d4 d5 3. Bf4 Nf6 4. e3 Bg4 5. c4 e6 6. Qb3 Qc8 7. Ne5 Nxe5 8. Bxe5 Be7 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/pIqnl2lN"]
+[Result "1-0"]
+[WhiteElo "2498"]
+[BlackElo "2651"]
+[Termination "Normal"]
+
+1. d4 d5 2. c4 e6 3. g3 Nf6 4. Bg2 a6 5. b3 c5 6. Bb2 cxd4 7. Qxd4 Nc6 8. Qh4 Bb4+ 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/Hy8NVaJk"]
+[Result "0-1"]
+[WhiteElo "2253"]
+[BlackElo "2265"]
+[Termination "Normal"]
+
+1. d4 Nf6 2. c4 g6 3. Nf3 Bg7 4. g3 O-O 5. Bg2 d6 6. O-O c5 7. dxc5 dxc5 8. Nc3 Nc6 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/tsQbKGB4"]
+[Result "1-0"]
+[WhiteElo "2253"]
+[BlackElo "2239"]
+[Termination "Time forfeit"]
+
+1. d4 e6 2. Bf4 d5 3. e3 Bd6 4. Nf3 Bxf4 5. exf4 Qd6 6. Qd2 Nf6 7. Nc3 Ne4 8. Nxe4 dxe4 1-0
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/1jnjqitI"]
+[Result "1/2-1/2"]
+[WhiteElo "2271"]
+[BlackElo "2252"]
+[Termination "Normal"]
+
+1. e4 c6 2. c4 d5 3. exd5 cxd5 4. cxd5 Nf6 5. Nc3 Nxd5 6. Bc4 e6 7. Nf3 Nc6 8. O-O Be7 1/2-1/2
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/GsTrArY4"]
+[Result "0-1"]
+[WhiteElo "2247"]
+[BlackElo "2254"]
+[Termination "Normal"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. d3 Bc5 5. c3 d6 6. O-O Bb6 7. a4 a5 8. Ng5 O-O 0-1
+
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/09yia9BY"]
+[Result "1-0"]
+[WhiteElo "2631"]
+[BlackElo "2484"]
+[Termination "Normal"]
+
+1. e4 Nc6 2. d4 e5 3. d5 Nce7 4. c4 Nf6 5. Nc3 Ng6 6. Nge2 Bc5 7. Ng3 d6 8. Be2 a6 1-0
+
+[Event "Rated Rapid game"]
+[Site "https://lichess.org/0IZph2TB"]
+[Result "1-0"]
+[WhiteElo "2264"]
+[BlackElo "2314"]
+[Termination "Normal"]
+
+1. c4 e6 2. Nc3 d5 3. d4 Nf6 4. cxd5 exd5 5. Bg5 Nbd7 6. e3 Be7 7. Bd3 O-O 8. Qc2 c6 1-0

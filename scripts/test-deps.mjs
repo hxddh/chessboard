@@ -71,7 +71,9 @@ function entry(pred, what) {
   const want = leadingVersion(entry((d) => d.npm === "playwright", "playwright").current);
   // `npm install --no-save playwright@X` and `npx playwright@X install`, in
   // checks.yml's two browser jobs and release.yml's one
-  allEqual(inWorkflows(/playwright@(\d+\.\d+\.\d+)/g), want, "Playwright 安装行", 4);
+  allEqual(inWorkflows(/playwright@(\d+\.\d+\.\d+)/g), want, "Playwright 安装行", 6);
+  // release.yml's sdk_version comment: "everything else … is pinned too (playwright X, …)"
+  allEqual(inWorkflows(/\(playwright (\d+\.\d+\.\d+),/g), want, "release.yml 注释里的 Playwright 版本", 1);
 }
 
 // --- Native SDK: every default, fallback and env pin -------------------------
