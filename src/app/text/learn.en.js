@@ -58,7 +58,18 @@ export default {
   "imp.file.empty": "The file is empty.", "imp.file.binary": "This is not a text file.", "imp.file.badJson": "This JSON file cannot be read.",
   "imp.file.notExport": "This is a JSON file, but not one exported by 19.0's “Export all data”.", "imp.file.v19NoGames": "This 19.0 data file has no games in it.",
   "imp.file.noGames": "No games found in the file — it does not look like a PGN file.", "imp.file.tooLarge": "The file is too large (64 MB at most).", "imp.file.read": "The file could not be read: {0}",
-  "me.games": "Recent games", "me.vsEngine": "vs computer", "me.pvp": "Two players", "me.noGames": "No games yet",
+  "me.games": "Games", "me.vsEngine": "vs computer", "me.pvp": "Two players", "me.noGames": "No games yet — play one, or import a PGN",
+  // the library list, "is this you?", the background review
+  "lib.search": "Search opponent, event or date", "lib.allResults": "All results", "lib.win": "Won", "lib.loss": "Lost", "lib.draw": "Drawn",
+  "lib.allYears": "All years", "lib.page": "Page {0} of {1}", "lib.prev": "Previous", "lib.next": "Next", "lib.none": "No games match",
+  "lib.total": "{0} games", "lib.played": "Played here", "lib.reviewed": "Reviewed", "lib.you": "You", "lib.white": "White", "lib.black": "Black",
+  "lib.open": "Open {0}", "lib.vs": "{0} vs {1}",
+  "lib.youAsk": "Which of these names is you?", "lib.youWhy": "Once we know, these games count towards your level and are reviewed in the background.",
+  "lib.youName": "{0} ({1} games)", "lib.youNone": "None of these", "lib.youDone": "Got it — you are {0}: {1} games now count towards your level.",
+  "lib.auto": "Imported games are reviewed while you are not playing (the latest {0}, at most {1} a day); the mistakes found become your review cards.",
+  // one game open
+  "game.back": "Back to the library", "game.review": "Review this game", "game.missing": "This game is not in the library.", "game.at": "Move {0} of {1}",
+  "game.startPos": "Starting position", "game.both": "It is not known which side was yours — the review looks at both sides' moves.",
   // —— skills ——
   "sk.rook": "How the rook moves", "sk.rook.why": "The rook moves any number of squares along a rank or file, but cannot jump over other pieces.",
   "sk.bishop": "How the bishop moves", "sk.bishop.why": "The bishop moves any number of squares diagonally and always stays on squares of one colour.",

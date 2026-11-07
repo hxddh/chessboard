@@ -1,7 +1,9 @@
 /**
  * 我 (v20-0-plan §2 L4/L5, §6 S1): one number — 你的水平 — and how it grew,
  * the next stage and the skills it needs, one line of evidence about the
- * week, the library and its PGN import (library/import.js), the recent games.
+ * week, and the library (pages/me-library.js: its PGN import, 「这是你吗」,
+ * the list of games imported and played); `#/me/game/<id>` opens one of them
+ * on a board (pages/me-game.js).
  * The puzzle and game ratings stay inside the model; only their blend is on
  * screen.
  * @module pages/me
@@ -13,8 +15,9 @@ import { STAGES } from "../content/skills.js";
 import { visibleRating, stageOf, weekly } from "../learn/model.js";
 import { learnerFor, opponentFor } from "../learn/service.js";
 import { addStyle } from "../learn/style.js";
-import { openTextFile, FileError } from "../services/files.js";
 import { oppText } from "../opponents/lines.js";
+import { effect, untrack } from "../lib/signal.js";
+import { libraryCard } from "./me-library.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const svg = (tag, attrs = {}) => { const e = document.createElementNS(SVG, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
@@ -34,84 +37,20 @@ function curve(points) {
   return el;
 }
 
-/**
- * 棋谱库: how many games, 导入 PGN, and what the last import did. The picker is
- * the native dialog in the app, the browser's elsewhere (services/files.js);
- * the import runs in slices (library/import.js), so a large file only shows
- * its progress here.
- */
-function libraryCard(db, t, L, alive, redraw) {
-  const count = h("p", { "data-test": "lib-count" });
-  const status = h("p", { class: "muted", "data-test": "import-status", "aria-live": "polite" });
-  const errs = h("ul", { class: "needs", "data-test": "import-errors" });
-  const showCount = async () => {
-    const n = await db.query("table.count", { table: "library" });
-    if (alive()) count.textContent = n ? t("me.libCount", n) : t("me.libEmpty");
-  };
-  const done = (r) => {
-    const parts = [r.added ? t("me.importDone", r.added) : t("me.importNone")];
-    if (r.dup) parts.push(t("me.importDup", r.dup));
-    if (r.bad.length) parts.push(t("me.importBad", r.bad.length));
-    if (r.empty) parts.push(t("me.importEmpty", r.empty));
-    if (r.you) parts.push(t("me.importYou", r.you));
-    status.textContent = (r.kind === "v19" ? t("me.importV19") + " · " : "") + parts.join(t("me.importSep")) + t("me.importEnd");
-    status.dataset.state = "done";
-    errs.replaceChildren(...r.bad.slice(0, 5).map((b) => {
-      const why = t("imp.err." + b.code, b.token);
-      return h("li", { text: b.line ? t("me.importBadLine", b.n, b.line, why) : t("me.importBadItem", b.item || b.n, why) });
-    }), ...(r.bad.length > 5 ? [h("li", { text: t("me.importMore", r.bad.length - 5) })] : []));
-  };
-  const fail = (code, detail = "") => {
-    status.textContent = t("imp.file." + code, detail);
-    status.dataset.state = "error";
-    errs.replaceChildren();
-  };
-  let busy = false;
-  async function run() {
-    if (busy) return;
-    let file;
-    try { file = await openTextFile({ title: t("me.importTitle"), max: IMPORT_MAX }); }
-    catch (e) { fail(e instanceof FileError ? e.code : "read", e && e.message); return; }
-    if (!file) return;
-    busy = true; btn.disabled = true;
-    status.dataset.state = "busy";
-    status.textContent = t("me.importReading", 0, "…");
-    try {
-      const { importFile, ImportError } = await import("../library/import.js");
-      try {
-        const r = await importFile(file.text, { db, name: file.name, onProgress: (phase, d, n) => {
-          status.textContent = t(phase === "read" ? "me.importReading" : "me.importSaving", d, n);
-        } });
-        done(r);
-        if (alive()) await redraw();
-      } catch (e) {
-        if (e instanceof ImportError) fail(e.code); else { console.warn("import:", e); fail("read", e && e.message); }
-      }
-    } finally {
-      busy = false; btn.disabled = false;
-      showCount();
-    }
-  }
-  const btn = h("button", { type: "button", "data-test": "import-pgn", onclick: run }, t("me.import"));
-  showCount();
-  return h("section", { class: "card", "data-test": "library" }, h("h2", { text: t("me.library") }), count,
-    h("div", {}, btn), h("p", { class: "muted", text: t("me.importHow") }), status, errs);
-}
-/** library/import.js's IMPORT_MAX, without loading it before it is needed. */
-const IMPORT_MAX = 64 * 1024 * 1024;
-
-export function mount(el, { ready }) {
+export function mount(el, { ready, route, router, store, engine, background }) {
   addStyle();
-  const t = learnText(), tp = playText();
+  const t = learnText();
   const root = h("div", { class: "me", "data-test": "me" });
-  el.append(root);
+  const host = h("div", { class: "lib-game-host" });
+  el.append(root, host);
   let live = true;
+  const open = (id) => router.go("/me/game/" + encodeURIComponent(id));
+  const wake = () => { if (background) background.wake(); };
 
   let library = null;
   ready.then(async function render(db) {
     const L = learnerFor(db);
     await L.refresh();
-    const games = await db.query("game.recent", { limit: 10 });
     if (!live) return;
     const st = L.model, now = Date.now();
     const r = visibleRating(st);
@@ -119,6 +58,7 @@ export function mount(el, { ready }) {
     const opp = opponentFor(stage.rating);
     const week = weekly(st, now);
     const name = (id) => t("sk." + id);
+    const tp = playText();
     const oppName = opp ? oppText(opp.id, "name") : "";
 
     const level = h("section", { class: "card" }, h("h2", { text: t("me.level") }),
@@ -131,13 +71,33 @@ export function mount(el, { ready }) {
       h("p", { class: "muted", text: t("me.stageUnlock") + (oppName ? " · " + oppName : "") }));
     const weekCard = h("section", { class: "card" }, h("h2", { text: t("me.week") }),
       h("p", { "data-test": "week", text: week ? t("me.weekLine", tp.has("motif." + week.motif) ? tp("motif." + week.motif) : week.motif, week.last, week.now) : t("me.weekNone") }));
-    // one card for the page's life: an import re-draws the rest (the level may have moved), not its own report
-    library ||= libraryCard(db, t, L, () => live, () => render(db));
-    const list = h("ul", { class: "games", "data-test": "games" }, games.length ? games.map((g) => h("li", {},
-      new Date(g.startedAt).toLocaleDateString(t("date.locale")) + " · " + (g.mode === "engine" ? t("me.vsEngine") : t("me.pvp")) +
-      (g.result ? " · " + g.result.result : ""))) : h("li", { text: t("me.noGames") }));
-    const recent = h("section", { class: "card" }, h("h2", { text: t("me.games") }), list);
-    root.replaceChildren(level, stageCard, weekCard, library, recent);
+    // one card for the page's life: an import or an answer re-draws the rest (the level may have moved), not its own report
+    library ||= libraryCard({ db, L, t, alive: () => live, redraw: () => render(db), open, wake });
+    root.replaceChildren(level, stageCard, weekCard, library.el);
   });
-  return () => { live = false; };
+
+  // #/me/game/<id>: the game on a board, the list kept underneath as it was
+  let viewer = null, viewing = null;
+  function show(id) {
+    if (id === viewing) return;
+    viewing = id;
+    if (viewer) { viewer(); viewer = null; }
+    root.hidden = !!id;
+    if (!id) { if (library) library.refresh(); return; }
+    ready.then(async (db) => {
+      if (!live || viewing !== id) return;
+      const { mountGame } = await import("./me-game.js");
+      if (!live || viewing !== id) return;
+      viewer = mountGame(host, { db, store, engine, id, t, back: () => router.go("/me") });
+    });
+  }
+  const off = route ? effect(() => {
+    const r = route.value;
+    const id = r.path === "/me" && r.rest[0] === "game" && r.rest[1] ? r.rest[1] : null;
+    untrack(() => show(id));
+  }) : () => {};
+  // a game the background review finished shows as reviewed when the list is next drawn
+  const offBg = background && background.version ? effect(() => { background.version.value; untrack(() => { if (library && !viewing) library.refresh(); }); }) : () => {};
+
+  return () => { live = false; off(); offBg(); if (viewer) viewer(); };
 }

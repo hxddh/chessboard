@@ -58,7 +58,18 @@ export default {
   "imp.file.empty": "ファイルが空です。", "imp.file.binary": "テキストファイルではありません。", "imp.file.badJson": "この JSON ファイルは読めません。",
   "imp.file.notExport": "JSON ファイルですが、19.0 の「すべてのデータを書き出し」で作られたものではありません。", "imp.file.v19NoGames": "この 19.0 のデータファイルには対局がありません。",
   "imp.file.noGames": "ファイルに対局が見つかりません —— PGN ファイルではないようです。", "imp.file.tooLarge": "ファイルが大きすぎます（最大 64 MB）。", "imp.file.read": "ファイルを読めませんでした：{0}",
-  "me.games": "最近の対局", "me.vsEngine": "コンピューターと", "me.pvp": "ふたりで", "me.noGames": "まだ対局がありません",
+  "me.games": "対局", "me.vsEngine": "コンピューターと", "me.pvp": "ふたりで", "me.noGames": "まだ対局がありません —— 一局指すか、PGN を取り込んでください",
+  // 棋譜の一覧、「これはあなた？」、裏での振り返り
+  "lib.search": "相手・大会・日付で検索", "lib.allResults": "すべての結果", "lib.win": "勝ち", "lib.loss": "負け", "lib.draw": "引き分け",
+  "lib.allYears": "すべての年", "lib.page": "{0} / {1} ページ", "lib.prev": "前へ", "lib.next": "次へ", "lib.none": "該当する対局はありません",
+  "lib.total": "全 {0} 局", "lib.played": "ここで対局", "lib.reviewed": "振り返り済み", "lib.you": "あなた", "lib.white": "白", "lib.black": "黒",
+  "lib.open": "{0} を開く", "lib.vs": "{0} 対 {1}",
+  "lib.youAsk": "この中で、あなたの名前はどれですか？", "lib.youWhy": "わかれば、これらの対局があなたの強さに反映され、裏で振り返りが行われます。",
+  "lib.youName": "{0}（対局 {1}）", "lib.youNone": "どれでもない", "lib.youDone": "わかりました。あなたは「{0}」です：{1} 局を強さに反映しました。",
+  "lib.auto": "取り込んだ対局は、対局していないあいだに自動で振り返ります（最新 {0} 局、1 日 {1} 局まで）。見つかったミスは復習問題になります。",
+  // 一局を開く
+  "game.back": "棋譜一覧に戻る", "game.review": "この対局を振り返る", "game.missing": "この対局は棋譜にありません。", "game.at": "{0} / {1} 手目",
+  "game.startPos": "開始局面", "game.both": "どちらがあなたか分からないので、両方の手を振り返ります。",
   // —— スキル ——
   "sk.rook": "ルークの動き", "sk.rook.why": "ルークは縦か横に何マスでも進めるが、ほかの駒を飛び越えることはできない。",
   "sk.bishop": "ビショップの動き", "sk.bishop.why": "ビショップは斜めに何マスでも進み、いつも同じ色のマスにいる。",
