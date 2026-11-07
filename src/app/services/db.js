@@ -47,7 +47,7 @@ const PROJECT = {
     : { gameId: e.gameId, ply: e.ply, uci: e.uci, san: e.san } }],
   "game.undo": (e) => [
     { delRange: "moves", lower: [e.gameId, e.ply], upper: [e.gameId, MAX] },
-    { merge: "games", key: e.gameId, patch: { result: null } },
+    { merge: "games", key: e.gameId, patch: e.takebacks ? { result: null, takebacks: e.takebacks } : { result: null } },
   ],
   "game.end": (e) => [{ merge: "games", key: e.gameId, patch: { result: { result: e.result, reason: e.reason }, endedAt: e.at } }],
   "settings.set": (e) => [{ put: "settings", value: { key: e.key, value: e.value } }],

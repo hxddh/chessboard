@@ -3,7 +3,7 @@
  * context bar that holds only what the moment needs; the move list is a
  * drawer; no evaluation while a game is on; toasts only for receipts.
  *
- *   playing     提示 · 和棋 · 认输 · 着法 · 新对局
+ *   playing     提示 · 悔棋 · 和棋 · 认输 · 着法 · 新对局   (翻转 in the drawer; keys Z, F as in 19.0)
  *   the coach   a move that hangs a man or allows mate is held *before* it is
  *               committed: 对方在威胁什么？ [再想想] [就走这步]
  *   hints       threat → checks and captures → the idea → the arrow
@@ -19,7 +19,7 @@ import { signal, computed, effect, untrack, batch } from "../lib/signal.js";
 import { createBoard } from "../board/board.js";
 import { loadSet } from "../board/pieces.js";
 import { readFen } from "../board/geometry.js";
-import { selectFen, selectFens, selectLastMove } from "../state/play.js";
+import { selectFen, selectFens, selectLastMove, takebackPlies } from "../state/play.js";
 import { coachOn } from "../state/settings.js";
 import { turnOf, applyMove, claimable, parseUci } from "../core/rules.js";
 import { Chess } from "../core/chess.js";
@@ -76,6 +76,7 @@ export function mount(el, { store, engine, ready }) {
   const pending = signal(null);       // the move the coach holds: { uci, san, fen, lastMove, rule }
   const thinking = signal(false);
   const said = signal(null);          // the opponent's line on screen: { text, key }
+  const flipped = signal(false);      // 翻转: the board turned from your side (per game)
   /** per game: the opponent's looks (opponents/mind.js), which of its ≤ 3 lines it has said */
   const minds = new Map();
   const mindOf = (g) => { let m = minds.get(g.id); if (!m) minds.set(g.id, m = { looks: [], said: new Set() }); return m; };
@@ -100,7 +101,7 @@ export function mount(el, { store, engine, ready }) {
   const barActions = h("div", { class: "bar-actions" });
   const bar = h("div", { class: "bar", "data-test": "bar" }, barText, barActions);
   const toastEl = h("div", { class: "toast", role: "status", "data-test": "toast", hidden: true });
-  const drawer = createDrawer({ t, onPick: (i) => look(i), onStep: (d) => step(d), onCopy: copyPgn });
+  const drawer = createDrawer({ t, onPick: (i) => look(i), onStep: (d) => step(d), onCopy: copyPgn, onFlip: () => flip() });
   const stage = h("div", { class: "stage" }, top.el, h("div", { class: "board-row" }, evalBar, boardEl), bottom.el, bar);
   const root = h("div", { class: "play" }, stage, drawer.el, toastEl);
   el.append(root);
@@ -198,6 +199,48 @@ export function mount(el, { store, engine, ready }) {
     batch(() => { pending.value = null; mode.value = "play"; });
     // played anyway: now the coach says what the move allows (asking first, it only asked)
     if (play) { commit(p.uci); if (p.said) note.value = { text: p.said, tone: "coach" }; }
+  }
+
+  // --- 悔棋 and 翻转 ------------------------------------------------------------------
+  /**
+   * Whose move 悔棋 takes back: yours against the engine (with its reply, so
+   * it is your turn again — or alone, while the reply is still coming); the
+   * last move when two people share the board. None once the game is over
+   * (19.0's rule), nor while the coach or a question holds the bar.
+   */
+  function canUndo() {
+    const g = game.peek();
+    if (!g || g.result || !g.moves.length || review.state.peek().phase !== "idle") return false;
+    if (mode.peek() !== "play" || pending.peek()) return false;
+    const human = humanOf(g);
+    return human ? takebackPlies(g, human) > 0 : true;
+  }
+  let animateNext = false;
+  function undo() {
+    // looking back at an earlier position: the first press comes back to the game (19.0)
+    if (viewAt.peek() != null && game.peek() && !game.peek().result) { viewAt.value = null; return; }
+    if (!canUndo()) return;
+    const g = game.peek(), human = humanOf(g);
+    const plies = human ? takebackPlies(g, human) : 1;
+    const fens = fensNow();
+    let engineMoves = 0;
+    for (let i = g.moves.length - plies; i < g.moves.length; i++) if (human && turnOf(fens[i]) === g.engineColor) engineMoves++;
+    board.cancelPremove();
+    animateNext = true;
+    store.dispatch("play.undo", { color: human, plies: 1, now: Date.now() });
+    const m = minds.get(g.id);
+    if (m && engineMoves) m.looks.splice(Math.max(0, m.looks.length - engineMoves));
+    const first = !g.takebacks && g.mode === "engine";
+    batch(() => {
+      hint.value = { fen: null, level: 0, arrows: [], marks: [] };
+      note.value = first ? { text: t("undo.unrated"), tone: null } : null;
+    });
+    sound.play("move");
+  }
+  /** 翻转: the board, the names and the clocks turn; a man in flight keeps flying (the scene is in board space). */
+  function flip() {
+    if (promoClose) promoClose(null);
+    flipped.value = !flipped.peek();
   }
 
   // --- hints (P3): threat → checks and captures → the idea → the arrow ------------
@@ -391,7 +434,9 @@ export function mount(el, { store, engine, ready }) {
     const hintLabel = hint.value.fen === f && hint.value.level > 0 && hint.value.level < 4 ? t("act.hintMore") : t("act.hint");
     const hintBtn = btn("hint", hintLabel, nextHint, "");
     hintBtn.disabled = !mine || hint.value.fen === f && hint.value.level >= 4;
-    return { phase: "play", text, tone: n ? n.tone : null, actions: [hintBtn,
+    // 悔棋 only when there is something of yours to take back
+    const undoBtn = g.moves.length && (!human || takebackPlies(g, human) > 0) ? btn("undo", t("act.undo"), undo, "quiet") : null;
+    return { phase: "play", text, tone: n ? n.tone : null, actions: [hintBtn, ...(undoBtn ? [undoBtn] : []),
       btn("draw", t("act.draw"), offerDraw, "quiet"), btn("resign", t("act.resign"), () => { mode.value = "confirm-resign"; }, "quiet"), moves, fresh] };
   });
 
@@ -436,9 +481,10 @@ export function mount(el, { store, engine, ready }) {
   const view = computed(() => {
     const g = game.value, f = fen.value;
     const human = humanOf(g);
-    const orientation = human === "b" ? "black" : "white";
+    const turn = (o) => (flipped.value ? (o === "black" ? "white" : "black") : o);
+    const orientation = turn(human === "b" ? "black" : "white");
     const rb = review.board.value;
-    if (rb) return { ...rb, marks: [] };
+    if (rb) return { ...rb, orientation: turn(rb.orientation || "white"), marks: [] };
     const p = pending.value;
     if (p) return { fen: p.fen, lastMove: p.lastMove, movable: "none", orientation, arrows: [], marks: [] };
     const at = viewAt.value;
@@ -455,7 +501,9 @@ export function mount(el, { store, engine, ready }) {
   let shownFen = fen.peek();
   stops.push(effect(() => {
     const v = view.value;
-    const animate = nearby(shownFen, v.fen);
+    // a takeback slides back even across two captures
+    const animate = animateNext || nearby(shownFen, v.fen);
+    animateNext = false;
     shownFen = v.fen;
     board.set({ fen: v.fen, lastMove: v.lastMove, movable: v.movable, orientation: v.orientation, arrows: v.arrows, marks: v.marks, animate });
     // the evaluation only once the game is over (v20-0-plan §3 P4)
@@ -481,15 +529,20 @@ export function mount(el, { store, engine, ready }) {
   }));
 
   // --- names and clocks ----------------------------------------------------------------------
+  /** The colour at the bottom of the board: yours (White when two share it), unless the board is turned. */
+  const bottomOf = (g, f = flipped.peek()) => (f ? other(humanOf(g) || "w") : humanOf(g) || "w");
   stops.push(effect(() => {
     const g = game.value;
     if (!g) return;
-    const human = humanOf(g);
-    const bottomColor = human || "w";
+    const bottomColor = bottomOf(g, flipped.value);
+    untrack(drawClocks);
     const opp = g.mode === "engine" ? opponentById(g.opponent) : null;
-    top.name.textContent = opp ? oppText(opp.id, "name") + " · " + opp.rating : t("side." + other(bottomColor));
-    top.face.replaceChildren(...(opp ? [portrait(opp.id, "portrait small")] : []));
-    bottom.name.textContent = g.mode === "engine" ? t("side.you") : t("side." + bottomColor);
+    // each strip names the side it sits by: the opponent's face goes where its men are
+    for (const [s, c] of [[top, other(bottomColor)], [bottom, bottomColor]]) {
+      const theirs = opp && c === g.engineColor;
+      s.name.textContent = theirs ? oppText(opp.id, "name") + " · " + opp.rating : opp ? t("side.you") : t("side." + c);
+      s.face.replaceChildren(...(theirs ? [portrait(opp.id, "portrait small")] : []));
+    }
     top.el.dataset.color = other(bottomColor);
     bottom.el.dataset.color = bottomColor;
   }));
@@ -498,7 +551,7 @@ export function mount(el, { store, engine, ready }) {
     const g = store.get().play.game;
     if (!g || !g.clock) { top.clock.textContent = bottom.clock.textContent = ""; return; }
     const now = Date.now();
-    const bottomColor = humanOf(g) || "w";
+    const bottomColor = bottomOf(g);
     for (const [s, c] of [[bottom, bottomColor], [top, other(bottomColor)]]) {
       const ms = left(g.clock, c, now);
       const txt = format(ms);
@@ -600,17 +653,23 @@ export function mount(el, { store, engine, ready }) {
     });
   }
   stops.push(store.subscribe(({ name, prev, next }) => {
+    // a new game is seen from your side again
+    if (name === "play.new" && flipped.peek()) flipped.value = false;
     const g = next.play.game, was = prev.play.game;
     if (!g || !g.result || (was && was.id === g.id && was.result)) return;
     if (name === "play.restore") openReview(g); else moment(g);
   }));
   if (game.peek() && game.peek().result) openReview(game.peek());
 
-  // keys: ← → walk the moves when nothing else has the keyboard
+  // keys: ← → walk the moves when nothing else has the keyboard; Z 悔棋, F 翻转 (19.0's keys)
   function onKey(e) {
     if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
     if (e.key === "ArrowLeft" && document.activeElement !== board.canvas) { step(-1); e.preventDefault(); }
     else if (e.key === "ArrowRight" && document.activeElement !== board.canvas) { step(1); e.preventDefault(); }
+    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || closeSheet || promoClose) return;
+    const k = e.key.toLowerCase();
+    if (k === "z") { undo(); e.preventDefault(); }
+    else if (k === "f") { flip(); e.preventDefault(); }
   }
   addEventListener("keydown", onKey);
 
@@ -621,7 +680,7 @@ export function mount(el, { store, engine, ready }) {
   });
 
   // for the e2e and the console
-  window.__play = { board, review, sound, get mode() { return mode.peek(); }, hint, pending };
+  window.__play = { board, review, sound, get mode() { return mode.peek(); }, hint, pending, flipped, undo, flip };
 
   return () => {
     stops.forEach((s) => s());

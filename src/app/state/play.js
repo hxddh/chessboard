@@ -4,7 +4,7 @@
  *   play: { game: null | {
  *     id, mode: "pvp" | "engine", engineColor: "w" | "b" | null, opponent: id | null, coach: boolean,
  *     startFen, moves: [{ uci, san, fen, clock? }], result: null | { result, reason },
- *     clock: null | core/clock
+ *     clock: null | core/clock, takebacks?: number (悔棋 so far)
  *   } }
  *
  * Time is an argument (`now`), never read here: the same actions replay a
@@ -36,6 +36,18 @@ function withMove(game, uci, now) {
 
 const winner = (loser) => (loser === "w" ? "0-1" : "1-0");
 
+/**
+ * How many plies 悔棋 takes back for `color`: to before its last move, so a
+ * reply already made goes too, and a move still being answered goes alone.
+ * 0 when `color` has not moved. (19.0 took back "the next pair" when the
+ * reply was still coming — v20-0-plan §3 走查.)
+ */
+export function takebackPlies(game, color) {
+  const fens = [game.startFen, ...game.moves.map((m) => m.fen)];
+  for (let i = game.moves.length - 1; i >= 0; i--) if (turnOf(fens[i]) === color) return game.moves.length - i;
+  return 0;
+}
+
 export const playActions = {
   "play.new": (s, { id, mode = "pvp", engineColor = null, startFen = START_FEN, opponent = null, tc = null, coach = false }) =>
     ({ ...s, play: { game: { id, mode, engineColor: mode === "engine" ? engineColor || "b" : null,
@@ -44,10 +56,27 @@ export const playActions = {
 
   "play.move": (s, { uci, now = 0 }) => ({ ...s, play: { game: withMove(s.play.game, uci, now) } }),
 
-  "play.undo": (s, { plies = 1 } = {}) => {
+  /**
+   * 悔棋: take moves back. `color` given: back to before that side's last
+   * move (its reply included, so it is that side's turn again); else `plies`.
+   * A finished game has nothing to take back into (19.0's rule), so it is
+   * left alone, as is a side that has not moved. The clock goes back to what
+   * it showed then and runs again from `now`; `takebacks` counts them (a game
+   * with one is not rated: learn/model.js).
+   */
+  "play.undo": (s, { plies = 1, color = null, now = 0 } = {}) => {
     const g = s.play.game;
-    const n = Math.max(0, g.moves.length - plies);
-    return { ...s, play: { game: { ...g, moves: g.moves.slice(0, n), result: null } } };
+    if (!g || g.result) return s;
+    const k = color ? takebackPlies(g, color) : Math.min(plies, g.moves.length);
+    if (k <= 0) return s;
+    const moves = g.moves.slice(0, g.moves.length - k);
+    let clock = g.clock;
+    if (clock) {
+      const last = moves.length ? moves[moves.length - 1].clock : null;
+      const fen = moves.length ? moves[moves.length - 1].fen : g.startFen;
+      clock = { ...clock, w: last ? last.w : clock.base, b: last ? last.b : clock.base, turn: turnOf(fen), since: moves.length ? now : null };
+    }
+    return { ...s, play: { game: { ...g, moves, clock, result: null, takebacks: (g.takebacks || 0) + 1 } } };
   },
 
   "play.resign": (s, { color, now = 0 }) => {
@@ -86,6 +115,7 @@ export const playActions = {
   "play.restore": (s, { game, moves }) => {
     let g = { id: game.id, mode: game.mode, engineColor: game.engineColor || null, opponent: game.opponent || null,
       coach: !!game.coach, startFen: game.startFen || START_FEN, moves: [], result: null, clock: null };
+    if (game.takebacks) g.takebacks = game.takebacks;
     for (const m of moves) g = withMove(g, m.uci, 0);
     const clock = newClock(game.tc);
     if (clock) {

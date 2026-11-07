@@ -15,7 +15,11 @@ export function persist(store, db) {
       if (m.clock) e.clock = m.clock;
       db.append(e);
     } else if (name === "play.undo") {
-      if (g.moves.length < was.moves.length) db.append({ type: "game.undo", gameId: g.id, ply: g.moves.length });
+      // 悔棋 is evidence too: the plies it took back, and how many this game has had
+      if (g.moves.length < was.moves.length) {
+        db.append({ type: "game.undo", gameId: g.id, ply: g.moves.length, plies: was.moves.length - g.moves.length,
+          takebacks: g.takebacks || 1, uci: was.moves.slice(g.moves.length).map((m) => m.uci) });
+      }
     } else if (name === "settings.set") {
       db.append({ type: "settings.set", key: payload.key, value: payload.value });
     }

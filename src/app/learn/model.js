@@ -12,6 +12,7 @@
  *                the motif's skills, and a review card (≤ 3 per game)
  *   review.retry { gameId, ply, ok }              the first try on that card
  *   game.start / game.end                         the game rating
+ *   game.undo                                     悔棋: that game is not rated
  *
  * State, per skill: mastery `m` (0…1, a moving average of answers), the
  * positions solved, `lit` (has it: placed, or ≥ 3 solved and m ≥ 0.6);
@@ -40,7 +41,7 @@ const dayOf = (at, tz) => Math.floor((at - tz * 60000) / DAY);
 export function initialState() {
   return {
     lastId: 0, placed: null,
-    puzzle: { r: START_RATING, rd: 350, vol: 0.06 }, game: null, games: 0, openGames: {},
+    puzzle: { r: START_RATING, rd: 350, vol: 0.06 }, game: null, games: 0, openGames: {}, unrated: 0,
     skills: {}, cards: {}, extra: {}, items: {}, days: {}, perGame: {}, misses: [], curve: [],
   };
 }
@@ -137,6 +138,7 @@ function gameEnd(st, e, tz) {
   const g = st.openGames[e.gameId];
   if (!g) return;
   delete st.openGames[e.gameId];
+  if (g.takeback) { st.unrated++; dayRec(st, dayOf(e.at, tz)).games++; return; }
   const score = e.result === "1/2-1/2" ? 0.5 : (e.result === "1-0") === (g.you === "w") ? 1 : 0;
   st.game ||= { r: st.puzzle.r, rd: 200, vol: 0.06 };
   st.game = ChessRating.update(st.game, [{ r: g.opp, rd: 60, score }]);
@@ -172,6 +174,10 @@ export function apply(st, e, { tz = 0, opponentRating = () => null } = {}) {
         const opp = opponentRating(e.opponent);
         if (Number.isFinite(opp)) st.openGames[e.gameId] = { opp, you: e.engineColor === "w" ? "b" : "w" };
       }
+      return st;
+    case "game.undo":
+      // 悔棋 in a rated game: the game still counts, its result does not move the rating
+      if (st.openGames[e.gameId]) st.openGames[e.gameId].takeback = true;
       return st;
     case "game.end": gameEnd(st, e, tz); break;
     default: return st;

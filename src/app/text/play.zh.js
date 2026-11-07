@@ -12,6 +12,8 @@ export default {
   "confirm.resign": "确定认输吗？", "confirm.draw": "向对手提和？", "confirm.claim": "可以要求和棋：{0}。",
   "claim.threefold": "同一局面出现了三次", "claim.fifty": "五十步内没有吃子和走兵",
   "draw.declined": "{0}没有接受和棋，接着下。", "draw.thinking": "{0}在考虑…",
+  "act.undo": "悔棋", "act.flip": "翻转", "act.flipKey": "翻转棋盘（F）",
+  "undo.unrated": "悔了棋，这盘不计入等级分。",
 
   // the coach before a move (P2)
   "coach.ask": "等一下——对方在威胁什么？", "coach.rethink": "再想想", "coach.play": "就走这步",
