@@ -15,6 +15,13 @@
  *                board: time to the first card, the whole pass, depth per
  *                level, and the 19.0 way for comparison; a kill survived; and,
  *                once the app is gone, no Stockfish left running
+ *   app-menu     menu commands sent through the automation server reach the
+ *                page and act (我, 下, 翻转棋盘, 新对局); the bar is rebuilt in
+ *                the page's language (read off the snapshot) and back
+ *   app-open     a .pgn the OS hands over is imported: on Windows named on
+ *                the command line at launch, then a second launch with
+ *                another file, which hands it to the running app and exits
+ *                0; on macOS both through `open -a` (the 'odoc' Apple event)
  *
  *   node scripts/automation-app.mjs <exe> [--out report.json] [--only app-db,app-engine]
  *
@@ -25,7 +32,7 @@ import fs from "fs";
 import path from "path";
 import { spawn, execFileSync } from "child_process";
 import { fileURLToPath } from "url";
-import { makeWork, dropbox, launchApp, sleep, liveProfileRefusal } from "./lib/automation.mjs";
+import { makeWork, dropbox, launchApp, sleep, liveProfileRefusal, snapshotMenuLabels } from "./lib/automation.mjs";
 
 const args = process.argv.slice(2);
 const opt = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null);
@@ -33,6 +40,11 @@ const exe = args.find((a, i) => !a.startsWith("--") && !["--out", "--only"].incl
 const outFile = opt("--out");
 const only = opt("--only") ? opt("--only").split(",") : null;
 const LAUNCH_MS = 420000;
+/** What app-open hands the app (src/app/selftest.js counts the games: 2, then 1 more). */
+const OPEN_FILES = [
+  ["open-1.pgn", '[Event "Open 1"]\n[White "Me"]\n[Black "A"]\n[Result "1-0"]\n\n1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0\n\n[Event "Open 1b"]\n[White "B"]\n[Black "Me"]\n[Result "0-1"]\n\n1. f3 e5 2. g4 Qh4# 0-1\n'],
+  ["open-2.pgn", '[Event "Open 2"]\n[White "Me"]\n[Black "C"]\n[Result "1/2-1/2"]\n\n1. d4 d5 2. c4 e6 1/2-1/2\n'],
+];
 
 const results = [];
 const check = (name, pass, detail) => { results.push({ name, pass: !!pass, detail }); console.log((pass ? "ok" : "FAIL") + ": " + name + " —— " + detail); };
@@ -74,20 +86,29 @@ async function main() {
     await sleep(1500);
   }
 
-  async function scenario(name) {
+  /**
+   * One scenario. `onStage(stage, rep, app, env)` answers each `await:<x>`
+   * stage the page reports, once (the menu command, the file to open).
+   */
+  async function scenario(name, { args = [], onStage = null } = {}) {
     if (!run(name)) return null;
     const out = path.join(work, "report-" + name + ".json");
     fs.rmSync(out, { force: true });
     dropbox(work).reset();
     const env = { ...process.env, ...profile, CHESS_SELFTEST: "1", CHESS_SELFTEST_SCENARIO: name, CHESS_SELFTEST_OUT: out };
     const t0 = Date.now();
-    const app = launchApp(exe, { work, env });
+    const app = launchApp(exe, { work, env, args });
     let rep = null;
+    const answered = new Set();
     try {
       await app.ready(120000);
       while (Date.now() - t0 < LAUNCH_MS) {
         rep = readReport(out);
         if (rep && rep.stage === "done") break;
+        if (onStage && rep && typeof rep.stage === "string" && rep.stage.startsWith("await:") && !answered.has(rep.stage)) {
+          answered.add(rep.stage);
+          await onStage(rep.stage.slice(6), rep, app, env);
+        }
         if (app.state.exited !== null) throw new Error("应用退出了（" + app.state.exited + "）");
         await sleep(250);
       }
@@ -111,6 +132,49 @@ async function main() {
   if (reports["app-move"] && reports["app-restore"]) {
     const a = reports["app-move"], b = reports["app-restore"];
     check("restart:same-game", a.wrote && a.wrote === b.found, "第一次写的对局 " + a.wrote + "，重启后回来的 " + b.found);
+  }
+  // --- the menu bar: a command reaches the page and acts; the bar in the page's language ---
+  await scenario("app-menu", {
+    onStage: async (cmd, rep, app) => {
+      if (rep.expectMenu) {
+        let labels = [];
+        for (let i = 0; i < 40; i++) {
+          labels = snapshotMenuLabels(app.box.read("snapshot.txt"));
+          if (labels.includes(rep.expectMenu)) break;
+          await sleep(250);
+        }
+        check("app-menu:bar:" + rep.expectMenu, labels.includes(rep.expectMenu), "菜单栏（快照）：" + labels.slice(0, 8).join(" / "));
+      }
+      const ms = await app.send("menu-command " + cmd);
+      console.log("menu-command " + cmd + "：" + Math.round(ms) + " ms 取走");
+    },
+  });
+
+  // --- a .pgn the OS hands over is imported ---------------------------------------------------
+  if (run("app-open")) {
+    const files = OPEN_FILES.map(([n, text]) => { const p = path.join(work, n); fs.writeFileSync(p, text); return p; });
+    const win = process.platform === "win32";
+    const bundle = path.resolve(exe, "..", "..", "..");
+    const openA = (file) => new Promise((resolve) => {
+      const c = spawn("open", ["-a", bundle, file], { stdio: "inherit" });
+      c.on("exit", (code) => resolve(code));
+    });
+    await scenario("app-open", {
+      // Windows: the first file on this launch's command line, as Explorer starts it
+      args: win ? [files[0]] : [],
+      onStage: async (stage, rep, app, env) => {
+        if (stage === "open-1" && !win) check("app-open:open-a-1", (await openA(files[0])) === 0, "open -a " + path.basename(bundle) + " " + path.basename(files[0]));
+        if (stage !== "open-2") return;
+        if (!win) { check("app-open:open-a-2", (await openA(files[1])) === 0, "open -a " + path.basename(bundle) + " " + path.basename(files[1])); return; }
+        // a second launch while the app runs: hands the file over and exits 0
+        const second = { ...env };
+        delete second.CHESS_SELFTEST; delete second.CHESS_SELFTEST_SCENARIO; delete second.CHESS_SELFTEST_OUT;
+        const t1 = Date.now();
+        const c = spawn(path.resolve(exe), [files[1]], { cwd: work, env: second, stdio: "inherit" });
+        const code = await Promise.race([new Promise((r) => c.on("exit", (x) => r(x))), sleep(20000).then(() => { c.kill(); return "timeout"; })]);
+        check("app-open:second-launch-hands-over", code === 0 && app.state.exited === null, "第二次启动退出码 " + code + "（" + (Date.now() - t1) + " ms），第一个还在：" + (app.state.exited === null));
+      },
+    });
   }
   const db = await scenario("app-db");
   if (db && db.latency) console.log("append 延迟（每步一个任务、等它落盘）：中位 " + db.latency.appendMedianMs + " ms，p95 " + db.latency.appendP95Ms + " ms，最长 " + db.latency.appendMaxMs + " ms；100 条一批 " + db.latency.batch100Ms + " ms；读 200 步 " + db.latency.read200Ms + " ms");

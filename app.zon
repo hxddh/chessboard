@@ -50,48 +50,40 @@
         },
     },
     .web_engine = "system",
-    // The events these emit reach the page as a "shortcut" window event
-    // (main.zig → host.js). The plumbing existed since 1.0 and went unused:
-    // every action lived on a bare letter key with nothing anywhere naming it,
-    // so on a desktop app the first place anyone looks — the menu bar — was
-    // empty. The in-page letters still work; these are the discoverable copy.
+    // 20.0 E3: the menu bar for 20.0's places (学 / 下 / 我, 设置) and what a
+    // player does in a game. A command reaches the page as a "shortcut"
+    // window event (main.zig → src/app/services/shell.js), which runs it on
+    // the page that has it — or opens that page first (新对局 → 下, 导入 PGN
+    // → 我). The labels here are Chinese; menus.zig has the English and
+    // Japanese, and the page's language rebuilds the bar (chess.setMenuLanguage).
+    // The keys are the in-page letters' (Z 悔棋, F 翻转) with ⌘ / Ctrl, so
+    // they never fire while typing. On macOS mac_chrome.m moves 设置… into
+    // the app menu, drops 退出 and 关于 (the app menu has both), and adds Edit
+    // and Window; on Windows the shell answers 退出 and 关于 itself.
     .menus = .{
         .{
             .title = "对局",
             .items = .{
-                .{ .label = "新局", .command = "game.new", .key = "n", .modifiers = .{"primary"} },
+                .{ .label = "新对局", .command = "game.new", .key = "n", .modifiers = .{"primary"} },
                 .{ .label = "悔棋", .command = "game.undo", .key = "z", .modifiers = .{"primary"} },
-                .{ .separator = true },
-                // ⌘H is the system's "Hide <app>" — AppKit installs the app
-                // menu before the declared ones, so its key equivalent wins and
-                // this item was dead from 1.10 on: pressing it hid the app
-                // instead of giving a hint. Doubly confusing from 1.18, where
-                // closing the window also hides. The in-page bare `h` is
-                // unaffected and still the fast way to ask.
-                .{ .label = "引擎提示", .command = "game.hint", .key = "h", .modifiers = .{ "primary", "shift" } },
                 .{ .label = "翻转棋盘", .command = "game.flip", .key = "f", .modifiers = .{"primary"} },
-            },
-        },
-        .{
-            .title = "视图",
-            .items = .{
-                .{ .label = "侧栏", .command = "view.panel", .key = "\\", .modifiers = .{"primary"} },
-                // v8-2-plan T4: the book's section — 19.0 S1: under 训练 · 开局, from any view
-                .{ .label = "开局书", .command = "view.repertoire", .key = "o", .modifiers = .{ "primary", "shift" } },
+                // ⌘H is the system's "Hide <app>" (1.18): the hint takes ⌘⇧H
+                .{ .label = "提示", .command = "game.hint", .key = "h", .modifiers = .{ "primary", "shift" } },
                 .{ .separator = true },
-                .{ .label = "上一手", .command = "view.prev", .key = "[", .modifiers = .{"primary"} },
-                .{ .label = "下一手", .command = "view.next", .key = "]", .modifiers = .{"primary"} },
+                .{ .label = "导入 PGN…", .command = "file.import", .key = "o", .modifiers = .{"primary"} },
+                .{ .separator = true },
+                .{ .label = "退出", .command = "app.quit", .key = "q", .modifiers = .{"primary"} },
             },
         },
-        // 9.0 S5: the places (four since 19.0 S1) and the one settings page, from the menu bar
         .{
             .title = "前往",
             .items = .{
-                .{ .label = "今天", .command = "go.home", .key = "1", .modifiers = .{"primary"} },
-                .{ .label = "下棋", .command = "go.play", .key = "2", .modifiers = .{"primary"} },
-                .{ .label = "训练", .command = "go.train", .key = "3", .modifiers = .{"primary"} },
-                // 19.0 S1: 棋谱 left the rail; 我的 takes its key
-                .{ .label = "我的", .command = "go.me", .key = "4", .modifiers = .{"primary"} },
+                .{ .label = "学", .command = "go.learn", .key = "1", .modifiers = .{"primary"} },
+                .{ .label = "下", .command = "go.play", .key = "2", .modifiers = .{"primary"} },
+                .{ .label = "我", .command = "go.me", .key = "3", .modifiers = .{"primary"} },
+                .{ .separator = true },
+                .{ .label = "上一手", .command = "view.prev", .key = "[", .modifiers = .{"primary"} },
+                .{ .label = "下一手", .command = "view.next", .key = "]", .modifiers = .{"primary"} },
                 .{ .separator = true },
                 .{ .label = "设置…", .command = "go.settings", .key = ",", .modifiers = .{"primary"} },
             },
@@ -99,7 +91,7 @@
         .{
             .title = "帮助",
             .items = .{
-                .{ .label = "快捷键", .command = "help.keys", .key = "/", .modifiers = .{"primary"} },
+                .{ .label = "关于国际象棋", .command = "app.about" },
             },
         },
     },

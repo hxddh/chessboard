@@ -9,11 +9,15 @@
  *
  *   openTextFile({ title, max, accept }) → { name, text } | null (cancelled)
  *   throws FileError { code: "tooLarge" | "read" }
+ *   nextOpenedFile(invoke, max)  a file the OS handed the app (double-clicked,
+ *                                dropped, a second launch: chess.openedFile,
+ *                                src/opened.zig) → { name, text } | null (none
+ *                                left); throws FileError with the file's `name`
  * @module services/files
  */
 
 export class FileError extends Error {
-  constructor(code, detail = "") { super(code + (detail ? ": " + detail : "")); this.name = "FileError"; this.code = code; }
+  constructor(code, detail = "", file = "") { super(code + (detail ? ": " + detail : "")); this.name = "FileError"; this.code = code; this.file = file; }
 }
 
 const inShell = (g = globalThis) => typeof g.zero === "object" && g.zero !== null && typeof g.zero.invoke === "function";
@@ -26,28 +30,30 @@ function bytesOf(b64) {
 }
 
 /**
- * The native dialog and read. null: cancelled; undefined: no dialog here.
- * @param {(cmd: string, payload: object) => Promise<any>} invoke
+ * A file from the shell, in pieces: the first answer from `first`, the rest
+ * by the token it carries. null: cancelled, or nothing waiting; undefined: no
+ * dialog here.
  */
-export async function nativeOpen(invoke, { title = "", max }) {
-  let r = await invoke("chess.openPgn", { title, max, recent: false });
+async function readPieces(invoke, cmd, first, max) {
+  let r = await invoke(cmd, first);
   if (!r || typeof r !== "object") throw new FileError("read", "bad answer");
-  if (r.cancelled === true) return null;
+  if (r.cancelled === true || r.none === true) return null;
   if (r.error === "no_dialog") return undefined;
-  if (r.tooLarge) throw new FileError("tooLarge");
-  if (typeof r.error === "string") throw new FileError("read", r.error);
-  if (typeof r.b64 !== "string") throw new FileError("read", "no bytes");
+  const file = typeof r.name === "string" ? r.name : "";
+  if (r.tooLarge) throw new FileError("tooLarge", "", file);
+  if (typeof r.error === "string") throw new FileError("read", r.error, file);
+  if (typeof r.b64 !== "string") throw new FileError("read", "no bytes", file);
   const name = String(r.name || "");
   const token = typeof r.token === "number" ? r.token : 0;
   const parts = [bytesOf(r.b64)];
   let size = parts[0].length;
   while (r.more === true) {
-    if (size > max) throw new FileError("tooLarge");
-    r = await invoke("chess.openPgn", { token, offset: size });
-    if (r && r.tooLarge) throw new FileError("tooLarge");
-    if (!r || typeof r.b64 !== "string") throw new FileError("read", (r && r.error) || "broke off");
+    if (size > max) throw new FileError("tooLarge", "", name);
+    r = await invoke(cmd, { token, offset: size });
+    if (r && r.tooLarge) throw new FileError("tooLarge", "", name);
+    if (!r || typeof r.b64 !== "string") throw new FileError("read", (r && r.error) || "broke off", name);
     const piece = bytesOf(r.b64);
-    if (!piece.length && r.more === true) throw new FileError("read", "no progress");
+    if (!piece.length && r.more === true) throw new FileError("read", "no progress", name);
     parts.push(piece);
     size += piece.length;
   }
@@ -56,6 +62,23 @@ export async function nativeOpen(invoke, { title = "", max }) {
   for (const p of parts) { bytes.set(p, at); at += p.length; }
   // decoded once, whole: a piece boundary can fall inside a UTF-8 sequence
   return { name, text: new TextDecoder().decode(bytes) };
+}
+
+/**
+ * The native dialog and read. null: cancelled; undefined: no dialog here.
+ * @param {(cmd: string, payload: object) => Promise<any>} invoke
+ */
+export function nativeOpen(invoke, { title = "", max }) {
+  return readPieces(invoke, "chess.openPgn", { title, max, recent: false }, max);
+}
+
+/**
+ * The next file the OS handed the app, or null when none is waiting.
+ * @param {(cmd: string, payload: object) => Promise<any>} invoke
+ */
+export async function nextOpenedFile(invoke, max = 64 * 1024 * 1024) {
+  const r = await readPieces(invoke, "chess.openedFile", {}, max);
+  return r || null;
 }
 
 /** The browser's picker. Resolves null when the player closes it without a file (where the browser says so). */

@@ -43,7 +43,7 @@ async function playedGame(db, id) {
  * @param {object} o  { db, store, engine, id, t (学 / 我), back: () => void }
  * @returns {() => void} unmount
  */
-export function mountGame(el, { db, store, engine, id, t, back }) {
+export function mountGame(el, { db, store, engine, id, t, back, commands }) {
   const tp = playText();
   const settings = store.get().settings;
   const at = signal(0);
@@ -157,6 +157,12 @@ export function mountGame(el, { db, store, engine, id, t, back }) {
     else if (e.key.toLowerCase() === "f") flipped.value = !flipped.peek();
   }
   addEventListener("keydown", onKey);
+  // the menu bar (services/shell.js)
+  const menu = commands ? [
+    commands.handle("game.flip", () => { flipped.value = !flipped.peek(); }),
+    commands.handle("view.prev", () => look(at.peek() - 1)),
+    commands.handle("view.next", () => look(at.peek() + 1)),
+  ] : [];
 
   // --- the game ---------------------------------------------------------------------------
   (async () => {
@@ -191,6 +197,7 @@ export function mountGame(el, { db, store, engine, id, t, back }) {
   return () => {
     alive = false;
     removeEventListener("keydown", onKey);
+    menu.forEach((off) => off());
     for (const off of offs) off();
     review.close();
     sound.close();

@@ -59,6 +59,11 @@ export function snapshotMenus(snap) {
   return [...(snap || "").matchAll(/^\s+app-menu-item label="[^"]*" command="([^"]+)"/gm)].map((m) => m[1]);
 }
 
+/** The app-menu item labels a snapshot lists, in order. */
+export function snapshotMenuLabels(snap) {
+  return [...(snap || "").matchAll(/^\s+app-menu-item label="([^"]*)"/gm)].map((m) => m[1]);
+}
+
 /** The dropbox under `work`. */
 export function dropbox(work) {
   const dir = path.join(work, ".zig-cache", "native-sdk-automation");
@@ -87,6 +92,7 @@ export function dropbox(work) {
 
 /**
  * A live app: spawned in `work` with `env`, its exit noted.
+ * `args`: its command line (a file to open, as Explorer passes one).
  * `send(line)` queues one command and resolves with the ms until the app
  * took it (deleted the file — the ack); `ready()` waits for this process's
  * own ready=true snapshot; `bridge(req)` sends one bridge request and reads
@@ -108,11 +114,11 @@ export function webviewProcesses() {
   }
 }
 
-export function launchApp(exe, { work, env, stdio = "inherit" }) {
+export function launchApp(exe, { work, env, stdio = "inherit", args = [] }) {
   const box = dropbox(work);
   const before = webviewProcesses();
   if (before !== null) console.log("note: 启动前还有 " + before + " 个 msedgewebview2.exe");
-  const child = spawn(path.resolve(exe), [], { cwd: work, env, stdio });
+  const child = spawn(path.resolve(exe), args, { cwd: work, env, stdio });
   const state = { exited: null };
   child.on("exit", (c, sig) => { state.exited = c ?? sig; });
   async function send(line, limit = 10000) {

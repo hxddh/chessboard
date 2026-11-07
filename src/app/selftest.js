@@ -18,6 +18,17 @@
  *                the first card, the whole pass, depth and nodes/s per level;
  *                the same game the 19.0 way (200 ms a position) for before /
  *                after; a kill mid-search survived; Threads and Hash as asked
+ *   app-menu     the menu bar (20.0 E3): each step reports `await:<command>`,
+ *                the driver sends that menu command through the automation
+ *                server, and the page checks it acted — 我, 下, 翻转棋盘,
+ *                新对局; then the language: the bar in English (`expectMenu`,
+ *                which the driver reads off the automation snapshot), and back
+ *   app-open     files the OS hands over (20.0 E3): `await:open-1` — the
+ *                driver opens one .pgn (Windows: on the command line of this
+ *                launch; macOS: `open -a`, the Apple event), and it is
+ *                imported on 我; `await:open-2` — a second file while the app
+ *                runs (Windows: a second launch, which hands it over and
+ *                exits; macOS: `open -a` again), imported too
  * @module selftest
  */
 import { createHarness } from "../../scripts/app/harness.mjs";
@@ -201,6 +212,59 @@ const SCENARIOS = {
     const again = await be.search(START, { depth: 14 });
     checks.restart = { pass: failed && again.lines[0].depth >= 14 && be.restarts >= 1, failedSearch: failed, depth: again.lines[0].depth, restarts: be.restarts };
   },
+
+  async "app-menu"(ctx, checks, rep) {
+    const { router, store, report } = ctx;
+    await boardDrawn();
+    checks.shell = { pass: !!(await window.__app.shell) };
+    const route = () => router.route.peek();
+    const steps = [
+      { cmd: "go.me", ok: () => route().path === "/me" && document.querySelector("[data-test=library]") },
+      { cmd: "go.play", ok: () => route().path === "/play" && window.__play },
+      { cmd: "game.flip", ok: () => window.__play && window.__play.flipped.peek() === true },
+      { cmd: "game.new", ok: () => document.querySelector("[data-test=opp-card]") },
+      // the language: the bar is rebuilt in English (the driver reads it off the snapshot first)
+      { before: async () => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); store.dispatch("settings.set", { key: "lang", value: "en" }); await sleep(1500); },
+        expectMenu: "New Game", cmd: "go.learn", ok: () => route().path === "/learn" },
+      { before: async () => { store.dispatch("settings.set", { key: "lang", value: "zh" }); await sleep(1500); },
+        expectMenu: "新对局", cmd: "go.play", ok: () => route().path === "/play" },
+    ];
+    for (const st of steps) {
+      if (st.before) await st.before();
+      rep.stage = "await:" + st.cmd;
+      rep.expectMenu = st.expectMenu || null;
+      await report();
+      const t0 = Date.now();
+      const key = "menu:" + st.cmd + (st.expectMenu ? "@" + st.expectMenu : "");
+      try { await waitFor(st.ok, 30000, st.cmd); checks[key] = { pass: true, ms: Date.now() - t0 }; }
+      catch (e) { checks[key] = { pass: false, err: e.message }; }
+    }
+    rep.expectMenu = null;
+  },
+
+  async "app-open"(ctx, checks, rep) {
+    const { router, ready, report } = ctx;
+    await boardDrawn();
+    const db = await ready;
+    checks.shell = { pass: !!(await window.__app.shell) };
+    const count = () => db.query("table.count", { table: "library" });
+    // open-1.pgn holds two games, open-2.pgn one (scripts/automation-app.mjs OPEN_FILES)
+    for (const [stage, want] of [["open-1", 2], ["open-2", 3]]) {
+      rep.stage = "await:" + stage;
+      await report();
+      const t0 = Date.now();
+      try {
+        await waitFor(async () => (await count()) >= want && router.route.peek().path === "/me" &&
+          /done/.test((document.querySelector("[data-test=import-status]") || {}).dataset?.state || ""), 60000, stage);
+        checks[stage] = { pass: (await count()) === want, games: await count(), ms: Date.now() - t0,
+          status: document.querySelector("[data-test=import-status]").textContent };
+      } catch (e) {
+        checks[stage] = { pass: false, err: e.message, games: await count() };
+      }
+      const st = document.querySelector("[data-test=import-status]");
+      if (st) st.dataset.state = "";
+    }
+  },
 };
 
 /** Run the scenario the shell named (or the smoke) and report it. */
@@ -215,7 +279,7 @@ export async function runSelftest(ctx, { invoke, scenario }) {
   if (scenario) await report();
   try {
     if (!run) throw new Error("no scenario " + name);
-    await run(ctx, checks, rep);
+    await run({ ...ctx, report }, checks, rep);
     rep.ok = Object.values(checks).every((c) => c.pass);
   } catch (e) {
     rep.err = String(e && e.stack || e).slice(0, 2000);

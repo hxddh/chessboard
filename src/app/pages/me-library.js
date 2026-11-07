@@ -57,14 +57,24 @@ export function libraryCard({ db, L, t, alive, redraw, open, wake = () => {} }) 
     status.dataset.state = "error";
     errs.replaceChildren();
   };
-  let busy = false;
-  async function run() {
-    if (busy) return;
-    let file;
-    try { file = await openTextFile({ title: t("me.importTitle"), max: IMPORT_MAX }); }
-    catch (e) { fail(e instanceof FileError ? e.code : "read", e && e.message); return; }
-    if (!file) return;
-    busy = true; btn.disabled = true;
+  // one import at a time: a file handed over meanwhile (the menu, a
+  // double-click, a drop) waits for the one before it
+  let chain = Promise.resolve();
+  /** Import `given` ({ name, text } or { name, error } from the shell), or what the picker gives. */
+  function run(given) {
+    const next = chain.then(() => runOne(given && given.type !== "click" ? given : null));
+    chain = next.catch(() => {});
+    return next;
+  }
+  async function runOne(given) {
+    let file = given;
+    if (!file) {
+      try { file = await openTextFile({ title: t("me.importTitle"), max: IMPORT_MAX }); }
+      catch (e) { fail(e instanceof FileError ? e.code : "read", e && e.message); return; }
+      if (!file) return;
+    }
+    if (file.error) { fail(file.error === "tooLarge" ? "tooLarge" : "read", file.name || ""); return; }
+    btn.disabled = true;
     status.dataset.state = "busy";
     status.textContent = t("me.importReading", 0, "…");
     try {
@@ -80,7 +90,7 @@ export function libraryCard({ db, L, t, alive, redraw, open, wake = () => {} }) 
         if (e instanceof ImportError) fail(e.code); else { console.warn("import:", e); fail("read", e && e.message); }
       }
     } finally {
-      busy = false; btn.disabled = false;
+      btn.disabled = false;
       await refresh();
     }
   }
@@ -180,5 +190,5 @@ export function libraryCard({ db, L, t, alive, redraw, open, wake = () => {} }) 
     h("div", {}, btn), h("p", { class: "muted", text: t("me.importHow") }), status, errs, ask, listBox,
     h("p", { class: "muted small", "data-test": "lib-auto", text: t("lib.auto", AUTO_RECENT, AUTO_PER_DAY) }));
   refresh();
-  return { el, refresh };
+  return { el, refresh, importFile: run };
 }

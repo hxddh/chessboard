@@ -37,7 +37,7 @@ function curve(points) {
   return el;
 }
 
-export function mount(el, { ready, route, router, store, engine, background }) {
+export function mount(el, { ready, route, router, store, engine, background, commands }) {
   addStyle();
   const t = learnText();
   const root = h("div", { class: "me", "data-test": "me" });
@@ -47,7 +47,13 @@ export function mount(el, { ready, route, router, store, engine, background }) {
   const open = (id) => router.go("/me/game/" + encodeURIComponent(id));
   const wake = () => { if (background) background.wake(); };
 
-  let library = null;
+  let library = null, libraryShown;
+  const libraryReady = new Promise((r) => { libraryShown = r; });
+  // the menu bar (services/shell.js): 导入 PGN…, and a file the OS handed over
+  const menu = commands ? [
+    commands.handle("file.import", () => libraryReady.then((lib) => lib.importFile())),
+    commands.handle("file.open", (file) => libraryReady.then((lib) => lib.importFile(file))),
+  ] : [];
   ready.then(async function render(db) {
     const L = learnerFor(db);
     await L.refresh();
@@ -74,6 +80,7 @@ export function mount(el, { ready, route, router, store, engine, background }) {
     // one card for the page's life: an import or an answer re-draws the rest (the level may have moved), not its own report
     library ||= libraryCard({ db, L, t, alive: () => live, redraw: () => render(db), open, wake });
     root.replaceChildren(level, stageCard, weekCard, library.el);
+    libraryShown(library);
   });
 
   // #/me/game/<id>: the game on a board, the list kept underneath as it was
@@ -88,7 +95,7 @@ export function mount(el, { ready, route, router, store, engine, background }) {
       if (!live || viewing !== id) return;
       const { mountGame } = await import("./me-game.js");
       if (!live || viewing !== id) return;
-      viewer = mountGame(host, { db, store, engine, id, t, back: () => router.go("/me") });
+      viewer = mountGame(host, { db, store, engine, id, t, back: () => router.go("/me"), commands });
     });
   }
   const off = route ? effect(() => {
@@ -99,5 +106,5 @@ export function mount(el, { ready, route, router, store, engine, background }) {
   // a game the background review finished shows as reviewed when the list is next drawn
   const offBg = background && background.version ? effect(() => { background.version.value; untrack(() => { if (library && !viewing) library.refresh(); }); }) : () => {};
 
-  return () => { live = false; off(); offBg(); if (viewer) viewer(); };
+  return () => { live = false; off(); offBg(); menu.forEach((x) => x()); if (viewer) viewer(); };
 }

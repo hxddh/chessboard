@@ -574,7 +574,10 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
   const missing = Object.keys(esb).filter((k) => !lock.packages["node_modules/" + k]);
   check(missing.length === 0,
     `版本检查: package-lock.json 缺少 esbuild 的平台包 ${missing.join(", ")} —— 只有生成它的那台机器装得起来`);
-  if (appVer) notes.push(`版本检查: app.zon、build.zig.zon、package.json、package-lock.json 一致（${appVer}）`);
+  // 20.0 E3: the Windows About box says menus.zig's APP_VERSION
+  const menusVer = (/pub const APP_VERSION = "([^"]+)"/.exec(fs.readFileSync(path.join(ROOT, "src/menus.zig"), "utf8")) || [])[1];
+  check(menusVer === appVer, `版本检查: src/menus.zig 的 APP_VERSION 写 ${menusVer}，app.zon 写 ${appVer}`);
+  if (appVer) notes.push(`版本检查: app.zon、build.zig.zon、package.json、package-lock.json、menus.zig 一致（${appVer}）`);
 }
 
 // ------------------------------------------- 5 / 6. the page ↔ bridge.zig
@@ -593,7 +596,7 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
   const used = new Set(), builtinUsed = new Set();
   for (const f of pageFiles) {
     const src = fs.readFileSync(f, "utf8");
-    for (const m of src.matchAll(/(?:invoke|call)\(\s*"(chess\.[a-zA-Z]+)"/g)) used.add(m[1]);
+    for (const m of src.matchAll(/["'](chess\.[a-zA-Z]+)["']/g)) used.add(m[1]);
     for (const m of src.matchAll(/\bzero\.([a-zA-Z]+)\.([a-zA-Z]+)\(/g)) if (NS[m[1]]) builtinUsed.add("native-sdk." + NS[m[1]] + "." + m[2]);
     const code = src.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
     const rel = path.relative(ROOT, f);
@@ -606,6 +609,7 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
   check(!!builtinBlock, "内建桥: bridge.zig 里有 BUILTIN_COMMANDS 列表");
   const granted = new Set(builtinBlock ? [...builtinBlock[1].matchAll(/"([a-z.-]+)"/gi)].map((m) => m[1]) : []);
   for (const u of builtinUsed) check(granted.has(u), `内建桥: 页面调用了 ${u}，但 bridge.zig 没有放行 —— 原生构建里它会被拒绝`);
+  for (const g of granted) check(builtinUsed.has(g), `内建桥: bridge.zig 放行了 ${g}，但页面不调用它 —— 不用的权限不给`);
   check(/\.builtin_bridge = app_state\.builtinBridge\(\)/.test(mainSrc), "内建桥: 策略真的传给了 runner（.builtin_bridge）");
   check(["chess.dbExec", "chess.dbQuery", "chess.engineStart", "chess.engineSend", "chess.engineStop"].every((c) => used.has(c)),
     "应用桥: 页面调用 db 与原生引擎的五个命令(" + [...used].sort().join("、") + ")");
@@ -622,8 +626,10 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
     /self\.handlers\[\w+\] = \.\{ \.name = cmd\.name/.test(loopSrc) &&
     /self\.policies\[index\] = \.\{[\s\S]*?\.name = cmd\.name/.test(loopSrc),
   "应用桥: handler 与 policy 都从 APP_COMMANDS 同一个循环里来");
+  // 20.0 E3: and nothing is registered the page never calls (19.0's thirteen went)
   const unused = [...registered].filter((r) => !used.has(r));
-  notes.push(`应用桥: 页面调用 ${used.size} 个 chess.* 命令，都在 APP_COMMANDS 里（表里另有 ${unused.length} 个 19.0 用过、20.0 不调用的：${unused.join("、") || "无"}）`);
+  check(unused.length === 0, `应用桥: APP_COMMANDS 里有页面不调用的命令：${unused.join("、")} —— 删掉它们（和它们的 handler）`);
+  notes.push(`应用桥: 页面调用 ${used.size} 个 chess.* 命令，与 APP_COMMANDS 一一对应`);
 }
 
 // ------------------------------------------------------------------------ 结果

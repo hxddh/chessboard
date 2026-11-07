@@ -56,7 +56,7 @@ function nearby(a, b) {
   return diff <= 4;
 }
 
-export function mount(el, { store, engine, ready }) {
+export function mount(el, { store, engine, ready, commands }) {
   const t = playText();
   const params = new URLSearchParams(location.search);
   const thinkScale = params.has("think") ? Number(params.get("think")) : 1;
@@ -686,6 +686,16 @@ export function mount(el, { store, engine, ready }) {
     else if (k === "f") { flip(); e.preventDefault(); }
   }
   addEventListener("keydown", onKey);
+  // the menu bar (services/shell.js): the same actions, with the keys' guards
+  const free = () => !closeSheet && !promoClose;
+  const menu = commands ? [
+    commands.handle("game.new", () => newGame()),
+    commands.handle("game.undo", () => { if (free()) undo(); }),
+    commands.handle("game.flip", () => { if (!closeSheet) flip(); }),
+    commands.handle("game.hint", () => { if (free()) nextHint(); }),
+    commands.handle("view.prev", () => step(-1)),
+    commands.handle("view.next", () => step(1)),
+  ] : [];
 
   ready.then(() => {
     const g = store.get().play.game;
@@ -702,6 +712,7 @@ export function mount(el, { store, engine, ready }) {
     timers.forEach(clearTimeout);
     if (tick) clearInterval(tick);
     removeEventListener("keydown", onKey);
+    menu.forEach((off) => off());
     if (closeSheet) closeSheet();
     review.close();
     sound.close();

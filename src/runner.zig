@@ -566,13 +566,13 @@ fn shortcutModifiers(comptime shortcut: anytype) native_sdk.ShortcutModifiers {
 
 /// Whether this exe was built with -Dautomation=true, for the app module,
 /// which has no build_options of its own: the automation driver's seams in
-/// bridge.zig / sync.zig compile in only then (v8-2-plan §9 M4 评审修正).
+/// in bridge.zig compile in only then (v8-2-plan §9 M4 评审修正).
 pub const automation_build = build_options.automation;
 /// 11.0 W: whether this exe drives the macOS platform — not the null backend
-/// built on a Mac host — for main.zig and chrome.zig: the app's own window
-/// shell (src/native/mac_chrome.m) is compiled into exactly these builds.
+/// built on a Mac host — for main.zig and menus.zig: the app's own AppKit
+/// glue (src/native/mac_chrome.m) is compiled into exactly these builds.
 pub const mac_shell = std.mem.eql(u8, build_options.platform, "macos");
-/// 12.0 N: the same for the Windows platform's chrome (src/native/win_chrome.c).
+/// 12.0 N: the same for the Windows platform.
 pub const win_shell = std.mem.eql(u8, build_options.platform, "windows");
 /// The schema the store is opened with (db_migrations.zig), for db.zig's tests.
 pub const db_migrations: []const native_sdk.relational_store.Migration = &built_relational_migrations.migrations;

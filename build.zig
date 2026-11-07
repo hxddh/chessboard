@@ -495,11 +495,11 @@ fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.B
         app_mod.linkFramework("ScreenCaptureKit", .{ .weak = true });
         app_mod.linkFramework("CoreVideo", .{});
         app_mod.linkFramework("MediaToolbox", .{});
-        // 11.0 W: the app's own window shell — traffic lights inside the
-        // content, a native drag strip over the top 28 pt, the appearance from
-        // the theme (src/native/mac_chrome.m; main.zig calls it on macOS).
-        // Plain ObjC whichever web engine is built; it looks for a WKWebView
-        // to tell the page about full screen and finds none under CEF.
+        // 11.0 W, 20.0 E3: the app's own AppKit glue — the 'odoc' Apple
+        // event (a .pgn double-clicked or dropped on the Dock icon) and the
+        // Mac's own menus around app.zon's (src/native/mac_chrome.m; main.zig
+        // and menus.zig call it on macOS). Plain ObjC whichever web engine is
+        // built.
         {
             const sdk_include = if (b.sysroot) |sysroot| b.fmt("-I{s}/usr/include", .{sysroot}) else "";
             const chrome_flags: []const []const u8 = if (b.sysroot) |sysroot| &.{ "-fobjc-arc", "-fno-sanitize=builtin", "-ObjC", "-mmacosx-version-min=11.0", "-isysroot", sysroot, sdk_include } else &.{ "-fobjc-arc", "-fno-sanitize=builtin", "-ObjC", "-mmacosx-version-min=11.0" };
@@ -606,10 +606,6 @@ fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.B
                 app_mod.addLibraryPath(b.path(b.fmt("{s}/Release", .{cef_dir})));
             },
         }
-        // 12.0 N: the app's own window chrome — the title bar dark or light
-        // with the theme, Mica on Windows 11 (src/native/win_chrome.c; chrome.zig
-        // calls it on Windows). dwmapi is loaded at run time, not linked.
-        app_mod.addCSourceFile(.{ .file = b.path("src/native/win_chrome.c"), .flags = &.{} });
         app_mod.linkSystemLibrary("c", .{});
         app_mod.linkSystemLibrary("c++", .{});
         app_mod.linkSystemLibrary("user32", .{});

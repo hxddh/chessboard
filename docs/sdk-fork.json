@@ -176,13 +176,7 @@
    "id": "B14",
    "file": "build.zig",
    "kind": "ours",
-   "title": "macOS 上编译应用自己的 ObjC 窗口外壳（src/native/mac_chrome.m）并链 WebKit（11.0 W）"
-  },
-  {
-   "id": "B15",
-   "file": "build.zig",
-   "kind": "ours",
-   "title": "Windows 上编译应用自己的窗口外壳（src/native/win_chrome.c）：标题栏跟主题明暗、Windows 11 上 Mica（12.0 N）"
+   "title": "macOS 上编译应用自己的 ObjC 胶水（src/native/mac_chrome.m）：打开文档的 Apple 事件、菜单栏的系统部分（11.0 W，20.0 E3）"
   },
   {
    "id": "B16",
@@ -1269,13 +1263,13 @@
    "ours": [
     "/// Whether this exe was built with -Dautomation=true, for the app module,",
     "/// which has no build_options of its own: the automation driver's seams in",
-    "/// bridge.zig / sync.zig compile in only then (v8-2-plan §9 M4 评审修正).",
+    "/// in bridge.zig compile in only then (v8-2-plan §9 M4 评审修正).",
     "pub const automation_build = build_options.automation;",
     "/// 11.0 W: whether this exe drives the macOS platform — not the null backend",
-    "/// built on a Mac host — for main.zig and chrome.zig: the app's own window",
-    "/// shell (src/native/mac_chrome.m) is compiled into exactly these builds.",
+    "/// built on a Mac host — for main.zig and menus.zig: the app's own AppKit",
+    "/// glue (src/native/mac_chrome.m) is compiled into exactly these builds.",
     "pub const mac_shell = std.mem.eql(u8, build_options.platform, \"macos\");",
-    "/// 12.0 N: the same for the Windows platform's chrome (src/native/win_chrome.c).",
+    "/// 12.0 N: the same for the Windows platform.",
     "pub const win_shell = std.mem.eql(u8, build_options.platform, \"windows\");",
     "/// The schema the store is opened with (db_migrations.zig), for db.zig's tests.",
     "pub const db_migrations: []const native_sdk.relational_store.Migration = &built_relational_migrations.migrations;",
@@ -6482,11 +6476,11 @@
    ],
    "up": [],
    "ours": [
-    "        // 11.0 W: the app's own window shell — traffic lights inside the",
-    "        // content, a native drag strip over the top 28 pt, the appearance from",
-    "        // the theme (src/native/mac_chrome.m; main.zig calls it on macOS).",
-    "        // Plain ObjC whichever web engine is built; it looks for a WKWebView",
-    "        // to tell the page about full screen and finds none under CEF.",
+    "        // 11.0 W, 20.0 E3: the app's own AppKit glue — the 'odoc' Apple",
+    "        // event (a .pgn double-clicked or dropped on the Dock icon) and the",
+    "        // Mac's own menus around app.zon's (src/native/mac_chrome.m; main.zig",
+    "        // and menus.zig call it on macOS). Plain ObjC whichever web engine is",
+    "        // built.",
     "        {",
     "            const sdk_include = if (b.sysroot) |sysroot| b.fmt(\"-I{s}/usr/include\", .{sysroot}) else \"\";",
     "            const chrome_flags: []const []const u8 = if (b.sysroot) |sysroot| &.{ \"-fobjc-arc\", \"-fno-sanitize=builtin\", \"-ObjC\", \"-mmacosx-version-min=11.0\", \"-isysroot\", sysroot, sdk_include } else &.{ \"-fobjc-arc\", \"-fno-sanitize=builtin\", \"-ObjC\", \"-mmacosx-version-min=11.0\" };",
@@ -6729,26 +6723,6 @@
    "after": [
     "            },",
     "        }"
-   ]
-  },
-  {
-   "group": "B15",
-   "file": "build.zig",
-   "at": 2847,
-   "before": [
-    "            },",
-    "        }"
-   ],
-   "up": [],
-   "ours": [
-    "        // 12.0 N: the app's own window chrome — the title bar dark or light",
-    "        // with the theme, Mica on Windows 11 (src/native/win_chrome.c; chrome.zig",
-    "        // calls it on Windows). dwmapi is loaded at run time, not linked.",
-    "        app_mod.addCSourceFile(.{ .file = b.path(\"src/native/win_chrome.c\"), .flags = &.{} });"
-   ],
-   "after": [
-    "        app_mod.linkSystemLibrary(\"c\", .{});",
-    "        app_mod.linkSystemLibrary(\"c++\", .{});"
    ]
   },
   {
