@@ -17,7 +17,9 @@ export default (test) => {
     const r = wallClock(jobs, { conclusion: "success" });
     a.equal(r.wall, 17.5); a.equal(r.always, 6.2);
     a.equal(r.critical, "native-windows / Windows package"); a.equal(r.pathGated, true); a.equal(r.green, true);
-    a.equal(r.jobs, 5, "a skipped job is not counted");
+    a.equal(r.jobs, 5, "a skipped job is not counted"); a.equal(r.alwaysGreen, true);
+    const cancelled = wallClock(jobs.map((j) => pathGated(j.name) ? { ...j, conclusion: "cancelled" } : j), { conclusion: "cancelled" });
+    a.equal(cancelled.green, false); a.equal(cancelled.alwaysGreen, true);
     a.ok(pathGated("opponents convert (verdict)") && pathGated("native-macos / scenarios") && !pathGated("browser (Chromium)") && !pathGated("what changed"));
   });
   test("ci-wallclock: refuses a run still going and a missing list", (a) => {
@@ -27,7 +29,10 @@ export default (test) => {
   test("ci-wallclock: the median over green runs, against " + TARGET_MIN + " min", (a) => {
     a.equal(median([9, 3, 7]), 7); a.equal(median([4, 8]), 4); a.equal(median([]), null);
     const s = summary([{ green: true, always: 6, wall: 18 }, { green: false, always: 30, wall: 30 }, { green: true, always: 7, wall: 7 }, { green: true, always: 12, wall: 12 }]);
-    a.deepEqual(s, { runs: 3, medianAlways: 7, medianWall: 12, ok: true });
+    a.deepEqual(s, { runs: 3, alwaysRuns: 3, medianAlways: 7, medianWall: 12, ok: true });
+    // a run cancelled by a newer push after its always-on jobs were done counts for them, not for the whole wall
+    const c = summary([{ green: false, alwaysGreen: true, always: 4, wall: 9 }, { green: true, alwaysGreen: true, always: 6, wall: 18 }]);
+    a.deepEqual(c, { runs: 1, alwaysRuns: 2, medianAlways: 4, medianWall: 18, ok: true });
   });
   test("ci-wallclock: a refused token is dropped; a rate limit says so", async (a) => {
     const seen = [];

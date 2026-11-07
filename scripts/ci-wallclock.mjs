@@ -22,8 +22,9 @@
  * /jobs (REPO defaults to hxddh/chessboard; GH_TOKEN or GITHUB_TOKEN if set —
  * a token GitHub refuses (401) is dropped and the request made again without
  * one, as a public repository allows). --pr lists checks.yml's pull_request
- * runs for that PR and takes the last N that finished (cancelled ones — a
- * newer push superseded them — do not count). --from reads the /jobs answer
+ * runs for that PR and takes the last N that finished. A run a newer push
+ * cancelled still counts for `always` when every always-on job had finished
+ * green (alwaysGreen); the whole wall's median takes green runs only. --from reads the /jobs answer
  * saved to a file, or { run, jobs } with both (what the GitHub MCP tools
  * return, where api.github.com is not reachable). Without --record it only
  * prints. Re-recording a run replaces it rather than adding it twice.
@@ -73,9 +74,12 @@ export function wallClock(jobs, run) {
   const green = run && run.conclusion ? run.conclusion === "success" : gating.length === 0;
   const bad = (green ? failed : gating.length ? gating : failed).map((j) => j.name + ": " + j.conclusion);
   const gated = ran.filter((j) => pathGated(j.name));
+  const always = ran.filter((j) => !pathGated(j.name));
+  // ADR 0005's figure needs only these: a run a newer push cancelled once they were done still measured them
+  const alwaysGreen = always.length > 0 && always.every((j) => j.conclusion === "success" || notAGate(j.name));
   return {
     run: ran[0].run_id, sha: String(ran[0].head_sha || "").slice(0, 7),
-    wall: span(ran), always: span(ran.filter((j) => !pathGated(j.name))),
+    wall: span(ran), always: span(always), alwaysGreen,
     critical: long.name, criticalMin: long.min,
     jobs: ran.length, pathGated: gated.length > 0, green, ...(bad.length ? { notGreen: bad } : {}),
   };
@@ -89,9 +93,9 @@ export function median(xs) {
 
 /** ADR 0005's figure over a list of rows: the median of the green runs' `always` and `wall`. */
 export function summary(rows) {
-  const green = rows.filter((r) => r.green);
-  const always = median(green.map((r) => r.always)), wall = median(green.map((r) => r.wall));
-  return { runs: green.length, medianAlways: always, medianWall: wall, ok: always != null && always <= TARGET_MIN };
+  const green = rows.filter((r) => r.green), alwaysGreen = rows.filter((r) => r.alwaysGreen ?? r.green);
+  const always = median(alwaysGreen.map((r) => r.always)), wall = median(green.map((r) => r.wall));
+  return { runs: green.length, alwaysRuns: alwaysGreen.length, medianAlways: always, medianWall: wall, ok: always != null && always <= TARGET_MIN };
 }
 
 /** The recorded list with `rows` merged in (same run → replaced), oldest first. */
@@ -128,7 +132,8 @@ async function runOf(id) {
 async function runsOfPr(pr, last) {
   const branch = (await api(`/pulls/${pr}`)).head.ref;
   const runs = (await api(`/actions/workflows/checks.yml/runs?event=pull_request&status=completed&per_page=${Math.min(100, last * 3)}&branch=${encodeURIComponent(branch)}`)).workflow_runs || [];
-  return runs.filter((r) => (r.pull_requests || []).some((p) => p.number === pr) && r.conclusion !== "cancelled")
+  // a cancelled run counts when its always-on jobs had finished (wallClock's alwaysGreen); one cancelled before that does not
+  return runs.filter((r) => (r.pull_requests || []).some((p) => p.number === pr))
     .slice(0, last).map((r) => r.id).reverse();
 }
 
@@ -146,13 +151,17 @@ async function main() {
   for (const id of ids) lists.push(await runOf(id));
   if (!lists.length) { console.error("usage: ci-wallclock.mjs RUN_ID… | --pr=N [--last=K] | --from=FILE,…  [--label=TEXT] [--record]"); process.exit(2); }
   const label = arg("label");
-  const rows = lists.map((l) => Object.assign(wallClock(l.jobs, l.run), label ? { label } : {}));
+  const rows = [];
+  for (const l of lists) {
+    try { rows.push(Object.assign(wallClock(l.jobs, l.run), label ? { label } : {})); }
+    catch (e) { console.log("run " + ((l.run && l.run.id) || "?") + ": not counted (" + e.message + ")"); }
+  }
   for (const r of rows) {
     console.log(`run ${r.run} (${r.sha})：墙钟 ${r.wall} 分钟，每个 PR 都跑的作业 ${r.always} 分钟` + (r.pathGated ? "（含按路径触发的作业）" : "") +
-      `，最长 ${r.critical} ${r.criticalMin} 分钟，${r.jobs} 个作业` + (r.green ? "" : "，没全绿：" + r.notGreen.join("; ")));
+      `，最长 ${r.critical} ${r.criticalMin} 分钟，${r.jobs} 个作业` + (r.green ? "" : "，没全绿：" + r.notGreen.join("; ") + (r.alwaysGreen ? "（每个 PR 都跑的作业全绿）" : "")));
   }
   const now = summary(rows);
-  console.log(`这 ${rows.length} 次里全绿的 ${now.runs} 次：每个 PR 都跑的作业墙钟中位 ${now.medianAlways} 分钟、整次中位 ${now.medianWall} 分钟；` +
+  console.log(`这 ${rows.length} 次：每个 PR 都跑的作业全绿的 ${now.alwaysRuns} 次，墙钟中位 ${now.medianAlways} 分钟；整次全绿的 ${now.runs} 次，中位 ${now.medianWall} 分钟；` +
     `ADR 0005 的目标（中位 ≤ ${TARGET_MIN} 分钟）：${now.ok ? "达到" : "没达到"}`);
   if (RECORDING) {
     const prev = read().ciWallClock;
