@@ -18,7 +18,8 @@
  *                    until it falls below 70%, the draw is taken among the
  *                    moves a multi-line search says keep the win, by the
  *                    human prior of a player who knows how to win it (the
- *                    profile's rating + 400, up to 1600), leant toward
+ *                    profile's rating + 400, up to 1600, or its `convertAs`;
+ *                    the weakest also stay careful down to `keep`), leant toward
  *                    progress: a 600 wins a won position the way a person
  *                    who knows it is winning does — no blunder, no
  *                    repetition, mates that a person sees (≤ `sees` moves),
@@ -40,7 +41,8 @@ export const CONVERT_LIFT = 400;
 export const CONVERT_KEEP = 70;         // … and, once converting, the % it keeps at it down to
 const CAP = 1500;                       // a big advantage is a big advantage: beyond it no move is "better"
 const TRADE = 2, PUSH = 1.6;            // converting: the lean to trades and to pawns going through
-const SLACK = 120, TAU = 35;            // converting: how much worse than the best a kept move may be; the lean to progress
+const SLACK = 80, TAU = 25;             // converting: how much worse than the best a kept move may be; the lean to progress
+                                        // (120 / 35 until 20.0's ladder re-run: a beginner drifted from +6 to a draw 120 at a time)
 /** Everything above that changes which move is played: a game records it (scripts/ladder20.mjs). */
 export const TUNING = { LOOK, CONVERT_LOOK, CONVERT_AT, CONVERT_KEEP, CONVERT_RATING, CONVERT_LIFT, CAP, SLACK, TAU, TRADE, PUSH };
 
@@ -199,15 +201,18 @@ export async function opponentMove(api, fen, profile, ctx = {}) {
   // once it is converting it keeps at it while the game stays clearly won (a person who knows
   // the game is won does not stop being careful at +5.9). A Stockfish profile converts too:
   // UCI_Elo and a small node count throw away won games as readily as they throw away equal ones
-  const was = looks.length > 0 && ownWin(looks[looks.length - 1]) >= CONVERT_KEEP + 10;
-  const converting = ownWin(look) >= CONVERT_AT || (was && ownWin(look) >= CONVERT_KEEP);
+  // (a profile's `keep` lowers the floor: the weakest fall apart at +2 the moment they stop being careful)
+  const keepAt = play.keep ?? CONVERT_KEEP;
+  const was = looks.length > 0 && ownWin(looks[looks.length - 1]) >= keepAt + 10;
+  const converting = ownWin(look) >= CONVERT_AT || (was && ownWin(look) >= keepAt);
   let move = null;
   if (converting) {
     const m = await api.analyse(fen, { lines: CONVERT_LOOK.lines, budget: { nodes: CONVERT_LOOK.nodes } });
     const lines = m.lines.map((l) => ({ moves: l.moves, own: ownOf(l.score, fen) }));
     // the prior of a player who knows how to win this: CONVERT_LIFT stronger, up to CONVERT_RATING
     // (a flat floor made everyone below it convert alike, and squeezed 1000–1650 into 100 points)
-    const cr = Math.max(rating, Math.min(CONVERT_RATING, rating + CONVERT_LIFT));
+    // (`convertAs` names it outright: below ~600 a +400 prior is still a beginner's, and drops won games)
+    const cr = play.convertAs ?? Math.max(rating, Math.min(CONVERT_RATING, rating + CONVERT_LIFT));
     const prior = cr === rating ? policy : await api.humanMoves(fen, { self: cr, oppo: rating }, history.slice(-7));
     move = convertPick(prior, lines, { fen, history, sees: play.sees || (play.maia == null ? 5 : 1), temperature: play.convertT || 0.5, random });
   }

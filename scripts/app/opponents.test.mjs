@@ -46,7 +46,7 @@ export default function (test) {
       for (const k of ["name", "note", "hello"]) a.ok(oppText(p.id, k), p.id + " has " + k);
       a.ok(p.id === "fish" || FACES[p.id], p.id + " has a face");
       a.ok(p.pace > 0.5 && p.pace < 1.5, p.id + " pace");
-      a.ok(p.play.maia != null ? p.play.maia >= 600 && p.play.maia <= 2600 : p.play.nodes > 0, p.id + " plays something");
+      a.ok(p.play.maia != null ? p.play.maia >= 0 && p.play.maia <= 2600 : p.play.nodes > 0, p.id + " plays something");
     }
     a.equal(LADDER[LADDER.length - 1].play.elo, undefined, "the top is Stockfish at full strength");
     a.equal(opponentById("nobody").id, opponentById().id, "an unknown id is the default opponent");

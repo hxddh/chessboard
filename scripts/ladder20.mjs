@@ -11,7 +11,7 @@
  *
  * The scale: 19.0's ladder (docs/measured.json `ladder`) is on the scale the
  * app has always shown — UCI_Elo 1320 / 1700 in 8.0, then each re-fit held to
- * the rungs that had not changed. Four of its rungs play here as anchors
+ * the rungs that had not changed. Six of its rungs play here as anchors
  * (`19:<id>`: 19.0's own engine.js tiers and Maia-1 nets, through
  * scripts/lib/ladder-player.mjs, 19.0's resign rule) against the 20.0
  * opponents nearest them; the fit is put on the 19.0 scale by a least-squares
@@ -46,7 +46,7 @@ const arg = (name, dflt) => {
 const MODE = process.argv[2];
 
 /** 19.0 rungs that hold the scale, and the 20.0 opponents they meet (nearest by rating). */
-export const ANCHORS = ["steady", "normalminus", "hard", "master"];
+export const ANCHORS = ["beginner", "improver", "steady", "normalminus", "hard", "master"];
 const IDS = LADDER.map((o) => o.id);
 const MIND = TUNING;
 /** What a game was played with: the profile's play and resign rule, and the mind's own settings. */
@@ -66,10 +66,9 @@ const OPENINGS = [
 
 // --- the schedule ------------------------------------------------------------------
 
-/** The 20.0 opponent an anchor is nearest, by the ratings on record (or shown). */
+/** The 20.0 opponent an anchor is nearest, by the ratings shown (the record, once recorded). */
 function nearestTo(rating, k) {
-  const rec = (read().ladder20 || {}).rating || {};
-  const r = (id) => rec[id] ?? LADDER.find((o) => o.id === id).rating;
+  const r = (id) => LADDER.find((o) => o.id === id).rating;
   return IDS.slice().sort((a, b) => Math.abs(r(a) - rating) - Math.abs(r(b) - rating)).slice(0, k);
 }
 
