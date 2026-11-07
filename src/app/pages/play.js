@@ -123,7 +123,7 @@ export function mount(el, { store, engine, ready }) {
     try { next = store.dispatch("play.move", { uci, now: Date.now() }); } catch (e) { console.warn(e.message); return; }
     const m = next.play.game.moves[next.play.game.moves.length - 1];
     const piece = new Chess(before).get(uci.slice(0, 2));
-    sound.play(moveSound(m.san), piece && piece.type);
+    sound.play(moveSound(m.san), piece && piece.type, piece && piece.color);
     batch(() => { note.value = null; hint.value = { fen: null, level: 0, arrows: [], marks: [] }; if (g) mode.value = mode.peek() === "draw-wait" ? "draw-wait" : "play"; });
   }
 
