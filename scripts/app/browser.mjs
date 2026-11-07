@@ -20,9 +20,25 @@ export async function launchChromium() {
   const exe = [process.env.CHROME_PATH, "/opt/pw-browsers/chromium-1243/chrome-linux64/chrome",
     "/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"]
     .find((p) => p && fs.existsSync(p));
-  if (exe) return pw.chromium.launch({ executablePath: exe });
-  let managed = null;
-  try { managed = pw.chromium.executablePath(); } catch { /* none */ }
-  if (!managed || !fs.existsSync(managed)) skip("no Chromium executable");
-  return pw.chromium.launch();
+  let browser;
+  if (exe) browser = await pw.chromium.launch({ executablePath: exe });
+  else {
+    let managed = null;
+    try { managed = pw.chromium.executablePath(); } catch { /* none */ }
+    if (!managed || !fs.existsSync(managed)) skip("no Chromium executable");
+    browser = await pw.chromium.launch();
+  }
+  return zhByDefault(browser);
+}
+
+/**
+ * The app starts in the system's language (text/lang.js) and Chromium's is
+ * en-US: every context is zh-CN unless the test asks for another locale, so
+ * the suites written against the Chinese text keep reading Chinese.
+ */
+function zhByDefault(browser) {
+  const newContext = browser.newContext.bind(browser), newPage = browser.newPage.bind(browser);
+  browser.newContext = (o = {}) => newContext({ locale: "zh-CN", ...o });
+  browser.newPage = (o = {}) => newPage({ locale: "zh-CN", ...o });
+  return browser;
 }
