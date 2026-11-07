@@ -13,5 +13,5 @@ const zh = { ...explain, ...page };
 
 export const learnText = (lang = getLang()) => {
   const p = lang !== "zh" && pack(lang);
-  return createText(p ? { ...p.explain, ...p.learn } : zh, zh);
+  return createText(p ? { ...p.explain, ...p.learn } : zh, zh, { lang: p ? lang : "zh" });
 };

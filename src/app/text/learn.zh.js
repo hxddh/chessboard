@@ -6,9 +6,9 @@
 export default {
   // 设置（pages/settings.js）
   "set.title": "设置", "set.lang": "语言", "set.appearance": "外观", "set.boardTheme": "棋盘", "set.pieceSet": "棋子", "set.sound": "声音",
-  "set.coach": "落子前提醒", "set.level": "我的水平",
+  "set.coach": "落子前提醒", "set.level": "下棋经验",
   "set.system": "跟随系统", "set.light": "浅色", "set.dark": "深色", "set.wood": "木纹", "set.green": "绿", "set.blue": "蓝",
-  "set.merida": "Merida", "set.cburnett": "Burnett", "set.classic": "经典", "set.on": "开", "set.off": "关", "set.auto": "按水平",
+  "set.merida": "Merida", "set.cburnett": "Burnett", "set.classic": "经典", "set.on": "开", "set.off": "关", "set.auto": "按经验",
   "set.600": "刚入门", "set.1000": "会下棋", "set.1500": "俱乐部", "set.2000": "很强",
   "date.locale": "zh-CN",
 
@@ -44,7 +44,9 @@ export default {
   "group.tactics": "战术母题", "group.calc": "计算", "group.opening": "开局原则", "group.endgame": "基本残局", "group.middlegame": "中局计划",
   // 我
   "me.level": "你的水平", "me.curve": "成长曲线", "me.stage": "下一阶段 {0}", "me.stageDone": "四个阶段都完成了",
-  "me.stageNeeds": "还差 {0} 个技能", "me.stageUnlock": "到了就解锁一位新对手和一组残局", "me.stageReady": "技能都会了 —— 水平到 {0} 就过关",
+  "me.stageNeeds": "还差 {0} 个技能", "me.stageMore": "还差 {0} 个技能，先学下面这 {1} 个",
+  "me.unknown": "还不知道", "me.unknownWhy": "做一次定级（约两分钟），或者做几道题、下几盘棋，这里就会出现你的水平。", "me.placeGo": "去定级",
+  "me.unknownSoon": "做几道题、下几盘棋，这里就会出现你的水平。", "me.curveEmpty": "每天一个点 —— 你的第一个点会画在这里", "me.curveOne": "今天的点在这里；明天再来，就连成一条线", "me.stageUnlock": "到了就解锁一位新对手和一组残局", "me.stageReady": "技能都会了 —— 水平到 {0} 就过关",
   "me.week": "这一周", "me.weekLine": "上周你漏看{0} {1} 次，本周 {2} 次", "me.weekNone": "还没有可以比较的一周 —— 下几盘、做几题，这里会告诉你进步在哪",
   "me.library": "棋谱库", "me.import": "导入 PGN",
   "me.libCount": "棋谱库里有 {0} 局", "me.libEmpty": "还没有导入的对局。可以导入 PGN 文件（一局或很多局），也可以导入 19.0「导出全部数据」的文件。",

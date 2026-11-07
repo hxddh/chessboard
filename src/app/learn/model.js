@@ -45,7 +45,7 @@ const dayOf = (at, tz) => Math.floor((at - tz * 60000) / DAY);
 export function initialState() {
   return {
     lastId: 0, placed: null,
-    puzzle: { r: START_RATING, rd: 350, vol: 0.06 }, game: null, games: 0, openGames: {}, unrated: 0, imported: 0,
+    puzzle: { r: START_RATING, rd: 350, vol: 0.06 }, rated: 0, game: null, games: 0, openGames: {}, unrated: 0, imported: 0,
     skills: {}, cards: {}, extra: {}, items: {}, days: {}, perGame: {}, misses: [], curve: [],
     // imported games whose side is not known yet: id → [white, black, whiteElo, blackElo, result]
     unclaimed: {}, ask: { file: 0, answered: 0 },
@@ -55,14 +55,26 @@ export function initialState() {
 const skillOf = (st, id) => (st.skills[id] ||= { m: 0, n: 0, solved: [], lit: false, by: null, lesson: false, at: 0, weakAt: 0 });
 const dayRec = (st, d) => (st.days[d] ||= { cards: 0, minutes: 0, answers: 0, ok: 0, games: 0, items: [] });
 
-/** The one number on screen: the puzzle rating, blended with the game rating once there are three games. */
+/**
+ * Is there any evidence of strength yet (v20-0-plan §11 L4)? The placement,
+ * a rated answer or a rated game. Before it the number would be
+ * START_RATING, which nobody earned: 我 says it does not know yet.
+ */
+export const ratingKnown = (st) => !!(st.placed || st.rated || st.game);
+
+/**
+ * The one number on screen: the puzzle rating, blended with the game rating
+ * once there are three games. With rated games and no placement or rated
+ * answer, the puzzle rating is still the unearned start: the games' number.
+ */
 export function visibleRating(st) {
-  const p = st.puzzle.r;
+  const p = !st.placed && !st.rated && st.game ? st.game.r : st.puzzle.r;
   const r = st.game && st.games >= 3 ? (2 * p + st.game.r) / 3 : p;
   return Math.round(r);
 }
 
 function mark(st, at, tz) {
+  if (!ratingKnown(st)) return;       // no point for a number nobody has earned
   const d = dayOf(at, tz), r = visibleRating(st);
   const last = st.curve[st.curve.length - 1];
   if (last && last[0] === d) last[1] = r; else st.curve.push([d, r]);
@@ -106,6 +118,7 @@ function answer(st, e, tz) {
   if (Number.isFinite(e.rating)) {
     const score = g === GOOD ? 1 : g === HARD ? 0.5 : 0;
     st.puzzle = ChessRating.rate1v1(st.puzzle, { r: e.rating, rd: 100, vol: 0.01 }, score).player;
+    st.rated++;
   }
   let card = st.cards[e.item];
   if (!card && !NO_CARD.has(kind)) card = addCard(st, e.item, e.at, tz, { skill: e.skill || null });
@@ -297,4 +310,16 @@ export function stageOf(st, stages) {
     if (r < g.rating || missing.length) return { ...g, missing, reached: false };
   }
   return { ...stages[stages.length - 1], missing: [], reached: true };
+}
+
+/**
+ * The stage's skills to list (v20-0-plan §11 L9): the ones you can start on
+ * now (every prerequisite lit or not needed by this stage) first, then by
+ * level and the graph's order; at most `max`. 我 says how many these are of
+ * how many — the list and the count never disagree.
+ */
+export function nextSkills(st, missing, max = 12) {
+  const order = (id) => SKILLS.findIndex((s) => s.id === id);
+  const ready = (id) => SKILL[id].needs.every((p) => isLit(st, p));
+  return [...missing].sort((a, b) => (ready(b) - ready(a)) || SKILL[a].level - SKILL[b].level || order(a) - order(b)).slice(0, max);
 }

@@ -250,7 +250,10 @@ export function mount(el, { store, engine, ready, router, background }) {
     chip.textContent = c.placement ? t("place.k", (placing ? placing.k : 0) + 1) : t("learn.why." + (c.why || "new"));
     sideGroup.textContent = sk ? t("group." + sk.group) : "";
     sideName.textContent = sk ? t("sk." + sk.id) : it.kind === "game" ? gameLine(c.opponent) : t("puzzle.find");
-    sideWhy.textContent = sk ? t("sk." + sk.id + ".why") : it.kind === "game" ? t("learn.gameWhy") : "";
+    // a lesson's own paragraphs say what the skill's one line says (§11 L8: 「车沿横线、直线走任意格…」
+    // twice): on a lesson the side shows the lesson, the one line elsewhere
+    sideWhy.textContent = sk ? (it.kind === "lesson" ? "" : t("sk." + sk.id + ".why")) : it.kind === "game" ? t("learn.gameWhy") : "";
+    sideWhy.hidden = !sideWhy.textContent;
     const paras = it.kind === "lesson" && sk ? sk.lessons.flatMap((id) => (LESSONS[id] ? lessonOf(id, LESSONS[id]).text : [])).slice(0, 4) : [];
     sideLesson.replaceChildren(...paras.map((p) => h("p", {}, ...withFigurines(plain(p)))));
     if (L && !c.placement) {

@@ -419,7 +419,8 @@ export function mount(el, { store, engine, ready, commands, background }) {
     if (!g) return { phase: "idle", text: "…", actions: [] };
     const human = humanOf(g);
     const opp = oppName(g);
-    const moves = btn("moves", t("act.moves"), toggleDrawer, "quiet");
+    // "moves-toggle": the drawer's own list is [data-test=moves] (§11 L11: one hook, one element)
+    const moves = btn("moves-toggle", t("act.moves"), toggleDrawer, "quiet");
     const fresh = btn("new", t("act.new"), newGame, "quiet");
     if (rv.phase !== "idle" && m !== "result") return reviewBar(rv, g, moves, fresh);
     if (m === "result" || g.result) {

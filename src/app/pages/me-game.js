@@ -17,8 +17,8 @@ import { createReview } from "../review/review.js";
 import { createSound, moveSoundAt } from "../lib/sound.js";
 import { playText } from "../text/play.js";
 import { oppText } from "../opponents/lines.js";
-import { gameOfRecord } from "../library/records.js";
-import { outcomeOf } from "../library/list.js";
+import { outcomeOf, dateLabel } from "../library/list.js";
+import { gameOfRecord, dateOf } from "../library/records.js";
 import { Chess } from "../core/chess.js";
 import { START_FEN } from "../core/rules.js";
 
@@ -172,7 +172,7 @@ export function mountGame(el, { db, store, engine, id, t, back, commands }) {
       const game = gameOfRecord(rec);
       if (game) {
         i = { game, you: rec.you || null, result: rec.result || "*", white: rec.white || "", black: rec.black || "",
-          when: rec.date ? rec.date.replace(/\.\?\?/g, "") : "", event: rec.event || "" };
+          when: dateLabel({ kind: "imported", dateText: rec.date || "", date: dateOf(rec) }, t("date.locale")), event: rec.event || "" };
       }
     } else {
       const p = await playedGame(db, id);
@@ -180,7 +180,7 @@ export function mountGame(el, { db, store, engine, id, t, back, commands }) {
         const g = p.row, you = g.mode === "engine" ? (g.engineColor === "w" ? "b" : "w") : null;
         const them = g.mode === "engine" ? oppText(g.opponent, "name") || t("me.vsEngine") : "";
         i = { game: p.game, you, result: g.result ? g.result.result : "*", white: you === "b" ? them : you === "w" ? t("lib.you") : t("lib.white"),
-          black: you === "w" ? them : you === "b" ? t("lib.you") : t("lib.black"), when: g.startedAt ? new Date(g.startedAt).toLocaleDateString(t("date.locale")) : "", event: "" };
+          black: you === "w" ? them : you === "b" ? t("lib.you") : t("lib.black"), when: dateLabel({ kind: "played", date: g.startedAt || 0 }, t("date.locale")), event: "" };
       }
     }
     if (!alive) return;

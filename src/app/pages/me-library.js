@@ -17,7 +17,7 @@ import { h } from "../lib/dom.js";
 import { openTextFile, FileError } from "../services/files.js";
 import { oppText } from "../opponents/lines.js";
 import { youCandidates } from "../learn/model.js";
-import { entriesOf, filterEntries, pageOf, yearsOf, outcomeOf, claimsFor, PAGE_SIZE } from "../library/list.js";
+import { entriesOf, dateLabel, filterEntries, pageOf, yearsOf, outcomeOf, claimsFor, PAGE_SIZE } from "../library/list.js";
 import { AUTO_RECENT, AUTO_PER_DAY } from "../library/records.js";
 
 /** library/import.js's IMPORT_MAX, without loading it before it is needed. */
@@ -138,8 +138,7 @@ export function libraryCard({ db, L, t, alive, redraw, open, wake = () => {} }) 
   const listBox = h("div", { class: "lib-box", "data-test": "games" }, h("div", { class: "lib-filter" }, search, result, year), list, pager);
 
   const locale = () => t("date.locale");
-  const dateText = (e) => (e.kind === "imported" && e.dateText && /^\d{4}/.test(e.dateText) ? e.dateText.replace(/\.\?\?/g, "")
-    : e.date ? new Date(e.date).toLocaleDateString(locale()) : "");
+  const dateText = (e) => dateLabel(e, locale());
   const sideName = (name, side, e) => name || (e.you === side ? t("lib.you") : t(side === "w" ? "lib.white" : "lib.black"));
   function row(e) {
     const o = outcomeOf(e);

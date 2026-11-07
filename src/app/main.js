@@ -47,6 +47,8 @@ const ready = openDbBackend(params).then((backend) => createDb(backend))
     // a first run: a game against the default opponent, White, no clock
     await restore(store, db, newId, (s) => ({ mode: "engine", engineColor: "b", opponent: DEFAULT_OPPONENT, coach: coachOn(s) }));
     addEventListener("pagehide", () => db.flush());
+    // hidden is often the last moment a WebView gets (the app minimised, then quit or killed)
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") db.flush(); });
     return db;
   });
 

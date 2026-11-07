@@ -171,10 +171,10 @@ const plies = (page, n) => page.waitForFunction((n) => window.__app.store.get().
   await page.waitForTimeout(400);
   assert(busy !== undefined && !(await page.evaluate(() => window.__play.board.state().animating)), "the move in flight settles after the flip");
   // the drawer's button
-  await page.click("[data-test=moves]");
+  await page.click("[data-test=moves-toggle]");
   await page.click("[data-test=flip]");
   assert((await orient()) === "black", "the drawer's 翻转 turns it too");
-  await page.click("[data-test=moves]");
+  await page.click("[data-test=moves-toggle]");
   await newGame(page, { engineColor: "w" });
   await page.waitForTimeout(50);
   assert((await orient()) === "black", "a new game starts from your side (Black now), not turned");

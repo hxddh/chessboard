@@ -35,6 +35,28 @@ export function entriesOf(library, games, namesOf = () => ({ white: "", black: "
   return out.sort((a, b) => b.date - a.date || (a.id < b.id ? 1 : -1));
 }
 
+/**
+ * A row's date in one form for the language (v20-0-plan §11 L5): the PGN's
+ * Date tag and the day a game was played here read alike — 「2026年10月20日」,
+ * "20 Oct 2026", 「2026/10/20」. A PGN date without a day is the month, one
+ * without a month the year; a PGN date is a calendar day (UTC), a game
+ * played here the local day it started.
+ * @param {object} e        an entry (entriesOf)
+ * @param {string} locale   the language's date locale (t("date.locale"))
+ */
+export function dateLabel(e, locale) {
+  const m = e.kind === "imported" ? /^(\d{4})(?:[.\-/](\d{1,2}|\?\?))?(?:[.\-/](\d{1,2}|\?\?))?/.exec(e.dateText || "") : null;
+  if (m && m[1] !== "????") {
+    const y = Number(m[1]), mo = Number(m[2]) || 0, d = Number(m[3]) || 0;
+    const at = new Date(Date.UTC(y, Math.max(mo, 1) - 1, Math.max(d, 1)));
+    const opts = !mo ? { year: "numeric" } : !d ? { year: "numeric", month: "short" } : { dateStyle: "medium" };
+    return new Intl.DateTimeFormat(locale, { ...opts, timeZone: "UTC" }).format(at);
+  }
+  if (!e.date) return "";
+  // a game played here, or an imported row without a Date tag (dateOf: when it was imported): the local day
+  return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(e.date));
+}
+
 /** "win" | "loss" | "draw" from your side, or null when it is not known which side you were (or there is no result). */
 export function outcomeOf(e) {
   if (e.result === "1/2-1/2") return "draw";

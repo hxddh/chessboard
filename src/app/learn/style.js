@@ -51,6 +51,12 @@ const CSS = `
 .me .curve { width: 100%; height: 120px; display: block; }
 .me .curve polyline { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .me .curve .base { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.me .level.unknown { display: grid; gap: 8px; justify-items: start; }
+.me .level .num-unknown { font-family: var(--font-title); font-size: 1.75rem; font-weight: 600; line-height: 1.1; color: var(--muted); }
+.me .curve-box { display: grid; gap: 4px; }
+.me .curve-box.empty .curve { height: 96px; }
+.me .curve .ghost { fill: none; stroke: var(--line); stroke-width: 2; stroke-dasharray: 2 6; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.me .curve-empty { font-size: .875rem; text-align: center; }
 .me .needs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .me .needs li { padding: 2px 10px; border-radius: var(--radius-full); background: var(--btn-hover); font-size: .875rem; }
 .me .muted { color: var(--muted); margin: 0; }

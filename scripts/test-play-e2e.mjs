@@ -103,10 +103,10 @@ const sansToUci = (sans, fen) => { const g = new Chess(fen); return sans.map((s)
   assert((await bar(page)).phase === "play", "one context bar, in its playing state");
   assert(await page.$eval("[data-test=evalbar]", (e) => e.hidden), "no evaluation bar while a game is on");
   await shot(page, "play-1440");
-  await page.click("[data-test=moves]");
+  await page.click("[data-test=moves-toggle]");
   const c2 = await controls(page);
   assert(c2.length <= 12 && !(await page.$eval("[data-test=drawer]", (e) => e.hidden)), "the move drawer opens; still ≤ 12 controls (" + c2.length + ")");
-  await page.click("[data-test=moves]");
+  await page.click("[data-test=moves-toggle]");
   await page.click("[data-test=new]");
   await page.waitForSelector("[data-test=sheet]");
   const c3 = await page.$$eval("[data-test=sheet] :is(button, select, input)", (els) => els.length);

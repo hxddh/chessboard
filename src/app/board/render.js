@@ -113,21 +113,6 @@ export function paint(ctx, size, frame, v) {
   }
   ctx.globalAlpha = 1;
 
-  if (v.coords) {
-    ctx.font = "600 " + Math.round(step * 0.16) + "px " + P.font;
-    for (let i = 0; i < 8; i++) {
-      const file = v.orientation === "black" ? 7 - i : i;
-      const rank = v.orientation === "black" ? i : 7 - i;
-      // ink in the other square's colour, so it reads on either
-      ctx.fillStyle = (7 + i) % 2 === 0 ? P.dark : P.light;
-      ctx.textAlign = "right"; ctx.textBaseline = "bottom";
-      ctx.fillText(FILES[file], edge(i + 1) - step * 0.06, size - step * 0.04);
-      ctx.fillStyle = i % 2 === 0 ? P.dark : P.light;
-      ctx.textAlign = "left"; ctx.textBaseline = "top";
-      ctx.fillText(String(rank + 1), step * 0.06, edge(i) + step * 0.04);
-    }
-  }
-
   const px = Math.max(8, Math.round(step));
   const drawMan = (code, cx, cy, alpha = 1, scale = 1, shadow = true) => {
     ctx.globalAlpha = alpha;
@@ -151,6 +136,29 @@ export function paint(ctx, size, frame, v) {
     const [cx, cy] = centre(p.x, p.y);
     const ghost = v.ghost && !p.leaving && p.sq === v.ghost;
     drawMan(p.code, cx, cy, ghost ? 0.3 * p.alpha : p.alpha, p.scale, !ghost);
+  }
+
+  // the coordinates over the men (v20-0-plan §11 L6: a man on the first rank
+  // covered its file letter): ink in the other square's colour, over a halo in
+  // its own square's colour, so a letter reads on the square and on a man alike
+  if (v.coords) {
+    ctx.font = "600 " + Math.round(step * 0.16) + "px " + P.font;
+    ctx.lineWidth = Math.max(2, step * 0.05);
+    ctx.lineJoin = "round";
+    const label = (text, x, y, onLight) => {
+      ctx.strokeStyle = onLight ? P.light : P.dark;
+      ctx.strokeText(text, x, y);
+      ctx.fillStyle = onLight ? P.dark : P.light;
+      ctx.fillText(text, x, y);
+    };
+    for (let i = 0; i < 8; i++) {
+      const file = v.orientation === "black" ? 7 - i : i;
+      const rank = v.orientation === "black" ? i : 7 - i;
+      ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+      label(FILES[file], edge(i + 1) - step * 0.06, size - step * 0.04, (7 + i) % 2 === 0);
+      ctx.textAlign = "left"; ctx.textBaseline = "top";
+      label(String(rank + 1), step * 0.06, edge(i) + step * 0.04, i % 2 === 0);
+    }
   }
 
   for (const o of over.dot) {

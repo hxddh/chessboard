@@ -15,5 +15,5 @@ const zh = { ...explain, ...page };
 
 export const playText = (lang = getLang()) => {
   const p = lang !== "zh" && pack(lang);
-  return createText(p ? { ...p.explain, ...p.play } : zh, zh);
+  return createText(p ? { ...p.explain, ...p.play } : zh, zh, { lang: p ? lang : "zh" });
 };

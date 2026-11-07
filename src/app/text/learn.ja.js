@@ -6,9 +6,9 @@
 export default {
   // 設定（pages/settings.js）
   "set.title": "設定", "set.lang": "言語", "set.appearance": "外観", "set.boardTheme": "盤", "set.pieceSet": "駒", "set.sound": "サウンド",
-  "set.coach": "指す前に確認", "set.level": "自分の強さ",
+  "set.coach": "指す前に確認", "set.level": "チェスの経験",
   "set.system": "システムに合わせる", "set.light": "ライト", "set.dark": "ダーク", "set.wood": "木目", "set.green": "グリーン", "set.blue": "ブルー",
-  "set.merida": "Merida", "set.cburnett": "Burnett", "set.classic": "クラシック", "set.on": "オン", "set.off": "オフ", "set.auto": "強さに合わせる",
+  "set.merida": "Merida", "set.cburnett": "Burnett", "set.classic": "クラシック", "set.on": "オン", "set.off": "オフ", "set.auto": "経験に合わせる",
   "set.600": "初心者", "set.1000": "駒の動きを知っている", "set.1500": "クラブレベル", "set.2000": "強い",
   "date.locale": "ja-JP",
 
@@ -44,7 +44,9 @@ export default {
   "group.tactics": "戦術", "group.calc": "読み", "group.opening": "序盤の原則", "group.endgame": "基本の終盤", "group.middlegame": "中盤の計画",
   // me
   "me.level": "あなたの強さ", "me.curve": "成長グラフ", "me.stage": "次のステージ {0}", "me.stageDone": "4 つのステージをすべて達成",
-  "me.stageNeeds": "あと {0} スキル", "me.stageUnlock": "到達すると新しい相手と終盤のセットが解放されます", "me.stageReady": "スキルはすべて習得 —— {0} に届けばクリア",
+  "me.stageNeeds": "あと {0} スキル", "me.stageMore": "あと {0} スキル。まずは下の {1} 個から",
+  "me.unknown": "まだわかりません", "me.unknownWhy": "レベル判定（約 2 分）を受けるか、問題を解いて何局か指すと、ここにあなたの強さが表示されます。", "me.placeGo": "レベル判定を受ける",
+  "me.unknownSoon": "問題を解いて何局か指すと、ここにあなたの強さが表示されます。", "me.curveEmpty": "1 日に 1 点 —— 最初の点はここに描かれます", "me.curveOne": "今日の点はここ。明日また来ると線になります", "me.stageUnlock": "到達すると新しい相手と終盤のセットが解放されます", "me.stageReady": "スキルはすべて習得 —— {0} に届けばクリア",
   "me.week": "今週", "me.weekLine": "先週は「{0}」を {1} 回見落とし、今週は {2} 回", "me.weekNone": "まだ比べられる週がありません —— 何局か指し、何問か解けば、ここにどこが伸びたかが出ます",
   "me.library": "棋譜ライブラリ", "me.import": "PGN を読み込む",
   "me.libCount": "ライブラリに {0} 局", "me.libEmpty": "まだ読み込んだ対局はありません。PGN ファイル（一局でも多数でも）や、19.0 の「すべてのデータを書き出し」のファイルを読み込めます。",

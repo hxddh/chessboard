@@ -22,6 +22,9 @@ export function persist(store, db) {
       }
     } else if (name === "settings.set") {
       db.append({ type: "settings.set", key: payload.key, value: payload.value });
+      // written now, not with the next batch: a language switched just before the app is
+      // closed (or killed) is the language it opens in (v20-0-plan §11)
+      db.flush();
     }
     if (g && g.result && !(was && was.id === g.id && was.result) && name !== "play.restore") {
       db.append({ type: "game.end", gameId: g.id, result: g.result.result, reason: g.result.reason });

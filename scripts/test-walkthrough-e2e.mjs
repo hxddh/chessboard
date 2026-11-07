@@ -16,6 +16,12 @@
  *   sheet         Tab stays inside the new-game sheet (a modal)
  *   selects       drawn by the app (WebKit's native menu kept a light face
  *                 under light text in the dark shells); the checkbox in the accent
+ *   the low ones  in zh, en and ja: no rating and an inviting empty curve on a
+ *                 new profile (L4); the library's dates in one form (L5); 设置's
+ *                 level not named like 我's rating (L7); a lesson's side says each
+ *                 thing once (L8); the stage's count and list agree (L9); one
+ *                 element for [data-test=moves] (L11); a settings change survives
+ *                 a reload right after it (the native run's language switch)
  *
  *   node scripts/test-walkthrough-e2e.mjs      (E2E_REQUIRED=1: a missing browser fails)
  */
@@ -199,6 +205,107 @@ for (const dark of [false, true]) {
   await page.click("[data-test=new]");
   const accent = await page.evaluate(() => getComputedStyle(document.querySelector("[data-test=coach]")).accentColor);
   assert(accent && accent !== "auto", "the coach's checkbox takes the accent (" + accent + ")");
+  await ctx.close();
+}
+
+// --- the low ones (§11 L4–L11) and the settings written at once, in all three languages -----------------
+const WORDS = {
+  zh: { level: "你的水平", placeGo: "去定级" },
+  en: { level: "Your level", placeGo: "Take the placement" },
+  ja: { level: "あなたの強さ", placeGo: "レベル判定を受ける" },
+};
+const dice = (a, b) => {
+  const grams = (s) => { const g = new Map(); s = s.replace(/\s+/g, ""); for (let i = 0; i < s.length - 1; i++) g.set(s.slice(i, i + 2), (g.get(s.slice(i, i + 2)) || 0) + 1); return g; };
+  const x = grams(a), y = grams(b);
+  let both = 0, n = 0;
+  for (const [k, v] of x) { both += Math.min(v, y.get(k) || 0); n += v; }
+  for (const v of y.values()) n += v;
+  return n ? (2 * both) / n : 0;
+};
+for (const lang of ["zh", "en", "ja"]) {
+  const { ctx, page } = await context();
+  const q = BASE + "?engine=fake&think=0&chain=60&autoreview=0&lang=" + lang + "&dbname=wt-low-" + lang + "-" + Date.now();
+  // L4: a new profile — no number, an empty curve that says what will be there, and the way to a number
+  await page.goto(q + "#/me");
+  await page.waitForSelector("[data-test=rating]");
+  const fresh = await page.evaluate(() => {
+    const card = document.querySelector("[data-test=rating]").closest(".card");
+    return { known: document.querySelector("[data-test=rating]").dataset.known, h2: card.querySelector("h2").textContent,
+      nums: [...card.innerText.matchAll(/\b\d{3,4}\b/g)].map((m) => m[0]),
+      empty: !!document.querySelector("[data-test=curve-empty]") && getComputedStyle(document.querySelector("[data-test=curve-empty]")).display !== "none",
+      emptyText: (document.querySelector("[data-test=curve-empty]") || {}).textContent || "", go: !!document.querySelector("[data-test=go-place]") };
+  });
+  assert(fresh.known === "0" && fresh.nums.length === 0 && fresh.empty && fresh.emptyText.length > 4 && fresh.go,
+    lang + " L4: a new profile shows no rating, an empty curve with words, and the placement (" + JSON.stringify(fresh) + ")");
+  // L9 before the placement too: the count and the list agree
+  const stage = await page.evaluate(() => {
+    const c = document.querySelector("[data-test=stage-count]");
+    return c ? { text: c.textContent, total: +c.dataset.total, shown: +c.dataset.shown, li: document.querySelectorAll("[data-test=stage-needs] li").length } : null;
+  });
+  assert(stage && stage.li === stage.shown && stage.text.includes(String(stage.total)) && (stage.total === stage.li || stage.text.includes(String(stage.li))),
+    lang + " L9: the stage's line names what is listed (" + JSON.stringify(stage) + ")");
+  // L7: 我's heading and 设置's level are two different words
+  assert(fresh.h2 === WORDS[lang].level, lang + " 我's heading: " + fresh.h2);
+  await page.click("[data-test=go-place]");
+  await page.waitForSelector("[data-test=place]:not([hidden])");
+  // L8: the lesson's side says each thing once
+  await place(page, "new");
+  await page.waitForFunction(() => window.__learn.item && window.__learn.item.kind === "lesson", null, { timeout: 8000 }).catch(() => {});
+  const side = await page.evaluate(() => {
+    const vis = (e) => e && !e.hidden && getComputedStyle(e).display !== "none" && e.textContent.trim();
+    const why = document.querySelector("[data-test=skill-why]");
+    return { kind: window.__learn.item && window.__learn.item.kind, blocks: [...(vis(why) ? [why.textContent] : []), ...[...document.querySelectorAll("[data-test=lesson-text] p")].map((p) => p.textContent)] };
+  });
+  let worst = 0;
+  for (let i = 0; i < side.blocks.length; i++) for (let j = i + 1; j < side.blocks.length; j++) worst = Math.max(worst, dice(side.blocks[i], side.blocks[j]));
+  assert(side.kind === "lesson" && side.blocks.length >= 1 && worst < 0.5, lang + " L8: the lesson's side repeats nothing (" + side.kind + ", " + side.blocks.length + " blocks, most alike " + worst.toFixed(2) + ")");
+  // L4 after it: a number
+  await page.click('a[href="#/me"]');
+  await page.waitForSelector("[data-test=rating][data-known='1']");
+  assert(/^\d{3,4}$/.test(await page.textContent("[data-test=rating]")), lang + " L4: placed — the number (" + await page.textContent("[data-test=rating]") + ")");
+  // L5: a PGN's date, a partial one and a game played here, in one form
+  await page.evaluate(async () => {
+    const m = await import("./library/import.js");
+    const one = (d, foe) => `[White "Me"]\n[Black "${foe}"]\n[Result "0-1"]\n[Date "${d}"]\n\n1. f3 e5 2. g4 Qh4# 0-1\n`;
+    await m.importFile(one("2026.10.20", "Foe") + "\n" + one("2024.03.??", "Other"), { db: await window.__app.ready, name: "dates.pgn" });
+    const st = window.__app.store;
+    st.dispatch("play.new", { id: "wt-dates", mode: "pvp" });
+    for (const u of ["f2f3", "e7e5", "g2g4", "d8h4"]) st.dispatch("play.move", { uci: u, now: Date.now() });
+    await (await window.__app.ready).flush();
+  });
+  await page.reload();   // already on #/me: a reload draws the list afresh
+  await page.waitForFunction(() => document.querySelectorAll("[data-test=lib-row]").length >= 3, null, { timeout: 8000 }).catch(() => {});
+  const when = await page.$$eval("[data-test=lib-row] .when", (es) => es.map((e) => e.textContent));
+  const shape = (s) => s.replace(/\d+/g, "#").replace(/[A-Za-z]+/g, "M");
+  const full = when.filter((w) => /2026/.test(w));
+  assert(when.length >= 3 && full.length === 2 && shape(full[0]) === shape(full[1]) && !when.some((w) => /\d{4}\.\d/.test(w)),
+    lang + " L5: the library's dates in one form (" + when.join(" | ") + ")");
+  // L7: 设置's level is not 我's 「…水平」
+  await page.goto(q + "#/settings");
+  await page.waitForSelector("[data-test=set-level]");
+  const setLabel = await page.$eval("[data-test=set-level]", (s) => s.closest("label").querySelector("span").textContent);
+  assert(setLabel !== WORDS[lang].level && !setLabel.toLowerCase().includes({ zh: "水平", en: "level", ja: "強さ" }[lang]), lang + " L7: 设置 says " + setLabel + ", 我 says " + WORDS[lang].level);
+  await ctx.close();
+}
+
+// --- L11: one element for [data-test=moves]; the settings written at once (a reload right after) -----------
+{
+  const { ctx, page } = await context();
+  const q = BASE + "?engine=fake&think=0&autoreview=0&dbname=wt-hooks-" + Date.now();
+  await page.goto(q + "#/play");
+  await page.waitForSelector("[data-page=play] canvas");
+  await page.click("[data-test=moves-toggle]");
+  await page.waitForSelector("ol[data-test=moves]");
+  assert(await page.$$eval("[data-test=moves]", (es) => es.length) === 1, "L11: [data-test=moves] is the move list alone");
+  await page.goto(q + "#/settings");
+  await page.waitForSelector("[data-test=set-lang]");
+  await page.selectOption("[data-test=set-lang]", "en");
+  // no wait: the page goes away right after the choice, as an app quit (or killed) right after it would
+  await page.reload();
+  await page.waitForSelector("[data-test=set-lang]");
+  await page.waitForFunction(() => window.__app.store.get().settings.lang !== undefined);
+  const back = await page.evaluate(() => window.__app.store.get().settings.lang);
+  assert(back === "en", "a language chosen just before the page went away is the language it comes back in (" + back + ")");
   await ctx.close();
 }
 
