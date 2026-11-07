@@ -54,7 +54,7 @@ export function createSound(enabled) {
   const last = {};
   const buffers = new Map();
   const played = [];
-  const stats = { plays: 0, rendered: 0, cold: 0, worstMs: 0 };
+  const stats = { plays: 0, rendered: 0, cold: 0, worstMs: 0, worstWarmMs: 0, worstColdMs: 0 };
   let seed = 0x9e3779b9;
   const wobble = (spread) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return 1 + ((seed / 0x7fffffff) * 2 - 1) * spread; };
 
@@ -114,6 +114,8 @@ export function createSound(enabled) {
     if (played.length > 50) played.shift();
     if (!enabled()) return;
     const t0 = performance.now();
+    // cold: the first play (it makes the AudioContext) or one that renders its take on the spot
+    let cold = stats.plays === 0;
     try {
       context();
       let strike = 0;
@@ -126,14 +128,16 @@ export function createSound(enabled) {
       const before = stats.rendered;
       const src = ctx.createBufferSource();
       src.buffer = buffer(name, strike, heft);
-      if (stats.rendered > before) stats.cold++;
+      if (stats.rendered > before) { stats.cold++; cold = true; }
       if (VARIED.has(name)) src.playbackRate.value = (color === "b" ? 0.95 : 1) * wobble(0.03);
       src.connect(master);
       src.start();
       warm();
     } catch { /* no audio here: silence is fine */ }
     stats.plays++;
-    stats.worstMs = Math.max(stats.worstMs, performance.now() - t0);
+    const ms = performance.now() - t0;
+    stats.worstMs = Math.max(stats.worstMs, ms);
+    if (cold) stats.worstColdMs = Math.max(stats.worstColdMs, ms); else stats.worstWarmMs = Math.max(stats.worstWarmMs, ms);
   }
 
   const onGesture = () => unlock();

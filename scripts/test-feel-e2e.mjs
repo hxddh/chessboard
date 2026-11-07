@@ -244,12 +244,14 @@ const animatingFor = (page) => page.evaluate(() => new Promise((res) => {
   await page.waitForTimeout(600);   // idle time: the takes render
   for (const u of ["e7e5", "g1f3", "b8c6", "f1c4", "g8f6", "e1g1"]) await clickMove(page, u);
   const st = await page.evaluate(() => ({ ...window.__play.sound.stats, latency: window.__play.sound.latency, played: window.__play.sound.played.slice() }));
-  report.sound = { audio: hasAudio, plays: st.plays, cold: st.cold, rendered: st.rendered, worstPlayMs: +st.worstMs.toFixed(2), baseLatencyMs: st.latency ? +(st.latency.base * 1000).toFixed(1) : null };
+  report.sound = { audio: hasAudio, plays: st.plays, cold: st.cold, rendered: st.rendered, worstPlayMs: +st.worstMs.toFixed(2), worstWarmMs: +st.worstWarmMs.toFixed(2), worstColdMs: +st.worstColdMs.toFixed(2), baseLatencyMs: st.latency ? +(st.latency.base * 1000).toFixed(1) : null };
   console.log("sound: " + JSON.stringify(report.sound));
   assert(st.played.slice(-1)[0] === "castle", "O-O sounds as a castle");
   if (hasAudio) {
     assert(st.cold <= 1, "the every-move takes were rendered ahead: at most the first sound renders on the move (" + st.cold + ")");
-    assert(st.worstMs < 4, "starting a sound costs < 4 ms of script (" + st.worstMs.toFixed(2) + ")");
+    assert(st.worstWarmMs < 4, "starting a warm sound costs < 4 ms of script (" + st.worstWarmMs.toFixed(2) + ")");
+    // the first play makes the AudioContext, and a take not rendered ahead renders on the spot
+    assert(st.worstColdMs < 12, "the cold play (first, or rendered on the move) costs < 12 ms (" + st.worstColdMs.toFixed(2) + ")");
   }
   await page.evaluate(() => window.__app.store.dispatch("settings.set", { key: "sound", value: "off" }));
   const before = await page.evaluate(() => window.__play.sound.stats.plays);
