@@ -14,6 +14,9 @@
  *   game.start / game.end                         the game rating
  *   game.undo                                     悔棋: that game is not rated
  *   game.import { you, opp, result }              an imported game: the game rating, like one played here
+ *   import.file { you, added }                    a file read; one without your name makes 我 ask 「这是你吗」
+ *   library.you { name }                          the answer: the games under that name that were nobody's
+ *                                                 rate as yours now (null: none of these)
  *
  * State, per skill: mastery `m` (0…1, a moving average of answers), the
  * positions solved, `lit` (has it: placed, or ≥ 3 solved and m ≥ 0.6);
@@ -44,6 +47,8 @@ export function initialState() {
     lastId: 0, placed: null,
     puzzle: { r: START_RATING, rd: 350, vol: 0.06 }, game: null, games: 0, openGames: {}, unrated: 0, imported: 0,
     skills: {}, cards: {}, extra: {}, items: {}, days: {}, perGame: {}, misses: [], curve: [],
+    // imported games whose side is not known yet: id → [white, black, whiteElo, blackElo, result]
+    unclaimed: {}, ask: { file: 0, answered: 0 },
   };
 }
 
@@ -153,14 +158,51 @@ function gameEnd(st, e, tz) {
  * result moves the game rating. It does not count towards today's games —
  * it was played some other day.
  */
+const RESULTS = ["1-0", "0-1", "1/2-1/2"];
+function rateImported(st, you, opp, result) {
+  if (!Number.isFinite(opp) || !RESULTS.includes(result)) return false;
+  const score = result === "1/2-1/2" ? 0.5 : (result === "1-0") === (you === "w") ? 1 : 0;
+  st.game ||= { r: st.puzzle.r, rd: 200, vol: 0.06 };
+  st.game = ChessRating.update(st.game, [{ r: opp, rd: 60, score }]);
+  st.games++;
+  return true;
+}
 function imported(st, e) {
   st.imported++;
   const you = e.you === "w" || e.you === "b" ? e.you : null;
-  if (!you || !Number.isFinite(e.opp) || !["1-0", "0-1", "1/2-1/2"].includes(e.result)) return;
-  const score = e.result === "1/2-1/2" ? 0.5 : (e.result === "1-0") === (you === "w") ? 1 : 0;
-  st.game ||= { r: st.puzzle.r, rd: 200, vol: 0.06 };
-  st.game = ChessRating.update(st.game, [{ r: e.opp, rd: 60, score }]);
-  st.games++;
+  if (you) return rateImported(st, you, e.opp, e.result);
+  // nobody's yet: kept until 「这是你吗」 names a side (library.you)
+  if ((e.white || e.black) && e.gameId) st.unclaimed[e.gameId] = [e.white || "", e.black || "", e.whiteElo ?? null, e.blackElo ?? null, e.result];
+  return false;
+}
+
+/**
+ * 「这是你吗」 answered: every game still nobody's with that name on one side
+ * is yours on that side, and rates against the other side's Elo — the
+ * games a file's import could not place (v20-0-plan §10). null: none of
+ * these; the question is put away until the next file without a name.
+ */
+function claimed(st, e) {
+  st.ask.answered = e.id ?? st.ask.file;
+  if (!e.name) return;
+  for (const [id, [white, black, we, be, result]] of Object.entries(st.unclaimed)) {
+    const you = white === e.name ? "w" : black === e.name ? "b" : null;
+    if (!you) continue;
+    delete st.unclaimed[id];
+    rateImported(st, you, you === "w" ? be : we, result);
+  }
+}
+
+/**
+ * The names to offer when 我 asks 「这是你吗」: the most frequent ones among
+ * the games still nobody's, with how many games each — [] when there is
+ * nothing to ask (no such games, or the last file's question was answered).
+ */
+export function youCandidates(st, max = 4) {
+  if (!(st.ask.file > st.ask.answered)) return [];
+  const n = new Map();
+  for (const [white, black] of Object.values(st.unclaimed)) for (const name of new Set([white, black])) if (name) n.set(name, (n.get(name) || 0) + 1);
+  return [...n].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, max).map(([name, games]) => ({ name, games }));
 }
 
 /**
@@ -198,6 +240,11 @@ export function apply(st, e, { tz = 0, opponentRating = () => null } = {}) {
       return st;
     case "game.end": gameEnd(st, e, tz); break;
     case "game.import": imported(st, e); break;
+    case "import.file":
+      // a file whose games carry names but none of them yours (library/import.js inferName)
+      if (!e.you && e.added) st.ask.file = e.id ?? st.ask.answered + 1;
+      return st;
+    case "library.you": claimed(st, e); break;
     default: return st;
   }
   mark(st, e.at, tz);
