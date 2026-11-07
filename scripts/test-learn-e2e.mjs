@@ -265,7 +265,7 @@ async function solve(page, it) {
   assert(/上周你漏看捉双 5 次，本周 1 次/.test(week), "the weekly line from the events: " + week);
   assert(await page.$("[data-test=curve] polyline"), "the growth curve");
   assert((await page.textContent("[data-test=stage-goal]")).includes("1200"), "the next stage: 1200");
-  assert(await page.$eval("[data-test=import-pgn]", (b) => b.disabled), "PGN import is a placeholder");
+  assert(await page.$eval("[data-test=import-pgn]", (b) => !b.disabled) && await page.$("[data-test=lib-count]"), "我 has the library and its 导入 PGN (scripts/test-import-e2e.mjs drives it)");
   await shot(page, "07-me");
   // and the learn page: still one rating at most (none while learning)
   await page.click('a[href="#/learn"]');
