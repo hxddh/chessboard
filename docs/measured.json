@@ -1,5 +1,5 @@
 {
-  "_": "Measured figures. Written by scripts/*.mjs --record, read by README.md, src/web/js/engine.js and scripts/test-chess.mjs. Do not hand-edit: a number here that no run produced is worse than no number.",
+  "_": "Measured figures. Written by scripts/*.mjs --record, read by the app's tests (scripts/app/*.test.mjs) and the docs. Do not hand-edit: a number here that no run produced is worse than no number.",
   "boardLook": {
     "what": "8.0 A3：每块棋盘、每种标记（上一步、选中、将军、提示、引擎箭头）叠在浅格（cl）与深格（cd）上的色度 C*，两者都不得超过上限；同一标记浅格与深格两个叠色之间的 ΔE00（dE）不得超过上限 —— 同一个标记在两种格子上要读成同一个标记。distinct：每两块棋盘深格之间的 ΔE00，最近的一对不得低于下限（7.9.0 的「日」与「木」只差 6.4）",
     "script": "scripts/measure-marks.mjs --record",
@@ -362,10 +362,22 @@
     }
   },
   "ciWallClock": {
-    "what": "checks.yml 一次 PR 运行的墙钟：第一个作业排队 → 最后一个作业结束（分钟，含排队）；critical 为耗时最长的单个作业。数据取自 GitHub API 的 jobs（started_at / completed_at），不手填",
-    "script": "node scripts/ci-wallclock.mjs RUN_ID… --label=… --record",
-    "targetMin": 15,
-    "lastThreeOk": false,
+    "what": "checks.yml 一次 PR 运行的墙钟：第一个作业排队 → 最后一个作业结束（分钟，含排队）；always 只算每个 PR 都跑的作业（不含按路径触发的 opponents / native）；critical 为耗时最长的单个作业。数据取自 GitHub API 的 jobs（started_at / completed_at），不手填",
+    "script": "node scripts/ci-wallclock.mjs --pr=129 --record（或 RUN_ID… / --from=…）",
+    "targetMin": 10,
+    "latest": {
+      "of": [
+        42330589853,
+        42333157549,
+        42336513751,
+        42337087744
+      ],
+      "runs": 1,
+      "alwaysRuns": 2,
+      "medianAlways": 3.7,
+      "medianWall": 17.6,
+      "ok": true
+    },
     "runs": [
       {
         "run": 36708776605,
@@ -526,6 +538,81 @@
         "jobs": 39,
         "green": true,
         "label": "8.4.0（PR #110，同时跑着发布彩排）"
+      },
+      {
+        "run": 42330589853,
+        "sha": "682102a",
+        "wall": 25.1,
+        "always": 7.3,
+        "alwaysGreen": false,
+        "critical": "native-windows / Windows package",
+        "criticalMin": 24.3,
+        "jobs": 17,
+        "pathGated": true,
+        "green": false,
+        "notGreen": [
+          "static (windows-2025): failure",
+          "visual baseline (Chromium): failure",
+          "browser (Chromium): failure"
+        ],
+        "label": "20.0 E3 PR #129"
+      },
+      {
+        "run": 42333157549,
+        "sha": "929202a",
+        "wall": 17.6,
+        "always": 6.2,
+        "alwaysGreen": true,
+        "critical": "native-windows / Windows package",
+        "criticalMin": 17.3,
+        "jobs": 17,
+        "pathGated": true,
+        "green": true,
+        "label": "20.0 E3 PR #129"
+      },
+      {
+        "run": 42336513751,
+        "sha": "9d8a247",
+        "wall": 4.4,
+        "always": 3.7,
+        "alwaysGreen": true,
+        "critical": "native-macos / macOS scenarios (automation build, not released)",
+        "criticalMin": 4.2,
+        "jobs": 18,
+        "pathGated": true,
+        "green": false,
+        "notGreen": [
+          "opponents convert (4/4): cancelled",
+          "opponents convert (3/4): cancelled",
+          "opponents convert (2/4): cancelled",
+          "opponents convert (1/4): cancelled",
+          "native-macos / macOS scenarios (automation build, not released): cancelled",
+          "native-windows / Windows package: cancelled",
+          "native-macos / macOS package: cancelled",
+          "native-windows / Windows scenarios (automation build, not released): cancelled",
+          "opponents convert (verdict): cancelled"
+        ],
+        "label": "20.0 E3 PR #129"
+      },
+      {
+        "run": 42337087744,
+        "sha": "1bfc29f",
+        "wall": 10.7,
+        "always": 5,
+        "alwaysGreen": false,
+        "critical": "native-macos / macOS package",
+        "criticalMin": 10.5,
+        "jobs": 18,
+        "pathGated": true,
+        "green": false,
+        "notGreen": [
+          "zig (windows-2025): failure",
+          "native-windows / Windows scenarios (automation build, not released): failure",
+          "native-macos / macOS package: cancelled",
+          "native-windows / Windows package: failure",
+          "native-macos / macOS scenarios (automation build, not released): failure"
+        ],
+        "label": "20.0 E3 PR #129"
       }
     ]
   },
