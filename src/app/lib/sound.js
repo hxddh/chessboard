@@ -1,7 +1,8 @@
 /**
- * Sounds for the play screen: move, capture, check, castle, promote and the
- * endings, from 19.0's wooden set (core/sounds). `played` keeps the last
- * names for the e2e (headless Chromium does not let anyone listen).
+ * The app's sounds — 下's and 学's boards alike: move, capture, check, castle,
+ * promote, the endings, a right and a wrong answer, from 19.0's wooden set
+ * (core/sounds). `played` keeps the last names for the e2e (headless
+ * Chromium does not let anyone listen).
  *
  * Feel (v20-0-plan §5 H), as 19.0's audio.js tuned it:
  *   latency   the AudioContext ("interactive") is made and resumed on the
@@ -14,9 +15,10 @@
  *             compressor and a 0.9 gain before the output, so two that
  *             overlap (your move, the reply) never clip
  *   setting   `enabled()` is read on every sound; off makes no context at all
- * @module pages/play-sound
+ * @module lib/sound
  */
 import { renderSound, heftOf, STRIKES } from "../core/sounds.js";
+import { Chess } from "../core/chess.js";
 
 /** The sound a move makes, from its SAN. */
 export function moveSound(san) {
@@ -25,6 +27,20 @@ export function moveSound(san) {
   if (/[+#]$/.test(san)) return "check";
   if (san.includes("x")) return "capture";
   return "move";
+}
+
+/**
+ * The sound of the move `from`→`to` in `fen` (a board that only knows the
+ * position before and the squares): { name, piece, color }, or null when it is
+ * not a legal move there (a jump to another position makes no sound).
+ */
+export function moveSoundAt(fen, from, to) {
+  let m = null;
+  try {
+    const g = new Chess(fen);
+    m = g.moves({ verbose: true }).find((x) => x.from === from && x.to === to) || null;
+  } catch { m = null; }
+  return m ? { name: moveSound(m.san), piece: m.piece, color: m.color } : null;
 }
 
 /** Sounds with four takes and a weight per man (sound-bank VARIED / HEFTED). */

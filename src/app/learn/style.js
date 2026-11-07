@@ -54,7 +54,35 @@ const CSS = `
 .me .needs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .me .needs li { padding: 2px 10px; border-radius: var(--radius-full); background: var(--btn-hover); font-size: .875rem; }
 .me .muted { color: var(--muted); margin: 0; }
-.me .games { margin: 0; padding-left: 18px; color: var(--muted); }
+.me[hidden], .lib-game[hidden] { display: none !important; }
+.me .small { font-size: .8125rem; }
+.me .you-ask { padding: 10px 12px; border: 1px solid var(--accent); border-radius: var(--radius-sm); display: grid; gap: 6px; }
+.me .you-ask .q { margin: 0; font-weight: 600; }
+.me .you-ask .names { display: flex; flex-wrap: wrap; gap: 6px; }
+.me button.quiet { background: transparent; box-shadow: none; border-color: transparent; color: var(--muted); }
+.me .lib-box { display: grid; gap: 8px; }
+.me .lib-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+.me .lib-filter input { flex: 1 1 180px; min-width: 0; }
+.me .lib-filter input, .me .lib-filter select { height: var(--ctl-h); padding: 0 8px; border-radius: var(--radius-sm); border: 1px solid var(--btn-edge); background: var(--bg, var(--card)); color: var(--text); font: inherit; }
+.me .lib-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.me .lib-list > li.muted { padding: 6px 2px; }
+.me button.lib-row { width: 100%; height: auto; min-height: var(--ctl-h); padding: 6px 10px; box-shadow: none; border-color: transparent; background: transparent;
+  display: grid; grid-template-columns: 7.5em minmax(0, 1fr) auto auto; gap: 10px; align-items: baseline; text-align: left; }
+.me button.lib-row:hover { background: var(--btn-hover); }
+.me .lib-row .when, .me .lib-row .tags { color: var(--muted); font-size: .875rem; font-variant-numeric: tabular-nums; }
+.me .lib-row .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.me .lib-row[data-outcome="win"] .res { color: var(--judge-good, var(--win)); }
+.me .lib-row[data-outcome="loss"] .res { color: var(--judge-bad, var(--danger)); }
+.me .lib-pager { display: flex; align-items: center; gap: 8px; }
+.me .lib-pager [data-test="lib-total"] { margin-left: auto; }
+.lib-game .lib-head { gap: 10px; justify-content: flex-start; }
+.lib-game .lib-head .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-game .lib-head .muted { color: var(--muted); font-size: .875rem; margin-left: auto; white-space: nowrap; }
+.lib-game .drawer { margin-top: 36px; }
+@media (max-width: 600px) {
+  .me button.lib-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .me .lib-row .when, .me .lib-row .tags { grid-column: 1 / -1; }
+}
 @media (max-width: 900px) {
   .learn { --board: min(calc(100vw - 40px), calc(100vh - 300px)); }
   .learn-main { flex-direction: column; }

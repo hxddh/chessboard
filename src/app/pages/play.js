@@ -34,7 +34,7 @@ import { sansOf } from "../core/pass.js";
 import { scalarOf, winPct } from "../core/winpct.js";
 import { newId } from "../services/db.js";
 import { playText } from "../text/play.js";
-import { createSound, moveSound } from "./play-sound.js";
+import { createSound, moveSound } from "../lib/sound.js";
 import { openSheet } from "./play-sheet.js";
 import { createDrawer } from "./play-drawer.js";
 import { createReview } from "../review/review.js";

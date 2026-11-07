@@ -7,6 +7,7 @@
  *                    for the opponents, the fake engine for analysis; stockfish: Stockfish alone
  *   ?db=memory       nothing persists;  ?dbname=x   a separate IndexedDB
  *   ?lang=en         start in a language (the e2e); otherwise the one chosen, else the system's
+ *   ?autoreview=0    no background review of imported games; &autoreviewDelay=ms before it starts (4000)
  * @module main
  */
 import { createRouter } from "./lib/router.js";
@@ -54,6 +55,11 @@ effect(() => {
   document.documentElement.dataset.theme = shellFor(s.appearance, s.boardTheme, prefersDark.value);
 });
 
+// imported games reviewed in the background (library/autoreview.js), loaded
+// after the first page and never while 下 or 学 has the engine
+const background = { wake() {}, version: signal(0), bg: null };
+const ENGINE_PAGES = new Set(["/play", "/learn"]);
+
 const router = createRouter({
   failText: (msg) => playText()("app.loadFailed", msg),
   routes: {
@@ -65,7 +71,7 @@ const router = createRouter({
   },
   outlet: document.getElementById("outlet"),
   fallback: "/play",
-  context: { store, engine, ready },
+  context: { store, engine, ready, background },
 });
 
 const links = [...document.querySelectorAll("[data-nav]")];
@@ -95,7 +101,16 @@ effect(() => {
     if (!started) { started = true; router.start(); } else router.remount();
   });
 });
+if (params.get("autoreview") !== "0") {
+  ready.then((db) => new Promise((r) => setTimeout(r, Number(params.get("autoreviewDelay") ?? 4000))).then(() => import("./library/autoreview.js")).then((m) => {
+    background.bg = m.startAutoReview({ engine, db, budget: Number(params.get("review")) || undefined,
+      busy: () => ENGINE_PAGES.has(router.route.peek().path),
+      onDone: () => { background.version.value++; } });
+    background.wake = () => background.bg.wake();
+  })).catch((e) => console.warn("autoreview:", e && e.message));
+}
+
 // for the e2e and the console: the app's parts, not its state
-window.__app = { store, engine, router, ready };
+window.__app = { store, engine, router, ready, background };
 // in the packaged app with CHESS_SELFTEST=1 only (selftest.js)
 startSelftest({ store, engine, router, ready, analyst });

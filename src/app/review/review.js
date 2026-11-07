@@ -23,7 +23,7 @@
  * @module review/review
  */
 import { signal, computed } from "../lib/signal.js";
-import { runProgressive, engineAnalyze, sansOf, deeper } from "../core/pass.js";
+import { runProgressive, runPass, engineAnalyze, sansOf, deeper } from "../core/pass.js";
 import { gradeMoves, selectMoments, MARK } from "../core/grade.js";
 import { gameAccuracy, winPctDrop, scalarOf, moveNumber, WIN_MISTAKE } from "../core/winpct.js";
 import { explainMove, explainText, explainMotif, explainKey, lineAfter, sanText } from "../core/explain.js";
@@ -80,6 +80,40 @@ export function whyNot(facts, fen, uci, t, { extra = false } = {}) {
   return d.kind === "mate" ? t("rv.ruleMate", sanText(d.san)) : t("rv.rulePiece", sanText(d.san), t("piece." + d.piece));
 }
 
+/** The events a finished pass leaves: its rows, and one `review.finding` per turning point (the learner model's evidence). */
+export function reviewEvents(gameId, fens, p, grades, moments, facts, { budget = null, auto = false } = {}) {
+  return [
+    { type: "review.analysis", gameId, budget, rows: passToRows(p, grades), ...(auto ? { auto: true } : {}) },
+    ...moments.map((m, i) => ({ type: "review.finding", gameId, ply: m.ply, san: m.san, side: m.side, fen: fens[m.ply], best: m.best || null,
+      severity: m.grade, swing: m.swing, motif: explainMotif(facts[i]) || null, fact: explainKey(facts[i]) || null, ...(auto ? { auto: true } : {}) })),
+  ];
+}
+
+/**
+ * The same review with nobody watching (library/autoreview.js): the 19.0
+ * pass at the normal budget with its deep rounds — no first card to hurry —
+ * then the turning points of `sides` (≤ 3), stored and handed to the learner
+ * model exactly as the review on the board stores them. `gate()` is awaited
+ * before every search, so the pass pauses (and keeps what it has) while the
+ * engine is somebody else's; `halt()` gives it up.
+ * @returns {Promise<{ moments: number } | null>} null when halted
+ */
+export async function reviewQuietly({ engine, db, game, sides = ["w", "b"], budget = REVIEW_BUDGET, gate = async () => {}, halt = () => null }) {
+  const levels = budgetsOf(budget);
+  const fens = [game.startFen, ...game.moves.map((m) => m.fen)];
+  const sans = game.moves.map((m) => m.san);
+  const analyze = engineAnalyze(engine);
+  const p = await runPass({ fens, sans, budget: levels.normal, deepBudget: levels.deep, halt,
+    analyze: async (fen, b, o) => { await gate(); return analyze(fen, b, o); } });
+  if (p.halted) return null;
+  const grades = gradeMoves(p);
+  const moments = selectMoments(p, grades, sides);
+  const facts = moments.map((m) => explainMove(fens[m.ply], m.san, { kind: "review", best: m.best, bestLine: p.pvs[m.ply],
+    line: lineAfter(p.pvs, sans, m.ply), evalBefore: p.scalars[m.ply], evalAfter: p.scalars[m.ply + 1] }));
+  for (const e of reviewEvents(game.id, fens, p, grades, moments, facts, { budget: levels.normal, auto: true })) await db.append(e);
+  return { moments: moments.length };
+}
+
 /**
  * @param {object} o
  * @param {object} o.engine   EngineService
@@ -112,7 +146,11 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET, later = (m
     const d = await db;
     let rows = await d.query("analysis.get", { gameId: game.id });
     if (my !== token) return;
-    const reviewed = async () => { const row = await d.query("game.get", { id: game.id }); return !!(row && row.reviewed); };
+    // a game played here, or one in the library (pages/me-game.js)
+    const reviewed = async () => {
+      const row = (await d.query("game.get", { id: game.id })) || (await d.query("library.get", { id: game.id }));
+      return !!(row && row.reviewed);
+    };
     if (rows.length === fens.length) {
       const { p, grades } = rowsToPass(rows, fens, sans);
       const moments = selectMoments(p, grades, sides);
@@ -160,9 +198,7 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET, later = (m
     const moments = mergeMoments(shown, selectMoments(p, grades, sides));
     const facts = factsOf(p, fens, sans, moments);
     data = { gameId: game.id, fens, sans, p, grades, moments, facts, sides, orientation, refining: false };
-    append({ type: "review.analysis", gameId: game.id, budget: levels.normal, rows: passToRows(p, grades) });
-    moments.forEach((m, i) => append({ type: "review.finding", gameId: game.id, ply: m.ply, san: m.san, side: m.side, fen: fens[m.ply], best: m.best || null,
-      severity: m.grade, swing: m.swing, motif: explainMotif(facts[i]) || null, fact: explainKey(facts[i]) || null }));
+    for (const e of reviewEvents(game.id, fens, p, grades, moments, facts, { budget: levels.normal })) append(e);
     resolveFinished();
     const s = state.peek();
     if (await wasReviewed) { if (my === token && s.phase === "running") state.value = { phase: "done", count: moments.length }; return; }

@@ -58,7 +58,18 @@ export default {
   "imp.file.empty": "文件是空的。", "imp.file.binary": "这不是文本文件。", "imp.file.badJson": "这个 JSON 文件读不了。",
   "imp.file.notExport": "这是 JSON 文件，但不是 19.0「导出全部数据」导出的文件。", "imp.file.v19NoGames": "这个 19.0 数据文件里没有对局。",
   "imp.file.noGames": "文件里没有找到对局 —— 它不像 PGN 文件。", "imp.file.tooLarge": "文件太大了（最多 64 MB）。", "imp.file.read": "文件读不了：{0}",
-  "me.games": "最近的对局", "me.vsEngine": "对电脑", "me.pvp": "双人", "me.noGames": "还没有对局",
+  "me.games": "对局", "me.vsEngine": "对电脑", "me.pvp": "双人", "me.noGames": "还没有对局 —— 下一盘，或者导入 PGN",
+  // 棋谱库的列表、「这是你吗」、后台复盘（pages/me-library.js、library/autoreview.js）
+  "lib.search": "搜索对手、赛事或日期", "lib.allResults": "全部结果", "lib.win": "胜", "lib.loss": "负", "lib.draw": "和",
+  "lib.allYears": "全部年份", "lib.page": "第 {0} / {1} 页", "lib.prev": "上一页", "lib.next": "下一页", "lib.none": "没有符合的对局",
+  "lib.total": "{0} 局", "lib.played": "在这里下的", "lib.reviewed": "已复盘", "lib.you": "你", "lib.white": "白方", "lib.black": "黑方",
+  "lib.open": "打开 {0}", "lib.vs": "{0} 对 {1}",
+  "lib.youAsk": "这些对局里，哪个名字是你？", "lib.youWhy": "认出你之后，这些对局会算进你的水平，并在后台复盘。",
+  "lib.youName": "{0}（{1} 局）", "lib.youNone": "都不是", "lib.youDone": "好的，你是「{0}」：{1} 局算进了你的水平。",
+  "lib.auto": "导入的对局会在你不下棋的时候自动复盘（最近 {0} 局，每天最多 {1} 局），找到的错会变成你的复习题。",
+  // 打开一盘（pages/me-game.js）
+  "game.back": "返回棋谱库", "game.review": "复盘这盘", "game.missing": "棋谱库里没有这盘棋。", "game.at": "第 {0} / {1} 步",
+  "game.startPos": "起始局面", "game.both": "不知道哪一方是你 —— 复盘看双方的着法。",
   // —— 技能 ——
   "sk.rook": "车怎么走", "sk.rook.why": "车沿横线、直线走任意格，不能越过别的子。",
   "sk.bishop": "象怎么走", "sk.bishop.why": "象沿斜线走任意格，永远待在同一种颜色的格子上。",

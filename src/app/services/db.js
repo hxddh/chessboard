@@ -52,14 +52,25 @@ const PROJECT = {
   "game.end": (e) => [{ merge: "games", key: e.gameId, patch: { result: { result: e.result, reason: e.reason }, endedAt: e.at } }],
   "settings.set": (e) => [{ put: "settings", value: { key: e.key, value: e.value } }],
   /** A finished review: one row per position of the game (ply = position index, 0 the start). */
-  "review.analysis": (e) => [
-    { delRange: "analysis", lower: [e.gameId, 0], upper: [e.gameId, MAX] },
-    ...e.rows.map((r, i) => ({ put: "analysis", value: { ...r, gameId: e.gameId, ply: i } })),
-    { merge: "games", key: e.gameId, patch: { analysed: { at: e.at, budget: e.budget || null } } },
-  ],
-  "review.done": (e) => [{ merge: "games", key: e.gameId, patch: { reviewed: e.at } }],
+  "review.analysis": (e) => {
+    const analysed = { analysed: e.auto ? { at: e.at, budget: e.budget || null, auto: true } : { at: e.at, budget: e.budget || null } };
+    return [
+      { delRange: "analysis", lower: [e.gameId, 0], upper: [e.gameId, MAX] },
+      ...e.rows.map((r, i) => ({ put: "analysis", value: { ...r, gameId: e.gameId, ply: i } })),
+      // a game played here or one in the library: whichever holds the id (a merge into neither is nothing)
+      { merge: "games", key: e.gameId, patch: analysed },
+      { merge: "library", key: e.gameId, patch: analysed },
+    ];
+  },
+  "review.done": (e) => [{ merge: "games", key: e.gameId, patch: { reviewed: e.at } }, { merge: "library", key: e.gameId, patch: { reviewed: e.at } }],
   /** An imported game (library/import.js): its row in the library, by its content's id. */
   "game.import": ({ type, id, gameId, at, ...rec }) => [{ put: "library", value: { ...rec, id: gameId, importedAt: at } }],
+  /**
+   * 「这是你吗」 answered (pages/me-library.js): the name chosen, and the games
+   * it makes yours — each [id, side, the other side's rating or null]. A
+   * name of null is "none of these": nothing changes.
+   */
+  "library.you": (e) => (e.games || []).map(([id, you, opp]) => ({ merge: "library", key: id, patch: { you, opp: Number.isFinite(opp) ? opp : null, claimed: e.at } })),
 };
 
 /** Named reads. `r` is the backend's reader: get, range, count. */
@@ -78,6 +89,11 @@ const QUERIES = {
   "events.since": (r, { after = 0, limit = 1000 } = {}) => r.range("events", after + 1, MAX, { limit }),
   /** The ids the library holds (an import counts what it has as duplicates). */
   "library.ids": async (r) => (await r.range("library", null, null)).map((g) => g.id),
+  /** Every imported game (the library list, the background review, 「这是你吗」). */
+  "library.all": (r) => r.range("library", null, null),
+  "library.get": (r, { id }) => r.get("library", id),
+  /** Every game played here (the library list shows the finished ones). */
+  "games.all": (r) => r.range("games", null, null),
   "settings.all": async (r) => Object.fromEntries((await r.range("settings", null, null)).map((s) => [s.key, s.value])),
   "table.count": (r, { table }) => {
     if (!TABLES[table]) throw new Error("db: no table " + table);
