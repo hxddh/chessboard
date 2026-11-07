@@ -23,7 +23,7 @@
  * package lists — offline, no sudo — and exits non-zero when anything is
  * missing:
  *
- *   1. nothing missing (Chromium on ubuntu-26.04, as a rule): done;
+ *   1. nothing missing (Chromium on ubuntu-latest, as a rule): done;
  *   2. the cache has .debs: `apt-get install` them as local files, check again;
  *   3. otherwise, or when 2 did not satisfy the check: `playwright
  *      install-deps` as before (the mirror), with apt keeping what it

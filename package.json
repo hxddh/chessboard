@@ -1,23 +1,22 @@
 {
   "name": "chessboard",
-  "version": "20.0.0",
+  "version": "19.0.0",
   "private": true,
-  "description": "国际象棋 Chessboard 20.0 — 学一样，下一盘像人的棋。Native SDK WebView 桌面应用的前端（src/app）、构建与检查脚本",
+  "description": "国际象棋 Chessboard — Native SDK WebView + Canvas 的检查与代码生成脚本",
   "license": "GPL-3.0-or-later",
   "engines": {
     "node": ">=26"
   },
   "scripts": {
-    "build": "node scripts/sync-dist.mjs",
-    "test": "npm run test:static && npm run test:app:e2e && npm run test:visual",
+    "build": "node scripts/bundle.mjs",
+    "test": "npm run test:static && npm run test:e2e",
     "test:static": "node scripts/run-static.mjs",
-    "test:app": "node scripts/test-app.mjs",
-    "build:app": "node scripts/build-app.mjs",
-    "test:app:e2e": "node scripts/test-app-e2e.mjs && node scripts/test-play-e2e.mjs && node scripts/test-maia3-e2e.mjs && node scripts/test-learn-e2e.mjs && node scripts/test-feel-e2e.mjs && node scripts/test-takeback-e2e.mjs && node scripts/test-import-e2e.mjs && node scripts/test-lang-e2e.mjs && node scripts/test-me-library-e2e.mjs && node scripts/test-shell-e2e.mjs && node scripts/test-walkthrough-e2e.mjs",
-    "test:visual": "node scripts/test-visual-e2e.mjs",
-    "serve:app": "node scripts/serve-app.mjs",
-    "gen:skills": "node scripts/gen-skills.mjs",
-    "gen:manifest": "node scripts/gen-manifest.mjs macos"
+    "test:e2e": "node scripts/test-board-e2e.mjs && node scripts/test-audio-e2e.mjs && node scripts/test-clock-e2e.mjs && node scripts/test-walk-e2e.mjs && node scripts/test-shell-e2e.mjs && node scripts/test-trainer-e2e.mjs && node scripts/test-content-e2e.mjs && node scripts/test-persist-e2e.mjs && node scripts/test-review-e2e.mjs && node scripts/test-library-e2e.mjs && node scripts/test-explorer-e2e.mjs && node scripts/test-sync-e2e.mjs && node scripts/test-repertoire-e2e.mjs && node scripts/test-selftest-e2e.mjs && node scripts/test-layout-e2e.mjs && node scripts/test-engine-e2e.mjs && node scripts/test-engine-flows-e2e.mjs && node scripts/test-endgames-e2e.mjs && node scripts/perf-e2e.mjs",
+    "test:engine": "node scripts/test-openings.mjs && node scripts/test-tactics.mjs && node scripts/test-novice.mjs && node scripts/test-strength.mjs && node scripts/test-analysis.mjs && node scripts/test-mines.mjs && node scripts/test-mined.mjs && node scripts/test-motif.mjs && node scripts/test-coach.mjs && node scripts/test-endgames-play.mjs",
+    "shots": "node scripts/shots.mjs",
+    "gen:engine": "node scripts/gen-engine-src.mjs",
+    "gen:manifest": "node scripts/gen-manifest.mjs",
+    "test:engine:sample": "node scripts/test-openings.mjs && node scripts/test-tactics.mjs && node scripts/test-novice.mjs && node scripts/test-strength.mjs && node scripts/test-analysis.mjs && node scripts/test-mines.mjs && node scripts/test-mined.mjs --sample=150 && node scripts/test-motif.mjs --games=6 && node scripts/test-coach.mjs && node scripts/test-endgames-play.mjs"
   },
   "devDependencies": {
     "esbuild": "0.28.2"

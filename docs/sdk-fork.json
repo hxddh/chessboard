@@ -1,6 +1,6 @@
 {
  "about": "v8-2-plan F2: every registered difference between our two hand-kept SDK copies and the SDK's own files. Read by scripts/sdk-diff.mjs; each group is explained in docs/sdk-fork-notes.md. A hunk: `up` is upstream's text, `ours` ours, `before`/`after` the upstream lines around it that place it.",
- "sdk": "0.11.0",
+ "sdk": "0.10.1",
  "files": [
   {
    "ours": "src/runner.zig",
@@ -17,10 +17,22 @@
  ],
  "groups": [
   {
+   "id": "R01",
+   "file": "src/runner.zig",
+   "kind": "unused",
+   "title": "记录库 / SQLite / 钥匙串 / 文件访问根目录：清单不声明这些能力，整段不抄"
+  },
+  {
    "id": "R02",
    "file": "src/runner.zig",
    "kind": "unused",
    "title": "会话录制与回放、启动计时：开发者诊断工具，不抄"
+  },
+  {
+   "id": "R03",
+   "file": "src/runner.zig",
+   "kind": "lag",
+   "title": "平台对象在栈上 initWithOptions / deinit，上游改为堆上 createWithOptions / destroy"
   },
   {
    "id": "R04",
@@ -167,6 +179,12 @@
    "title": "从 app.zon 推断 web 层：自己的精简解析（只读 web 相关字段，@embedFile app.zon）"
   },
   {
+   "id": "B12",
+   "file": "build.zig",
+   "kind": "lag",
+   "title": "x86_64 强制 LLVM 后端的规避（useLlvmWorkaround）没有抄"
+  },
+  {
    "id": "B13",
    "file": "build.zig",
    "kind": "ours",
@@ -176,16 +194,33 @@
    "id": "B14",
    "file": "build.zig",
    "kind": "ours",
-   "title": "macOS 上编译应用自己的 ObjC 胶水（src/native/mac_chrome.m）：打开文档的 Apple 事件、菜单栏的系统部分（11.0 W，20.0 E3）"
+   "title": "macOS 上编译应用自己的 ObjC 窗口外壳（src/native/mac_chrome.m）并链 WebKit（11.0 W）"
   },
   {
-   "id": "B16",
+   "id": "B15",
    "file": "build.zig",
    "kind": "ours",
-   "title": "SQLite 与迁移（20.0 A2）：relational_migrations 用手写的 src/db_migrations.zig；sqlite3.c 只编进 -Dui=app 的 exe 和测试"
+   "title": "Windows 上编译应用自己的窗口外壳（src/native/win_chrome.c）：标题栏跟主题明暗、Windows 11 上 Mica（12.0 N）"
   }
  ],
  "hunks": [
+  {
+   "group": "R01",
+   "file": "src/runner.zig",
+   "at": 5,
+   "before": [
+    "const native_sdk = @import(\"native_sdk\");",
+    "const app_manifest = @import(\"app_manifest_zon\");"
+   ],
+   "up": [
+    "const built_relational_migrations = @import(\"relational_migrations\");"
+   ],
+   "ours": [],
+   "after": [
+    "const window_placement = @import(\"window_placement.zig\");",
+    "const manifest_commands = if (@hasField(@TypeOf(app_manifest), \"commands\")) app_manifest.commands else .{};"
+   ]
+  },
   {
    "group": "R05",
    "file": "src/runner.zig",
@@ -208,8 +243,7 @@
    "after": [
     "pub const StdoutTraceSink = struct {",
     "    pub fn sink(self: *StdoutTraceSink) native_sdk.trace.Sink {"
-   ],
-   "_emptyAt": 11
+   ]
   },
   {
    "group": "R04",
@@ -262,8 +296,7 @@
    "after": [
     "pub const RunOptions = struct {",
     "    app_name: []const u8,"
-   ],
-   "_emptyAt": 26
+   ]
   },
   {
    "group": "R08",
@@ -284,8 +317,7 @@
    "after": [
     "    icon_path: []const u8 = \"assets/icon.png\",",
     "    default_frame: native_sdk.geometry.RectF = native_sdk.geometry.RectF.init(0, 0, 1100, 760),"
-   ],
-   "_emptyAt": 30
+   ]
   },
   {
    "group": "R10",
@@ -305,8 +337,7 @@
    "after": [
     "    bridge: ?native_sdk.BridgeDispatcher = null,",
     "    builtin_bridge: native_sdk.BridgePolicy = .{},"
-   ],
-   "_emptyAt": 31
+   ]
   },
   {
    "group": "R06",
@@ -345,13 +376,47 @@
    "after": [
     "    commands: ?[]const native_sdk.Command = null,",
     "    menus: ?[]const native_sdk.Menu = null,"
+   ]
+  },
+  {
+   "group": "R07",
+   "file": "src/runner.zig",
+   "at": 70,
+   "before": [
+    "    menus: ?[]const native_sdk.Menu = null,",
+    "    shortcuts: ?[]const native_sdk.Shortcut = null,"
    ],
-   "_emptyAt": 40
+   "up": [
+    "    /// Filled by `runWithOptions` from the manifest capability. App entry",
+    "    /// points do not set this themselves; the field only carries the owned",
+    "    /// binding uniformly into each platform's runtime options.",
+    "    record_store: ?native_sdk.RecordStoreBinding = null,",
+    "    relational_store: ?native_sdk.RelationalStoreBinding = null,",
+    "    credentials_enabled: bool = false,",
+    "    file_access: ?native_sdk.FileAccessBinding = null,",
+    "    /// Migration/testing switch. Shipping defaults to the final enforced",
+    "    /// posture; set false for the preceding warn-only behavior.",
+    "    file_access_enforce: bool = true,",
+    "    relational_migrations: []const native_sdk.relational_store.Migration = &built_relational_migrations.migrations,"
+   ],
+   "ours": [
+    "    /// v8-1-plan N2 (not in the SDK's app_runner): where to put the Runtime",
+    "    /// once it is built, and null again once it is gone. A bridge handler is",
+    "    /// handed no Runtime, and main.zig's chess.openPgn / chess.saveText need",
+    "    /// one to open the file dialogs natively (Runtime.showOpenDialog /",
+    "    /// showSaveDialog, SDK 0.10.1 runtime/core.zig). Set before `run`, so no",
+    "    /// bridge call can arrive first.",
+    "    runtime_slot: ?*?*native_sdk.Runtime = null,"
+   ],
+   "after": [
+    "",
+    "    fn appInfo(self: RunOptions, buffers: *StateBuffers) native_sdk.AppInfo {"
+   ]
   },
   {
    "group": "R08",
    "file": "src/runner.zig",
-   "at": 87,
+   "at": 85,
    "before": [
     "        var info: native_sdk.AppInfo = .{",
     "            .app_name = self.app_name,"
@@ -377,7 +442,7 @@
   {
    "group": "R08",
    "file": "src/runner.zig",
-   "at": 94,
+   "at": 92,
    "before": [
     "            .version = manifestStringField(\"version\"),",
     "            .description = manifestStringField(\"description\"),"
@@ -399,7 +464,7 @@
   {
    "group": "R08",
    "file": "src/runner.zig",
-   "at": 96,
+   "at": 94,
    "before": [
     "            .has_web_content = manifestHasWebContent(),",
     "            .declares_tray = manifestDeclaresTrayCapability(),"
@@ -420,7 +485,7 @@
   {
    "group": "R08",
    "file": "src/runner.zig",
-   "at": 100,
+   "at": 98,
    "before": [
     "            .bundle_id = self.bundle_id,",
     "            .icon_path = self.icon_path,"
@@ -442,7 +507,7 @@
   {
    "group": "R10",
    "file": "src/runner.zig",
-   "at": 103,
+   "at": 101,
    "before": [
     "            .update_public_key = manifestUpdateString(\"public_key\"),",
     "            .update_check_on_start = manifestUpdateCheckOnStart(),"
@@ -462,13 +527,12 @@
    "after": [
     "        };",
     "        const windows = manifestWindowOptions(buffers);"
-   ],
-   "_emptyAt": 91
+   ]
   },
   {
    "group": "R09",
    "file": "src/runner.zig",
-   "at": 115,
+   "at": 113,
    "before": [
     "        const windows = manifestWindowOptions(buffers);",
     "        if (windows.len > 0) {"
@@ -490,7 +554,7 @@
   {
    "group": "R10",
    "file": "src/runner.zig",
-   "at": 117,
+   "at": 115,
    "before": [
     "            info.main_window = windows[0];",
     "            info.windows = windows;"
@@ -530,13 +594,12 @@
    "after": [
     "        }",
     "        return info;"
-   ],
-   "_emptyAt": 102
+   ]
   },
   {
    "group": "R13",
    "file": "src/runner.zig",
-   "at": 163,
+   "at": 161,
    "before": [
     "};",
     ""
@@ -564,13 +627,12 @@
    "after": [
     "const CommandStorage = struct {",
     "    commands: [native_sdk.app_manifest.max_commands]native_sdk.Command = undefined,"
-   ],
-   "_emptyAt": 119
+   ]
   },
   {
    "group": "R12",
    "file": "src/runner.zig",
-   "at": 202,
+   "at": 200,
    "before": [
     "};",
     ""
@@ -592,7 +654,7 @@
   {
    "group": "R12",
    "file": "src/runner.zig",
-   "at": 206,
+   "at": 204,
    "before": [
     "    items: [native_sdk.platform.max_menu_items]native_sdk.MenuItem = undefined,",
     ""
@@ -611,7 +673,7 @@
   {
    "group": "R06",
    "file": "src/runner.zig",
-   "at": 259,
+   "at": 257,
    "before": [
     "};",
     ""
@@ -728,7 +790,7 @@
   {
    "group": "R11",
    "file": "src/runner.zig",
-   "at": 286,
+   "at": 284,
    "before": [
     "        .restore_state = windowBool(window, \"restore_state\", true),",
     "        .restore_policy = windowRestorePolicy(window),"
@@ -748,7 +810,7 @@
   {
    "group": "R11",
    "file": "src/runner.zig",
-   "at": 288,
+   "at": 286,
    "before": [
     "        .initial_placement = if (windowHasExplicitOrigin(window)) .explicit else .default,",
     "        .titlebar = windowTitlebarStyle(window),"
@@ -774,7 +836,7 @@
   {
    "group": "R13",
    "file": "src/runner.zig",
-   "at": 300,
+   "at": 298,
    "before": [
     "}",
     ""
@@ -818,7 +880,7 @@
   {
    "group": "R10",
    "file": "src/runner.zig",
-   "at": 321,
+   "at": 319,
    "before": [
     "}",
     ""
@@ -851,7 +913,7 @@
   {
    "group": "R10",
    "file": "src/runner.zig",
-   "at": 333,
+   "at": 331,
    "before": [
     "}",
     ""
@@ -1128,7 +1190,7 @@
   {
    "group": "R13",
    "file": "src/runner.zig",
-   "at": 597,
+   "at": 595,
    "before": [
     "        return .hide;",
     "    }"
@@ -1147,7 +1209,7 @@
   {
    "group": "R13",
    "file": "src/runner.zig",
-   "at": 600,
+   "at": 598,
    "before": [
     "}",
     ""
@@ -1180,7 +1242,7 @@
   {
    "group": "R13",
    "file": "src/runner.zig",
-   "at": 612,
+   "at": 610,
    "before": [
     "}",
     ""
@@ -1209,7 +1271,7 @@
   {
    "group": "R13",
    "file": "src/runner.zig",
-   "at": 618,
+   "at": 616,
    "before": [
     "    const visible = if (comptime @hasField(@TypeOf(app_manifest), \"dock_visible\")) app_manifest.dock_visible else true;",
     "    if (comptime !visible and !manifestDeclaresTrayCapability()) {"
@@ -1226,9 +1288,114 @@
    ]
   },
   {
+   "group": "R01",
+   "file": "src/runner.zig",
+   "at": 621,
+   "before": [
+    "}",
+    ""
+   ],
+   "up": [
+    "/// Whether app.zon declares the Tier-2 record store. This is comptime so",
+    "/// apps without the capability never analyze the SQLite open/deinit path.",
+    "fn manifestDeclaresStore() bool {",
+    "    if (comptime !@hasField(@TypeOf(app_manifest), \"capabilities\")) return false;",
+    "    inline for (app_manifest.capabilities) |capability| {",
+    "        const name: []const u8 = capability;",
+    "        if (comptime std.mem.eql(u8, name, \"store\")) return true;",
+    "    }",
+    "    return false;"
+   ],
+   "ours": [
+    "/// One string out of app.zon's optional `.updates` block. Absent block,",
+    "/// absent field, and explicit null all read as \"\" — the host treats an empty",
+    "/// feed URL or public key as \"updates are off\", so there is no third state",
+    "/// to represent.",
+    "fn manifestUpdateString(comptime field: []const u8) []const u8 {",
+    "    if (comptime !@hasField(@TypeOf(app_manifest), \"updates\")) return \"\";",
+    "    const updates = app_manifest.updates;",
+    "    if (comptime !@hasField(@TypeOf(updates), field)) return \"\";",
+    "    const value = @field(updates, field);",
+    "    return switch (@typeInfo(@TypeOf(value))) {",
+    "        .optional => value orelse \"\",",
+    "        else => value,",
+    "    };"
+   ],
+   "after": [
+    "}",
+    ""
+   ]
+  },
+  {
+   "group": "R01",
+   "file": "src/runner.zig",
+   "at": 632,
+   "before": [
+    "}",
+    ""
+   ],
+   "up": [
+    "fn manifestDeclaresSqlite() bool {",
+    "    if (comptime !@hasField(@TypeOf(app_manifest), \"capabilities\")) return false;",
+    "    inline for (app_manifest.capabilities) |capability| {",
+    "        const name: []const u8 = capability;",
+    "        if (comptime std.mem.eql(u8, name, \"sqlite\")) return true;",
+    "    }",
+    "    return false;"
+   ],
+   "ours": [
+    "fn manifestUpdateCheckOnStart() bool {",
+    "    if (comptime !@hasField(@TypeOf(app_manifest), \"updates\")) return false;",
+    "    if (comptime !@hasField(@TypeOf(app_manifest.updates), \"check_on_start\")) return false;",
+    "    return app_manifest.updates.check_on_start;"
+   ],
+   "after": [
+    "}",
+    ""
+   ]
+  },
+  {
+   "group": "R01",
+   "file": "src/runner.zig",
+   "at": 641,
+   "before": [
+    "}",
+    ""
+   ],
+   "up": [
+    "fn manifestDeclaresCredentials() bool {"
+   ],
+   "ours": [
+    "fn manifestDeclaresTrayCapability() bool {"
+   ],
+   "after": [
+    "    if (comptime !@hasField(@TypeOf(app_manifest), \"capabilities\")) return false;",
+    "    inline for (app_manifest.capabilities) |capability| {"
+   ]
+  },
+  {
+   "group": "R01",
+   "file": "src/runner.zig",
+   "at": 645,
+   "before": [
+    "    inline for (app_manifest.capabilities) |capability| {",
+    "        const name: []const u8 = capability;"
+   ],
+   "up": [
+    "        if (comptime std.mem.eql(u8, name, \"credentials\")) return true;"
+   ],
+   "ours": [
+    "        if (comptime std.mem.eql(u8, name, \"tray\")) return true;"
+   ],
+   "after": [
+    "    }",
+    "    return false;"
+   ]
+  },
+  {
    "group": "R13",
    "file": "src/runner.zig",
-   "at": 650,
+   "at": 648,
    "before": [
     "        if (comptime std.mem.eql(u8, name, \"credentials\")) return true;",
     "    }",
@@ -1254,7 +1421,7 @@
   {
    "group": "R16",
    "file": "src/runner.zig",
-   "at": 686,
+   "at": 684,
    "before": [
     "}",
     ""
@@ -1263,18 +1430,14 @@
    "ours": [
     "/// Whether this exe was built with -Dautomation=true, for the app module,",
     "/// which has no build_options of its own: the automation driver's seams in",
-    "/// in bridge.zig compile in only then (v8-2-plan §9 M4 评审修正).",
+    "/// bridge.zig / sync.zig compile in only then (v8-2-plan §9 M4 评审修正).",
     "pub const automation_build = build_options.automation;",
     "/// 11.0 W: whether this exe drives the macOS platform — not the null backend",
-    "/// built on a Mac host — for main.zig and menus.zig: the app's own AppKit",
-    "/// glue (src/native/mac_chrome.m) is compiled into exactly these builds.",
+    "/// built on a Mac host — for main.zig and chrome.zig: the app's own window",
+    "/// shell (src/native/mac_chrome.m) is compiled into exactly these builds.",
     "pub const mac_shell = std.mem.eql(u8, build_options.platform, \"macos\");",
-    "/// 12.0 N: the same for the Windows platform.",
+    "/// 12.0 N: the same for the Windows platform's chrome (src/native/win_chrome.c).",
     "pub const win_shell = std.mem.eql(u8, build_options.platform, \"windows\");",
-    "/// The schema the store is opened with (db_migrations.zig), for db.zig's tests.",
-    "pub const db_migrations: []const native_sdk.relational_store.Migration = &built_relational_migrations.migrations;",
-    "pub const manifest_sqlite = manifestDeclaresSqlite();",
-    "pub const manifest_spa_fallback = if (@hasField(@TypeOf(app_manifest), \"frontend\") and @hasField(@TypeOf(app_manifest.frontend), \"spa_fallback\")) app_manifest.frontend.spa_fallback else false;",
     ""
    ],
    "after": [
@@ -1283,31 +1446,199 @@
    ]
   },
   {
-   "group": "R02",
+   "group": "R01",
    "file": "src/runner.zig",
-   "at": 788,
+   "at": 688,
    "before": [
-    "fn runNull(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {",
-    "    var buffers: StateBuffers = undefined;",
+    "        std.debug.print(\"debug-overlay=true backend={s} web-engine={s} trace={s}\\n\", .{ build_options.platform, build_options.web_engine, build_options.trace });",
+    "    }"
+   ],
+   "up": [
+    "    // Session replay never opens a real platform: the journal is the",
+    "    // world, and it drives a headless runtime over the null platform.",
+    "    if (init.environ_map.get(\"NATIVE_SDK_SESSION_REPLAY\")) |journal_path| {",
+    "        return runSessionReplay(app, options, init, journal_path);",
+    "    }",
+    "    const RecordStoreType = if (comptime manifestDeclaresStore()) native_sdk.RecordStore else void;",
+    "    var record_store_value: RecordStoreType = undefined;",
+    "    var record_store_open = false;",
+    "    var resolved_options = options;",
+    "    resolved_options.credentials_enabled = manifestDeclaresCredentials();",
+    "    var file_root_buffers: [6][1024]u8 = undefined;",
+    "    var file_roots: [6][]const u8 = undefined;",
+    "    const resolved_file_dirs = native_sdk.app_dirs.resolve(",
+    "        .{ .name = options.bundle_id },",
+    "        native_sdk.app_dirs.currentPlatform(),",
+    "        native_sdk.debug.envFromMap(init.environ_map),",
+    "        native_sdk.app_dirs.Buffers.fromArray(1024, &file_root_buffers),",
+    "    ) catch null;",
+    "    var file_root_count: usize = 0;",
+    "    if (resolved_file_dirs) |dirs| {",
+    "        file_roots = .{ dirs.config, dirs.cache, dirs.data, dirs.state, dirs.logs, dirs.temp };",
+    "        file_root_count = file_roots.len;",
+    "    }",
+    "    // Fail closed if app-dir resolution is unavailable: a filesystem grant",
+    "    // still opens arbitrary paths, while an ungranted app gets no accidental",
+    "    // unrestricted fallback merely because HOME/XDG data was malformed.",
+    "    resolved_options.file_access = .{",
+    "        .roots = file_roots[0..file_root_count],",
+    "        .permitted = native_sdk.security.hasPermission(options.security.permissions, native_sdk.security.permission_filesystem),",
+    "        .enforce = options.file_access_enforce,",
+    "    };",
+    "    if (comptime manifestDeclaresStore()) {",
+    "        var data_dir_buffer: [512]u8 = undefined;",
+    "        const app_data_dir = native_sdk.app_dirs.resolveOne(",
+    "            .{ .name = options.bundle_id },",
+    "            native_sdk.app_dirs.currentPlatform(),",
+    "            native_sdk.debug.envFromMap(init.environ_map),",
+    "            .data,",
+    "            &data_dir_buffer,",
+    "        ) catch return error.StoreDataDirUnavailable;",
+    "        try std.Io.Dir.cwd().createDirPath(init.io, app_data_dir);",
+    "        record_store_value = try native_sdk.RecordStore.open(std.heap.page_allocator, app_data_dir);",
+    "        record_store_open = true;",
+    "        resolved_options.record_store = record_store_value.binding();",
+    "    }",
+    "    defer if (comptime manifestDeclaresStore()) {",
+    "        if (record_store_open) record_store_value.deinit();",
+    "    };",
+    "    const RelationalStoreType = if (comptime manifestDeclaresSqlite()) native_sdk.RelationalStore else void;",
+    "    var relational_store_value: RelationalStoreType = undefined;",
+    "    var relational_store_open = false;",
+    "    if (comptime manifestDeclaresSqlite()) {",
+    "        var data_dir_buffer: [512]u8 = undefined;",
+    "        const app_data_dir = native_sdk.app_dirs.resolveOne(",
+    "            .{ .name = options.bundle_id },",
+    "            native_sdk.app_dirs.currentPlatform(),",
+    "            native_sdk.debug.envFromMap(init.environ_map),",
+    "            .data,",
+    "            &data_dir_buffer,",
+    "        ) catch return error.SqliteDataDirUnavailable;",
+    "        try std.Io.Dir.cwd().createDirPath(init.io, app_data_dir);",
+    "        const open_result = try native_sdk.RelationalStore.openMigrated(std.heap.page_allocator, app_data_dir, options.relational_migrations);",
+    "        switch (open_result.outcome) {",
+    "            .ok => relational_store_value = open_result.database.?,",
+    "            .migrate_failed => return error.SqliteMigrationFailed,",
+    "            .version_unknown => return error.SqliteVersionUnknown,",
+    "        }",
+    "        relational_store_open = true;",
+    "        resolved_options.relational_store = relational_store_value.binding();",
+    "    }",
+    "    defer if (comptime manifestDeclaresSqlite()) {",
+    "        if (relational_store_open) relational_store_value.deinit();",
+    "    };"
+   ],
+   "ours": [],
+   "after": [
+    "    if (comptime std.mem.eql(u8, build_options.platform, \"macos\")) {",
+    "        try runMacos(app, resolved_options, init);"
+   ]
+  },
+  {
+   "group": "R01",
+   "file": "src/runner.zig",
+   "at": 762,
+   "before": [
+    "    };",
+    "    if (comptime std.mem.eql(u8, build_options.platform, \"macos\")) {"
+   ],
+   "up": [
+    "        try runMacos(app, resolved_options, init);"
+   ],
+   "ours": [
+    "        try runMacos(app, options, init);"
+   ],
+   "after": [
+    "    } else if (comptime std.mem.eql(u8, build_options.platform, \"linux\")) {",
+    "        try runLinux(app, resolved_options, init);"
+   ]
+  },
+  {
+   "group": "R01",
+   "file": "src/runner.zig",
+   "at": 764,
+   "before": [
+    "        try runMacos(app, resolved_options, init);",
+    "    } else if (comptime std.mem.eql(u8, build_options.platform, \"linux\")) {"
+   ],
+   "up": [
+    "        try runLinux(app, resolved_options, init);"
+   ],
+   "ours": [
+    "        try runLinux(app, options, init);"
+   ],
+   "after": [
+    "    } else if (comptime std.mem.eql(u8, build_options.platform, \"windows\")) {",
+    "        try runWindows(app, resolved_options, init);"
+   ]
+  },
+  {
+   "group": "R01",
+   "file": "src/runner.zig",
+   "at": 766,
+   "before": [
+    "        try runLinux(app, resolved_options, init);",
+    "    } else if (comptime std.mem.eql(u8, build_options.platform, \"windows\")) {"
+   ],
+   "up": [
+    "        try runWindows(app, resolved_options, init);"
+   ],
+   "ours": [
+    "        try runWindows(app, options, init);"
+   ],
+   "after": [
+    "    } else {",
+    "        try runNull(app, resolved_options, init);"
+   ]
+  },
+  {
+   "group": "R01",
+   "file": "src/runner.zig",
+   "at": 768,
+   "before": [
+    "        try runWindows(app, resolved_options, init);",
+    "    } else {"
+   ],
+   "up": [
+    "        try runNull(app, resolved_options, init);"
+   ],
+   "ours": [
+    "        try runNull(app, options, init);"
+   ],
+   "after": [
+    "    }",
+    "}"
+   ]
+  },
+  {
+   "group": "R03",
+   "file": "src/runner.zig",
+   "at": 776,
+   "before": [
     "    var app_info = options.appInfo(&buffers);",
     "    const store = prepareStateStore(init.io, init.environ_map, &app_info, &buffers);"
    ],
    "up": [
-    "    const session_recorder = setupSessionRecorder(init, app_info, app.recording_policy, app.blob_policy);"
-   ],
-   "ours": [],
-   "after": [
+    "    const session_recorder = setupSessionRecorder(init, app_info);",
     "    // Heap wrapper, latch-gated free: worker threads hold this address",
     "    // as the channel wake context and an abandoned wake call may",
     "    // dereference it after this frame unwinds (see",
-    "    // `NullPlatform.createWithOptions`/`destroy`)."
+    "    // `NullPlatform.createWithOptions`/`destroy`).",
+    "    const null_platform = try native_sdk.NullPlatform.createWithOptions(.{}, webEngine(), app_info);",
+    "    defer null_platform.destroy();"
    ],
-   "_emptyAt": 642
+   "ours": [
+    "    var null_platform = native_sdk.NullPlatform.initWithOptions(.{}, webEngine(), app_info);"
+   ],
+   "after": [
+    "    var trace_sink = StdoutTraceSink{};",
+    "    var log_buffers: native_sdk.debug.LogPathBuffers = .{};"
+   ]
   },
   {
    "group": "R04",
    "file": "src/runner.zig",
-   "at": 809,
+   "at": 797,
    "before": [
     "    defer null_platform.destroy();",
     "    var trace_sink = StdoutTraceSink{};",
@@ -1346,13 +1677,12 @@
     "    // (and disarm the producer wake bindings) before the runtime",
     "    // storage itself goes.",
     "    defer runtime.deinit();"
-   ],
-   "_emptyAt": 662
+   ]
   },
   {
    "group": "R13",
    "file": "src/runner.zig",
-   "at": 817,
+   "at": 805,
    "before": [
     "    }",
     "    var filtered_trace_sink: FilteredTraceSink = .{ .child = runtime_trace_sink };",
@@ -1387,7 +1717,7 @@
   {
    "group": "R05",
    "file": "src/runner.zig",
-   "at": 821,
+   "at": 809,
    "before": [
     "    const runtime = try std.heap.page_allocator.create(native_sdk.Runtime);",
     "    defer std.heap.page_allocator.destroy(runtime);"
@@ -1403,13 +1733,12 @@
    "after": [
     "    native_sdk.Runtime.initAt(runtime, .{",
     "        .platform = null_platform.platform(),"
-   ],
-   "_emptyAt": 672
+   ]
   },
   {
    "group": "R05",
    "file": "src/runner.zig",
-   "at": 828,
+   "at": 816,
    "before": [
     "    native_sdk.Runtime.initAt(runtime, .{",
     "        .platform = null_platform.platform(),"
@@ -1421,13 +1750,12 @@
    "after": [
     "        .trace_sink = runtime_trace_sink,",
     "        .log_path = if (log_setup) |setup| setup.paths.log_file else null,"
-   ],
-   "_emptyAt": 674
+   ]
   },
   {
    "group": "R06",
    "file": "src/runner.zig",
-   "at": 833,
+   "at": 821,
    "before": [
     "        .platform = null_platform.platform(),",
     "        .max_image_pixel_bytes = manifestImagePixelBudget(),",
@@ -1452,7 +1780,7 @@
   {
    "group": "R05",
    "file": "src/runner.zig",
-   "at": 835,
+   "at": 823,
    "before": [
     "        .platform = null_platform.platform(),",
     "        .max_image_pixel_bytes = manifestImagePixelBudget(),",
@@ -1477,13 +1805,46 @@
     "        .record_store = options.record_store,",
     "        .relational_store = options.relational_store,",
     "        .credentials_enabled = options.credentials_enabled,"
+   ]
+  },
+  {
+   "group": "R01",
+   "file": "src/runner.zig",
+   "at": 830,
+   "before": [
+    "        .js_window_api = options.js_window_api,",
+    "        .web_layer = webLayerEnabled(),",
+    "        .gpu_surface_frame_diagnostics = false,",
+    "        .security = options.security,",
+    "        .commands = commands,",
+    "        .menus = menus,",
+    "        .shortcuts = shortcuts,",
+    "        .automation = if (build_options.automation) native_sdk.automation.Server.init(init.io, \".zig-cache/native-sdk-automation\", app_info.resolvedWindowTitle()) else null,",
+    "        .window_state_store = store,"
    ],
-   "_emptyAt": 681
+   "up": [
+    "        .record_store = options.record_store,",
+    "        .relational_store = options.relational_store,",
+    "        .credentials_enabled = options.credentials_enabled,",
+    "        .file_access = options.file_access,"
+   ],
+   "ours": [],
+   "after": [
+    "        .environ = init.minimal.environ,",
+    "        .session_recorder = session_recorder,",
+    "    });",
+    "",
+    "    try runtime.run(app);",
+    "    finishSessionRecorder(session_recorder);",
+    "}",
+    "",
+    "fn runMacos(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {"
+   ]
   },
   {
    "group": "R02",
    "file": "src/runner.zig",
-   "at": 847,
+   "at": 835,
    "before": [
     "        .automation = if (build_options.automation) native_sdk.automation.Server.init(init.io, \".zig-cache/native-sdk-automation\", app_info.resolvedWindowTitle()) else null,",
     "        .window_state_store = store,",
@@ -1505,13 +1866,12 @@
     "}",
     "",
     "fn runMacos(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {"
-   ],
-   "_emptyAt": 691
+   ]
   },
   {
    "group": "R07",
    "file": "src/runner.zig",
-   "at": 850,
+   "at": 838,
    "before": [
     "        .file_access = options.file_access,",
     "        .environ = init.minimal.environ,",
@@ -1535,7 +1895,7 @@
   {
    "group": "R02",
    "file": "src/runner.zig",
-   "at": 851,
+   "at": 839,
    "before": [
     "    });",
     "",
@@ -1549,13 +1909,12 @@
     "}",
     "",
     "fn runMacos(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {"
-   ],
-   "_emptyAt": 696
+   ]
   },
   {
    "group": "R02",
    "file": "src/runner.zig",
-   "at": 855,
+   "at": 843,
    "before": [
     "",
     "fn runMacos(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {"
@@ -1569,53 +1928,39 @@
    "after": [
     "    var buffers: StateBuffers = undefined;",
     "    var app_info = options.appInfo(&buffers);"
-   ],
-   "_emptyAt": 699
+   ]
   },
   {
-   "group": "R02",
+   "group": "R03",
    "file": "src/runner.zig",
-   "at": 861,
+   "at": 849,
    "before": [
-    "    native_sdk.runtime.launch_timing.lap(\"runner_main\");",
-    "    var buffers: StateBuffers = undefined;",
     "    var app_info = options.appInfo(&buffers);",
     "    const store = prepareStateStore(init.io, init.environ_map, &app_info, &buffers);"
    ],
    "up": [
-    "    const session_recorder = setupSessionRecorder(init, app_info, app.recording_policy, app.blob_policy);"
-   ],
-   "ours": [],
-   "after": [
+    "    const session_recorder = setupSessionRecorder(init, app_info);",
     "    // Heap wrapper, latch-gated free: worker threads hold this address",
     "    // as the channel wake context and an abandoned wake call may",
     "    // dereference it after this frame unwinds (see",
-    "    // `MacPlatform.createWithOptions`/`destroy`)."
-   ],
-   "_emptyAt": 702
-  },
-  {
-   "group": "R02",
-   "file": "src/runner.zig",
-   "at": 868,
-   "before": [
+    "    // `MacPlatform.createWithOptions`/`destroy`).",
     "    const mac_platform = try native_sdk.platform.macos.MacPlatform.createWithOptions(native_sdk.geometry.SizeF.init(720, 480), webEngine(), app_info);",
-    "    defer mac_platform.destroy();"
-   ],
-   "up": [
+    "    defer mac_platform.destroy();",
     "    native_sdk.runtime.launch_timing.lap(\"host_ready\");"
    ],
-   "ours": [],
+   "ours": [
+    "    var mac_platform = try native_sdk.platform.macos.MacPlatform.initWithOptions(native_sdk.geometry.SizeF.init(720, 480), webEngine(), app_info);",
+    "    defer mac_platform.deinit();"
+   ],
    "after": [
     "    var trace_sink = StdoutTraceSink{};",
     "    var log_buffers: native_sdk.debug.LogPathBuffers = .{};"
-   ],
-   "_emptyAt": 708
+   ]
   },
   {
    "group": "R04",
    "file": "src/runner.zig",
-   "at": 883,
+   "at": 871,
    "before": [
     "    native_sdk.runtime.launch_timing.lap(\"host_ready\");",
     "    var trace_sink = StdoutTraceSink{};",
@@ -1654,13 +1999,12 @@
     "    // (and disarm the producer wake bindings) before the runtime",
     "    // storage itself goes.",
     "    defer runtime.deinit();"
-   ],
-   "_emptyAt": 722
+   ]
   },
   {
    "group": "R13",
    "file": "src/runner.zig",
-   "at": 891,
+   "at": 879,
    "before": [
     "    }",
     "    var filtered_trace_sink: FilteredTraceSink = .{ .child = runtime_trace_sink };",
@@ -1695,7 +2039,7 @@
   {
    "group": "R05",
    "file": "src/runner.zig",
-   "at": 895,
+   "at": 883,
    "before": [
     "    const runtime = try std.heap.page_allocator.create(native_sdk.Runtime);",
     "    defer std.heap.page_allocator.destroy(runtime);"
@@ -1711,13 +2055,12 @@
    "after": [
     "    native_sdk.Runtime.initAt(runtime, .{",
     "        .platform = mac_platform.platform(),"
-   ],
-   "_emptyAt": 732
+   ]
   },
   {
    "group": "R05",
    "file": "src/runner.zig",
-   "at": 902,
+   "at": 890,
    "before": [
     "    native_sdk.Runtime.initAt(runtime, .{",
     "        .platform = mac_platform.platform(),"
@@ -1729,13 +2072,12 @@
    "after": [
     "        .trace_sink = runtime_trace_sink,",
     "        .log_path = if (log_setup) |setup| setup.paths.log_file else null,"
-   ],
-   "_emptyAt": 734
+   ]
   },
   {
    "group": "R06",
    "file": "src/runner.zig",
-   "at": 907,
+   "at": 895,
    "before": [
     "        .platform = mac_platform.platform(),",
     "        .max_image_pixel_bytes = manifestImagePixelBudget(),",
@@ -1760,7 +2102,7 @@
   {
    "group": "R05",
    "file": "src/runner.zig",
-   "at": 909,
+   "at": 897,
    "before": [
     "        .platform = mac_platform.platform(),",
     "        .max_image_pixel_bytes = manifestImagePixelBudget(),",
@@ -1785,13 +2127,36 @@
     "        .record_store = options.record_store,",
     "        .relational_store = options.relational_store,",
     "        .credentials_enabled = options.credentials_enabled,"
+   ]
+  },
+  {
+   "group": "R01",
+   "file": "src/runner.zig",
+   "at": 904,
+   "before": [
+    "        .menus = menus,",
+    "        .shortcuts = shortcuts,",
+    "        .automation = if (build_options.automation) native_sdk.automation.Server.init(init.io, \".zig-cache/native-sdk-automation\", app_info.resolvedWindowTitle()) else null,",
+    "        .window_state_store = store,"
    ],
-   "_emptyAt": 741
+   "up": [
+    "        .record_store = options.record_store,",
+    "        .relational_store = options.relational_store,",
+    "        .credentials_enabled = options.credentials_enabled,",
+    "        .file_access = options.file_access,"
+   ],
+   "ours": [],
+   "after": [
+    "        .environ = init.minimal.environ,",
+    "        .session_recorder = session_recorder,",
+    "    });",
+    "    native_sdk.runtime.launch_timing.lap(\"runtime_ready\");"
+   ]
   },
   {
    "group": "R02",
    "file": "src/runner.zig",
-   "at": 921,
+   "at": 909,
    "before": [
     "        .file_access = options.file_access,",
     "        .environ = init.minimal.environ,"
@@ -1803,13 +2168,12 @@
    "after": [
     "    });",
     "    native_sdk.runtime.launch_timing.lap(\"runtime_ready\");"
-   ],
-   "_emptyAt": 751
+   ]
   },
   {
    "group": "R02",
    "file": "src/runner.zig",
-   "at": 923,
+   "at": 911,
    "before": [
     "        .session_recorder = session_recorder,",
     "    });"
@@ -1821,13 +2185,12 @@
    "after": [
     "",
     "    try runtime.run(app);"
-   ],
-   "_emptyAt": 752
+   ]
   },
   {
    "group": "R07",
    "file": "src/runner.zig",
-   "at": 925,
+   "at": 913,
    "before": [
     "    native_sdk.runtime.launch_timing.lap(\"runtime_ready\");",
     ""
@@ -1845,7 +2208,7 @@
   {
    "group": "R02",
    "file": "src/runner.zig",
-   "at": 926,
+   "at": 914,
    "before": [
     "    native_sdk.runtime.launch_timing.lap(\"runtime_ready\");",
     "",
@@ -1859,35 +2222,38 @@
     "}",
     "",
     "fn runLinux(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {"
-   ],
-   "_emptyAt": 756
+   ]
   },
   {
-   "group": "R02",
+   "group": "R03",
    "file": "src/runner.zig",
-   "at": 933,
+   "at": 921,
    "before": [
-    "fn runLinux(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {",
-    "    var buffers: StateBuffers = undefined;",
     "    var app_info = options.appInfo(&buffers);",
     "    const store = prepareStateStore(init.io, init.environ_map, &app_info, &buffers);"
    ],
    "up": [
-    "    const session_recorder = setupSessionRecorder(init, app_info, app.recording_policy, app.blob_policy);"
-   ],
-   "ours": [],
-   "after": [
+    "    const session_recorder = setupSessionRecorder(init, app_info);",
     "    // Heap wrapper, latch-gated free: worker threads hold this address",
     "    // as the channel wake context and an abandoned wake call may",
     "    // dereference it after this frame unwinds (see",
-    "    // `LinuxPlatform.createWithOptions`/`destroy`)."
+    "    // `LinuxPlatform.createWithOptions`/`destroy`).",
+    "    const linux_platform = try native_sdk.platform.linux.LinuxPlatform.createWithOptions(native_sdk.geometry.SizeF.init(720, 480), webEngine(), app_info);",
+    "    defer linux_platform.destroy();"
    ],
-   "_emptyAt": 762
+   "ours": [
+    "    var linux_platform = try native_sdk.platform.linux.LinuxPlatform.initWithOptions(native_sdk.geometry.SizeF.init(720, 480), webEngine(), app_info);",
+    "    defer linux_platform.deinit();"
+   ],
+   "after": [
+    "    var trace_sink = StdoutTraceSink{};",
+    "    var log_buffers: native_sdk.debug.LogPathBuffers = .{};"
+   ]
   },
   {
    "group": "R04",
    "file": "src/runner.zig",
-   "at": 954,
+   "at": 942,
    "before": [
     "    defer linux_platform.destroy();",
     "    var trace_sink = StdoutTraceSink{};",
@@ -1926,13 +2292,12 @@
     "    // (and disarm the producer wake bindings) before the runtime",
     "    // storage itself goes.",
     "    defer runtime.deinit();"
-   ],
-   "_emptyAt": 782
+   ]
   },
   {
    "group": "R13",
    "file": "src/runner.zig",
-   "at": 962,
+   "at": 950,
    "before": [
     "    }",
     "    var filtered_trace_sink: FilteredTraceSink = .{ .child = runtime_trace_sink };",
@@ -1967,7 +2332,7 @@
   {
    "group": "R05",
    "file": "src/runner.zig",
-   "at": 966,
+   "at": 954,
    "before": [
     "    const runtime = try std.heap.page_allocator.create(native_sdk.Runtime);",
     "    defer std.heap.page_allocator.destroy(runtime);"
@@ -1983,13 +2348,12 @@
    "after": [
     "    native_sdk.Runtime.initAt(runtime, .{",
     "        .platform = linux_platform.platform(),"
-   ],
-   "_emptyAt": 792
+   ]
   },
   {
    "group": "R05",
    "file": "src/runner.zig",
-   "at": 973,
+   "at": 961,
    "before": [
     "    native_sdk.Runtime.initAt(runtime, .{",
     "        .platform = linux_platform.platform(),"
@@ -2001,13 +2365,12 @@
    "after": [
     "        .trace_sink = runtime_trace_sink,",
     "        .log_path = if (log_setup) |setup| setup.paths.log_file else null,"
-   ],
-   "_emptyAt": 794
+   ]
   },
   {
    "group": "R06",
    "file": "src/runner.zig",
-   "at": 978,
+   "at": 966,
    "before": [
     "        .platform = linux_platform.platform(),",
     "        .max_image_pixel_bytes = manifestImagePixelBudget(),",
@@ -2032,7 +2395,7 @@
   {
    "group": "R05",
    "file": "src/runner.zig",
-   "at": 980,
+   "at": 968,
    "before": [
     "        .platform = linux_platform.platform(),",
     "        .max_image_pixel_bytes = manifestImagePixelBudget(),",
@@ -2057,13 +2420,46 @@
     "        .record_store = options.record_store,",
     "        .relational_store = options.relational_store,",
     "        .credentials_enabled = options.credentials_enabled,"
+   ]
+  },
+  {
+   "group": "R01",
+   "file": "src/runner.zig",
+   "at": 975,
+   "before": [
+    "        .js_window_api = options.js_window_api,",
+    "        .web_layer = webLayerEnabled(),",
+    "        .gpu_surface_frame_diagnostics = false,",
+    "        .security = options.security,",
+    "        .commands = commands,",
+    "        .menus = menus,",
+    "        .shortcuts = shortcuts,",
+    "        .automation = if (build_options.automation) native_sdk.automation.Server.init(init.io, \".zig-cache/native-sdk-automation\", app_info.resolvedWindowTitle()) else null,",
+    "        .window_state_store = store,"
    ],
-   "_emptyAt": 801
+   "up": [
+    "        .record_store = options.record_store,",
+    "        .relational_store = options.relational_store,",
+    "        .credentials_enabled = options.credentials_enabled,",
+    "        .file_access = options.file_access,"
+   ],
+   "ours": [],
+   "after": [
+    "        .environ = init.minimal.environ,",
+    "        .session_recorder = session_recorder,",
+    "    });",
+    "",
+    "    try runtime.run(app);",
+    "    finishSessionRecorder(session_recorder);",
+    "}",
+    "",
+    "fn runWindows(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {"
+   ]
   },
   {
    "group": "R02",
    "file": "src/runner.zig",
-   "at": 992,
+   "at": 980,
    "before": [
     "        .automation = if (build_options.automation) native_sdk.automation.Server.init(init.io, \".zig-cache/native-sdk-automation\", app_info.resolvedWindowTitle()) else null,",
     "        .window_state_store = store,",
@@ -2085,13 +2481,12 @@
     "}",
     "",
     "fn runWindows(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {"
-   ],
-   "_emptyAt": 811
+   ]
   },
   {
    "group": "R07",
    "file": "src/runner.zig",
-   "at": 995,
+   "at": 983,
    "before": [
     "        .file_access = options.file_access,",
     "        .environ = init.minimal.environ,",
@@ -2115,7 +2510,7 @@
   {
    "group": "R02",
    "file": "src/runner.zig",
-   "at": 996,
+   "at": 984,
    "before": [
     "    });",
     "",
@@ -2129,35 +2524,38 @@
     "}",
     "",
     "fn runWindows(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {"
-   ],
-   "_emptyAt": 816
+   ]
   },
   {
-   "group": "R02",
+   "group": "R03",
    "file": "src/runner.zig",
-   "at": 1003,
+   "at": 991,
    "before": [
-    "fn runWindows(app: native_sdk.App, options: RunOptions, init: std.process.Init) !void {",
-    "    var buffers: StateBuffers = undefined;",
     "    var app_info = options.appInfo(&buffers);",
     "    const store = prepareStateStore(init.io, init.environ_map, &app_info, &buffers);"
    ],
    "up": [
-    "    const session_recorder = setupSessionRecorder(init, app_info, app.recording_policy, app.blob_policy);"
-   ],
-   "ours": [],
-   "after": [
+    "    const session_recorder = setupSessionRecorder(init, app_info);",
     "    // Heap wrapper, latch-gated free: worker threads hold this address",
     "    // as the channel wake context and an abandoned wake call may",
     "    // dereference it after this frame unwinds (see",
-    "    // `WindowsPlatform.createWithOptions`/`destroy`)."
+    "    // `WindowsPlatform.createWithOptions`/`destroy`).",
+    "    const windows_platform = try native_sdk.platform.windows.WindowsPlatform.createWithOptions(native_sdk.geometry.SizeF.init(720, 480), webEngine(), app_info);",
+    "    defer windows_platform.destroy();"
    ],
-   "_emptyAt": 822
+   "ours": [
+    "    var windows_platform = try native_sdk.platform.windows.WindowsPlatform.initWithOptions(native_sdk.geometry.SizeF.init(720, 480), webEngine(), app_info);",
+    "    defer windows_platform.deinit();"
+   ],
+   "after": [
+    "    var trace_sink = StdoutTraceSink{};",
+    "    var log_buffers: native_sdk.debug.LogPathBuffers = .{};"
+   ]
   },
   {
    "group": "R04",
    "file": "src/runner.zig",
-   "at": 1024,
+   "at": 1012,
    "before": [
     "    defer windows_platform.destroy();",
     "    var trace_sink = StdoutTraceSink{};",
@@ -2196,13 +2594,12 @@
     "    // (and disarm the producer wake bindings) before the runtime",
     "    // storage itself goes.",
     "    defer runtime.deinit();"
-   ],
-   "_emptyAt": 842
+   ]
   },
   {
    "group": "R13",
    "file": "src/runner.zig",
-   "at": 1032,
+   "at": 1020,
    "before": [
     "    }",
     "    var filtered_trace_sink: FilteredTraceSink = .{ .child = runtime_trace_sink };",
@@ -2237,7 +2634,7 @@
   {
    "group": "R05",
    "file": "src/runner.zig",
-   "at": 1036,
+   "at": 1024,
    "before": [
     "    const runtime = try std.heap.page_allocator.create(native_sdk.Runtime);",
     "    defer std.heap.page_allocator.destroy(runtime);"
@@ -2253,13 +2650,12 @@
    "after": [
     "    native_sdk.Runtime.initAt(runtime, .{",
     "        .platform = windows_platform.platform(),"
-   ],
-   "_emptyAt": 852
+   ]
   },
   {
    "group": "R05",
    "file": "src/runner.zig",
-   "at": 1043,
+   "at": 1031,
    "before": [
     "    native_sdk.Runtime.initAt(runtime, .{",
     "        .platform = windows_platform.platform(),"
@@ -2271,13 +2667,12 @@
    "after": [
     "        .trace_sink = runtime_trace_sink,",
     "        .log_path = if (log_setup) |setup| setup.paths.log_file else null,"
-   ],
-   "_emptyAt": 854
+   ]
   },
   {
    "group": "R06",
    "file": "src/runner.zig",
-   "at": 1048,
+   "at": 1036,
    "before": [
     "        .platform = windows_platform.platform(),",
     "        .max_image_pixel_bytes = manifestImagePixelBudget(),",
@@ -2302,7 +2697,7 @@
   {
    "group": "R05",
    "file": "src/runner.zig",
-   "at": 1050,
+   "at": 1038,
    "before": [
     "        .platform = windows_platform.platform(),",
     "        .max_image_pixel_bytes = manifestImagePixelBudget(),",
@@ -2327,13 +2722,46 @@
     "        .record_store = options.record_store,",
     "        .relational_store = options.relational_store,",
     "        .credentials_enabled = options.credentials_enabled,"
+   ]
+  },
+  {
+   "group": "R01",
+   "file": "src/runner.zig",
+   "at": 1045,
+   "before": [
+    "        .js_window_api = options.js_window_api,",
+    "        .web_layer = webLayerEnabled(),",
+    "        .gpu_surface_frame_diagnostics = false,",
+    "        .security = options.security,",
+    "        .commands = commands,",
+    "        .menus = menus,",
+    "        .shortcuts = shortcuts,",
+    "        .automation = if (build_options.automation) native_sdk.automation.Server.init(init.io, \".zig-cache/native-sdk-automation\", app_info.resolvedWindowTitle()) else null,",
+    "        .window_state_store = store,"
    ],
-   "_emptyAt": 861
+   "up": [
+    "        .record_store = options.record_store,",
+    "        .relational_store = options.relational_store,",
+    "        .credentials_enabled = options.credentials_enabled,",
+    "        .file_access = options.file_access,"
+   ],
+   "ours": [],
+   "after": [
+    "        .environ = init.minimal.environ,",
+    "        .session_recorder = session_recorder,",
+    "    });",
+    "",
+    "    try runtime.run(app);",
+    "    finishSessionRecorder(session_recorder);",
+    "}",
+    "",
+    "// ------------------------------------------------- session record/replay"
+   ]
   },
   {
    "group": "R02",
    "file": "src/runner.zig",
-   "at": 1062,
+   "at": 1050,
    "before": [
     "        .automation = if (build_options.automation) native_sdk.automation.Server.init(init.io, \".zig-cache/native-sdk-automation\", app_info.resolvedWindowTitle()) else null,",
     "        .window_state_store = store,",
@@ -2355,13 +2783,12 @@
     "}",
     "",
     "// ------------------------------------------------- session record/replay"
-   ],
-   "_emptyAt": 871
+   ]
   },
   {
    "group": "R07",
    "file": "src/runner.zig",
-   "at": 1065,
+   "at": 1053,
    "before": [
     "        .file_access = options.file_access,",
     "        .environ = init.minimal.environ,",
@@ -2385,7 +2812,7 @@
   {
    "group": "R02",
    "file": "src/runner.zig",
-   "at": 1066,
+   "at": 1054,
    "before": [
     "    });",
     "",
@@ -2399,13 +2826,12 @@
     "}",
     "",
     "// ------------------------------------------------- session record/replay"
-   ],
-   "_emptyAt": 876
+   ]
   },
   {
    "group": "R02",
    "file": "src/runner.zig",
-   "at": 1069,
+   "at": 1057,
    "before": [
     "}",
     ""
@@ -2436,12 +2862,12 @@
     "/// journal's directory — large effect payloads (an image load's source",
     "/// bytes) live there content-addressed, referenced from journal",
     "/// records by hash + length (see session_blobs.zig).",
-    "fn sessionBlobStore(io: std.Io, journal_path: []const u8, policy: ?*const fn ([]const u8, []u8) usize) ?*native_sdk.runtime.SessionBlobDirStore {",
+    "fn sessionBlobStore(io: std.Io, journal_path: []const u8) ?*native_sdk.runtime.SessionBlobDirStore {",
     "    var dir_buffer: [1024]u8 = undefined;",
     "    const parent = std.fs.path.dirname(journal_path) orelse \".\";",
     "    const blob_dir = std.fmt.bufPrint(&dir_buffer, \"{s}/blobs\", .{parent}) catch return null;",
     "    const store = std.heap.page_allocator.create(native_sdk.runtime.SessionBlobDirStore) catch return null;",
-    "    store.* = native_sdk.runtime.SessionBlobDirStore.initWithPolicy(io, blob_dir, policy) catch {",
+    "    store.* = native_sdk.runtime.SessionBlobDirStore.init(io, blob_dir) catch {",
     "        std.heap.page_allocator.destroy(store);",
     "        return null;",
     "    };",
@@ -2452,7 +2878,7 @@
     "/// recorder that streams the session into it from the very first",
     "/// dispatched event (init determinism needs init-time effect results).",
     "/// Failures disable recording loudly and never block the app.",
-    "fn setupSessionRecorder(init: std.process.Init, app_info: native_sdk.AppInfo, policy: ?*const fn ([]const u8, []u8) usize, blob_policy: ?*const fn ([]const u8, []u8) usize) ?*native_sdk.runtime.SessionRecorder {",
+    "fn setupSessionRecorder(init: std.process.Init, app_info: native_sdk.AppInfo) ?*native_sdk.runtime.SessionRecorder {",
     "    const path = init.environ_map.get(\"NATIVE_SDK_SESSION_RECORD\") orelse return null;",
     "    const file = std.Io.Dir.cwd().createFile(init.io, path, .{ .truncate = true }) catch |err| {",
     "        std.debug.print(\"session recording disabled: cannot create {s}: {s}\\n\", .{ path, @errorName(err) });",
@@ -2462,8 +2888,7 @@
     "    context.* = .{ .io = init.io, .file = file };",
     "    const recorder = std.heap.page_allocator.create(native_sdk.runtime.SessionRecorder) catch return null;",
     "    recorder.* = native_sdk.runtime.SessionRecorder.init(context.sink());",
-    "    recorder.recording_policy = policy;",
-    "    if (sessionBlobStore(init.io, path, blob_policy)) |store| recorder.blob_sink = store.sink();",
+    "    if (sessionBlobStore(init.io, path)) |store| recorder.blob_sink = store.sink();",
     "    recorder.begin(native_sdk.runtime.sessionHeaderNow(",
     "        native_sdk.runtime.sessionPlatformName(),",
     "        app_info.app_name,",
@@ -2564,7 +2989,7 @@
     "        !std.mem.eql(u8, value, \"0\")",
     "    else",
     "        true;",
-    "    const blob_store = sessionBlobStore(init.io, journal_path, app.blob_policy);",
+    "    const blob_store = sessionBlobStore(init.io, journal_path);",
     "    const report = native_sdk.runtime.replaySession(runtime, app, journal_bytes, .{",
     "        .verify = verify,",
     "        .blobs = if (blob_store) |store| store.source() else null,",
@@ -2631,7 +3056,7 @@
   {
    "group": "R04",
    "file": "src/runner.zig",
-   "at": 1278,
+   "at": 1265,
    "before": [
     "    if (comptime std.mem.eql(u8, build_options.trace, \"off\")) return false;",
     "    if (comptime std.mem.eql(u8, build_options.trace, \"all\")) return true;"
@@ -2650,7 +3075,7 @@
   {
    "group": "R14",
    "file": "src/runner.zig",
-   "at": 1287,
+   "at": 1274,
    "before": [
     "}",
     ""
@@ -2723,7 +3148,7 @@
   {
    "group": "R14",
    "file": "src/runner.zig",
-   "at": 1337,
+   "at": 1324,
    "before": [
     "}",
     ""
@@ -2752,7 +3177,7 @@
   {
    "group": "R14",
    "file": "src/runner.zig",
-   "at": 1341,
+   "at": 1328,
    "before": [
     "        .{ .id = \"override.command\", .title = \"Override Command\" },",
     "    };"
@@ -2787,7 +3212,7 @@
   {
    "group": "R14",
    "file": "src/runner.zig",
-   "at": 1358,
+   "at": 1345,
    "before": [
     "    };",
     ""
@@ -2815,7 +3240,7 @@
   {
    "group": "R14",
    "file": "src/runner.zig",
-   "at": 1363,
+   "at": 1350,
    "before": [
     "    try std.testing.expectEqualStrings(\"override.command\", commands[0].id);",
     ""
@@ -2861,7 +3286,7 @@
   {
    "group": "R15",
    "file": "src/runner.zig",
-   "at": 1410,
+   "at": 1397,
    "before": [
     "    }",
     "    return store;"
@@ -2941,8 +3366,7 @@
    "after": [
     "const std = @import(\"std\");",
     "const builtin = @import(\"builtin\");"
-   ],
-   "_emptyAt": 0
+   ]
   },
   {
    "group": "B02",
@@ -3054,8 +3478,7 @@
    "after": [
     "",
     "const PlatformOption = enum {"
-   ],
-   "_emptyAt": 1
+   ]
   },
   {
    "group": "B04",
@@ -3091,10 +3514,6 @@
     "",
     "pub const AppOptions = struct {",
     "    name: []const u8,",
-    "    /// Expose the embed archive on a desktop host as well as mobile targets.",
-    "    /// The core is staged through the ordinary app build, including compiled",
-    "    /// TypeScript wiring, before addMobileLib consumes it.",
-    "    mobile_lib: bool = false,",
     "    /// Explicit manifest path. Null auto-detects app.json first, then app.zon,",
     "    /// so older owned build.zig files can adopt JSON without a build edit.",
     "    manifest: ?[]const u8 = null,",
@@ -3131,7 +3550,7 @@
   {
    "group": "B03",
    "file": "build.zig",
-   "at": 153,
+   "at": 149,
    "before": [
     "};",
     ""
@@ -3205,13 +3624,13 @@
   {
    "group": "B03",
    "file": "build.zig",
-   "at": 208,
+   "at": 204,
    "before": [
     "};",
     ""
    ],
    "up": [
-    "const TsMarkupSource = struct {",
+    "const TsWindowSource = struct {",
     "    set_path: []const u8,",
     "    source_path: []const u8,",
     "    staged_path: []const u8,"
@@ -3230,7 +3649,7 @@
   {
    "group": "B01",
    "file": "build.zig",
-   "at": 214,
+   "at": 210,
    "before": [
     "};",
     ""
@@ -3238,7 +3657,7 @@
    "up": [
     "const TsWindowViews = struct {",
     "    views: []const TsWindowView,",
-    "    sources: []const TsMarkupSource,",
+    "    sources: []const TsWindowSource,",
     "};"
    ],
    "ours": [
@@ -3247,61 +3666,18 @@
    ],
    "after": [
     "",
-    "const TsAppMarkupSources = struct {"
+    "/// Default TypeScript secondary-window views are statically discovered under"
    ]
   },
   {
    "group": "B02",
    "file": "build.zig",
-   "at": 219,
+   "at": 215,
    "before": [
     "};",
     ""
    ],
    "up": [
-    "const TsAppMarkupSources = struct {",
-    "    /// Non-root, non-window files discovered under src/. Window files are",
-    "    /// staged by the existing secondary-window registry and must not be",
-    "    /// copied a second time.",
-    "    files: []const TsMarkupSource,",
-    "    /// The root view's embedded resolver set. Its path keys are relative to",
-    "    /// src/, matching the root disk watcher; existing window sources are",
-    "    /// projected under their staged `windows/...` names.",
-    "    sources: []const TsMarkupSource,",
-    "};",
-    "",
-    "const max_markup_source_path_len = 200;",
-    "const max_markup_source_path_segments = 24;",
-    "const root_markup_source_prefix = \"src/\";",
-    "",
-    "/// Whether a path relative to `src/` fits the markup resolver once the",
-    "/// generated desktop watch and `native check` address it as `src/<path>`.",
-    "/// The compiled source set drops that prefix, but accepting a path only the",
-    "/// compiled resolver can represent would make development and release",
-    "/// disagree at the boundary.",
-    "pub fn markupSourcePathWithinBudget(path: []const u8) bool {",
-    "    var segments: usize = 1; // the disk resolver's leading `src` segment",
-    "    var it = std.mem.tokenizeScalar(u8, path, '/');",
-    "    while (it.next() != null) segments += 1;",
-    "    return root_markup_source_prefix.len + path.len <= max_markup_source_path_len and",
-    "        segments <= max_markup_source_path_segments;",
-    "}",
-    "",
-    "fn validateMarkupSourcePath(path: []const u8) void {",
-    "    if (!markupSourcePathWithinBudget(path)) {",
-    "        std.debug.panic(",
-    "            \"\\nTypeScript markup source path `src/{s}` exceeds the import resolver budget: the full app-relative path, including `src/`, must be at most {d} bytes and {d} segments\\n\",",
-    "            .{ path, max_markup_source_path_len, max_markup_source_path_segments },",
-    "        );",
-    "    }",
-    "}",
-    "",
-    "pub fn isRootMarkupSourcePath(path: []const u8) bool {",
-    "    return std.mem.endsWith(u8, path, \".native\") and",
-    "        !std.mem.eql(u8, path, \"app.native\") and",
-    "        !std.mem.startsWith(u8, path, \"windows/\");",
-    "}",
-    "",
     "/// Default TypeScript secondary-window views are statically discovered under",
     "/// `src/windows/`: `settings.native` serves descriptor label `settings`.",
     "/// Direct files form the generated launcher's closed, comptime-compiled view",
@@ -3314,7 +3690,7 @@
     "    var walker = dir.walk(b.allocator) catch return .{ .views = &.{}, .sources = &.{} };",
     "    defer walker.deinit();",
     "    var views: std.ArrayList(TsWindowView) = .empty;",
-    "    var sources: std.ArrayList(TsMarkupSource) = .empty;",
+    "    var sources: std.ArrayList(TsWindowSource) = .empty;",
     "    while (walker.next(b.graph.io) catch null) |entry| {",
     "        if (entry.kind != .file or !std.mem.endsWith(u8, entry.path, \".native\")) continue;",
     "        const normalized_path = b.dupe(entry.path);",
@@ -3351,83 +3727,12 @@
     "    }.than;",
     "    std.mem.sort(TsWindowView, views.items, {}, less);",
     "    const source_less = struct {",
-    "        fn than(_: void, a: TsMarkupSource, z: TsMarkupSource) bool {",
+    "        fn than(_: void, a: TsWindowSource, z: TsWindowSource) bool {",
     "            return std.mem.order(u8, a.set_path, z.set_path) == .lt;",
     "        }",
     "    }.than;",
-    "    std.mem.sort(TsMarkupSource, sources.items, {}, source_less);",
+    "    std.mem.sort(TsWindowSource, sources.items, {}, source_less);",
     "    return .{ .views = views.items, .sources = sources.items };",
-    "}",
-    "",
-    "/// The root TypeScript view resolves imports from every `.native` file under",
-    "/// `src/` except itself. Window files already come from collectTsWindowViews;",
-    "/// append those under `windows/...` keys so this set matches the root disk",
-    "/// resolver without changing the separate window resolver root.",
-    "fn collectAppMarkupSources(b: *std.Build, app_root: []const u8, window_views: TsWindowViews) TsAppMarkupSources {",
-    "    const src_path = appPath(b, app_root, \"src\");",
-    "    var dir = b.build_root.handle.openDir(b.graph.io, src_path, .{ .iterate = true }) catch",
-    "        return .{ .files = &.{}, .sources = &.{} };",
-    "    defer dir.close(b.graph.io);",
-    "    var walker = dir.walk(b.allocator) catch return .{ .files = &.{}, .sources = &.{} };",
-    "    defer walker.deinit();",
-    "",
-    "    var files: std.ArrayList(TsMarkupSource) = .empty;",
-    "    while (walker.next(b.graph.io) catch null) |entry| {",
-    "        if (entry.kind != .file or !std.mem.endsWith(u8, entry.path, \".native\")) continue;",
-    "        const normalized_path = b.dupe(entry.path);",
-    "        for (normalized_path) |*char| {",
-    "            if (char.* == '\\\\') char.* = '/';",
-    "        }",
-    "        if (!isRootMarkupSourcePath(normalized_path)) continue;",
-    "        validateMarkupSourcePath(normalized_path);",
-    "        files.append(b.allocator, .{",
-    "            .set_path = normalized_path,",
-    "            .source_path = b.fmt(\"src/{s}\", .{normalized_path}),",
-    "            .staged_path = normalized_path,",
-    "        }) catch @panic(\"OOM\");",
-    "    }",
-    "",
-    "    const less = struct {",
-    "        fn than(_: void, a: TsMarkupSource, z: TsMarkupSource) bool {",
-    "            return std.mem.order(u8, a.set_path, z.set_path) == .lt;",
-    "        }",
-    "    }.than;",
-    "    std.mem.sort(TsMarkupSource, files.items, {}, less);",
-    "",
-    "    var sources: std.ArrayList(TsMarkupSource) = .empty;",
-    "    sources.ensureTotalCapacity(b.allocator, files.items.len + window_views.sources.len) catch @panic(\"OOM\");",
-    "    sources.appendSliceAssumeCapacity(files.items);",
-    "    for (window_views.sources) |source| {",
-    "        validateMarkupSourcePath(source.staged_path);",
-    "        sources.appendAssumeCapacity(.{",
-    "            .set_path = source.staged_path,",
-    "            .source_path = source.source_path,",
-    "            .staged_path = source.staged_path,",
-    "        });",
-    "    }",
-    "    std.mem.sort(TsMarkupSource, sources.items, {}, less);",
-    "    return .{ .files = files.items, .sources = sources.items };",
-    "}",
-    "",
-    "fn tsAppMarkupSourcesSource(b: *std.Build, registry: TsAppMarkupSources) []const u8 {",
-    "    var out: std.ArrayList(u8) = .empty;",
-    "    out.appendSlice(b.allocator,",
-    "        \\\\//! Generated by build/app.zig from src/**/*.native.",
-    "        \\\\const native_sdk = @import(\"native_sdk\");",
-    "        \\\\const canvas = native_sdk.canvas;",
-    "        \\\\pub const sources = [_]canvas.ui_markup.SourceFile{",
-    "        \\\\",
-    "    ) catch @panic(\"OOM\");",
-    "    for (registry.sources) |source| {",
-    "        const line = std.fmt.allocPrint(",
-    "            b.allocator,",
-    "            \"    .{{ .path = \\\"{f}\\\", .source = @embedFile(\\\"{f}\\\") }},\\n\",",
-    "            .{ std.zig.fmtString(source.set_path), std.zig.fmtString(source.staged_path) },",
-    "        ) catch @panic(\"OOM\");",
-    "        out.appendSlice(b.allocator, line) catch @panic(\"OOM\");",
-    "    }",
-    "    out.appendSlice(b.allocator, \"};\\n\") catch @panic(\"OOM\");",
-    "    return out.items;",
     "}",
     "",
     "fn tsWindowRegistrySource(b: *std.Build, registry: TsWindowViews) []const u8 {",
@@ -3530,10 +3835,6 @@
     "    /// mirror/registry files): the embed static library's `app`",
     "    /// module roots here on iOS/Android targets.",
     "    mobile_root: std.Build.LazyPath,",
-    "    /// Release/mobile-only module embedding src/app.native. It lives in a",
-    "    /// separate generated directory so a Debug app-code module never gains",
-    "    /// the root markup as a transitive file input; Debug links markup_c.",
-    "    app_markup_root: std.Build.LazyPath,",
     "    /// The compiled-core archive: the app module links it (with libc,",
     "    /// for the toolchain's runtime) beside the staged mirror.",
     "    archive: std.Build.LazyPath,",
@@ -3873,32 +4174,22 @@
     "    return suffix;",
     "}",
     "",
-    "/// App and root fixture builds share the same scriptc optimization policy.",
-    "pub fn scriptcOptimizationForMode(optimize: std.builtin.OptimizeMode) []const u8 {",
-    "    return if (optimize == .Debug) \"dev\" else \"release\";",
-    "}",
-    "",
-    "/// The library-profile optimization field first shipped with the Node",
-    "/// bootstrap. scriptc installs a native binary instead, so either",
-    "/// published entrypoint marks a compiler that accepts the field.",
+    "/// PR 166 adds both the published compile-cache bootstrap and the optional",
+    "/// library-profile optimization field. The installed bootstrap is therefore",
+    "/// the capability marker: keep older exact pins byte-for-byte compatible;",
+    "/// once that release is installed, Debug/native-dev gets `dev` and",
+    "/// release/package artifacts get `release` automatically.",
     "fn scriptcProfileOptimization(b: *std.Build, dep: *std.Build.Dependency, optimize: std.builtin.OptimizeMode) ?[]const u8 {",
     "    const sdk_root = tsSdkRoot(b.allocator, b.graph.io, dep);",
-    "    const release_marker = b.pathJoin(&.{ sdk_root, \"packages\", \"core\", \"scripts\", \"scriptc-toolchain.json\" });",
-    "    if (std.Io.Dir.cwd().access(b.graph.io, release_marker, .{})) |_| {",
-    "        return scriptcOptimizationForMode(optimize);",
-    "    } else |_| {}",
     "    var dir: []const u8 = b.pathJoin(&.{ sdk_root, \"packages\", \"core\" });",
     "    while (true) {",
     "        if (!std.mem.eql(u8, std.fs.path.basename(dir), \"node_modules\")) {",
-    "            const native_marker = b.pathJoin(&.{ dir, \"node_modules\", \"scriptc\", \"bin\", \"scriptc.exe\" });",
-    "            std.Io.Dir.cwd().access(b.graph.io, native_marker, .{}) catch {",
-    "                const bootstrap_marker = b.pathJoin(&.{ dir, \"node_modules\", \"scriptc\", \"dist\", \"bootstrap.js\" });",
-    "                std.Io.Dir.cwd().access(b.graph.io, bootstrap_marker, .{}) catch {",
-    "                    dir = std.fs.path.dirname(dir) orelse return null;",
-    "                    continue;",
-    "                };",
+    "            const marker = b.pathJoin(&.{ dir, \"node_modules\", \"scriptc\", \"dist\", \"bootstrap.js\" });",
+    "            std.Io.Dir.cwd().access(b.graph.io, marker, .{}) catch {",
+    "                dir = std.fs.path.dirname(dir) orelse return null;",
+    "                continue;",
     "            };",
-    "            return scriptcOptimizationForMode(optimize);",
+    "            return if (optimize == .Debug) \"dev\" else \"release\";",
     "        }",
     "        dir = std.fs.path.dirname(dir) orelse return null;",
     "    }",
@@ -4032,11 +4323,9 @@
     "    service_pool_workers: ?u8,",
     "    build_trace: bool,",
     "    scriptc_optimization: ?[]const u8,",
-    "    typescript_view: bool,",
     ") TsCoreStage {",
     "    const node = tsCorePreflight(b, dep, app_root);",
     "    const window_views = collectTsWindowViews(b, app_root);",
-    "    const app_markup_sources = collectAppMarkupSources(b, app_root, window_views);",
     "    const has_services = appHasServiceFiles(b, app_root);",
     "    if (!scriptcCompileSupported(b.graph.host.result, target)) {",
     "        panicUnsupportedScriptcTarget(b, b.graph.host.result, target);",
@@ -4091,7 +4380,7 @@
     "        }",
     "        sqlite_check.addFileInput(dep.path(\"packages/core/src/sqlite_codegen.ts\"));",
     "        sqlite_check.addFileInput(dep.path(\"packages/core/src/sqlite_runtime_policy.ts\"));",
-    "        for ([_][]const u8{ \"bytes.ts\", \"bytes.d.ts\", \"events.ts\", \"text.ts\", \"bytes_text_methods.d.ts\", \"events.d.ts\", \"text.d.ts\", \"theme.ts\", \"theme.d.ts\", \"internal/image_identity.ts\", \"internal/image_identity.d.ts\", \"internal/markdown_policy.ts\", \"internal/markdown_policy.d.ts\" }) |source| {",
+    "        for ([_][]const u8{ \"events.ts\", \"text.ts\", \"bytes_text_methods.d.ts\", \"events.d.ts\", \"text.d.ts\" }) |source| {",
     "            sqlite_check.addFileInput(dep.path(b.fmt(\"packages/core/sdk/{s}\", .{source})));",
     "        }",
     "        addAppSqlDirInputs(b, sqlite_check, appPath(b, app_root, \"src\"));",
@@ -4163,7 +4452,7 @@
     "    // corewire, compiled from the SDK dependency for the build host: one",
     "    // invocation projects the generated compile entry and its profile,",
     "    // so the profile's entry spelling and the facade file can never skew.",
-    "    const corewire_exe = @import(\"corewire.zig\").executable(b, dep.builder, node, .Debug, useLlvmWorkaround(b.graph.host));",
+    "    const corewire_exe = corewireExe(b, dep);",
     "    const project = b.addRunArtifact(corewire_exe);",
     "    project.setName(\"native corewire (core facade + profile)\");",
     "    project.addArg(\"--sidecar\");",
@@ -4236,8 +4525,6 @@
     "        if (build_trace) service_compile.setEnvironmentVariable(\"SCRIPTC_TIMING\", \"1\");",
     "        service_compile.addFileArg(dep.path(\"packages/core/scripts/run_external_service_compiler.mjs\"));",
     "        service_compile.addFileInput(dep.path(\"packages/core/scripts/compiler_command.mjs\"));",
-    "        service_compile.addFileInput(dep.path(\"packages/core/scripts/scriptc_toolchain.mjs\"));",
-    "        service_compile.addFileInput(dep.path(\"packages/core/scripts/scriptc-toolchain.json\"));",
     "        service_compile.addArg(\"--stage\");",
     "        service_compile.addDirectoryArg(service_stage_dir);",
     "        service_compile.addArg(\"--manifest\");",
@@ -4292,19 +4579,6 @@
     "    stage_run.addFileArg(facade);",
     "    stage_run.addArg(\"--profile\");",
     "    stage_run.addFileArg(profile);",
-    "    addViewFrontendInputs(b, dep.builder, stage_run);",
-    "    if (typescript_view) {",
-    "        stage_run.addArg(\"--view-markup\");",
-    "        stage_run.addFileArg(b.path(appPath(b, app_root, \"src/app.native\")));",
-    "        stage_run.addArg(\"--view-contract\");",
-    "        stage_run.addFileArg(contract);",
-    "        for (app_markup_sources.files) |source| {",
-    "            stage_run.addFileInput(b.path(appPath(b, app_root, source.source_path)));",
-    "        }",
-    "        for (window_views.sources) |source| {",
-    "            stage_run.addFileInput(b.path(appPath(b, app_root, source.source_path)));",
-    "        }",
-    "    }",
     "    if (service_client) |client| {",
     "        stage_run.addArg(\"--services-client\");",
     "        stage_run.addFileArg(client);",
@@ -4329,9 +4603,6 @@
     "    if (build_trace) compile.setEnvironmentVariable(\"SCRIPTC_TIMING\", \"1\");",
     "    compile.addFileArg(dep.path(\"packages/core/scripts/run_external_core_compiler.mjs\"));",
     "    compile.addFileInput(dep.path(\"packages/core/scripts/compiler_command.mjs\"));",
-    "    compile.addFileInput(dep.path(\"packages/core/scripts/scriptc_toolchain.mjs\"));",
-    "    compile.addFileInput(dep.path(\"packages/core/scripts/scriptc-toolchain.json\"));",
-    "    compile.addFileInput(dep.path(\"packages/core/scripts/run_library_compiler.mjs\"));",
     "    compile.addArg(\"--stage\");",
     "    compile.addDirectoryArg(stage_dir);",
     "    compile.addArgs(&.{ \"--name\", symbol_name });",
@@ -4377,7 +4648,6 @@
     "    _ = staged.addCopyFile(shim, \"core.zig\");",
     "    _ = staged.addCopyFile(dep.path(\"tools/corewire/shim_rt.zig\"), \"shim_rt.zig\");",
     "    _ = staged.addCopyFile(dep.path(\"tools/corewire/core_abi.zig\"), \"core_abi.zig\");",
-    "    _ = staged.addCopyFile(dep.path(\"src/app_runner/ts_compiled_view.zig\"), \"compiled_view.zig\");",
     "    _ = staged.addCopyFile(service_registry, \"services.zig\");",
     "    // The carrier selection, as one staged constant module: the generated",
     "    // wiring comptime-switches its service transport on it.",
@@ -4391,19 +4661,9 @@
     "        \\\\",
     "    , .{ service_carrier, service_pool_workers }));",
     "    _ = staged.addCopyFile(migrations_zig, \"migrations.zig\");",
-    "    // Every imported file is an input to Debug's embedded source resolver and",
-    "    // the release/mobile compiled view, so stage those beside the runner.",
-    "    // Keep the ROOT out of this directory: changing any file in one WriteFiles",
-    "    // output changes its directory identity, and the runner lives here. Root",
-    "    // markup gets a separate release-only module below; Debug keeps the small",
-    "    // linked C data object, preserving its link-only edit path.",
-    "    for (app_markup_sources.files) |source| {",
-    "        _ = staged.addCopyFile(b.path(appPath(b, app_root, source.source_path)), source.staged_path);",
-    "    }",
     "    // Primary markup bytes live in their own tiny C translation unit. They",
-    "    // drive Debug desktop without participating in Zig source analysis, so a",
-    "    // root markup edit there reuses the compiled app/SDK graph and performs",
-    "    // only C data compile + relink.",
+    "    // no longer participate in Zig source analysis, so a markup edit reuses",
+    "    // the compiled app/SDK graph and performs only C data compile + relink.",
     "    const markup_embed = b.addSystemCommand(&.{node});",
     "    markup_embed.setName(\"native embed primary markup data\");",
     "    markup_embed.addFileArg(dep.path(\"packages/core/scripts/embed_markup_c.mjs\"));",
@@ -4412,24 +4672,15 @@
     "    for (window_views.sources) |source| {",
     "        _ = staged.addCopyFile(b.path(appPath(b, app_root, source.source_path)), source.staged_path);",
     "    }",
-    "    _ = staged.add(\"app_sources.zig\", tsAppMarkupSourcesSource(b, app_markup_sources));",
-    "    _ = staged.add(\"window_views.zig\", tsWindowRegistrySource(b, if (typescript_view) .{ .views = &.{}, .sources = &.{} } else window_views));",
+    "    _ = staged.add(\"window_views.zig\", tsWindowRegistrySource(b, window_views));",
     "    const main_root = staged.addCopyFile(dep.path(\"src/app_runner/ts_core_main.zig\"), \"main.zig\");",
     "    // The mobile wiring stages beside the desktop entry: same mirror, same",
     "    // registry, same carrier constant — only the shell differs (the embed",
     "    // host's AppDef contract instead of a process `main`).",
     "    const mobile_root = staged.addCopyFile(dep.path(\"src/app_runner/ts_core_mobile.zig\"), \"mobile.zig\");",
-    "    const release_markup = b.addWriteFiles();",
-    "    _ = release_markup.addCopyFile(b.path(appPath(b, app_root, \"src/app.native\")), \"app.native\");",
-    "    const app_markup_root = release_markup.add(\"app_markup_root.zig\",",
-    "        \\\\//! Generated release/mobile embedding for the TypeScript root view.",
-    "        \\\\pub const source = @embedFile(\"app.native\");",
-    "        \\\\",
-    "    );",
     "    return .{",
     "        .main_root = main_root,",
     "        .mobile_root = mobile_root,",
-    "        .app_markup_root = app_markup_root,",
     "        .archive = archive,",
     "        .service_exe = service_exe,",
     "        .service_archive = service_archive,",
@@ -4466,6 +4717,21 @@
     "        if (entry.kind != .file or !std.mem.endsWith(u8, entry.basename, \".sql\")) continue;",
     "        run.addFileInput(b.path(b.fmt(\"{s}/{s}\", .{ src_path, entry.path })));",
     "    }",
+    "}",
+    "",
+    "/// corewire (the contract-sidecar shim generator), compiled from the SDK",
+    "/// dependency's sources for the build host.",
+    "fn corewireExe(b: *std.Build, dep: *std.Build.Dependency) *std.Build.Step.Compile {",
+    "    const mod = b.createModule(.{",
+    "        .root_source_file = dep.path(\"tools/corewire/main.zig\"),",
+    "        .target = b.graph.host,",
+    "        .optimize = .Debug,",
+    "    });",
+    "    return b.addExecutable(.{",
+    "        .name = \"corewire\",",
+    "        .root_module = mod,",
+    "        .use_llvm = useLlvmWorkaround(b.graph.host),",
+    "    });",
     "}",
     "",
     "/// The archive's symbol-safe stem (`<app>_core` with every non-identifier",
@@ -4527,21 +4793,6 @@
     "    }",
     "}",
     "",
-    "/// Track exactly the ordered portable policies joined by the TypeScript view",
-    "/// frontend. Both app and repository fixture stages use this inventory, so a",
-    "/// policy edit or a new manifest entry invalidates a warm staging cache.",
-    "pub fn addViewFrontendInputs(b: *std.Build, sdk_builder: *std.Build, stage: *std.Build.Step.Run) void {",
-    "    const manifest = \"packages/core/src/portable_sources.json\";",
-    "    const sources = std.json.parseFromSliceLeaky([]const []const u8, b.allocator, @embedFile(\"../packages/core/src/portable_sources.json\"), .{}) catch",
-    "        @panic(\"invalid portable source inventory\");",
-    "    stage.addFileInput(sdk_builder.path(manifest));",
-    "    stage.addFileInput(sdk_builder.path(\"packages/core/src/portable_sources.ts\"));",
-    "    stage.addFileInput(sdk_builder.path(\"packages/core/src/view_frontend.ts\"));",
-    "    for (sources) |source| {",
-    "        stage.addFileInput(sdk_builder.path(b.fmt(\"packages/core/{s}\", .{source})));",
-    "    }",
-    "}",
-    "",
     "/// Declare the SDK implementation modules copied by",
     "/// stage_external_core.mjs. A directory LazyPath supplies ordering only for",
     "/// this source tree; these file inputs make implementation-only SDK edits",
@@ -4549,7 +4800,7 @@
     "/// contract remains byte-identical. Public for the repository fixture graph,",
     "/// which exercises the same compiler boundary as app builds.",
     "pub fn addStagedCoreSdkInputs(b: *std.Build, sdk_builder: *std.Build, stage: *std.Build.Step.Run) void {",
-    "    for ([_][]const u8{ \"bytes.ts\", \"text.ts\", \"events.ts\", \"theme.ts\", \"internal/image_identity.ts\", \"internal/markdown_policy.ts\" }) |source| {",
+    "    for ([_][]const u8{ \"text.ts\", \"events.ts\" }) |source| {",
     "        stage.addFileInput(sdk_builder.path(b.fmt(\"packages/core/sdk/{s}\", .{source})));",
     "    }",
     "}",
@@ -4668,12 +4919,11 @@
     "pub const MobileTsCore = struct {",
     "    /// The staged mobile wiring (mobile.zig beside the generated mirror).",
     "    main_root: std.Build.LazyPath,",
-    "    /// Separate root-markup module consumed by the compiled mobile view.",
-    "    app_markup_root: std.Build.LazyPath,",
     "    /// The compiled-core archive; merged into the embed library.",
     "    archive: std.Build.LazyPath,",
     "    /// The in-process service archive, when src/services exists.",
     "    service_archive: ?std.Build.LazyPath,",
+    "    markup_c: std.Build.LazyPath,",
     "    /// The app.zon module the mobile wiring reads scene chrome, identity,",
     "    /// and theme from (`app_manifest_zon`).",
     "    manifest_mod: *std.Build.Module,",
@@ -4696,7 +4946,7 @@
   {
    "group": "B05",
    "file": "build.zig",
-   "at": 1645,
+   "at": 1472,
    "before": [
     "pub fn addMobileLib(b: *std.Build, dep: *std.Build.Dependency, options: MobileLibOptions) void {",
     "    const target = nativeSdkTarget(b);"
@@ -4717,7 +4967,7 @@
   {
    "group": "B02",
    "file": "build.zig",
-   "at": 1646,
+   "at": 1473,
    "before": [
     "    const target = nativeSdkTarget(b);",
     "    const optimize_request = b.option(std.builtin.OptimizeMode, \"optimize\", \"Prioritize performance, safety, or binary size\");"
@@ -4775,11 +5025,6 @@
     "                .optimize = optimize,",
     "            });",
     "            mod.addImport(\"app_manifest_zon\", ts.manifest_mod);",
-    "            mod.addImport(\"app_markup_root\", b.createModule(.{",
-    "                .root_source_file = ts.app_markup_root,",
-    "                .target = target,",
-    "                .optimize = optimize,",
-    "            }));",
     "            break :ts_app mod;",
     "        } else localModule(b, target, optimize, options.main);",
     "        app_mod.addImport(\"native_sdk\", native_sdk_mod);",
@@ -4794,6 +5039,7 @@
     "        // host link already passes).",
     "        exports_mod.link_libc = true;",
     "        exports_mod.addObjectFile(ts.archive);",
+    "        exports_mod.addObjectFile(markupDataObject(b, target, optimize, ts.markup_c).getEmittedBin());",
     "        if (ts.service_archive) |service_archive| exports_mod.addObjectFile(service_archive);",
     "    }",
     "    if (options.store_capability or options.relational_capability) {",
@@ -4819,20 +5065,15 @@
     "        .use_llvm = useLlvmWorkaround(target),",
     "    });",
     "",
-    "    if (options.ts_core != null) {",
-    "        // The compiled view decodes JSON numbers through Zig's f128",
-    "        // helpers. C/Objective-C hosts link this archive directly rather",
-    "        // than through Zig, so it must carry its compiler runtime too.",
-    "        lib.bundle_compiler_rt = true;",
-    "    }",
-    "",
     "    const lib_step = b.step(\"lib\", \"Build the mobile embed static library\");",
-    "    if (options.ts_core != null and (target.result.os.tag == .ios or target.result.abi.isAndroid())) {",
-    "        // Android's ELF archive contains nested TypeScript archives that",
-    "        // the NDK linker skips. On iOS, Zig's Mach-O archive can place",
-    "        // members off an 8-byte boundary, which Apple ld64 rejects.",
-    "        // Rebuild either output as a plain object archive before install.",
-    "        const merged = mergeMobileArchive(b, dep, lib, options.name, if (target.result.os.tag == .ios) \"darwin\" else \"gnu\");",
+    "    if (options.ts_core != null and target.result.abi.isAndroid()) {",
+    "        // Zig's ELF static-library emission stores the compiled TypeScript",
+    "        // archives as nested members instead of merging their objects (the",
+    "        // Mach-O emission merges), and the NDK's -shared host link would",
+    "        // skip those blobs with only a warning. Flatten to one plain",
+    "        // object archive so the Android host tier keeps linking exactly",
+    "        // the archive it already stages.",
+    "        const merged = mergeMobileArchive(b, dep, lib, options.name);",
     "        const lib_name = b.fmt(\"lib{s}.a\", .{options.name});",
     "        b.getInstallStep().dependOn(&b.addInstallFileWithDir(merged, .lib, lib_name).step);",
     "        lib_step.dependOn(&b.addInstallFileWithDir(merged, .lib, lib_name).step);",
@@ -4842,14 +5083,15 @@
     "    }",
     "}",
     "",
-    "/// Rebuild a TypeScript embed library from its object members. Android",
-    "/// needs flattening; iOS needs Darwin archive member alignment.",
-    "fn mergeMobileArchive(b: *std.Build, dep: *std.Build.Dependency, lib: *std.Build.Step.Compile, name: []const u8, format: []const u8) std.Build.LazyPath {",
+    "/// Flatten an Android embed library whose members include the compiled",
+    "/// TypeScript archives (see the call site above). Runs under node like the",
+    "/// rest of the TypeScript lane's drivers.",
+    "fn mergeMobileArchive(b: *std.Build, dep: *std.Build.Dependency, lib: *std.Build.Step.Compile, name: []const u8) std.Build.LazyPath {",
     "    const node = b.findProgram(&.{\"node\"}, &.{}) catch",
     "        @panic(\"\\nmerging the mobile TypeScript archives needs node on PATH (the TypeScript core lane already requires it).\\n\");",
     "    const merge = b.addSystemCommand(&.{node});",
     "    merge.addFileArg(dep.path(\"packages/core/scripts/merge_static_archives.mjs\"));",
-    "    merge.addArgs(&.{ \"--zig\", b.graph.zig_exe, \"--format\", format });",
+    "    merge.addArgs(&.{ \"--zig\", b.graph.zig_exe, \"--format\", \"gnu\" });",
     "    merge.addArg(\"--out\");",
     "    const merged = merge.addOutputFileArg(b.fmt(\"lib{s}.a\", .{name}));",
     "    merge.addArg(\"--in\");",
@@ -4888,8 +5130,6 @@
     "        detectCoreTree(b, app_options.app_root)",
     "    else",
     "        .zig;",
-    "    const typescript_view = b.option(bool, \"typescript-view\", \"Compile Native markup beside the TypeScript model (default for TypeScript apps; rebuild after markup edits)\") orelse (core_tree == .ts);",
-    "    if (typescript_view and core_tree != .ts) @panic(\"-Dtypescript-view requires src/core.ts\");",
     "    if (core_tree == .both) {",
     "        @panic(\"\\nthis app declares two cores: src/core.ts (TypeScript) and src/main.zig (Zig).\" ++",
     "            \"\\nAn app has exactly one core - the tree is the truth. Keep src/core.ts and delete\" ++",
@@ -4944,7 +5184,6 @@
     "            service_pool_workers,",
     "            build_trace,",
     "            scriptc_optimization,",
-    "            typescript_view,",
     "        )",
     "    else",
     "        null;",
@@ -4962,7 +5201,7 @@
     "    // `-Dtarget`. Desktop targets keep the step absent. A TypeScript core",
     "    // roots the library's app module at the staged mobile wiring and",
     "    // merges the compiled archives into it.",
-    "    if (app_options.mobile_lib or target.result.os.tag == .ios or target.result.abi.isAndroid()) {",
+    "    if (target.result.os.tag == .ios or target.result.abi.isAndroid()) {",
     "        addMobileLibWithTarget(b, dep, target, optimize, .{",
     "            .name = app_options.name,",
     "            .main = appPath(b, app_options.app_root, app_options.main),",
@@ -4976,9 +5215,9 @@
     "            .max_image_pixel_bytes = app_config.max_image_pixel_bytes,",
     "            .ts_core = if (ts_stage) |stage| .{",
     "                .main_root = stage.mobile_root,",
-    "                .app_markup_root = stage.app_markup_root,",
     "                .archive = stage.archive,",
     "                .service_archive = stage.service_archive,",
+    "                .markup_c = stage.markup_c,",
     "                .manifest_mod = appManifestModule(b, app_options.app_root, manifest_name),",
     "            } else null,",
     "        });",
@@ -4996,7 +5235,7 @@
   {
    "group": "B05",
    "file": "build.zig",
-   "at": 1915,
+   "at": 1731,
    "before": [
     "    const cef_dir_override = b.option([]const u8, \"cef-dir\", \"Override CEF root directory for Chromium builds\");",
     "    const cef_auto_install_override = b.option(bool, \"cef-auto-install\", \"Override app.zon CEF auto-install setting\");"
@@ -5029,7 +5268,7 @@
   {
    "group": "B04",
    "file": "build.zig",
-   "at": 1916,
+   "at": 1732,
    "before": [
     "    const cef_auto_install_override = b.option(bool, \"cef-auto-install\", \"Override app.zon CEF auto-install setting\");",
     "    const selected_platform: PlatformOption = switch (platform_option) {"
@@ -5048,7 +5287,7 @@
   {
    "group": "B05",
    "file": "build.zig",
-   "at": 1928,
+   "at": 1744,
    "before": [
     "        @panic(\"-Dplatform=windows requires a Windows target\");",
     "    }"
@@ -5065,7 +5304,7 @@
   {
    "group": "B11",
    "file": "build.zig",
-   "at": 1929,
+   "at": 1745,
    "before": [
     "    }",
     "    const web_engine = web_engine_override orelse app_config.web_engine;"
@@ -5079,13 +5318,143 @@
    "after": [
     "    const cef_dir = cef_dir_override orelse defaultCefDir(selected_platform, app_config.cef_dir);",
     "    const cef_auto_install = cef_auto_install_override orelse app_config.cef_auto_install;"
+   ]
+  },
+  {
+   "group": "B05",
+   "file": "build.zig",
+   "at": 1755,
+   "before": [
+    "    const web_layer = resolveWebLayer(app_config, web_engine, web_layer_override);",
+    ""
    ],
-   "_emptyAt": 102
+   "up": [
+    "    const options = b.addOptions();",
+    "    options.addOption([]const u8, \"platform\", switch (selected_platform) {",
+    "        .auto => unreachable,",
+    "        .null => \"null\",",
+    "        .macos => \"macos\",",
+    "        .linux => \"linux\",",
+    "        .windows => \"windows\",",
+    "    });",
+    "    options.addOption([]const u8, \"trace\", @tagName(trace_option));",
+    "    options.addOption([]const u8, \"web_engine\", @tagName(web_engine));",
+    "    options.addOption(bool, \"debug_overlay\", debug_overlay);",
+    "    options.addOption(bool, \"automation\", automation_enabled);",
+    "    options.addOption(bool, \"js_bridge\", js_bridge_enabled);",
+    "    options.addOption(bool, \"web_layer\", web_layer);",
+    "    const options_mod = options.createModule();"
+   ],
+   "ours": [
+    "    const native_sdk_mod = nativeSdkModule(b, target, optimize, native_sdk_path);",
+    "    const build_opts: BuildOptionValues = .{",
+    "        .platform = switch (selected_platform) {",
+    "            .auto => unreachable,",
+    "            .@\"null\" => \"null\",",
+    "            .macos => \"macos\",",
+    "            .linux => \"linux\",",
+    "            .windows => \"windows\",",
+    "        },",
+    "        .trace = @tagName(trace_option),",
+    "        .web_engine = @tagName(web_engine),",
+    "        .debug_overlay = debug_overlay,",
+    "        .automation = automation_enabled,",
+    "        .js_bridge = js_bridge_enabled,",
+    "        .web_layer = web_layer,",
+    "        .dev_origins = dev_origins_request orelse (optimize == .Debug),",
+    "    };",
+    "    const options_mod = buildOptionsModule(b, build_opts);"
+   ],
+   "after": [
+    "",
+    "    const app_mod = appModule(b, dep, target, app_optimize, app_options, manifest_name, options_mod, ts_stage, relational_migrations, app_config);"
+   ]
+  },
+  {
+   "group": "B02",
+   "file": "build.zig",
+   "at": 1771,
+   "before": [
+    "    const options_mod = options.createModule();",
+    ""
+   ],
+   "up": [
+    "    const app_mod = appModule(b, dep, target, app_optimize, app_options, manifest_name, options_mod, ts_stage, relational_migrations, app_config);",
+    "    // TypeScript app code and platform hosts are expensive Zig/Clang semantic",
+    "    // work but do not depend on primary markup bytes. Compile them once into",
+    "    // an object, then make the executable a link-only artifact over that",
+    "    // cached object plus the tiny generated markup-data object. A markup edit",
+    "    // therefore avoids re-analyzing the SDK and app runner entirely.",
+    "    const exe_root = if (ts_stage) |stage| root: {",
+    "        const app_code = b.addObject(.{",
+    "            .name = b.fmt(\"{s}-app-code\", .{app_options.name}),",
+    "            .root_module = app_mod,",
+    "            .use_llvm = useLlvmWorkaround(target),",
+    "        });",
+    "        const link_mod = b.createModule(.{ .target = target, .optimize = app_optimize });",
+    "        link_mod.addObject(app_code);",
+    "        link_mod.addObject(markupDataObject(b, target, app_optimize, stage.markup_c));",
+    "        // Object dependencies propagate framework/system-library NAMES, but",
+    "        // Zig does not propagate the search paths or rpaths recorded on the",
+    "        // module that produced an object. Restate those path-only facts on",
+    "        // the final link module so the cached app-code split remains link-",
+    "        // equivalent to compiling the app module directly.",
+    "        addPlatformLinkSearchPaths(b, selected_platform, web_engine, cef_dir, link_mod);",
+    "        break :root link_mod;",
+    "    } else app_mod;"
+   ],
+   "ours": [
+    "    const runner_mod = localModule(b, target, optimize, \"src/runner.zig\");",
+    "    runner_mod.addImport(\"native_sdk\", native_sdk_mod);",
+    "    runner_mod.addImport(\"build_options\", options_mod);",
+    "    runner_mod.addImport(\"app_manifest_zon\", b.createModule(.{ .root_source_file = b.path(manifest_path) }));",
+    "",
+    "    const app_mod = localModule(b, target, optimize, \"src/main.zig\");",
+    "    app_mod.addImport(\"native_sdk\", native_sdk_mod);",
+    "    app_mod.addImport(\"runner\", runner_mod);"
+   ],
+   "after": [
+    "    const exe = b.addExecutable(.{",
+    "        .name = app_options.name,"
+   ]
+  },
+  {
+   "group": "B12",
+   "file": "build.zig",
+   "at": 1795,
+   "before": [
+    "    } else app_mod;",
+    "    const exe = b.addExecutable(.{"
+   ],
+   "up": [
+    "        .name = app_options.name,",
+    "        .root_module = exe_root,",
+    "        // The app executable crosses the platform C seam on every host",
+    "        // call (the GTK host's `native_sdk_gtk_create_view` is a",
+    "        // 22-parameter mix of pointers, sizes, ints, and doubles), and",
+    "        // Zig 0.16.0's self-hosted x86_64 backend miscompiles exactly",
+    "        // that calling-convention shape (see useLlvmWorkaround below):",
+    "        // a Debug `native dev` on x86_64 Linux placed the stack-passed",
+    "        // string arguments one slot off, so the host read a garbage",
+    "        // `role` pointer and crashed in `native_sdk_strndup` while the",
+    "        // register-passed `label` arrived intact. Every other artifact",
+    "        // in this graph already forces LLVM on x86_64; the app exe —",
+    "        // the one binary users actually run — must too.",
+    "        .use_llvm = useLlvmWorkaround(target),"
+   ],
+   "ours": [
+    "        .name = app_exe_name,",
+    "        .root_module = app_mod,"
+   ],
+   "after": [
+    "    });",
+    "    // Windows subsystem posture: release-shaped exes (`native build`,"
+   ]
   },
   {
    "group": "B08",
    "file": "build.zig",
-   "at": 2009,
+   "at": 1810,
    "before": [
     "        .use_llvm = useLlvmWorkaround(target),",
     "    });"
@@ -5118,7 +5487,7 @@
   {
    "group": "B02",
    "file": "build.zig",
-   "at": 2021,
+   "at": 1822,
    "before": [
     "        exe.subsystem = .windows;",
     "    }"
@@ -5140,7 +5509,7 @@
   {
    "group": "B06",
    "file": "build.zig",
-   "at": 2025,
+   "at": 1826,
    "before": [
     "    b.getInstallStep().dependOn(&install.step);",
     ""
@@ -5157,11 +5526,12 @@
     "    // The web side has no npm project of its own (D12: `frontend/` never",
     "    // existed — these steps were `npm --prefix frontend` from the template",
     "    // and made `zig build run/dev/package` fail locally for twenty releases).",
-    "    // frontend/dist is the split build of src/app (scripts/build-app.mjs)",
-    "    // plus the licences, produced by one script that does exactly what",
-    "    // scripts/package.sh and the two build workflows do.",
+    "    // frontend/dist is a plain copy of src/web, produced by one script that",
+    "    // does exactly what scripts/package.sh and the two build workflows do:",
+    "    // generate engine-src.js, bundle the ES modules, copy index.html +",
+    "    // styles.css + js/bundle.js + js/engine-src.js, add licenses/.",
     "    const frontend_build = b.addSystemCommand(&.{ \"node\", \"scripts/sync-dist.mjs\" });",
-    "    const frontend_step = b.step(\"frontend-build\", \"Build frontend/dist from src/app (node scripts/sync-dist.mjs)\");",
+    "    const frontend_step = b.step(\"frontend-build\", \"Sync frontend/dist from src/web (node scripts/sync-dist.mjs)\");",
     "    frontend_step.dependOn(&frontend_build.step);"
    ],
    "after": [
@@ -5172,7 +5542,7 @@
   {
    "group": "B06",
    "file": "build.zig",
-   "at": 2032,
+   "at": 1833,
    "before": [
     "    } else null else null;",
     ""
@@ -5201,7 +5571,7 @@
   {
    "group": "B06",
    "file": "build.zig",
-   "at": 2043,
+   "at": 1844,
    "before": [
     "    } else b.addRunArtifact(exe);",
     "    addCefRuntimeRunFiles(b, target, run, exe, web_engine, cef_dir);"
@@ -5218,9 +5588,211 @@
    ]
   },
   {
+   "group": "B06",
+   "file": "build.zig",
+   "at": 1848,
+   "before": [
+    "    run_step.dependOn(&run.step);",
+    ""
+   ],
+   "up": [
+    "    // TypeScript tests need their own module even when optimize modes match:",
+    "    // the production app module feeds the cached app-code object and must not",
+    "    // absorb the separately linked markup data object.",
+    "    const test_app_mod = if (ts_stage != null or app_optimize != optimize)",
+    "        appModule(b, dep, target, optimize, app_options, manifest_name, options_mod, ts_stage, relational_migrations, app_config)",
+    "    else",
+    "        app_mod;",
+    "    if (ts_stage) |stage| test_app_mod.addObject(markupDataObject(b, target, optimize, stage.markup_c));",
+    "    const tests = b.addTest(.{ .root_module = test_app_mod, .use_llvm = useLlvmWorkaround(target) });"
+   ],
+   "ours": [
+    "    const dev = b.addSystemCommand(&.{ \"native\", \"dev\", \"--manifest\", manifest_path, \"--binary\" });",
+    "    dev.addFileArg(exe.getEmittedBin());",
+    "    addWebView2RuntimeRunFiles(b, target, dev, web_engine, web_layer, native_sdk_path);",
+    "    dev.step.dependOn(&exe.step);",
+    "    dev.step.dependOn(&frontend_build.step);",
+    "    const dev_step = b.step(\"dev\", \"Run the frontend dev server and native shell\");",
+    "    dev_step.dependOn(&dev.step);",
+    "",
+    "    // `zig build package` wraps its own exe: release-shaped by default",
+    "    // (ReleaseFast, GUI subsystem on Windows) so the packaged artifact",
+    "    // is never a Debug console binary just because the dev loop",
+    "    // defaults to Debug. When -Doptimize/--release pinned one mode for",
+    "    // everything, the roles agree and the dev exe is reused as-is.",
+    "    const package_exe = if (package_optimize == optimize) exe else pkg: {",
+    "        const package_sdk_mod = nativeSdkModule(b, target, package_optimize, native_sdk_path);",
+    "        const package_runner_mod = localModule(b, target, package_optimize, \"src/runner.zig\");",
+    "        package_runner_mod.addImport(\"native_sdk\", package_sdk_mod);",
+    "        // Its own options module: same values, but dev_origins follows THIS",
+    "        // exe's role, so a `zig build package` from a Debug edit loop still",
+    "        // wraps an exe that trusts no dev server.",
+    "        var package_opts = build_opts;",
+    "        package_opts.dev_origins = dev_origins_request orelse (package_optimize == .Debug);",
+    "        package_runner_mod.addImport(\"build_options\", buildOptionsModule(b, package_opts));",
+    "        package_runner_mod.addImport(\"app_manifest_zon\", b.createModule(.{ .root_source_file = b.path(manifest_path) }));",
+    "        const package_app_mod = localModule(b, target, package_optimize, \"src/main.zig\");",
+    "        package_app_mod.addImport(\"native_sdk\", package_sdk_mod);",
+    "        package_app_mod.addImport(\"runner\", package_runner_mod);",
+    "        const built = b.addExecutable(.{",
+    "            .name = app_exe_name,",
+    "            .root_module = package_app_mod,",
+    "        });",
+    "        // Same subsystem posture as the dev exe above, keyed on this",
+    "        // exe's own mode: release-shaped Windows exes are GUI-subsystem.",
+    "        if (target.result.os.tag == .windows and package_optimize != .Debug) {",
+    "            built.subsystem = .windows;",
+    "        }",
+    "        linkPlatform(b, target, package_app_mod, built, selected_platform, web_engine, web_layer, native_sdk_path, cef_dir, cef_auto_install);",
+    "        break :pkg built;",
+    "    };",
+    "",
+    "    const package = b.addSystemCommand(&.{",
+    "        \"native\",",
+    "        \"package\",",
+    "        \"--target\",",
+    "        @tagName(package_target),",
+    "        \"--manifest\",",
+    "        manifest_path,",
+    "        \"--assets\",\"frontend/dist\",",
+    "        \"--optimize\",",
+    "        package_optimize_name,",
+    "        \"--output\",",
+    "        // No version in the name. It used to read 0.1.0 — hardcoded, never",
+    "        // touched again, and by 1.21 it described nothing at all. A name that",
+    "        // has to be remembered is a name that will be wrong; the tag on the",
+    "        // release is where the version actually lives.",
+    "        b.fmt(\"zig-out/package/{s}-{s}-{s}{s}\", .{ app_exe_name, @tagName(package_target), package_optimize_name, packageSuffix(package_target) }),",
+    "        \"--binary\",",
+    "    });",
+    "    // The CLI resolves SDK-owned package inputs (the vendored WebView2",
+    "    // loader) from the framework root; a PATH-resolved `native` could",
+    "    // belong to a different checkout than the one this build compiled",
+    "    // against, so hand the same root over explicitly.",
+    "    package.setEnvironmentVariable(\"NATIVE_SDK_PATH\", b.pathFromRoot(native_sdk_path));",
+    "    package.addFileArg(package_exe.getEmittedBin());",
+    "    package.addArgs(&.{ \"--web-engine\", @tagName(web_engine), \"--cef-dir\", cef_dir });",
+    "    // Forward the RESOLVED web-layer decision, never the raw inputs:",
+    "    // this graph already decided web vs native-only for the exe it is",
+    "    // packaging (app.zon declarations plus -Dweb-layer/-Dweb-engine),",
+    "    // and the CLI re-inferring from app.zon alone would miss a",
+    "    // flag-driven override. Handing over the decision itself makes",
+    "    // exe/package agreement structural.",
+    "    package.addArgs(&.{ \"--web-layer\", if (web_layer) \"include\" else \"exclude\" });",
+    "    if (cef_auto_install) package.addArg(\"--cef-auto-install\");",
+    "    package.step.dependOn(&package_exe.step);",
+    "    package.step.dependOn(&frontend_build.step);",
+    "    const package_step = b.step(\"package\", \"Create a local package artifact\");",
+    "    package_step.dependOn(&package.step);",
+    "",
+    "    const tests = b.addTest(.{ .root_module = app_mod });"
+   ],
+   "after": [
+    "    const test_step = b.step(\"test\", \"Run tests\");",
+    "    test_step.dependOn(&b.addRunArtifact(tests).step);"
+   ]
+  },
+  {
+   "group": "B13",
+   "file": "build.zig",
+   "at": 1859,
+   "before": [
+    "    const test_step = b.step(\"test\", \"Run tests\");",
+    "    test_step.dependOn(&b.addRunArtifact(tests).step);"
+   ],
+   "up": [],
+   "ours": [
+    "    // src/runner.zig is a module of its own, so the app's test binary never",
+    "    // runs its tests: the window-restore one (v8-2-plan M4, sdk-fork-notes R15)",
+    "    // and those of the SDK's window_placement.zig it imports.",
+    "    const runner_tests = b.addTest(.{ .root_module = runner_mod });",
+    "    test_step.dependOn(&b.addRunArtifact(runner_tests).step);"
+   ],
+   "after": [
+    "",
+    "    // `native test` must surface the app's compile-time teaching errors,"
+   ]
+  },
+  {
+   "group": "B02",
+   "file": "build.zig",
+   "at": 1859,
+   "before": [
+    "    const test_step = b.step(\"test\", \"Run tests\");",
+    "    test_step.dependOn(&b.addRunArtifact(tests).step);"
+   ],
+   "up": [],
+   "ours": [
+    "}"
+   ],
+   "after": [
+    "",
+    "    // `native test` must surface the app's compile-time teaching errors,"
+   ]
+  },
+  {
    "group": "B05",
    "file": "build.zig",
-   "at": 2124,
+   "at": 1860,
+   "before": [
+    "    test_step.dependOn(&b.addRunArtifact(tests).step);",
+    ""
+   ],
+   "up": [
+    "    // `native test` must surface the app's compile-time teaching errors,",
+    "    // not just its test failures. Test builds never analyze `main` (the",
+    "    // test runner replaces the entry point), so rules that fire inside it",
+    "    // — UiApp.create's Model-defaults rule above all — used to ambush at",
+    "    // `native build`, the LAST step in the loop. Compiling this object",
+    "    // forces full semantic analysis of the app module, entry point",
+    "    // included; nothing links or runs.",
+    "    const analysis_root = b.addWriteFiles().add(\"app_analysis.zig\",",
+    "        \\\\//! Generated by the app build: force semantic analysis of the",
+    "        \\\\//! app's entry point at test time. Exactly `main`, transitively —",
+    "        \\\\//! the same surface `native build` analyzes — so test-time can",
+    "        \\\\//! never be stricter than the build it fronts.",
+    "        \\\\comptime {",
+    "        \\\\    const app = @import(\"app\");",
+    "        \\\\    if (@hasDecl(app, \"main\")) _ = &app.main;",
+    "        \\\\}",
+    "        \\\\",
+    "    );",
+    "    const analysis_mod = b.createModule(.{",
+    "        .root_source_file = analysis_root,",
+    "        .target = target,",
+    "        .optimize = optimize,",
+    "    });",
+    "    analysis_mod.addImport(\"app\", test_app_mod);",
+    "    const analysis_obj = b.addObject(.{",
+    "        .name = b.fmt(\"{s}-analysis\", .{app_options.name}),",
+    "        .root_module = analysis_mod,",
+    "        .use_llvm = useLlvmWorkaround(target),",
+    "    });",
+    "    test_step.dependOn(&analysis_obj.step);"
+   ],
+   "ours": [
+    "/// Everything src/runner.zig reads from `build_options`, in one place so the",
+    "/// dev exe and the package exe get the same list with one field varied.",
+    "const BuildOptionValues = struct {",
+    "    platform: []const u8,",
+    "    trace: []const u8,",
+    "    web_engine: []const u8,",
+    "    debug_overlay: bool,",
+    "    automation: bool,",
+    "    js_bridge: bool,",
+    "    web_layer: bool,",
+    "    dev_origins: bool,",
+    "};"
+   ],
+   "after": [
+    "",
+    "    // `zig build model-contract`: reflect the app's Model/Msg into"
+   ]
+  },
+  {
+   "group": "B05",
+   "file": "build.zig",
+   "at": 1891,
    "before": [
     "    test_step.dependOn(&analysis_obj.step);",
     ""
@@ -5341,380 +5913,178 @@
    ]
   },
   {
-   "group": "B05",
+   "group": "B12",
    "file": "build.zig",
-   "at": 1939,
+   "at": 1988,
    "before": [
-    "    const web_layer = resolveWebLayer(app_config, web_engine, web_layer_override);",
+    "}",
     ""
    ],
    "up": [
-    "    const options = b.addOptions();",
-    "    options.addOption([]const u8, \"platform\", switch (selected_platform) {",
-    "        .auto => unreachable,",
-    "        .null => \"null\",",
-    "        .macos => \"macos\",",
-    "        .linux => \"linux\",",
-    "        .windows => \"windows\",",
-    "    });",
-    "    options.addOption([]const u8, \"trace\", @tagName(trace_option));",
-    "    options.addOption([]const u8, \"web_engine\", @tagName(web_engine));",
-    "    options.addOption(bool, \"debug_overlay\", debug_overlay);",
-    "    options.addOption(bool, \"automation\", automation_enabled);",
-    "    options.addOption(bool, \"js_bridge\", js_bridge_enabled);",
-    "    options.addOption(bool, \"web_layer\", web_layer);",
-    "    const options_mod = options.createModule();"
+    "/// Zig 0.16.0's self-hosted x86_64 backend miscompiles the SysV C calling",
+    "/// convention for f32-heavy signatures with interleaved pointer arguments",
+    "/// (`native_sdk_app_viewport`: 11 f32s + 2 pointers): both the caller and",
+    "/// the callee place/read the wrong registers and stack slots, so safe-area",
+    "/// insets arrive as garbage on x86_64 Debug builds while every LLVM-backed",
+    "/// build is correct. Minimal repro (fails under `zig test`, passes with",
+    "/// `-fllvm` on x86_64-linux):",
+    "///",
+    "///   fn take(a: ?*anyopaque, w: f32, h: f32, s: f32, p: ?*anyopaque,",
+    "///           t: f32, r: f32, bo: f32, l: f32, kt: f32, kr: f32, kb: f32,",
+    "///           kl: f32) callconv(.c) void { ... }",
+    "///",
+    "/// The same backend also mis-places STACK-passed integer/pointer arguments",
+    "/// in long mixed signatures with interleaved doubles: calling the GTK",
+    "/// host's `native_sdk_gtk_create_view` (22 params: 6 register ints, 4",
+    "/// doubles, 12 stack ints/pointers/sizes) from self-hosted Debug code",
+    "/// hands the clang-compiled callee arguments shifted by one stack slot",
+    "/// from `visible` onward — the callee's `role` pointer reads as the",
+    "/// caller's `enabled` value (a 4-byte 1 under 0xAA undefined fill,",
+    "/// faulting at 0xaaaaaaaa00000001) and `role_len` reads as the role",
+    "/// pointer. Register-passed arguments (`label`) arrive intact, which is",
+    "/// why the crash appears only at the first stack-passed string. Verified",
+    "/// against zig 0.16.0 on x86_64-linux with a standalone caller/callee",
+    "/// pair: self-hosted Debug corrupts, `-fllvm` is correct.",
+    "///",
+    "/// Force the LLVM backend on x86_64 until the upstream backend is fixed;",
+    "/// Release modes already default to LLVM, so this only changes Debug.",
+    "pub fn useLlvmWorkaround(target: std.Build.ResolvedTarget) ?bool {",
+    "    return if (target.result.cpu.arch == .x86_64) true else null;",
+    "}",
+    "",
+    "fn exampleOptimizeMode(b: *std.Build, requested: ?std.builtin.OptimizeMode, default_mode: std.builtin.OptimizeMode) std.builtin.OptimizeMode {"
    ],
    "ours": [
-    "    const native_sdk_mod = nativeSdkModule(b, target, optimize, native_sdk_path);",
-    "    const build_opts: BuildOptionValues = .{",
-    "        .platform = switch (selected_platform) {",
-    "            .auto => unreachable,",
-    "            .@\"null\" => \"null\",",
-    "            .macos => \"macos\",",
-    "            .linux => \"linux\",",
-    "            .windows => \"windows\",",
-    "        },",
-    "        .trace = @tagName(trace_option),",
-    "        .web_engine = @tagName(web_engine),",
-    "        .debug_overlay = debug_overlay,",
-    "        .automation = automation_enabled,",
-    "        .js_bridge = js_bridge_enabled,",
-    "        .web_layer = web_layer,",
-    "        .dev_origins = dev_origins_request orelse (optimize == .Debug),",
-    "    };",
-    "    const options_mod = buildOptionsModule(b, build_opts);"
+    "// Resolve the optimize mode for one exe role (mirrors the Native SDK",
+    "// build graph): an explicit -Doptimize wins for every role, --release",
+    "// resolves through zig's release_mode, and only when neither was",
+    "// passed does the role keep its own default — Debug for the dev loop,",
+    "// ReleaseFast for the exe `zig build package` wraps.",
+    "fn optimizeMode(b: *std.Build, requested: ?std.builtin.OptimizeMode, default_mode: std.builtin.OptimizeMode) std.builtin.OptimizeMode {"
    ],
    "after": [
-    "",
-    "    const defer_ts_archives = target.result.ofmt == .elf;"
+    "    if (requested) |mode| return mode;",
+    "    return switch (b.release_mode) {"
    ]
   },
   {
    "group": "B02",
    "file": "build.zig",
-   "at": 1955,
+   "at": 2029,
    "before": [
-    "    const options_mod = options.createModule();",
+    "}",
     ""
    ],
    "up": [
-    "    const defer_ts_archives = target.result.ofmt == .elf;",
-    "    const app_mod = appModule(b, dep, target, app_optimize, app_options, manifest_name, options_mod, ts_stage, relational_migrations, app_config, !defer_ts_archives);",
-    "    // TypeScript app code and platform hosts are expensive Zig/Clang semantic",
-    "    // work but do not depend on primary markup bytes. Compile them once into",
-    "    // an object, then make the executable a link-only artifact over that",
-    "    // cached object plus the tiny generated markup-data object. A markup edit",
-    "    // therefore avoids re-analyzing the SDK and app runner entirely.",
-    "    const exe_root = if (ts_stage) |stage| root: {",
-    "        // COFF has no relocatable link for merging the compiled core archive",
-    "        // and platform C/C++ objects into one object. Keep all those inputs",
-    "        // on the executable's final link instead, including Debug markup.",
-    "        if (target.result.os.tag == .windows) {",
-    "            if (app_optimize == .Debug) app_mod.addObject(markupDataObject(b, target, app_optimize, stage.markup_c));",
-    "            break :root app_mod;",
-    "        }",
-    "        const app_code = b.addObject(.{",
-    "            .name = b.fmt(\"{s}-app-code\", .{app_options.name}),",
-    "            .root_module = app_mod,",
-    "            .use_llvm = useLlvmWorkaround(target),",
-    "        });",
-    "        const link_mod = b.createModule(.{ .target = target, .optimize = app_optimize });",
-    "        link_mod.addObject(app_code);",
-    "        // ELF relocatable links can leave an archive's unwind terminator",
-    "        // before later .eh_frame records. Keep the compiled archives on the",
-    "        // final link, preserving unwind data and the cached app-code split.",
-    "        if (defer_ts_archives) {",
-    "            link_mod.addObjectFile(stage.archive);",
-    "            if (stage.service_archive) |service_archive| link_mod.addObjectFile(service_archive);",
-    "        }",
-    "        if (app_optimize == .Debug) link_mod.addObject(markupDataObject(b, target, app_optimize, stage.markup_c));",
-    "        // Object dependencies propagate framework/system-library NAMES, but",
-    "        // Zig does not propagate the search paths or rpaths recorded on the",
-    "        // module that produced an object. Restate those path-only facts on",
-    "        // the final link module so the cached app-code split remains link-",
-    "        // equivalent to compiling the app module directly.",
-    "        addPlatformLinkSearchPaths(b, selected_platform, web_engine, cef_dir, link_mod);",
-    "        break :root link_mod;",
-    "    } else app_mod;"
-   ],
-   "ours": [
-    "    const runner_mod = localModule(b, target, optimize, \"src/runner.zig\");",
-    "    runner_mod.addImport(\"native_sdk\", native_sdk_mod);",
-    "    runner_mod.addImport(\"build_options\", options_mod);",
-    "    runner_mod.addImport(\"app_manifest_zon\", b.createModule(.{ .root_source_file = b.path(manifest_path) }));",
-    "    addMigrations(b, target, optimize, runner_mod, native_sdk_mod);",
-    "",
-    "    const app_mod = localModule(b, target, optimize, \"src/main.zig\");",
-    "    app_mod.addImport(\"native_sdk\", native_sdk_mod);",
-    "    app_mod.addImport(\"runner\", runner_mod);",
-    "    addSqlite(b, app_mod, native_sdk_path);"
-   ],
-   "after": [
-    "    const exe = b.addExecutable(.{",
-    "        .name = app_options.name,"
-   ]
-  },
-  {
-   "group": "B02",
-   "file": "build.zig",
-   "at": 1994,
-   "before": [
-    "    } else app_mod;",
-    "    const exe = b.addExecutable(.{"
-   ],
-   "up": [
-    "        .name = app_options.name,",
-    "        .root_module = exe_root,"
-   ],
-   "ours": [
-    "        .name = app_exe_name,",
-    "        .root_module = app_mod,"
-   ],
-   "after": [
-    "        // The app executable crosses the platform C seam on every host",
-    "        // call (the GTK host's `native_sdk_gtk_create_view` is a"
-   ]
-  },
-  {
-   "group": "B06",
-   "file": "build.zig",
-   "at": 2047,
-   "before": [
-    "    run_step.dependOn(&run.step);",
-    ""
-   ],
-   "up": [
-    "    // TypeScript tests need their own module even when optimize modes match:",
-    "    // the production app module feeds the cached app-code object and must not",
-    "    // absorb the separately linked markup data object.",
-    "    const test_app_mod = if (ts_stage != null or app_optimize != optimize)",
-    "        appModule(b, dep, target, optimize, app_options, manifest_name, options_mod, ts_stage, relational_migrations, app_config, true)",
-    "    else",
-    "        app_mod;",
-    "    if (ts_stage) |stage| {",
-    "        if (optimize == .Debug) test_app_mod.addObject(markupDataObject(b, target, optimize, stage.markup_c));",
-    "    }",
-    "    const tests = b.addTest(.{ .root_module = test_app_mod, .use_llvm = useLlvmWorkaround(target) });"
-   ],
-   "ours": [
-    "    const dev = b.addSystemCommand(&.{ \"native\", \"dev\", \"--manifest\", manifest_path, \"--binary\" });",
-    "    dev.addFileArg(exe.getEmittedBin());",
-    "    addWebView2RuntimeRunFiles(b, target, dev, web_engine, web_layer, native_sdk_path);",
-    "    dev.step.dependOn(&exe.step);",
-    "    dev.step.dependOn(&frontend_build.step);",
-    "    const dev_step = b.step(\"dev\", \"Run the frontend dev server and native shell\");",
-    "    dev_step.dependOn(&dev.step);",
-    "",
-    "    // `zig build package` wraps its own exe: release-shaped by default",
-    "    // (ReleaseFast, GUI subsystem on Windows) so the packaged artifact",
-    "    // is never a Debug console binary just because the dev loop",
-    "    // defaults to Debug. When -Doptimize/--release pinned one mode for",
-    "    // everything, the roles agree and the dev exe is reused as-is.",
-    "    const package_exe = if (package_optimize == optimize) exe else pkg: {",
-    "        const package_sdk_mod = nativeSdkModule(b, target, package_optimize, native_sdk_path);",
-    "        const package_runner_mod = localModule(b, target, package_optimize, \"src/runner.zig\");",
-    "        package_runner_mod.addImport(\"native_sdk\", package_sdk_mod);",
-    "        // Its own options module: same values, but dev_origins follows THIS",
-    "        // exe's role, so a `zig build package` from a Debug edit loop still",
-    "        // wraps an exe that trusts no dev server.",
-    "        var package_opts = build_opts;",
-    "        package_opts.dev_origins = dev_origins_request orelse (package_optimize == .Debug);",
-    "        package_runner_mod.addImport(\"build_options\", buildOptionsModule(b, package_opts));",
-    "        package_runner_mod.addImport(\"app_manifest_zon\", b.createModule(.{ .root_source_file = b.path(manifest_path) }));",
-    "        addMigrations(b, target, package_optimize, package_runner_mod, package_sdk_mod);",
-    "        const package_app_mod = localModule(b, target, package_optimize, \"src/main.zig\");",
-    "        package_app_mod.addImport(\"native_sdk\", package_sdk_mod);",
-    "        package_app_mod.addImport(\"runner\", package_runner_mod);",
-    "        addSqlite(b, package_app_mod, native_sdk_path);",
-    "        const built = b.addExecutable(.{",
-    "            .name = app_exe_name,",
-    "            .root_module = package_app_mod,",
-    "            // the same x86_64 LLVM workaround as the dev exe (B12)",
-    "            .use_llvm = useLlvmWorkaround(target),",
-    "        });",
-    "        // Same subsystem posture as the dev exe above, keyed on this",
-    "        // exe's own mode: release-shaped Windows exes are GUI-subsystem.",
-    "        if (target.result.os.tag == .windows and package_optimize != .Debug) {",
-    "            built.subsystem = .windows;",
-    "        }",
-    "        linkPlatform(b, target, package_app_mod, built, selected_platform, web_engine, web_layer, native_sdk_path, cef_dir, cef_auto_install);",
-    "        break :pkg built;",
-    "    };",
-    "",
-    "    const package = b.addSystemCommand(&.{",
-    "        \"native\",",
-    "        \"package\",",
-    "        \"--target\",",
-    "        @tagName(package_target),",
-    "        \"--manifest\",",
-    "        manifest_path,",
-    "        \"--assets\",\"frontend/dist\",",
-    "        \"--optimize\",",
-    "        package_optimize_name,",
-    "        \"--output\",",
-    "        // No version in the name. It used to read 0.1.0 — hardcoded, never",
-    "        // touched again, and by 1.21 it described nothing at all. A name that",
-    "        // has to be remembered is a name that will be wrong; the tag on the",
-    "        // release is where the version actually lives.",
-    "        b.fmt(\"zig-out/package/{s}-{s}-{s}{s}\", .{ app_exe_name, @tagName(package_target), package_optimize_name, packageSuffix(package_target) }),",
-    "        \"--binary\",",
-    "    });",
-    "    // The CLI resolves SDK-owned package inputs (the vendored WebView2",
-    "    // loader) from the framework root; a PATH-resolved `native` could",
-    "    // belong to a different checkout than the one this build compiled",
-    "    // against, so hand the same root over explicitly.",
-    "    package.setEnvironmentVariable(\"NATIVE_SDK_PATH\", b.pathFromRoot(native_sdk_path));",
-    "    package.addFileArg(package_exe.getEmittedBin());",
-    "    package.addArgs(&.{ \"--web-engine\", @tagName(web_engine), \"--cef-dir\", cef_dir });",
-    "    // Forward the RESOLVED web-layer decision, never the raw inputs:",
-    "    // this graph already decided web vs native-only for the exe it is",
-    "    // packaging (app.zon declarations plus -Dweb-layer/-Dweb-engine),",
-    "    // and the CLI re-inferring from app.zon alone would miss a",
-    "    // flag-driven override. Handing over the decision itself makes",
-    "    // exe/package agreement structural.",
-    "    package.addArgs(&.{ \"--web-layer\", if (web_layer) \"include\" else \"exclude\" });",
-    "    if (cef_auto_install) package.addArg(\"--cef-auto-install\");",
-    "    package.step.dependOn(&package_exe.step);",
-    "    package.step.dependOn(&frontend_build.step);",
-    "    const package_step = b.step(\"package\", \"Create a local package artifact\");",
-    "    package_step.dependOn(&package.step);",
-    "",
-    "    // v20-0-plan A2: the test binary always links SQLite, whichever UI the",
-    "    // exe has, so src/db.zig's tests run against a real RelationalStore.",
-    "    // Its own root module (same imports): C sources belong to a module, and",
-    "    // the 19.0 exe must not carry the amalgamation it never opens.",
-    "    const test_mod = localModule(b, target, optimize, \"src/main.zig\");",
-    "    test_mod.addImport(\"native_sdk\", native_sdk_mod);",
-    "    test_mod.addImport(\"runner\", runner_mod);",
-    "    addSqlite(b, test_mod, native_sdk_path);",
-    "    const tests = b.addTest(.{ .root_module = test_mod, .use_llvm = useLlvmWorkaround(target) });",
-    "    // the same platform sources and links the exe's module gets (the macOS",
-    "    // host .m, mac_chrome.m, AppKit/WebKit…): the test binary links main()",
-    "    linkPlatform(b, target, test_mod, tests, selected_platform, web_engine, web_layer, native_sdk_path, cef_dir, cef_auto_install);"
-   ],
-   "after": [
-    "    const test_step = b.step(\"test\", \"Run tests\");",
-    "    test_step.dependOn(&b.addRunArtifact(tests).step);"
-   ]
-  },
-  {
-   "group": "B13",
-   "file": "build.zig",
-   "at": 2060,
-   "before": [
-    "    const test_step = b.step(\"test\", \"Run tests\");",
-    "    test_step.dependOn(&b.addRunArtifact(tests).step);"
-   ],
-   "up": [],
-   "ours": [
-    "    // src/runner.zig is a module of its own, so the app's test binary never",
-    "    // runs its tests: the window-restore one (v8-2-plan M4, sdk-fork-notes R15)",
-    "    // and those of the SDK's window_placement.zig it imports.",
-    "    const runner_tests = b.addTest(.{ .root_module = runner_mod, .use_llvm = useLlvmWorkaround(target) });",
-    "    test_step.dependOn(&b.addRunArtifact(runner_tests).step);",
-    "}"
-   ],
-   "after": [
-    "",
-    "    // Authored Node tests drive a separately linked native TestHarness host."
-   ]
-  },
-  {
-   "group": "B05",
-   "file": "build.zig",
-   "at": 2061,
-   "before": [
-    "    test_step.dependOn(&b.addRunArtifact(tests).step);",
-    ""
-   ],
-   "up": [
-    "    // Authored Node tests drive a separately linked native TestHarness host.",
-    "    // Apps without tests pay no extra compile/link cost.",
-    "    if (ts_stage != null and hasTypeScriptTests(b, app_options.app_root)) {",
-    "        const host_root = b.addWriteFiles().add(\"native_test_main.zig\",",
-    "            \\\\pub const main = @import(\"app\").testMain;",
-    "            \\\\",
-    "        );",
-    "        const host_mod = b.createModule(.{ .root_source_file = host_root, .target = target, .optimize = optimize });",
-    "        host_mod.addImport(\"app\", test_app_mod);",
-    "        // The headless host bypasses linkPlatform, but the compiled core's",
-    "        // runtime still references the Windows networking and crypto APIs.",
-    "        if (target.result.os.tag == .windows) {",
-    "            host_mod.linkSystemLibrary(\"ws2_32\", .{});",
-    "            host_mod.linkSystemLibrary(\"iphlpapi\", .{});",
-    "            host_mod.linkSystemLibrary(\"advapi32\", .{});",
-    "        }",
-    "        const host = b.addExecutable(.{",
-    "            .name = b.fmt(\"{s}-test-host\", .{app_options.name}),",
-    "            .root_module = host_mod,",
-    "            .use_llvm = useLlvmWorkaround(target),",
-    "        });",
-    "        const node_tests = b.addSystemCommand(&.{tsToolingPreflight(b, dep, .app_core)});",
-    "        node_tests.addArgs(&.{ \"--test-reporter=spec\", \"--test-reporter-destination=stderr\" });",
-    "        node_tests.addFileArg(dep.path(\"build/ts_run.mjs\"));",
-    "        node_tests.addFileArg(dep.path(\"packages/core/scripts/run_native_tests.mjs\"));",
-    "        node_tests.addArtifactArg(host);",
-    "        node_tests.addDirectoryArg(b.path(appPath(b, app_options.app_root, \"tests\")));",
-    "        node_tests.setCwd(b.path(app_options.app_root));",
-    "        node_tests.has_side_effects = true;",
-    "        test_step.dependOn(&node_tests.step);",
-    "    }",
-    "",
-    "    // `native test` must surface the app's compile-time teaching errors,",
-    "    // not just its test failures. Test builds never analyze `main` (the",
-    "    // test runner replaces the entry point), so rules that fire inside it",
-    "    // — UiApp.create's Model-defaults rule above all — used to ambush at",
-    "    // `native build`, the LAST step in the loop. Compiling this object",
-    "    // forces full semantic analysis of the app module, entry point",
-    "    // included; nothing links or runs.",
-    "    const analysis_root = b.addWriteFiles().add(\"app_analysis.zig\",",
-    "        \\\\//! Generated by the app build: force semantic analysis of the",
-    "        \\\\//! app's entry point at test time. Exactly `main`, transitively —",
-    "        \\\\//! the same surface `native build` analyzes — so test-time can",
-    "        \\\\//! never be stricter than the build it fronts.",
-    "        \\\\comptime {",
-    "        \\\\    const app = @import(\"app\");",
-    "        \\\\    if (@hasDecl(app, \"main\")) _ = &app.main;",
-    "        \\\\}",
-    "        \\\\",
-    "    );",
-    "    const analysis_mod = b.createModule(.{",
-    "        .root_source_file = analysis_root,",
+    "fn appModule(b: *std.Build, dep: *std.Build.Dependency, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, app_options: AppOptions, manifest_name: []const u8, options_mod: *std.Build.Module, ts_stage: ?TsCoreStage, relational_migrations: std.Build.LazyPath, app_config: AppManifestBuildConfig) *std.Build.Module {",
+    "    const native_sdk_mod = nativeSdkModuleWithTerminal(b, dep, target, optimize, app_options.terminal_sessions);",
+    "    const runner_mod = b.createModule(.{",
+    "        .root_source_file = dep.path(\"src/app_runner/root.zig\"),",
     "        .target = target,",
     "        .optimize = optimize,",
     "    });",
-    "    analysis_mod.addImport(\"app\", test_app_mod);",
-    "    const analysis_obj = b.addObject(.{",
-    "        .name = b.fmt(\"{s}-analysis\", .{app_options.name}),",
-    "        .root_module = analysis_mod,",
-    "        .use_llvm = useLlvmWorkaround(target),",
-    "    });",
-    "    test_step.dependOn(&analysis_obj.step);"
-   ],
-   "ours": [
-    "/// Everything src/runner.zig reads from `build_options`, in one place so the",
-    "/// dev exe and the package exe get the same list with one field varied.",
-    "const BuildOptionValues = struct {",
-    "    platform: []const u8,",
-    "    trace: []const u8,",
-    "    web_engine: []const u8,",
-    "    debug_overlay: bool,",
-    "    automation: bool,",
-    "    js_bridge: bool,",
-    "    web_layer: bool,",
-    "    dev_origins: bool,",
-    "};"
-   ],
-   "after": [
+    "    const manifest_mod = appManifestModule(b, app_options.app_root, manifest_name);",
+    "    runner_mod.addImport(\"native_sdk\", native_sdk_mod);",
+    "    runner_mod.addImport(\"build_options\", options_mod);",
+    "    runner_mod.addImport(\"app_manifest_zon\", manifest_mod);",
+    "    const migration_mod = b.createModule(.{ .root_source_file = relational_migrations, .target = target, .optimize = optimize });",
+    "    migration_mod.addImport(\"native_sdk\", native_sdk_mod);",
+    "    runner_mod.addImport(\"relational_migrations\", migration_mod);",
     "",
-    "    // `zig build model-contract`: reflect the app's Model/Msg into"
+    "    const app_mod = if (ts_stage) |stage|",
+    "        // TypeScript core: the app module roots at the staged generated",
+    "        // wiring (ts_core_main.zig beside the mirror core.zig, its shim",
+    "        // runtime; primary markup bytes link as a separate data object).",
+    "        b.createModule(.{",
+    "            .root_source_file = stage.main_root,",
+    "            .target = target,",
+    "            .optimize = optimize,",
+    "        })",
+    "    else",
+    "        localModule(b, target, optimize, appPath(b, app_options.app_root, app_options.main));",
+    "    app_mod.addImport(\"native_sdk\", native_sdk_mod);",
+    "    app_mod.addImport(\"runner\", runner_mod);",
+    "    if (ts_stage != null) {",
+    "        // The wiring derives scene/identity/security from app.zon itself.",
+    "        app_mod.addImport(\"app_manifest_zon\", manifest_mod);",
+    "    }",
+    "    if (ts_stage) |stage| {",
+    "        // The compiled-core archive links behind the staged mirror; the",
+    "        // toolchain's runtime needs libc.",
+    "        app_mod.link_libc = true;",
+    "        app_mod.addObjectFile(stage.archive);",
+    "        // The in-process service archive links beside it (distinct symbol",
+    "        // prefix; its runtime internals are localized).",
+    "        if (stage.service_archive) |service_archive| app_mod.addObjectFile(service_archive);",
+    "    }",
+    "    if (app_config.sqlite_capability) {",
+    "        // `store` and the relational `sqlite` tier share this exact object.",
+    "        // The source is absent from every artifact declaring neither",
+    "        // capability, which keeps capability inference a real binary-size",
+    "        // boundary rather than a runtime flag.",
+    "        app_mod.addIncludePath(dep.path(\"third_party/sqlite\"));",
+    "        app_mod.addCSourceFile(.{",
+    "            .file = dep.path(\"third_party/sqlite/sqlite3.c\"),",
+    "            .flags = &sqlite_c_defines,",
+    "        });",
+    "        app_mod.link_libc = true;",
+    "    }",
+    "    addMacosInfoPlist(b, app_mod, target, app_config);",
+    "    return app_mod;",
+    "}",
+    "",
+    "/// Compile primary markup bytes independently from the Zig app graph. The",
+    "/// final artifact sees this as an object-file input, so a markup edit dirties",
+    "/// only this tiny C compile and the final link.",
+    "fn markupDataObject(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, source: std.Build.LazyPath) *std.Build.Step.Compile {",
+    "    const mod = b.createModule(.{ .target = target, .optimize = optimize });",
+    "    mod.addCSourceFile(.{ .file = source, .flags = &.{} });",
+    "    return b.addObject(.{ .name = \"native-app-markup-data\", .root_module = mod });",
+    "}",
+    "",
+    "/// Bare Mach-O executables launched by the dev loop do not have an app",
+    "/// bundle's external Info.plist. Embed launch policy plus capture usage",
+    "/// strings in the conventional section so LaunchServices starts accessory",
+    "/// apps without a transient Dock tile and capture consent can be presented.",
+    "/// Packaged apps retain their richer external plist generated by package.zig.",
+    "fn addMacosInfoPlist(b: *std.Build, app_mod: *std.Build.Module, target: std.Build.ResolvedTarget, config: AppManifestBuildConfig) void {",
+    "    if (target.result.os.tag != .macos) return;",
+    "    if (config.dock_visible and !config.microphone_permission and !config.system_audio_permission) return;",
+    "",
+    "    const launch_policy = if (!config.dock_visible)",
+    "        \"  <key>LSUIElement</key>\\\\n  <true/>\\\\n\"",
+    "    else",
+    "        \"\";",
+    "    const microphone = if (config.microphone_permission)",
+    "        \"  <key>NSMicrophoneUsageDescription</key>\\\\n  <string>This app captures microphone audio when you start recording.</string>\\\\n\"",
+    "    else",
+    "        \"\";",
+    "    const system_audio = if (config.system_audio_permission)",
+    "        \"  <key>NSAudioCaptureUsageDescription</key>\\\\n  <string>This app captures system audio when you start recording.</string>\\\\n\" ++",
+    "            \"  <key>NSScreenCaptureUsageDescription</key>\\\\n  <string>This app captures system audio when you start recording.</string>\\\\n\"",
+    "    else",
+    "        \"\";",
+    "    const source = b.fmt(",
+    "        \\\\#define NATIVE_SDK_INFO_PLIST \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n\" \"<!DOCTYPE plist PUBLIC \\\"-//Apple//DTD PLIST 1.0//EN\\\" \\\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\\\">\\n\" \"<plist version=\\\"1.0\\\">\\n<dict>\\n{s}{s}{s}</dict>\\n</plist>\\n\"",
+    "        \\\\__attribute__((used, section(\"__TEXT,__info_plist\")))",
+    "        \\\\static const unsigned char native_sdk_info_plist[sizeof(NATIVE_SDK_INFO_PLIST) - 1] = NATIVE_SDK_INFO_PLIST;",
+    "        \\\\",
+    "    , .{ launch_policy, microphone, system_audio });",
+    "    const generated = b.addWriteFiles().add(\"native_sdk_macos_info_plist.c\", source);",
+    "    app_mod.addCSourceFile(.{ .file = generated, .flags = &.{} });",
+    "}",
+    ""
+   ],
+   "ours": [],
+   "after": [
+    "fn nativeSdkTarget(b: *std.Build) std.Build.ResolvedTarget {",
+    "    const target = b.standardTargetOptions(.{});"
    ]
   },
   {
    "group": "B03",
    "file": "build.zig",
-   "at": 2387,
+   "at": 2141,
    "before": [
     "}",
     ""
@@ -5925,165 +6295,12 @@
    "after": [
     "fn macosSdkPath(b: *std.Build) ?[]const u8 {",
     "    if (b.graph.environ_map.get(\"SDKROOT\")) |sdkroot| {"
-   ],
-   "_emptyAt": 399
-  },
-  {
-   "group": "B05",
-   "file": "build.zig",
-   "at": 2252,
-   "before": [
-    "}",
-    ""
-   ],
-   "up": [
-    "fn exampleOptimizeMode(b: *std.Build, requested: ?std.builtin.OptimizeMode, default_mode: std.builtin.OptimizeMode) std.builtin.OptimizeMode {"
-   ],
-   "ours": [
-    "// Resolve the optimize mode for one exe role (mirrors the Native SDK",
-    "// build graph): an explicit -Doptimize wins for every role, --release",
-    "// resolves through zig's release_mode, and only when neither was",
-    "// passed does the role keep its own default — Debug for the dev loop,",
-    "// ReleaseFast for the exe `zig build package` wraps.",
-    "fn optimizeMode(b: *std.Build, requested: ?std.builtin.OptimizeMode, default_mode: std.builtin.OptimizeMode) std.builtin.OptimizeMode {"
-   ],
-   "after": [
-    "    if (requested) |mode| return mode;",
-    "    return switch (b.release_mode) {"
    ]
-  },
-  {
-   "group": "B02",
-   "file": "build.zig",
-   "at": 2262,
-   "before": [
-    "}",
-    ""
-   ],
-   "up": [
-    "fn appModule(b: *std.Build, dep: *std.Build.Dependency, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, app_options: AppOptions, manifest_name: []const u8, options_mod: *std.Build.Module, ts_stage: ?TsCoreStage, relational_migrations: std.Build.LazyPath, app_config: AppManifestBuildConfig, link_ts_archives: bool) *std.Build.Module {",
-    "    const native_sdk_mod = nativeSdkModuleWithTerminal(b, dep, target, optimize, app_options.terminal_sessions);",
-    "    const runner_mod = b.createModule(.{",
-    "        .root_source_file = dep.path(\"src/app_runner/root.zig\"),",
-    "        .target = target,",
-    "        .optimize = optimize,",
-    "    });",
-    "    const manifest_mod = appManifestModule(b, app_options.app_root, manifest_name);",
-    "    runner_mod.addImport(\"native_sdk\", native_sdk_mod);",
-    "    runner_mod.addImport(\"build_options\", options_mod);",
-    "    runner_mod.addImport(\"app_manifest_zon\", manifest_mod);",
-    "    const migration_mod = b.createModule(.{ .root_source_file = relational_migrations, .target = target, .optimize = optimize });",
-    "    migration_mod.addImport(\"native_sdk\", native_sdk_mod);",
-    "    runner_mod.addImport(\"relational_migrations\", migration_mod);",
-    "",
-    "    const app_mod = if (ts_stage) |stage|",
-    "        // TypeScript core: the app module roots at the staged generated",
-    "        // wiring (ts_core_main.zig beside the mirror core.zig, its shim",
-    "        // runtime; primary markup bytes link as a separate data object).",
-    "        b.createModule(.{",
-    "            .root_source_file = stage.main_root,",
-    "            .target = target,",
-    "            .optimize = optimize,",
-    "        })",
-    "    else",
-    "        localModule(b, target, optimize, appPath(b, app_options.app_root, app_options.main));",
-    "    app_mod.addImport(\"native_sdk\", native_sdk_mod);",
-    "    app_mod.addImport(\"runner\", runner_mod);",
-    "    if (ts_stage != null) {",
-    "        // The wiring derives scene/identity/security from app.zon itself.",
-    "        app_mod.addImport(\"app_manifest_zon\", manifest_mod);",
-    "    }",
-    "    if (ts_stage) |stage| {",
-    "        // The compiled-core archive links behind the staged mirror; the",
-    "        // toolchain's runtime needs libc.",
-    "        app_mod.link_libc = true;",
-    "        if (link_ts_archives) app_mod.addObjectFile(stage.archive);",
-    "        // Debug reads src/app.native only through the separately linked C",
-    "        // data object. Supplying this generated module in Debug would put",
-    "        // the authored root back into the app-code dependency graph even",
-    "        // though the runner's comptime branch never imports it.",
-    "        if (optimize != .Debug) {",
-    "            app_mod.addImport(\"app_markup_root\", b.createModule(.{",
-    "                .root_source_file = stage.app_markup_root,",
-    "                .target = target,",
-    "                .optimize = optimize,",
-    "            }));",
-    "        }",
-    "        // The in-process service archive links beside it (distinct symbol",
-    "        // prefix; its runtime internals are localized).",
-    "        if (link_ts_archives) {",
-    "            if (stage.service_archive) |service_archive| app_mod.addObjectFile(service_archive);",
-    "        }",
-    "    }",
-    "    if (app_config.sqlite_capability) {",
-    "        // `store` and the relational `sqlite` tier share this exact object.",
-    "        // The source is absent from every artifact declaring neither",
-    "        // capability, which keeps capability inference a real binary-size",
-    "        // boundary rather than a runtime flag.",
-    "        app_mod.addIncludePath(dep.path(\"third_party/sqlite\"));",
-    "        app_mod.addCSourceFile(.{",
-    "            .file = dep.path(\"third_party/sqlite/sqlite3.c\"),",
-    "            .flags = &sqlite_c_defines,",
-    "        });",
-    "        app_mod.link_libc = true;",
-    "    }",
-    "    addMacosInfoPlist(b, app_mod, target, app_config);",
-    "    return app_mod;",
-    "}",
-    "",
-    "/// Compile primary markup bytes independently from the Zig app graph. The",
-    "/// final artifact sees this as an object-file input, so a markup edit dirties",
-    "/// only this tiny C compile and the final link.",
-    "fn markupDataObject(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, source: std.Build.LazyPath) *std.Build.Step.Compile {",
-    "    const mod = b.createModule(.{ .target = target, .optimize = optimize });",
-    "    mod.addCSourceFile(.{ .file = source, .flags = &.{} });",
-    "    return b.addObject(.{ .name = \"native-app-markup-data\", .root_module = mod });",
-    "}",
-    "",
-    "/// Bare Mach-O executables launched by the dev loop do not have an app",
-    "/// bundle's external Info.plist. Embed launch policy plus capture usage",
-    "/// strings in the conventional section so LaunchServices starts accessory",
-    "/// apps without a transient Dock tile and capture consent can be presented.",
-    "/// Packaged apps retain their richer external plist generated by package.zig.",
-    "fn addMacosInfoPlist(b: *std.Build, app_mod: *std.Build.Module, target: std.Build.ResolvedTarget, config: AppManifestBuildConfig) void {",
-    "    if (target.result.os.tag != .macos) return;",
-    "    if (config.dock_visible and !config.microphone_permission and !config.system_audio_permission) return;",
-    "",
-    "    const launch_policy = if (!config.dock_visible)",
-    "        \"  <key>LSUIElement</key>\\\\n  <true/>\\\\n\"",
-    "    else",
-    "        \"\";",
-    "    const microphone = if (config.microphone_permission)",
-    "        \"  <key>NSMicrophoneUsageDescription</key>\\\\n  <string>This app captures microphone audio when you start recording.</string>\\\\n\"",
-    "    else",
-    "        \"\";",
-    "    const system_audio = if (config.system_audio_permission)",
-    "        \"  <key>NSAudioCaptureUsageDescription</key>\\\\n  <string>This app captures system audio when you start recording.</string>\\\\n\" ++",
-    "            \"  <key>NSScreenCaptureUsageDescription</key>\\\\n  <string>This app captures system audio when you start recording.</string>\\\\n\"",
-    "    else",
-    "        \"\";",
-    "    const source = b.fmt(",
-    "        \\\\#define NATIVE_SDK_INFO_PLIST \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\\n\" \"<!DOCTYPE plist PUBLIC \\\"-//Apple//DTD PLIST 1.0//EN\\\" \\\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\\\">\\n\" \"<plist version=\\\"1.0\\\">\\n<dict>\\n{s}{s}{s}</dict>\\n</plist>\\n\"",
-    "        \\\\__attribute__((used, section(\"__TEXT,__info_plist\")))",
-    "        \\\\static const unsigned char native_sdk_info_plist[sizeof(NATIVE_SDK_INFO_PLIST) - 1] = NATIVE_SDK_INFO_PLIST;",
-    "        \\\\",
-    "    , .{ launch_policy, microphone, system_audio });",
-    "    const generated = b.addWriteFiles().add(\"native_sdk_macos_info_plist.c\", source);",
-    "    app_mod.addCSourceFile(.{ .file = generated, .flags = &.{} });",
-    "}",
-    ""
-   ],
-   "ours": [],
-   "after": [
-    "fn nativeSdkTarget(b: *std.Build) std.Build.ResolvedTarget {",
-    "    const target = b.standardTargetOptions(.{});"
-   ],
-   "_emptyAt": 385
   },
   {
    "group": "B01",
    "file": "build.zig",
-   "at": 2613,
+   "at": 2367,
    "before": [
     "}",
     ""
@@ -6104,7 +6321,7 @@
   {
    "group": "B01",
    "file": "build.zig",
-   "at": 2617,
+   "at": 2371,
    "before": [
     "}",
     ""
@@ -6141,7 +6358,7 @@
   {
    "group": "B01",
    "file": "build.zig",
-   "at": 2629,
+   "at": 2383,
    "before": [
     "    canvas_mod.addImport(\"geometry\", geometry_mod);",
     "    canvas_mod.addImport(\"json\", json_mod);"
@@ -6160,7 +6377,7 @@
   {
    "group": "B01",
    "file": "build.zig",
-   "at": 2633,
+   "at": 2387,
    "before": [
     "    debug_mod.addImport(\"trace\", trace_mod);",
     ""
@@ -6183,7 +6400,7 @@
   {
    "group": "B03",
    "file": "build.zig",
-   "at": 2647,
+   "at": 2401,
    "before": [
     "    native_sdk_mod.addImport(\"json\", json_mod);",
     "    native_sdk_mod.addImport(\"canvas\", canvas_mod);"
@@ -6224,13 +6441,12 @@
    "after": [
     "    return native_sdk_mod;",
     "}"
-   ],
-   "_emptyAt": 455
+   ]
   },
   {
    "group": "B01",
    "file": "build.zig",
-   "at": 2680,
+   "at": 2434,
    "before": [
     "}",
     ""
@@ -6249,7 +6465,7 @@
   {
    "group": "B01",
    "file": "build.zig",
-   "at": 2682,
+   "at": 2436,
    "before": [
     "fn externalModule(b: *std.Build, dep: *std.Build.Dependency, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, path: []const u8) *std.Build.Module {",
     "    return b.createModule(.{"
@@ -6268,7 +6484,7 @@
   {
    "group": "B07",
    "file": "build.zig",
-   "at": 2688,
+   "at": 2442,
    "before": [
     "}",
     ""
@@ -6297,7 +6513,7 @@
   {
    "group": "B01",
    "file": "build.zig",
-   "at": 2704,
+   "at": 2458,
    "before": [
     "                const sdk_include = if (b.sysroot) |sysroot| b.fmt(\"-I{s}/usr/include\", .{sysroot}) else \"\";",
     "                const flags: []const []const u8 = if (b.sysroot) |sysroot| &.{ \"-fobjc-arc\", \"-fno-sanitize=builtin\", \"-ObjC\", \"-mmacosx-version-min=11.0\", \"-isysroot\", sysroot, sdk_include } else &.{ \"-fobjc-arc\", \"-fno-sanitize=builtin\", \"-ObjC\", \"-mmacosx-version-min=11.0\" };"
@@ -6316,7 +6532,7 @@
   {
    "group": "B01",
    "file": "build.zig",
-   "at": 2721,
+   "at": 2475,
    "before": [
     "                const sdk_include = if (b.sysroot) |sysroot| b.fmt(\"-isystem{s}/usr/include\", .{sysroot}) else \"\";",
     "                const flags: []const []const u8 = if (b.sysroot) |sysroot| &.{ \"-fobjc-arc\", \"-fno-sanitize=builtin\", \"-ObjC++\", \"-std=c++17\", \"-stdlib=libc++\", \"-mmacosx-version-min=11.0\", \"-isysroot\", sysroot, sdk_include, include_arg, define_arg } else &.{ \"-fobjc-arc\", \"-fno-sanitize=builtin\", \"-ObjC++\", \"-std=c++17\", \"-stdlib=libc++\", \"-mmacosx-version-min=11.0\", include_arg, define_arg };"
@@ -6335,7 +6551,7 @@
   {
    "group": "B07",
    "file": "build.zig",
-   "at": 2723,
+   "at": 2477,
    "before": [
     "                app_mod.addCSourceFile(.{ .file = dep.path(\"src/platform/macos/cef_host.mm\"), .flags = flags });",
     "                app_mod.addObjectFile(b.path(b.fmt(\"{s}/libcef_dll_wrapper/libcef_dll_wrapper.a\", .{cef_dir})));"
@@ -6352,7 +6568,7 @@
   {
    "group": "B07",
    "file": "build.zig",
-   "at": 2724,
+   "at": 2478,
    "before": [
     "                app_mod.addObjectFile(b.path(b.fmt(\"{s}/libcef_dll_wrapper/libcef_dll_wrapper.a\", .{cef_dir})));",
     "                app_mod.linkFramework(\"Chromium Embedded Framework\", .{});"
@@ -6369,7 +6585,7 @@
   {
    "group": "B07",
    "file": "build.zig",
-   "at": 2725,
+   "at": 2479,
    "before": [
     "                app_mod.linkFramework(\"Chromium Embedded Framework\", .{});",
     "            },"
@@ -6388,7 +6604,7 @@
   {
    "group": "B08",
    "file": "build.zig",
-   "at": 2727,
+   "at": 2481,
    "before": [
     "        }",
     "        app_mod.linkFramework(\"AppKit\", .{});"
@@ -6400,13 +6616,12 @@
    "after": [
     "        app_mod.linkFramework(\"AVFoundation\", .{});",
     "        app_mod.linkFramework(\"CoreMedia\", .{});"
-   ],
-   "_emptyAt": 500
+   ]
   },
   {
    "group": "B08",
    "file": "build.zig",
-   "at": 2729,
+   "at": 2483,
    "before": [
     "        // The audio playback service (the AppKit host's single AVPlayer).",
     "        app_mod.linkFramework(\"AVFoundation\", .{});"
@@ -6429,7 +6644,7 @@
   {
    "group": "B08",
    "file": "build.zig",
-   "at": 2731,
+   "at": 2485,
    "before": [
     "        app_mod.linkFramework(\"CoreMedia\", .{});",
     "        app_mod.linkFramework(\"ScreenCaptureKit\", .{ .weak = true });"
@@ -6443,13 +6658,12 @@
    "after": [
     "        app_mod.linkFramework(\"CoreVideo\", .{});",
     "        // Spectrum analysis of the app's own playback: the MediaToolbox"
-   ],
-   "_emptyAt": 510
+   ]
   },
   {
    "group": "B08",
    "file": "build.zig",
-   "at": 2735,
+   "at": 2489,
    "before": [
     "        // header-only, but the pixel-buffer calls are real symbols.",
     "        app_mod.linkFramework(\"CoreVideo\", .{});"
@@ -6463,40 +6677,12 @@
    "after": [
     "        app_mod.linkFramework(\"MediaToolbox\", .{});",
     "        app_mod.linkFramework(\"Accelerate\", .{});"
-   ],
-   "_emptyAt": 511
-  },
-  {
-   "group": "B14",
-   "file": "build.zig",
-   "at": 2739,
-   "before": [
-    "        // (vDSP) turns it into band magnitudes.",
-    "        app_mod.linkFramework(\"MediaToolbox\", .{});"
-   ],
-   "up": [],
-   "ours": [
-    "        // 11.0 W, 20.0 E3: the app's own AppKit glue — the 'odoc' Apple",
-    "        // event (a .pgn double-clicked or dropped on the Dock icon) and the",
-    "        // Mac's own menus around app.zon's (src/native/mac_chrome.m; main.zig",
-    "        // and menus.zig call it on macOS). Plain ObjC whichever web engine is",
-    "        // built.",
-    "        {",
-    "            const sdk_include = if (b.sysroot) |sysroot| b.fmt(\"-I{s}/usr/include\", .{sysroot}) else \"\";",
-    "            const chrome_flags: []const []const u8 = if (b.sysroot) |sysroot| &.{ \"-fobjc-arc\", \"-fno-sanitize=builtin\", \"-ObjC\", \"-mmacosx-version-min=11.0\", \"-isysroot\", sysroot, sdk_include } else &.{ \"-fobjc-arc\", \"-fno-sanitize=builtin\", \"-ObjC\", \"-mmacosx-version-min=11.0\" };",
-    "            app_mod.addCSourceFile(.{ .file = b.path(\"src/native/mac_chrome.m\"), .flags = chrome_flags });",
-    "            app_mod.linkFramework(\"WebKit\", .{});",
-    "        }"
-   ],
-   "after": [
-    "        app_mod.linkFramework(\"Accelerate\", .{});",
-    "        app_mod.linkFramework(\"Foundation\", .{});"
    ]
   },
   {
    "group": "B01",
    "file": "build.zig",
-   "at": 2751,
+   "at": 2505,
    "before": [
     "        switch (web_engine) {",
     "            .system => if (web_layer) {"
@@ -6515,7 +6701,7 @@
   {
    "group": "B08",
    "file": "build.zig",
-   "at": 2763,
+   "at": 2517,
    "before": [
     "                // development package is installed — libwebkitgtk is",
     "                // neither linked nor required at runtime, and the"
@@ -6543,7 +6729,7 @@
   {
    "group": "B01",
    "file": "build.zig",
-   "at": 2784,
+   "at": 2538,
    "before": [
     "                const include_arg = b.fmt(\"-I{s}\", .{cef_dir});",
     "                const define_arg = b.fmt(\"-DNATIVE_SDK_CEF_DIR=\\\"{s}\\\"\", .{cef_dir});"
@@ -6562,7 +6748,7 @@
   {
    "group": "B07",
    "file": "build.zig",
-   "at": 2786,
+   "at": 2540,
    "before": [
     "                app_mod.addCSourceFile(.{ .file = dep.path(\"src/platform/linux/cef_host.cpp\"), .flags = &.{ \"-std=c++17\", include_arg, define_arg } });",
     "                app_mod.addObjectFile(b.path(b.fmt(\"{s}/libcef_dll_wrapper/libcef_dll_wrapper.a\", .{cef_dir})));"
@@ -6579,7 +6765,7 @@
   {
    "group": "B07",
    "file": "build.zig",
-   "at": 2787,
+   "at": 2541,
    "before": [
     "                app_mod.addObjectFile(b.path(b.fmt(\"{s}/libcef_dll_wrapper/libcef_dll_wrapper.a\", .{cef_dir})));",
     "                app_mod.linkSystemLibrary(\"cef\", .{});"
@@ -6596,7 +6782,7 @@
   {
    "group": "B09",
    "file": "build.zig",
-   "at": 2798,
+   "at": 2552,
    "before": [
     "        // canvas rasterizes at real device scale instead of Windows",
     "        // bitmap-stretching a 96-DPI surface on scaled displays."
@@ -6615,7 +6801,7 @@
   {
    "group": "B01",
    "file": "build.zig",
-   "at": 2804,
+   "at": 2558,
    "before": [
     "                // turns on the host's embedded-WebView layer; the host",
     "                // fails the compile by design if it cannot be found."
@@ -6642,7 +6828,7 @@
   {
    "group": "B01",
    "file": "build.zig",
-   "at": 2811,
+   "at": 2565,
    "before": [
     "                // the machine's WebView2 runtime. Canvas apps never",
     "                // touch it."
@@ -6661,7 +6847,7 @@
   {
    "group": "B08",
    "file": "build.zig",
-   "at": 2822,
+   "at": 2576,
    "before": [
     "                // — no WebView2Loader.dll is installed or path-wired,",
     "                // and the executable carries no reference to it at all."
@@ -6690,7 +6876,7 @@
   {
    "group": "B01",
    "file": "build.zig",
-   "at": 2842,
+   "at": 2596,
    "before": [
     "                const include_arg = b.fmt(\"-I{s}\", .{cef_dir});",
     "                const define_arg = b.fmt(\"-DNATIVE_SDK_CEF_DIR=\\\"{s}\\\"\", .{cef_dir});"
@@ -6711,7 +6897,7 @@
   {
    "group": "B07",
    "file": "build.zig",
-   "at": 2845,
+   "at": 2599,
    "before": [
     "                app_mod.addCSourceFile(.{ .file = dep.path(\"src/platform/windows/gpu_surface_renderer.cpp\"), .flags = &.{\"-std=c++17\"} });",
     "                app_mod.addObjectFile(b.path(b.fmt(\"{s}/libcef_dll_wrapper/libcef_dll_wrapper.lib\", .{cef_dir})));"
@@ -6728,7 +6914,7 @@
   {
    "group": "B08",
    "file": "build.zig",
-   "at": 2851,
+   "at": 2605,
    "before": [
     "        app_mod.linkSystemLibrary(\"user32\", .{});",
     "        app_mod.linkSystemLibrary(\"gdi32\", .{});"
@@ -6752,7 +6938,7 @@
   {
    "group": "B08",
    "file": "build.zig",
-   "at": 2861,
+   "at": 2615,
    "before": [
     "        app_mod.linkSystemLibrary(\"oleacc\", .{});",
     "        app_mod.linkSystemLibrary(\"shell32\", .{});"
@@ -6778,7 +6964,7 @@
   {
    "group": "B07",
    "file": "build.zig",
-   "at": 2877,
+   "at": 2631,
    "before": [
     "}",
     ""
@@ -6810,13 +6996,12 @@
    "after": [
     "/// The vendored WebView2Loader.dll for the target architecture, relative",
     "/// to the framework root."
-   ],
-   "_emptyAt": 659
+   ]
   },
   {
    "group": "B01",
    "file": "build.zig",
-   "at": 2907,
+   "at": 2661,
    "before": [
     "}",
     ""
@@ -6843,7 +7028,7 @@
   {
    "group": "B01",
    "file": "build.zig",
-   "at": 2915,
+   "at": 2669,
    "before": [
     "    if (target.result.os.tag != .windows) return;",
     "    const loader_dir = std.fs.path.dirname(webView2LoaderSubPath(target)).?;"
@@ -6862,7 +7047,7 @@
   {
    "group": "B10",
    "file": "build.zig",
-   "at": 2921,
+   "at": 2675,
    "before": [
     "    if (web_engine != .chromium) return;",
     "    if (target.result.os.tag != .macos) return;"
@@ -6910,7 +7095,7 @@
   {
    "group": "B10",
    "file": "build.zig",
-   "at": 2945,
+   "at": 2699,
    "before": [
     "    const script = switch (target.result.os.tag) {",
     "        .macos => b.fmt("
@@ -6949,7 +7134,7 @@
   {
    "group": "B10",
    "file": "build.zig",
-   "at": 2954,
+   "at": 2708,
    "before": [
     "        , .{ cef_dir, cef_dir, cef_dir, cef_dir }),",
     "        .linux => b.fmt("
@@ -6980,7 +7165,7 @@
   {
    "group": "B10",
    "file": "build.zig",
-   "at": 2963,
+   "at": 2717,
    "before": [
     "        , .{ cef_dir, cef_dir, cef_dir, cef_dir }),",
     "        .windows => b.fmt("
@@ -7011,7 +7196,7 @@
   {
    "group": "B06",
    "file": "build.zig",
-   "at": 2976,
+   "at": 2730,
    "before": [
     "}",
     ""
@@ -7044,7 +7229,7 @@
   {
    "group": "B11",
    "file": "build.zig",
-   "at": 2981,
+   "at": 2735,
    "before": [
     "/// over-inclusion is a size cost, wrong exclusion is a broken app.",
     "const AppManifestBuildConfig = struct {"
@@ -7056,13 +7241,12 @@
    "after": [
     "    web_engine: WebEngineOption = .system,",
     "    cef_dir: []const u8 = \"third_party/cef/macos\","
-   ],
-   "_emptyAt": 755
+   ]
   },
   {
    "group": "B11",
    "file": "build.zig",
-   "at": 2986,
+   "at": 2740,
    "before": [
     "    cef_auto_install: bool = false,",
     "    webview_layer: WebLayerOption = .auto,"
@@ -7104,7 +7288,7 @@
   {
    "group": "B11",
    "file": "build.zig",
-   "at": 3008,
+   "at": 2762,
    "before": [
     "};",
     ""
@@ -7134,7 +7318,7 @@
   {
    "group": "B11",
    "file": "build.zig",
-   "at": 3019,
+   "at": 2773,
    "before": [
     "/// stays with `native validate` and the runner's comptime import.",
     "const InferenceManifest = struct {"
@@ -7146,13 +7330,12 @@
    "after": [
     "    capabilities: []const []const u8 = &.{},",
     "    permissions: []const []const u8 = &.{},"
-   ],
-   "_emptyAt": 770
+   ]
   },
   {
    "group": "B11",
    "file": "build.zig",
-   "at": 3021,
+   "at": 2775,
    "before": [
     "    id: []const u8 = \"dev.native_sdk.app\",",
     "    capabilities: []const []const u8 = &.{},"
@@ -7165,13 +7348,12 @@
    "after": [
     "    web_engine: []const u8 = \"system\",",
     "    webview_layer: []const u8 = \"auto\","
-   ],
-   "_emptyAt": 771
+   ]
   },
   {
    "group": "B11",
    "file": "build.zig",
-   "at": 3025,
+   "at": 2779,
    "before": [
     "    web_engine: []const u8 = \"system\",",
     "    webview_layer: []const u8 = \"auto\","
@@ -7183,13 +7365,12 @@
    "after": [
     "    cef: struct {",
     "        dir: []const u8 = \"third_party/cef/macos\","
-   ],
-   "_emptyAt": 773
+   ]
   },
   {
    "group": "B11",
    "file": "build.zig",
-   "at": 3031,
+   "at": 2785,
    "before": [
     "    } = .{},",
     "    frontend: ?struct {} = null,"
@@ -7210,13 +7391,12 @@
    "after": [
     "    shell: struct {",
     "        windows: []const struct {"
-   ],
-   "_emptyAt": 778
+   ]
   },
   {
    "group": "B11",
    "file": "build.zig",
-   "at": 3059,
+   "at": 2813,
    "before": [
     "}",
     ""
@@ -7253,7 +7433,7 @@
   {
    "group": "B11",
    "file": "build.zig",
-   "at": 3074,
+   "at": 2828,
    "before": [
     "    const source = b.build_root.handle.readFileAlloc(b.graph.io, appPath(b, app_root, manifest_name), b.allocator, .limited(1024 * 1024)) catch return fallback;",
     "    @setEvalBranchQuota(2000);"
@@ -7288,7 +7468,7 @@
   {
    "group": "B11",
    "file": "build.zig",
-   "at": 3091,
+   "at": 2845,
    "before": [
     "        .cef_dir = raw.cef.dir,",
     "        .cef_auto_install = raw.cef.auto_install,"
@@ -7324,7 +7504,7 @@
   {
    "group": "B11",
    "file": "build.zig",
-   "at": 3110,
+   "at": 2864,
    "before": [
     "        .web_declaration = web_layer_contract.manifestDeclaration(raw),",
     "    };"
@@ -7353,7 +7533,7 @@
   {
    "group": "B11",
    "file": "build.zig",
-   "at": 3112,
+   "at": 2866,
    "before": [
     "}",
     ""
@@ -7401,7 +7581,7 @@
   {
    "group": "B11",
    "file": "build.zig",
-   "at": 3135,
+   "at": 2889,
    "before": [
     "fn resolveWebLayer(config: AppManifestBuildConfig, web_engine: WebEngineOption, override: ?WebLayerOption) bool {",
     "    const setting = override orelse config.webview_layer;"
@@ -7449,185 +7629,50 @@
    ]
   },
   {
-   "group": "B03",
+   "group": "B14",
    "file": "build.zig",
-   "at": 3141,
+   "at": 2493,
    "before": [
-    "    );",
-    "    return decision.enabled;"
-   ],
-   "up": [
-    "}",
-    "",
-    "/// One explicit discovery convention, shared with run_native_tests.mjs.",
-    "fn hasTypeScriptTests(b: *std.Build, app_root: []const u8) bool {",
-    "    var dir = std.Io.Dir.cwd().openDir(b.graph.io, b.pathFromRoot(appPath(b, app_root, \"tests\")), .{ .iterate = true }) catch |err| switch (err) {",
-    "        error.FileNotFound => return false,",
-    "        else => @panic(\"cannot read app tests directory\"),",
-    "    };",
-    "    defer dir.close(b.graph.io);",
-    "    var iterator = dir.iterate();",
-    "    while (iterator.next(b.graph.io) catch @panic(\"cannot enumerate app tests\")) |entry| {",
-    "        if (entry.kind == .file and std.mem.endsWith(u8, entry.name, \".test.ts\")) return true;",
-    "    }",
-    "    return false;"
-   ],
-   "ours": [],
-   "after": [
-    "}"
-   ],
-   "_emptyAt": 865
-  },
-  {
-   "group": "R07",
-   "file": "src/runner.zig",
-   "at": 70,
-   "before": [
-    "    menus: ?[]const native_sdk.Menu = null,",
-    "    shortcuts: ?[]const native_sdk.Shortcut = null,"
+    "        // (vDSP) turns it into band magnitudes.",
+    "        app_mod.linkFramework(\"MediaToolbox\", .{});"
    ],
    "up": [],
    "ours": [
-    "    /// v8-1-plan N2 (not in the SDK's app_runner): where to put the Runtime",
-    "    /// once it is built, and null again once it is gone. A bridge handler is",
-    "    /// handed no Runtime, and main.zig's chess.openPgn / chess.saveText need",
-    "    /// one to open the file dialogs natively (Runtime.showOpenDialog /",
-    "    /// showSaveDialog, SDK 0.10.1 runtime/core.zig). Set before `run`, so no",
-    "    /// bridge call can arrive first.",
-    "    runtime_slot: ?*?*native_sdk.Runtime = null,"
+    "        // 11.0 W: the app's own window shell — traffic lights inside the",
+    "        // content, a native drag strip over the top 28 pt, the appearance from",
+    "        // the theme (src/native/mac_chrome.m; main.zig calls it on macOS).",
+    "        // Plain ObjC whichever web engine is built; it looks for a WKWebView",
+    "        // to tell the page about full screen and finds none under CEF.",
+    "        {",
+    "            const sdk_include = if (b.sysroot) |sysroot| b.fmt(\"-I{s}/usr/include\", .{sysroot}) else \"\";",
+    "            const chrome_flags: []const []const u8 = if (b.sysroot) |sysroot| &.{ \"-fobjc-arc\", \"-fno-sanitize=builtin\", \"-ObjC\", \"-mmacosx-version-min=11.0\", \"-isysroot\", sysroot, sdk_include } else &.{ \"-fobjc-arc\", \"-fno-sanitize=builtin\", \"-ObjC\", \"-mmacosx-version-min=11.0\" };",
+    "            app_mod.addCSourceFile(.{ .file = b.path(\"src/native/mac_chrome.m\"), .flags = chrome_flags });",
+    "            app_mod.linkFramework(\"WebKit\", .{});",
+    "        }"
    ],
    "after": [
-    "    /// Filled by `runWithOptions` from the manifest capability. App entry",
-    "    /// points do not set this themselves; the field only carries the owned"
+    "        app_mod.linkFramework(\"Accelerate\", .{});",
+    "        app_mod.linkFramework(\"Foundation\", .{});"
    ]
   },
   {
-   "group": "R13",
-   "file": "src/runner.zig",
-   "at": 623,
-   "before": [
-    "}",
-    ""
-   ],
-   "up": [],
-   "ours": [
-    "/// One string out of app.zon's optional `.updates` block. Absent block,",
-    "/// absent field, and explicit null all read as \"\" — the host treats an empty",
-    "/// feed URL or public key as \"updates are off\", so there is no third state",
-    "/// to represent.",
-    "fn manifestUpdateString(comptime field: []const u8) []const u8 {",
-    "    if (comptime !@hasField(@TypeOf(app_manifest), \"updates\")) return \"\";",
-    "    const updates = app_manifest.updates;",
-    "    if (comptime !@hasField(@TypeOf(updates), field)) return \"\";",
-    "    const value = @field(updates, field);",
-    "    return switch (@typeInfo(@TypeOf(value))) {",
-    "        .optional => value orelse \"\",",
-    "        else => value,",
-    "    };",
-    "}",
-    "",
-    "fn manifestUpdateCheckOnStart() bool {",
-    "    if (comptime !@hasField(@TypeOf(app_manifest), \"updates\")) return false;",
-    "    if (comptime !@hasField(@TypeOf(app_manifest.updates), \"check_on_start\")) return false;",
-    "    return app_manifest.updates.check_on_start;",
-    "}",
-    "",
-    "fn manifestDeclaresTrayCapability() bool {",
-    "    if (comptime !@hasField(@TypeOf(app_manifest), \"capabilities\")) return false;",
-    "    inline for (app_manifest.capabilities) |capability| {",
-    "        const name: []const u8 = capability;",
-    "        if (comptime std.mem.eql(u8, name, \"tray\")) return true;",
-    "    }",
-    "    return false;",
-    "}",
-    ""
-   ],
-   "after": [
-    "/// Whether app.zon declares the Tier-2 record store. This is comptime so",
-    "/// apps without the capability never analyze the SQLite open/deinit path."
-   ]
-  },
-  {
-   "group": "R02",
-   "file": "src/runner.zig",
-   "at": 690,
-   "before": [
-    "        std.debug.print(\"debug-overlay=true backend={s} web-engine={s} trace={s}\\n\", .{ build_options.platform, build_options.web_engine, build_options.trace });",
-    "    }"
-   ],
-   "up": [
-    "    // Session replay never opens a real platform: the journal is the",
-    "    // world, and it drives a headless runtime over the null platform.",
-    "    if (init.environ_map.get(\"NATIVE_SDK_SESSION_REPLAY\")) |journal_path| {",
-    "        return runSessionReplay(app, options, init, journal_path);",
-    "    }"
-   ],
-   "ours": [],
-   "after": [
-    "    const RecordStoreType = if (comptime manifestDeclaresStore()) native_sdk.RecordStore else void;",
-    "    var record_store_value: RecordStoreType = undefined;"
-   ]
-  },
-  {
-   "group": "R06",
-   "file": "src/runner.zig",
-   "at": 728,
-   "before": [
-    "    resolved_options.file_access = .{",
-    "        .roots = file_roots[0..file_root_count],"
-   ],
-   "up": [
-    "        .permitted = native_sdk.security.hasPermission(options.security.permissions, native_sdk.security.permission_filesystem),"
-   ],
-   "ours": [
-    "        .permitted = native_sdk.security.hasPermission((options.security orelse manifestSecurity()).permissions, native_sdk.security.permission_filesystem),"
-   ],
-   "after": [
-    "        .enforce = options.file_access_enforce,",
-    "    };"
-   ]
-  },
-  {
-   "group": "B16",
+   "group": "B15",
    "file": "build.zig",
-   "at": 2221,
+   "at": 2601,
    "before": [
-    "}",
-    ""
+    "            },",
+    "        }"
    ],
    "up": [],
    "ours": [
-    "/// The runner's `relational_migrations` (SDK build/app.zig wires the same",
-    "/// import from a generated file; ours is written by hand, ADR 0003).",
-    "fn addMigrations(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, runner_mod: *std.Build.Module, native_sdk_mod: *std.Build.Module) void {",
-    "    const migrations_mod = localModule(b, target, optimize, \"src/db_migrations.zig\");",
-    "    migrations_mod.addImport(\"native_sdk\", native_sdk_mod);",
-    "    runner_mod.addImport(\"relational_migrations\", migrations_mod);",
-    "}",
-    "",
-    "/// The SQLite amalgamation the SDK vendors, with the SDK's own defines",
-    "/// (build/app.zig sqlite_c_defines): what `store` / `sqlite` apps link.",
-    "fn addSqlite(b: *std.Build, mod: *std.Build.Module, native_sdk_path: []const u8) void {",
-    "    mod.addIncludePath(nativeSdkPath(b, native_sdk_path, \"third_party/sqlite\"));",
-    "    mod.addCSourceFile(.{ .file = nativeSdkPath(b, native_sdk_path, \"third_party/sqlite/sqlite3.c\"), .flags = &sqlite_c_defines });",
-    "    mod.link_libc = true;",
-    "}",
-    "",
-    "const sqlite_c_defines = [_][]const u8{",
-    "    \"-DSQLITE_THREADSAFE=2\",",
-    "    \"-DSQLITE_OMIT_LOAD_EXTENSION\",",
-    "    \"-DSQLITE_DQS=0\",",
-    "    \"-DSQLITE_ENABLE_FTS5\",",
-    "    \"-DSQLITE_ENABLE_JSON1\",",
-    "    \"-DSQLITE_ENABLE_UPDATE_HOOK\",",
-    "    \"-DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1\",",
-    "    \"-DSQLITE_DEFAULT_MEMSTATUS=0\",",
-    "};",
-    ""
+    "        // 12.0 N: the app's own window chrome — the title bar dark or light",
+    "        // with the theme, Mica on Windows 11 (src/native/win_chrome.c; chrome.zig",
+    "        // calls it on Windows). dwmapi is loaded at run time, not linked.",
+    "        app_mod.addCSourceFile(.{ .file = b.path(\"src/native/win_chrome.c\"), .flags = &.{} });"
    ],
    "after": [
-    "/// Zig 0.16.0's self-hosted x86_64 backend miscompiles the SysV C calling",
-    "/// convention for f32-heavy signatures with interleaved pointer arguments"
+    "        app_mod.linkSystemLibrary(\"c\", .{});",
+    "        app_mod.linkSystemLibrary(\"c++\", .{});"
    ]
   }
  ]

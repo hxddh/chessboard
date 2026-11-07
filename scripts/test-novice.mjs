@@ -1,0 +1,268 @@
+/**
+ * How strong are the handicap tiers against somebody who actually cannot play?
+ *
+ * ACPL alone could not answer this. Through 1.18 the 新手 tier measured a
+ * respectable-looking 150–180 ACPL — and lost 81% to a bot whose entire skill
+ * was "do not drop a piece to an immediate recapture", because `worstBias` 0.6
+ * meant six moves in ten were the worst of ten candidates. The tier was not
+ * weak, it was self-destructive, and the rung above it was Elo 1320.
+ *
+ * So measure the thing itself: play the tier against two stand-ins for a human
+ * who cannot play, and report the score. Seeded, so a run is repeatable.
+ *
+ * Opt-in — slow and needs the vendored engine:
+ *   node scripts/test-novice.mjs [--tier=beginner|casual|learner|improver|steady|solid] [--games N]
+ */
+//
+// All we had was an indirect argument from ACPL (150–180 for the tier, versus
+// roughly 250–350 for a real novice). That says "stronger than a beginner"
+// without saying whether a beginner ever wins. So play it out.
+//
+// The tier is replicated here exactly as engine.js does it — MultiPV 10 at
+// depth 2, Skill 0, and `worstBias` 0.6 meaning it deliberately plays the WORST
+// of the candidates six times out of ten, except that it never throws away a
+// mate it already found.
+//
+// Two stand-ins for a human novice, neither flattering:
+//   random  — any legal move at all
+//   careful — a random move, but not one that drops a piece to an immediate
+//             recapture; that is about as much as a raw beginner sees
+import fs from 'fs'; import path from 'path'; import vm from 'vm';
+import { createRequire } from 'module';
+import { compileModuleSync } from "./bundle.mjs";
+import { record, RECORDING } from "./measurements.mjs";
+const require = createRequire(import.meta.url);
+const ROOT = path.join(path.dirname(new URL(import.meta.url).pathname), '..');
+const ctx = { console }; ctx.globalThis = ctx; ctx.window = ctx; vm.createContext(ctx);
+vm.runInContext(compileModuleSync(path.join(ROOT, 'src/web/js/chess.js')), ctx, { filename: "module" });
+const Chess = ctx.Chess;
+
+const L = [];
+const engine = {
+  wasmBinary: new Uint8Array(fs.readFileSync(path.join(ROOT, 'third_party/stockfish/stockfish-19-lite-single.wasm'))),
+  listener: (l) => { for (const x of L.slice()) x(l); },
+};
+const factory = require(path.join(ROOT, 'third_party/stockfish/stockfish-19-lite-single.js'));
+await (factory.length >= 1 ? factory(engine) : factory()(engine));
+await new Promise((r) => { const t = () => (engine._isReady && !engine._isReady() ? setTimeout(t, 10) : r()); t(); });
+const send = (c) => engine.ccall('command', null, ['string'], [c], { async: /^go\b/.test(c) });
+const wf = (p, ms = 60000) => new Promise((res, rej) => {
+  const T = setTimeout(() => { d(); rej(new Error('timeout')); }, ms);
+  const h = (l) => { if (p(l)) { clearTimeout(T); d(); res(l); } };
+  const d = () => { const i = L.indexOf(h); if (i >= 0) L.splice(i, 1); };
+  L.push(h);
+});
+const uw = wf((l) => l === 'uciok', 30000); send('uci'); await uw;
+const ready = async () => { const w = wf((l) => l === 'readyok', 20000); send('isready'); await w; };
+
+// the 新手 tier, as engine.js configures it
+const arg = (name, dflt) => {
+  const hit = process.argv.find((a) => a.startsWith('--' + name + '='));
+  return hit ? hit.slice(name.length + 3) : dflt;
+};
+// The tier definition AND the rule that picks among its candidates are
+// engine.js's, not a copy: the tier row used to be scraped out of the source
+// text with a regex and the sampling re-typed below, so this script measured
+// its own transcription of the thing it was measuring.
+const engCtx = { console }; engCtx.globalThis = engCtx; engCtx.window = engCtx; vm.createContext(engCtx);
+vm.runInContext(compileModuleSync(path.join(ROOT, 'src/web/js/engine.js')), engCtx, { filename: "module" });
+const TIER_NAME = arg('tier', 'beginner');
+const TIER = engCtx.ChessEngine.TIERS[TIER_NAME];
+if (!TIER) { console.error('engine.js 里没有 ' + TIER_NAME + ' 这一档'); process.exit(1); }
+const pickCandidate = engCtx.ChessEngine.pickCandidate;
+if (TIER.elo != null) { console.log(TIER_NAME + ' 是按 Elo 限强的档位,这个脚本只量手工削弱的档'); process.exit(0); }
+console.log(TIER_NAME + ' 档参数(读自 engine.js):', JSON.stringify(TIER));
+let configured = false;
+async function beginnerMove(fen) {
+  await ready();
+  if (!configured) {
+    send('setoption name UCI_LimitStrength value false');
+    send('setoption name Skill Level value ' + TIER.skill);
+    send('setoption name MultiPV value ' + TIER.multipv);
+    configured = true;
+  }
+  send('position fen ' + fen);
+  const lines = new Map();
+  const collect = (l) => {
+    const mp = /\bmultipv (\d+)\b/.exec(l);
+    const s = l.match(/\bscore (cp|mate) (-?\d+)\b/);
+    const pv = /\bpv ((?:[a-h][1-8][a-h][1-8][qrbn]?\s*)+)/.exec(l);
+    if (mp && s && pv) lines.set(Number(mp[1]), {
+      score: s[1] === 'mate' ? (Number(s[2]) > 0 ? 1e5 - Number(s[2]) : -1e5 - Number(s[2])) : Number(s[2]),
+      uci: pv[1].trim().split(/\s+/)[0],
+    });
+  };
+  L.push(collect);
+  const done = wf((l) => /^bestmove/.test(l), 60000);
+  send('go depth ' + TIER.depth);
+  const bm = await done;
+  L.splice(L.indexOf(collect), 1);
+  const list = [...lines.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
+  if (!list.length) { const u = bm.split(/\s+/)[1]; return u && u !== '(none)' ? u : null; }
+  return pickCandidate(list, TIER, rnd) || list[0].uci;
+}
+
+const VAL = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+/** material for the side to move, after the opponent's best single capture */
+function afterBestRecapture(g) {
+  let worst = 0;
+  for (const m of g.moves({ verbose: true })) {
+    if (!m.captured) continue;
+    const gain = VAL[m.captured] || 0;
+    if (gain > worst) worst = gain;
+  }
+  return worst;
+}
+function noviceMove(g, careful) {
+  const moves = g.moves({ verbose: true });
+  if (!moves.length) return null;
+  if (!careful) return moves[Math.floor(rnd() * moves.length)];
+  // shuffle, then take the first move that does not hand back more than it took
+  const order = moves.slice().sort(() => rnd() - 0.5);
+  for (const m of order) {
+    const probe = new Chess(g.fen());
+    probe.move({ from: m.from, to: m.to, promotion: m.promotion || 'q' });
+    const loses = afterBestRecapture(probe);
+    const took = VAL[m.captured] || 0;
+    if (loses - took <= 0) return m;
+  }
+  return order[0];
+}
+
+let seed = 20260726;
+const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+
+async function playGame(careful, noviceIsWhite) {
+  const g = new Chess();
+  for (let ply = 0; ply < 300 && !g.game_over(); ply++) {
+    const noviceTurn = (g.turn() === 'w') === noviceIsWhite;
+    if (noviceTurn) {
+      const m = noviceMove(g, careful);
+      if (!m) break;
+      g.move({ from: m.from, to: m.to, promotion: m.promotion || 'q' });
+    } else {
+      const u = await beginnerMove(g.fen());
+      if (!u) break;
+      if (!g.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] || 'q' })) break;
+    }
+  }
+  if (g.in_checkmate()) return (g.turn() === 'w') === noviceIsWhite ? 'loss' : 'win';
+  return 'draw';
+}
+
+const N = Number(arg('games', process.env.GAMES || 20));
+/**
+ * How many times to play the whole match (7.1.1).
+ *
+ * One match is one sample of a noisy statistic, and until now this script
+ * recorded that single number as though it were the tier's strength. The
+ * release gate then compared a fresh single match against a band derived
+ * from it — and a 20-game match of semi-random play has a standard
+ * deviation of about ten points, so the gate failed on its own noise
+ * roughly one run in six. (It did, on v7.1.0: 78% against a 35–75% band.)
+ *
+ * Repeating the match is what turns "56%" into "56% ± 9", and a band can
+ * only be honest if the spread behind it was measured rather than assumed.
+ */
+const REPEAT = Math.max(1, Number(arg('repeat', 1)));
+const measured = {};
+for (const careful of (process.env.ONLY_CAREFUL ? [true] : [false, true])) {
+  const label = careful ? '不一步送子的随机手' : '纯随机手';
+  const runs = [];
+  const total = { win: 0, draw: 0, loss: 0 };
+  for (let r0 = 0; r0 < REPEAT; r0++) {
+    const tally = { win: 0, draw: 0, loss: 0 };
+    for (let i = 0; i < N; i++) {
+      const r = await playGame(careful, i % 2 === 0);
+      tally[r]++;
+      total[r]++;
+      const tag = REPEAT > 1 ? `[${r0 + 1}/${REPEAT}] ` : '';
+      process.stdout.write(`\r  ${tag}${label}: ${i + 1}/${N}  胜${tally.win} 和${tally.draw} 负${tally.loss}   `);
+    }
+    runs.push(Number(((tally.win + tally.draw / 2) / N * 100).toFixed(0)));
+  }
+  const games = N * REPEAT;
+  const score = Number(((total.win + total.draw / 2) / games * 100).toFixed(0));
+  // population SD over the repeats; with REPEAT === 1 there is no spread to
+  // speak of and the field says so by being null rather than 0
+  const sd = runs.length > 1
+    ? Number(Math.sqrt(runs.reduce((a, x) => a + (x - runs.reduce((p, q) => p + q, 0) / runs.length) ** 2, 0) / (runs.length - 1)).toFixed(1))
+    : null;
+  console.log(`\n  ${label} 对 ${TIER_NAME} 档 ${games} 盘（${REPEAT}×${N}）: 胜 ${total.win} · 和 ${total.draw} · 负 ${total.loss}  → 得分率 ${score}%` +
+    (sd == null ? '' : `（每轮 ${runs.join('/')}，样本标准差 ${sd}）`));
+  measured[careful ? 'careful' : 'random'] =
+    { games, matches: REPEAT, gamesPerMatch: N, ...total, scorePct: score, runs, sdPct: sd };
+}
+
+// --record writes docs/measured.json, which README and engine.js quote. The
+// tier settings go in beside the result: a score rate is only meaningful next
+// to the parameters that produced it, and `worstBias` 0.6 vs 0.2 is exactly
+// the pair of runs that got mixed up before this file existed.
+if (RECORDING) {
+  const prev = (await import('./measurements.mjs')).read().noviceScore || { tiers: {} };
+  record('noviceScore', {
+    what: '一个只会「不一步送子」的随机机器人对下削弱档,得分率 = (胜 + 和/2) / 盘数',
+    script: 'scripts/test-novice.mjs --record --tier <id> --games <n>',
+    tiers: { ...(prev.tiers || {}), [TIER_NAME]: { settings: TIER, ...measured } },
+  });
+}
+// 6.0: the run asserts, not only prints. 7.1.1: and the bands are now
+// measured mean ± 3σ, where BOTH numbers came out of a run.
+//
+// The old bands were the measured figure "with room for sampling noise" —
+// room estimated rather than measured, because the record held a single
+// score and no spread at all. Two things then went wrong at once:
+//
+//   1. 7.0 swapped Stockfish 18 for 19 lite-single and nobody re-recorded
+//      this. The figures the bands were drawn around (beginner 56 %,
+//      casual 27 %) described the OLD engine. Under SF19 the tiers score
+//      59 % and 29 % — both drifted up, consistent with a weaker engine.
+//   2. A 20-game match of semi-random play has σ ≈ 7.7 (beginner) and
+//      ≈ 10.1 (casual), measured over five matches each. The old upper
+//      bound of 75 sat less than 2σ above the true mean, so the gate failed
+//      on its own noise roughly one run in six — which is exactly what
+//      happened to the v7.1.0 release: 78 % against a 35–75 % band, on code
+//      whose every file in this measurement's path was byte-identical to
+//      7.0.0's.
+//
+// So: ±3σ around the measured mean, rounded outward. A single 20-game match
+// stays inside 99.7 % of the time, and a tier whose strength really moved by
+// more than three standard deviations still fails. scripts/test-chess.mjs
+// checks these numbers against docs/measured.json, so a re-record that
+// nobody carried into this table is now a failing test rather than a gate
+// that quietly describes an engine the app no longer ships.
+//
+// A lower bound of 0 is NOT a gate: mean − 3σ below zero is more than a
+// 20-game match can resolve, and only the upper side means anything. Until
+// v8-0-plan B4 that was casual (29 − 3σ); retuned it scores 41 and both of
+// its sides are real, and it is the new rungs above it whose
+// lower bound is 0. The release path runs the beginner tier, where both
+// sides are real.
+//
+// Two bots, two bands. The careful bot is the one the README describes and
+// the one the tiers were calibrated against. The pure-random bot is recorded
+// at 0 % — a mover that hangs its queen loses to any engine, and its band
+// says only that: the release gate first applied the careful band to both
+// and failed v6.0.0 on a 0 % that measured.json had always said.
+{
+  // v8-0-plan B4: beginner (worstBias 0.15) and casual (8 candidates,
+  // worstBias 0.12) re-measured, and the four rungs above them — the ramp that
+  // replaced the cliff to 1320
+  const BANDS = {
+    beginner: { careful: [22, 90], random: [0, 15] },
+    casual: { careful: [12, 70], random: [0, 15] },
+    learner: { careful: [0, 65], random: [0, 15] },
+    improver: { careful: [0, 38], random: [0, 15] },
+    steady: { careful: [0, 28], random: [0, 15] },
+    solid: { careful: [0, 13], random: [0, 15] },
+  };
+  const bands = BANDS[TIER_NAME];
+  for (const [label, m] of Object.entries(measured)) {
+    const band = bands && bands[label];
+    if (!band) continue;
+    const ok = m.scorePct >= band[0] && m.scorePct <= band[1];
+    console.log((ok ? "ok" : "FAIL") + `: ${label} 机器人对 ${TIER_NAME} 得分率 ${m.scorePct}% 落在 ${band[0]}–${band[1]}% 内`);
+    if (!ok) process.exitCode = 1;
+  }
+}
+process.exit(process.exitCode || 0);

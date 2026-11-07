@@ -1,0 +1,44 @@
+/**
+ * 看 N 步后与盲走收官的外壳（v8-2-plan T2）。
+ *
+ * The two modes are js/chunk-visual.js (trainer/visual-modes.js), fetched the
+ * first time one is started or 「我的」 has a record of them to draw; this is
+ * what the bundle keeps (F1: content and its code in a chunk, the door here).
+ * trainer/puzzles.js creates it beside the modes and hands it the trainer's
+ * pieces; puzzle-modes.js startRun asks it for a set of either kind.
+ *
+ * A set is drawn from the book with the mined puzzles in it, so the mined
+ * chunk is waited for too: the same seed has to find the same book.
+ * v8-3-plan T1 / T2: the bank's bands (puzzle-db.js; its index rides in that
+ * chunk) and the engine go in too — the modes load the band a set needs.
+ * @module trainer/visual
+ */
+import { loadChunk } from "../chunk.js";
+import { ChessLazy } from "../lazy-content.js";
+import { ChessPuzzleDb } from "../puzzle-db.js";
+import { ChessEngine } from "../engine.js";
+
+/** chunk file and global — scripts/bundle.mjs builds visual-modes.js into it */
+export const VIS_CHUNK = { file: "chunk-visual.js", global: "CHESS_VISUAL" };
+/** the run kinds that are this module's (puzzle-modes.js startRun) */
+export const VIS_KINDS = ["look", "blind"];
+
+/**
+ * @param {object} d trainer/puzzles.js's bag (see visual-modes.js createVisualModes)
+ */
+export function createVisual(d) {
+  const box = { asked: null };
+  function ensure() {
+    if (!box.asked) {
+      box.asked = Promise.all([loadChunk(VIS_CHUNK.file, VIS_CHUNK.global), ChessLazy.ensureMined().catch(() => null)])
+        .then(([m]) => m.createVisualModes({ ...d, mined: ChessLazy.mined, Db: ChessPuzzleDb, Engine: ChessEngine }));
+      box.asked.catch(() => { box.asked = null; }); // a failed load is tried again next time
+    }
+    return box.asked;
+  }
+  return {
+    /** A new set of `kind`, or null when the chunk cannot be had (or `alive()` turned false meanwhile). */
+    make: (kind, alive) => ensure().then((m) => m.make(kind, alive), () => { d.toast(d.t("theme.loadFailed"), "fix"); return null; }),
+    // 19.0 S3: 计算专项 left 「我的」 (renderMe); its ratings stay with the modes
+  };
+}

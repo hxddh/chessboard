@@ -574,62 +574,125 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
   const missing = Object.keys(esb).filter((k) => !lock.packages["node_modules/" + k]);
   check(missing.length === 0,
     `版本检查: package-lock.json 缺少 esbuild 的平台包 ${missing.join(", ")} —— 只有生成它的那台机器装得起来`);
-  // 20.0 E3: the Windows About box says menus.zig's APP_VERSION
-  const menusVer = (/pub const APP_VERSION = "([^"]+)"/.exec(fs.readFileSync(path.join(ROOT, "src/menus.zig"), "utf8")) || [])[1];
-  check(menusVer === appVer, `版本检查: src/menus.zig 的 APP_VERSION 写 ${menusVer}，app.zon 写 ${appVer}`);
-  if (appVer) notes.push(`版本检查: app.zon、build.zig.zon、package.json、package-lock.json、menus.zig 一致（${appVer}）`);
+  // 7.5: the README says what each version changed, and 7.4 §4 asked for the
+  // current one to be required — it was written down and never checked. The
+  // heading is exact ("## 7.4.0 改了什么"): a release that bumps app.zon and
+  // forgets the README fails here, not in a reader's hands.
+  const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
+  const verHead = appVer && /^\d+\.\d+\.\d+$/.test(appVer) &&
+    new RegExp("^## " + appVer.replace(/\./g, "\\.") + " 改了什么\\s*$", "m").test(readme);
+  check(!!verHead, `版本检查: README.md 没有「## ${appVer} 改了什么」这一节 —— 当前版本改了什么没写`);
+  if (appVer) notes.push(`版本检查: app.zon、build.zig.zon、package.json、package-lock.json 一致（${appVer}），README 有这一版的一节`);
 }
 
-// ------------------------------------------- 5 / 6. the page ↔ bridge.zig
+// ----------------------------------------------- 5. host.js ↔ bridge.zig 内建桥
+// （v8-2-plan F2 起列表在 bridge.zig；这里读的是全部应用 Zig 源码 APP_ZIG）
 // SDK 0.8 起，对话框 / 系统 / 剪贴板这些内建命令没有隐含权限：不在 builtin_bridge
-// 策略（bridge.zig 的 BUILTIN_COMMANDS，main.zig 交给 runner）里的一律拒绝；应用
-// 自己的 `chess.*` 命令由一张表（bridge.zig 的 APP_COMMANDS）同时喂给 handler
-// 注册表和 origin 策略。5.0.0 → 5.2.0 三个版本里没有一次原生文件对话框真的弹出来
-// 过而 CI 全绿 —— 没有任何检查把页面调用的命令和 zig 侧放行的命令对到一起。这里
-// 对：src/app 调用的每个命令都在表里（少一个，原生构建里它被拒绝）。
+// 策略（bridge.zig 的 BUILTIN_COMMANDS，main.zig 交给 runner）里的一律拒绝，
+// 而 host.js 把拒绝读成「这一构建没有对话框」走浏览器回退。5.0.0 → 5.2.0 三个版本里没有一次原生文件对话框真的弹出来过，
+// 而 CI 全绿 —— 因为没有任何检查把页面调用的命令和 zig 侧放行的命令对到一起。
+// 这里对：页面用到的每个 `zero.X.Y` 必须在 bridge.zig 放行，放行的也必须被用到。
 {
+  const hostSrc = fs.readFileSync(path.join(ROOT, "src/web/js/host.js"), "utf8");
   const mainSrc = appZigSrc;
-  const appJs = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) =>
-    d.isDirectory() ? appJs(path.join(dir, d.name)) : d.name.endsWith(".js") ? [path.join(dir, d.name)] : []);
-  const pageFiles = appJs(path.join(ROOT, "src/app"));
   const NS = { dialogs: "dialog", os: "os", clipboard: "clipboard", platform: "platform" };
-  const used = new Set(), builtinUsed = new Set();
-  for (const f of pageFiles) {
-    const src = fs.readFileSync(f, "utf8");
-    for (const m of src.matchAll(/["'](chess\.[a-zA-Z]+)["']/g)) used.add(m[1]);
-    for (const m of src.matchAll(/\bzero\.([a-zA-Z]+)\.([a-zA-Z]+)\(/g)) if (NS[m[1]]) builtinUsed.add("native-sdk." + NS[m[1]] + "." + m[2]);
-    const code = src.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
-    const rel = path.relative(ROOT, f);
-    // the dialogs run in dialogs.zig (chess.openPgn), so the path the player picks never reaches the page
-    check(!/issuePath/.test(code), `应用桥: ${rel} 的代码里提到了 issuePath —— 这个命令已删除,页面不该再请求签发路径(v8-1-plan N2)`);
-    check(!/zero\.dialogs\.(openFile|saveFile)\b/.test(code), `应用桥: ${rel} 自己打开文件对话框(zero.dialogs.openFile / saveFile)—— 应走 chess.openPgn`);
+  const used = new Set();
+  for (const m of hostSrc.matchAll(/global\.zero\.([a-zA-Z]+)\.([a-zA-Z]+)\(/g)) {
+    if (m[1] === "on" || m[1] === "off") continue;
+    const ns = NS[m[1]];
+    if (ns) used.add("native-sdk." + ns + "." + m[2]);
   }
-  check(pageFiles.length > 50, `应用桥: 页面源码扫描到 ${pageFiles.length} 个文件`);
-  const builtinBlock = /const BUILTIN_COMMANDS = \[_\]\[\]const u8\{([\s\S]*?)\};/.exec(mainSrc);
-  check(!!builtinBlock, "内建桥: bridge.zig 里有 BUILTIN_COMMANDS 列表");
-  const granted = new Set(builtinBlock ? [...builtinBlock[1].matchAll(/"([a-z.-]+)"/gi)].map((m) => m[1]) : []);
-  for (const u of builtinUsed) check(granted.has(u), `内建桥: 页面调用了 ${u}，但 bridge.zig 没有放行 —— 原生构建里它会被拒绝`);
-  for (const g of granted) check(builtinUsed.has(g), `内建桥: bridge.zig 放行了 ${g}，但页面不调用它 —— 不用的权限不给`);
+  const block = /const BUILTIN_COMMANDS = \[_\]\[\]const u8\{([\s\S]*?)\};/.exec(mainSrc);
+  check(!!block, "内建桥: bridge.zig 里有 BUILTIN_COMMANDS 列表");
+  check((mainSrc.match(/const BUILTIN_COMMANDS = \[_\]/g) || []).length === 1, "内建桥: BUILTIN_COMMANDS 只有一份");
+  const granted = new Set(block ? [...block[1].matchAll(/"([a-z.-]+)"/gi)].map((m) => m[1]) : []);
+  for (const u of used) check(granted.has(u), `内建桥: host.js 调用了 ${u}，但 bridge.zig 没有放行 —— 原生构建里它会静默走浏览器回退`);
+  for (const g of granted) check(used.has(g), `内建桥: bridge.zig 放行了 ${g}，但页面从不调用它`);
   check(/\.builtin_bridge = app_state\.builtinBridge\(\)/.test(mainSrc), "内建桥: 策略真的传给了 runner（.builtin_bridge）");
-  check(["chess.dbExec", "chess.dbQuery", "chess.engineStart", "chess.engineSend", "chess.engineStop"].every((c) => used.has(c)),
-    "应用桥: 页面调用 db 与原生引擎的五个命令(" + [...used].sort().join("、") + ")");
+  notes.push(`内建桥: host.js 调用 ${used.size} 个 SDK 命令，bridge.zig 放行 ${granted.size} 个，一致`);
+}
+
+// ----------------------------------------------- 6. host.js ↔ bridge.zig 应用桥
+// （v8-2-plan F2 起表在 bridge.zig，处理函数分在 bridge / dialogs / menus / sync.zig）
+// 同一个病的另一半。应用自己的 `chess.*` 命令由一张表(bridge.zig 的 APP_COMMANDS)
+// 同时喂给 handler 注册表和 origin 策略,页面用 `zero.invoke("chess.X")`
+// 调它们。这里对:页面调的每个 chess.X 在表里,表里的每个 chess.X 页面真的调。
+// 少一个是「原生构建里静默走回退」,多一个是没人读的死代码。
+{
+  const hostSrc = fs.readFileSync(path.join(ROOT, "src/web/js/host.js"), "utf8");
+  const mainSrc = appZigSrc;
+  const used = new Set([...hostSrc.matchAll(/zero\.invoke\(\s*"(chess\.[a-zA-Z]+)"/g)].map((m) => m[1]));
   const block = /const APP_COMMANDS = \[_\]AppCommand\{([\s\S]*?)\n\};/.exec(mainSrc);
   check(!!block, "应用桥: bridge.zig 里有 APP_COMMANDS 表");
   check((mainSrc.match(/const APP_COMMANDS = \[_\]/g) || []).length === 1, "应用桥: APP_COMMANDS 只有一份");
   const registered = new Set(block ? [...block[1].matchAll(/\.name = "(chess\.[a-zA-Z]+)"/g)].map((m) => m[1]) : []);
-  for (const u of used) check(registered.has(u), `应用桥: 页面调用了 ${u},但 bridge.zig 的 APP_COMMANDS 没有它 —— 原生构建里它会被拒绝`);
-  // the table really is what the runner gets — a handler with no policy is
-  // refused by the SDK, so both come from the one loop (plain and async alike)
+  for (const u of used) check(registered.has(u), `应用桥: host.js 调用了 ${u},但 bridge.zig 的 APP_COMMANDS 没有它 —— 原生构建里它会被拒绝`);
+  for (const r of registered) check(used.has(r), `应用桥: bridge.zig 注册了 ${r},但页面从不调用它`);
+  // v8-1-plan N2: chess.issuePath — the page asking the native side to trust a
+  // path the page named — is gone for good, not kept "for older pages": the
+  // page is always the frontend bundled into the same binary. Neither the
+  // command nor a compatibility list for it may come back.
+  // Comments may tell the story, and the test blocks at the bottom name it on
+  // purpose (to assert it is gone); the code above them may not.
+  // (file by file: since v8-2-plan F2 each one keeps its tests at its bottom)
+  const mainCode = APP_ZIG.map(({ src }) => {
+    const firstTest = src.indexOf('\ntest "');
+    return (firstTest < 0 ? src : src.slice(0, firstTest)).replace(/\/\/[^\n]*/g, "");
+  }).join("\n");
+  check(!/issuePath/.test(mainCode), "应用桥: 应用 Zig 的代码里又出现了 issuePath(命令、处理函数或兼容列表)—— v8-1-plan N2 已把它删掉");
+  check(!/COMPAT_COMMANDS/.test(mainCode), "应用桥: 应用 Zig 又有了 COMPAT_COMMANDS —— 页面总是同一个二进制里打包的前端,没有「旧页面」要兼容");
+  // …and no page source names it or opens a file dialog itself: the dialogs
+  // run in dialogs.zig (chess.openPgn / chess.saveText), so the path the player
+  // picks never reaches the page
+  const webJs = path.join(ROOT, "src/web/js");
+  const pageFiles = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      // chunk-*.js and bundle.js are build output, made of these same sources
+      else if (/\.js$/.test(e.name) && !/^chunk-/.test(e.name) && e.name !== "bundle.js") pageFiles.push(p);
+    }
+  };
+  walk(webJs);
+  for (const f of pageFiles) {
+    const src = fs.readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
+    const rel = path.relative(ROOT, f);
+    // any spelling — "…", '…', `…`, "chess." + "issuePath" — so the bare word
+    check(!/issuePath/.test(src), `应用桥: ${rel} 的代码里提到了 issuePath —— 这个命令已删除,页面不该再请求签发路径(v8-1-plan N2)`);
+    check(!/zero\.dialogs\.(openFile|saveFile)\b/.test(src), `应用桥: ${rel} 自己打开文件对话框(zero.dialogs.openFile / saveFile)—— 应走 chess.openPgn / chess.saveText`);
+    check(!/zero\.os\.revealPath\b/.test(src), `应用桥: ${rel} 调用 zero.os.revealPath —— 保存后显示文件由 chess.saveText 在原生侧做`);
+  }
+  check(pageFiles.length > 50, `应用桥: 页面源码扫描到 ${pageFiles.length} 个文件`);
+  // the two dialog commands never issue a path: what they pick stays native
+  for (const fn of ["openPgn", "saveText"]) {
+    const body = new RegExp(`fn ${fn}\\([\\s\\S]*?\\n\\}`).exec(mainSrc);
+    check(!!body && !/issued\.add/.test(body[0]) && /runtime\.show(Open|Save)Dialog\(/.test(body[0]),
+      `应用桥: ${fn} 要在原生侧弹框(runtime.show…Dialog),且不签发路径(issued.add)`);
+  }
+  // and the table really is what the runner gets — a handler with no policy
+  // is refused by the SDK, so both come from the one loop
+  // v8-1-plan N1: a command is a plain handler or an async one (the SDK's
+  // async registry), from the same loop and under the same policy table
   const loop = /fn bridge\(self: \*@This\(\)\) native_sdk\.BridgeDispatcher \{([\s\S]*?)\n {4}\}/.exec(mainSrc);
   const loopSrc = loop ? loop[1] : "";
   check(/for \(APP_COMMANDS, 0\.\.\) \|cmd, index\|/.test(loopSrc) &&
     /self\.handlers\[\w+\] = \.\{ \.name = cmd\.name/.test(loopSrc) &&
-    /self\.policies\[index\] = \.\{[\s\S]*?\.name = cmd\.name/.test(loopSrc),
-  "应用桥: handler 与 policy 都从 APP_COMMANDS 同一个循环里来");
-  // 20.0 E3: and nothing is registered the page never calls (19.0's thirteen went)
-  const unused = [...registered].filter((r) => !used.has(r));
-  check(unused.length === 0, `应用桥: APP_COMMANDS 里有页面不调用的命令：${unused.join("、")} —— 删掉它们（和它们的 handler）`);
-  notes.push(`应用桥: 页面调用 ${used.size} 个 chess.* 命令，与 APP_COMMANDS 一一对应`);
+    /self\.async_handlers\[\w+\] = \.\{ \.name = cmd\.name/.test(loopSrc) &&
+    /self\.policies\[index\] = \.\{[\s\S]*?\.name = cmd\.name/.test(loopSrc) &&
+    /\.async_registry = \.\{ \.handlers = self\.async_handlers/.test(loopSrc),
+  "应用桥: handler(同步与异步)与 policy 都从 APP_COMMANDS 同一个循环里来,异步的进了 async_registry");
+  // v8-1-plan N1: the two that go to the network never run on the loop thread
+  for (const name of ["chess.fetchGames", "chess.checkUpdate"]) {
+    const row = block ? new RegExp(`\\.name = "${name.replace(".", "\\.")}", \\.(\\w+) =`).exec(block[1]) : null;
+    check(!!row && row[1] === "async_fn", `应用桥: ${name} 要是异步处理器(.async_fn)—— 联网不能占住平台循环的线程(v8-1-plan N1)`);
+  }
+  // Q1.2: the two file commands consult the issued-path table
+  for (const fn of ["writeTextFile", "readTextFile"]) {
+    const body = new RegExp(`fn ${fn}\\([\\s\\S]*?\\n\\}`).exec(mainSrc);
+    check(!!body && /self\.issued\.contains\(path\)/.test(body[0]), `应用桥: ${fn} 没有查签发路径表(issued.contains)—— 任意绝对路径又能读写了`);
+  }
+  notes.push(`应用桥: host.js 调用 ${used.size} 个 chess.* 命令,bridge.zig 注册 ${registered.size} 个,一致`);
 }
 
 // ------------------------------------------------------------------------ 结果

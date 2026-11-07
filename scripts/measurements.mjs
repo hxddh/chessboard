@@ -11,13 +11,12 @@
  * run either came from. Defect 12.
  *
  * So the scripts write here, and prose points at this file rather than
- * restating it; the app's tests read the numbers they hold the app to
- * (ladder20, explainCoverage) from here.
+ * restating it. scripts/test-chess.mjs then checks that every number README
+ * and engine.js quote is the number in this file — a stale quote is a failing
+ * test rather than a thing someone eventually notices.
  *
- *   node scripts/ladder20.mjs fit --in=DIR --record   the opponents' ratings
- *   node scripts/test-convert.mjs --in=DIR --record   every opponent converts
- *   node scripts/audit-explain.mjs --audit --record   what the explainer says
- *   node scripts/ci-wallclock.mjs RUN_ID --record      a PR's CI wall clock
+ *   node scripts/test-novice.mjs --record     score rate vs a novice bot
+ *   node scripts/test-strength.mjs --record   ACPL per tier
  *
  * Without --record a run only prints, so measuring something on a branch does
  * not silently rewrite the recorded figures.
@@ -48,7 +47,7 @@ export function record(section, value) {
   all[section] = value;
   const ordered = {};
   ordered._ = "Measured figures. Written by scripts/*.mjs --record, read by " +
-    "the app's tests (scripts/app/*.test.mjs) and the docs. " +
+    "README.md, src/web/js/engine.js and scripts/test-chess.mjs. " +
     "Do not hand-edit: a number here that no run produced is worse than no number.";
   for (const k of Object.keys(all).filter((k) => k !== "_").sort()) ordered[k] = all[k];
   fs.mkdirSync(path.dirname(FILE), { recursive: true });

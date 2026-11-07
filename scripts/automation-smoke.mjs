@@ -39,7 +39,7 @@
  *   (live)   a macOS / Windows automation build stays up: wait for ready,
  *            send commands one at a time, then kill it. build-macos.yml and
  *            build-windows.yml run it on the automation build (v8-2-plan V1
- *            step 2):
+ *            step 2), before scripts/automation-scenarios.mjs:
  *              node scripts/automation-smoke.mjs <exe> [--manifest build/app.macos.zon]
  *            Only on a CI runner (CI or GITHUB_ACTIONS set) unless
  *            --real-profile-ok is passed: the page's plain self-test writes
@@ -47,8 +47,8 @@
  *            next launch's language (lib/automation.mjs liveProfileRefusal).
  *
  * Each run gets a fresh working directory and profile (HOME / APPDATA) under
- * the system temp folder. The dropbox itself is scripts/lib/automation.mjs,
- * shared with the scenarios' driver (scripts/automation-app.mjs).
+ * the system temp folder, like scripts/selftest-app.mjs. The dropbox itself
+ * is scripts/lib/automation.mjs, shared with the scenarios' driver.
  */
 import fs from "fs";
 import path from "path";

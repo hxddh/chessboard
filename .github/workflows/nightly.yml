@@ -1,9 +1,17 @@
 name: nightly
 
-# Once a day on main: are the pinned versions behind upstream (the SDK, Zig,
-# Node, Playwright, the actions, esbuild — scripts/deps-check.mjs)? A report,
-# never a failure: raising a pin is a person's change, which test-deps.mjs
-# then holds docs/deps-inventory.json to.
+# The full engine sweep, once a day on main.
+#
+# 7.1 moved the mined-puzzle gate out of the release path and into a sample
+# (v7-1-plan §3.2): 1002 puzzles at depth 18 with a clean transposition table
+# each is about two hours, which turned every release into an afternoon. The
+# sample is a real gate — it fails on a stored answer more than 50cp worse
+# than the engine's choice — but it is 15% of the bank, so the other 85% has
+# to be searched somewhere. Here.
+#
+# Nothing else lives in this workflow on purpose. A nightly job that also
+# runs the fast suites is a nightly job whose failures are usually not about
+# the thing it exists for.
 on:
   schedule:
     # 03:20 UTC. Not on the hour: a cron shared with everyone else's cron is
@@ -15,8 +23,31 @@ permissions:
   contents: read
 
 jobs:
+  engine:
+    runs-on: ubuntu-latest
+    # The whole sweep, and it is allowed to take as long as it takes.
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - name: install build deps
+        run: npm ci
+      # Every one of `npm run test:engine`, mined gate included and unsampled.
+      # Each script exits 0 with a notice if the vendored engine is missing,
+      # so a stripped checkout reports "skipped" rather than a false green.
+      - name: engine checks (full)
+        run: npm run test:engine
+
+  # v8-1-plan §1.7: is anything in docs/deps-inventory.json behind npm's
+  # `latest` (SDK, esbuild, Playwright, Stockfish.js)? Its own job, and one
+  # that cannot go red: the script exits 0 on "newer exists" and on an
+  # unreachable registry alike, continue-on-error covers anything else, and
+  # the answer lands in the run's summary. So the header's rule still holds —
+  # a red nightly is still only ever about the engine sweep.
   deps:
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     continue-on-error: true
     steps:

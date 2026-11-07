@@ -1,6 +1,6 @@
 /**
  * The Native SDK automation server's file dropbox, from the driver's side —
- * shared by scripts/automation-smoke.mjs and scripts/automation-app.mjs
+ * shared by scripts/automation-smoke.mjs and scripts/automation-scenarios.mjs
  * (v8-2-plan V1; the protocol is described in automation-smoke.mjs's header
  * and in v8-2-plan §9 M1).
  */
@@ -14,7 +14,7 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /**
  * A fresh working directory (the dropbox is resolved against the app's
  * current directory) and a profile — HOME, and APPDATA on Windows — under
- * the system temp folder.
+ * the system temp folder, as scripts/selftest-app.mjs makes one.
  */
 export function makeWork(prefix) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -59,11 +59,6 @@ export function snapshotMenus(snap) {
   return [...(snap || "").matchAll(/^\s+app-menu-item label="[^"]*" command="([^"]+)"/gm)].map((m) => m[1]);
 }
 
-/** The app-menu item labels a snapshot lists, in order. */
-export function snapshotMenuLabels(snap) {
-  return [...(snap || "").matchAll(/^\s+app-menu-item label="([^"]*)"/gm)].map((m) => m[1]);
-}
-
 /** The dropbox under `work`. */
 export function dropbox(work) {
   const dir = path.join(work, ".zig-cache", "native-sdk-automation");
@@ -92,7 +87,6 @@ export function dropbox(work) {
 
 /**
  * A live app: spawned in `work` with `env`, its exit noted.
- * `args`: its command line (a file to open, as Explorer passes one).
  * `send(line)` queues one command and resolves with the ms until the app
  * took it (deleted the file — the ack); `ready()` waits for this process's
  * own ready=true snapshot; `bridge(req)` sends one bridge request and reads
@@ -114,11 +108,11 @@ export function webviewProcesses() {
   }
 }
 
-export function launchApp(exe, { work, env, stdio = "inherit", args = [] }) {
+export function launchApp(exe, { work, env, stdio = "inherit" }) {
   const box = dropbox(work);
   const before = webviewProcesses();
   if (before !== null) console.log("note: 启动前还有 " + before + " 个 msedgewebview2.exe");
-  const child = spawn(path.resolve(exe), args, { cwd: work, env, stdio });
+  const child = spawn(path.resolve(exe), [], { cwd: work, env, stdio });
   const state = { exited: null };
   child.on("exit", (c, sig) => { state.exited = c ?? sig; });
   async function send(line, limit = 10000) {

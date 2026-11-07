@@ -7,7 +7,9 @@
  *     打包，不再缩一次、套一次圆角）；.icns 从 16 到 1024 每个槽位都在；
  *   - Windows：.ico 七个尺寸，16 / 32 是按像素画的 —— 边缘不糊，两只耳朵在
  *     最上一行分得开（7.x 那只「独角兽」只有一只耳朵），眼睛是一个亮像素；
- *   - app.zon 把三个文件都交给打包器。
+ *   - app.zon 把三个文件都交给打包器；
+ *   - 品牌色是四套主题各自的 token，用在首页、关于和空状态，且在各自的底色上
+ *     够得上大字 3:1。
  * 跑：node scripts/test-brand.mjs
  */
 import fs from "fs";
@@ -137,6 +139,40 @@ function legibility(img) {
   const list = m ? [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]) : [];
   assert(JSON.stringify(list) === JSON.stringify(["assets/icon.icns", "assets/icon.ico", "assets/icon.png"]),
     "app.zon .icons：icns 给 macOS、ico 给 Windows、png 给其余（" + list.join(", ") + "）");
+}
+
+// --- the brand colour: a token per theme, used where the plan says ------------
+{
+  const css = String(read("src/web/styles.css"));
+  const html = String(read("src/web/index.html"));
+  const hex = (s) => { const v = s.replace("#", ""); return [0, 2, 4].map((i) => parseInt(v.slice(i, i + 2), 16)); };
+  const rel = (c) => { const x = c / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
+  const L = ([r, g, b]) => 0.2126 * rel(r) + 0.7152 * rel(g) + 0.0722 * rel(b);
+  const ratio = (a, b) => { const [x, y] = [L(a), L(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+  for (const theme of ["wood", "night", "day", "notebook"]) {
+    const sel = theme === "wood" ? ':root, [data-theme="wood"]' : '[data-theme="' + theme + '"]';
+    const start = css.indexOf(sel + " {");
+    const blk = start >= 0 ? css.slice(start, css.indexOf("\n    }", start)) : "";
+    const raw = new RegExp("--" + theme + "-brand: (#[0-9a-f]{6});").exec(blk);
+    const bg = new RegExp("--" + theme + "-bg: (#[0-9a-f]{6});").exec(blk);
+    const panel = new RegExp("--" + theme + "-panel: (#[0-9a-f]{6});").exec(blk);
+    assert(raw && blk.includes("--brand: var(--" + theme + "-brand);"), theme + "：主题块里声明品牌色 --brand");
+    if (raw && bg && panel) {
+      const r1 = ratio(hex(raw[1]), hex(bg[1])), r2 = ratio(hex(raw[1]), hex(panel[1]));
+      assert(Math.min(r1, r2) >= 3, theme + "：品牌色在底色和面板上都够大字 3:1（" + r1.toFixed(2) + " / " + r2.toFixed(2) + "）");
+    }
+  }
+  const body = css.slice(css.indexOf("* { box-sizing"));
+  assert(/\.wordmark \{[^}]*color: var\(--brand\)/.test(body), "字标用品牌色");
+  // 9.0 V1（设计语言 v2）：一个主题只有一个强调色，品牌色只给字标；空状态
+  // 是居中图标 + 一句话 + 一个动作，图标取正文旁注的次要色（currentColor）
+  assert(/\.hint\.empty-note::before \{[^}]*background: currentColor/.test(body) && /\.hint\.empty-note \{[^}]*color: var\(--muted\)/.test(body),
+    "空状态的图标用次要色（品牌色只给字标）");
+  assert(!/empty-note[^{]*\{[^}]*var\(--brand\)/.test(body), "……空状态里不再有品牌色");
+  // 9.0 S1：今天页的标题是问候语，字标在它上面
+  const head = html.slice(html.indexOf('<header class="today-head">'), html.indexOf('</header>', html.indexOf('<header class="today-head">')));
+  assert(/class="wordmark[^"]*"[^>]*id="today-brand"/.test(head) && head.indexOf('id="today-brand"') < head.indexOf('id="home-h"'), "今天页的页头有字标，在问候语上面");
+  assert(/id="about-modal"[\s\S]{0,400}class="[^"]*wordmark/.test(html), "关于里有字标");
 }
 
 if (failed) {

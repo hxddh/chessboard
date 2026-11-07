@@ -6,15 +6,15 @@
       "name": "@native-sdk/cli（Native SDK，原 zero-native，vercel-labs/native）",
       "kind": "desktop-sdk",
       "npm": "@native-sdk/cli",
-      "current": "0.11.0",
+      "current": "0.10.1",
       "pinnedIn": [".github/workflows/checks.yml (zig job SDK_VERSION)", ".github/workflows/build-macos.yml (sdk_version 默认值)", ".github/workflows/build-windows.yml (sdk_version 默认值)", ".github/workflows/release.yml (sdk_version 默认值)", "src/runner.zig（SDK app_runner 的分叉，随 SDK 手动同步）", "build.zig（SDK build/app.zig 的手抄本）", "docs/sdk-fork.json（上面两份与这一版上游的已登记差异；scripts/sdk-diff.mjs 核对，checks.yml 的 zig 作业在跑）"],
-      "latest": "0.11.0（npm，2026-10-13）",
+      "latest": "0.10.1（npm latest，2026-08-24；8.1.0 发布当天 2026-09-30 重查，仍无 0.10.2）；main 上另有 17 个未发版提交（git rev-list --count v0.10.1..HEAD），HEAD 96943d4a（2026-09-28）；GitHub 已有 v0.10.0、v0.10.1 标签",
       "source": ["npm view @native-sdk/cli dist-tags/time", "git ls-remote + clone https://github.com/vercel-labs/native（CHANGELOG.md、docs、src）"],
-      "checkedAt": "2026-11-06",
+      "checkedAt": "2026-09-30",
       "unusedCapabilitiesAlreadyIn0101": ["bridge.AsyncHandler + PlatformServices.wake_fn（异步桥应答，同步不再占住桥线程）", "PlatformServices.showOpenDialog/showSaveDialog（原生侧拿到对话框结果，可去掉对话框路径的 issuePath）", "签名更新器（0.10.0，仅 macOS system host；runner.zig 已接好，app.zon 缺 .updates）", "notarytool 公证与 DMG 装订（0.10.1，需要 Developer ID 证书）", "automation server（build.zig -Dautomation，runner.zig 已接线，没有 workflow 用过；v8-2-plan V1）"],
       "stillMissing": ["WebView 页面声明可拖区域 / 开始拖窗（macOS 只接给画布控件；Windows 的 WM_NCHITTEST 拖动区按 view label 存，是否对 WebView2 主视图生效要实验）", "zero:// 响应头（COOP/COEP）——多线程 wasm 引擎的前提", "Windows / Linux 的自动更新"],
-      "recommendation": "done-20.0",
-      "note": "v20-0-plan E1：0.10.1 → 0.11.0。0.11 对这个应用几乎没有新东西：签名更新器（仅 macOS）、DMG、notarytool 在 0.10.1 就有，zero:// 的 scheme handler 与 MIME 表两版逐字相同，网页拖动区两版都没有；变化在画布、无障碍、TypeScript、移动端。升级时照上游改了 R03（平台对象 createWithOptions / destroy）与 B12（x86_64 强制 LLVM），其余分叉重新登记（docs/sdk-fork-notes.md）。最低 macOS 仍是 11.0（package.zig 的 Info.plist 模板、build/app.zig 的 os_version_min）；Big Sur 出厂 Safari 14，15 / 16 只是可选更新，所以不能保证 Safari 16+ 的 WebKit，bundle target 留在 safari15（v8-1-plan §5，见 scripts/bundle.mjs）。"
+      "recommendation": "upgrade-when-released",
+      "note": "当前钉的就是最新正式版。8.1.0 用到了 0.10.1 里原先没用的异步桥（N1）、原生对话框（N2）；签名更新器按 v8-1-plan §8 第 4 条暂不接。main 上的 #465（优化构建的 macOS 链接保留更新器导出）与开启更新器直接相关：本仓库 release 用 ReleaseFast。0.10.2 发布后升，并用一次双平台构建证明；runner.zig / build.zig 要对照上游 diff 同步（node scripts/sdk-diff.mjs <新 SDK>，步骤见 docs/sdk-fork-notes.md）。最低 macOS：0.10.1 的 Info.plist 模板写 LSMinimumSystemVersion 11.0（src/tooling/package.zig），build/app.zig 以 -mmacosx-version-min=11.0 链接；Big Sur 出厂 Safari 14，15 / 16 只是可选更新，所以不能保证 Safari 16+ 的 WebKit，bundle target 留在 safari15（v8-1-plan §5，见 scripts/bundle.mjs）。"
     },
     {
       "name": "Zig",
@@ -40,21 +40,32 @@
       "note": "已是最新。另外四种构建：lite 多线程（1.6 MB，需要 SharedArrayBuffer / 跨源隔离，SDK 的 zero:// 不发 COOP/COEP）；完整 NNUE 单线程 / 多线程（约 99 MB，安装包要涨一个数量级）；asm.js（更慢）。都不换。"
     },
     {
-      "name": "Maia-3 5M（CSSLab/maia3，Hugging Face UofTCSSLab/Maia3-5M）",
+      "name": "Maia（CSSLab/maia-chess，maia-1100 / 1300 / 1500 / 1700 / 1900）",
       "kind": "engine",
-      "current": "maia3-5m.pt @ b6559de2398d7140b985f28fd2c19fb5e47ddabe（sha256 ba14208b…524f），由 scripts/gen-maia3.py 转成 fp16 的 third_party/maia3/maia3-5m.f16（10.46 MB）",
-      "pinnedIn": ["third_party/maia3/maia3-5m.json", "scripts/gen-maia3.py"],
-      "latest": "5M / 23M / 79M 三个尺寸（2026-05）；代码 CSSLab/maia3 1e13597（2026-05-25）",
-      "source": ["https://huggingface.co/api/models/UofTCSSLab/Maia3-5M（sha b6559de，2026-11-06 查）", "https://github.com/CSSLab/maia3 LICENSE = AGPL-3.0"],
-      "checkedAt": "2026-11-06",
+      "current": "五个 lc0 网络（6 × 64，SE，卷积策略头），各 1.24–1.31 MB gz，vendored 在 third_party/maia/（sha256 见 README）",
+      "pinnedIn": ["third_party/maia/maia-*.pb.gz", "scripts/gen-maia-src.mjs"],
+      "latest": "maia_weights/ 自 2020 年发布后未变（九个 1100–1900）；Maia-2（2024，统一模型、PyTorch）是另一套格式",
+      "source": ["https://github.com/CSSLab/maia-chess maia_weights/（2026-10-16 下载，GPL-3.0）"],
+      "checkedAt": "2026-10-16",
       "recommendation": "not-needed",
-      "note": "20.0 P1。前向计算是自己写的（src/app/services/maia3，wasm SIMD），对着 PyTorch 原版做一致性测试（scripts/app/maia3-parity.mjs）；23M 约 4.6 倍算量，先不换。"
+      "note": "13.0 H。没有新版；Maia-2 要 PyTorch 运行时，不换。"
+    },
+    {
+      "name": "Leela Chess Zero 的两张表（lc0 v0.30.0 kIdxToMove、kConvPolicyMap）",
+      "kind": "data",
+      "current": "v0.30.0，抄进 src/web/js/human/lc0-tables.js",
+      "pinnedIn": ["src/web/js/human/lc0-tables.js"],
+      "latest": "表是 lc0 网络格式的一部分，各版相同",
+      "source": ["https://github.com/LeelaChessZero/lc0 v0.30.0 src/chess/bitboard.cc、src/neural/shared/policy_map.h（GPL-3.0）"],
+      "checkedAt": "2026-10-16",
+      "recommendation": "not-needed",
+      "note": "13.0 H。scripts/test-human.mjs 校验数量与唯一性。"
     },
     {
       "name": "chess.js",
       "kind": "js-library (vendored)",
-      "current": "0.13.4（src/app/core/chessjs.js，BSD-2-Clause，无逻辑改动）",
-      "pinnedIn": ["src/app/core/chessjs.js 文件头"],
+      "current": "0.13.4（src/web/js/chess.js，BSD-2-Clause，无逻辑改动）",
+      "pinnedIn": ["src/web/js/chess.js 文件头"],
       "latest": "1.4.0（npm，2025-06-14）",
       "source": ["npm view chess.js dist-tags/time"],
       "checkedAt": "2026-09-29",
@@ -78,7 +89,7 @@
       "kind": "CI tool（npm install --no-save）",
       "npm": "playwright",
       "current": "1.64.0（Chromium 156.0.8078.4 / WebKit 27.2）",
-      "pinnedIn": [".github/workflows/checks.yml"],
+      "pinnedIn": [".github/workflows/checks.yml", ".github/workflows/release.yml"],
       "latest": "1.64.0（2026-10-07；Chromium 156.0.8078.4 / WebKit 27.2）",
       "source": ["npm view playwright dist-tags/time", "raw.githubusercontent.com/microsoft/playwright/main/docs/src/release-notes-js.md"],
       "checkedAt": "2026-10-08",
@@ -99,7 +110,7 @@
     {
       "name": "actions/checkout",
       "kind": "GitHub Action",
-      "current": "@v7",
+      "current": "@v7（全部 19 处）",
       "pinnedIn": [".github/workflows/*.yml"],
       "latest": "v7.0.1",
       "source": ["git ls-remote --tags https://github.com/actions/checkout"],
@@ -131,7 +142,7 @@
       "name": "actions/download-artifact",
       "kind": "GitHub Action",
       "current": "@v8",
-      "pinnedIn": [".github/workflows/release.yml", ".github/workflows/checks.yml", ".github/workflows/ladder.yml"],
+      "pinnedIn": [".github/workflows/release.yml", ".github/workflows/ladder.yml"],
       "latest": "v8.0.1",
       "source": ["git ls-remote --tags https://github.com/actions/download-artifact", "raw.githubusercontent.com/actions/download-artifact/v8/README.md（「v8 - What's new」）", "raw.githubusercontent.com/actions/download-artifact/v8.0.1/action.yml"],
       "checkedAt": "2026-09-29",
@@ -141,35 +152,13 @@
     {
       "name": "actions/cache",
       "kind": "GitHub Action",
-      "current": "@v6（restore / save 两个子 action）",
-      "pinnedIn": [".github/workflows/checks.yml（browser、visual：Chromium 的系统包）", ".github/workflows/build-macos.yml / build-windows.yml（原生 Stockfish）"],
+      "current": "@v6（restore / save 两个子 action，全部 6 处）",
+      "pinnedIn": [".github/workflows/checks.yml（browser、shots）", ".github/workflows/release.yml（browser）"],
       "latest": "v6.1.0",
       "source": ["git ls-remote --tags https://github.com/actions/cache"],
       "checkedAt": "2026-10-08",
       "recommendation": "not-needed",
       "note": "v8-4-plan V2 新加：浏览器作业的系统依赖（.deb）按 Playwright 版本 + 引擎 + runner 镜像缓存（scripts/ci-browser-deps.mjs），不再每次 --with-deps 从 apt 镜像下。用 restore / save 分开写，是为了装完依赖就存、不等测试跑完，也只在缓存没命中且这次真从 apt 下了包时才存。"
-    },
-    {
-      "name": "msys2/setup-msys2",
-      "kind": "GitHub Action",
-      "current": "@v2（浮动主版本）",
-      "pinnedIn": [".github/workflows/build-windows.yml（app：MinGW-w64 GCC 编原生 Stockfish）"],
-      "latest": "v2",
-      "source": ["git ls-remote --tags https://github.com/msys2/setup-msys2"],
-      "checkedAt": "2026-11-06",
-      "recommendation": "not-needed",
-      "note": "20.0 F3 新加：Stockfish 官方 CI 用同一个 action 编 Windows 版；只在 Stockfish 缓存没命中时运行。"
-    },
-    {
-      "name": "Stockfish（原生）",
-      "kind": "source build",
-      "current": "sf_19 @ edb0d9db6731067ec50ce619ff372b463bc4dd5d，网络 nn-1a298aa575a0（内嵌）",
-      "pinnedIn": ["scripts/build-stockfish.sh"],
-      "latest": "sf_19",
-      "source": ["git ls-remote --tags https://github.com/official-stockfish/Stockfish"],
-      "checkedAt": "2026-11-06",
-      "recommendation": "done-20.0",
-      "note": "20.0 F3：CI 从源码编（macOS apple-silicon / Windows x86-64-avx2，profile-build），脚本拒绝 tag 指向别的提交。GPLv3：licenses/ 里带 COPYING、AUTHORS 与 stockfish-SOURCE.txt（tag、提交、仓库）。"
     },
     {
       "name": "mlugg/setup-zig",
@@ -185,8 +174,8 @@
     {
       "name": "Lichess 题库（lichess_db_puzzle.csv.zst）",
       "kind": "data (CC0)",
-      "current": "2026-10-02 的导出（sha256 76335bfa7d7c4a7f93c1366d81549e53951ebb79dd43d34904cab8f22d962f8d），导入 40,000 道（data/v19/lichess/band-*.js；20.0 的技能图由 scripts/gen-skills.mjs 从中挑 172 道）",
-      "pinnedIn": ["data/v19/lichess/*.js 文件头"],
+      "current": "2026-10-02 的导出（sha256 76335bfa7d7c4a7f93c1366d81549e53951ebb79dd43d34904cab8f22d962f8d），导入 40,000 道（src/web/js/lichess/band-*.js）；上一次导入（2026-09-09 的导出）而新库没有的 13,386 行原样留在 src/web/js/lichess/old-*.js，只供复习按 id 查",
+      "pinnedIn": ["src/web/js/lichess/*.js 文件头", "src/web/js/puzzles-lc-index.js 文件头（Selected … of 6157342 rows）", "scripts/import-puzzles.mjs"],
       "latest": "Last-Modified 2026-10-02 08:51:45 GMT（307,234,795 字节，6,157,342 行）",
       "source": ["curl -I https://database.lichess.org/lichess_db_puzzle.csv.zst", "sha256sum 下载件（2026-10-08）"],
       "checkedAt": "2026-10-08",
@@ -194,10 +183,32 @@
       "note": "v8-4-plan T3：同一脚本、同一参数（--max 40000 --pool 1500 --seed 1 --min-rating 600 --max-rating 2800 --min-popularity 80 --min-plays 100 --max-rd 90，没有 --exclude）重抽。上一份是 2026-09-09 的导出（Last-Modified 2026-09-09 17:40 GMT，304,429,328 字节，当时没记 sha256）。11 个分段的题数与 8.3 相差 ≤ 0.59%，26 个有题的主题与「闪将」标记相差 ≤ 2.42%（验收线 5%）。旧库 40,000 道里 26,614 道在新库同一分段、局面与解法不变；6,535 道评级漂到别的分段、6,851 道不在新库——这 13,386 行原样留在 old-NNNN.js（import-puzzles.mjs droppedRows；--no-keep-old 可关）。同一导出在 scratch 目录与仓库里各导一次，11 个分段文件逐字节相同。Node 22 的 zstd 读 pzstd 照常。"
     },
     {
+      "name": "Lichess 标准对局库（大师着法树的来源）",
+      "kind": "data (CC0)",
+      "current": "lichess_db_standard_rated_2026-08，≥2200，120,000 局，前 16 个半回合（m5 分支 src/web/js/explorer/masters-*.js）",
+      "pinnedIn": ["scripts/build-explorer.mjs 参数", "masters-*.js 文件头"],
+      "latest": "2026-08（database.lichess.org/standard/list.txt 第一行）",
+      "source": ["https://database.lichess.org/standard/list.txt"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "not-needed",
+      "note": "已是最新月份。每月刷新没有意义：前 16 个半回合的分布一个月内几乎不动，刷新只会让安装包无谓变化。"
+    },
+    {
+      "name": "lichess-org/chess-openings（ECO 表）",
+      "kind": "data (CC0)",
+      "current": "c67912be581f0793dbaa776be5ccf111e01f88d9（2026-09-20 的提交，2026-09-29 取），3815 个局面",
+      "pinnedIn": ["src/web/js/eco.js 文件头", "scripts/gen-eco.mjs"],
+      "latest": "c67912be（2026-09-20，#399：补了几条 E16 线）",
+      "source": ["git clone https://github.com/lichess-org/chess-openings", "git ls-remote … HEAD + raw.githubusercontent.com/…/master/{a..e}.tsv（gen-eco --refresh）"],
+      "checkedAt": "2026-09-29",
+      "recommendation": "done-8.1",
+      "note": "8.1 F1 已刷新：gen-eco --refresh，4b86227 → c67912be，3810 → 3815 个局面（新增 5 个 E16：Capablanca ×3、Riumin ×2），0 个重复。chunk-eco.js 485,191 → 485,817 字节（+626），主包不变。test-eco 通过；开局浏览器「书」核对：1011 个分支点（1005 个局面）一致。"
+    },
+    {
       "name": "棋子图（Merida / cburnett / 经典；19.0 S8 去掉了 Chessnut、Fantasy、Celtic、Spatial）",
       "kind": "assets",
-      "current": "M2 时逐套核过许可后 vendored（src/app/core/pieces/*.js）",
-      "pinnedIn": ["src/app/core/pieces/*.js 文件头", "README 许可段"],
+      "current": "M2 时逐套核过许可后 vendored（src/web/js/pieces-*.js）",
+      "pinnedIn": ["src/web/js/pieces-*.js 文件头", "README 许可段"],
       "latest": "无版本号",
       "source": ["仓库内文件头"],
       "checkedAt": "2026-09-29",
@@ -206,30 +217,29 @@
     {
       "name": "界面字体",
       "kind": "assets",
-      "current": "Inter（拉丁，可变字重，SIL OFL，src/app/styles/fonts/）+ 系统字体栈（src/app/styles/tokens.css --font-ui）",
-      "pinnedIn": ["src/app/styles/tokens.css", "src/app/styles/fonts/"],
+      "current": "系统字体栈（styles.css --font-ui / --font-num），不打包字体",
+      "pinnedIn": ["src/web/styles.css"],
       "latest": "n/a",
       "source": ["仓库内 styles.css"],
       "checkedAt": "2026-09-29",
       "recommendation": "not-needed"
+    },
+    {
+      "name": "残局训练营的核对工具（Syzygy 3–4 子表、python-chess、Stockfish 16）",
+      "kind": "generation-time (不进安装包)",
+      "current": "Syzygy 3–4 子 WDL/DTZ 70 个文件（取自 python-chess 仓库 data/syzygy/regular，md5 逐个记在 docs/endgames-verified.json）；python-chess 1.10.0；Stockfish 16（Ubuntu 包）",
+      "pinnedIn": ["docs/endgames-verified.json tools", "scripts/verify-endgames.py", "verify-endgames.yml（pip install chess==1.10.0）"],
+      "latest": "n/a",
+      "source": ["raw.githubusercontent.com/niklasf/python-chess/master/data/syzygy/regular", "pypi.org chess 1.10.0 wheel"],
+      "checkedAt": "2026-09-30",
+      "recommendation": "not-needed",
+      "note": "v8-1-plan T2：只在写 60 个残局时用来核对结论，应用里不带残局库。5 子的表取不到（见 unverified），5 子以上用 Stockfish 深搜代替。v8-2-plan V2：手动触发的 verify-endgames 工作流在 CI 上向 tablebase.lichess.ovh 查询 ≤ 7 子的局面（verify-endgames.py --online）。"
     }
   ],
   "unverified": [
-    {
-      "what": "ziglang.org 官方下载索引、codeberg.org/ziglang/zig 标签",
-      "why": "未能核实（网络策略拦截，代理 403）；Zig 最新版改以 PyPI 镜像为准"
-    },
-    {
-      "what": "lichess.org / api.chess.com 的真实应答（C2 同步的样本）",
-      "why": "未能核实（网络策略拦截，代理 403）"
-    },
-    {
-      "what": "api.github.com releases（actions/download-artifact v8、chess.js 1.x、Stockfish.js 的发布说明）",
-      "why": "未能核实（本会话 GitHub API 只开放本仓库）；标签用 git ls-remote 核过"
-    },
-    {
-      "what": "tablebase.lichess.ovh（Lichess 残局库查询）与 5 子 Syzygy 文件",
-      "why": "未能取到（网络策略拦截，代理 403）；T2 的 5 子以上局面改用 Stockfish 16 深度 30 / 40 核对（2026-09-30）"
-    }
+    {"what": "ziglang.org 官方下载索引、codeberg.org/ziglang/zig 标签", "why": "未能核实（网络策略拦截，代理 403）；Zig 最新版改以 PyPI 镜像为准"},
+    {"what": "lichess.org / api.chess.com 的真实应答（C2 同步的样本）", "why": "未能核实（网络策略拦截，代理 403）"},
+    {"what": "api.github.com releases（actions/download-artifact v8、chess.js 1.x、Stockfish.js 的发布说明）", "why": "未能核实（本会话 GitHub API 只开放本仓库）；标签用 git ls-remote 核过"},
+    {"what": "tablebase.lichess.ovh（Lichess 残局库查询）与 5 子 Syzygy 文件", "why": "未能取到（网络策略拦截，代理 403）；T2 的 5 子以上局面改用 Stockfish 16 深度 30 / 40 核对（2026-09-30）"}
   ]
 }
