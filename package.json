@@ -13,7 +13,7 @@
     "test:static": "node scripts/run-static.mjs",
     "test:app": "node scripts/test-app.mjs",
     "build:app": "node scripts/build-app.mjs",
-    "test:app:e2e": "node scripts/test-app-e2e.mjs && node scripts/test-play-e2e.mjs && node scripts/test-maia3-e2e.mjs && node scripts/test-learn-e2e.mjs",
+    "test:app:e2e": "node scripts/test-app-e2e.mjs && node scripts/test-play-e2e.mjs && node scripts/test-maia3-e2e.mjs && node scripts/test-learn-e2e.mjs && node scripts/test-feel-e2e.mjs",
     "serve:app": "node scripts/serve-app.mjs",
     "test:e2e": "node scripts/test-board-e2e.mjs && node scripts/test-audio-e2e.mjs && node scripts/test-clock-e2e.mjs && node scripts/test-walk-e2e.mjs && node scripts/test-shell-e2e.mjs && node scripts/test-trainer-e2e.mjs && node scripts/test-content-e2e.mjs && node scripts/test-persist-e2e.mjs && node scripts/test-review-e2e.mjs && node scripts/test-library-e2e.mjs && node scripts/test-explorer-e2e.mjs && node scripts/test-sync-e2e.mjs && node scripts/test-repertoire-e2e.mjs && node scripts/test-selftest-e2e.mjs && node scripts/test-layout-e2e.mjs && node scripts/test-engine-e2e.mjs && node scripts/test-engine-flows-e2e.mjs && node scripts/test-endgames-e2e.mjs && node scripts/perf-e2e.mjs",
     "test:engine": "node scripts/test-openings.mjs && node scripts/test-tactics.mjs && node scripts/test-novice.mjs && node scripts/test-strength.mjs && node scripts/test-analysis.mjs && node scripts/test-mines.mjs && node scripts/test-mined.mjs && node scripts/test-motif.mjs && node scripts/test-coach.mjs && node scripts/test-endgames-play.mjs",
