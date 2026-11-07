@@ -1,0 +1,9 @@
+[Event "En passant"]
+[Site "?"]
+[Date "2024.02.19"]
+[Round "?"]
+[White "Passant"]
+[Black "Pawn"]
+[Result "*"]
+
+1. e4 Nf6 2. e5 d5 3. exd6 Qxd6 4. Nc3 c5 5. d4 cxd4 6. Qxd4 Qxd4 7. Nb5 Qb6 8. Nc7+ Kd8 9. Nxa8 *

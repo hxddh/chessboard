@@ -1,0 +1,9 @@
+[Event "Long comment"]
+[Site "?"]
+[Date "2024.02.16"]
+[Round "?"]
+[White "Wrap"]
+[Black "Width"]
+[Result "*"]
+
+1. d4 {The queen's pawn opening leads to closed positions where long-term plans matter more than tactics; this comment is deliberately longer than eighty columns so that the export has to break it across several lines without breaking a word.} d5 2. c4 {The Queen's Gambit, which is not really a gambit since black cannot hold the pawn.} dxc4 3. e3 b5 4. a4 c6 5. axb5 cxb5 6. Qf3 *

@@ -1,0 +1,21 @@
+[Event "A null move written as two dashes"]
+[Site "?"]
+[Date "2026.09.20"]
+[Round "?"]
+[White "Null"]
+[Black "Move"]
+[Result "*"]
+
+
+1. e4 e5 ( 1... c5 2. Nf3 ) 2. -- { white passes } Nf6 *
+
+[Event "A null move written as Z0"]
+[Site "?"]
+[Date "2026.09.20"]
+[Round "?"]
+[White "Null"]
+[Black "Move"]
+[Result "*"]
+
+
+1. d4 Z0 d5 *

@@ -1,0 +1,11 @@
+%PGN escape line: ignored by the standard
+[Event "Escape line"]
+[Site "?"]
+[Date "2024.02.15"]
+[Round "?"]
+[White "Percent"]
+[Black "Sign"]
+[Result "*"]
+
+% another one, inside the movetext
+1. Nf3 d5 2. g3 c5 3. Bg2 Nc6 4. O-O e6 *

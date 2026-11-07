@@ -1,0 +1,10 @@
+[Event "An escaped brace inside a comment"]
+[Site "?"]
+[Date "2026.09.20"]
+[Round "?"]
+[White "Brace"]
+[Black "Escape"]
+[Result "*"]
+
+
+1. e4 { he wrote \} twice \} as an emoticon } e5 { a backslash \\ too } 2. Nf3 *

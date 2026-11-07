@@ -1,0 +1,10 @@
+[Event "Castling written with zeros"]
+[Site "?"]
+[Date "2024.02.04"]
+[Round "?"]
+[White "Zero"]
+[Black "Zero"]
+[Result "*"]
+
+1. d4 Nf6 2. c4 g6 3. Nc3 d5 4. Bg5 Ne4 5. Nxe4 dxe4 6. Qd2 Bg7 7. e3 Nc6
+8. 0-0-0 Bd7 9. d5 Ne5 10. f4 exf3 11. Nxf3 Nxf3 12. gxf3 0-0 *

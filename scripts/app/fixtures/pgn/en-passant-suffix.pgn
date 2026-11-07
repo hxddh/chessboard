@@ -1,0 +1,10 @@
+[Event "An en passant capture with the e.p. suffix"]
+[Site "?"]
+[Date "2026.09.20"]
+[Round "?"]
+[White "En"]
+[Black "Passant"]
+[Result "*"]
+
+
+1. e4 h6 2. e5 d5 3. exd6 e.p. Qxd6 4. Nf3 *
