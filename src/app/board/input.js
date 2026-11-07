@@ -5,7 +5,8 @@
  *
  *   left click      select a piece of the side that may move; click a hint to move
  *   drag            past 3 px it is a drag: the piece follows, a ghost stays
- *   right click     toggle a mark on a square; right-drag toggles an arrow
+ *   right click     toggle a mark on a square; right-drag toggles an arrow,
+ *                   its head on a queen line or knight jump (the nearest one)
  *                   (no modifier green, Shift red, Alt blue, Shift+Alt yellow)
  *   keys            arrows move a cursor, Enter/Space click on it, Escape cancels
  *   premove         a piece of the side waiting may be given a move in advance
@@ -39,6 +40,25 @@ export function createInput(rules) {
 
   const targets = () => !s.selected ? [] :
     s.selected.mode === "move" ? rules.dests(s.selected.sq) : rules.premoveDests(s.selected.sq);
+
+  /**
+   * An arrow ends on a queen's line or a knight's jump from where it starts
+   * (chessground): let go anywhere else, it ends on the nearest such square.
+   */
+  function snapArrow(from, to) {
+    const fx = sqFile(from), fy = sqRank(from), tx = sqFile(to), ty = sqRank(to);
+    const dx = tx - fx, dy = ty - fy;
+    if (!dx || !dy || Math.abs(dx) === Math.abs(dy) || Math.abs(dx * dy) === 2) return to;
+    let best = to, bd = Infinity;
+    for (let x = 0; x < 8; x++) for (let y = 0; y < 8; y++) {
+      const ax = x - fx, ay = y - fy;
+      if (!ax && !ay) continue;
+      if (!(!ax || !ay || Math.abs(ax) === Math.abs(ay) || Math.abs(ax * ay) === 2)) continue;
+      const d = (x - tx) ** 2 + (y - ty) ** 2;
+      if (d < bd) { bd = d; best = sqName(x, y); }
+    }
+    return best;
+  }
 
   function shapeColor(m = {}) {
     if (m.shiftKey && m.altKey) return "Y";
@@ -100,6 +120,7 @@ export function createInput(rules) {
       const from = s.right;
       s.right = null;
       if (!from || !sq) return out;
+      if (sq !== from) sq = snapArrow(from, sq);
       const color = shapeColor(mods);
       if (from === sq) {
         const i = s.shapes.marks.findIndex((m) => m.sq === sq && m.color === color);

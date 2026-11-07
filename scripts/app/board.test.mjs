@@ -87,6 +87,16 @@ export default function (test) {
     a.deepEqual(click(c.input, "b1").filter((x) => x.type === "snapback"), []);
   });
 
+  test("input: a right-drag arrow snaps to a queen line or a knight jump", (a) => {
+    const c = inputOn(START_FEN);
+    const arrow = (from, to) => { c.input.down(from, 0, 0, 2); c.input.up(to, 0, 0, 2); const ar = c.input.state.shapes.arrows; return ar[ar.length - 1]; };
+    a.equal(arrow("e2", "e6").to, "e6", "a file stays");
+    a.equal(arrow("c1", "h6").to, "h6", "a diagonal stays");
+    a.equal(arrow("g1", "f3").to, "f3", "a knight jump stays");
+    a.ok(["e7", "f6"].includes(arrow("e4", "f7").to), "e4→f7 is no line: it ends a square away, on e7 or f6");
+    a.equal(arrow("a1", "c6").to, "a6", "a1→c6: the nearest square on a line from a1");
+  });
+
   test("geometry: FEN, screen mapping both ways", (a) => {
     const p = readFen(START_FEN);
     a.equal(p.size, 32);
