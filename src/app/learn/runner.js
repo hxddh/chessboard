@@ -20,6 +20,7 @@ import { Chess } from "../core/chess.js";
 import * as MG from "./minigame.js";
 import { judge } from "./goals.js";
 import { explainMove, explainText } from "../core/explain.js";
+import { localItem } from "../content/words.js";
 
 const REPLY_MS = 450, RESET_MS = 900;
 const sideOf = (fen) => (fen.split(" ")[1] === "b" ? "b" : "w");
@@ -54,6 +55,8 @@ function why(fen, move, ctx, t) {
 }
 
 export function createRunner(item, { t, engine, later = (ms, fn) => setTimeout(fn, ms), onDone }) {
+  item = localItem(item);   // its prompt, retry, name and idea in the language showing
+  const DASH = t("learn.dash");
   const view = signal({ fen: item.fen, orientation: "white", movable: "none", dests: null, marks: [], arrows: [], lastMove: null, check: null });
   const bar = signal({ text: "", tone: null, actions: [] });
   let over = false, tries = 0, alive = true;
@@ -116,7 +119,7 @@ export function createRunner(item, { t, engine, later = (ms, fn) => setTimeout(f
           tries++;
           const r = judge(item.fen, uciOf(mv), item);
           show(r.fen, lastOf(mv));
-          if (r.ok) { say(t("learn.right") + " —— " + r.san, "good", []); finish({ ok: true }); return; }
+          if (r.ok) { say(t("learn.right") + DASH + r.san, "good", []); finish({ ok: true }); return; }
           const w = why(item.fen, uciOf(mv), { kind: "lesson", goal: item.goal, expected: item.answer }, t);
           say(w ? t("learn.wrongWhy", w.text) : item.retry || (item.goal === "mate" ? t("learn.wrongMate", r.san) : t("learn.wrong")), "bad");
           wait(RESET_MS, () => { if (!over) show(item.fen); });
@@ -147,7 +150,7 @@ export function createRunner(item, { t, engine, later = (ms, fn) => setTimeout(f
           last = lastOf(m);
           show();
           if (k >= item.line.length) { say(item.idea || t("learn.right"), "good", []); finish({ ok: true }); }
-          else say((intent || "") + t("learn.theirMove", m.san) + " —— " + t("learn.yourMove"));
+          else say((intent || "") + t("learn.theirMove", m.san) + DASH + t("learn.yourMove"));
           intent = "";
         });
       };
@@ -219,7 +222,7 @@ export function createRunner(item, { t, engine, later = (ms, fn) => setTimeout(f
         view.value = { fen, orientation: COLOR[you], movable: !over && !busy && sideOf(fen) === you ? COLOR[you] : "none",
           dests: destsOf(fen), marks: [], arrows: [], lastMove: last, check: true };
       };
-      const restart = () => { while (g.history().length) g.undo(); last = null; busy = false; moves = 0; show(); say(goalText + (item.prompt ? " —— " + item.prompt : "")); };
+      const restart = () => { while (g.history().length) g.undo(); last = null; busy = false; moves = 0; show(); say(goalText + (item.prompt ? DASH + item.prompt : "")); };
       /** Over? true: reached; false: missed; null: play on. */
       const verdict = (mv) => {
         if (item.goal === "promote" && mv && mv.color === you && mv.promotion) return true;
@@ -236,7 +239,7 @@ export function createRunner(item, { t, engine, later = (ms, fn) => setTimeout(f
         finish({ ok });
       };
       show();
-      say(goalText + (item.prompt ? " —— " + item.prompt : ""), null, [{ id: "reset", label: t("learn.reset"), fn: () => !over && restart() }]);
+      say(goalText + (item.prompt ? DASH + item.prompt : ""), null, [{ id: "reset", label: t("learn.reset"), fn: () => !over && restart() }]);
       return {
         async move(from, to) {
           if (over || busy || sideOf(g.fen()) !== you) return;

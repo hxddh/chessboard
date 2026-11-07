@@ -40,7 +40,7 @@ export default {
   "ex.betterTwo": "更好的是 {0}，同时攻击对方的{1}和{2}",
   // —— v2：局面（只在引擎评估也明显变化时说）——
   "ex.pos.shelter": "{0} 动了王前的兵，王的掩护变弱了", "ex.pos.openFile": "{0} 让{1}对着你的王打开了",
-  "ex.pos.isolated": "{0} 之后，{1} 兵成了孤兵", "ex.pos.doubled": "{0} 之后，你在{1}线上成了叠兵",
+  "ex.pos.isolated": "{0} 之后，{1} 兵成了孤兵", "ex.pos.doubled": "{0} 之后，你在{1}上成了叠兵",
   "ex.pos.backward": "{0} 之后，{1} 兵成了落后兵", "ex.pos.passed": "{0} 让对方的 {1} 兵成了通路兵",
   "ex.pos.outpost": "{0} 之后，对方的马有了一个赶不走的前哨 {1}", "ex.pos.bishopPair": "{0} 用象换了马，双象给了对方", "ex.pos.badBishop": "{0} 把兵放在象的同色格上，象被自己的兵堵住了",
   "ex.file": "{0} 线", "ex.mateWord": "将死",
@@ -61,4 +61,6 @@ export default {
   "ex.attackTwo": "{0} 同时攻击 {1} 和 {2}", "ex.attackMate": "{0} 威胁 {1} 杀棋", "ex.attack": "{0} 威胁吃掉对方的{1}",
   "ex.defends": "{0} 解除了对方 {1} 的威胁", "ex.check": "{0} 是将军", "ex.castle": "{0} 把王藏到了安全的地方",
   "ex.develop": "{0} 出动了{1}", "ex.push": "{0} 推进了通路兵", "ex.describe": "{0}",
+  // —— 标点：句号接下一句、列举的分隔 ——
+  "ex.stop": "。", "ex.list": "、",
 };

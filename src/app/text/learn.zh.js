@@ -4,6 +4,14 @@
  * @module text/learn.zh
  */
 export default {
+  // 设置（pages/settings.js）
+  "set.title": "设置", "set.lang": "语言", "set.appearance": "外观", "set.boardTheme": "棋盘", "set.pieceSet": "棋子", "set.sound": "声音",
+  "set.coach": "落子前提醒", "set.level": "我的水平",
+  "set.system": "跟随系统", "set.light": "浅色", "set.dark": "深色", "set.wood": "木纹", "set.green": "绿", "set.blue": "蓝",
+  "set.merida": "Merida", "set.cburnett": "Burnett", "set.classic": "经典", "set.on": "开", "set.off": "关", "set.auto": "按水平",
+  "set.600": "刚入门", "set.1000": "会下棋", "set.1500": "俱乐部", "set.2000": "很强",
+  "date.locale": "zh-CN",
+
   // —— 页面 ——
   "learn.today": "今日一课", "learn.left": "还剩约 {0} 分钟", "learn.doneToday": "今天的课做完了 —— 想多练就接着来",
   "learn.map": "技能图", "learn.back": "回到今日一课", "learn.next": "下一个", "learn.start": "开始练习",
@@ -19,7 +27,7 @@ export default {
   // 你这一步：讲解器（core/explain.js）说的事实，再请你再试
   "learn.wrongWhy": "{0} —— 再想想", "learn.openingWrongWhy": "{0} —— 按开局书再走一次",
   "learn.classicWrongWhy": "{0}。大师走的不是这步 —— 再猜一次", "learn.classicSame": "{0}，和大师想的一样。",
-  "learn.drillStop": "{0} —— 再来一遍",
+  "learn.dash": " —— ", "learn.drillStop": "{0} —— 再来一遍",
   "learn.mistake": "你在对局里走了 {0} —— 找出更好的一步", "learn.mistakePlain": "你自己对局里的一个局面 —— 找出更好的一步",
   "learn.review": "复习", "learn.new": "新技能", "learn.weak": "再练练", "learn.lessonOf": "{0}",
   "learn.why.review": "到期复习", "learn.why.lesson": "新技能", "learn.why.new": "新技能", "learn.why.weak": "最近漏过", "learn.why.drill": "残局", "learn.why.game": "对局", "learn.why.ahead": "加练",

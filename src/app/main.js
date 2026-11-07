@@ -6,6 +6,7 @@
  *   ?engine=fake     the fake engine alone (&delay=ms: how long it "thinks"); maia3-fake: Maia-3
  *                    for the opponents, the fake engine for analysis; stockfish: Stockfish alone
  *   ?db=memory       nothing persists;  ?dbname=x   a separate IndexedDB
+ *   ?lang=en         start in a language (the e2e); otherwise the one chosen, else the system's
  * @module main
  */
 import { createRouter } from "./lib/router.js";
@@ -19,9 +20,16 @@ import { createDb, newId } from "./services/db.js";
 import { analystBackend, openDbBackend, startSelftest } from "./services/native.js";
 import { createEngineService, fakeBackend, stockfishBackend } from "./services/engine.js";
 import { maia3Backend } from "./services/maia3/backend.js";
+import { LANGS, LANG_TAGS, systemLang, setLang, getLang, loadWords } from "./text/lang.js";
+import { playText } from "./text/play.js";
 
 const params = new URLSearchParams(location.search);
-const store = createStore({ play: initialPlay, settings: SETTINGS_DEFAULT }, { ...playActions, ...settingsActions });
+// the language until the saved settings are read: the one last shown on this
+// device (a hint only — the settings event is the record), else the system's
+const HINT = "app.lang";
+const hint = () => { try { return localStorage.getItem(HINT); } catch { return null; } };
+const bootLang = [params.get("lang"), hint()].find((l) => LANGS.includes(l)) || systemLang();
+const store = createStore({ play: initialPlay, settings: { ...SETTINGS_DEFAULT, lang: bootLang } }, { ...playActions, ...settingsActions });
 const engineName = params.get("engine") || "";
 const analyst = engineName.endsWith("fake") ? fakeBackend({ delayMs: Number(params.get("delay") ?? 30) }) : analystBackend(() => stockfishBackend());
 const engine = createEngineService(engineName === "fake" || engineName === "stockfish" ? analyst : maia3Backend({ analyst }));
@@ -47,8 +55,10 @@ effect(() => {
 });
 
 const router = createRouter({
+  failText: (msg) => playText()("app.loadFailed", msg),
   routes: {
-    "/learn": () => import("./pages/learn.js"),
+    // 学 shows the content: its words in the language come first (nothing to fetch in Chinese)
+    "/learn": () => Promise.all([import("./pages/learn.js"), loadWords()]).then(([m]) => m),
     "/play": () => import("./pages/play.js"),
     "/me": () => import("./pages/me.js"),
     "/settings": () => import("./pages/settings.js"),
@@ -64,7 +74,27 @@ effect(() => {
   for (const a of links) a.toggleAttribute("aria-current", a.getAttribute("href") === "#" + path);
 });
 
-router.start();
+// the language: its words fetched before the first page mounts (only when it is
+// not Chinese), and on a change the shell relabelled and the page mounted again
+function chrome() {
+  const t = playText();
+  document.documentElement.lang = LANG_TAGS[getLang()];
+  document.title = t("app.title");
+  document.querySelector(".nav").setAttribute("aria-label", t("nav.aria"));
+  for (const a of links) a.textContent = t("nav." + a.getAttribute("href").slice(2));
+}
+const langOf = store.select((s) => s.settings.lang);
+let started = false;
+effect(() => {
+  const want = langOf.value;
+  // the first page waits for the interface only; a change brings the content's words as well
+  setLang(want, { words: started }).catch(() => setLang("zh")).then(() => {
+    if (want !== langOf.peek()) return;   // a later choice is on its way
+    try { localStorage.setItem(HINT, getLang()); } catch { /* a hint only */ }
+    chrome();
+    if (!started) { started = true; router.start(); } else router.remount();
+  });
+});
 // for the e2e and the console: the app's parts, not its state
 window.__app = { store, engine, router, ready };
 // in the packaged app with CHESS_SELFTEST=1 only (selftest.js)

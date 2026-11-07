@@ -133,7 +133,7 @@ export function mount(el, { ready }) {
     // one card for the page's life: an import re-draws the rest (the level may have moved), not its own report
     library ||= libraryCard(db, t, L, () => live, () => render(db));
     const list = h("ul", { class: "games", "data-test": "games" }, games.length ? games.map((g) => h("li", {},
-      new Date(g.startedAt).toLocaleDateString() + " · " + (g.mode === "engine" ? t("me.vsEngine") : t("me.pvp")) +
+      new Date(g.startedAt).toLocaleDateString(t("date.locale")) + " · " + (g.mode === "engine" ? t("me.vsEngine") : t("me.pvp")) +
       (g.result ? " · " + g.result.result : ""))) : h("li", { text: t("me.noGames") }));
     const recent = h("section", { class: "card" }, h("h2", { text: t("me.games") }), list);
     root.replaceChildren(level, stageCard, weekCard, library, recent);

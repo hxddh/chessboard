@@ -1,5 +1,9 @@
 /** 下 — the play screen and the review on the board, in Chinese. Keys are semantic; {0} {1} are arguments. */
 export default {
+  // the shell around the pages (main.js, index.html) and the board's name for screen readers
+  "app.title": "国际象棋", "nav.aria": "主导航", "nav.learn": "学", "nav.play": "下", "nav.me": "我", "nav.settings": "设置",
+  "app.loadFailed": "页面加载失败：{0}", "board.aria": "棋盘",
+
   // opponents: names and lines are opponents/lines.zh.js
   "opp.thinking": "在想", "new.weaker": "弱一点的对手", "new.stronger": "强一点的对手",
   "side.you": "你", "side.w": "白方", "side.b": "黑方",

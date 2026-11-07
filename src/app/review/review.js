@@ -242,7 +242,7 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET, later = (m
     };
     if (mv.san === m.san) {
       const why = whyNot(data.facts[k], fen, mv.uci, t, { extra: true });
-      return wrong(t("rv.same") + (why ? " " + why + "。" : ""), data.facts[k] && data.facts[k].arrows);
+      return wrong(t("rv.same") + (why ? " " + why + t("ex.stop") : ""), data.facts[k] && data.facts[k].arrows);
     }
     if (m.best && mv.uci === applyMove(fen, m.best)?.uci) {
       patch({ note: t("rv.right", fig(mv.san, fen)), tone: "good", solved: true, arrows: bestArrow(m), busy: false, tries,
@@ -273,7 +273,7 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET, later = (m
     if (!m) return;
     const why = whyNot(data.facts[s.k], data.fens[m.ply], sanToUci(data.fens[m.ply], m.san), t, { extra: true });
     const best = bestSan(m);
-    const parts = [why ? why + "。" : "", best && !(why && why.includes(best.slice(1))) ? t("rv.better", fig(best, data.fens[m.ply])) : ""];
+    const parts = [why ? why + t("ex.stop") : "", best && !(why && why.includes(best.slice(1))) ? t("rv.better", fig(best, data.fens[m.ply])) : ""];
     patch({ note: parts.join(" ").trim(), tone: null, arrows: bestArrow(m), shown: true, tried: null });
   }
 

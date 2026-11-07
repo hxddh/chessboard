@@ -1,20 +1,24 @@
 /**
- * Settings: the look for now. Stored as settings.set events; the projection
- * gives them back at start.
+ * Settings: the language, the look, the sound, the coach. Stored as
+ * settings.set events; the projection gives them back at start.
  * @module state/settings
  */
 import { PIECE_SET_IDS, BOARD_THEMES, DEFAULT_PIECE_SET } from "../core/pieces.js";
+import { LANGS } from "../text/lang.js";
 
 /**
  * `level`: the player's own strength, until the learner model knows it.
  * `coach`: the question before a move (v20-0-plan §3 P2) — "auto" follows
  * the level (beginners on, from 1500 off).
+ * `lang`: the interface language. The default here is the source's; main.js
+ * starts from the system's locale until one is chosen (text/lang.js).
  */
 export const LEVELS = [600, 1000, 1500, 2000];
-export const SETTINGS_DEFAULT = Object.freeze({ appearance: "system", boardTheme: "wood", pieceSet: DEFAULT_PIECE_SET,
+export const SETTINGS_DEFAULT = Object.freeze({ lang: "zh", appearance: "system", boardTheme: "wood", pieceSet: DEFAULT_PIECE_SET,
   sound: "on", coach: "auto", level: 1000 });
 
 const VALID = {
+  lang: (v) => LANGS.includes(v),
   appearance: (v) => ["system", "light", "dark"].includes(v),
   boardTheme: (v) => BOARD_THEMES.includes(v),
   pieceSet: (v) => PIECE_SET_IDS.includes(v),

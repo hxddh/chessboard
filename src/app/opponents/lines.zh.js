@@ -7,11 +7,12 @@
  *   hello   when the game starts
  *   react   once, when your move costs it a lot (opponents/mind.js surprised)
  *   won / lost / drawn / resign   the result, from its side
- * A line it does not have falls back to `_`.
+ * A line it does not have falls back to `_`; `_.say` joins a name and a line.
  * @module opponents/lines.zh
  */
 export default {
   _: {
+    say: "{0}：{1}",
     hello: "请多指教。", react: "这步我没想到。",
     won: "谢谢你的对局。", lost: "你下得好。", drawn: "和了，下得不错。", resign: "我认输了。",
   },

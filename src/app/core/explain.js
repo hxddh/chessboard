@@ -708,7 +708,7 @@ function arrowsOf(f, lineW, picked) {
 export function explainParts(res, t, { extra = false } = {}) {
   if (!res || !res.key) return [];
   const out = res.args == null ? parts19(res.facts.ex19, t) : fill(t(res.key), res.args, t);
-  if (extra) for (const [k, a] of res.extra || []) { out.push("。"); out.push(...fill(t(k), a, t)); }
+  if (extra) for (const [k, a] of res.extra || []) { out.push(t("ex.stop")); out.push(...fill(t(k), a, t)); }
   return out;
 }
 function fill(tpl, args, t) {

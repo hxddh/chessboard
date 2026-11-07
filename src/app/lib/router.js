@@ -33,9 +33,10 @@ function browserEnv() {
  * @param {object} [o.context] passed to every page's mount, with `route` and `router` added
  * @param {object} [o.env] location adapter (tests)
  * @param {(tag: string) => HTMLElement} [o.createElement]
+ * @param {(message: string) => string} [o.failText] what a page that could not load says
  */
 export function createRouter({ routes, outlet, fallback = "/play", context = {}, env = browserEnv(),
-  createElement = (t) => document.createElement(t) }) {
+  createElement = (t) => document.createElement(t), failText = (msg) => "页面加载失败：" + msg }) {
   const route = signal(parseHash(""));
   const modules = new Map();   // path → Promise<module>
   let mounted = null;          // { path, el, unmount }
@@ -82,7 +83,7 @@ export function createRouter({ routes, outlet, fallback = "/play", context = {},
       unmount();
       const el = createElement("div");
       el.className = "page-error";
-      el.textContent = "页面加载失败：" + ((e && e.message) || e);
+      el.textContent = failText(String((e && e.message) || e));
       outlet.append(el);
       mounted = { path: null, el, unmount: null };
       return;
@@ -115,6 +116,14 @@ export function createRouter({ routes, outlet, fallback = "/play", context = {},
       return pending;
     },
     start() { unlisten = env.listen(onChange); onChange(); return pending; },
+    /** Mount the current page again (the language changed); resolves once it is mounted. */
+    remount() {
+      if (!mounted) return pending;
+      token++;
+      unmount();
+      pending = sync();
+      return pending;
+    },
     stop() { if (unlisten) unlisten(); unlisten = null; seen = null; token++; unmount(); },
     /** Resolves once the latest navigation has settled (tests). */
     settled: () => pending,

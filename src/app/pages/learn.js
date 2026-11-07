@@ -17,6 +17,7 @@ import { learnText } from "../text/learn.js";
 import { playText } from "../text/play.js";
 import { SKILL, SKILLS, GROUPS } from "../content/skills.js";
 import { LESSONS } from "../content/lessons.js";
+import { lessonOf } from "../content/words.js";
 import { PRACTICE } from "../content/practice.js";
 import { next, itemOf, todayOf, skillItems } from "../learn/queue.js";
 import { isLit, isReached, frontier, visibleRating } from "../learn/model.js";
@@ -68,7 +69,7 @@ export function mount(el, { store, engine, ready, router }) {
   const root = h("div", { class: "learn", "data-test": "learn" }, head, main, mapEl, placeEl);
   el.append(root);
 
-  const board = createBoard(boardEl, { fen: "8/8/8/8/8/8/8/8 w - - 0 1", dests: new Map(), movable: "none", check: null, premove: false,
+  const board = createBoard(boardEl, { label: tp("board.aria"), fen: "8/8/8/8/8/8/8/8 w - - 0 1", dests: new Map(), movable: "none", check: null, premove: false,
     pieceSet: s0.pieceSet, theme: s0.boardTheme, onMove: ({ from, to }) => { const c = current.peek(); if (c && c.runner && !c.done) c.runner.move(from, to); } });
 
   // --- the item ------------------------------------------------------------------------
@@ -166,7 +167,7 @@ export function mount(el, { store, engine, ready, router }) {
       box.push(h("div", { class: "skill-detail", "data-test": "skill-detail" },
         h("h2", { text: t("sk." + d) }), h("p", { text: t("sk." + d + ".why") }),
         h("p", { class: "muted", text: t("map." + state) + " · " + t("map.positions", (PRACTICE[d] || []).length) +
-          (missing.length ? " · " + t("map.needs", missing.join("、")) : "") }),
+          (missing.length ? " · " + t("map.needs", missing.join(t("ex.list"))) : "") }),
         h("div", {}, h("button", { type: "button", class: "primary", "data-test": "practice-skill", disabled: state === "locked",
           onclick: () => practise(d) }, t("map.practice")))));
     }
@@ -230,7 +231,7 @@ export function mount(el, { store, engine, ready, router }) {
     sideGroup.textContent = sk ? t("group." + sk.group) : "";
     sideName.textContent = sk ? t("sk." + sk.id) : it.kind === "game" ? gameLine(c.opponent) : t("puzzle.find");
     sideWhy.textContent = sk ? t("sk." + sk.id + ".why") : it.kind === "game" ? t("learn.gameWhy") : "";
-    const paras = it.kind === "lesson" && sk ? sk.lessons.flatMap((id) => (LESSONS[id] ? LESSONS[id].text : [])).slice(0, 4) : [];
+    const paras = it.kind === "lesson" && sk ? sk.lessons.flatMap((id) => (LESSONS[id] ? lessonOf(id, LESSONS[id]).text : [])).slice(0, 4) : [];
     sideLesson.replaceChildren(...paras.map((p) => h("p", {}, ...withFigurines(plain(p)))));
     if (L && !c.placement) {
       const td = todayOf(L.model, clock(), { tz: L.tz });
