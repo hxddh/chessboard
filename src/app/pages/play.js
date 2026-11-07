@@ -14,6 +14,7 @@
  * @module pages/play
  */
 import { h } from "../lib/dom.js";
+import { withFigurines } from "../lib/notation.js";
 import { signal, computed, effect, untrack, batch } from "../lib/signal.js";
 import { createBoard } from "../board/board.js";
 import { loadSet } from "../board/pieces.js";
@@ -422,7 +423,7 @@ export function mount(el, { store, engine, ready }) {
     const b = barModel.value;
     bar.dataset.phase = b.phase;
     bar.dataset.tone = b.tone || "";
-    barText.replaceChildren(b.count ? h("span", { class: "bar-count", text: b.count }) : "", b.text);
+    barText.replaceChildren(b.count ? h("span", { class: "bar-count", text: b.count }) : "", ...withFigurines(b.text));
     barActions.replaceChildren(...b.actions);
   }));
 

@@ -10,6 +10,7 @@
  * @module pages/learn
  */
 import { h } from "../lib/dom.js";
+import { setNotation, withFigurines } from "../lib/notation.js";
 import { signal, effect, untrack } from "../lib/signal.js";
 import { createBoard } from "../board/board.js";
 import { learnText } from "../text/learn.js";
@@ -214,7 +215,7 @@ export function mount(el, { store, engine, ready, router }) {
       bar.dataset.tone = "";
       return;
     }
-    barText.textContent = b.text;
+    setNotation(barText, b.text);
     bar.dataset.tone = b.tone || "";
     const acts = c.done && !c.placement ? [{ id: "next", label: t("learn.next"), primary: true, fn: () => showNext() }] : b.actions;
     barActions.replaceChildren(...acts.map(btn));
@@ -230,7 +231,7 @@ export function mount(el, { store, engine, ready, router }) {
     sideName.textContent = sk ? t("sk." + sk.id) : it.kind === "game" ? gameLine(c.opponent) : t("puzzle.find");
     sideWhy.textContent = sk ? t("sk." + sk.id + ".why") : it.kind === "game" ? t("learn.gameWhy") : "";
     const paras = it.kind === "lesson" && sk ? sk.lessons.flatMap((id) => (LESSONS[id] ? LESSONS[id].text : [])).slice(0, 4) : [];
-    sideLesson.replaceChildren(...paras.map((p) => h("p", { text: plain(p) })));
+    sideLesson.replaceChildren(...paras.map((p) => h("p", {}, ...withFigurines(plain(p)))));
     if (L && !c.placement) {
       const td = todayOf(L.model, clock(), { tz: L.tz });
       todayEl.textContent = c.more || !td.left ? t("learn.doneToday") : t("learn.left", Math.max(1, td.left));

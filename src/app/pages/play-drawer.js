@@ -6,7 +6,7 @@
  * @module pages/play-drawer
  */
 import { h } from "../lib/dom.js";
-import { sanText } from "../core/explain.js";
+import { sanNode } from "../lib/notation.js";
 
 /**
  * @param {object} o
@@ -38,7 +38,7 @@ export function createDrawer({ t, onPick, onStep, onCopy }) {
       const side = i % 2 === 0 ? "w" : "b";
       list.append(h("li", { "data-ply": i, "data-side": side },
         i % 2 === 0 ? h("span", { class: "no", text: (i / 2 + 1) + "." }) : null,
-        h("span", { class: "san", text: sanText(moves[i].san) }),
+        h("span", { class: "san" }, sanNode(moves[i].san)),
         h("span", { class: "mark" })));
     }
     shown = moves; shownId = gameId;
