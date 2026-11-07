@@ -13,7 +13,7 @@
     "test:static": "node scripts/run-static.mjs",
     "test:app": "node scripts/test-app.mjs",
     "build:app": "node scripts/build-app.mjs",
-    "test:app:e2e": "node scripts/test-app-e2e.mjs && node scripts/test-play-e2e.mjs && node scripts/test-maia3-e2e.mjs && node scripts/test-learn-e2e.mjs && node scripts/test-feel-e2e.mjs && node scripts/test-takeback-e2e.mjs && node scripts/test-import-e2e.mjs && node scripts/test-lang-e2e.mjs && node scripts/test-me-library-e2e.mjs && node scripts/test-shell-e2e.mjs",
+    "test:app:e2e": "node scripts/test-app-e2e.mjs && node scripts/test-play-e2e.mjs && node scripts/test-maia3-e2e.mjs && node scripts/test-learn-e2e.mjs && node scripts/test-feel-e2e.mjs && node scripts/test-takeback-e2e.mjs && node scripts/test-import-e2e.mjs && node scripts/test-lang-e2e.mjs && node scripts/test-me-library-e2e.mjs && node scripts/test-shell-e2e.mjs && node scripts/test-walkthrough-e2e.mjs",
     "test:visual": "node scripts/test-visual-e2e.mjs",
     "serve:app": "node scripts/serve-app.mjs",
     "gen:skills": "node scripts/gen-skills.mjs",

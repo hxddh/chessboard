@@ -133,10 +133,13 @@ export function next(st, now, o = {}) {
   return id ? { id, why: "ahead", kind: ITEMS[id].kind, skill: ITEMS[id].skill, more: true } : null;
 }
 
-/** Today's lesson: minutes done, minutes planned, items left. */
+/** Today's lesson: minutes done, minutes planned, what the head shows as left, items left. */
 export function todayOf(st, now, o = {}) {
   const day = today(st, now, o.tz || 0);
   const p = plan(st, now, o);
   const left = p.reduce((m, x) => m + (MINUTES[x.kind] || 1), 0);
-  return { done: Math.round(day.minutes), left: Math.round(left), count: p.length, answered: day.answers };
+  // what 学's head says: the day's budget not yet used — it only goes down as the day goes on
+  // (the plan's own sum grows back each time a new skill's items join it)
+  const shown = p.length ? Math.max(1, Math.round(DAY_MINUTES - day.minutes)) : 0;
+  return { done: Math.round(day.minutes), left: Math.round(left), shown, count: p.length, answered: day.answers };
 }

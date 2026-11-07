@@ -7,6 +7,7 @@
  *                    for the opponents, the fake engine for analysis; stockfish: Stockfish alone
  *   ?db=memory       nothing persists;  ?dbname=x   a separate IndexedDB
  *   ?lang=en         start in a language (the e2e); otherwise the one chosen, else the system's
+ *   (no #/…)         the first start on a device opens #/learn (the placement), later ones #/play
  *   ?autoreview=0    no background review of imported games; &autoreviewDelay=ms before it starts (4000)
  * @module main
  */
@@ -30,6 +31,9 @@ const params = new URLSearchParams(location.search);
 const HINT = "app.lang";
 const hint = () => { try { return localStorage.getItem(HINT); } catch { return null; } };
 const bootLang = [params.get("lang"), hint()].find((l) => LANGS.includes(l)) || systemLang();
+// the very first start on this device opens 学 — 「你下过国际象棋吗？」 — not a game against
+// whoever the default is; after that an empty address opens 下, the game where it was left
+const firstLaunch = hint() === null;
 const store = createStore({ play: initialPlay, settings: { ...SETTINGS_DEFAULT, lang: bootLang } }, { ...playActions, ...settingsActions });
 const engineName = params.get("engine") || "";
 const analyst = engineName.endsWith("fake") ? fakeBackend({ delayMs: Number(params.get("delay") ?? 30) }) : analystBackend(() => stockfishBackend());
@@ -56,9 +60,10 @@ effect(() => {
 });
 
 // imported games reviewed in the background (library/autoreview.js), loaded
-// after the first page and never while 下 or 学 has the engine
-const background = { wake() {}, version: signal(0), bg: null };
-const ENGINE_PAGES = new Set(["/play", "/learn"]);
+// after the first page and never while the page on screen has the engine
+// `busyOf`: set by the page on screen while it needs the engine (a game being played, its review,
+// a position on 学's board); 我, 设置, a finished game, the skill map leave it free
+const background = { wake() {}, version: signal(0), bg: null, busyOf: null };
 
 // the menu bar's commands (services/shell.js): what the page on screen answers,
 // registered while it is mounted — handle(name, fn) → its own removal
@@ -107,13 +112,17 @@ effect(() => {
     if (want !== langOf.peek()) return;   // a later choice is on its way
     try { localStorage.setItem(HINT, getLang()); } catch { /* a hint only */ }
     chrome();
-    if (!started) { started = true; router.start().then(firstPage, firstPage); } else router.remount();
+    if (!started) {
+      started = true;
+      if (firstLaunch && !location.hash) history.replaceState(null, "", "#/learn");
+      router.start().then(firstPage, firstPage);
+    } else router.remount();
   });
 });
 if (params.get("autoreview") !== "0") {
   ready.then((db) => new Promise((r) => setTimeout(r, Number(params.get("autoreviewDelay") ?? 4000))).then(() => import("./library/autoreview.js")).then((m) => {
     background.bg = m.startAutoReview({ engine, db, budget: Number(params.get("review")) || undefined,
-      busy: () => ENGINE_PAGES.has(router.route.peek().path),
+      busy: () => !!(background.busyOf && background.busyOf()),
       onDone: () => { background.version.value++; } });
     background.wake = () => background.bg.wake();
   })).catch((e) => console.warn("autoreview:", e && e.message));

@@ -37,7 +37,7 @@ const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } })
 const page = await ctx.newPage();
 page.on("pageerror", (e) => errors.push(e.message));
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
-await page.goto(srv.url + "?engine=maia3-fake&db=memory");
+await page.goto(srv.url + "?engine=maia3-fake&db=memory#/play");
 await page.waitForSelector("[data-page]");
 
 // --- measured + parity: a fresh worker, cold ------------------------------------

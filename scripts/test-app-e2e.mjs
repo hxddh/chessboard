@@ -31,7 +31,7 @@ const srv = await startServer();
 const browser = await launchBrowser();
 const errors = [];
 
-async function open(query = "?engine=fake", { hash = "", ctxOpts = {}, base = srv.url } = {}) {
+async function open(query = "?engine=fake", { hash = "#/play", ctxOpts = {}, base = srv.url } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, ...ctxOpts });
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(e.message));
@@ -73,9 +73,14 @@ async function drag(page, from, to, sel) {
   const fetched = [];
   page.on("request", (r) => { const m = /\/src\/app\/pages\/(\w+)\.js/.exec(r.url()); if (m) fetched.push(m[1]); });
   page.on("pageerror", (e) => errors.push(e.message));
+  // the very first start on a device: 学, the placement (「你下过国际象棋吗？」), not a game
+  await page.goto(srv.url + "?engine=fake&db=memory");
+  await page.waitForSelector("[data-page=learn]");
+  assert((await page.evaluate(() => location.hash)) === "#/learn", "the first start on a device opens #/learn");
+  fetched.length = 0;
   await page.goto(srv.url + "?engine=fake&db=memory");
   await page.waitForSelector("[data-page=play]");
-  assert((await page.evaluate(() => location.hash)) === "#/play", "an empty hash lands on #/play");
+  assert((await page.evaluate(() => location.hash)) === "#/play", "after that an empty hash lands on #/play");
   assert(!fetched.includes("learn") && !fetched.includes("me") && !fetched.includes("settings"), "only the play page is fetched at start (" + fetched.join(",") + ")");
   for (const name of ["learn", "me", "settings", "play", "learn"]) {
     await page.click(`a[href="#/${name}"]`);
@@ -383,7 +388,7 @@ report.firstPaintKB = Math.round(built.firstBytes / 102.4) / 10;
       // an entry type the engine does not know is ignored, not thrown: no list then, not an empty one
       if (!(PerformanceObserver.supportedEntryTypes || []).includes("longtask")) window.__longTasks = null;
     });
-    await page.goto(srv.dist + "?engine=fake&db=memory");
+    await page.goto(srv.dist + "?engine=fake&db=memory#/play");
     await page.waitForSelector("[data-page=play] canvas");
     await page.waitForFunction(() => performance.getEntriesByName("app:board").length > 0);
     await frames(page);

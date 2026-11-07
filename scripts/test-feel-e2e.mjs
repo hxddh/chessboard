@@ -47,7 +47,7 @@ async function open(query = "", { w = 1280, h = 860, ctxOpts = {} } = {}) {
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
-  await page.goto(BASE + "?think=0&engine=fake&db=memory" + query);
+  await page.goto(BASE + "?think=0&engine=fake&db=memory" + query + "#/play");
   await page.waitForSelector("[data-page=play] canvas");
   await page.waitForFunction(() => window.__app.store.get().play.game && window.__play);
   return { ctx, page };
@@ -126,7 +126,7 @@ const animatingFor = (page) => page.evaluate(() => new Promise((res) => {
 {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
-  await page.goto(srv.url + "?engine=fake&db=memory");
+  await page.goto(srv.url + "?engine=fake&db=memory#/play");
   await page.waitForSelector("[data-page]");
   const said = await page.evaluate(async () => {
     const { withFigurines } = await import("./lib/notation.js");

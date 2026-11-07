@@ -72,9 +72,11 @@ export function mount(el, { ready, route, router, store, engine, background, com
       h("h2", { text: t("me.curve") }), curve(st.curve));
     const stageCard = h("section", { class: "card", "data-test": "stage" },
       h("h2", { "data-test": "stage-goal" }, stage.reached ? t("me.stageDone") : t("me.stage", stage.rating)),
-      stage.missing.length ? h("p", { class: "muted", text: t("me.stageNeeds", stage.missing.length) }) : h("p", { class: "muted", text: t("me.stageReady", stage.rating) }),
-      h("ul", { class: "needs", "data-test": "stage-needs" }, stage.missing.slice(0, 12).map((id) => h("li", { text: name(id) }))),
-      h("p", { class: "muted", text: t("me.stageUnlock") + (oppName ? " · " + oppName : "") }));
+      // all four reached: that is the whole card (no "reach N" and no unlock still to come)
+      ...(stage.reached ? [] : [
+        stage.missing.length ? h("p", { class: "muted", text: t("me.stageNeeds", stage.missing.length) }) : h("p", { class: "muted", text: t("me.stageReady", stage.rating) }),
+        h("ul", { class: "needs", "data-test": "stage-needs" }, stage.missing.slice(0, 12).map((id) => h("li", { text: name(id) }))),
+        h("p", { class: "muted", "data-test": "stage-unlock", text: t("me.stageUnlock") + (oppName ? " · " + oppName : "") })]));
     const weekCard = h("section", { class: "card" }, h("h2", { text: t("me.week") }),
       h("p", { "data-test": "week", text: week ? t("me.weekLine", tp.has("motif." + week.motif) ? tp("motif." + week.motif) : week.motif, week.last, week.now) : t("me.weekNone") }));
     // one card for the page's life: an import or an answer re-draws the rest (the level may have moved), not its own report

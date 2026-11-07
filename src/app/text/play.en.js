@@ -50,7 +50,7 @@ export default {
   "report.title": "Full report", "report.accuracy": "Accuracy {0}", "report.copy": "Copy PGN", "toast.copied": "Copied",
 
   // the review on the board (P5)
-  "rv.running": "Reviewing… {0}/{1}", "rv.card": "Move {0}: you played {1} ({2}).", "rv.cardOf": "{0}/{1}",
+  "rv.waiting": "Still going through the rest of the game — the next one follows as soon as it is ready…", "rv.running": "Reviewing… {0}/{1}", "rv.card": "Move {0}: you played {1} ({2}).", "rv.cardOf": "{0}/{1}",
   "rv.tryAgain": "There was a better move here. Can you find it?", "rv.answer": "Show the answer", "rv.next": "Next", "rv.finish": "Finish",
   "rv.report": "Full report", "rv.same": "That is the move you played in the game.", "rv.right": "Right! {0} is the best move here.",
   "rv.alsoGood": "{0} works too. The engine's favourite is {1}.", "rv.wrong": "{0} isn't good either: {1}", "rv.wrongPlain": "{0} isn't good either. Think again.",

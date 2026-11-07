@@ -50,7 +50,7 @@ export default {
   "report.title": "詳しいレポート", "report.accuracy": "正確度 {0}", "report.copy": "PGN をコピー", "toast.copied": "コピーしました",
 
   // the review on the board (P5)
-  "rv.running": "振り返り中… {0}/{1}", "rv.card": "{0} 手目、あなたは {1} と指した（{2}）。", "rv.cardOf": "{0}/{1}",
+  "rv.waiting": "残りの局面を確認しています。終わりしだい次へ進みます…", "rv.running": "振り返り中… {0}/{1}", "rv.card": "{0} 手目、あなたは {1} と指した（{2}）。", "rv.cardOf": "{0}/{1}",
   "rv.tryAgain": "ここにはもっと良い手があった。考えてみる？", "rv.answer": "答えを見る", "rv.next": "次へ", "rv.finish": "終了",
   "rv.report": "詳しいレポート", "rv.same": "それは対局で指した手です。", "rv.right": "正解！ {0} がここでの最善手です。",
   "rv.alsoGood": "{0} でも大丈夫。エンジンの一番手は {1}。", "rv.wrong": "{0} もよくない：{1}", "rv.wrongPlain": "{0} もよくない。もう一度考えよう。",

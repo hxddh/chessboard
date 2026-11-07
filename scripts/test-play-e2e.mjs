@@ -50,7 +50,7 @@ async function open(query = "", { w = 1440, h = 900, ctxOpts = {}, engine = "fak
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
   // an error event that is not a thrown exception (a ResizeObserver loop) is no pageerror in Chromium; WebKit reports it
   await page.addInitScript(() => addEventListener("error", (e) => { if (!e.error) console.error("error event: " + e.message); }));
-  await page.goto(BASE + "?think=" + think + (engine === "fake" ? "&engine=fake" : "") + query);
+  await page.goto(BASE + "?think=" + think + (engine === "fake" ? "&engine=fake" : "") + query + "#/play");
   await page.waitForSelector("[data-page=play] canvas");
   await page.waitForFunction(() => window.__app.store.get().play.game && window.__play);
   return { ctx, page };

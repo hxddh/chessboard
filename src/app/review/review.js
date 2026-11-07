@@ -22,6 +22,7 @@
  * No DOM here: the page renders `state` and `board`, and calls the verbs.
  * @module review/review
  */
+import { joinSentences } from "../lib/sentences.js";
 import { signal, computed } from "../lib/signal.js";
 import { runProgressive, runPass, engineAnalyze, sansOf, deeper } from "../core/pass.js";
 import { gradeMoves, selectMoments, MARK } from "../core/grade.js";
@@ -278,7 +279,7 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET, later = (m
     };
     if (mv.san === m.san) {
       const why = whyNot(data.facts[k], fen, mv.uci, t, { extra: true });
-      return wrong(t("rv.same") + (why ? " " + why + t("ex.stop") : ""), data.facts[k] && data.facts[k].arrows);
+      return wrong(joinSentences(t("rv.same"), why ? why + t("ex.stop") : ""), data.facts[k] && data.facts[k].arrows);
     }
     if (m.best && mv.uci === applyMove(fen, m.best)?.uci) {
       patch({ note: t("rv.right", fig(mv.san, fen)), tone: "good", solved: true, arrows: bestArrow(m), busy: false, tries,
@@ -310,14 +311,14 @@ export function createReview({ engine, db, t, budget = REVIEW_BUDGET, later = (m
     const why = whyNot(data.facts[s.k], data.fens[m.ply], sanToUci(data.fens[m.ply], m.san), t, { extra: true });
     const best = bestSan(m);
     const parts = [why ? why + t("ex.stop") : "", best && !(why && why.includes(best.slice(1))) ? t("rv.better", fig(best, data.fens[m.ply])) : ""];
-    patch({ note: parts.join(" ").trim(), tone: null, arrows: bestArrow(m), shown: true, tried: null });
+    patch({ note: joinSentences(parts), tone: null, arrows: bestArrow(m), shown: true, tried: null });
   }
 
   function next() {
     const s = state.peek();
     if (s.phase !== "card") return;
     // the later cards are the finished pass's: wait for it, the board where it is
-    if (data.refining) { const p = state.peek(); patch({ waiting: true, note: t("rv.running", p.k + 1, p.count) }); return; }
+    if (data.refining) { patch({ waiting: true, note: t("rv.waiting") }); return; }
     if (s.k + 1 < data.moments.length) card(s.k + 1);
     else finish();
   }

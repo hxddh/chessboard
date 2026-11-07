@@ -50,7 +50,7 @@ export default {
   "report.title": "完整报告", "report.accuracy": "准确度 {0}", "report.copy": "复制棋谱", "toast.copied": "已复制",
 
   // the review on the board (P5)
-  "rv.running": "复盘中… {0}/{1}", "rv.card": "第 {0} 回合，你走了 {1}（{2}）。", "rv.cardOf": "{0}/{1}",
+  "rv.waiting": "还在看这盘的其余部分，好了就接着下一处…", "rv.running": "复盘中… {0}/{1}", "rv.card": "第 {0} 回合，你走了 {1}（{2}）。", "rv.cardOf": "{0}/{1}",
   "rv.tryAgain": "这里有更好的一步，再想想？", "rv.answer": "看答案", "rv.next": "下一处", "rv.finish": "完成",
   "rv.report": "完整报告", "rv.same": "这就是对局里那一步。", "rv.right": "对了！{0} 是这里最好的一步。",
   "rv.alsoGood": "{0} 也可以。引擎最喜欢的是 {1}。", "rv.wrong": "{0} 也不好：{1}", "rv.wrongPlain": "{0} 也不好，再想想。",

@@ -15,6 +15,7 @@
  */
 import { h } from "../lib/dom.js";
 import { withFigurines } from "../lib/notation.js";
+import { joinSentences } from "../lib/sentences.js";
 import { signal, computed, effect, untrack, batch } from "../lib/signal.js";
 import { createBoard } from "../board/board.js";
 import { loadSet } from "../board/pieces.js";
@@ -56,7 +57,7 @@ function nearby(a, b) {
   return diff <= 4;
 }
 
-export function mount(el, { store, engine, ready, commands }) {
+export function mount(el, { store, engine, ready, commands, background }) {
   const t = playText();
   const params = new URLSearchParams(location.search);
   const thinkScale = params.has("think") ? Number(params.get("think")) : 1;
@@ -462,7 +463,7 @@ export function mount(el, { store, engine, ready, commands }) {
     if (rv.phase === "done") return { phase: "review-done", text: resultText(g) + " · " + t("rv.done"), actions: [report, btn("new", t("act.new"), newGame, "primary")] };
     // a card
     const last = rv.k + 1 >= rv.count;
-    const text = rv.note || review.headline() + " " + t("rv.tryAgain");
+    const text = rv.note || joinSentences(review.headline(), t("rv.tryAgain"));
     const next = btn("rv-next", last ? t("rv.finish") : t("rv.next"), () => review.next(), rv.solved || rv.shown ? "primary" : "quiet");
     const actions = rv.solved || rv.shown ? [next, report] : [btn("rv-answer", t("rv.answer"), () => review.answer(), "primary"), next, report];
     return { phase: "review-card", text, tone: rv.tone, count: t("rv.cardOf", rv.k + 1, rv.count), actions };
@@ -703,10 +704,19 @@ export function mount(el, { store, engine, ready, commands }) {
     store.dispatch("play.resume", { now: Date.now() });
   });
 
+  // the background review (library/autoreview.js) waits while this page has the engine:
+  // a game being played (the opponent, the coach, the hints) or its review being worked through
+  const busy = () => {
+    const g = store.get().play.game, ph = review.state.peek().phase;
+    return !!(g && !g.result) || ph === "running" || ph === "card";
+  };
+  if (background) background.busyOf = busy;
+
   // for the e2e and the console
   window.__play = { board, review, sound, get mode() { return mode.peek(); }, hint, pending, flipped, undo, flip };
 
   return () => {
+    if (background && background.busyOf === busy) background.busyOf = null;
     barSize.disconnect(); cancelAnimationFrame(barFrame);
     stops.forEach((s) => s());
     timers.forEach(clearTimeout);

@@ -159,6 +159,23 @@ export default function (test) {
     a.ok(next(st, later), "something next");
   });
 
+  test("queue: the minutes left today only go down as the day's items are done", (a) => {
+    // a beginner's first day: rook, bishop, queen — the plan's own sum went 3 → 7 at each new lesson
+    const ev = [{ id: 1, at: T0, type: "learn.place", rating: 400, how: "new" }];
+    const shown = [];
+    let id = 1;
+    for (let i = 0; i < 12; i++) {
+      const st = project(ev);
+      const t = todayOf(st, T0 + i * 60000 + 1);
+      if (!t.count) break;
+      shown.push(t.shown);
+      const n = next(st, T0 + i * 60000 + 1);
+      ev.push({ id: ++id, at: T0 + i * 60000 + 1, type: "learn.answer", item: n.id, skill: n.skill, kind: n.kind, ok: true, tries: 1, revealed: false });
+    }
+    a.ok(shown.length >= 6, "a day of items: " + shown.join(" "));
+    a.ok(shown.every((x, i) => i === 0 || x <= shown[i - 1]), "never up: " + shown.join(" "));
+  });
+
   test("queue: the stage goal and one rating", (a) => {
     const st = project([{ id: 1, at: T0, type: "learn.place", rating: 1300, how: "often" }]);
     const s = stageOf(st, STAGES);

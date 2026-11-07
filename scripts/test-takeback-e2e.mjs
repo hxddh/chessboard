@@ -37,7 +37,7 @@ async function open(query = "", { w = 1280, h = 860, think = 0, delay = 30, dbna
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
   const db = dbname ? "&dbname=" + dbname : "&db=memory";
-  await page.goto(BASE + "?engine=fake&think=" + think + "&delay=" + delay + db + query);
+  await page.goto(BASE + "?engine=fake&think=" + think + "&delay=" + delay + db + query + "#/play");
   await page.waitForSelector("[data-page=play] canvas");
   await page.waitForFunction(() => window.__app.store.get().play.game && window.__play);
   return { ctx, page };

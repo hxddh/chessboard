@@ -32,7 +32,7 @@ import { createSound, moveSoundAt } from "../lib/sound.js";
 
 const plain = (s) => String(s).replace(/\*\*/g, "");
 
-export function mount(el, { store, engine, ready, router }) {
+export function mount(el, { store, engine, ready, router, background }) {
   addStyle();
   const t = learnText();
   const tp = playText();
@@ -148,6 +148,12 @@ export function mount(el, { store, engine, ready, router }) {
     // the coach and the opponents follow the level the placement found
     const lv = LEVELS.reduce((b, x) => (Math.abs(x - e.rating) < Math.abs(b - e.rating) ? x : b), LEVELS[0]);
     try { store.dispatch("settings.set", { key: "level", value: lv }); } catch { /* a level the settings do not offer */ }
+    // the game 下 opened on before anyone knew the level, still untouched, becomes one against the
+    // opponent for that level, with the coach as the level has it (beginners on, from 1500 off)
+    const g = store.get().play.game;
+    if (g && g.mode === "engine" && !g.moves.length && !g.result) {
+      store.dispatch("play.new", { id: newId(), mode: "engine", engineColor: g.engineColor, opponent: opponentFor(e.rating).id, coach: coachOn(store.get().settings) });
+    }
     view.value = "item";
     showNext();
   }
@@ -249,7 +255,7 @@ export function mount(el, { store, engine, ready, router }) {
     sideLesson.replaceChildren(...paras.map((p) => h("p", {}, ...withFigurines(plain(p)))));
     if (L && !c.placement) {
       const td = todayOf(L.model, clock(), { tz: L.tz });
-      todayEl.textContent = c.more || !td.left ? t("learn.doneToday") : t("learn.left", Math.max(1, td.left));
+      todayEl.textContent = c.more || !td.left ? t("learn.doneToday") : t("learn.left", td.shown);
     } else todayEl.textContent = "";
   });
 
@@ -260,6 +266,11 @@ export function mount(el, { store, engine, ready, router }) {
     view.value = "item";
     showNext();
   });
+
+  // the background review waits while a position is on the board here (its replies and checks
+  // ask the engine); the placement question, the skill map and a game's card leave it free
+  const busy = () => view.peek() === "item" && !!current.peek() && !!current.peek().runner && !current.peek().done;
+  if (background) background.busyOf = busy;
 
   // tests and the console: the item on the board, and a way to answer it
   window.__learn = {
@@ -283,6 +294,7 @@ export function mount(el, { store, engine, ready, router }) {
   };
 
   return () => {
+    if (background && background.busyOf === busy) background.busyOf = null;
     alive = false;
     for (const off of offs) off();
     for (const id of timers) clearTimeout(id);
