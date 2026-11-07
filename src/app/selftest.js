@@ -59,7 +59,17 @@ async function waitFor(pred, ms, what) {
   }
 }
 
-const boardDrawn = () => waitFor(() => performance.getEntriesByName("app:board").length > 0 && document.querySelector("[data-page=play] canvas"), 30000, "board");
+/** The router the app was started with (runSelftest). */
+let appRouter = null;
+/**
+ * 下's board, drawn. The first start on a device opens 学 (the placement,
+ * 7e160fb), so a scenario that needs 下 goes there first instead of waiting
+ * for a board that page never draws.
+ */
+async function boardDrawn() {
+  if (appRouter && appRouter.route.peek().path !== "/play") await appRouter.go("/play");
+  return waitFor(() => performance.getEntriesByName("app:board").length > 0 && document.querySelector("[data-page=play] canvas"), 30000, "board");
+}
 
 /** A contract suite's cases as checks: { pass, passed, failed, failures }. */
 async function runSuite(add, label) {
@@ -280,6 +290,7 @@ export async function runSelftest(ctx, { invoke, scenario }) {
   const checks = {};
   const rep = { ok: false, scenario: name, stage: "running", checks };
   const report = () => invoke("chess.selftestReport", rep).catch(() => {});
+  appRouter = ctx.router || null;
   // a scenario's reports are read as they come (the shell stays up); the
   // plain self-test's one report ends the app, so it is sent only at the end
   if (scenario) await report();
