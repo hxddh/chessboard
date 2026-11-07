@@ -8,13 +8,14 @@ pub const panic = std.debug.FullPanic(native_sdk.debug.capturePanic);
 // v8-2-plan F2: this file is the entry and the wiring — App (the state every
 // handler shares and what it hands the runner), onEvent / onStop and main().
 // What the handlers do lives next to it, moved verbatim with their tests:
-//   bridge.zig   the chess.* command table and the builtin-bridge grants, the
-//                chunked transfer, issued paths (the trust model), the
-//                appdata store and the self-test commands;
-//   dialogs.zig  chess.openPgn / chess.saveText and the native file dialogs;
-//   menus.zig    the menu language and what a menu command becomes for the page;
-//   sync.zig     the async bridge, the update check and the Lichess /
-//                Chess.com fetch.
+//   bridge.zig   the chess.* command table and the builtin-bridge grants
+//                (none), the sizes and JSON helpers, the self-test commands;
+//   dialogs.zig  chess.openPgn (the native open dialog) and chess.openedFile;
+//   opened.zig   files the OS hands over (double-click, drop, a second
+//                launch on Windows) and the one-instance handover;
+//   menus.zig    the menu bar's languages, what a menu command becomes for
+//                the page, quit and the Windows About box;
+//   engine.zig   the native Stockfish process; db.zig the SQLite store.
 // Each file names what it takes from the others in the `@import` lines at
 // its top.
 
@@ -37,23 +38,27 @@ pub const panic = std.debug.FullPanic(native_sdk.debug.capturePanic);
 // 6.0 (Q1.6): for a non-Chinese UI language main.zig hands the runner a
 // *localized copy* of the manifest menus (see localizedMenus) — a real slice
 // built from app.zon, never an empty one. Chinese stays null → manifest.
+// 20.0 E3: the page's language rebuilds the bar live (menus.zig).
 
 const APP_COMMANDS = @import("bridge.zig").APP_COMMANDS;
 const BUILTIN_COMMANDS = @import("bridge.zig").BUILTIN_COMMANDS;
-const IssuedPaths = @import("bridge.zig").IssuedPaths;
 const LANG_FILE = @import("bridge.zig").LANG_FILE;
-const PathPolicy = @import("bridge.zig").PathPolicy;
 const SEP = @import("bridge.zig").SEP;
-const STORE_DIR = @import("bridge.zig").STORE_DIR;
-const Stages = @import("bridge.zig").Stages;
-const forwardOpenFiles = @import("bridge.zig").forwardOpenFiles;
-const issueDroppedPaths = @import("bridge.zig").issueDroppedPaths;
 const Opened = @import("dialogs.zig").Opened;
-const commandDetail = @import("menus.zig").commandDetail;
-const languageTag = @import("menus.zig").languageTag;
-const menuText = @import("menus.zig").menuText;
-const windowTitleFor = @import("menus.zig").windowTitleFor;
-const Pending = @import("sync.zig").Pending;
+const menus_mod = @import("menus.zig");
+const commandDetail = menus_mod.commandDetail;
+const languageTag = menus_mod.languageTag;
+const windowTitleFor = menus_mod.windowTitleFor;
+const opened = @import("opened.zig");
+const engine = @import("engine.zig");
+
+// The app's db service needs the store (ADR 0003), and its asset reads need
+// a missing file to be missing (ADR 0001) — refused here rather than found on
+// a device.
+comptime {
+    if (!runner.manifest_sqlite) @compileError("the manifest must declare the sqlite capability (app.zon .capabilities)");
+    if (runner.manifest_spa_fallback) @compileError("the manifest must set spa_fallback = false (app.zon .frontend)");
+}
 
 /// The page's directory, relative: what app.zon's .frontend.dist names and
 /// what a dev run (or the macOS host, inside the .app) resolves.
@@ -117,13 +122,12 @@ pub const App = struct {
     env_map: *std.process.Environ.Map,
     io: std.Io,
     handlers: [APP_COMMANDS.len]native_sdk.BridgeHandler = undefined,
-    async_handlers: [APP_COMMANDS.len]native_sdk.bridge.AsyncHandler = undefined,
     policies: [APP_COMMANDS.len]native_sdk.BridgeCommandPolicy = undefined,
     builtin_policies: [BUILTIN_COMMANDS.len]native_sdk.BridgeCommandPolicy = undefined,
     /// The per-user data directory, resolved once in main() from the
-    /// environment — "" when the platform gave no home (then every appdata
-    /// command answers {"error":"no_appdata_dir"} and the page keeps using
-    /// localStorage). Slices into appdata_dir_buf, so App must not move after
+    /// environment — "" when the platform gave no home (then the menu
+    /// language is not kept and a second Windows launch cannot hand over).
+    /// Slices into appdata_dir_buf, so App must not move after
     /// resolveAppDataDir() ran; main() keeps it in one place.
     appdata_dir_buf: [1024]u8 = undefined,
     appdata_dir: []const u8 = "",
@@ -138,7 +142,7 @@ pub const App = struct {
     /// asset_root_buf, so App must not move after resolveAssetRoot() ran.
     asset_root_buf: [4096]u8 = undefined,
     asset_root: []const u8 = FRONTEND_DIST,
-    /// The icon the platform shows on a notification (the update check's).
+    /// The icon the window and the platform's notifications show.
     /// v8-3-plan V2: on Windows the host loads it with LoadImageW(IMAGE_ICON)
     /// from a path joined to the current directory — "assets/icon.png" was
     /// never found there, and a PNG is no IMAGE_ICON — so notifications fell
@@ -146,27 +150,27 @@ pub const App = struct {
     /// resources\ and main() points this at it. Slices into icon_path_buf.
     icon_path_buf: [4096]u8 = undefined,
     icon_path: []const u8 = ICON_PATH,
-    /// 6.1 — bumped per appdata write so each one gets its own tmp file name.
-    appdata_seq: u32 = 0,
-    /// Q1.2 — the paths the native side has issued to the page this process.
-    issued: IssuedPaths = .{},
-    /// v8-1-plan N2 — the Runtime, for the file dialogs chess.openPgn /
-    /// chess.saveText open. A bridge handler is handed no Runtime, so
-    /// runner.zig fills this in (RunOptions.runtime_slot) before the loop
-    /// starts; null outside the runner (tests), which answers "no dialogs".
+    /// v8-1-plan N2 — the Runtime, for the file dialog chess.openPgn opens,
+    /// the menu bar's rebuild and the engine's wake. A bridge handler is
+    /// handed no Runtime, so runner.zig fills this in (RunOptions.runtime_slot)
+    /// before the loop starts; null outside the runner (tests), which answers
+    /// "no dialogs".
     runtime: ?*native_sdk.Runtime = null,
     /// v8-1-plan N2 — the file chess.openPgn is handing over in pieces.
     opened: Opened = .{},
-    /// v8-1-plan N1 — the sync and the update check in flight, and what
-    /// their threads have finished, waiting for the loop to answer it.
-    pending: Pending = .{},
-    /// v8-0-plan F3 — writes arriving in pieces, until their last piece.
-    stages: Stages = .{},
-    /// Q1.6 — localized copies of the manifest menus, when the launch
-    /// language is not Chinese. Same storage shape as runner.MenuStorage.
+    /// 20.0 E3 — the file chess.openedFile is handing over in pieces.
+    handed: Opened = .{},
+    /// v20-0-plan F3 — the native Stockfish process (engine.zig).
+    engine: engine.Engine = .{},
+    /// Q1.6 — localized copies of the manifest menus. Same storage shape as
+    /// runner.MenuStorage.
     menu_storage: runner.MenuStorage = .{},
     menu_items: [native_sdk.platform.max_menu_items]native_sdk.MenuItem = undefined,
     menus: [native_sdk.platform.max_menus]native_sdk.Menu = undefined,
+    /// 20.0 E3 — the language the bar is in, and whether the platform's own
+    /// menus were finished for it (menus.zig finishPlatformMenus).
+    menu_lang: []const u8 = "zh",
+    menus_finished: bool = false,
 
     fn app(self: *@This()) native_sdk.App {
         return .{
@@ -233,19 +237,8 @@ pub const App = struct {
     }
 
     pub fn bridge(self: *@This()) native_sdk.BridgeDispatcher {
-        var sync_count: usize = 0;
-        var async_count: usize = 0;
         for (APP_COMMANDS, 0..) |cmd, index| {
-            // v8-1-plan N1: the SDK looks a command up in the async registry
-            // first (runtime/flow.zig handleAsyncBridgeMessage) and checks the
-            // same policy there, so both kinds share the one policy table
-            if (cmd.async_fn) |invoke| {
-                self.async_handlers[async_count] = .{ .name = cmd.name, .context = self, .invoke_fn = invoke };
-                async_count += 1;
-            } else {
-                self.handlers[sync_count] = .{ .name = cmd.name, .context = self, .invoke_fn = cmd.invoke_fn.? };
-                sync_count += 1;
-            }
+            self.handlers[index] = .{ .name = cmd.name, .context = self, .invoke_fn = cmd.invoke_fn };
             self.policies[index] = .{
                 .name = cmd.name,
                 .origins = runner.manifestOrigins(),
@@ -256,8 +249,8 @@ pub const App = struct {
                 .enabled = true,
                 .commands = self.policies[0..],
             },
-            .registry = .{ .handlers = self.handlers[0..sync_count] },
-            .async_registry = .{ .handlers = self.async_handlers[0..async_count] },
+            .registry = .{ .handlers = self.handlers[0..] },
+            .async_registry = .{ .handlers = &.{} },
         };
     }
 
@@ -307,23 +300,6 @@ pub const App = struct {
         return std.fmt.bufPrint(buf, "{s}{s}{s}", .{ self.appdata_dir, SEP, name }) catch null;
     }
 
-    /// v8-0-plan F3: `<appdata>/profile/<key>.json<suffix>` for a key of the
-    /// per-key store. The key has passed storeKeyValid, so it cannot climb
-    /// out of the directory.
-    pub fn appdataFile(self: *@This(), buf: []u8, key: []const u8, suffix: []const u8) ?[]const u8 {
-        if (self.appdata_dir.len == 0) return null;
-        return std.fmt.bufPrint(buf, "{s}{s}{s}{s}{s}.json{s}", .{ self.appdata_dir, SEP, STORE_DIR, SEP, key, suffix }) catch null;
-    }
-
-    pub fn pathPolicy(self: *@This()) PathPolicy {
-        const home_var: []const u8 = if (builtin.os.tag == .windows) "USERPROFILE" else "HOME";
-        return .{
-            .home = self.env_map.get(home_var) orelse "",
-            .appdata_dir = self.appdata_dir,
-            .windows = builtin.os.tag == .windows,
-        };
-    }
-
     /// The language the page last saved through chess.setMenuLanguage, or
     /// "zh" (app.zon's own labels). Read once, at launch: the menu bar is
     /// built before the page runs and the Runtime offers no rebuild.
@@ -341,44 +317,45 @@ pub const App = struct {
     /// for Chinese so the runner takes app.zon verbatim (null is the runner's
     /// "use the manifest" signal — see the comment at the top of this file).
     fn localizedMenus(self: *@This(), lang: []const u8) ?[]const native_sdk.Menu {
+        self.menu_lang = lang;
         if (std.mem.eql(u8, lang, "zh")) return null;
-        const base = self.menu_storage.fromManifest();
-        var item_index: usize = 0;
-        for (base, 0..) |menu, menu_index| {
-            const first_item = item_index;
-            for (menu.items) |item| {
-                var copy = item;
-                copy.label = menuText(item.command, lang, item.label);
-                self.menu_items[item_index] = copy;
-                item_index += 1;
-            }
-            self.menus[menu_index] = .{
-                .title = menuText(menu.title, lang, menu.title),
-                .items = self.menu_items[first_item..item_index],
-            };
-        }
-        return self.menus[0..base.len];
+        return menus_mod.localize(self.menu_storage.fromManifest(), lang, &self.menu_items, &self.menus);
     }
 };
 
 fn onEvent(context: *anyopaque, runtime: *native_sdk.Runtime, event: native_sdk.Event) anyerror!void {
     const self: *App = @ptrCast(@alignCast(context));
+    // the platform built the bar before its loop ran: the Mac's own menus
+    // (the app menu in the language, Edit, Window) are finished on the
+    // first event (menus.zig)
+    if (!self.menus_finished) {
+        self.menus_finished = true;
+        menus_mod.finishPlatformMenus(self.menu_lang);
+    }
     switch (event) {
         // v8-1-plan N1: a worker called PlatformServices.wake_fn; the SDK
         // delivers the platform's `.wake` here as `.effects_wake`, on the loop
         // thread (runtime/flow.zig dispatchPlatformEvent), which is the one
         // thread that may answer the bridge
-        .effects_wake => self.pending.drain(),
-        .command => |cmd| {
-            var buf: [256]u8 = undefined;
-            const detail = commandDetail(&buf, cmd.name, cmd.window_id) catch return;
-            const wid: native_sdk.WindowId = if (cmd.window_id == 0) 1 else cmd.window_id;
-            runtime.emitWindowEvent(wid, "shortcut", detail) catch {};
+        .effects_wake => {
+            self.engine.drain(self.io, engine.runtimeEmit(runtime));
+            opened.tellPage(runtime);
         },
+        .command => |cmd| {
+            if (menus_mod.nativeCommand(cmd.name)) |native| switch (native) {
+                .quit => runtime.options.platform.services.quitApp() catch {},
+                .about => menus_mod.showAbout(self.menu_lang),
+            } else {
+                var buf: [256]u8 = undefined;
+                const detail = commandDetail(&buf, cmd.name, cmd.window_id) catch return;
+                const wid: native_sdk.WindowId = if (cmd.window_id == 0) 1 else cmd.window_id;
+                runtime.emitWindowEvent(wid, "shortcut", detail) catch {};
+            }
+        },
+        // a drop on the window: queued like a double-clicked file
+        .files_dropped => opened.queueDropped(runtime, event),
         else => {},
     }
-    forwardOpenFiles(self, runtime, event);
-    issueDroppedPaths(self, event);
 }
 
 /// v8-1-plan N1: the SDK's stop hook runs once, on the loop thread, before the
@@ -387,10 +364,11 @@ fn onEvent(context: *anyopaque, runtime: *native_sdk.Runtime, event: native_sdk.
 fn onStop(context: *anyopaque, runtime: *native_sdk.Runtime) anyerror!void {
     _ = runtime;
     const self: *App = @ptrCast(@alignCast(context));
-    self.pending.close();
+    opened.close();
+    self.engine.close(self.io);
 }
 
-extern fn chess_mac_chrome_init() void;
+extern fn chess_mac_shell_init() void;
 
 pub fn main(init: std.process.Init) !void {
     var app_state = App{ .env_map = init.environ_map, .io = init.io };
@@ -402,9 +380,17 @@ pub fn main(init: std.process.Init) !void {
     // v8-4-plan V1: before the runner, which creates the WebView2 environment
     app_state.resolveWebView2UserData();
     const lang = app_state.launchLanguage();
-    // 11.0 W: the Mac's inset window shell — set up before the runner opens
-    // its window (src/native/mac_chrome.m; build.zig compiles it on macOS only)
-    if (comptime runner.mac_shell) chess_mac_chrome_init();
+    // 20.0 E3: files the OS hands over (opened.zig). On Windows a launch
+    // while the app runs hands its files to that one and leaves; the files
+    // on the command line are queued for the page (macOS sends them as an
+    // Apple event instead, which mac_chrome.m registers for)
+    opened.app_ptr = &app_state;
+    const args = init.minimal.args.toSlice(init.arena.allocator()) catch &.{};
+    if (opened.claimInstance(&app_state, args) == .handed_over) return;
+    if (comptime builtin.os.tag != .macos) _ = opened.queueArgs(args);
+    // the Mac's Apple-event handler and menu finishing — set up before the
+    // runner starts AppKit (src/native/mac_chrome.m; macOS builds only)
+    if (comptime runner.mac_shell) chess_mac_shell_init();
     const ran = runner.runWithOptions(app_state.app(), .{
         .app_name = windowTitleFor(lang),
         .window_title = windowTitleFor(lang),
@@ -416,10 +402,12 @@ pub fn main(init: std.process.Init) !void {
         .menus = app_state.localizedMenus(lang),
         .runtime_slot = &app_state.runtime,
     }, init);
-    // v8-1-plan N1: a sync or update check still on the network. Returning
-    // would reach std.start's Io.Threaded.deinit while its thread is inside
-    // that Io, so leave here instead — the answer has nobody to go to.
-    if (app_state.pending.workersOut()) std.process.exit(if (ran) |_| 0 else |_| 1);
+    // v20-0-plan F3: the engine's reader, which ends with the engine (asked
+    // to quit, its stdin closed by the stop hook), may still be inside the
+    // Io: returning would reach std.start's Io.Threaded.deinit under it, so
+    // leave here instead. The same for the Windows inbox listener, which
+    // waits on its event for good.
+    if (app_state.engine.readersOut() or opened.listenerOut()) std.process.exit(if (ran) |_| 0 else |_| 1);
     return ran;
 }
 
@@ -439,7 +427,12 @@ test "the whole app is semantically analysed by the test build" {
 }
 
 test {
-    _ = @import("chrome.zig");
+    _ = @import("bridge.zig");
+    _ = @import("db.zig");
+    _ = @import("dialogs.zig");
+    _ = @import("engine.zig");
+    _ = @import("menus.zig");
+    _ = @import("opened.zig");
 }
 
 test "the packaged page sits in resources beside bin (v8-3-plan V1)" {

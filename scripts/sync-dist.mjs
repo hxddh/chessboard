@@ -1,103 +1,57 @@
 /**
  * Produce frontend/dist — the directory `native package` bundles and
- * `zig build run` serves — from src/web.
+ * `zig build run` serves — from src/app.
  *
- * One script, because before this the same six lines lived in three places
- * (scripts/package.sh, build-macos.yml, build-windows.yml) and build.zig had
- * a fourth, wrong version: `npm --prefix frontend run build` against a
- * `frontend/` npm project that never existed (v6-plan D12). build.zig's
- * `frontend-build` step now runs this file; the shell copies stay as they
- * are and this does exactly what they do:
+ *   1. scripts/build-app.mjs: src/app as ES modules, split (ADR 0001), into
+ *      dist-app/ — the files it points at (wasm, weights, the Stockfish
+ *      loader) copied under assets/;
+ *   2. dist-app/ copied whole to frontend/dist;
+ *   3. the licences next to index.html (GPLv3 §4: the product carries them):
+ *      ours, Stockfish's, Maia-3's (AGPL-3.0, and the notice that the weights
+ *      are converted), Inter's (SIL OFL). The native Stockfish's source note
+ *      and authors are added by the build workflows, which build it.
  *
- *   1. node scripts/gen-engine-src.mjs   (Stockfish loader + wasm as base64)
- *   2. node scripts/bundle.mjs           (the ES modules → one classic script)
- *   3. copy src/web/index.html, src/web/styles.css,
- *           src/web/js/bundle.js, src/web/js/engine-src.js
- *      — only the two generated scripts ship; index.html loads exactly these,
- *      and the module sources are build inputs, not product.
- *   4. copy LICENSE and third_party/stockfish/COPYING.txt into licenses/
- *      next to index.html (GPLv3 §4: the product has to carry the licence).
- *   5. (9.0 V2) copy the bundled font, src/web/fonts/inter-latin-wght-normal.woff2,
- *      to fonts/, and its SIL OFL to licenses/Inter-OFL.txt.
- *
- * Same sanity checks as package.sh: the bundle must be the whole app and
- * engine-src must carry the full wasm payload, not a stub.
+ * What it checks, so a package is never an empty shell: the page's CSP lets a
+ * worker start from a URL ('self'), index.html loads main.js, no script points
+ * at a `../` URL (it would be outside the package), and every asset the build
+ * referenced is there and not empty.
  *
  *   node scripts/sync-dist.mjs
  */
 import fs from "fs";
 import path from "path";
-import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
-import { CHUNKS } from "./bundle.mjs";
+import { buildApp, OUT } from "./build-app.mjs";
 
-/** the Maia bands gen-maia-src.mjs writes (kept in step by test-human.mjs) */
-const MAIA_BANDS = [1100, 1300, 1500, 1700, 1900];
-
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.join(HERE, "..");
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = path.join(ROOT, "frontend", "dist");
 
-const run = (script) => execFileSync(process.execPath, [path.join(HERE, script)], { cwd: ROOT, stdio: "inherit" });
-
-run("gen-engine-src.mjs");
-run("gen-maia-src.mjs");
-run("bundle.mjs");
-
-fs.rmSync(DIST, { recursive: true, force: true });
-fs.mkdirSync(path.join(DIST, "js"), { recursive: true });
-fs.mkdirSync(path.join(DIST, "licenses"), { recursive: true });
-fs.mkdirSync(path.join(DIST, "fonts"), { recursive: true });
-
 /** [source relative to ROOT, destination relative to DIST] */
-const FILES = [
-  ["src/web/index.html", "index.html"],
-  ["src/web/styles.css", "styles.css"],
-  ["src/web/js/bundle.js", "js/bundle.js"],
-  ["src/web/js/engine-src.js", "js/engine-src.js"],
+export const LICENSES = [
   ["LICENSE", "licenses/LICENSE.txt"],
   ["third_party/stockfish/COPYING.txt", "licenses/stockfish-COPYING.txt"],
-  // 13.0 H: the five Maia nets (scripts/gen-maia-src.mjs), and their licence
-  ...MAIA_BANDS.map((b) => ["src/web/js/maia-" + b + ".js", "js/maia-" + b + ".js"]),
-  ["third_party/maia/LICENSE", "licenses/maia-LICENSE.txt"],
-  // 9.0 V2: the one bundled face, Inter (Latin, variable, ~48 KB), which
-  // styles.css loads as fonts/…; its OFL travels with the other licences
-  ["src/web/fonts/inter-latin-wght-normal.woff2", "fonts/inter-latin-wght-normal.woff2"],
-  ["src/web/fonts/Inter-OFL.txt", "licenses/Inter-OFL.txt"],
-  // 6.1: the on-demand chunks. Read from the bundler's own list rather than
-  // typed again here — a chunk that is built but not packaged is an app whose
-  // opening names silently never appear, and a list in two places is how that
-  // happens. The size guards below apply to these too.
-  ...CHUNKS.map((c) => [c.out, "js/" + path.basename(c.out)]),
+  ["third_party/maia3/LICENSE", "licenses/maia3-LICENSE.txt"],
+  ["third_party/maia3/NOTICE", "licenses/maia3-NOTICE.txt"],
+  ["src/app/styles/fonts/Inter-OFL.txt", "licenses/Inter-OFL.txt"],
 ];
-for (const [from, to] of FILES) fs.copyFileSync(path.join(ROOT, from), path.join(DIST, to));
 
-const size = (rel) => fs.statSync(path.join(DIST, rel)).size;
-if (size("js/bundle.js") <= 400000) {
-  console.error("FAIL: frontend/dist/js/bundle.js 太小 —— 不是完整的应用");
-  process.exit(1);
+const built = await buildApp({ quiet: true });
+fs.rmSync(DIST, { recursive: true, force: true });
+fs.cpSync(OUT, DIST, { recursive: true });
+fs.mkdirSync(path.join(DIST, "licenses"), { recursive: true });
+for (const [from, to] of LICENSES) fs.copyFileSync(path.join(ROOT, from), path.join(DIST, to));
+
+const fail = (why) => { console.error("FAIL: frontend/dist " + why); process.exit(1); };
+const html = fs.readFileSync(path.join(DIST, "index.html"), "utf8");
+const csp = (/http-equiv="Content-Security-Policy"\s+content="([^"]+)"/.exec(html) || [])[1] || "";
+if (!/worker-src 'self' blob:/.test(csp)) fail("的 CSP 没有 worker-src 'self' blob:（URL Worker 会先被页面自己挡掉，ADR 0001）：" + csp);
+if (!/<script type="module" src="main.js">/.test(html)) fail("的 index.html 没有加载 main.js");
+for (const f of fs.readdirSync(DIST).filter((n) => n.endsWith(".js"))) {
+  if (/new URL\((["'])\.\.\//.test(fs.readFileSync(path.join(DIST, f), "utf8"))) fail("里 " + f + " 有一个 ../ 的 URL —— 打包后它在包外面");
 }
-// 7.0 重标定：Stockfish 18 lite-single 的 wasm 是 7.3 MB，base64 后 9.75 MB；
-// 19 lite-single 换了一张 1 MB 的网络，wasm 1.79 MB、base64 后 2.41 MB。这条
-// 守卫防的是「打出一个空壳」，所以门槛跟着实际体积走，不是跟着历史走。
-if (size("js/engine-src.js") <= 2000000) {
-  console.error("FAIL: frontend/dist/js/engine-src.js 太小 —— 没带上完整的 wasm");
-  process.exit(1);
+for (const a of built.assets) {
+  const p = path.join(DIST, a);
+  if (!fs.existsSync(p) || !fs.statSync(p).size) fail("少了 " + a);
 }
-// 13.0 H: each net is 1.7 MB of weights, 2.3 MB as base64
-for (const b of MAIA_BANDS) {
-  if (size("js/maia-" + b + ".js") <= 2000000) {
-    console.error(`FAIL: frontend/dist/js/maia-${b}.js 太小 —— 没带上完整的 Maia 网络`);
-    process.exit(1);
-  }
-}
-for (const c of CHUNKS) {
-  const rel = "js/" + path.basename(c.out);
-  // v8-0-plan F5: each chunk names its own floor — the boot script is a few
-  // hundred bytes and the Merida set 34 KB, so one 50 KB line no longer fits
-  if (size(rel) <= c.min) {
-    console.error(`FAIL: frontend/dist/${rel} 太小 —— 分块没建出来`);
-    process.exit(1);
-  }
-}
-console.log(`frontend/dist ← src/web (${FILES.length} files)`);
+const bytes = (dir) => fs.readdirSync(dir, { withFileTypes: true }).reduce((n, d) => n + (d.isDirectory() ? bytes(path.join(dir, d.name)) : fs.statSync(path.join(dir, d.name)).size), 0);
+console.log("frontend/dist ← dist-app（" + (bytes(DIST) / 1048576).toFixed(1) + " MB；" + built.assets.length + " 个资源文件在 assets/ 下）");

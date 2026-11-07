@@ -31,8 +31,6 @@
  * what scripts/manifest-check.mjs now guards, and it checks THIS file's output,
  * not just app.zon: a key that exists only in the derived copy is exactly the
  * shape that got through.
- *
- *   node scripts/gen-manifest.mjs macos [--out build/app.macos.zon]
  */
 import fs from "fs";
 import path from "path";
@@ -74,8 +72,8 @@ const EDITS = {
     find: /(\{\s*\n\s*\.label = "main",)/,
     apply: (m) => `${m}${EOL}            .close_policy = "hide",`,
   }],
+  windows: [],
 };
-
 let out = src;
 const applied = [];
 for (const edit of EDITS[platform]) {
@@ -84,7 +82,7 @@ for (const edit of EDITS[platform]) {
     console.error(`FAIL: app.zon 里找不到该改的地方(${edit.why})—— 清单结构变了,这个脚本要跟着改`);
     process.exit(1);
   }
-  if (/\.close_policy\s*=/.test(out)) {
+  if (edit.why.startsWith("关窗") && /\.close_policy\s*=/.test(out)) {
     console.error("FAIL: app.zon 自己已经写了 close_policy —— 那它就不该由这个脚本注入,两处会打架");
     process.exit(1);
   }
@@ -94,7 +92,7 @@ for (const edit of EDITS[platform]) {
 
 // A generated manifest that silently equals its source is a footgun: the build
 // would look platform-aware and be nothing of the kind.
-if (platform === "macos" && out === src) {
+if (out === src) {
   console.error("FAIL: macOS 清单和 app.zon 一模一样,说明什么也没注入");
   process.exit(1);
 }

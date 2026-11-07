@@ -1,5 +1,5 @@
 {
-  "_": "Measured figures. Written by scripts/*.mjs --record, read by README.md, src/web/js/engine.js and scripts/test-chess.mjs. Do not hand-edit: a number here that no run produced is worse than no number.",
+  "_": "Measured figures. Written by scripts/*.mjs --record, read by the app's tests (scripts/app/*.test.mjs) and the docs. Do not hand-edit: a number here that no run produced is worse than no number.",
   "boardLook": {
     "what": "8.0 A3：每块棋盘、每种标记（上一步、选中、将军、提示、引擎箭头）叠在浅格（cl）与深格（cd）上的色度 C*，两者都不得超过上限；同一标记浅格与深格两个叠色之间的 ΔE00（dE）不得超过上限 —— 同一个标记在两种格子上要读成同一个标记。distinct：每两块棋盘深格之间的 ΔE00，最近的一对不得低于下限（7.9.0 的「日」与「木」只差 6.4）",
     "script": "scripts/measure-marks.mjs --record",
@@ -362,10 +362,23 @@
     }
   },
   "ciWallClock": {
-    "what": "checks.yml 一次 PR 运行的墙钟：第一个作业排队 → 最后一个作业结束（分钟，含排队）；critical 为耗时最长的单个作业。数据取自 GitHub API 的 jobs（started_at / completed_at），不手填",
-    "script": "node scripts/ci-wallclock.mjs RUN_ID… --label=… --record",
-    "targetMin": 15,
-    "lastThreeOk": false,
+    "what": "checks.yml 一次 PR 运行的墙钟：第一个作业排队 → 最后一个作业结束（分钟，含排队）；always 只算每个 PR 都跑的作业（不含按路径触发的 opponents / native）；critical 为耗时最长的单个作业。数据取自 GitHub API 的 jobs（started_at / completed_at），不手填",
+    "script": "node scripts/ci-wallclock.mjs --pr=129 --record（或 RUN_ID… / --from=…）",
+    "targetMin": 10,
+    "latest": {
+      "of": [
+        42330589853,
+        42333157549,
+        42336513751,
+        42337087744,
+        42338453415
+      ],
+      "runs": 2,
+      "alwaysRuns": 3,
+      "medianAlways": 6.2,
+      "medianWall": 17.6,
+      "ok": true
+    },
     "runs": [
       {
         "run": 36708776605,
@@ -526,6 +539,94 @@
         "jobs": 39,
         "green": true,
         "label": "8.4.0（PR #110，同时跑着发布彩排）"
+      },
+      {
+        "run": 42330589853,
+        "sha": "682102a",
+        "wall": 25.1,
+        "always": 7.3,
+        "alwaysGreen": false,
+        "critical": "native-windows / Windows package",
+        "criticalMin": 24.3,
+        "jobs": 17,
+        "pathGated": true,
+        "green": false,
+        "notGreen": [
+          "static (windows-2025): failure",
+          "visual baseline (Chromium): failure",
+          "browser (Chromium): failure"
+        ],
+        "label": "20.0 E3 PR #129"
+      },
+      {
+        "run": 42333157549,
+        "sha": "929202a",
+        "wall": 17.6,
+        "always": 6.2,
+        "alwaysGreen": true,
+        "critical": "native-windows / Windows package",
+        "criticalMin": 17.3,
+        "jobs": 17,
+        "pathGated": true,
+        "green": true,
+        "label": "20.0 E3 PR #129"
+      },
+      {
+        "run": 42336513751,
+        "sha": "9d8a247",
+        "wall": 4.4,
+        "always": 3.7,
+        "alwaysGreen": true,
+        "critical": "native-macos / macOS scenarios (automation build, not released)",
+        "criticalMin": 4.2,
+        "jobs": 18,
+        "pathGated": true,
+        "green": false,
+        "notGreen": [
+          "opponents convert (4/4): cancelled",
+          "opponents convert (3/4): cancelled",
+          "opponents convert (2/4): cancelled",
+          "opponents convert (1/4): cancelled",
+          "native-macos / macOS scenarios (automation build, not released): cancelled",
+          "native-windows / Windows package: cancelled",
+          "native-macos / macOS package: cancelled",
+          "native-windows / Windows scenarios (automation build, not released): cancelled",
+          "opponents convert (verdict): cancelled"
+        ],
+        "label": "20.0 E3 PR #129"
+      },
+      {
+        "run": 42337087744,
+        "sha": "1bfc29f",
+        "wall": 10.7,
+        "always": 5,
+        "alwaysGreen": false,
+        "critical": "native-macos / macOS package",
+        "criticalMin": 10.5,
+        "jobs": 18,
+        "pathGated": true,
+        "green": false,
+        "notGreen": [
+          "zig (windows-2025): failure",
+          "native-windows / Windows scenarios (automation build, not released): failure",
+          "native-macos / macOS package: cancelled",
+          "native-windows / Windows package: failure",
+          "native-macos / macOS scenarios (automation build, not released): failure"
+        ],
+        "label": "20.0 E3 PR #129"
+      },
+      {
+        "run": 42338453415,
+        "sha": "da313e0",
+        "wall": 24.1,
+        "always": 6.2,
+        "alwaysGreen": true,
+        "critical": "native-windows / Windows package",
+        "criticalMin": 23.8,
+        "jobs": 18,
+        "pathGated": true,
+        "green": true,
+        "label": "20.0 E3 PR #129"
       }
     ]
   },
@@ -815,6 +916,189 @@
       }
     }
   },
+  "convert20": {
+    "what": "每个对手在 50 个赢棋局面（scripts/fixtures/convert-positions.json：真实对局的中局与多车、多后残局，Stockfish 深 14 ≥ +6）执胜方，按应用的走法（engine.bestMove → opponents/mind.js）对固定防守方（Stockfish 每步 5000 节点、不限强度），60 步内将死算赢",
+    "script": "scripts/test-convert.mjs --shard=i/4 --out=DIR ; scripts/test-convert.mjs --in=DIR --record",
+    "need": 90,
+    "profiles": {
+      "pip": {
+        "games": 50,
+        "wins": 48,
+        "rate": 96,
+        "medianMoves": 18,
+        "kinds": {
+          "middlegame": "24/26",
+          "rook": "12/12",
+          "queen": "12/12"
+        }
+      },
+      "tomo": {
+        "games": 50,
+        "wins": 49,
+        "rate": 98,
+        "medianMoves": 17,
+        "kinds": {
+          "middlegame": "25/26",
+          "rook": "12/12",
+          "queen": "12/12"
+        }
+      },
+      "lina": {
+        "games": 50,
+        "wins": 49,
+        "rate": 98,
+        "medianMoves": 18,
+        "kinds": {
+          "middlegame": "25/26",
+          "rook": "12/12",
+          "queen": "12/12"
+        }
+      },
+      "kai": {
+        "games": 50,
+        "wins": 48,
+        "rate": 96,
+        "medianMoves": 17,
+        "kinds": {
+          "middlegame": "24/26",
+          "rook": "12/12",
+          "queen": "12/12"
+        }
+      },
+      "ada": {
+        "games": 50,
+        "wins": 47,
+        "rate": 94,
+        "medianMoves": 17,
+        "kinds": {
+          "middlegame": "23/26",
+          "rook": "12/12",
+          "queen": "12/12"
+        }
+      },
+      "ben": {
+        "games": 50,
+        "wins": 47,
+        "rate": 94,
+        "medianMoves": 16,
+        "kinds": {
+          "middlegame": "23/26",
+          "rook": "12/12",
+          "queen": "12/12"
+        }
+      },
+      "vera": {
+        "games": 50,
+        "wins": 49,
+        "rate": 98,
+        "medianMoves": 18,
+        "kinds": {
+          "middlegame": "25/26",
+          "rook": "12/12",
+          "queen": "12/12"
+        }
+      },
+      "leo": {
+        "games": 50,
+        "wins": 49,
+        "rate": 98,
+        "medianMoves": 15,
+        "kinds": {
+          "middlegame": "25/26",
+          "rook": "12/12",
+          "queen": "12/12"
+        }
+      },
+      "ivy": {
+        "games": 50,
+        "wins": 49,
+        "rate": 98,
+        "medianMoves": 19,
+        "kinds": {
+          "middlegame": "25/26",
+          "rook": "12/12",
+          "queen": "12/12"
+        }
+      },
+      "max": {
+        "games": 50,
+        "wins": 49,
+        "rate": 98,
+        "medianMoves": 15,
+        "kinds": {
+          "middlegame": "25/26",
+          "rook": "12/12",
+          "queen": "12/12"
+        }
+      },
+      "iris": {
+        "games": 50,
+        "wins": 50,
+        "rate": 100,
+        "medianMoves": 17,
+        "kinds": {
+          "middlegame": "26/26",
+          "rook": "12/12",
+          "queen": "12/12"
+        }
+      },
+      "otto": {
+        "games": 50,
+        "wins": 48,
+        "rate": 96,
+        "medianMoves": 17,
+        "kinds": {
+          "middlegame": "24/26",
+          "rook": "12/12",
+          "queen": "12/12"
+        }
+      },
+      "zoe": {
+        "games": 50,
+        "wins": 50,
+        "rate": 100,
+        "medianMoves": 17,
+        "kinds": {
+          "middlegame": "26/26",
+          "rook": "12/12",
+          "queen": "12/12"
+        }
+      },
+      "nora": {
+        "games": 50,
+        "wins": 49,
+        "rate": 98,
+        "medianMoves": 14,
+        "kinds": {
+          "middlegame": "25/26",
+          "rook": "12/12",
+          "queen": "12/12"
+        }
+      },
+      "kit": {
+        "games": 50,
+        "wins": 49,
+        "rate": 98,
+        "medianMoves": 14,
+        "kinds": {
+          "middlegame": "25/26",
+          "rook": "12/12",
+          "queen": "12/12"
+        }
+      },
+      "fish": {
+        "games": 50,
+        "wins": 50,
+        "rate": 100,
+        "medianMoves": 16,
+        "kinds": {
+          "middlegame": "26/26",
+          "rook": "12/12",
+          "queen": "12/12"
+        }
+      }
+    }
+  },
   "engineScheduler": {
     "what": "v8-1-plan F4：棋谱库后台分析进行中，人机对局（normal 档）每一手的等待。reply＝你的着法进着法表→引擎应着进着法表；wait＝你的着法进着法表→应着的 go 发到 worker（验收看它的 p90）；queued＝bestMove() 调用→它的搜索拿到引擎。before 是 8.0 的单链 exclusive()，after 是三级调度；determinism 是被抢占过的那几局与没人下棋时逐步比较；secondWorker 是默认关的第二个 worker（进程树 RSS 的增量，Hash 32）",
     "script": "scripts/test-engine-flows-e2e.mjs --record（before：8.0 的 engine.js 上 --record-before）",
@@ -946,6 +1230,94 @@
         "plies": 124,
         "differing": 0
       }
+    }
+  },
+  "explainCoverage": {
+    "what": "复盘里每一手 ? / ?? 的讲解（core/explain.js explainMove，按 review/review.js 的调用方式）：有原因、说出机制、只说「更好的是」的比例，与 100 条对照深搜的错误数",
+    "script": "scripts/audit-explain.mjs --audit --record",
+    "corpora": {
+      "corpus": "scripts/fixtures/corpus.mjs（28 局）",
+      "low": "scripts/fixtures/coach-games.mjs（低分段）"
+    },
+    "passMs": 200,
+    "oracleNodes": 1000000,
+    "acceptance": {
+      "reasonedPct": ">= 80 (all)",
+      "namedPct": ">= 60 (low)",
+      "barePct": "<= 10 (the 100 audited, as 14.0 counted its 25)",
+      "wrongPct": "<= 1 (audit)"
+    },
+    "before": {
+      "all": {
+        "mistakes": 211,
+        "reasoned": 122,
+        "reasonedPct": 57.8,
+        "named": 68,
+        "namedPct": 32.2,
+        "bare": 85,
+        "barePct": 40.3
+      },
+      "corpus": {
+        "mistakes": 99,
+        "reasoned": 53,
+        "reasonedPct": 53.5,
+        "named": 38,
+        "namedPct": 38.4,
+        "bare": 43,
+        "barePct": 43.4
+      },
+      "low": {
+        "mistakes": 112,
+        "reasoned": 69,
+        "reasonedPct": 61.6,
+        "named": 30,
+        "namedPct": 26.8,
+        "bare": 42,
+        "barePct": 37.5
+      },
+      "auditWrongPct": 1,
+      "auditBarePct": 25
+    },
+    "after": {
+      "all": {
+        "mistakes": 211,
+        "reasoned": 184,
+        "reasonedPct": 87.2,
+        "named": 167,
+        "namedPct": 79.1,
+        "bare": 23,
+        "barePct": 10.9
+      },
+      "corpus": {
+        "mistakes": 99,
+        "reasoned": 82,
+        "reasonedPct": 82.8,
+        "named": 81,
+        "namedPct": 81.8,
+        "bare": 14,
+        "barePct": 14.1
+      },
+      "low": {
+        "mistakes": 112,
+        "reasoned": 102,
+        "reasonedPct": 91.1,
+        "named": 86,
+        "namedPct": 76.8,
+        "bare": 9,
+        "barePct": 8
+      }
+    },
+    "audit": {
+      "n": 100,
+      "nodes": 1000000,
+      "wrong": 1,
+      "wrongPct": 1,
+      "wrong19": 1,
+      "wrong19Pct": 1,
+      "bare": 7,
+      "barePct": 7,
+      "bare19": 25,
+      "bare19Pct": 25
     }
   },
   "explorer": {
@@ -2189,6 +2561,1083 @@
         "elo": null,
         "movetime": 1200,
         "style": "off"
+      }
+    }
+  },
+  "ladder20": {
+    "what": "20.0 的对手（src/app/core/opponents.js）相邻循环对下：每步是应用的 engine.bestMove（opponents/mind.js，Maia-3 + node 里的 Stockfish 19 lite wasm），16 个开局各执两色、每盘一个种子；Bradley–Terry 极大似然（相邻各加 2 盘虚拟和棋）；以 19.0 阶梯的 6 个档（19:id，19.0 自己的设置）为锚，按它们在 docs/measured.json ladder 里的分数做最小二乘定标。区间 95%",
+    "script": "scripts/ladder20.mjs play --shard=i/4 … ; scripts/ladder20.mjs fit --record",
+    "games": 1288,
+    "engineHours": 4.14,
+    "endings": {
+      "resign": 785,
+      "mate": 371,
+      "rules": 121,
+      "cap": 11
+    },
+    "scale": 1.141,
+    "anchors": {
+      "19:beginner": {
+        "record": 532,
+        "fitted": 463,
+        "se": 0
+      },
+      "19:improver": {
+        "record": 894,
+        "fitted": 966,
+        "se": 99
+      },
+      "19:steady": {
+        "record": 1056,
+        "fitted": 1113,
+        "se": 102
+      },
+      "19:normalminus": {
+        "record": 1512,
+        "fitted": 1476,
+        "se": 132
+      },
+      "19:hard": {
+        "record": 1991,
+        "fitted": 1967,
+        "se": 155
+      },
+      "19:master": {
+        "record": 2460,
+        "fitted": 2459,
+        "se": 178
+      }
+    },
+    "rating": {
+      "pip": 551,
+      "tomo": 680,
+      "lina": 854,
+      "kai": 1062,
+      "ada": 1225,
+      "ben": 1438,
+      "vera": 1579,
+      "leo": 1733,
+      "ivy": 1962,
+      "max": 2145,
+      "iris": 2344,
+      "otto": 2578,
+      "zoe": 2760,
+      "nora": 2917,
+      "kit": 3136,
+      "fish": 3305
+    },
+    "ratingSe": {
+      "pip": 59,
+      "tomo": 62,
+      "lina": 83,
+      "kai": 93,
+      "ada": 108,
+      "ben": 121,
+      "vera": 128,
+      "leo": 138,
+      "ivy": 145,
+      "max": 153,
+      "iris": 163,
+      "otto": 168,
+      "zoe": 175,
+      "nora": 180,
+      "kit": 185,
+      "fish": 194
+    },
+    "adjacent": [
+      {
+        "lower": "pip",
+        "upper": "tomo",
+        "games": 40,
+        "h2hPct": 62.5,
+        "h2hCi": [
+          47.5,
+          77.5
+        ],
+        "fitPct": 65.8,
+        "fitCi": [
+          53.3,
+          76.4
+        ]
+      },
+      {
+        "lower": "tomo",
+        "upper": "lina",
+        "games": 40,
+        "h2hPct": 72.5,
+        "h2hCi": [
+          58.7,
+          86.3
+        ],
+        "fitPct": 70.6,
+        "fitCi": [
+          57.4,
+          81.1
+        ]
+      },
+      {
+        "lower": "lina",
+        "upper": "kai",
+        "games": 40,
+        "h2hPct": 67.5,
+        "h2hCi": [
+          53,
+          82
+        ],
+        "fitPct": 74,
+        "fitCi": [
+          63.9,
+          82.2
+        ]
+      },
+      {
+        "lower": "kai",
+        "upper": "ada",
+        "games": 40,
+        "h2hPct": 65,
+        "h2hCi": [
+          50.2,
+          79.8
+        ],
+        "fitPct": 69.5,
+        "fitCi": [
+          56,
+          80.3
+        ]
+      },
+      {
+        "lower": "ada",
+        "upper": "ben",
+        "games": 40,
+        "h2hPct": 75,
+        "h2hCi": [
+          61.6,
+          88.4
+        ],
+        "fitPct": 74.5,
+        "fitCi": [
+          61.5,
+          84.2
+        ]
+      },
+      {
+        "lower": "ben",
+        "upper": "vera",
+        "games": 40,
+        "h2hPct": 62.5,
+        "h2hCi": [
+          47.5,
+          77.5
+        ],
+        "fitPct": 67.2,
+        "fitCi": [
+          55.4,
+          77.1
+        ]
+      },
+      {
+        "lower": "vera",
+        "upper": "leo",
+        "games": 40,
+        "h2hPct": 67.5,
+        "h2hCi": [
+          53,
+          82
+        ],
+        "fitPct": 68.4,
+        "fitCi": [
+          55.1,
+          79.3
+        ]
+      },
+      {
+        "lower": "leo",
+        "upper": "ivy",
+        "games": 80,
+        "h2hPct": 75.6,
+        "h2hCi": [
+          66.3,
+          85
+        ],
+        "fitPct": 76,
+        "fitCi": [
+          66.4,
+          83.6
+        ]
+      },
+      {
+        "lower": "ivy",
+        "upper": "max",
+        "games": 40,
+        "h2hPct": 75,
+        "h2hCi": [
+          61.6,
+          88.4
+        ],
+        "fitPct": 71.6,
+        "fitCi": [
+          59.9,
+          81
+        ]
+      },
+      {
+        "lower": "max",
+        "upper": "iris",
+        "games": 40,
+        "h2hPct": 72.5,
+        "h2hCi": [
+          59.1,
+          85.9
+        ],
+        "fitPct": 73.2,
+        "fitCi": [
+          59.8,
+          83.3
+        ]
+      },
+      {
+        "lower": "iris",
+        "upper": "otto",
+        "games": 80,
+        "h2hPct": 75,
+        "h2hCi": [
+          66.5,
+          83.5
+        ],
+        "fitPct": 76.5,
+        "fitCi": [
+          66.9,
+          84
+        ]
+      },
+      {
+        "lower": "otto",
+        "upper": "zoe",
+        "games": 40,
+        "h2hPct": 76.3,
+        "h2hCi": [
+          64.8,
+          87.7
+        ],
+        "fitPct": 71.5,
+        "fitCi": [
+          59.7,
+          80.9
+        ]
+      },
+      {
+        "lower": "zoe",
+        "upper": "nora",
+        "games": 80,
+        "h2hPct": 70,
+        "h2hCi": [
+          62.3,
+          77.7
+        ],
+        "fitPct": 68.8,
+        "fitCi": [
+          58.8,
+          77.3
+        ]
+      },
+      {
+        "lower": "nora",
+        "upper": "kit",
+        "games": 80,
+        "h2hPct": 74.4,
+        "h2hCi": [
+          66.6,
+          82.1
+        ],
+        "fitPct": 75.1,
+        "fitCi": [
+          65.4,
+          82.7
+        ]
+      },
+      {
+        "lower": "kit",
+        "upper": "fish",
+        "games": 40,
+        "h2hPct": 70,
+        "h2hCi": [
+          61.7,
+          78.3
+        ],
+        "fitPct": 70.2,
+        "fitCi": [
+          55.9,
+          81.4
+        ]
+      }
+    ],
+    "monotone": true,
+    "pairs": [
+      {
+        "a": "ben",
+        "b": "vera",
+        "games": 40,
+        "scoreA": 15,
+        "draws": 0
+      },
+      {
+        "a": "nora",
+        "b": "kit",
+        "games": 80,
+        "scoreA": 20.5,
+        "draws": 21
+      },
+      {
+        "a": "nora",
+        "b": "fish",
+        "games": 12,
+        "scoreA": 1,
+        "draws": 2
+      },
+      {
+        "a": "kit",
+        "b": "fish",
+        "games": 40,
+        "scoreA": 12,
+        "draws": 22
+      },
+      {
+        "a": "19:normalminus",
+        "b": "ben",
+        "games": 30,
+        "scoreA": 19.5,
+        "draws": 3
+      },
+      {
+        "a": "19:normalminus",
+        "b": "vera",
+        "games": 30,
+        "scoreA": 8,
+        "draws": 2
+      },
+      {
+        "a": "pip",
+        "b": "lina",
+        "games": 12,
+        "scoreA": 3,
+        "draws": 0
+      },
+      {
+        "a": "lina",
+        "b": "kai",
+        "games": 40,
+        "scoreA": 13,
+        "draws": 0
+      },
+      {
+        "a": "kai",
+        "b": "ben",
+        "games": 12,
+        "scoreA": 1,
+        "draws": 0
+      },
+      {
+        "a": "zoe",
+        "b": "nora",
+        "games": 80,
+        "scoreA": 24,
+        "draws": 28
+      },
+      {
+        "a": "zoe",
+        "b": "kit",
+        "games": 12,
+        "scoreA": 1,
+        "draws": 0
+      },
+      {
+        "a": "19:beginner",
+        "b": "pip",
+        "games": 30,
+        "scoreA": 14,
+        "draws": 4
+      },
+      {
+        "a": "19:improver",
+        "b": "lina",
+        "games": 30,
+        "scoreA": 18.5,
+        "draws": 3
+      },
+      {
+        "a": "19:improver",
+        "b": "kai",
+        "games": 30,
+        "scoreA": 12,
+        "draws": 0
+      },
+      {
+        "a": "19:steady",
+        "b": "kai",
+        "games": 30,
+        "scoreA": 16,
+        "draws": 0
+      },
+      {
+        "a": "19:steady",
+        "b": "lina",
+        "games": 30,
+        "scoreA": 25,
+        "draws": 0
+      },
+      {
+        "a": "19:master",
+        "b": "zoe",
+        "games": 30,
+        "scoreA": 6,
+        "draws": 8
+      },
+      {
+        "a": "lina",
+        "b": "ada",
+        "games": 12,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "kai",
+        "b": "ada",
+        "games": 40,
+        "scoreA": 14,
+        "draws": 0
+      },
+      {
+        "a": "ada",
+        "b": "ben",
+        "games": 40,
+        "scoreA": 10,
+        "draws": 0
+      },
+      {
+        "a": "ada",
+        "b": "vera",
+        "games": 12,
+        "scoreA": 2,
+        "draws": 0
+      },
+      {
+        "a": "pip",
+        "b": "tomo",
+        "games": 40,
+        "scoreA": 15,
+        "draws": 0
+      },
+      {
+        "a": "tomo",
+        "b": "lina",
+        "games": 40,
+        "scoreA": 11,
+        "draws": 0
+      },
+      {
+        "a": "tomo",
+        "b": "kai",
+        "games": 12,
+        "scoreA": 1,
+        "draws": 0
+      },
+      {
+        "a": "ben",
+        "b": "leo",
+        "games": 12,
+        "scoreA": 3,
+        "draws": 0
+      },
+      {
+        "a": "vera",
+        "b": "leo",
+        "games": 40,
+        "scoreA": 13,
+        "draws": 0
+      },
+      {
+        "a": "vera",
+        "b": "ivy",
+        "games": 12,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "leo",
+        "b": "ivy",
+        "games": 80,
+        "scoreA": 19.5,
+        "draws": 1
+      },
+      {
+        "a": "19:beginner",
+        "b": "tomo",
+        "games": 30,
+        "scoreA": 5,
+        "draws": 0
+      },
+      {
+        "a": "19:hard",
+        "b": "ivy",
+        "games": 30,
+        "scoreA": 15,
+        "draws": 0
+      },
+      {
+        "a": "leo",
+        "b": "max",
+        "games": 12,
+        "scoreA": 2,
+        "draws": 0
+      },
+      {
+        "a": "ivy",
+        "b": "max",
+        "games": 40,
+        "scoreA": 10,
+        "draws": 0
+      },
+      {
+        "a": "ivy",
+        "b": "iris",
+        "games": 12,
+        "scoreA": 2,
+        "draws": 0
+      },
+      {
+        "a": "max",
+        "b": "iris",
+        "games": 40,
+        "scoreA": 11,
+        "draws": 2
+      },
+      {
+        "a": "iris",
+        "b": "zoe",
+        "games": 12,
+        "scoreA": 1,
+        "draws": 2
+      },
+      {
+        "a": "19:hard",
+        "b": "max",
+        "games": 30,
+        "scoreA": 8.5,
+        "draws": 5
+      },
+      {
+        "a": "max",
+        "b": "otto",
+        "games": 12,
+        "scoreA": 0,
+        "draws": 0
+      },
+      {
+        "a": "iris",
+        "b": "otto",
+        "games": 80,
+        "scoreA": 20,
+        "draws": 12
+      },
+      {
+        "a": "otto",
+        "b": "zoe",
+        "games": 40,
+        "scoreA": 9.5,
+        "draws": 7
+      },
+      {
+        "a": "otto",
+        "b": "nora",
+        "games": 12,
+        "scoreA": 3,
+        "draws": 2
+      },
+      {
+        "a": "19:master",
+        "b": "otto",
+        "games": 30,
+        "scoreA": 10,
+        "draws": 8
+      }
+    ],
+    "settings": {
+      "pip": {
+        "play": {
+          "maia": 0,
+          "temperature": 2,
+          "sees": 3,
+          "convertAs": 1200,
+          "convertT": 0.3,
+          "keep": 60
+        },
+        "resign": null,
+        "mind": {
+          "LOOK": {
+            "nodes": 20000
+          },
+          "CONVERT_LOOK": {
+            "nodes": 40000,
+            "lines": 6
+          },
+          "CONVERT_AT": 85,
+          "CONVERT_KEEP": 70,
+          "CONVERT_RATING": 1600,
+          "CONVERT_LIFT": 400,
+          "CAP": 1500,
+          "SLACK": 80,
+          "TAU": 25,
+          "TRADE": 2,
+          "PUSH": 1.6
+        }
+      },
+      "tomo": {
+        "play": {
+          "maia": 150,
+          "sees": 3,
+          "convertAs": 1200,
+          "convertT": 0.3,
+          "keep": 60
+        },
+        "resign": null,
+        "mind": {
+          "LOOK": {
+            "nodes": 20000
+          },
+          "CONVERT_LOOK": {
+            "nodes": 40000,
+            "lines": 6
+          },
+          "CONVERT_AT": 85,
+          "CONVERT_KEEP": 70,
+          "CONVERT_RATING": 1600,
+          "CONVERT_LIFT": 400,
+          "CAP": 1500,
+          "SLACK": 80,
+          "TAU": 25,
+          "TRADE": 2,
+          "PUSH": 1.6
+        }
+      },
+      "lina": {
+        "play": {
+          "maia": 350,
+          "style": "principled",
+          "sees": 3,
+          "convertAs": 1200,
+          "convertT": 0.3,
+          "keep": 60
+        },
+        "resign": {
+          "cp": 1500,
+          "n": 4,
+          "after": 40
+        },
+        "mind": {
+          "LOOK": {
+            "nodes": 20000
+          },
+          "CONVERT_LOOK": {
+            "nodes": 40000,
+            "lines": 6
+          },
+          "CONVERT_AT": 85,
+          "CONVERT_KEEP": 70,
+          "CONVERT_RATING": 1600,
+          "CONVERT_LIFT": 400,
+          "CAP": 1500,
+          "SLACK": 80,
+          "TAU": 25,
+          "TRADE": 2,
+          "PUSH": 1.6
+        }
+      },
+      "kai": {
+        "play": {
+          "maia": 500,
+          "style": "attacker",
+          "sees": 3,
+          "convertAs": 1200,
+          "convertT": 0.3,
+          "keep": 60
+        },
+        "resign": {
+          "cp": 1500,
+          "n": 4,
+          "after": 40
+        },
+        "mind": {
+          "LOOK": {
+            "nodes": 20000
+          },
+          "CONVERT_LOOK": {
+            "nodes": 40000,
+            "lines": 6
+          },
+          "CONVERT_AT": 85,
+          "CONVERT_KEEP": 70,
+          "CONVERT_RATING": 1600,
+          "CONVERT_LIFT": 400,
+          "CAP": 1500,
+          "SLACK": 80,
+          "TAU": 25,
+          "TRADE": 2,
+          "PUSH": 1.6
+        }
+      },
+      "ada": {
+        "play": {
+          "maia": 700,
+          "sees": 3,
+          "convertT": 0.3,
+          "keep": 60
+        },
+        "resign": {
+          "cp": 1500,
+          "n": 4,
+          "after": 40
+        },
+        "mind": {
+          "LOOK": {
+            "nodes": 20000
+          },
+          "CONVERT_LOOK": {
+            "nodes": 40000,
+            "lines": 6
+          },
+          "CONVERT_AT": 85,
+          "CONVERT_KEEP": 70,
+          "CONVERT_RATING": 1600,
+          "CONVERT_LIFT": 400,
+          "CAP": 1500,
+          "SLACK": 80,
+          "TAU": 25,
+          "TRADE": 2,
+          "PUSH": 1.6
+        }
+      },
+      "ben": {
+        "play": {
+          "maia": 1200
+        },
+        "resign": {
+          "cp": 1200,
+          "n": 3,
+          "after": 30
+        },
+        "mind": {
+          "LOOK": {
+            "nodes": 20000
+          },
+          "CONVERT_LOOK": {
+            "nodes": 40000,
+            "lines": 6
+          },
+          "CONVERT_AT": 85,
+          "CONVERT_KEEP": 70,
+          "CONVERT_RATING": 1600,
+          "CONVERT_LIFT": 400,
+          "CAP": 1500,
+          "SLACK": 80,
+          "TAU": 25,
+          "TRADE": 2,
+          "PUSH": 1.6
+        }
+      },
+      "vera": {
+        "play": {
+          "maia": 1750
+        },
+        "resign": {
+          "cp": 1000,
+          "n": 3,
+          "after": 24
+        },
+        "mind": {
+          "LOOK": {
+            "nodes": 20000
+          },
+          "CONVERT_LOOK": {
+            "nodes": 40000,
+            "lines": 6
+          },
+          "CONVERT_AT": 85,
+          "CONVERT_KEEP": 70,
+          "CONVERT_RATING": 1600,
+          "CONVERT_LIFT": 400,
+          "CAP": 1500,
+          "SLACK": 80,
+          "TAU": 25,
+          "TRADE": 2,
+          "PUSH": 1.6
+        }
+      },
+      "leo": {
+        "play": {
+          "maia": 2250,
+          "sees": 2
+        },
+        "resign": {
+          "cp": 900,
+          "n": 3,
+          "after": 24
+        },
+        "mind": {
+          "LOOK": {
+            "nodes": 20000
+          },
+          "CONVERT_LOOK": {
+            "nodes": 40000,
+            "lines": 6
+          },
+          "CONVERT_AT": 85,
+          "CONVERT_KEEP": 70,
+          "CONVERT_RATING": 1600,
+          "CONVERT_LIFT": 400,
+          "CAP": 1500,
+          "SLACK": 80,
+          "TAU": 25,
+          "TRADE": 2,
+          "PUSH": 1.6
+        }
+      },
+      "ivy": {
+        "play": {
+          "maia": 2600,
+          "temperature": 0.65,
+          "sees": 3
+        },
+        "resign": {
+          "cp": 800,
+          "n": 2,
+          "after": 20
+        },
+        "mind": {
+          "LOOK": {
+            "nodes": 20000
+          },
+          "CONVERT_LOOK": {
+            "nodes": 40000,
+            "lines": 6
+          },
+          "CONVERT_AT": 85,
+          "CONVERT_KEEP": 70,
+          "CONVERT_RATING": 1600,
+          "CONVERT_LIFT": 400,
+          "CAP": 1500,
+          "SLACK": 80,
+          "TAU": 25,
+          "TRADE": 2,
+          "PUSH": 1.6
+        }
+      },
+      "max": {
+        "play": {
+          "elo": 2400,
+          "nodes": 60000
+        },
+        "resign": {
+          "cp": 700,
+          "n": 2,
+          "after": 20
+        },
+        "mind": {
+          "LOOK": {
+            "nodes": 20000
+          },
+          "CONVERT_LOOK": {
+            "nodes": 40000,
+            "lines": 6
+          },
+          "CONVERT_AT": 85,
+          "CONVERT_KEEP": 70,
+          "CONVERT_RATING": 1600,
+          "CONVERT_LIFT": 400,
+          "CAP": 1500,
+          "SLACK": 80,
+          "TAU": 25,
+          "TRADE": 2,
+          "PUSH": 1.6
+        },
+        "sf": 2
+      },
+      "iris": {
+        "play": {
+          "elo": 2625,
+          "nodes": 120000
+        },
+        "resign": {
+          "cp": 700,
+          "n": 2,
+          "after": 20
+        },
+        "mind": {
+          "LOOK": {
+            "nodes": 20000
+          },
+          "CONVERT_LOOK": {
+            "nodes": 40000,
+            "lines": 6
+          },
+          "CONVERT_AT": 85,
+          "CONVERT_KEEP": 70,
+          "CONVERT_RATING": 1600,
+          "CONVERT_LIFT": 400,
+          "CAP": 1500,
+          "SLACK": 80,
+          "TAU": 25,
+          "TRADE": 2,
+          "PUSH": 1.6
+        },
+        "sf": 2
+      },
+      "otto": {
+        "play": {
+          "elo": 2800,
+          "nodes": 150000
+        },
+        "resign": {
+          "cp": 700,
+          "n": 2,
+          "after": 20
+        },
+        "mind": {
+          "LOOK": {
+            "nodes": 20000
+          },
+          "CONVERT_LOOK": {
+            "nodes": 40000,
+            "lines": 6
+          },
+          "CONVERT_AT": 85,
+          "CONVERT_KEEP": 70,
+          "CONVERT_RATING": 1600,
+          "CONVERT_LIFT": 400,
+          "CAP": 1500,
+          "SLACK": 80,
+          "TAU": 25,
+          "TRADE": 2,
+          "PUSH": 1.6
+        },
+        "sf": 2
+      },
+      "zoe": {
+        "play": {
+          "elo": 2875,
+          "nodes": 150000
+        },
+        "resign": {
+          "cp": 600,
+          "n": 2,
+          "after": 20
+        },
+        "mind": {
+          "LOOK": {
+            "nodes": 20000
+          },
+          "CONVERT_LOOK": {
+            "nodes": 40000,
+            "lines": 6
+          },
+          "CONVERT_AT": 85,
+          "CONVERT_KEEP": 70,
+          "CONVERT_RATING": 1600,
+          "CONVERT_LIFT": 400,
+          "CAP": 1500,
+          "SLACK": 80,
+          "TAU": 25,
+          "TRADE": 2,
+          "PUSH": 1.6
+        },
+        "sf": 2
+      },
+      "nora": {
+        "play": {
+          "elo": 3000,
+          "nodes": 150000
+        },
+        "resign": {
+          "cp": 600,
+          "n": 2,
+          "after": 20
+        },
+        "mind": {
+          "LOOK": {
+            "nodes": 20000
+          },
+          "CONVERT_LOOK": {
+            "nodes": 40000,
+            "lines": 6
+          },
+          "CONVERT_AT": 85,
+          "CONVERT_KEEP": 70,
+          "CONVERT_RATING": 1600,
+          "CONVERT_LIFT": 400,
+          "CAP": 1500,
+          "SLACK": 80,
+          "TAU": 25,
+          "TRADE": 2,
+          "PUSH": 1.6
+        },
+        "sf": 2
+      },
+      "kit": {
+        "play": {
+          "nodes": 1000
+        },
+        "resign": {
+          "cp": 600,
+          "n": 2,
+          "after": 20
+        },
+        "mind": {
+          "LOOK": {
+            "nodes": 20000
+          },
+          "CONVERT_LOOK": {
+            "nodes": 40000,
+            "lines": 6
+          },
+          "CONVERT_AT": 85,
+          "CONVERT_KEEP": 70,
+          "CONVERT_RATING": 1600,
+          "CONVERT_LIFT": 400,
+          "CAP": 1500,
+          "SLACK": 80,
+          "TAU": 25,
+          "TRADE": 2,
+          "PUSH": 1.6
+        },
+        "sf": 2
+      },
+      "fish": {
+        "play": {
+          "nodes": 400000
+        },
+        "resign": {
+          "cp": 600,
+          "n": 2,
+          "after": 20
+        },
+        "mind": {
+          "LOOK": {
+            "nodes": 20000
+          },
+          "CONVERT_LOOK": {
+            "nodes": 40000,
+            "lines": 6
+          },
+          "CONVERT_AT": 85,
+          "CONVERT_KEEP": 70,
+          "CONVERT_RATING": 1600,
+          "CONVERT_LIFT": 400,
+          "CAP": 1500,
+          "SLACK": 80,
+          "TAU": 25,
+          "TRADE": 2,
+          "PUSH": 1.6
+        },
+        "sf": 2
       }
     }
   },

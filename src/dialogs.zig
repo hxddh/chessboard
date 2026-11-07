@@ -1,5 +1,7 @@
-//! chess.openPgn / chess.saveText: the native file dialogs and the file
-//! behind them (v8-1-plan N2). Moved verbatim out of main.zig (v8-2-plan F2).
+//! chess.openPgn: the native open dialog and the file behind it (v8-1-plan
+//! N2); chess.openedFile: a file the OS handed over (opened.zig), read the
+//! same way. Moved out of main.zig (v8-2-plan F2); 19.0's chess.saveText went
+//! with 20.0 E3 (the 20.0 page exports nothing yet).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -11,10 +13,7 @@ const BUILTIN_COMMANDS = @import("bridge.zig").BUILTIN_COMMANDS;
 const CHUNK_BYTES = @import("bridge.zig").CHUNK_BYTES;
 const ChunkRead = @import("bridge.zig").ChunkRead;
 const FILE_MAX_BYTES = @import("bridge.zig").FILE_MAX_BYTES;
-const Incoming = @import("bridge.zig").Incoming;
 const SEP = @import("bridge.zig").SEP;
-const STAGE_SLOTS = @import("bridge.zig").STAGE_SLOTS;
-const Stages = @import("bridge.zig").Stages;
 const USER_FILE_MAX_BYTES = @import("bridge.zig").USER_FILE_MAX_BYTES;
 const chunkAnswer = @import("bridge.zig").chunkAnswer;
 const isSep = @import("bridge.zig").isSep;
@@ -23,11 +22,8 @@ const jsonBoolField = @import("bridge.zig").jsonBoolField;
 const jsonStringField = @import("bridge.zig").jsonStringField;
 const jsonStringFieldRaw = @import("bridge.zig").jsonStringFieldRaw;
 const jsonUintField = @import("bridge.zig").jsonUintField;
-const pendingAnswer = @import("bridge.zig").pendingAnswer;
-const receive = @import("bridge.zig").receive;
-const stageLimit = @import("bridge.zig").stageLimit;
-const takeReceived = @import("bridge.zig").takeReceived;
 const tooLargeAnswerFor = @import("bridge.zig").tooLargeAnswerFor;
+const os_files = @import("opened.zig");
 const App = @import("main.zig").App;
 
 // ------------------------------------------- native file dialogs (v8-1-plan N2)
@@ -51,22 +47,16 @@ const App = @import("main.zig").App;
 //     unless `max` asks for more (导入全部数据), and never past
 //     USER_FILE_MAX_BYTES. `recent` puts the file on the OS's recent-documents
 //     list once it was read.
-//   * chess.saveText {title, name, recent?, b64…} — the bytes first, in the
-//     pieces writeTextFile takes (staged, up to USER_FILE_MAX_BYTES), and only
-//     when the last one is in, the save dialog with `name` suggested and its
-//     extension as the filter (and added to a name typed without one); then
-//     the write, the folder shown with the file in it, and {ok, name,
-//     revealed[, path]}. The path comes back only when
-//     the folder could not be shown, so the toast can say where the file went;
-//     no command takes a path from the page to issue.
+//   * chess.openedFile {} — the next file the OS handed over (a .pgn
+//     double-clicked, dropped, or passed by a second launch: opened.zig),
+//     read the same way to USER_FILE_MAX_BYTES: {name, b64, more[, token]},
+//     {none:true} when nothing waits, or {error | tooLarge, name} for one
+//     that could not be read (the page says so and asks for the next).
+//     Later pieces: {token, offset}, as for chess.openPgn.
 //
-// Both answer {probe:true, dialogs} to {probe:true} without opening anything —
+// chess.openPgn answers {probe:true, dialogs} to {probe:true} without opening anything —
 // the packaged self-test's `nativeIo` check (v8-1-plan N3). {error:"no_dialog"}
 // means this platform has none, and the page takes the browser's picker.
-
-/// What a staged chess.saveText is filed under while it has no path yet. Not
-/// "appdata:", so stageLimit gives it USER_FILE_MAX_BYTES (导出全部数据).
-const SAVE_TARGET = "dialog:save";
 
 /// What a file looked like when chess.openPgn read its first piece. A later
 /// piece is read only from the same file, unchanged: one saved over in
@@ -141,37 +131,6 @@ fn baseName(path: []const u8, windows: bool) []const u8 {
     var i = path.len;
     while (i > 0 and !isSep(path[i - 1], windows)) : (i -= 1) {}
     return path[i..];
-}
-
-/// The extension of the suggested name, as the save dialog's one filter
-/// ("pgn", "json", "png"), or null when there is none worth filtering by.
-fn saveExt(name: []const u8) ?[]const u8 {
-    const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
-    const ext = name[dot + 1 ..];
-    if (dot == 0 or ext.len == 0 or ext.len > 8) return null;
-    for (ext) |c| {
-        if (!std.ascii.isAlphanumeric(c)) return null;
-    }
-    return ext;
-}
-
-/// `picked` with the suggested name's extension added, when the player typed
-/// a name that has none; null when there is nothing to add (or no room).
-///
-/// The Windows save dialog is given the extension as a filter but sets no
-/// default extension (SDK 0.10.1 windows host), so a player who types "game"
-/// gets a file called "game" that no PGN reader offers to open. macOS adds
-/// it already, and then this finds one and adds nothing. A name with any
-/// extension of its own ("game.v2") is taken as the player meant it.
-fn withSaveExt(picked: []const u8, suggested: []const u8, windows: bool, buf: []u8) ?[]const u8 {
-    const ext = saveExt(suggested) orelse return null;
-    const base = baseName(picked, windows);
-    if (base.len == 0 or saveExt(base) != null) return null;
-    if (picked.len + 1 + ext.len > buf.len) return null;
-    @memcpy(buf[0..picked.len], picked);
-    buf[picked.len] = '.';
-    @memcpy(buf[picked.len + 1 ..][0..ext.len], ext);
-    return buf[0 .. picked.len + 1 + ext.len];
 }
 
 /// Length of the valid UTF-8 sequence `s` starts with (its first byte is 0x80
@@ -289,21 +248,6 @@ fn openAnswer(output: []u8, name: []const u8, token: ?u32, bytes: []const u8, mo
     return output[0..n];
 }
 
-/// chess.saveText's answer. `path` is for a toast to show, when the folder
-/// did not open to show the file itself.
-fn savedAnswer(output: []u8, name: []const u8, revealed: bool, path: ?[]const u8) anyerror![]const u8 {
-    var n: usize = 0;
-    if (!jsonAppend(output, &n, "{\"ok\":true,\"name\":")) return error.HandlerFailed;
-    if (!jsonAppendName(output, &n, name)) return error.HandlerFailed;
-    if (!jsonAppend(output, &n, if (revealed) ",\"revealed\":true" else ",\"revealed\":false")) return error.HandlerFailed;
-    if (path) |p| {
-        if (!jsonAppend(output, &n, ",\"path\":")) return error.HandlerFailed;
-        if (!jsonAppendName(output, &n, p)) return error.HandlerFailed;
-    }
-    if (!jsonAppend(output, &n, "}")) return error.HandlerFailed;
-    return output[0..n];
-}
-
 /// How much of a read that got `n` bytes at `offset` to hand over, from a
 /// file of `size` bytes: never past `size`, and error.Changed when the read
 /// came up short of it (the file shrank under us).
@@ -339,14 +283,6 @@ fn readOpenedChunk(io: std.Io, path: []const u8, offset: usize, buf: []u8, limit
     const n = file.readPositionalAll(io, buf[0 .. CHUNK_BYTES + 1], offset) catch return error.HandlerFailed;
     const piece = try openedPiece(stamp.size, offset, n);
     return .{ .n = piece.n, .more = piece.more, .stamp = stamp };
-}
-
-/// The same two std.Io calls writeTextFile makes. `exclusive`: only a new
-/// file (error.PathAlreadyExists when there is one).
-fn writeWhole(io: std.Io, path: []const u8, bytes: []const u8, exclusive: bool) !void {
-    var file = try std.Io.Dir.createFileAbsolute(io, path, .{ .truncate = true, .exclusive = exclusive });
-    defer file.close(io);
-    try file.writeStreamingAll(io, bytes);
 }
 
 pub fn openPgn(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
@@ -401,76 +337,91 @@ pub fn openPgn(context: *anyopaque, invocation: native_sdk.bridge.Invocation, ou
     return openAnswer(output, baseName(path, builtin.os.tag == .windows), token, buf[0..got.n], got.more);
 }
 
-pub fn saveText(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+/// chess.openedFile's answers for a file that could not be read: the code
+/// (or the limit) and the file's name, so the page can say which.
+fn namedAnswer(output: []u8, head: []const u8, name: []const u8) anyerror![]const u8 {
+    var n: usize = 0;
+    if (!jsonAppend(output, &n, head)) return error.HandlerFailed;
+    if (!jsonAppend(output, &n, ",\"name\":")) return error.HandlerFailed;
+    if (!jsonAppendName(output, &n, name)) return error.HandlerFailed;
+    if (!jsonAppend(output, &n, "}")) return error.HandlerFailed;
+    return output[0..n];
+}
+
+pub fn openedFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
     const self: *App = @ptrCast(@alignCast(context));
     const payload = invocation.request.payload;
-    if (jsonBoolField(payload, "probe") orelse false) return probeAnswer(output, dialogsAvailable(self));
+    const gpa = std.heap.page_allocator;
+    const buf = gpa.alloc(u8, CHUNK_BYTES + 1) catch return error.HandlerFailed;
+    defer gpa.free(buf);
 
-    // the bytes first, in the pieces writeTextFile takes; the dialog only
-    // once they are all here, so a Cancel leaves nothing half-sent behind
-    var incoming: Incoming = undefined;
-    var answer: []const u8 = "";
-    switch (try receive(self, payload, SAVE_TARGET, output, &incoming, &answer)) {
-        .answered => return answer,
-        .pending => return pendingAnswer(output),
-        .ready => {},
+    // a later piece: by its token, from the file the first piece came from
+    if (jsonUintField(payload, "token")) |token| {
+        const offset = jsonUintField(payload, "offset") orelse return error.InvalidRequest;
+        const path = self.handed.pathOf(token) orelse return fileErrorAnswer(output, "open_lost");
+        const got = (readOpenedChunk(self.io, path, offset, buf, self.handed.limit, self.handed.stamp) catch |err| switch (err) {
+            error.Changed => {
+                self.handed.forget();
+                return fileErrorAnswer(output, "open_lost");
+            },
+            error.FileTooLarge => return tooLargeAnswerFor(output, self.handed.limit),
+            error.HandlerFailed => return fileErrorAnswer(output, "read_failed"),
+        }) orelse return fileErrorAnswer(output, "open_lost");
+        if (!got.more) self.handed.forget();
+        return chunkAnswer(output, buf[0..got.n], got.more, null);
     }
-    // Ours before the dialog (review P3-3). The dialog is modal, and a modal
-    // loop may run the bridge: a write arriving meanwhile that needs a stage
-    // slot evicts the oldest (Stages.freeSlot) and frees its bytes — these,
-    // if they were still in their slot. Taken out, the slot is idle and the
-    // bytes are this call's alone.
-    const bytes = takeReceived(self, incoming);
-    defer std.heap.page_allocator.free(bytes);
 
-    const runtime = self.runtime orelse return fileErrorAnswer(output, "no_dialog");
-    var title_buf: [512]u8 = undefined;
-    const title = jsonStringField(payload, "title", &title_buf) orelse "";
-    var name_buf: [1024]u8 = undefined;
-    const name = jsonStringField(payload, "name", &name_buf) orelse "";
-    // read before the dialog, for the same reason: the payload is the SDK's
-    const recent = jsonBoolField(payload, "recent") orelse false;
-    const exts = [_][]const u8{saveExt(name) orelse ""};
-    const one_filter = [_]native_sdk.FileFilter{.{ .name = exts[0], .extensions = exts[0..] }};
-    const filters: []const native_sdk.FileFilter = if (exts[0].len > 0) one_filter[0..] else &.{};
-    var path_buf: [native_sdk.platform.max_dialog_path_bytes]u8 = undefined;
-    const picked = runtime.showSaveDialog(.{
-        .title = title,
-        .default_name = name,
-        .filters = filters,
-    }, &path_buf) catch |err| return fileErrorAnswer(output, dialogErrorCode(err));
-    const chosen = picked orelse return cancelledAnswer(output);
-    if (chosen.len == 0) return cancelledAnswer(output);
-    // a platform's dialog answers with an absolute path; one that does not
-    // (the null platform hands back the suggested name as it is) is refused
-    // here rather than written relative to wherever the process runs
-    if (!std.fs.path.isAbsolute(chosen)) return fileErrorAnswer(output, "dialog_failed");
+    var path_buf: [os_files.PATH_MAX]u8 = undefined;
+    const path = os_files.queue.pop(&path_buf) orelse return std.fmt.bufPrint(output, "{{\"none\":true}}", .{}) catch return error.HandlerFailed;
+    const name = baseName(path, builtin.os.tag == .windows);
+    const limit = USER_FILE_MAX_BYTES;
+    const got = (readOpenedChunk(self.io, path, 0, buf, limit, null) catch |err| switch (err) {
+        error.FileTooLarge => {
+            var head: [64]u8 = undefined;
+            return namedAnswer(output, std.fmt.bufPrint(&head, "{{\"tooLarge\":true,\"limit\":{d}", .{limit}) catch return error.HandlerFailed, name);
+        },
+        error.Changed, error.HandlerFailed => return namedAnswer(output, "{\"error\":\"read_failed\"", name),
+    }) orelse return namedAnswer(output, "{\"error\":\"read_failed\"", name);
+    var token: ?u32 = null;
+    if (got.more) token = self.handed.remember(path, limit, got.stamp) orelse return namedAnswer(output, "{\"error\":\"read_failed\"", name);
+    // the OS's recent-documents list, as an open through the dialog does
+    if (self.runtime) |rt| rt.addRecentDocument(path) catch {};
+    return openAnswer(output, name, token, buf[0..got.n], got.more);
+}
 
-    // review P3-5: "game" typed into the Windows dialog becomes game.pgn —
-    // but only as a new file: the dialog asked about replacing "game", not
-    // "game.pgn", so an existing game.pgn is left alone and the name is
-    // written as the player typed it
-    const windows = builtin.os.tag == .windows;
-    var ext_buf: [native_sdk.platform.max_dialog_path_bytes + 16]u8 = undefined;
-    var path = chosen;
-    if (withSaveExt(chosen, name, windows, &ext_buf)) |extended| {
-        if (writeWhole(self.io, extended, bytes, true)) |_| {
-            path = extended;
-        } else |err| {
-            if (err != error.PathAlreadyExists) return fileErrorAnswer(output, "write_failed");
-            writeWhole(self.io, chosen, bytes, false) catch return fileErrorAnswer(output, "write_failed");
-        }
-    } else {
-        writeWhole(self.io, chosen, bytes, false) catch return fileErrorAnswer(output, "write_failed");
-    }
-    if (recent) runtime.addRecentDocument(path) catch {};
-    // the folder, with the file in it: "where did it go" answered on screen
-    const revealed = if (runtime.revealPath(path)) |_| true else |_| false;
-    return savedAnswer(output, baseName(path, windows), revealed, if (revealed) null else path);
+test "an opened file's refusals name it, and an empty queue answers none" {
+    var out: [128]u8 = undefined;
+    try std.testing.expectEqualStrings("{\"error\":\"read_failed\",\"name\":\"a.pgn\"}", try namedAnswer(&out, "{\"error\":\"read_failed\"", "a.pgn"));
+    try std.testing.expectEqualStrings("{\"tooLarge\":true,\"limit\":5,\"name\":\"\xef\xbf\xbd.pgn\"}", try namedAnswer(&out, "{\"tooLarge\":true,\"limit\":5", "\xff.pgn"));
+}
+
+test "a file the OS handed over is read whole, by name, then the queue is empty" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "one.pgn", .data = "1. e4 e5 *\n" });
+    var dir_buf: [4096]u8 = undefined;
+    const dir = dir_buf[0..try tmp.dir.realPath(io, &dir_buf)];
+    var p_buf: [4200]u8 = undefined;
+    const path = try std.fmt.bufPrint(&p_buf, "{s}{s}one.pgn", .{ dir, SEP });
+    var drain: [os_files.PATH_MAX]u8 = undefined;
+    while (os_files.queue.pop(&drain)) |_| {}
+    try std.testing.expect(os_files.queue.push(path));
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    var app_state = App{ .env_map = &env, .io = io };
+    const out = try std.testing.allocator.alloc(u8, BRIDGE_FRAME_MAX);
+    defer std.testing.allocator.free(out);
+    const inv = native_sdk.bridge.Invocation{ .request = .{ .id = "1", .command = "chess.openedFile", .payload = "{}" }, .source = .{} };
+    const first = try openedFile(&app_state, inv, out);
+    try std.testing.expectEqualStrings("{\"name\":\"one.pgn\",\"b64\":\"MS4gZTQgZTUgKgo=\",\"more\":false}", first);
+    const none = try openedFile(&app_state, inv, out);
+    try std.testing.expectEqualStrings("{\"none\":true}", none);
+    _ = os_files.queue.takeArrived();
 }
 
 test "the file dialogs are the native side's: the page is granted neither, nor the reveal" {
-    // v8-1-plan N2 — chess.openPgn / chess.saveText open them in dialogs.zig
+    // v8-1-plan N2 — chess.openPgn opens it in dialogs.zig
     for (BUILTIN_COMMANDS) |name| {
         try std.testing.expect(!std.mem.eql(u8, name, "native-sdk.dialog.openFile"));
         try std.testing.expect(!std.mem.eql(u8, name, "native-sdk.dialog.saveFile"));
@@ -505,8 +456,6 @@ test "an open reads to 16 MiB, to 64 MiB when 导入全部数据 asks, and never
     var out: [64]u8 = undefined;
     try std.testing.expectEqualStrings("{\"tooLarge\":true,\"limit\":16777216}", try tooLargeAnswerFor(&out, openLimit(null)));
     try std.testing.expectEqualStrings("{\"tooLarge\":true,\"limit\":67108864}", try tooLargeAnswerFor(&out, openLimit(64 * 1024 * 1024)));
-    // and a save is staged to the 64 MiB a picked file may be (导出全部数据)
-    try std.testing.expectEqual(USER_FILE_MAX_BYTES, stageLimit(SAVE_TARGET));
 }
 
 test "a file name that is not UTF-8 still makes a JSON string the page can parse" {
@@ -532,17 +481,11 @@ test "a file name that is not UTF-8 still makes a JSON string the page can parse
     try std.testing.expect(!jsonAppendName(&tiny, &m, "\xff\xff"));
 }
 
-test "a picked file is shown by its name, and saved with its extension as the filter" {
+test "a picked or opened file is shown by its name" {
     try std.testing.expectEqualStrings("a.pgn", baseName("/Users/me/games/a.pgn", false));
     try std.testing.expectEqualStrings("b.pgn", baseName("C:\\Users\\me\\b.pgn", true));
     try std.testing.expectEqualStrings("c\\d.pgn", baseName("/tmp/c\\d.pgn", false));
     try std.testing.expectEqualStrings("e.pgn", baseName("e.pgn", false));
-    try std.testing.expectEqualStrings("pgn", saveExt("chess-20260929.pgn").?);
-    try std.testing.expectEqualStrings("json", saveExt("chessboard-all-20260929.json").?);
-    try std.testing.expect(saveExt("noext") == null);
-    try std.testing.expect(saveExt(".hidden") == null);
-    try std.testing.expect(saveExt("a.") == null);
-    try std.testing.expect(saveExt("a.p;g") == null);
 }
 
 test "a later piece of an opened file is asked for by its token, never by a path" {
@@ -628,64 +571,6 @@ test "an opened file saved over between its pieces answers open_lost, not a spli
     try std.testing.expectError(error.Changed, readOpenedChunk(io, path, CHUNK_BYTES, buf, FILE_MAX_BYTES, first.stamp));
 }
 
-test "a save's bytes leave their stage slot before the dialog, so an eviction cannot free them" {
-    // review P3-3: while the modal save dialog is up, other writes can fill
-    // every slot; the oldest (this one) used to be freed under the save
-    const gpa = std.testing.allocator;
-    var stages: Stages = .{};
-    defer stages.releaseAll(gpa);
-    const got = try stages.claim(gpa, "save1", SAVE_TARGET, 5, 0, 5);
-    @memcpy(got.dest, "1. e4");
-    got.stage.filled += 5;
-    try std.testing.expect(got.stage.complete());
-    const bytes = stages.detach(got.stage);
-    defer gpa.free(bytes);
-    // the slot is idle again, and nothing of the save is left in the table
-    for (&stages.slots) |*slot| try std.testing.expect(!slot.busy());
-    // every slot taken and then some — each eviction frees only its own
-    var name_buf: [16]u8 = undefined;
-    var i: usize = 0;
-    while (i < STAGE_SLOTS + 2) : (i += 1) {
-        const name = try std.fmt.bufPrint(&name_buf, "w{d}", .{i});
-        _ = try stages.claim(gpa, name, "appdata:x", 8, 0, 4);
-    }
-    try std.testing.expectEqualStrings("1. e4", bytes);
-}
-
-test "a name typed without an extension is saved with the suggested one" {
-    // review P3-5: the Windows dialog sets no default extension
-    var buf: [64]u8 = undefined;
-    try std.testing.expectEqualStrings("C:\\Users\\me\\game.pgn", withSaveExt("C:\\Users\\me\\game", "chess-20260929.pgn", true, &buf).?);
-    try std.testing.expectEqualStrings("/Users/me/all.json", withSaveExt("/Users/me/all", "chessboard-all.json", false, &buf).?);
-    // one already there (macOS adds it), or the player's own: left alone
-    try std.testing.expect(withSaveExt("C:\\x\\game.pgn", "a.pgn", true, &buf) == null);
-    try std.testing.expect(withSaveExt("C:\\x\\game.v2", "a.pgn", true, &buf) == null);
-    // nothing suggested, no room: nothing added
-    try std.testing.expect(withSaveExt("/Users/me/game", "noext", false, &buf) == null);
-    var tiny: [8]u8 = undefined;
-    try std.testing.expect(withSaveExt("/Users/me/game", "a.pgn", false, &tiny) == null);
-    // a dot in a folder name is not the file's extension
-    try std.testing.expectEqualStrings("/Users/me.v2/game.pgn", withSaveExt("/Users/me.v2/game", "a.pgn", false, &buf).?);
-}
-
-test "a save to a path that is not absolute is refused, and a typed name never replaces a file the dialog did not ask about" {
-    // review P3-5, on a real directory: the extended name is created only as
-    // a new file; an existing one is left as it was
-    const io = std.testing.io;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-    var dir_buf: [4096]u8 = undefined;
-    const dir = dir_buf[0..try tmp.dir.realPath(io, &dir_buf)];
-    var p_buf: [4200]u8 = undefined;
-    const game = try std.fmt.bufPrint(&p_buf, "{s}{s}game.pgn", .{ dir, SEP });
-    try writeWhole(io, game, "new", true);
-    try std.testing.expectError(error.PathAlreadyExists, writeWhole(io, game, "newer", true));
-    var back: [16]u8 = undefined;
-    try std.testing.expectEqualStrings("new", try tmp.dir.readFile(io, "game.pgn", &back));
-    // what the null platform's dialog hands back is refused before any write
-    try std.testing.expect(!std.fs.path.isAbsolute("chess-20260929.pgn"));
-}
-
 test "an open's first piece carries the name and the token, and fits the frame at worst" {
     const gpa = std.testing.allocator;
     const out = try gpa.alloc(u8, BRIDGE_FRAME_MAX);
@@ -711,12 +596,6 @@ test "an open's first piece carries the name and the token, and fits the frame a
     const small = try openAnswer(out, "a.pgn", null, "1. e4", false);
     try std.testing.expect(jsonUintField(small, "token") == null);
     try std.testing.expectEqualStrings("{\"name\":\"a.pgn\",\"b64\":\"MS4gZTQ=\",\"more\":false}", small);
-}
-
-test "a save answers with the name, and with the path only when the folder did not open" {
-    var out: [128]u8 = undefined;
-    try std.testing.expectEqualStrings("{\"ok\":true,\"name\":\"a.pgn\",\"revealed\":true}", try savedAnswer(&out, "a.pgn", true, null));
-    try std.testing.expectEqualStrings("{\"ok\":true,\"name\":\"a.pgn\",\"revealed\":false,\"path\":\"C:\\\\x\\\\a.pgn\"}", try savedAnswer(&out, "a.pgn", false, "C:\\x\\a.pgn"));
 }
 
 test "the self-test probe answers without a dialog, and says whether there is one" {

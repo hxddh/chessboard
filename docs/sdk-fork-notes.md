@@ -25,7 +25,7 @@ node scripts/sdk-diff.mjs <SDK 目录>      # SDK 仓库或 npm 包；也可设 
 node scripts/sdk-diff.mjs <SDK 目录> --suggest   # 另外把每个没登记的块打印成可粘贴的登记项
 ```
 
-- 对 0.10.1（我们钉的版本）输出为空。
+- 对 0.11.0（我们钉的版本）输出为空。
 - `checks.yml` 的 zig 作业拿 npm 装好的 SDK 跑它，所以登记表和钉住的 SDK 不会悄悄脱节。
 - `scripts/test-sdk-diff.mjs`（`test:static`，离线）：
   - 从我们的文件和登记表反推出上游原文，确认跑一遍为空；
@@ -33,7 +33,7 @@ node scripts/sdk-diff.mjs <SDK 目录> --suggest   # 另外把每个没登记的
   - 改掉登记过的一行上游原文，确认报出是哪一组；
   - 本文缺了一组的说明时，确认会报出来。
 
-## 升 SDK（0.10.2 起）的做法
+## 升 SDK 的做法（0.10.1 → 0.11.0 就是这样做的，20.0 E1）
 
 1. 装新版 SDK，跑 `node scripts/sdk-diff.mjs <新 SDK>`。
 2. 每一个报出来的块，二选一：
@@ -56,9 +56,9 @@ node scripts/sdk-diff.mjs <SDK 目录> --suggest   # 另外把每个没登记的
 
 | 组 | 类 | 内容与理由 |
 |---|---|---|
-| R01 | unused | **记录库、SQLite、钥匙串、文件访问根目录**。<br>上游按 app.zon 的 `capabilities` 在 comptime 决定开不开 `RecordStore` / `RelationalStore` / 凭据，并给 `file_access` 算出应用目录。<br>我们的清单不声明 `store` / `sqlite` / `credentials`，存档走自己的 `chess.appdata*`（v7-plan §7.1），所以这些分支、`relational_migrations` 导入和 `resolved_options` 都不抄。 |
-| R02 | unused | **会话录制与回放**（`NATIVE_SDK_SESSION_RECORD/REPLAY`）、**启动计时**（`launch_timing.lap`）。<br>这些是 SDK 的确定性回放与性能诊断工具，服务于画布应用。我们是 WebView 应用，用不上。<br>同一块里有我们加的 `publishRuntime`（R07）。 |
-| R03 | lag | **平台对象的分配**。<br>上游 0.10 起用 `createWithOptions` 在堆上建平台包装、`destroy` 按闩锁释放：工作线程的 channel wake 拿着包装的地址，被放弃的 wake 可能在栈帧退出后才执行。我们还是栈上的 `initWithOptions` / `deinit`。<br>影响：我们自己的异步桥（v8-1-plan N1）在 `onStop` 里先 `close()`，等进行中的 wake 返回（有上限）；`main()` 在有工作线程未归时直接 `exit`。这条路径已经防住了。剩下的风险只在 SDK 自己的 channel wake 上，我们不用那条路。<br>建议：0.10.2 升级时照上游改。 |
+| R01 | ours | **记录库、SQLite、钥匙串、文件访问根目录：已照上游**（20.0 A2，登记表里不再有这一组）。<br>上游按 app.zon 的 `capabilities` 在 comptime 决定开不开 `RecordStore` / `RelationalStore` / 凭据，并给 `file_access` 算出 7 个应用目录（含 0.11 的 `legacy_data_directory`）。19.0 之前我们不抄（unused）；20.0 的 db 服务改用 SDK 的 SQLite（ADR 0003），`runWithOptions` 的这一段、`RunOptions` 的六个字段、三个 `manifestDeclares*` 和四个平台把它们交给 Runtime 的四行，都逐行照上游。<br>剩下的差异各归原组：上游在同一处的会话回放入口（R02）；`options.security` 在我们这里是可空的，取权限时 `orelse manifestSecurity()`（R06）；`runtime_slot` 排在上游字段之前（R07）；三个函数之前是我们的更新源辅助函数（R13，排版）。<br>`relational_migrations` 由 build.zig 接到手写的 `src/db_migrations.zig`（B16）。只有声明 `sqlite` 的清单（`gen-manifest.mjs --ui app`）才真的打开数据库；19.0 界面的清单不声明，行为不变。 |
+| R02 | unused | **会话录制与回放**（`NATIVE_SDK_SESSION_RECORD/REPLAY`）、**启动计时**（`launch_timing.lap`）。0.11 起录制带 `recording_policy` / `blob_policy`。<br>这些是 SDK 的确定性回放与性能诊断工具，服务于画布应用。我们是 WebView 应用，用不上。<br>同一块里有我们加的 `publishRuntime`（R07）。 |
+| R03 | ours | **平台对象的分配：已照上游**（20.0 E1，登记表里不再有这一组）。<br>上游 0.10 起用 `createWithOptions` 在堆上建平台包装、`destroy` 按闩锁释放：工作线程的 channel wake 拿着包装的地址，被放弃的 wake 可能在栈帧退出后才执行。0.10.1 时我们还是栈上的 `initWithOptions` / `deinit`（lag）；升 0.11.0 时四个平台都改成了上游的写法，注释逐字相同。<br>剩下的差异只有上游在同一处多出的一行 `setupSessionRecorder(…)`，归 R02。R15 的测试仍用 `NullPlatform.initWithOptions`：它只读 `app_info`，不起工作线程。 |
 | R04 | lag | **trace 过滤**。<br>我们：在 `StdoutTraceSink` 里过滤，写进日志文件的不过滤；`-Dtrace=events`（默认）时什么都打。<br>上游：`FilteredTraceSink` 包住扇出后的全部输出；events 档只留 `runtime.event`。<br>影响：开发时 stdout 更吵，发布件不受影响。<br>建议：0.10.2 时跟上游。 |
 | R05 | lag | **Runtime 的三项设置**：<br>· `max_image_pixel_bytes`：读 app.zon `images`，我们没有这一段，取 Runtime 默认值，和上游不声明时相同；<br>· `gpu_surface_frame_diagnostics = false`：我们不传，Runtime 默认 true，但我们没有 gpu_surface 视图，无影响；<br>· 退出时 `runtime.deinit()`：归还字体和媒体纹理，我们不调用。进程随即退出，只少一次释放。<br>上游另有 `pub const app_assets`，我们不用。<br>建议：0.10.2 时跟上游，代价很小。 |
 | R06 | ours | **安全策略从 app.zon 读**：`.security` / `.permissions`，以及外链放行列表。`RunOptions.security` 是可空的，null 表示用清单。<br>同时在 exe 里滤掉 `http://` 开发 origin，除非 `-Ddev-origins`（v6-plan D6）。<br>1.20 之前 main.zig 手写一份 origin 列表，和清单两份并存。<br>`manifest-check.mjs` 第 2 节守着「不许传空字面量盖掉清单」。 |
@@ -71,7 +71,7 @@ node scripts/sdk-diff.mjs <SDK 目录> --suggest   # 另外把每个没登记的
 | R13 | lag | **辅助函数的先后顺序与措辞**。分叉时的旧排版，没有跟上游重排。<br>`windowLabel` 等函数位置不同、几处注释措辞不同，`manifestStringField` 没有上游的 null 分支（app.zon 没有写 null 的字符串字段）。<br>`dock_visible` 的编译期报错是我们改成中文的。<br>行为相同。 |
 | R14 | ours | **上游自己的两个测试不抄**。它们断言的是 SDK 测试用清单里的值（`example.com` 的更新源、`app.refresh` 命令）；拿我们的 app.zon 编译会失败。<br>web 层的三个判断（`manifestHasWebContent` / `manifestWebDeclaration` / `webLayerEnabled` 与编译期检查）放在文件末尾，内容与上游相同，注释略短。 |
 | R15 | ours | **恢复窗口位置**（8.2 M4 起照上游；F2 登记时是 lag）。<br>上游：`window_placement.applySavedWindow` 换上保存的 frame，同时把 `initial_placement` 标成 `.restored`。8.1 及以前我们只换 frame，`initial_placement` 留在 `.default`。<br>8.1 实际表现：SDK 的 `AppInfo.inferLegacyExplicitOrigin` 把原点不为 (0,0) 的 `.default` 当成写死的位置（`.explicit`），所以位置多半是碰巧回来的；保存在 (0,0) 的窗口仍是 `.default`，macOS 主机把它居中到主屏（`appkit_host.m` 的 `centerOnPrimary`）。F2 登记时写的「每次都居中」漏看了这层推断。另外 `.explicit` 与 `.restored` 在 macOS 上换算外框、夹进屏幕的方式不同（后者按最终标题栏换算），只有走 `.restored` 才是上游测过的那条路。<br>现在：`prepareStateStore` 与上游逐行相同，`window_placement.zig` 原样抄入（`files` 里第三对，`sdk-diff` 同样盯着）。剩下的差异只有文件末尾我们自己的测试：用 null 平台走一遍「首次启动 → 保存 → 再启动」，断言主机拿到 `.restored`（原点 (140,90) 与 (0,0) 各一次），并顺带跑 `window_placement.zig` 自带的测试。修之前这条测试是红的（拿到 `.explicit`）。<br>真机核对：`docs/manual-check.md`「8.2 真机路线（30 分钟）」macOS 第 6 步（X1）。 |
-| R16 | ours | **`pub const automation_build`**（8.2 M4 评审修正）。<br>应用模块（main.zig 及其拆出的文件）没有 `build_options`，`-Dautomation` 只到 runner。automation 驱动的两个接缝（`CHESS_SELFTEST_SCENARIO`、`CHESS_SYNC_BASE`，bridge.zig `seamsOpen`）要在编译期就随它关掉：发布件不带 automation，什么环境变量都打不开；普通自检（只设 `CHESS_SELFTEST=1`）照旧。<br>放在 runner 里转出一行，build.zig 不用动。<br>11.0 W 在同一处加了 `pub const mac_shell`：`-Dplatform=null` 在 Mac 上构建时 OS 仍是 macOS，但 `build.zig` 只在 macOS 平台分支编译 `mac_chrome.m`，所以 main.zig / chrome.zig 按平台而不是按 OS 决定是否调用它。<br>12.0 N 同样加了 `pub const win_shell`，给 chrome.zig 决定是否调用 `win_chrome.c`。 |
+| R16 | ours | **`pub const automation_build`**（8.2 M4 评审修正）。<br>应用模块（main.zig 及其拆出的文件）没有 `build_options`，`-Dautomation` 只到 runner。automation 驱动的接缝（`CHESS_SELFTEST_SCENARIO`，bridge.zig `seamsOpen`；19.0 另有 `CHESS_SYNC_BASE`，20.0 E3 随 sync.zig 删掉）要在编译期就随它关掉：发布件不带 automation，什么环境变量都打不开；普通自检（只设 `CHESS_SELFTEST=1`）照旧。<br>放在 runner 里转出一行，build.zig 不用动。<br>11.0 W 在同一处加了 `pub const mac_shell`：`-Dplatform=null` 在 Mac 上构建时 OS 仍是 macOS，但 `build.zig` 只在 macOS 平台分支编译 `mac_chrome.m`，所以 main.zig / menus.zig 按平台而不是按 OS 决定是否调用它。<br>12.0 N 同样加了 `pub const win_shell`（20.0 E3 起没有使用者，留着给 Windows 专有的代码）。<br>20.0 A1 在同一处加了 `ui_app`（`-Dui=app`）、`manifest_sqlite`、`manifest_spa_fallback` 和 `db_migrations`：main.zig 在 comptime 要求 20.0 界面的清单声明 `sqlite` 且关掉 `spa_fallback`，db.zig 的测试用同一份迁移开内存库。 |
 
 ## build.zig ↔ build/app.zig
 
@@ -81,22 +81,25 @@ node scripts/sdk-diff.mjs <SDK 目录> --suggest   # 另外把每个没登记的
 | B02 | ours | **一个应用自己的 `build()`**。<br>上游是给别的应用调用的构建库：`addApp` / `addAppArtifacts` / `addMobileLib`，还有 `native test` 的分析对象、`model-contract`、`appModule`。我们直接写一个 `build()`，模块装配只有 runner 与 main 两个。<br>上游文件头的说明与几个 import 也随之不要。 |
 | B03 | unused | **TypeScript core、服务进程、移动端库、终端会话、SQLite 源码**。<br>上游按应用目录里有没有 `src/core.ts` 等决定编译 TypeScript core、ScriptC 运行时、服务进程归档、iOS/Android 库、ghostty 终端，以及 `sqlite3.c`。<br>这个应用一样都没有。 |
 | B04 | ours | **`PlatformOption` 的 `null` 写成 `@"null"`**。抄写时的写法，两者在 Zig 0.16 里等价。 |
-| B05 | ours | **构建选项**：<br>· `-Dmanifest`：macOS 用派生清单，只多 `close_policy`；<br>· `-Ddev-origins`：见 R06；<br>· `-Dpackage-target`；<br>· `BuildOptionValues` / `buildOptionsModule`：开发 exe 与打包 exe 各一份，只差 `dev_origins`；<br>· `optimizeMode` 让 run/dev 默认 Debug、package 默认 ReleaseFast。 |
+| B05 | ours | **构建选项**：<br>· `-Dmanifest`：macOS 用派生清单，只多 `close_policy`；<br>· `-Ddev-origins`：见 R06；<br>· `-Dpackage-target`；<br>· `BuildOptionValues` / `buildOptionsModule`：开发 exe 与打包 exe 各一份，只差 `dev_origins`；<br>· `optimizeMode` 让 run/dev 默认 Debug、package 默认 ReleaseFast。<br>· `-Dui=web|app`（20.0 A1）：`app` 时 `frontend-build` 跑 `sync-dist.mjs --ui=app`（打包 dist-app），exe 链 SQLite（B16），`build_options.ui_app` 给 runner（R16）。默认 `web`，19.0 界面不变。 |
 | B06 | ours | **`frontend-build` / `dev` / `package` 步骤**。<br>`frontend/dist` 由 `scripts/sync-dist.mjs` 从 `src/web` 同步（D12）；`zig build dev` 走 `native dev`；`zig build package` 走 `native package`，并把同一个 SDK 路径传给 CLI。<br>上游对应的是服务进程安装与 TypeScript 测试模块。 |
 | B07 | lag | **链接搜索路径的位置**。<br>上游把框架路径、库路径、rpath 抽进 `addPlatformLinkSearchPaths`，好让 TypeScript 应用的缓存对象与最终链接共用。我们写在 `linkPlatform` 里，内容相同。<br>同一块里，`linkPlatform` 上方关于 `-fno-sanitize=builtin` 的说明我们没抄（只是注释，标志本身两边一样）。 |
 | B08 | ours | **只有注释不同**。<br>为什么链 CoreMedia / ScreenCaptureKit / CoreVideo、iphlpapi / ws2_32 / advapi32、Direct2D / DirectWrite，Windows 子系统，WebKitGTK / WebView2 存根。我们的注释写的是这个应用为什么也要链它们，上游的写的是功能。 |
 | B09 | ours | **Windows exe 嵌入 SDK 的应用清单**（8.2 M4 起照上游；F2 登记时是 lag）。<br>`exe.win32_manifest = assets/native-sdk.manifest`：那份清单声明通用控件 v6 和「按显示器 DPI 感知（PerMonitorV2，旧系统退到 `dpiAware true/pm`）」。8.1 及以前没有它，进程对 DPI 不感知，缩放不是 100% 的显示器上 Windows 把整个窗口按位图拉伸，文字和棋盘发虚；原生消息框也是旧样式。<br>现在：注释与上游逐字相同，差异只剩 SDK 路径的写法（`nativeSdkPath(…)` 对 `dep.path(…)`，同 B01）。交叉编译的 PE 里多了一个 `.rsrc` 节，只有一项 `RT_MANIFEST` #1（1,752 字节，与 SDK 文件逐字节相同）；修之前 exe 没有资源目录，图标随包放在旁边（`native package` 的 `app-icon.ico`），不在 exe 里，所以没有图标、版本信息可被挤掉。<br>`manifest-check.mjs --sdk` 加了一条：SDK 的 `build/app.zig` 嵌的清单文件，我们也得嵌。<br>真机核对：`docs/manual-check.md`「8.2 真机路线（30 分钟）」Windows 第 6 步（X2）。 |
 | B10 | ours | **CEF 的复制与检查脚本**：排版不同，macOS 缺件时多打印几行提示。我们不用 Chromium 引擎，这几段只在 `-Dweb-engine=chromium` 时生效。 |
 | B11 | ours | **从 app.zon 推断 web 层**。<br>我们用一个只读 web 相关字段的精简解析（`@embedFile("app.zon")`），自己写 `resolveWebLayer` / `parseWebEngine` / `parseWebLayer`。<br>上游用 `web_layer_contract`，并顺带读权限、`persist`、服务包、图片预算、更新开关等，那些只服务于 B03 和 R05 里我们没有的功能。<br>上游「更新与 Chromium 引擎不能同时开」的配置期检查也在这一组：我们两者都没开。 |
-| B12 | lag | **x86_64 强制 LLVM 后端**（`useLlvmWorkaround`）。<br>Zig 0.16 的自研 x86_64 后端会错编 SysV 调用约定里浮点参数多的 C 函数，只影响 x86_64 的 Debug 构建。我们的发布件是 ReleaseFast（本来就走 LLVM）；Windows 是另一套调用约定；macOS 发布件是 arm64。<br>影响：只可能出现在 x86_64 Linux/macOS 的 Debug 开发构建上。<br>建议：0.10.2 时照抄（一行）。 |
+| B12 | ours | **x86_64 强制 LLVM 后端：已照上游**（20.0 E1，登记表里不再有这一组）。<br>Zig 0.16 的自研 x86_64 后端会错编 SysV 调用约定里参数多的 C 函数（浮点参数多的，以及 GTK 主机 22 个参数、栈上传参错一格的），只影响 x86_64 的 Debug 构建。<br>现在 `useLlvmWorkaround` 与上游逐字相同，开发 exe 带着上游的注释用它，打包 exe 与两个测试二进制（B13）也用它，和上游的 `addTest` 一样。 |
 | B13 | ours | **`zig build test` 另跑 runner 模块的测试**（8.2 M4）。<br>`src/runner.zig` 是独立模块（`runner_mod`），应用的测试二进制以 `main.zig` 为根，从来不跑它里面的测试。R15 的测试与 `window_placement.zig` 自带的测试要在 runner 模块里才拿得到 `prepareStateStore`，所以加一个以 `runner_mod` 为根的测试。上游对应的是 `native test` 的分析对象，见 B05。 |
-| B14 | ours | **应用自己的 macOS 窗口外壳**（11.0 W）。<br>SDK 0.10.1 的拖动区只给它自己的画布控件用，WKWebView 盖住标题栏后网页里无法声明可拖动区域。`src/native/mac_chrome.m` 由我们自己编译（只在 macOS 分支，带 `-fobjc-arc`），链 WebKit：标题栏透明、内容通到顶，WebView 上方一条 28 pt 的原生拖动条，窗口外观跟主题（`chess.setChrome`）。<br>上游没有对应的东西；SDK 哪天有了网页拖动区，就整组删掉、改用 SDK 的。 |
-| B15 | ours | **应用自己的 Windows 窗口外壳**（12.0 N）。<br>SDK 0.10.1 的 Windows 主机不设 DWM 属性：标题栏一直是系统默认的白/灰，深色主题（木、夜）下是一条亮边。`src/native/win_chrome.c` 由我们自己编译（只在 Windows 分支），`chess.setChrome` 时把本进程的顶层窗口设成 immersive dark mode（跟主题明暗），并在 Windows 11 上把系统背景设成 Mica；dwmapi 运行时加载，不加链接依赖，Windows 10 上 Mica 那一步失败就跳过。<br>上游哪天有了窗口外观的接口，就整组删掉、改用 SDK 的。 |
+| B14 | ours | **应用自己的 macOS AppKit 胶水**（11.0 W；20.0 E3 改）。<br>`src/native/mac_chrome.m` 由我们自己编译（只在 macOS 分支，带 `-fobjc-arc`）：在 applicationWillFinishLaunching 里装 `odoc` Apple 事件的处理（Finder 双击 / 拖到 Dock 图标的 .pgn，SDK 的 AppKit 主机不处理它），交给 opened.zig；每次建菜单栏之后补上 Mac 自己的部分（应用菜单换成页面的语言、设置…挪进应用菜单、去掉只给 Windows 的退出 / 关于、加编辑与窗口菜单）。<br>11.0 W 起它还把内容铺到透明标题栏下、盖一条 28 pt 的原生拖动条（配合 19.0 页面的 `chess.setChrome`）；20.0 页面不留那条空、导航就在那里，拖动条吃掉了点击，20.0 E3 连同 `chess.setChrome` 一起删掉。12.0 N 的 Windows 窗口外壳（B15，`win_chrome.c`，只由 `chess.setChrome` 调用）同时删掉。<br>上游哪天处理了打开文档事件、或给了应用菜单的本地化，就删掉对应部分。 |
+| B16 | ours | **SQLite 与迁移**（20.0 A2，ADR 0003）。<br>上游 `appModule` 按清单的 `sqlite` / `store` 能力把 `third_party/sqlite/sqlite3.c` 编进应用模块，`relational_migrations` 来自 TypeScript schema 生成的 `migrations.zig`（没有 schema 时是 `no_migrations.zig`）。<br>我们没有 TypeScript core：`addMigrations` 把 runner 的 `relational_migrations` 接到手写的 `src/db_migrations.zig`；`addSqlite` 用上游同一组 `sqlite_c_defines`，只编进 `-Dui=app` 的 exe（19.0 的 exe 不带这份 8 MB 的 C），以及总是编进测试二进制（`db.zig` 的测试要真的 RelationalStore；测试用自己的根模块，C 源文件跟着模块走）。<br>链了 libc 的 Linux 测试二进制静态 TLS 有 257 KiB，glibc 从线程栈里扣：sync.zig / engine.zig 的线程栈因此是 1 MiB（256 KiB 时 pthread_create 报 EINVAL）。 |
 
-## 数字（登记于 0.10.1）
+## 数字（登记于 0.11.0）
 
-- **31 组，177 块**：ours 20 组、unused 4 组、lag 7 组（12.0 N 加了 B15；11.0 W 加了 B14；8.2 M4 把 R15、B09 两组 lag 修成 ours，加了 B13，评审修正加了 R16；F2 登记时是 27 组：ours 14、unused 4、lag 9）。
-- **runner.zig**：16 组，94 块，上游 882 行对我们 374 行。
-- **build.zig**：14 组，82 块，上游 2,539 行对我们 394 行。
+- **29 组，168 块**：ours 21 组、unused 3 组、lag 5 组（R04、R05、R11、R13、B07）。
+  - 20.0 A2：R01 照上游（SQLite / 记录库 / 凭据 / 文件根目录），登记表里不再有；新开 B16（手写迁移、只在 `-Dui=app` 编 SQLite）；R02、R06、R07、R13、R16、B03、B05、B06、B02 里随之改了几块。
+  - 20.0 E1 升 0.11.0：R03、B12 两组 lag 照上游改掉，登记表里不再有；其余 19 块对不上的（上游在我们分叉处改了 TypeScript / 移动端 / 会话录制的代码）按原来的组重新登记，内容不变。
+  - 之前：12.0 N 加了 B15；11.0 W 加了 B14；8.2 M4 把 R15、B09 两组 lag 修成 ours，加了 B13，评审修正加了 R16；F2 登记时是 27 组：ours 14、unused 4、lag 9。
+- **runner.zig**：14 组，84 块，上游 1,410 行对我们 1,057 行。
+- **build.zig**：15 组，84 块，上游 3,155 行对我们 866 行。
 - **window_placement.zig**：没有差异。
-  - 其中 B02、B03 两组占了上游的 2,045 行：上游是给所有应用用的构建库，我们只是一个应用。
+  - 其中 B02、B03 两组占了上游的 2,273 行：上游是给所有应用用的构建库，我们只是一个应用。
