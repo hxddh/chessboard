@@ -13,6 +13,7 @@
  *   review.retry { gameId, ply, ok }              the first try on that card
  *   game.start / game.end                         the game rating
  *   game.undo                                     悔棋: that game is not rated
+ *   game.import { you, opp, result }              an imported game: the game rating, like one played here
  *
  * State, per skill: mastery `m` (0…1, a moving average of answers), the
  * positions solved, `lit` (has it: placed, or ≥ 3 solved and m ≥ 0.6);
@@ -41,7 +42,7 @@ const dayOf = (at, tz) => Math.floor((at - tz * 60000) / DAY);
 export function initialState() {
   return {
     lastId: 0, placed: null,
-    puzzle: { r: START_RATING, rd: 350, vol: 0.06 }, game: null, games: 0, openGames: {}, unrated: 0,
+    puzzle: { r: START_RATING, rd: 350, vol: 0.06 }, game: null, games: 0, openGames: {}, unrated: 0, imported: 0,
     skills: {}, cards: {}, extra: {}, items: {}, days: {}, perGame: {}, misses: [], curve: [],
   };
 }
@@ -147,6 +148,22 @@ function gameEnd(st, e, tz) {
 }
 
 /**
+ * An imported game (library/import.js) is a game like one played here: when
+ * it is known which side was yours and how strong the other side was, its
+ * result moves the game rating. It does not count towards today's games —
+ * it was played some other day.
+ */
+function imported(st, e) {
+  st.imported++;
+  const you = e.you === "w" || e.you === "b" ? e.you : null;
+  if (!you || !Number.isFinite(e.opp) || !["1-0", "0-1", "1/2-1/2"].includes(e.result)) return;
+  const score = e.result === "1/2-1/2" ? 0.5 : (e.result === "1-0") === (you === "w") ? 1 : 0;
+  st.game ||= { r: st.puzzle.r, rd: 200, vol: 0.06 };
+  st.game = ChessRating.update(st.game, [{ r: e.opp, rd: 60, score }]);
+  st.games++;
+}
+
+/**
  * Apply one event to `st` (mutating it; `project` gives a fresh state).
  * @param {object} st   from initialState()
  * @param {object} e    a stored event (id, at, type, …)
@@ -180,6 +197,7 @@ export function apply(st, e, { tz = 0, opponentRating = () => null } = {}) {
       if (st.openGames[e.gameId]) st.openGames[e.gameId].takeback = true;
       return st;
     case "game.end": gameEnd(st, e, tz); break;
+    case "game.import": imported(st, e); break;
     default: return st;
   }
   mark(st, e.at, tz);

@@ -1,0 +1,37 @@
+[Event "Good one"]
+[White "Alice"]
+[Black "Bob"]
+[WhiteElo "1450"]
+[BlackElo "1500"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0
+
+[Event "Illegal move"]
+[White "Alice"]
+[Black "Carol"]
+[Result "0-1"]
+
+1. e4 e5 2. Nf9 Nc6 0-1
+
+[Event "Unclosed variation"]
+[White "Dan"]
+[Black "Alice"]
+[BlackElo "1600"]
+[Result "1/2-1/2"]
+
+1. d4 d5 (1... Nf6 2. c4 1/2-1/2
+
+[Event "Bad FEN"]
+[SetUp "1"]
+[FEN "not a fen"]
+[Result "*"]
+
+1. e4 *
+
+[Event "No moves"]
+[White "Alice"]
+[Black "Erin"]
+[Result "*"]
+
+*

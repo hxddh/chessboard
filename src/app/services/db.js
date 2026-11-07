@@ -58,6 +58,8 @@ const PROJECT = {
     { merge: "games", key: e.gameId, patch: { analysed: { at: e.at, budget: e.budget || null } } },
   ],
   "review.done": (e) => [{ merge: "games", key: e.gameId, patch: { reviewed: e.at } }],
+  /** An imported game (library/import.js): its row in the library, by its content's id. */
+  "game.import": ({ type, id, gameId, at, ...rec }) => [{ put: "library", value: { ...rec, id: gameId, importedAt: at } }],
 };
 
 /** Named reads. `r` is the backend's reader: get, range, count. */
@@ -74,6 +76,8 @@ const QUERIES = {
   /** The review's rows for a game, by position; [] when it was never reviewed. */
   "analysis.get": (r, { gameId }) => r.range("analysis", [gameId, 0], [gameId, MAX]),
   "events.since": (r, { after = 0, limit = 1000 } = {}) => r.range("events", after + 1, MAX, { limit }),
+  /** The ids the library holds (an import counts what it has as duplicates). */
+  "library.ids": async (r) => (await r.range("library", null, null)).map((g) => g.id),
   "settings.all": async (r) => Object.fromEntries((await r.range("settings", null, null)).map((s) => [s.key, s.value])),
   "table.count": (r, { table }) => {
     if (!TABLES[table]) throw new Error("db: no table " + table);
