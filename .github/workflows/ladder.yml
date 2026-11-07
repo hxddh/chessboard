@@ -1,59 +1,30 @@
 name: ladder
 
-# The opponent ladder, measured on machines that do nothing else
-# (v8-1-plan T1).
-#
-# docs/measured.json `ladder` says how far apart the rungs are: the stronger
-# of two neighbours should score 60–75%. Those numbers come from a
-# round-robin of self-play games (scripts/test-ladder.mjs), which is
-# CPU-bound — thousands of games, hours of engine time — and the 8.1 run was
-# made on a shared development machine, so its intervals are wider than the
-# acceptance band in places and the movetime rung (不限档) searched fewer
-# nodes a move than it does on a player's machine. This workflow re-runs it
-# where the numbers can be trusted: 16 jobs × 4 processes, one engine each,
-# then one fit over everything and the fit's own verdict (monotone, every
-# step 60–75%) as the job's result. The fitted table is uploaded; putting it
-# into docs/measured.json and opponents.js is a person's commit.
-#
-# v20-0-plan §3 P1: `ladder: 20` (the default) plays the 20.0 opponents
-# instead (scripts/ladder20.mjs: src/app/core/opponents.js over the app's
-# engine service, 19.0 rungs as anchors), and its fit writes `ladder20`.
-# scripts/app/ladder20.test.mjs fails any PR whose profiles or displayed
-# ratings differ from that record, so a changed profile is re-measured here
-# (or locally) and the uploaded docs/measured.json committed with it. Empty
-# inputs take each script's own defaults (19: 120 / 24 / 2; 20: 40 / 12,
-# anchors 30).
-#
-# Manual only. It is not a release gate: a gate that takes hours and can
-# fail on sampling noise is one people learn to skip. It is the thing to
-# press after changing a rung in engine.js TIERS.
+# The 20.0 opponent ladder, measured on machines that do nothing else
+# (v20-0-plan §3 P1): the opponents of src/app/core/opponents.js play each
+# other over the app's engine service (scripts/ladder20.mjs), 16 jobs × 4
+# processes, and one Bradley–Terry fit over everything writes `ladder20`.
+# Six 19.0 rungs play as anchors so the scale stays 19.0's: they run from a
+# checkout of the v19.0.0 tag (19.0's own engine tiers, Maia-1 nets and
+# resign rule — none of it is in this tree any more). The fitted
+# docs/measured.json is uploaded; putting it into the repository is a
+# person's commit. scripts/app/ladder20.test.mjs fails any PR whose profiles
+# or displayed ratings differ from that record.
+
 on:
   workflow_dispatch:
     inputs:
-      ladder:
-        description: "which ladder: 20 (core/opponents.js, ladder20.mjs) or 19 (engine.js TIERS, test-ladder.mjs)"
-        type: choice
-        options: ["20", "19"]
-        default: "20"
       adjacent:
         description: games per pairing of neighbours (empty = the script's default)
         default: ""
       near:
         description: games per pairing two apart (empty = the script's default)
         default: ""
-      far:
-        description: "19 only: games per pairing further apart"
-        default: ""
       anchors:
-        description: "20 only: games per 19.0 anchor and each of its two nearest 20.0 opponents"
+        description: "games per 19.0 anchor and each of its two nearest 20.0 opponents"
         default: ""
-      # v8-2-plan F5: top up the steps the fit is least sure of without
-      # replaying the whole schedule. 19: each named pairing is played that
-      # many games in all and the fit takes every other pairing's totals from
-      # docs/measured.json. 20: ids are core/opponents.js's (an anchor is
-      # 19:<rung>), and the fit reads only this run's games.
       pairs:
-        description: "only these pairings, e.g. 19: strongplus:extreme:300 · 20: nora:fish:80,19:steady:ada:40 (empty: everything)"
+        description: "only these pairings, e.g. nora:fish:80,19:steady:ada:40 (empty: everything)"
         default: ""
 
 permissions:
@@ -74,46 +45,34 @@ jobs:
           node-version: 26
       - name: install build deps
         run: npm ci
-      # four shards per job, one per core: 64 in all. A game already in the
-      # directory is not played again, so a job that stops at the step's own
-      # timeout (below the job's, so the upload after it still runs) uploads
-      # what it finished. A shard that crashes fails the step: each exit code
-      # is collected, not only the last one `wait` would report. The inputs
-      # reach the shell as environment variables, never pasted into the
-      # script text.
+      - name: 19.0 for the anchors (v19.0.0)
+        run: |
+          git fetch --no-tags --depth=1 origin +refs/tags/v19.0.0:refs/tags/v19.0.0
+          git worktree add .ladder19 v19.0.0
+          ln -s "$PWD/node_modules" .ladder19/node_modules
       - name: self-play
         shell: bash
         timeout-minutes: 330
         env:
           JOB: ${{ matrix.job }}
-          LADDER: ${{ inputs.ladder }}
           ADJACENT: ${{ inputs.adjacent }}
           NEAR: ${{ inputs.near }}
-          FAR: ${{ inputs.far }}
           ANCHORS: ${{ inputs.anchors }}
           PAIRS: ${{ inputs.pairs }}
         run: |
-          for v in "$ADJACENT" "$NEAR" "$FAR" "$ANCHORS"; do
+          for v in "$ADJACENT" "$NEAR" "$ANCHORS"; do
             [[ "$v" =~ ^[0-9]*$ ]] || { echo "not a number: $v"; exit 2; }
           done
-          # the shape here; the names are checked by the script itself
           [[ "$PAIRS" =~ ^([a-z0-9]+(:[a-z0-9]+)+(,[a-z0-9]+(:[a-z0-9]+)+)*)?$ ]] || { echo "pairs: a:b[:games],…"; exit 2; }
           args=()
-          if [ "$LADDER" = 19 ]; then
-            script=scripts/test-ladder.mjs
-            args+=(--adjacent="${ADJACENT:-120}" --near="${NEAR:-24}" --far="${FAR:-2}")
-          else
-            script=scripts/ladder20.mjs
-            [ -z "$ADJACENT" ] || args+=(--adjacent="$ADJACENT")
-            [ -z "$NEAR" ] || args+=(--near="$NEAR")
-            [ -z "$ANCHORS" ] || args+=(--anchor-games="$ANCHORS")
-          fi
+          [ -z "$ADJACENT" ] || args+=(--adjacent="$ADJACENT")
+          [ -z "$NEAR" ] || args+=(--near="$NEAR")
+          [ -z "$ANCHORS" ] || args+=(--anchor-games="$ANCHORS")
           [ -z "$PAIRS" ] || args+=(--pairs="$PAIRS")
-          # what this job will play, in the log, before an hour of it
-          node "$script" play --dry-run --shard=$(( (JOB - 1) * 4 + 1 ))/64 "${args[@]}" | tail -n 1
+          node scripts/ladder20.mjs play --dry-run --shard=$(( (JOB - 1) * 4 + 1 ))/64 "${args[@]}" | tail -n 1
           pids=()
           for k in 1 2 3 4; do
-            node "$script" play --shard=$(( (JOB - 1) * 4 + k ))/64 --out=out "${args[@]}" > /dev/null &
+            node scripts/ladder20.mjs play --shard=$(( (JOB - 1) * 4 + k ))/64 --out=out "${args[@]}" > /dev/null &
             pids+=($!)
           done
           bad=0
@@ -142,18 +101,8 @@ jobs:
           pattern: ladder-*
           path: out
           merge-multiple: true
-      # --record writes the fit into this checkout's docs/measured.json,
-      # which is uploaded below; the exit code is the verdict
       - name: fit
-        shell: bash
-        env:
-          LADDER: ${{ inputs.ladder }}
-        run: |
-          if [ "$LADDER" = 19 ]; then
-            node scripts/test-ladder.mjs fit --in=out --anchors=kept --record
-          else
-            node scripts/ladder20.mjs fit --in=out --record
-          fi
+        run: node scripts/ladder20.mjs fit --in=out --record
       - uses: actions/upload-artifact@v7
         if: always()
         with:

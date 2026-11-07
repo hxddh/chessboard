@@ -1,281 +1,65 @@
 name: build-windows
 
-# Builds chessboard.exe (x64) on a Windows runner using the system web engine
-# (Microsoft Edge WebView2, preinstalled on windows-2025). Native SDK comes
-# from npm (@native-sdk/cli), zig from ziglang.org. Optionally uploads the zip
-# to an existing release when release_tag is set. Exploratory: this is the
-# first non-macOS target — CI is the source of truth for whether it builds.
+# The Windows app (x64): the same as build-macos.yml — src/app into
+# frontend/dist, the Zig shell with the SQLite store, a native Stockfish
+# (MinGW-w64 GCC, cached by its build script) beside chessboard.exe, packaged
+# by the Native SDK CLI. Two jobs, side by side:
+#
+#   package    the release build: packaged, the engine added, zipped, and the
+#              package as shipped launched in self-test mode twice — once from
+#              a folder nobody may write to (where a user's Program Files copy
+#              is: WebView2's data must then go to %LOCALAPPDATA%\Chessboard,
+#              v8-4-plan V1), once from where it was unpacked. Its zip is the
+#              Chessboard-Windows-x64 artifact release.yml publishes.
+#   scenarios  the same commit built with -Dautomation=true, never uploaded,
+#              driven through the app's scenarios (scripts/automation-app.mjs).
+#
+# checks.yml runs this workflow on a PR that changes the native side, and
+# release.yml runs it (through checks.yml) on every release.
+#
+# Signing (v20-0-plan §7 E2) is not here yet: the exe and the engine are
+# unsigned, so SmartScreen warns. Authenticode signing needs the owner's code
+# signing certificate as repository secrets; the step goes where the TODO
+# below says, after add-engine.sh and before the zip.
+
 on:
   workflow_dispatch:
     inputs:
-      release_tag:
-        description: "Existing release tag to upload the zip to (optional)"
-        required: false
-        default: ""
       sdk_version:
-        # Pinned, like release.yml's input of the same name (see the comment
-        # there). D7: this used to default to "latest", and the `|| '0.11.0'`
-        # below only catches an EMPTY string — so every hand-dispatched build
-        # got whatever npm had that day, while the step's comment claimed the
-        # opposite. The fallback stays for a caller that passes "".
         description: "@native-sdk/cli version (npm dist-tag or exact version)"
         required: false
         default: "0.11.0"
-  # 7.6: called by release.yml in parallel with its test jobs — see the same
-  # trigger in build-macos.yml.
   workflow_call:
     inputs:
-      release_tag:
-        type: string
-        required: false
-        default: ""
       sdk_version:
         type: string
         required: false
         default: "0.11.0"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build:
+  package:
     runs-on: windows-2025
+    timeout-minutes: 50
+    name: Windows package
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 26
-      # esbuild, and nothing else. It bundles the ES modules under src/web/js
-      # into the one classic script zero:// can load; `npm ci` rather than
-      # `npm install` so the same commit gets the same bundler.
       - name: install build deps
         run: npm ci
-      - name: unit tests
-        run: node scripts/test-chess.mjs
-      # The SDK version is an input rather than a bare `npm install -g`, so a
-      # release can pin it and get the same toolchain twice. Whatever it
-      # resolves to is echoed into the log: an unrecorded dependency is one
-      # that cannot be blamed later.
       - name: install Native SDK CLI
-        shell: bash
         env:
-          # see release.yml's sdk_version input for why this is not 'latest'
           SDK_VERSION: ${{ inputs.sdk_version || '0.11.0' }}
         run: |
           npm install -g "@native-sdk/cli@${SDK_VERSION}"
           native --version || true
-          echo "resolved: $(npm ls -g --depth=0 @native-sdk/cli || true)"
-          echo "SDK_PATH=$(npm root -g)/@native-sdk/cli" >> "$GITHUB_ENV"
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.16.0
-      - name: sync frontend dist
-        shell: bash
-        run: |
-          # One script, not a hand-copied list. 6.1 added an on-demand chunk
-          # (chunk-eco.js) to the bundler and to sync-dist.mjs, and these
-          # workflow copies kept naming two files — the packaged app would
-          # have shipped without it and lost every opening name. The list
-          # lives in scripts/bundle.mjs CHUNKS and is read, never retyped.
-          node scripts/sync-dist.mjs
-      - name: manifest keys are actually read
-        # src/runner.zig is a fork of the SDK's app_runner and does not
-        # complain when it lags: an unread key silently takes the SDK
-        # default. That is how close_policy = "hide" shipped dead in 1.18.
-        shell: bash
-        run: node scripts/manifest-check.mjs --sdk "$SDK_PATH"
-      # src/main.zig has carried `test` blocks since 1.21.2 and nothing has ever
-      # run them — `zig build test` exists in build.zig and no workflow, and no
-      # script, called it. That includes the guard written for the JSON
-      # unescaping fix, which shipped in two releases described as guarded.
-      #
-      # It is worse than an unrun test: Zig only analyses a `test` block when
-      # building tests, so one that does not even compile leaves `zig build`
-      # perfectly green. This step is the first time these are known to work.
-      #
-      # It lives here rather than in checks.yml because the test module imports
-      # the Native SDK, which only the platform runners have.
-      - name: zig build test
-        shell: bash
-        run: zig build test -Dplatform=windows -Dnative-sdk-path="$SDK_PATH"
-      - name: zig build
-        shell: bash
-        run: zig build -Doptimize=ReleaseFast -Dplatform=windows -Dnative-sdk-path="$SDK_PATH"
-      - name: package + zip
-        shell: bash
-        run: |
-          mkdir -p dist
-          native package --target windows --output dist/Chessboard --binary zig-out/bin/chessboard.exe
-          # .pgn association: Windows has no bundle manifest for it and the
-          # packager writes no registry entries, so the one-time registration
-          # script rides next to the exe (see scripts/register-pgn.cmd)
-          if [ -d dist/Chessboard ]; then
-            cp scripts/register-pgn.cmd scripts/register-pgn.reg dist/Chessboard/
-            # the notification icon main.zig hands the host (v8-3-plan V2):
-            # LoadImageW(IMAGE_ICON) wants an .ico, by an absolute path
-            cp assets/icon.ico dist/Chessboard/resources/icon.ico
-            test -f "$(find dist/Chessboard -path '*/licenses/LICENSE.txt' | head -n1)"
-          fi
-          ls -R dist
-      # v8-4-plan V1: the packaged app in a folder the user cannot write to,
-      # as when it is unzipped into Program Files. A copy of dist/Chessboard
-      # (taken before the self-test below has run it, so it holds no
-      # chessboard.exe.WebView2 folder yet) gets a deny ACE for Everyone:
-      # (OI)(CI)(WD,AD) — "create files / write data" and "create
-      # folders / append data", inherited by everything under it. That is
-      # what makes creating a file fail; reading, listing and running the exe
-      # are untouched (no full W: W includes SYNCHRONIZE, which opening a
-      # folder needs). The step proves the deny took (a write must fail),
-      # runs the same two-launch self-test there, and then wants WebView2's
-      # data in %LOCALAPPDATA%\Chessboard\WebView2 and none beside the exe.
-      # Red on purpose: comment out `app_state.resolveWebView2UserData();` in
-      # src/main.zig main() — then WebView2 has no folder it may write, and
-      # even if the page came up anyway the %LOCALAPPDATA% check fails.
-      - name: self-test the packaged app from a read-only folder
-        timeout-minutes: 6
-        shell: pwsh
-        run: |
-          $src = if (Test-Path 'dist/Chessboard') { 'dist/Chessboard' } else { throw 'no dist/Chessboard to copy' }
-          $ro = Join-Path $env:RUNNER_TEMP 'readonly-app\Chessboard'
-          New-Item -ItemType Directory -Force (Split-Path $ro) | Out-Null
-          Copy-Item -Recurse -Force $src $ro
-          Get-ChildItem -Recurse -Directory -Filter '*.WebView2' $ro | Remove-Item -Recurse -Force
-          $fallback = Join-Path $env:LOCALAPPDATA 'Chessboard\WebView2'
-          if (Test-Path $fallback) { Remove-Item -Recurse -Force $fallback }
-          # Everyone (S-1-1-0), not just $env:USERNAME: on the first CI run a
-          # deny for the user alone did not stop the write. /T writes the ACE
-          # on every folder and file, so it does not rely on propagation.
-          icacls $ro /deny "*S-1-1-0:(OI)(CI)(WD,AD)" /T /C
-          if ($LASTEXITCODE -ne 0) { throw "icacls failed ($LASTEXITCODE)" }
-          $exe = (Get-ChildItem -Recurse -Filter chessboard.exe $ro | Select-Object -First 1).FullName
-          $bin = Split-Path $exe
-          icacls $bin
-          $probe = Join-Path $bin 'write-probe.txt'
-          $wrote = $true
-          try { [IO.File]::WriteAllText($probe, 'x') } catch { $wrote = $false }
-          if ($wrote) { throw "the deny did not take: $probe could be written" }
-          Write-Host "ok: $bin refuses new files"
-          node scripts/selftest-app.mjs $exe
-          if ($LASTEXITCODE -ne 0) { throw "self-test from the read-only folder failed ($LASTEXITCODE)" }
-          $beside = Get-ChildItem -Directory -Filter '*.WebView2' $bin
-          if ($beside) { throw "WebView2 data beside the exe: $($beside.FullName -join ', ')" }
-          if (-not (Get-ChildItem -Force $fallback -ErrorAction SilentlyContinue)) { throw "no WebView2 data in $fallback" }
-          Write-Host "ok: WebView2 data went to $fallback"
-      # 7.5: launch the packaged app once before shipping it — see the same
-      # step in build-macos.yml and scripts/selftest-app.mjs (v8-1-plan N3 adds
-      # IndexedDB, the synchronous language chunks and the native file commands).
-      - name: self-test the packaged app
-        shell: bash
-        run: |
-          exe="$(find dist/Chessboard -name chessboard.exe | head -n1)"
-          [ -n "$exe" ] || exe=zig-out/bin/chessboard.exe
-          node scripts/selftest-app.mjs "$exe"
-      - name: zip package
-        shell: pwsh
-        run: |
-          # Zip whatever native package produced under dist/ (a folder or a bare exe).
-          $src = if (Test-Path 'dist/Chessboard') { 'dist/Chessboard' } else { 'zig-out/bin/chessboard.exe' }
-          Compress-Archive -Path $src -DestinationPath 'dist/Chessboard-Windows-x64.zip' -Force
-          Get-ChildItem dist
-      - uses: actions/upload-artifact@v7
-        with:
-          name: Chessboard-Windows-x64
-          path: dist/Chessboard-Windows-x64.zip
-      - name: upload to release
-        if: ${{ inputs.release_tag != '' }}
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.release_tag }}
-        run: gh release upload "$TAG" dist/Chessboard-Windows-x64.zip --clobber
-
-  # v8-2-plan V1 step 2: the automation build, driven from outside — see the
-  # same job in build-macos.yml for what it is and why it is never released
-  # (scripts/test-chess.mjs holds that it produces no Chessboard-* artifact).
-  #
-  # A gate since 8.3 (v8-3-plan §8 第 4 条): release.yml's publish needs this
-  # whole workflow, so a red here stops a release, as on macOS. Until 8.2.1
-  # it was not: the page never ran on a runner, because the WebView2 host
-  # read it from the current directory (v8-2-plan §9 「8.2.1」); with that
-  # fixed it went green twice in a row (runs 37571031877, 37573325903).
-  # The smoke and scenario steps carry their own limits under the job's, so
-  # a hang ends a step "failed" with its report, not the job "cancelled".
-  automation:
-    runs-on: windows-2025
-    timeout-minutes: 20
-    name: automation (not released)
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 26
-      - name: install build deps
-        run: npm ci
-      - name: install Native SDK CLI
-        env:
-          SDK_VERSION: ${{ inputs.sdk_version || '0.11.0' }}
-        run: |
-          npm install -g "@native-sdk/cli@${SDK_VERSION}"
-          echo "resolved: $(npm ls -g --depth=0 @native-sdk/cli || true)"
-          echo "SDK_PATH=$(npm root -g)/@native-sdk/cli" >> "$GITHUB_ENV"
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.16.0
-      - name: sync frontend dist
-        run: node scripts/sync-dist.mjs
-      # v20-0-plan A5: the zero:// probe page, into this package only (the
-      # shipped one never has it); the `zero-probe` scenario prints its table
-      - name: zero:// probe page (automation package only)
-        run: node scripts/zero-probe.mjs
-      - name: zig build (automation)
-        run: zig build -Doptimize=ReleaseFast -Dautomation=true -Dplatform=windows -Dnative-sdk-path="$SDK_PATH" --prefix zig-out-auto
-      - name: package (automation build, never uploaded)
-        run: |
-          native package --target windows --output dist-auto/Chessboard --binary zig-out-auto/bin/chessboard.exe
-          exe="$(find dist-auto/Chessboard -name chessboard.exe | head -n1)"
-          [ -n "$exe" ] || exe=zig-out-auto/bin/chessboard.exe
-          echo "AUTO_EXE=$exe" >> "$GITHUB_ENV"
-      - name: automation smoke
-        timeout-minutes: 3
-        run: node scripts/automation-smoke.mjs "$AUTO_EXE"
-      - name: automation scenarios
-        timeout-minutes: 12
-        run: node scripts/automation-scenarios.mjs "$AUTO_EXE" --out automation-windows.json
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: automation-report-Windows
-          path: automation-windows.json
-          if-no-files-found: ignore
-
-  # v20-0-plan A1–A3, F3: the 20.0 app — see the same job in build-macos.yml.
-  # Stockfish is built in MSYS2's MINGW64 shell (GCC, ARCH=x86-64-avx2) and
-  # goes into bin\ beside chessboard.exe; the shell starts it with
-  # CREATE_NO_WINDOW (src/engine.zig).
-  app:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: windows-2025
-    timeout-minutes: 45
-    name: 20.0 app (-Dui=app, not released)
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 26
-      - name: install build deps
-        run: npm ci
-      - name: install Native SDK CLI
-        env:
-          SDK_VERSION: ${{ inputs.sdk_version || '0.11.0' }}
-        run: |
-          npm install -g "@native-sdk/cli@${SDK_VERSION}"
-          echo "resolved: $(npm ls -g --depth=0 @native-sdk/cli || true)"
           echo "SDK_PATH=$(npm root -g)/@native-sdk/cli" >> "$GITHUB_ENV"
       - uses: mlugg/setup-zig@v2
         with:
@@ -304,29 +88,121 @@ jobs:
         with:
           path: build/stockfish
           key: stockfish-${{ runner.os }}-x64-${{ hashFiles('scripts/build-stockfish.sh') }}
-      - name: the 20.0 frontend (dist-app) and its licences
+      - name: frontend (src/app → frontend/dist) and its licences
         run: |
-          node scripts/sync-dist.mjs --ui=app
+          node scripts/sync-dist.mjs
           cp build/stockfish/stockfish-SOURCE.txt build/stockfish/stockfish-AUTHORS.txt frontend/dist/licenses/
-      - name: derive the Windows manifest for the 20.0 UI
-        run: node scripts/gen-manifest.mjs windows --ui app
-      - name: zig build (-Dui=app, automation)
-        run: zig build -Doptimize=ReleaseFast -Dui=app -Dautomation=true -Dplatform=windows -Dmanifest=build/app.windows-app.zon -Dnative-sdk-path="$SDK_PATH" --prefix zig-out-app
-      - name: package, with the engine (never uploaded)
+      - name: manifest keys are actually read
+        run: node scripts/manifest-check.mjs --sdk "$SDK_PATH"
+      - name: zig build test
+        run: zig build test -Dplatform=windows -Dnative-sdk-path="$SDK_PATH"
+      - name: zig build
+        run: zig build -Doptimize=ReleaseFast -Dplatform=windows -Dnative-sdk-path="$SDK_PATH"
+      - name: package with the engine
         run: |
-          native package --target windows --manifest build/app.windows-app.zon --output dist-app-pkg/Chessboard --binary zig-out-app/bin/chessboard.exe
-          cp assets/icon.ico dist-app-pkg/Chessboard/resources/icon.ico
-          scripts/add-engine.sh dist-app-pkg/Chessboard build/stockfish
-          test -f "$(find dist-app-pkg/Chessboard -path '*/licenses/stockfish-SOURCE.txt' | head -n1)"
-          du -sh dist-app-pkg/Chessboard
-          # the package size, exactly (v20-0-plan §10 F3b: ≤ 40 MB): bytes, and the five largest files
-          echo "package: $(du -sk dist-app-pkg/Chessboard | cut -f1) KiB"
-          find dist-app-pkg/Chessboard -type f -exec du -k {} + | sort -rn | head -5
-          exe="$(find dist-app-pkg/Chessboard -name chessboard.exe | head -n1)"
-          echo "APP_EXE=$exe" >> "$GITHUB_ENV"
-      - name: the 20.0 app's scenarios
-        timeout-minutes: 20
-        run: node scripts/automation-app.mjs "$APP_EXE" --out automation-app-windows.json
+          mkdir -p dist
+          native package --target windows --output dist/Chessboard --binary zig-out/bin/chessboard.exe
+          cp scripts/register-pgn.cmd scripts/register-pgn.reg dist/Chessboard/
+          cp assets/icon.ico dist/Chessboard/resources/icon.ico
+          scripts/add-engine.sh dist/Chessboard build/stockfish
+          test -f "$(find dist/Chessboard -path '*/licenses/LICENSE.txt' | head -n1)"
+          test -f "$(find dist/Chessboard -path '*/licenses/stockfish-SOURCE.txt' | head -n1)"
+          echo "package: $(du -sk dist/Chessboard | cut -f1) KiB"
+      # TODO(v20-0-plan E2): Authenticode-sign chessboard.exe and
+      # stockfish.exe (signtool sign /fd SHA256 /tr <timestamp server>) once
+      # the owner's code signing certificate is a repository secret; until then
+      # the package is unsigned.
+      - name: self-test the package as shipped, from a read-only folder
+        timeout-minutes: 8
+        shell: pwsh
+        run: |
+          $ro = Join-Path $env:RUNNER_TEMP 'readonly-app\Chessboard'
+          New-Item -ItemType Directory -Force (Split-Path $ro) | Out-Null
+          Copy-Item -Recurse -Force 'dist/Chessboard' $ro
+          Get-ChildItem -Recurse -Directory -Filter '*.WebView2' $ro | Remove-Item -Recurse -Force
+          $fallback = Join-Path $env:LOCALAPPDATA 'Chessboard\WebView2'
+          if (Test-Path $fallback) { Remove-Item -Recurse -Force $fallback }
+          icacls $ro /deny "*S-1-1-0:(OI)(CI)(WD,AD)" /T /C
+          if ($LASTEXITCODE -ne 0) { throw "icacls failed ($LASTEXITCODE)" }
+          $exe = (Get-ChildItem -Recurse -Filter chessboard.exe $ro | Select-Object -First 1).FullName
+          $bin = Split-Path $exe
+          $probe = Join-Path $bin 'write-probe.txt'
+          $wrote = $true
+          try { [IO.File]::WriteAllText($probe, 'x') } catch { $wrote = $false }
+          if ($wrote) { throw "the deny did not take: $probe could be written" }
+          node scripts/automation-app.mjs $exe --only smoke
+          if ($LASTEXITCODE -ne 0) { throw "the self-test from the read-only folder failed ($LASTEXITCODE)" }
+          $beside = Get-ChildItem -Directory -Filter '*.WebView2' $bin
+          if ($beside) { throw "WebView2 data beside the exe: $($beside.FullName -join ', ')" }
+          if (-not (Get-ChildItem -Force $fallback -ErrorAction SilentlyContinue)) { throw "no WebView2 data in $fallback" }
+          Write-Host "ok: WebView2 data went to $fallback"
+      - name: self-test the package as shipped
+        timeout-minutes: 8
+        run: node scripts/automation-app.mjs "$(find dist/Chessboard -name chessboard.exe | head -n1)" --only smoke
+      - name: zip
+        shell: pwsh
+        run: Compress-Archive -Path 'dist/Chessboard' -DestinationPath 'dist/Chessboard-Windows-x64.zip' -Force
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Chessboard-Windows-x64
+          path: dist/Chessboard-Windows-x64.zip
+
+  scenarios:
+    runs-on: windows-2025
+    timeout-minutes: 50
+    name: Windows scenarios (automation build, not released)
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - name: install build deps
+        run: npm ci
+      - name: install Native SDK CLI
+        env:
+          SDK_VERSION: ${{ inputs.sdk_version || '0.11.0' }}
+        run: |
+          npm install -g "@native-sdk/cli@${SDK_VERSION}"
+          echo "SDK_PATH=$(npm root -g)/@native-sdk/cli" >> "$GITHUB_ENV"
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: restore Stockfish
+        id: sf
+        uses: actions/cache/restore@v6
+        with:
+          path: build/stockfish
+          key: stockfish-${{ runner.os }}-x64-${{ hashFiles('scripts/build-stockfish.sh') }}
+      - name: MSYS2 (MinGW-w64 GCC) for Stockfish
+        if: steps.sf.outputs.cache-hit != 'true'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: mingw-w64-x86_64-gcc make git
+      - name: build Stockfish
+        if: steps.sf.outputs.cache-hit != 'true'
+        timeout-minutes: 25
+        shell: msys2 {0}
+        run: scripts/build-stockfish.sh build/stockfish
+      - name: frontend (src/app → frontend/dist) and its licences
+        run: |
+          node scripts/sync-dist.mjs
+          cp build/stockfish/stockfish-SOURCE.txt build/stockfish/stockfish-AUTHORS.txt frontend/dist/licenses/
+      - name: zig build (automation)
+        run: zig build -Doptimize=ReleaseFast -Dautomation=true -Dplatform=windows -Dnative-sdk-path="$SDK_PATH" --prefix zig-out-auto
+      - name: package (automation build, never uploaded)
+        run: |
+          native package --target windows --output dist-auto/Chessboard --binary zig-out-auto/bin/chessboard.exe
+          cp assets/icon.ico dist-auto/Chessboard/resources/icon.ico
+          scripts/add-engine.sh dist-auto/Chessboard build/stockfish
+          echo "AUTO_EXE=$(find dist-auto/Chessboard -name chessboard.exe | head -n1)" >> "$GITHUB_ENV"
+      - name: the app's scenarios
+        timeout-minutes: 25
+        run: node scripts/automation-app.mjs "$AUTO_EXE" --out automation-app-windows.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:

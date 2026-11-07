@@ -1,31 +1,41 @@
 name: checks
 
-# Everything that can be checked on every PR (and every push to main) — and, since 6.0,
-# the one thing that needs zig and the Native SDK too (the `zig` job below).
+# Every check this repository has, on every PR (and every push to main) —
+# and, called by release.yml, on every release: there is no check that runs
+# only at release (scripts/ci-check.mjs holds that, ADR 0005).
 #
-# Until now the repo had no PR-time CI at all: the only workflows were the two
-# platform builds and the release. That meant the checks which do exist ran
-# either on a developer's machine or at release time — the two moments where
-# "it was already broken before I got here" is hardest to tell.
+#   static      npm run test:static on the three systems the app is built on:
+#               the unit tests, the generated content re-made and compared
+#               (gen-skills --check), the workflows, sdk-diff, the manifest,
+#               the pinned versions, the icons (scripts/run-static.mjs)
+#   browser     npm run test:app:e2e in Chromium (WebView2 is Chromium): the
+#               pages, the board, play, review, learn, import, three
+#               languages, first paint and the per-move cost
+#   visual      every page at 1440×900, 1024×700 and 600×900 against the
+#               committed baseline (scripts/test-visual-e2e.mjs)
+#   zig         the shell: manifest keys read, sdk-diff against the SDK on
+#               disk, zig build test, zig build, the automation seams on the
+#               null platform
+#   opponents   (when the opponents, Maia-3, the engine service or their
+#               scripts change) every opponent converts a won position
+#   native      (when the native side changes) build-macos.yml and
+#               build-windows.yml: the packages built, the package as shipped
+#               self-tested, the automation build's scenarios
 #
-# The browser checks run twice, once per engine. The app ships no browser: on
-# Windows the page runs in WebView2, which is Chromium, and on macOS in
-# WKWebView, which is WebKit. One engine is a stand-in for half the product.
+# A path-gated job runs whatever changed on a workflow_dispatch and on a
+# release (the event is then not a pull_request or a push).
 #
-# v8-0-plan F1: `push` is main only. On every other branch a commit with an
-# open PR ran this whole workflow twice — once for the push, once for the
-# pull_request — for the same tree. The PR run is the one that gates.
+# `push` is main only: on any other branch a commit with an open PR would run
+# all of this twice for the same tree; the PR run is the one that gates.
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
-# v8-0-plan F1: a new push to a PR supersedes the run on the old head, which
-# nobody will look at — cancel it. Not on main: every commit there keeps its
-# own complete record. That is why the group is per run outside PRs rather
-# than `cancel-in-progress: false` — a shared group with false still queues
-# the runs one at a time and drops every pending one but the newest.
+# A new push to a PR supersedes the run on the old head — cancel it. Not on
+# main, and not in a release: every run there keeps its own record.
 concurrency:
   group: checks-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: true
@@ -33,73 +43,31 @@ concurrency:
 permissions:
   contents: read
 
-# v8-2-plan V4: every job has a timeout. Without one a hung job waits out
-# GitHub's default of six hours; on 2026-09-30 a layout shard sat silent for
-# 57 minutes and only release.yml's own 60 stopped it. Each limit is about
-# twice the job's longest time in the last four PR runs of 8.1
-# (36708776605, 36711052317, 36721696259, 36732131710), rounded up to five
-# minutes — generous enough not to fire on a slow runner, short enough that
-# a hang costs minutes. A browser group carries its own (`timeout` below),
-# because one number for all of them would be the slowest group's; for the
-# four groups split by V4 the base is their suites' time in the job logs
-# plus the job's setup.
 jobs:
   static:
-    # Three platforms, not one. The 5.0.0 lockfile installed only on the Linux
-    # runner that generated it — the README's first command failed on every
-    # Mac and Windows checkout, and CI was green because CI was that runner.
-    # The unit tests themselves are platform-independent; what this matrix
-    # proves is that a clean checkout installs where the app is actually built.
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-26.04, macos-26, windows-2025]
     runs-on: ${{ matrix.os }}
-    # longest 5.0 min (windows) since the sampled puzzle search moved to its
-    # own job below; ubuntu with it was 10.1–10.3
     timeout-minutes: 15
+    name: static (${{ matrix.os }})
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 26
-      # esbuild, and nothing else. It bundles the ES modules under src/web/js
-      # into the one classic script zero:// can load; `npm ci` rather than
-      # `npm install` so the same commit gets the same bundler.
       - name: install build deps
         run: npm ci
-      # 6.1: one source of truth. This job used to name three scripts, while
-      # `npm run test:static` named eight — so test-pgn, test-learning,
-      # test-eco and test-review-winpct never ran in PR CI at all, and
-      # test-classics was written and wired nowhere. A job that lists the
-      # tests by hand drifts from the script that lists them; running the
-      # script is the only arrangement where the two cannot disagree.
       - name: static tests
         run: npm run test:static
-      # `free variables: node scripts/scope-check.mjs` used to sit here. The
-      # sources are ES modules as of 1.25 and index.html loads one bundle, so
-      # an unbound name is a build failure — test-chess.mjs asserts the bundle
-      # resolves, which is the same rule enforced by the thing that ships.
-      # manifest-check runs as the last step of `npm run test:static` above.
 
-  # 7.1 (v7-1-plan §3.2): the sampled soundness gate.
-  #
-  # v8-0-plan F1: on ubuntu only. It is a search against the vendored
-  # engine — nothing in it depends on the platform — and on three runners
-  # it was the same five minutes, three times, on each of them the
-  # longest step. The static tests above stay on all three: installing on
-  # a clean checkout is the part that differs by platform.
-  #
-  # v8-3-plan V4: a job of its own rather than two more steps of static
-  # (ubuntu). Behind the static tests it made that job 10.1–10.3 minutes, the
-  # longest of the run with webkit engine; the runs take jobs in no fixed
-  # order onto 20 runners at once, so a 10-minute job picked in the second
-  # wave is what pushed the wall clock past 15. Apart, each is about 5.
-  mined:
+  browser:
     runs-on: ubuntu-26.04
-    # 5.7–5.9 min for the search in the last six PR runs
-    timeout-minutes: 15
-    name: mined puzzles (sampled) + tablebase reading
+    timeout-minutes: 20
+    name: browser (Chromium)
+    env:
+      E2E_REQUIRED: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -107,35 +75,134 @@ jobs:
           node-version: 26
       - name: install build deps
         run: npm ci
-      # PR CI had no engine-backed check at all — every one of them lived in
-      # release.yml, so a change to the puzzle bank or the mining rules was
-      # first searched against a real engine at the moment of release. 150 of
-      # the 1002 mined puzzles at depth 18 is about five minutes, the sample
-      # is a fixed shuffle (same 150 every run, so the number does not move
-      # on its own), and a sampled run now FAILS on a stored answer that is
-      # more than 50cp worse — it used to print and exit 0, which made it
-      # worth nothing as a gate. The full sweep stays: nightly.yml.
-      - name: mined-puzzle soundness (sampled)
-        run: node scripts/test-mined.mjs --sample=150
-      # v8-2-plan V2: how verify-endgames.py --online reads a tablebase
-      # answer. The online run itself is manual (verify-endgames.yml); its
-      # parsing is checked here, offline, on the runner's own Python.
-      - name: tablebase answer reading
-        run: python3 scripts/test-verify-endgames.py
+      - name: install playwright
+        id: pw
+        run: |
+          npm install --no-save playwright@1.64.0
+          node scripts/ci-browser-deps.mjs key chromium
+      - name: restore Chromium's system packages
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pw.outputs.dir }}
+          key: ${{ steps.pw.outputs.key }}
+      - name: system packages for Chromium
+        id: deps
+        run: node scripts/ci-browser-deps.mjs install chromium
+      - name: cache Chromium's system packages
+        if: steps.deps.outputs.save == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.pw.outputs.dir }}
+          key: ${{ steps.pw.outputs.key }}
+      - name: install Chromium
+        run: |
+          npx --yes playwright@1.64.0 install chromium
+          echo "CHROME_PATH=$(node -e "console.log(require('playwright').chromium.executablePath())")" >> "$GITHUB_ENV"
+      - name: the app in the browser
+        run: npm run test:app:e2e
 
-  # v20-0-plan §3 P1: every opponent converts won positions (≥ 90% of 50 within
-  # 60 moves, scripts/test-convert.mjs) — on the PRs that can change it. Played
-  # out it is ~800 games of Maia-3 + Stockfish wasm, too heavy for every PR, so
-  # `opponents-changed` looks at what the PR (or the push) touched and the
-  # shards run only when an opponent, Maia-3, the engine service, the vendored
-  # nets or the harness changed (or on a manual run). Skipped is green: the
-  # static `ladder20.test.mjs` still fails a PR that changes a profile's
-  # settings without re-recording the ladder. The ladder itself is ladder.yml.
-  opponents-changed:
+  visual:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    name: visual baseline (Chromium)
+    env:
+      E2E_REQUIRED: "1"
+      OUT: shots/visual
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - name: install build deps
+        run: npm ci
+      - name: install playwright
+        id: pw
+        run: |
+          npm install --no-save playwright@1.64.0
+          node scripts/ci-browser-deps.mjs key chromium
+      - name: restore Chromium's system packages
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pw.outputs.dir }}
+          key: ${{ steps.pw.outputs.key }}
+      - name: system packages for Chromium
+        id: deps
+        run: node scripts/ci-browser-deps.mjs install chromium
+      - name: cache Chromium's system packages
+        if: steps.deps.outputs.save == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.pw.outputs.dir }}
+          key: ${{ steps.pw.outputs.key }}
+      - name: install Chromium
+        run: |
+          npx --yes playwright@1.64.0 install chromium
+          echo "CHROME_PATH=$(node -e "console.log(require('playwright').chromium.executablePath())")" >> "$GITHUB_ENV"
+      - name: every page against the baseline
+        run: npm run test:visual
+      - name: upload the shots and the differences
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: visual
+          path: shots/visual/
+          retention-days: 14
+
+  zig:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-26
+            flags: -Dmanifest=build/app.macos.zon
+          - os: windows-2025
+            flags: -Dplatform=windows
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    name: zig (${{ matrix.os }})
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - name: install build deps
+        run: npm ci
+      - name: install Native SDK CLI
+        env:
+          SDK_VERSION: "0.11.0"
+        run: |
+          npm install -g "@native-sdk/cli@${SDK_VERSION}"
+          echo "SDK_PATH=$(npm root -g)/@native-sdk/cli" >> "$GITHUB_ENV"
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: derive the macOS manifest
+        if: matrix.os == 'macos-26'
+        run: node scripts/gen-manifest.mjs macos
+      - name: manifest keys are actually read (with the SDK on disk)
+        run: node scripts/manifest-check.mjs --sdk "$SDK_PATH"
+      - name: runner.zig / build.zig differ from the SDK only where registered
+        run: node scripts/sdk-diff.mjs "$SDK_PATH"
+      - name: zig build test
+        run: zig build test ${{ matrix.flags }} -Dnative-sdk-path="$SDK_PATH"
+      - name: zig build
+        run: zig build ${{ matrix.flags }} -Dnative-sdk-path="$SDK_PATH"
+      - name: automation seams (null platform)
+        if: matrix.os == 'macos-26'
+        run: |
+          zig build -Dplatform=null -Dautomation=true -Dnative-sdk-path="$SDK_PATH" --prefix zig-out-null
+          node scripts/automation-smoke.mjs zig-out-null/bin/chessboard --null
+
+  changed:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
+    name: what changed
     outputs:
-      run: ${{ steps.diff.outputs.run }}
+      opponents: ${{ steps.diff.outputs.opponents }}
+      native: ${{ steps.diff.outputs.native }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -147,26 +214,28 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
           BEFORE: ${{ github.event.before }}
         run: |
-          paths='^(src/app/core/opponents[^/]*\.js|src/app/opponents/|src/app/services/maia3/|src/app/services/engine\.js|third_party/(maia3|stockfish)/|scripts/(ladder20|test-convert)\.mjs|scripts/lib/(opp-game|sf-backend)\.mjs|scripts/fixtures/convert-positions\.json|\.github/workflows/checks\.yml$)'
+          # the opponents: their profiles and mind, Maia-3, the engine service, the vendored nets, the game scripts
+          opponents='^(src/app/core/opponents[^/]*\.js|src/app/opponents/|src/app/services/maia3/|src/app/services/engine\.js|third_party/(maia3|stockfish)/|scripts/(ladder20|test-convert)\.mjs|scripts/lib/(opp-game|sf-backend)\.mjs|scripts/fixtures/convert-positions\.json)'
+          # the native side: the shell, its build, the manifest, the packaging and self-test scripts, the app's native services
+          native='^(src/[^/]+\.zig|src/native/|build\.zig|build\.zig\.zon|app\.zon|assets/|scripts/(build-stockfish\.sh|add-engine\.sh|add-pgn-doctype\.sh|register-pgn\.(cmd|reg)|sync-dist\.mjs|build-app\.mjs|gen-manifest\.mjs|automation-app\.mjs|automation-smoke\.mjs)|scripts/lib/automation\.mjs|src/app/selftest\.js|src/app/services/(native|db-native|engine-native)\.js|\.github/workflows/build-(macos|windows)\.yml)'
           base="$BASE"; [ "$EVENT" = pull_request ] || base="$BEFORE"
-          if [ "$EVENT" = workflow_dispatch ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-            run=true
-          elif git diff --name-only "$base" HEAD | grep -qE "$paths"; then
-            run=true
+          if [ "$EVENT" != pull_request ] && [ "$EVENT" != push ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "opponents=true" >> "$GITHUB_OUTPUT"; echo "native=true" >> "$GITHUB_OUTPUT"
           else
-            run=false
+            files="$(git diff --name-only "$base" HEAD)"
+            if grep -qE "$opponents" <<< "$files"; then echo "opponents=true"; else echo "opponents=false"; fi >> "$GITHUB_OUTPUT"
+            if grep -qE "$native" <<< "$files"; then echo "native=true"; else echo "native=false"; fi >> "$GITHUB_OUTPUT"
           fi
-          echo "run=$run" | tee -a "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
 
   opponents:
-    needs: opponents-changed
-    if: needs.opponents-changed.outputs.run == 'true'
+    needs: changed
+    if: needs.changed.outputs.opponents == 'true'
     strategy:
       fail-fast: false
       matrix:
         job: [1, 2, 3, 4]
     runs-on: ubuntu-26.04
-    # 16 shards of ~50 games, four per job (one per core): ~10 min locally
     timeout-minutes: 30
     name: opponents convert (${{ matrix.job }}/4)
     steps:
@@ -176,7 +245,6 @@ jobs:
           node-version: 26
       - name: install build deps
         run: npm ci
-      # each shard's exit code is collected, not only the last one `wait` reports
       - name: convert (four shards)
         shell: bash
         env:
@@ -210,396 +278,15 @@ jobs:
           pattern: convert-*
           path: out
           merge-multiple: true
-      # every profile ≥ 90%, or this fails (the table is in the log)
       - name: every opponent converts
         run: node scripts/test-convert.mjs --in=out
 
-  browser:
-    runs-on: ubuntu-26.04
-    # per group: twice the longest of either engine (layout 1/4 on WebKit
-    # once took 28.7 min; its scenarios also have their own 600 s watchdog,
-    # as engine flows' have since v8-3-plan V4)
-    timeout-minutes: ${{ matrix.group.timeout }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # chromium ≈ the Windows WebView2 engine, webkit ≈ the macOS WKWebView
-        # engine. fail-fast is off so a failure on one engine still reports the
-        # other — "does this break everywhere or only on WebKit" is the first
-        # question worth answering.
-        engine: [chromium, webkit]
-        # 7.6 (v7-6-plan §5): engine × group rather than one job per engine
-        # running every suite in a row (84 minutes on Chromium). A group is
-        # one of the long suites, or a few short ones; release.yml uses the
-        # same groups. scripts/test-chess.mjs checks that every suite in
-        # `npm run test:e2e` is named here, each in one group only, and
-        # (v8-2-plan V4) that release.yml's list is this one entry for entry.
-        group:
-          # v8-2-plan V4: with "lessons + review + engine" split (below), this
-          # was the next job over the 15-minute target — 16.6–19.6 min on
-          # Chromium. Split the same way, by the suites' own times in run
-          # 36732131710: board 7.2 + clock 1.1 / sound 4.4 + shell 2.5 +
-          # trainer 2.1 minutes.
-          - name: board + clock
-            suites: scripts/test-board-e2e.mjs scripts/test-clock-e2e.mjs scripts/test-walk-e2e.mjs
-            timeout: 30
-          # v8-3-plan V4: and "sound + shell + trainer" in two. 8.3's trainer
-          # suite (T1/T2) is now half of it: locally audio 142 s + shell 104 s
-          # / trainer 256 s; the group was 7.4–7.8 min of suites on WebKit, so
-          # each half is about 4.5 min with the job's setup.
-          - name: sound + shell
-            suites: scripts/test-audio-e2e.mjs scripts/test-shell-e2e.mjs
-            timeout: 15
-          - name: trainer
-            suites: scripts/test-trainer-e2e.mjs
-            timeout: 15
-          # v8-2-plan V4: "lessons + review + engine" was one 21.7-minute job,
-          # the critical path of every PR. Split where its time splits: the
-          # lessons and review suites ≈ 10 minutes, the three that start the
-          # real engine ≈ 10.5 (Chromium, run 36732131710).
-          # Not split further in M2: its 18.8 min in run 36767532525 was an
-          # 8.9-minute `playwright install --with-deps` (slow apt mirror; the
-          # same step took 0.4–1.3 min in the other jobs looked at); the
-          # suites were content 5.1 + review 4.7, as in 8.1. Splitting them
-          # would not have shortened that stall, only added jobs to the queue.
-          # v8-2-plan V4 (M3): split after all. With T1's 24 lessons in the
-          # content suite this job became the critical path at 15.0 min in run
-          # 36800690390 (no rehearsal running): content 7.7 + review 6.8 min,
-          # install 0.4. Apart, each is about 8 min; timeouts twice that.
-          - name: lessons
-            suites: scripts/test-content-e2e.mjs
-            timeout: 20
-          # v8-3-plan V4: "engine" was the longest job of 8.2's last PR runs,
-          # 10.1–12.7 min on WebKit (9.2–9.4 of it the suites). Locally
-          # engine 91 s, engine flows 423 s, endgames 27 s: the flows suite is
-          # cut in two by scenario (SHARD, as the layout suite is), and the two
-          # short ones join review, the shortest group (3.2–3.6 min).
-          - name: review + engine + endgames
-            suites: scripts/test-review-e2e.mjs scripts/test-engine-e2e.mjs scripts/test-endgames-e2e.mjs
-            timeout: 20
-          - name: engine flows 1/2
-            suites: scripts/test-engine-flows-e2e.mjs
-            shard: 1/2
-            timeout: 20
-          - name: engine flows 2/2
-            suites: scripts/test-engine-flows-e2e.mjs
-            shard: 2/2
-            timeout: 20
-          - name: persistence
-            suites: scripts/test-persist-e2e.mjs
-            timeout: 25
-          # v8-2-plan V4 (M2): the next group over the target — 13.0 min on
-          # Chromium in run 36767532525, 12.4 of it the suites (library 7.8,
-          # explorer 1.4, sync 1.3, repertoire 1.9), and once 21.5 on WebKit
-          # in 8.1. The library suite keeps the group's name; the three short
-          # ones become their own group.
-          - name: game library
-            suites: scripts/test-library-e2e.mjs
-            timeout: 30
-          - name: explorer + sync + repertoire
-            suites: scripts/test-explorer-e2e.mjs scripts/test-sync-e2e.mjs scripts/test-repertoire-e2e.mjs scripts/test-selftest-e2e.mjs
-            timeout: 20
-          # v8-0-plan F1: the layout suite in shards. As one job it was
-          # 31m51s on Chromium, the critical path of every PR by 18 minutes;
-          # SHARD=i/n runs every n-th scenario (scripts/e2e-shard.mjs).
-          # test-chess.mjs checks the shards here are exactly 1/n..n/n.
-          # v8-3-plan V4: five rather than four. In four, 2/4 on WebKit was
-          # 6.8–8.0 min of suite and 8.4–10.5 as a job; the suite is 27–28 min
-          # on WebKit in all, so a fifth is about 5.5 plus setup. Timeouts:
-          # the 28.7-minute 1/4 of 8.1 was a stall, which the scenarios' own
-          # 600 s watchdog now ends first.
-          - name: panel layout 1/5
-            suites: scripts/test-layout-e2e.mjs
-            shard: 1/5
-            timeout: 40
-          - name: panel layout 2/5
-            suites: scripts/test-layout-e2e.mjs
-            shard: 2/5
-            timeout: 40
-          - name: panel layout 3/5
-            suites: scripts/test-layout-e2e.mjs
-            shard: 3/5
-            timeout: 40
-          - name: panel layout 4/5
-            suites: scripts/test-layout-e2e.mjs
-            shard: 4/5
-            timeout: 40
-          - name: panel layout 5/5
-            suites: scripts/test-layout-e2e.mjs
-            shard: 5/5
-            timeout: 40
-        # v10-0-plan E2 (§8 第 4 条): on a pull request the three heaviest
-        # groups — the five layout shards, lessons, board + clock: 7 of the 16
-        # WebKit jobs and most of their minutes — run on Chromium only; both
-        # engines run them on every push to main and in the release, so a
-        # WebKit-only regression is still caught before anything ships. The
-        # objects are the groups above, whole (an exclusion matches them
-        # exactly); test-chess.mjs checks they are.
-        exclude: ${{ github.event_name == 'pull_request' && fromJSON('[{"engine":"webkit","group":{"name":"board + clock","suites":"scripts/test-board-e2e.mjs scripts/test-clock-e2e.mjs scripts/test-walk-e2e.mjs","timeout":30}},{"engine":"webkit","group":{"name":"lessons","suites":"scripts/test-content-e2e.mjs","timeout":20}},{"engine":"webkit","group":{"name":"panel layout 1/5","suites":"scripts/test-layout-e2e.mjs","shard":"1/5","timeout":40}},{"engine":"webkit","group":{"name":"panel layout 2/5","suites":"scripts/test-layout-e2e.mjs","shard":"2/5","timeout":40}},{"engine":"webkit","group":{"name":"panel layout 3/5","suites":"scripts/test-layout-e2e.mjs","shard":"3/5","timeout":40}},{"engine":"webkit","group":{"name":"panel layout 4/5","suites":"scripts/test-layout-e2e.mjs","shard":"4/5","timeout":40}},{"engine":"webkit","group":{"name":"panel layout 5/5","suites":"scripts/test-layout-e2e.mjs","shard":"5/5","timeout":40}}]') || fromJSON('[]') }}
-        # v8-0-plan F2: the per-move cost gate reads a CDP metric, so it is
-        # one Chromium job rather than a group on both engines — `include`
-        # with a group no combination has adds exactly that one job
-        include:
-          - engine: chromium
-            group:
-              name: performance
-              suites: scripts/perf-e2e.mjs
-              timeout: 10
-    name: browser (${{ matrix.engine }}, ${{ matrix.group.name }})
-    env:
-      E2E_REQUIRED: "1"
-      E2E_BROWSER: ${{ matrix.engine }}
-      # empty for the unsharded groups, which is "run everything"
-      SHARD: ${{ matrix.group.shard }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 26
-      # esbuild, and nothing else. It bundles the ES modules under src/web/js
-      # into the one classic script zero:// can load; `npm ci` rather than
-      # `npm install` so the same commit gets the same bundler.
-      - name: install build deps
-        run: npm ci
-      # Pinned. An unpinned install is how the same commit comes out different
-      # on different days.
-      #
-      # Pinned is not the same as frozen, and for eight months it was: the pin
-      # sat at 1.49.1 while the engines moved on. That is fine for Chromium —
-      # WebView2 on a Windows machine updates itself and is roughly current
-      # either way — and it is not fine for WebKit, which is the *whole* macOS
-      # half of this gate. WKWebView is whatever the player's macOS ships, and
-      # 1.49.1's WebKit is nearly two years behind that. A regression that
-      # appears in the WebKit a real user has and not in the one this gate
-      # runs is invisible here, which is the one failure mode a two-engine
-      # gate exists to prevent. 1.64.0 (Chromium 156 / WebKit 27.2) is the
-      # current release (v8-4-plan D1); the pin should be walked forward like
-      # this deliberately, not left to rot.
-      - name: install playwright
-        id: pw
-        run: |
-          npm install --no-save playwright@1.64.0
-          node scripts/ci-browser-deps.mjs key ${{ matrix.engine }}
-      # v8-4-plan V2: the engine's system packages (about 180 for WebKit) come
-      # from a cache keyed on this Playwright version and the runner image,
-      # not from the apt mirror every time: `install --with-deps` was 31–53 s
-      # and, the day the mirror was slow, 441 s. The mirror stays the fallback;
-      # scripts/ci-browser-deps.mjs says when, and why not the container image.
-      - name: restore ${{ matrix.engine }}'s system packages
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ steps.pw.outputs.dir }}
-          key: ${{ steps.pw.outputs.key }}
-      - name: system packages for ${{ matrix.engine }}
-        id: deps
-        run: node scripts/ci-browser-deps.mjs install ${{ matrix.engine }}
-      - name: cache ${{ matrix.engine }}'s system packages
-        if: steps.deps.outputs.save == 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ steps.pw.outputs.dir }}
-          key: ${{ steps.pw.outputs.key }}
-      - name: install ${{ matrix.engine }}
-        run: npx --yes playwright@1.64.0 install ${{ matrix.engine }}
-      - name: resolve the browser Playwright just installed
-        run: |
-          node -e "
-            const pw = require('playwright');
-            const p = pw['${{ matrix.engine }}'].executablePath();
-            console.log('${{ matrix.engine }} =', p);
-            require('fs').appendFileSync(process.env.GITHUB_ENV,
-              ('${{ matrix.engine }}' === 'chromium' ? 'CHROME_PATH=' : 'WEBKIT_PATH=') + p + '\n');
-          "
-      # Every suite in the group runs even when an earlier one fails, so one
-      # red job says everything that is wrong in it.
-      #
-      # test-engine-e2e is the only browser check that serves the real
-      # engine-src.js — every other stubs it — and answers "does Stockfish
-      # start in the page as shipped" on this matrix's engine (v7-4-plan §1).
-      # test-engine-flows-e2e runs the features that need the engine on the
-      # real one: vs computer, hint, blunder coach, analysis, live analysis,
-      # game library, lesson drill (v7-5-plan §2).
-      #
-      # A layout shard writes its FRAME-MISS count to this job's summary itself
-      # (v8-3-plan V4: test-layout-e2e.mjs → lib/frame-watch.mjs, appending to
-      # $GITHUB_STEP_SUMMARY at exit); release.yml's shards do the same
-      # (v8-4-plan V3), and test-chess.mjs checks both.
-      - name: ${{ matrix.group.name }}
-        env:
-          SUITES: ${{ matrix.group.suites }}
-        run: |
-          failed=""
-          for s in $SUITES; do
-            echo "::group::$s"
-            node "$s" || failed="$failed $s"
-            echo "::endgroup::"
-          done
-          [ -z "$failed" ] || { echo "::error::failed:$failed"; exit 1; }
+  native-macos:
+    needs: changed
+    if: needs.changed.outputs.native == 'true'
+    uses: ./.github/workflows/build-macos.yml
 
-  # 7.8 (v7-8-plan §7.1): the screenshot set, on both engines, as an
-  # artifact — so a PR's before and after can be looked at side by side
-  # without anyone re-running scripts/shots.mjs by hand. It is not a gate:
-  # nothing in it compares pixels (what can be measured is asserted in the
-  # e2e suites), so the job never turns a PR red — `continue-on-error`, and
-  # the artifact is uploaded whatever the script's exit. For the same reason
-  # it is not in `npm run test:e2e` (test-chess.mjs would then require it in
-  # release.yml too) and not in release.yml: a release must not wait on, or
-  # be blocked by, a set of pictures.
-  shots:
-    runs-on: ubuntu-26.04
-    # longest 3.5 min
-    timeout-minutes: 10
-    continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        engine: [chromium, webkit]
-    name: screenshots (${{ matrix.engine }}, not a gate)
-    env:
-      E2E_BROWSER: ${{ matrix.engine }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 26
-      - name: install build deps
-        run: npm ci
-      # the same pin as the browser job above, walked forward together
-      - name: install playwright
-        id: pw
-        run: |
-          npm install --no-save playwright@1.64.0
-          node scripts/ci-browser-deps.mjs key ${{ matrix.engine }}
-      # v8-4-plan V2: the same system packages from the same cache
-      - name: restore ${{ matrix.engine }}'s system packages
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ steps.pw.outputs.dir }}
-          key: ${{ steps.pw.outputs.key }}
-      - name: system packages for ${{ matrix.engine }}
-        id: deps
-        run: node scripts/ci-browser-deps.mjs install ${{ matrix.engine }}
-      - name: cache ${{ matrix.engine }}'s system packages
-        if: steps.deps.outputs.save == 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ steps.pw.outputs.dir }}
-          key: ${{ steps.pw.outputs.key }}
-      - name: install ${{ matrix.engine }}
-        run: npx --yes playwright@1.64.0 install ${{ matrix.engine }}
-      - name: resolve the browser Playwright just installed
-        run: |
-          node -e "
-            const pw = require('playwright');
-            const p = pw['${{ matrix.engine }}'].executablePath();
-            console.log('${{ matrix.engine }} =', p);
-            require('fs').appendFileSync(process.env.GITHUB_ENV,
-              ('${{ matrix.engine }}' === 'chromium' ? 'CHROME_PATH=' : 'WEBKIT_PATH=') + p + '\n');
-          "
-      - name: take the screenshot set
-        env:
-          E2E_REQUIRED: "1"
-          OUT: shots
-        run: node scripts/shots.mjs
-      # v11-0-plan S: on a pull request, the same set from the base branch
-      # beside it — shots-compare.mjs writes compare.html, base left, head
-      # right, for a person to look through (not a pixel assertion)
-      - name: take the base branch's set
-        if: github.event_name == 'pull_request'
-        env:
-          E2E_REQUIRED: "1"
-        run: |
-          git fetch --depth=1 origin "${{ github.base_ref }}"
-          git worktree add base FETCH_HEAD
-          ln -s "$PWD/node_modules" base/node_modules
-          (cd base && npm run build && OUT="$PWD/../shots-base" node scripts/shots.mjs) || echo "the base set did not finish"
-          node scripts/shots-compare.mjs "shots-base/${{ matrix.engine }}" "shots/${{ matrix.engine }}" "shots/${{ matrix.engine }}"
-      - name: upload the screenshots
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: shots-${{ matrix.engine }}
-          path: |
-            shots/${{ matrix.engine }}/
-            shots-base/${{ matrix.engine }}/
-          if-no-files-found: warn
-          retention-days: 14
-
-  # src/*.zig (main.zig, the files it imports since v8-2-plan F2, and
-  # runner.zig), compiled and their tests run, on every
-  # PR — not only at release time. Until 6.0 the Zig side had no PR-time
-  # CI at all, and 5.0–5.2 shipped three versions with dead file dialogs and
-  # a dead Escape key from exactly that blind spot (v6-plan §1.2, Q0.2).
-  #
-  # v8-0-plan F1: and on Windows. Until 8.0 this job was macOS only, and
-  # build-windows.yml runs on workflow_dispatch and from release.yml — so the
-  # Windows backend was first compiled at release time, which is the blind
-  # spot those three versions came out of, half-closed. test-chess.mjs checks
-  # windows-2025 stays in this matrix.
-  #
-  # Same toolchain as the platform builds: the SDK from npm (public registry,
-  # no token), zig 0.16.0 from mlugg/setup-zig. `zig build` alone installs the
-  # exe and never packages; frontend/dist is not needed for either step. Each
-  # OS builds the way its build-*.yml does — macOS against the derived
-  # manifest, Windows on app.zon with -Dplatform=windows.
-  zig:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-26
-            flags: -Dmanifest=build/app.macos.zon
-          - os: windows-2025
-            flags: -Dplatform=windows
-    runs-on: ${{ matrix.os }}
-    # longest 5.2 min (windows)
-    timeout-minutes: 15
-    name: zig (${{ matrix.os }})
-    defaults:
-      run:
-        # the steps are bash on both (Windows' default shell is pwsh)
-        shell: bash
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 26
-      - name: install build deps
-        run: npm ci
-      - name: install Native SDK CLI
-        env:
-          # the same pin the platform builds and release.yml carry
-          SDK_VERSION: "0.11.0"
-        run: |
-          npm install -g "@native-sdk/cli@${SDK_VERSION}"
-          native --version || true
-          echo "resolved: $(npm ls -g --depth=0 @native-sdk/cli || true)"
-          echo "SDK_PATH=$(npm root -g)/@native-sdk/cli" >> "$GITHUB_ENV"
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.16.0
-      - name: derive the macOS manifest
-        if: matrix.os == 'macos-26'
-        run: node scripts/gen-manifest.mjs macos
-      - name: manifest keys are actually read (with the SDK on disk)
-        run: node scripts/manifest-check.mjs --sdk "$SDK_PATH"
-      # v8-2-plan F2: every difference of src/runner.zig / build.zig from the
-      # pinned SDK's own files is registered (docs/sdk-fork.json) and explained
-      # (docs/sdk-fork-notes.md); silent when so, and the upgrade's to-do list
-      # when the pin moves
-      - name: runner.zig / build.zig differ from the SDK only where registered
-        run: node scripts/sdk-diff.mjs "$SDK_PATH"
-      - name: zig build test
-        run: zig build test ${{ matrix.flags }} -Dnative-sdk-path="$SDK_PATH"
-      - name: zig build
-        run: zig build ${{ matrix.flags }} -Dnative-sdk-path="$SDK_PATH"
-      # v8-2-plan V1: the self-test seams bridge.zig / sync.zig read in self-test mode only
-      # (CHESS_SELFTEST_SCENARIO, the report that does not exit), through the
-      # automation server itself, on the null platform: one frame, one command.
-      # The live runs are build-macos.yml / build-windows.yml's automation jobs.
-      - name: automation seams (null platform)
-        if: matrix.os == 'macos-26'
-        run: |
-          zig build -Dplatform=null -Dautomation=true -Dnative-sdk-path="$SDK_PATH" --prefix zig-out-null
-          node scripts/automation-smoke.mjs zig-out-null/bin/chessboard --null
-          node scripts/automation-scenarios.mjs zig-out-null/bin/chessboard --null
+  native-windows:
+    needs: changed
+    if: needs.changed.outputs.native == 'true'
+    uses: ./.github/workflows/build-windows.yml
