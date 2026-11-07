@@ -115,14 +115,24 @@ async function drag(page, from, to, sel) {
     const b = createBoard(host, {});
     Element.prototype.getBoundingClientRect = real;
     const during = { reads, width: b.canvas.width, frames: b.state().frames };
+    // a new size clears a canvas: it is drawn again in the same step, never left blank for a frame
+    // (an observer of our own, registered after the board's, runs right after it)
+    const seen = [];
+    const ro = new ResizeObserver(() => { const g = b.canvas.getContext("2d"); seen.push({ width: b.canvas.width, alpha: g.getImageData(2, 2, 1, 1).data[3] }); });
+    ro.observe(host);
+    await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+    host.style.width = "320px";
+    await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+    ro.disconnect();
     for (let i = 0; i < 3; i++) await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
     const after = { width: b.canvas.width, frames: b.state().frames };
     b.destroy(); host.remove();
-    return { during, after };
+    return { during, after, seen };
   });
   assert(r.during.reads === 0 && r.during.frames === 0,
     "createBoard reads no layout and draws nothing while it runs (" + JSON.stringify(r.during) + ")");
-  assert(r.after.width >= 400 && r.after.frames >= 1, "and the board is sized and drawn on the frames after (" + JSON.stringify(r.after) + ")");
+  assert(r.after.width >= 320 && r.after.frames >= 1, "and the board is sized and drawn on the frames after (" + JSON.stringify(r.after) + ")");
+  assert(r.seen.length >= 2 && r.seen.every((x) => x.alpha === 255), "each new size is drawn before the frame is painted, never blank (" + JSON.stringify(r.seen) + ")");
   await ctx.close();
 }
 

@@ -117,10 +117,13 @@ export function createBoard(el, opts = {}) {
 
   let frameReq = 0;
   let setReady = false;
+  let sized = false;
   const stats = { frames: 0 };
   function draw() {
     frameReq = 0;
-    if (!canvas.width) return;
+    // nothing is drawn before the observer has given the canvas its size (a draw at the
+    // canvas's default 300 px would be thrown away by the resize that follows)
+    if (!sized || !canvas.width) return;
     if (!pal) pal = readPaint(el);
     const t = now();
     const f = scene.frame(t);
@@ -149,18 +152,15 @@ export function createBoard(el, opts = {}) {
   // at the press, not on every pointermove and frame (no layout reads in the drag).
   let rect = null;
   const box = () => rect || canvas.getBoundingClientRect();
-  // The size comes from the observer (after the page's own layout), never by
-  // reading the layout while the page mounts: the first size is drawn on the
-  // next frame, so mounting, the first layout and the first draw are three
-  // short tasks, not one long one. A later resize draws at once (no blank frame).
-  let sized = false;
+  // The size comes from the observer (after the page's own layout), never by reading the
+  // layout while the page mounts: mounting and the first layout are separate tasks. A new
+  // size clears the canvas, so it is drawn again at once, before that frame is painted.
   function resize() {
     rect = null;
+    sized = true;
     const r = canvas.getBoundingClientRect();
     const px = Math.max(64, Math.round(r.width * (devicePixelRatio || 1)));
-    if (canvas.width === px) return;
-    canvas.width = canvas.height = px;
-    if (sized) draw(); else { sized = true; request(); }
+    if (canvas.width !== px) { canvas.width = canvas.height = px; draw(); }
   }
   const ro = new ResizeObserver(resize);
   ro.observe(el);
