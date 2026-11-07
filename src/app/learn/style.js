@@ -63,7 +63,8 @@ const CSS = `
 .me .lib-box { display: grid; gap: 8px; }
 .me .lib-filter { display: flex; flex-wrap: wrap; gap: 6px; }
 .me .lib-filter input { flex: 1 1 180px; min-width: 0; }
-.me .lib-filter input, .me .lib-filter select { height: var(--ctl-h); padding: 0 8px; border-radius: var(--radius-sm); border: 1px solid var(--btn-edge); background: var(--bg, var(--card)); color: var(--text); font: inherit; }
+.me .lib-filter input, .me .lib-filter select { height: var(--ctl-h); padding: 0 8px; border-radius: var(--radius-sm); border: 1px solid var(--btn-edge); background-color: var(--bg, var(--card)); color: var(--text); font: inherit; }
+.me .lib-filter select { padding-right: 26px; }
 .me .lib-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
 .me .lib-list > li.muted { padding: 6px 2px; }
 .me button.lib-row { width: 100%; height: auto; min-height: var(--ctl-h); padding: 6px 10px; box-shadow: none; border-color: transparent; background: transparent;

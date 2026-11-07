@@ -24,7 +24,19 @@ button, select { font: inherit; color: inherit; }
 .placeholder h1 { font-family: var(--font-title); font-weight: 600; margin: 0 0 12px; }
 .field { display: flex; gap: 12px; align-items: center; margin: 8px 0; }
 .field span { width: 6em; color: var(--muted); }
-select { background: var(--btn-lift); border: 1px solid var(--btn-edge); border-radius: var(--radius-sm); padding: 4px 8px; }
+/* A select drawn by the app, not the platform: WebKit's native menu button ignores the
+   background and keeps its own light face, so in a dark shell the light text vanished on it.
+   The chevron is two gradients in currentColor; the menu it opens follows color-scheme. */
+[data-theme="wood"], [data-theme="night"] { color-scheme: dark; }
+[data-theme="day"], [data-theme="notebook"] { color-scheme: light; }
+select {
+  -webkit-appearance: none; appearance: none;
+  background-color: var(--btn-lift); color: var(--text);
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 13px center, right 9px center; background-size: 4px 4px; background-repeat: no-repeat;
+  border: 1px solid var(--btn-edge); border-radius: var(--radius-sm); padding: 4px 26px 4px 8px;
+}
+input[type="checkbox"] { accent-color: var(--accent); }
 
 /* the play screen: the board first, one bar under it, the moves in a drawer */
 .play {

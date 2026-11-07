@@ -70,7 +70,17 @@ export function openSheet(host, { t, last, onStart, onClose }) {
     for (const [c, b] of colors) { b.setAttribute("aria-pressed", String(pick.color === c)); b.disabled = friend; }
     coach.disabled = friend;
   }
-  function onKey(e) { if (e.key === "Escape") { close(); onClose(); } }
+  // a modal sheet keeps the keyboard: Tab and Shift+Tab go round its own controls, not the page under it
+  function onKey(e) {
+    if (e.key === "Escape") { close(); onClose(); return; }
+    if (e.key !== "Tab") return;
+    const all = [...sheet.querySelectorAll("button, select, input")].filter((x) => !x.disabled && x.offsetParent !== null);
+    if (!all.length) return;
+    const i = all.indexOf(document.activeElement);
+    const to = e.shiftKey ? (i <= 0 ? all.length - 1 : i - 1) : (i < 0 || i === all.length - 1 ? 0 : i + 1);
+    all[to].focus();
+    e.preventDefault();
+  }
   function close() { scrim.remove(); removeEventListener("keydown", onKey); }
   addEventListener("keydown", onKey);
   sync();
