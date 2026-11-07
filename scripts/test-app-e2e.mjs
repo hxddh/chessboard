@@ -95,6 +95,37 @@ async function drag(page, from, to, sel) {
   await ctx.close();
 }
 
+// --- a board's mount is short: no layout read, no draw, no move list while createBoard runs ------
+// (a cold start's long task was the play page's mount doing all three at once: the first
+// size and draw come from the ResizeObserver and the next frame, the legal moves on the first press)
+{
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+  const page = await ctx.newPage();
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(srv.url + "?engine=fake&db=memory#/settings");
+  await page.waitForSelector("[data-page=settings]");
+  const r = await page.evaluate(async () => {
+    const { createBoard } = await import("./board/board.js");
+    const host = document.createElement("div");
+    host.style.cssText = "width:400px;height:400px";
+    document.body.append(host);
+    const real = Element.prototype.getBoundingClientRect;
+    let reads = 0;
+    Element.prototype.getBoundingClientRect = function () { reads++; return real.call(this); };
+    const b = createBoard(host, {});
+    Element.prototype.getBoundingClientRect = real;
+    const during = { reads, width: b.canvas.width, frames: b.state().frames };
+    for (let i = 0; i < 3; i++) await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+    const after = { width: b.canvas.width, frames: b.state().frames };
+    b.destroy(); host.remove();
+    return { during, after };
+  });
+  assert(r.during.reads === 0 && r.during.frames === 0,
+    "createBoard reads no layout and draws nothing while it runs (" + JSON.stringify(r.during) + ")");
+  assert(r.after.width >= 400 && r.after.frames >= 1, "and the board is sized and drawn on the frames after (" + JSON.stringify(r.after) + ")");
+  await ctx.close();
+}
+
 // --- play: click, drag, keyboard; legal moves only; reload restores ------------------
 {
   const q = "?engine=fake&think=0&dbname=e2e-play-" + Date.now();
@@ -352,7 +383,8 @@ report.firstPaintKB = Math.round(built.firstBytes / 102.4) / 10;
       long: window.__longTasks,
     }));
     paints.push(t.fcp); boards.push(t.board);
-    if (t.long) longTasks.push(...t.long.filter((x) => x.start <= t.board));
+    // each one with where it fell: before the first paint (the HTML and its fonts) or in the app's start
+    if (t.long) longTasks.push(...t.long.filter((x) => x.start <= t.board).map((x) => ({ ...x, fcp: t.fcp, board: t.board })));
     else longTasks.push(null);
     fetched = got;
     await ctx.close();
@@ -368,7 +400,8 @@ report.firstPaintKB = Math.round(built.firstBytes / 102.4) / 10;
     report.longTasksAtFirstPaint = longTasks.filter(Boolean).length;
     assert(!longTasks.includes(null) && longTasks.length === 0,
       "no long task (≥ 50 ms) before the board is drawn, in five cold starts" +
-      (longTasks.length ? " — " + JSON.stringify(longTasks.map((x) => x && Math.round(x.ms))) : ""));
+      (longTasks.length ? " — " + longTasks.map((x) => x && Math.round(x.ms) + " ms at " + Math.round(x.start) + " ms (first paint " +
+        Math.round(x.fcp) + ", board " + Math.round(x.board) + ")").join("; ") : ""));
   }
   const pages = fetched.filter((f) => /^(learn|me|settings)-/.test(f));
   assert(pages.length === 0 && fetched.some((f) => /^play-/.test(f)), "the first paint loads the play page and no other page (" + fetched.join(" ") + ")");

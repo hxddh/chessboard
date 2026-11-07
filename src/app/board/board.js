@@ -45,7 +45,9 @@ export function createBoard(el, opts = {}) {
     coords: true, onMove: () => {}, onShapes: () => {}, onReady: null, ...opts,
   };
   let placement = readFen(o.fen);
-  let dests = o.dests || legalDests(o.fen);
+  // the legal moves are worked out when first asked for (a press), not while the page mounts
+  let dests = o.dests || null;
+  const destsNow = () => (dests ||= legalDests(o.fen));
   let snap = [];
   let pal = null;
 
@@ -70,7 +72,7 @@ export function createBoard(el, opts = {}) {
   }
   const input = createInput({
     canPick,
-    dests: (from) => dests.get(from) || [],
+    dests: (from) => destsNow().get(from) || [],
     premoveDests: (from) => premoveDests(placement, from),
     orientation: () => o.orientation,
   });
@@ -147,11 +149,18 @@ export function createBoard(el, opts = {}) {
   // at the press, not on every pointermove and frame (no layout reads in the drag).
   let rect = null;
   const box = () => rect || canvas.getBoundingClientRect();
+  // The size comes from the observer (after the page's own layout), never by
+  // reading the layout while the page mounts: the first size is drawn on the
+  // next frame, so mounting, the first layout and the first draw are three
+  // short tasks, not one long one. A later resize draws at once (no blank frame).
+  let sized = false;
   function resize() {
     rect = null;
     const r = canvas.getBoundingClientRect();
     const px = Math.max(64, Math.round(r.width * (devicePixelRatio || 1)));
-    if (canvas.width !== px) { canvas.width = canvas.height = px; draw(); }
+    if (canvas.width === px) return;
+    canvas.width = canvas.height = px;
+    if (sized) draw(); else { sized = true; request(); }
   }
   const ro = new ResizeObserver(resize);
   ro.observe(el);
@@ -259,7 +268,7 @@ export function createBoard(el, opts = {}) {
     if (themeChanged) { el.dataset.board = o.theme; pal = null; }
     if (setChanged) loadSet(o.pieceSet).then(request);
     if (next.dests) dests = next.dests;
-    else if (fenChanged) dests = legalDests(o.fen);
+    else if (fenChanged) dests = null;
     if (fenChanged) {
       placement = readFen(o.fen);
       scene.setPieces(placement, { now: now(), ms: animate ? ms() : 0, snap });
@@ -273,7 +282,6 @@ export function createBoard(el, opts = {}) {
   scene.setPieces(placement, { now: now(), ms: 0 });
   refresh(false);
   loadSet(o.pieceSet).then(() => { setReady = true; request(); });
-  resize();
 
   return {
     el, canvas, set,
