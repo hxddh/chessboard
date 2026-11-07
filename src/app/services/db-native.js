@@ -1,7 +1,7 @@
 /**
  * The db service's native backend (ADR 0003, v20-0-plan A2): the SDK's SQLite
  * store, which the app opens when its manifest declares `sqlite`
- * (gen-manifest.mjs --ui app; schema in src/db_migrations.zig), reached over
+ * (app.zon .capabilities; schema in src/db_migrations.zig), reached over
  * two bridge commands (src/db.zig):
  *
  *   chess.dbExec  {stmts:[{sql, params}]}  one transaction for the array

@@ -12,7 +12,7 @@
 //!
 //! Wired in by build.zig as the runner's `relational_migrations` module;
 //! only a manifest that declares the `sqlite` capability opens the database
-//! (gen-manifest.mjs --ui app). A new version is a new entry at the end;
+//! (app.zon .capabilities). A new version is a new entry at the end;
 //! entries already shipped are never edited.
 
 const relational = @import("native_sdk").relational_store;

@@ -12,7 +12,7 @@
  * file (wasm, weights, the Stockfish loader) is copied under
  * dist-app/assets/, at its path in the repository (assets/third_party/…,
  * assets/src/app/…), and referenced there. So dist-app/ is the whole app on
- * its own: the native package serves it as its root (sync-dist.mjs --ui=app),
+ * its own: the native package serves it as its root (sync-dist.mjs),
  * where a `../` would climb out of the bundle (v20-0-plan A1).
  * @module build-app
  */

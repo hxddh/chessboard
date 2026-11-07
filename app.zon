@@ -3,15 +3,15 @@
     .name = "chessboard",
     .display_name = "国际象棋",
     .description = "Chess for macOS & Windows — Native SDK WebView + Canvas, GPLv3.",
-    .version = "19.0.0",
+    .version = "20.0.0",
     .icons = .{ "assets/icon.icns", "assets/icon.ico", "assets/icon.png" },
     .platforms = .{ "macos", "windows" },
     .permissions = .{},
-    .capabilities = .{"webview"},
+    .capabilities = .{ "webview", "sqlite" },
     .frontend = .{
         .dist = "frontend/dist",
         .entry = "index.html",
-        .spa_fallback = true,
+        .spa_fallback = false,
     },
     // 7.0：.pgn 的文档类型声明搬进 manifest。
     //

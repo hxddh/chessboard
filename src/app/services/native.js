@@ -6,7 +6,7 @@
  * before.
  *
  *   openDbBackend(params)  native SQLite when the shell has the store
- *                          (gen-manifest.mjs --ui app), else IndexedDB;
+ *                          (app.zon .capabilities), else IndexedDB;
  *                          ?db=memory still means nothing persists
  *   analystBackend(wasm)   native Stockfish, the wasm one as its fallback —
  *                          with a one-line notice when it falls back

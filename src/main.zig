@@ -56,12 +56,12 @@ const windowTitleFor = @import("menus.zig").windowTitleFor;
 const Pending = @import("sync.zig").Pending;
 const engine = @import("engine.zig");
 
-// v20-0-plan A1: the 20.0 UI's manifest (gen-manifest.mjs --ui app). Its
-// db service needs the store (ADR 0003), and its asset reads need a missing
-// file to be missing (ADR 0001) — refused here rather than found on a device.
+// The app's db service needs the store (ADR 0003), and its asset reads need
+// a missing file to be missing (ADR 0001) — refused here rather than found on
+// a device.
 comptime {
-    if (runner.ui_app and !runner.manifest_sqlite) @compileError("-Dui=app needs a manifest with the sqlite capability: node scripts/gen-manifest.mjs <platform> --ui app");
-    if (runner.ui_app and runner.manifest_spa_fallback) @compileError("-Dui=app needs spa_fallback = false: node scripts/gen-manifest.mjs <platform> --ui app");
+    if (!runner.manifest_sqlite) @compileError("the manifest must declare the sqlite capability (app.zon .capabilities)");
+    if (runner.manifest_spa_fallback) @compileError("the manifest must set spa_fallback = false (app.zon .frontend)");
 }
 
 /// The page's directory, relative: what app.zon's .frontend.dist names and

@@ -26,15 +26,6 @@ const WebLayerOption = enum {
     exclude,
 };
 
-/// v20-0-plan A1: which frontend the app serves. `web` is the 19.0 UI
-/// (src/web → frontend/dist, the default until parity is decided); `app` is
-/// the 20.0 one (src/app, built by scripts/build-app.mjs), which also opens
-/// the SQLite store (ADR 0003) and runs the native Stockfish (ADR 0004).
-const UiOption = enum {
-    web,
-    app,
-};
-
 const PackageTarget = enum {
     macos,
     windows,
@@ -73,11 +64,6 @@ pub fn build(b: *std.Build) void {
     // tray. So macOS builds compile a derived manifest — scripts/gen-manifest.mjs
     // writes it, this points both the runner import and `native package` at it.
     const manifest_path = b.option([]const u8, "manifest", "Manifest to build against (default app.zon)") orelse "app.zon";
-    // v20-0-plan A1: -Dui=app builds the 20.0 frontend in; it wants the
-    // manifest `node scripts/gen-manifest.mjs <platform> --ui app` writes
-    // (spa_fallback off, the sqlite capability), and main.zig refuses at
-    // comptime to build against one that is not.
-    const ui = b.option(UiOption, "ui", "Frontend: web (19.0, default) or app (20.0, src/app)") orelse .web;
     // D6: app.zon lists the dev server (http://127.0.0.1:5173) among its
     // trusted origins so `native dev` works. src/runner.zig drops every
     // http:// origin unless this is set; unset, it follows the exe's role —
@@ -123,7 +109,6 @@ pub fn build(b: *std.Build) void {
         .js_bridge = js_bridge_enabled,
         .web_layer = web_layer,
         .dev_origins = dev_origins_request orelse (optimize == .Debug),
-        .ui_app = ui == .app,
     };
     const options_mod = buildOptionsModule(b, build_opts);
 
@@ -136,7 +121,7 @@ pub fn build(b: *std.Build) void {
     const app_mod = localModule(b, target, optimize, "src/main.zig");
     app_mod.addImport("native_sdk", native_sdk_mod);
     app_mod.addImport("runner", runner_mod);
-    if (ui == .app) addSqlite(b, app_mod, native_sdk_path);
+    addSqlite(b, app_mod, native_sdk_path);
     const exe = b.addExecutable(.{
         .name = app_exe_name,
         .root_module = app_mod,
@@ -167,12 +152,11 @@ pub fn build(b: *std.Build) void {
     // The web side has no npm project of its own (D12: `frontend/` never
     // existed — these steps were `npm --prefix frontend` from the template
     // and made `zig build run/dev/package` fail locally for twenty releases).
-    // frontend/dist is a plain copy of src/web, produced by one script that
-    // does exactly what scripts/package.sh and the two build workflows do:
-    // generate engine-src.js, bundle the ES modules, copy index.html +
-    // styles.css + js/bundle.js + js/engine-src.js, add licenses/.
-    const frontend_build = b.addSystemCommand(if (ui == .app) &.{ "node", "scripts/sync-dist.mjs", "--ui=app" } else &.{ "node", "scripts/sync-dist.mjs" });
-    const frontend_step = b.step("frontend-build", "Sync frontend/dist from src/web (node scripts/sync-dist.mjs)");
+    // frontend/dist is the split build of src/app (scripts/build-app.mjs)
+    // plus the licences, produced by one script that does exactly what
+    // scripts/package.sh and the two build workflows do.
+    const frontend_build = b.addSystemCommand(&.{ "node", "scripts/sync-dist.mjs" });
+    const frontend_step = b.step("frontend-build", "Build frontend/dist from src/app (node scripts/sync-dist.mjs)");
     frontend_step.dependOn(&frontend_build.step);
 
     const run = b.addRunArtifact(exe);
@@ -210,7 +194,7 @@ pub fn build(b: *std.Build) void {
         const package_app_mod = localModule(b, target, package_optimize, "src/main.zig");
         package_app_mod.addImport("native_sdk", package_sdk_mod);
         package_app_mod.addImport("runner", package_runner_mod);
-        if (ui == .app) addSqlite(b, package_app_mod, native_sdk_path);
+        addSqlite(b, package_app_mod, native_sdk_path);
         const built = b.addExecutable(.{
             .name = app_exe_name,
             .root_module = package_app_mod,
@@ -296,7 +280,6 @@ const BuildOptionValues = struct {
     js_bridge: bool,
     web_layer: bool,
     dev_origins: bool,
-    ui_app: bool,
 };
 
 fn buildOptionsModule(b: *std.Build, values: BuildOptionValues) *std.Build.Module {
@@ -309,7 +292,6 @@ fn buildOptionsModule(b: *std.Build, values: BuildOptionValues) *std.Build.Modul
     options.addOption(bool, "js_bridge", values.js_bridge);
     options.addOption(bool, "web_layer", values.web_layer);
     options.addOption(bool, "dev_origins", values.dev_origins);
-    options.addOption(bool, "ui_app", values.ui_app);
     return options.createModule();
 }
 

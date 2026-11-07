@@ -574,10 +574,6 @@ pub const automation_build = build_options.automation;
 pub const mac_shell = std.mem.eql(u8, build_options.platform, "macos");
 /// 12.0 N: the same for the Windows platform's chrome (src/native/win_chrome.c).
 pub const win_shell = std.mem.eql(u8, build_options.platform, "windows");
-/// v20-0-plan A1: built with -Dui=app (the 20.0 frontend). main.zig holds
-/// the manifest to what that UI needs: the `sqlite` capability (ADR 0003)
-/// and spa_fallback off, so a missing file is a 404 (ADR 0001).
-pub const ui_app = build_options.ui_app;
 /// The schema the store is opened with (db_migrations.zig), for db.zig's tests.
 pub const db_migrations: []const native_sdk.relational_store.Migration = &built_relational_migrations.migrations;
 pub const manifest_sqlite = manifestDeclaresSqlite();
