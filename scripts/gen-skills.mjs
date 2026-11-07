@@ -37,12 +37,12 @@
  */
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 
 process.removeAllListeners("warning");
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const V19 = path.join(ROOT, "data/v19");
-const imp = (rel) => import(path.join(ROOT, rel));
+const imp = (rel) => import(pathToFileURL(path.join(ROOT, rel)).href);
 
 const { Chess } = await imp("src/app/core/chess.js");
 const { gate, whiteHasForcedMate } = await imp("scripts/lib/puzzle-gate.mjs");
