@@ -519,3 +519,14 @@ E4 先把 CI 版本写死 → A5 技术验证（SDK 0.11 上 ES modules / fetch�
 - **大文件不卡**：按行切分（跟踪 `{}` 注释）和逐局解析都按约 12 ms 一片让出主线程，每 100 局一批写库。3,000 局（带注释与变着）本机 Chromium 约 5.5 s，最长帧间隔 17 ms。
 - 测试：`scripts/app/takeback.test.mjs`（6）、`scripts/app/import.test.mjs`（8：注释 / 变着 / NAG、坏文件逐局行号、非 PGN、19.0 导出夹具 `scripts/app/fixtures/v19-export.json`、事件与去重、模型、1,500 局让出、原生分片读含 UTF-8 断片）；`scripts/test-takeback-e2e.mjs`（25）、`scripts/test-import-e2e.mjs`（17，含原生 `chess.openPgn` 桩与 3,000 局帧间隔），都进 `test:app:e2e`。
 - 还没做：棋谱库的列表与打开一盘（现在只有局数和最近一次导入的报告）；导入对局的复盘与「你自己对局里的错」；名字认不出时让人指认（19.0 的「这是你吗」）；英日文由 i18n 那条线补（键在 `learn.zh.js` 的 `me.import*` / `imp.*`、`play.zh.js` 的 `act.undo` / `act.flip` / `undo.unrated`）。
+
+**S4 三种语言（`src/app/text/`、`opponents/lines.*`、`content/words.*`；2026-11-07）**：
+- **怎么装**：中文仍是源语言，和首帧一起；英文、日文各两个按需块——`text/pack.<lang>.js`（页面词典、讲解器的句子、对手的名字与台词，en 32 KB / ja 66 KB）在首个页面挂上之前取，`content/words.<lang>.js`（每个题目的提示 / 重试 / 名字 / 思路、每课的标题与正文，en 94 KB / ja 218 KB）打开「学」时才取（路由的 loader 等它）。组件不认语言：`playText()` / `learnText()` / `oppText()` / `localItem()` 读 `text/lang.js` 的当前包；缺键回落到中文。
+- **从哪来**：课、开局、名局、残局的文字由 `gen-skills.mjs` 按同一 id 从 19.0 的译文生成（`lessons-*`、`lessons-adv-*`、`openings-*`、`classics-*`、`endgames.js`），缺一条就是 gen 的错误；讲解器里 19.0 的句子、母题、子名照用 19.0 的英日文；其余新写，术语跟 19.0（日文：チェックメイト、ステイルメイト、アンパッサン、キャスリング、昇格、投了、振り返り、大悪手 / 悪手 / 軽い緩手）。十六个对手的台词各按性格写（皮普的兴奋、凯的嘴硬、Stockfish 的一个词）。
+- **设置**：`settings.lang`（zh / en / ja），和别的设置一样是一条 `settings.set` 事件；设置页第一项，每种语言用它自己的名字。没选过时用系统语言（`navigator.languages`，19.0 `lang-ids.js` 的规则；都不是就中文），`?lang=` 给测试；这台设备上一次显示的语言另记在 localStorage（只作首帧提示，事件才是记录），所以选了英文的人重开时首帧就是英文。切换不重载：外壳（导航、标题、`<html lang>`）重贴字，当前页 `router.remount()` 重挂（状态都在 store 里）。
+- **代码里写死的中文标点**（`。`、`、`、` —— `）和 `toLocaleDateString` 走词典（`ex.stop`、`ex.list`、`learn.dash`、`date.locale`）；顺手修了讲解器的「e 线线上」。
+- **下的情境条在 1024×700 放不下**：悔棋加进来后六个按钮 + 状态在 490 px 宽的条里，中文的状态也被挤成一列、整页比窗口高 7 px；英日文的按钮字在按钮里折行。改成：条最多两行——按钮留给状态不足 4em 时，状态单占一行，按钮一行、不折；`pages/play.js` 把条的实际高度量进 `--bar-h`，棋盘尺寸减去它（1024×700：中文一行、棋盘 484 px；英日文两行、460 px；1280×860 各语言都一行）。按钮左右内距 14 → 10 px。
+- **首帧**：199.2 KB / 16 个模块，同一时刻不带本条改动是 196.9 KB——+2.3 KB 是切换语言的代码（`lang.js`、外壳的词、路由的 `remount`、条的测高），语言内容不在首帧（e2e 核对中文首帧不取任何语言块，英日文首帧只取界面包不取课文）。首帧 68 ms、棋盘 157 ms，在门内。
+- 测试：`scripts/app/text.test.mjs`（`test:app`，8 项：三语键一致且 `{n}` 相同、对手台词、内容译文齐全、英文里没有汉字与全角标点、日文不是原样中文、各语言包接上后讲解器说英日文、首次的系统语言、设置）；`scripts/test-lang-e2e.mjs`（`test:app:e2e`，72 项：系统语言决定首次；下（含新对局全部对手）、学（定级、课、题、技能图）、我、设置在英日文下没有中文、没有出界或被截断、按钮字不折行、下不超出窗口——中文同样核布局；设置里切换不重载、是事件、重开还在）。`scripts/app/browser.mjs` 让 e2e 的浏览器默认 zh-CN，原有按中文写的测试不受系统语言影响。
+- **以后加键**：`*.zh.js` 加一个键，`text.test.mjs` 会要 en、ja 同时加上（报出缺哪个）；新的内容由 `gen-skills.mjs` 一起生成译文。
+- 还没做：英日文的真机走查（字体回落、日文换行）；19.0 的 `cjk-punct` 一类排版检查没搬过来；设置页的选项名对新棋子套（`set.<id>` 没有时显示 id）。
