@@ -28,7 +28,9 @@ select { background: var(--btn-lift); border: 1px solid var(--btn-edge); border-
 
 /* the play screen: the board first, one bar under it, the moves in a drawer */
 .play {
-  --board: min(calc(100vh - 210px), calc(100vw - 80px), 860px);
+  /* the window less the nav, the padding, the two strips and the bar as it is
+     (--bar-h, measured by pages/play.js: two rows when the buttons' words are long) */
+  --board: min(calc(100vh - 160px - var(--bar-h, 56px)), calc(100vw - 80px), 860px);
   position: relative; display: flex; justify-content: center; gap: 20px; padding: 16px 20px; height: 100%; min-height: 0;
 }
 .stage {
@@ -56,10 +58,14 @@ select { background: var(--btn-lift); border: 1px solid var(--btn-edge); border-
 .strip .clock.low.running { color: var(--danger); }
 
 .bar {
-  display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 10px 8px 16px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-height: 56px; padding: 8px 10px 8px 16px;
+  /* at most two rows: the buttons stay on one, and a bar a little wider than a small board is centred under it */
+  min-width: min-content; align-self: center; width: 100%;
   background: var(--card); border: 1px solid var(--card-edge); border-radius: var(--radius-md);
 }
-.bar-text { flex: 1; margin: 0; line-height: var(--lh-tight); }
+/* the words never squeezed to a column of letters: when the buttons leave
+   less than 4em, they move to a row of their own (a longer language) */
+.bar-text { flex: 1 1 0; min-width: 4em; margin: 0; line-height: var(--lh-tight); }
 .bar-count { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 8px; }
 .bar[data-tone="coach"] .bar-text, .bar[data-tone="moment"] .bar-text { font-weight: 600; }
 .bar[data-tone="coach"] { border-color: var(--judge-mid, var(--accent)); }
@@ -67,7 +73,7 @@ select { background: var(--btn-lift); border: 1px solid var(--btn-edge); border-
 .bar[data-tone="bad"] .bar-text { color: var(--judge-bad, var(--danger)); }
 .bar[data-tone="moment"] .bar-text { font-family: var(--font-title); font-size: 1.25rem; animation: moment var(--dur-slow, 400ms) var(--ease) 1; }
 @keyframes moment { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-.bar-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.bar-actions { display: flex; gap: 4px; flex-wrap: nowrap; justify-content: flex-end; margin-left: auto; }
 .play button {
   height: var(--ctl-h); padding: 0 14px; border-radius: var(--radius-sm); cursor: pointer;
   background: var(--btn-lift); border: 1px solid var(--btn-edge); box-shadow: var(--elev-1);
@@ -79,6 +85,7 @@ select { background: var(--btn-lift); border: 1px solid var(--btn-edge); border-
 .play button.danger { background: var(--danger); color: var(--on-danger); border-color: transparent; }
 .play button.quiet { background: transparent; box-shadow: none; border-color: transparent; color: var(--muted); }
 .play button.quiet:hover { color: var(--text); background: var(--btn-hover); }
+.play .bar-actions button { padding: 0 10px; white-space: nowrap; flex: none; }
 
 .drawer {
   flex: 0 0 260px; display: flex; flex-direction: column; gap: 8px; min-height: 0; max-height: calc(var(--board) + 110px);

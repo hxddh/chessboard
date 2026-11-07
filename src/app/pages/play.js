@@ -105,9 +105,12 @@ export function mount(el, { store, engine, ready }) {
   const stage = h("div", { class: "stage" }, top.el, h("div", { class: "board-row" }, evalBar, boardEl), bottom.el, bar);
   const root = h("div", { class: "play" }, stage, drawer.el, toastEl);
   el.append(root);
+  // the board gives the bar the room it takes (two rows in a language with longer words: styles/app.css --board)
+  const barSize = new ResizeObserver(() => root.style.setProperty("--bar-h", bar.offsetHeight + "px"));
+  barSize.observe(bar);
 
   const s0 = settings.peek();
-  const board = createBoard(boardEl, {
+  const board = createBoard(boardEl, { label: t("board.aria"),
     fen: fen.peek(), pieceSet: s0.pieceSet, theme: s0.boardTheme, movable: "none",
     onMove: ({ from, to, premove }) => onBoardMove(from, to, premove),
     onReady: () => performance.mark("app:board"),
@@ -263,7 +266,7 @@ export function mount(el, { store, engine, ready }) {
     } else if (level === 2) {
       const cc = checksAndCaptures(f);
       const all = [...cc.checks, ...cc.captures];
-      const text = all.length ? t("hint.forcing", all.slice(0, 5).map((m) => sanText(m.san)).join("、")) : t("hint.noForcing");
+      const text = all.length ? t("hint.forcing", all.slice(0, 5).map((m) => sanText(m.san)).join(t("ex.list"))) : t("hint.noForcing");
       setHint(f, 2, text, [], [...new Set(all.map((m) => m.from))].map((sq) => ({ sq, color: "G" })));
     } else {
       setHint(f, level, t("hint.wait"), [], hint.peek().marks);
@@ -683,6 +686,7 @@ export function mount(el, { store, engine, ready }) {
   window.__play = { board, review, sound, get mode() { return mode.peek(); }, hint, pending, flipped, undo, flip };
 
   return () => {
+    barSize.disconnect();
     stops.forEach((s) => s());
     timers.forEach(clearTimeout);
     if (tick) clearInterval(tick);
