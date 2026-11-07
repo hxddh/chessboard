@@ -23,11 +23,12 @@ import { next, itemOf, todayOf, skillItems } from "../learn/queue.js";
 import { isLit, isReached, frontier, visibleRating } from "../learn/model.js";
 import { newRun, pickNext, step, placeEvent } from "../learn/placement.js";
 import { createRunner } from "../learn/runner.js";
-import { learnerFor, opponentFor } from "../learn/service.js";
+import { learnerFor, opponentFor, nextGameLine } from "../learn/service.js";
 import { addStyle } from "../learn/style.js";
 import { ITEMS } from "../content/practice.js";
 import { LEVELS, coachOn } from "../state/settings.js";
 import { newId } from "../services/db.js";
+import { createSound, moveSoundAt } from "../lib/sound.js";
 
 const plain = (s) => String(s).replace(/\*\*/g, "");
 
@@ -72,6 +73,10 @@ export function mount(el, { store, engine, ready, router }) {
   const board = createBoard(boardEl, { label: tp("board.aria"), fen: "8/8/8/8/8/8/8/8 w - - 0 1", dests: new Map(), movable: "none", check: null, premove: false,
     pieceSet: s0.pieceSet, theme: s0.boardTheme, onMove: ({ from, to }) => { const c = current.peek(); if (c && c.runner && !c.done) c.runner.move(from, to); } });
 
+  // the same wooden set as 下 (lib/sound.js), under the same setting
+  const sound = createSound(() => store.get().settings.sound !== "off");
+  let heard = { fen: null, bar: null };
+
   // --- the item ------------------------------------------------------------------------
   function showNext() {
     if (!L) return;
@@ -99,6 +104,7 @@ export function mount(el, { store, engine, ready, router }) {
       revealed: !!r.revealed, ...(Number.isFinite(it.rating) ? { rating: it.rating } : {}), ...(c.placement ? { placement: true } : {}) };
     c.done = r;
     rev.value++;
+    if (r.ok && !r.revealed && it.kind !== "lesson") sound.play("star");
     if (c.placement) return placementAnswer(it, r.ok && !r.revealed);
     await L.record(e);
     if (!alive || current.peek() !== c) return;
@@ -111,7 +117,7 @@ export function mount(el, { store, engine, ready, router }) {
     store.dispatch("play.new", { id: newId(), mode: "engine", engineColor: "b", opponent: o.id, coach: coachOn(store.get().settings) });
     router.go("/play");
   }
-  const gameLine = (o) => (tp.has("opp." + o.id) ? t("learn.game", tp("opp." + o.id)) : t("learn.gameAny"));
+  const gameLine = (o) => nextGameLine(t, o);
 
   // --- placement -----------------------------------------------------------------------
   let placing = null;
@@ -201,6 +207,12 @@ export function mount(el, { store, engine, ready, router }) {
       return;
     }
     const v = c.runner.view.value;
+    // a move on the board, yours or the other side's, is heard; a jump to another position is not
+    if (v.lastMove && heard.fen && v.fen !== heard.fen) {
+      const s = moveSoundAt(heard.fen, v.lastMove.from, v.lastMove.to);
+      if (s) sound.play(s.name, s.piece, s.color);
+    }
+    heard.fen = v.fen;
     board.set({ fen: v.fen, orientation: v.orientation, movable: v.movable, dests: v.dests || new Map(), marks: v.marks || [], arrows: v.arrows || [],
       lastMove: v.lastMove, check: v.check === true ? true : null });
   });
@@ -218,6 +230,8 @@ export function mount(el, { store, engine, ready, router }) {
     }
     setNotation(barText, b.text);
     bar.dataset.tone = b.tone || "";
+    if (b !== heard.bar && b.tone === "bad") sound.play("wrong");
+    heard.bar = b;
     const acts = c.done && !c.placement ? [{ id: "next", label: t("learn.next"), primary: true, fn: () => showNext() }] : b.actions;
     barActions.replaceChildren(...acts.map(btn));
   });
@@ -264,6 +278,7 @@ export function mount(el, { store, engine, ready, router }) {
     start: (id) => { view.value = "item"; start(ITEMS[id], "new"); },
     square: (sq) => board.squareCenter(sq),
     board: () => board.state(),
+    sound,
     lit: (id) => !!(L && isLit(L.model, id)),
   };
 
@@ -274,6 +289,7 @@ export function mount(el, { store, engine, ready, router }) {
     const c = current.peek();
     if (c && c.runner) c.runner.dispose();
     board.destroy();
+    sound.close();
     if (window.__learn && window.__learn.square) delete window.__learn;
   };
 }

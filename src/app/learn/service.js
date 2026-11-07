@@ -8,6 +8,7 @@
 import { signal } from "../lib/signal.js";
 import { initialState, apply } from "./model.js";
 import { OPPONENTS } from "../core/opponents.js";
+import { oppText } from "../opponents/lines.js";
 
 const PAGE = 1000;
 const byDb = new WeakMap();
@@ -22,6 +23,16 @@ export function opponentFor(rating) {
   let best = list[0];
   for (const o of list) if (o.rating <= rating + 150) best = o;
   return best;
+}
+
+/**
+ * 「下一盘：对 X」: the opponent's name from the opponents' own tables
+ * (opponents/lines.*.js, in the current language); the generic wording only
+ * for an opponent without one.
+ */
+export function nextGameLine(t, o) {
+  const name = o ? oppText(o.id, "name") : "";
+  return name ? t("learn.game", name) : t("learn.gameAny");
 }
 
 export function learnerFor(db, { tz = new Date().getTimezoneOffset() } = {}) {

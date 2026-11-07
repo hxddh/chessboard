@@ -14,6 +14,7 @@ import { visibleRating, stageOf, weekly } from "../learn/model.js";
 import { learnerFor, opponentFor } from "../learn/service.js";
 import { addStyle } from "../learn/style.js";
 import { openTextFile, FileError } from "../services/files.js";
+import { oppText } from "../opponents/lines.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const svg = (tag, attrs = {}) => { const e = document.createElementNS(SVG, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
@@ -118,7 +119,7 @@ export function mount(el, { ready }) {
     const opp = opponentFor(stage.rating);
     const week = weekly(st, now);
     const name = (id) => t("sk." + id);
-    const oppName = tp.has("opp." + opp.id) ? tp("opp." + opp.id) : "";
+    const oppName = opp ? oppText(opp.id, "name") : "";
 
     const level = h("section", { class: "card" }, h("h2", { text: t("me.level") }),
       h("div", { class: "level" }, h("span", { class: "num", "data-test": "rating", "data-rating": String(r) }, String(r))),
