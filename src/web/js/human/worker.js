@@ -55,7 +55,7 @@ function workerMain(makeCore) {
  */
 export function createHuman(d) {
   const G = d.global || globalThis;
-  let worker = null, seq = 0, booting = null;
+  let worker = null, workerUrl = null, seq = 0, booting = null;
   const pending = new Map();
   const loaded = new Map(); // band → Promise<void>
 
@@ -64,16 +64,37 @@ export function createHuman(d) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { pending.delete(id); reject(new Error("maia: no answer to " + msg.type + " in " + ms + " ms")); }, ms);
       pending.set(id, { resolve, reject, timer });
+      if (!worker) { clearTimeout(timer); pending.delete(id); reject(new Error("maia: no worker")); return; }
       worker.postMessage(Object.assign({ id }, msg));
     });
   }
 
+  /**
+   * 19.1 F2: throw the worker away — on a worker error, or an init that never
+   * answered. Before 19.1 a dead worker stayed `worker`, every later policy()
+   * was posted to it and waited out its full timeout, for the rest of the
+   * session; and an init that timed out left the old worker running beside
+   * the next one. Now everything is dropped, so the next request boots afresh
+   * (the nets go with the worker, so `loaded` is forgotten too).
+   */
+  function reset(err) {
+    const w = worker, url = workerUrl;
+    worker = null; workerUrl = null; booting = null;
+    loaded.clear();
+    for (const p of pending.values()) { clearTimeout(p.timer); p.reject(err); }
+    pending.clear();
+    if (w) { try { w.terminate(); } catch (_) { /* already gone */ } }
+    if (url) { try { URL.revokeObjectURL(url); } catch (_) { /* nothing to free */ } }
+  }
+
   function boot() {
     if (booting) return booting;
-    booting = (async () => {
+    const run = (async () => {
       const src = "(" + workerMain.toString() + ")(" + maiaCore.toString() + ")";
-      worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
-      worker.onmessage = (ev) => {
+      workerUrl = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+      const w = new Worker(workerUrl);
+      worker = w;
+      w.onmessage = (ev) => {
         const r = ev.data || {};
         const p = pending.get(r.id);
         if (!p) return;
@@ -81,11 +102,12 @@ export function createHuman(d) {
         clearTimeout(p.timer);
         if (r.ok) p.resolve(r); else p.reject(new Error(r.err || "maia: failed"));
       };
-      worker.onerror = (ev) => { const err = new Error("maia worker: " + ((ev && ev.message) || "error")); for (const p of pending.values()) { clearTimeout(p.timer); p.reject(err); } pending.clear(); };
+      w.onerror = (ev) => { if (worker === w) reset(new Error("maia worker: " + ((ev && ev.message) || "error"))); };
       await ask({ type: "init", moves: IDX_TO_MOVE, map: Array.from(CONV_POLICY_MAP) }, 10000);
     })();
-    booting.catch(() => { booting = null; });
-    return booting;
+    booting = run;
+    run.catch((err) => { if (booting === run) reset(err); });
+    return run;
   }
 
   /** The band's net, in the worker (once). */
@@ -94,10 +116,12 @@ export function createHuman(d) {
     const p = (async () => {
       await boot();
       const name = "CHESS_MAIA_" + band;
-      await d.loadChunk("maia-" + band + ".js", name);
-      const b64 = G[name];
+      // the chunk loader remembers what the script carried, so a worker booted
+      // again after reset() gets the same text without a second script load
+      const b64 = (await d.loadChunk("maia-" + band + ".js", name)) || G[name];
       if (!b64 || typeof b64 !== "string") throw new Error("maia-" + band + ".js carried no weights");
-      G[name] = "";
+      // the global was only the script's way to hand the text over
+      try { delete G[name]; } catch (_) { G[name] = undefined; }
       await ask({ type: "net", band, b64 }, 30000);
     })();
     loaded.set(band, p);

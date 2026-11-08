@@ -14,6 +14,7 @@
  * @module notices
  */
 import { placeToastAt } from "./toast-place.js";
+import { createErrLog } from "./errlog.js";
 
 /** How long each tier stays up, in ms; a fault stays until closed. ach: an unlocked badge, with its picture (v8-0-plan A5) */
 export const TOAST_MS = { ok: 2200, fix: 4200, fault: 0, ach: 6500 };
@@ -146,8 +147,11 @@ export function createNotices(d) {
     el.append(text, retry, copy, close);
     el.hidden = false;
   }
-  doc.defaultView.addEventListener("error", (ev) => { if (ev && ev.error) showAppFault(ev.error); });
-  doc.defaultView.addEventListener("unhandledrejection", (ev) => { showAppFault(ev && ev.reason); });
+  // 19.1 G4: …and kept on disk (errlog.js), so a fault on a real machine
+  // leaves something to read after the banner is closed
+  const errLog = createErrLog({ host: Host, version: typeof __CHESS_VERSION__ === "string" ? __CHESS_VERSION__ : "" });
+  doc.defaultView.addEventListener("error", (ev) => { if (ev && ev.error) { errLog.record(ev.error, "error"); showAppFault(ev.error); } });
+  doc.defaultView.addEventListener("unhandledrejection", (ev) => { errLog.record(ev && ev.reason, "rejection"); showAppFault(ev && ev.reason); });
 
   /**
    * Three tiers, because 110 toasts were saying three different kinds of thing

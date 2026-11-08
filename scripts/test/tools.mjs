@@ -182,6 +182,11 @@ export async function run() {
     assert(grade(300).blunder === 1, "300cp is a blunder");
 
     assert(R.verdictKey(s, "w") === "rv.verdict.oneBlunder", "one blunder gets its own verdict");
+    {
+      // 19.1 F5: the verdict never says "only one" over a table that counts two
+      const two = { acc: { w: 70 }, judged: { w: R.MIN_JUDGED }, counts: { w: { blunder: 2, mistake: 0, inaccuracy: 0 } } };
+      assert(R.verdictKey(two, "w") === "rv.verdict.blunders", "two blunders are not called one (" + R.verdictKey(two, "w") + ")");
+    }
     // s is a fragment (fewer than MIN_JUDGED own moves): a side that made a
     // blunder is told about the blunder, a side that made none is told the
     // sample is too short — not that it plays excellently (audit F5)

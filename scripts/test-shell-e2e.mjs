@@ -1286,6 +1286,23 @@ for (const v of ["home", "me", "settings"]) {
     await ctx.close();
   }
   {
+    // 19.1 F6: a player the placement put at 1675, who has finished no lesson:
+    // 「继续」's course card starts where the plan starts them (18.0 R3's
+    // lessonFrom), not at 「第 1 课 · 棋盘与坐标」
+    const { ctx, page, errs } = await seeded({ "chess.puzzles": { v: 1, solved: {}, placed: { r: 1675, at: now },
+      rating: { r: 1675, rd: 150, vol: 0.06 }, rhist: [{ t: now, r: 1675, place: true }] } });
+    await page.click('#rail button[data-view="home"]');
+    let line = "";
+    for (let i = 0; i < 40 && !line; i++) {
+      await page.waitForTimeout(100);
+      line = await page.evaluate(() => (document.querySelector('#today-cont .today-c[data-seg="course"] b') || {}).textContent || "");
+    }
+    assert(line && !/第 1 课/.test(line) && /开完局之后/.test(line),
+      "19.1 F6 定级 1675、还没学完一课:「继续」的课程卡从中局思路开始，不是第 1 课(" + line + ")");
+    assert(errs.length === 0, "19.1 F6:没有页面异常 " + errs.join(" / "));
+    await ctx.close();
+  }
+  {
     // too few games for any figure: B5's block said what it needed. 19.0 S2:
     // the three figures went with it; the diagnosis waits for its floor, and
     // the library's card is what says how many games it still needs

@@ -24,6 +24,8 @@ import * as scope from "./test/scope.mjs";
 import * as copy from "./test/copy.mjs";
 import * as readme from "./test/readme.mjs";
 import * as persist from "./test/persist.mjs";
+import * as humanWorker from "./test/human-worker.mjs";
+import * as errlog from "./test/errlog.mjs";
 import * as firstPaint from "./test/first-paint.mjs";
 import * as automation from "./test/automation.mjs";
 import * as visionDrills from "./test/vision-drills.mjs";
@@ -35,7 +37,7 @@ import * as syncChartsSounds from "./test/sync-charts-sounds.mjs";
 
 for (const domain of [
   rules, content, keyboard, design, opponents, review, drills, tools, trainer,
-  i18nUi, achievements, nativeBridge, scope, copy, readme, persist, firstPaint,
+  i18nUi, achievements, nativeBridge, scope, copy, readme, persist, humanWorker, errlog, firstPaint,
   automation, visionDrills, ci, fen, layout, appModules, syncChartsSounds,
 ]) {
   await domain.run();
