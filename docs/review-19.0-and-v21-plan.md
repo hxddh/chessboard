@@ -311,4 +311,6 @@ T 组每一条都是 20.0 计划 L / P / F 里的同名想法，但**落在 19.0
 
 ## 附录 A · 浏览器 e2e 结果
 
-（运行完成后补）
+- **本地**（Linux，Chromium 无头，单机串行）：`npm run test:e2e` 19 组跑了 60 分钟，被会话的后台时限停在第 15 组（layout），没有跑完。停下之前，前 14 组（board、audio、clock、walk、shell、trainer、content、persist、review、library、explorer、sync、repertoire、selftest）全部通过：3,849 条 ok，0 条失败。
+- **CI**（本 PR，19.0 代码，提交 37794b5）：32 个检查全绿，其中 Chromium、WebKit 各一整套 browser，以及 static（三个系统）、zig（macOS、Windows）。
+- **意义**：19.0 在浏览器一侧没有已知的红。第 2、3 节的问题都是行为或设计问题，现有断言碰不到——这正是第 4.3 节说的盲区。
