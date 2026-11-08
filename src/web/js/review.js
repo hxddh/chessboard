@@ -256,8 +256,10 @@
     const c = summary.counts[side];
     const enough = !summary.judged || summary.judged[side] >= MIN_JUDGED;
     if (!enough && c.blunder === 0 && c.mistake < 3) return "rv.verdict.tooShort";
-    if (c.blunder >= 3) return "rv.verdict.blunders";
-    if (c.blunder >= 1) return "rv.verdict.oneBlunder";
+    // 19.1 F5: two blunders used to fall through to "only one blunder", right
+    // above a table that counted two. "One" is said only when it is one.
+    if (c.blunder >= 2) return "rv.verdict.blunders";
+    if (c.blunder === 1) return "rv.verdict.oneBlunder";
     if (c.mistake >= 3) return "rv.verdict.mistakes";
     if (summary.acc[side] >= VERDICT_EXCELLENT) return "rv.verdict.excellent";
     if (summary.acc[side] >= VERDICT_SOLID) return "rv.verdict.solid";

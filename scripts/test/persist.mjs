@@ -220,6 +220,29 @@ export async function run() {
       assert(r === "corrupt", "a file that will not parse reads as corrupt (" + r + ")");
       assert(failed && failed.key === "appdataCorrupt", "…and says so once");
     }
+    // 11c. (19.1 F1) a restore the cache refuses part-way leaves the file
+    // whole. Before 19.1 recover() returned without shutting the mirror, the
+    // next write flushed the half-restored cache and the refused key fell out
+    // of the file's manifest — the native copy lost what the cache had no
+    // room for, and the user was told the file was damaged.
+    {
+      const stats = JSON.stringify({ v: 2, games: [1, 2, 3] });
+      const h = withFile(JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 5000,
+        keys: { save: JSON.stringify({ v: 1, pgn: "1. Nf3 *" }), stats } }));
+      const realSet = h.storageSet;
+      h.storageSet = (k, v) => (k === KEYS.stats ? false : realSet(k, v));
+      let failed = null;
+      const P = createPersist(h, (info) => { failed = info; });
+      P.load();
+      const r = await P.recover();
+      assert(r === "unrestored", "a restore the cache refused is reported as such, not as a damaged file (" + r + ")");
+      assert(failed && failed.key !== "appdataCorrupt", "…and the user hears that storage failed (" + (failed && failed.key) + ")");
+      h.storageSet = realSet;
+      P.set("panelOpen", "1");
+      await tick(700);
+      assert(h.writes === 0, "…nothing is mirrored over the file (" + h.writes + " write(s))");
+      assert(JSON.parse(h.file).keys.stats === stats, "…and the key the cache had no room for is still in the file");
+    }
     // 12. the quarantine keeps the evidence it promises to keep
     {
       const h = mem();

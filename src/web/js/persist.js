@@ -541,8 +541,10 @@ export function createPersist(host, onWriteFailure) {
   }
   /**
    * Adopt the native file when it knows more than the cache does.
-   * @returns {Promise<"kept"|"restored"|"none">} "restored" means storage
-   *   was rewritten from the file and the caller should reload the page
+   * @returns {Promise<"kept"|"restored"|"none"|"corrupt"|"unrestored">}
+   *   "restored" means storage was rewritten from the file and the caller
+   *   should reload the page; "unrestored" means the cache refused the
+   *   restore part-way and the file was left untouched
    */
   async function recover() {
     // v8-0-plan F3: unless the store is provably at the cache's revision,
@@ -638,7 +640,12 @@ export function createPersist(host, onWriteFailure) {
     }
     const doc = await src.load();
     if (!doc || !isProfileDoc(doc)) { blockMirror(); return "corrupt"; }
-    if (!restoreAll(doc)) return "corrupt";
+    // 19.1 F1: a restore the cache refused part of (the quota, most often)
+    // leaves the cache holding half of the file. The mirror must stay shut:
+    // releasing it would write the cache's gaps over the complete file and
+    // drop those keys from its manifest. restoreAll() has already latched the
+    // refused write, so the user hears "storage failed", not "file damaged".
+    if (!restoreAll(doc)) { blockMirror(); return "unrestored"; }
     // 6.1: storage now holds the file's profile but the page still holds the
     // old one. Freeze until the caller reloads onto it.
     freeze();

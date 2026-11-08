@@ -22,6 +22,7 @@
 import { paintMini, measureMinis } from "./mini-board.js";
 import { ChessProgressMetrics as Metrics } from "./progress-metrics.js";
 import { ChessProgress } from "./progress.js";
+import { ChessPlanner } from "./planner.js";
 
 /** Today's goals: one lesson, five puzzles, one game — a sitting, not a quota. */
 export const TODAY_GOALS = { lesson: 1, puzzle: 5, game: 1 };
@@ -136,6 +137,16 @@ export function createTodayPage(d) {
     let li = Math.max(0, Math.min(ls.last || 0, LESSONS.length - 1));
     const nx = dn[(LESSONS[li] || {}).id] ? LESSONS.findIndex((x, i) => i > li && !dn[x.id]) : -1;
     if (nx > 0) li = nx;
+    // 19.1 F6: a placed player who has finished no lesson yet starts where
+    // the plan starts them. 18.0 R3 taught 「接下来」 the placement, but this
+    // card still read the bookmark (0 on a fresh profile), so a player placed
+    // at 1675 was offered 「第 1 课 · 棋盘与坐标」 right under a plan that
+    // skipped it.
+    const ps = store.session.puzzleState || {};
+    if (ps.placed && !Object.keys(dn).some((k) => dn[k])) {
+      const from = ChessPlanner.lessonFrom(LESSONS, dn, ps.placed.r);
+      if (from > li) li = from;
+    }
     const L = LESSONS[li];
     if (L) {
       const lt = lessonText(L);

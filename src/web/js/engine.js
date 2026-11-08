@@ -202,6 +202,19 @@ const global = typeof window !== "undefined" ? window : globalThis;
   /** a background search is running on the shared worker */
   const batchRunning = () => { const r = sched.running(); return !!r && r.prio === PRIO.BATCH; };
 
+  // 19.1 F3: one blob URL per loader text, shared by the main worker and every
+  // background lane. The source never changes, and before 19.1 each spawn made
+  // a fresh URL that nothing revoked: a lane closes after 30 s idle, so every
+  // review after a pause leaked another copy of the worker source.
+  let blobUrl = null, blobText = null;
+  function workerUrl(loaderText) {
+    if (blobUrl && blobText === loaderText) return blobUrl;
+    if (blobUrl) { try { URL.revokeObjectURL(blobUrl); } catch (_) { /* nothing to free */ } }
+    blobText = loaderText;
+    blobUrl = URL.createObjectURL(new Blob([workerSource(loaderText)], { type: "text/javascript" }));
+    return blobUrl;
+  }
+
   function workerSource(loaderText) {
     return [
       "var module = { exports: {} };",
@@ -400,8 +413,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
         if (!wasmB64) throw new Error("engine sources missing");
         global.CHESS_SF_WASM_B64 = "";
       }
-      const blobUrl = URL.createObjectURL(new Blob([workerSource(loaderText)], { type: "text/javascript" }));
-      worker = new Worker(blobUrl);
+      worker = new Worker(workerUrl(loaderText));
       worker.onmessage = (ev) => onLine(ev.data);
       // a worker that throws inside the wasm never sends __sf_ready__; without
       // this the init promise waited out its 30 s and the worker lingered
@@ -923,7 +935,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
         await init(); // the sources the lane is built from, and the worker it falls back on
         if (!s.lane) {
           s.lane = createBgLane({
-            spawn: () => new Worker(URL.createObjectURL(new Blob([workerSource(loaderSrc)], { type: "text/javascript" }))),
+            spawn: () => new Worker(workerUrl(loaderSrc)),
             b64: () => wasmB64,
             optionCmds: fullStrengthCmds,
             readInfo,
