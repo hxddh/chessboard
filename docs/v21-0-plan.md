@@ -103,4 +103,22 @@ owner 定下的前提：
 
 ## 9 · 落地记录
 
-（发布前补）
+| # | 落地 | 验收 |
+|---|---|---|
+| T1 | `review/moments.js`：`whyOpen` 默认值改成「能再试一次就收起」；「再试一次」排第一、`.primary` | `test-review-e2e`、`test-engine-flows-e2e`「为什么」通过 |
+| T2 | `game-controller.js` `replyAfterCoach` / `coachHolds`；`app.js` 落子后改调它，`maybeEngineTurn` 等着 hold；`i18n` 新键 `mm.blunderHold`（界面键 1376 → 1377） | `test-engine-flows-e2e`「失着提醒」三条通过：提示出现在第 5 个半着；Z 收回到 4 个，5 秒后仍是 4 个；不收回时对手照常应着。「后台分析中应着」关了教练再量，阈值没动，通过 |
+| T3 | 新模块 `play-hint.js`；`app.js` 的 `requestHint` 移过去（`app.js` 4,777 → 4,758 行）；按钮字在亮圈时是「答案」 | `test-engine-flows-e2e`「人机」：第一下一个圈、没有箭头、不说着法；第二下给出合法着法 |
+| T5 | `ChessMistakes.capPerGame`（`PER_GAME` = 3），棋盘复盘和棋谱库分析两条路径都用 | 单测 2 条；两条源码守卫改成认 `capPerGame` |
+| E | `about-lazy.js` → `chunk-about.js`；`save-slots.js` → `chunk-slots.js`（只有还留着存档槽的档案才取） | 首屏包 826,187 字节（线 827,000 不动）；`test-shell-e2e` 新增「关于」按需打开；`test-persist-e2e` 存档槽迁移照旧通过 |
+| G1 | `selftest-scenarios.js` 新增 `pages` 场景（13 页，每页判样式、导航、按钮、主区域、棋盘像素、深色模式、未捕获错误）；`automation-scenarios.mjs` 用 `screencapture` / CopyFromScreen 截图；两个 automation 作业上传 `webview-shots-*` | 2026-11-09 在本分支手动跑 `build-macos.yml`（run 42538657782）和 `build-windows.yml`（run 42538660139），都通过。两个平台的 13 张截图 Claude 逐张看过：样式、棋盘、按钮、复盘、深色模式都正常 |
+| G5 | `scripts/test/real-gate.mjs`：打包目标、Safari 15 不支持的 CSS 写法（已有的 23 处 `color-mix()`、22 处 `:has()` 计数只减不增）、module Worker；`--accent-soft` / `--accent-line` 给了没有 `color-mix()` 时的回落值 | 静态测试通过 |
+| D4 | `release.yml` 写 `SHA256SUMS.txt`，`sha256sum -c` 自检后随包上传 | 静态检查守着步骤顺序和内容 |
+
+**真机截图里看到、这一版不改的**：Windows 截图里界面是英文，原生菜单栏是中文。原因还没查，记给 21.x。
+
+**G6（人工签字）**：owner 让 Claude 完成并发布，所以这一版由 Claude 看过两平台真 WebView 截图代签（上表 G1）。不是真人真机：dpr 1，CI 镜像是最新系统，覆盖不到 macOS 11–14。
+
+**测试**：
+- `npm run test:static` 全过；`test-pgn.mjs` 的耗时阈值在和 e2e 并行跑时超过一次，单独重跑通过。
+- 浏览器 e2e 19 组本地（Chromium）全过。
+- PR 上的 CI 跑 Chromium 和 WebKit 两套。
