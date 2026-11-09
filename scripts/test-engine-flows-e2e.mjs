@@ -386,11 +386,18 @@ await scenario("人机", async () => {
   await page.waitForTimeout(300);
   const before = (await page.evaluate(() => window.__toasts.length));
   await page.keyboard.press("h");
+  // 21.0 T3: the first press rings the piece, and names no move
+  const piece = await until(() => page.evaluate((k) =>
+    window.__toasts.slice(k).find((s) => /动亮圈里的这个子/.test(s)) || null, before), 10000);
+  const ring = await page.evaluate(() => { const s = window.__chess.shapes(); return { circles: s.circles.length, arrows: s.arrows.length }; });
+  assert(!!piece && ring.circles === 1 && ring.arrows === 0 && !(await page.evaluate((k) => window.__toasts.slice(k).some((s) => /^提示 · /.test(s)), before)),
+    "21.0 T3 按 H：第一下只圈出要动的子，不说着法(" + JSON.stringify({ piece, ring }) + ")");
+  await page.keyboard.press("h");
   const hint = await until(() => page.evaluate((k) =>
     window.__toasts.slice(k).find((s) => /^提示 · /.test(s)) || null, before), 10000);
   const san = hint ? hint.replace(/^提示 · /, "").trim() : "";
   const legal = g ? g.moves() : [];
-  assert(!!hint && legal.includes(san), "按 H：提示给出当前局面里一手合法的棋", hint + " / " + (g && g.fen()));
+  assert(!!hint && legal.includes(san), "按 H：第二下给出当前局面里一手合法的棋", hint + " / " + (g && g.fen()));
   assert(!errs.length, "人机：页面没有报错", errs.join(" / "));
   await ctx.close();
 });
@@ -420,12 +427,23 @@ await scenario("失着提醒", async () => {
       await page.waitForTimeout(300);
       const k = await page.evaluate(() => window.__toasts.length);
       await clickMove(page, "h5", "f7");
-      const reply = await savedAt(page, 6, 20000);
       const t0 = Date.now();
       const hit = await until(() => page.evaluate((i) =>
         window.__toasts.slice(i).find((s) => /可能是严重失误/.test(s)) || null, k), 8000);
-      assert(!!reply && !!hit, "失着提醒：" + (g.history().join(" ")) + " Qxf7+ 之后出现 mm.blunder 提示(引擎应着后 " +
-        (Date.now() - t0) + "ms)", JSON.stringify(await page.evaluate(() => window.__toasts)));
+      // 21.0 T2: the warning is up while the opponent still waits — 5 plies, not 6
+      const atWarn = await plies(page);
+      assert(!!hit && atWarn === 5, "21.0 T2 失着提醒：" + (g.history().join(" ")) + " Qxf7+ 之后、对手应着之前出现提示(" +
+        (Date.now() - t0) + "ms，" + atWarn + " 个半着)", JSON.stringify(await page.evaluate(() => window.__toasts)));
+      // …and Z takes back just that move: the opponent never answered it
+      await page.keyboard.press("z");
+      const back = await until(async () => ((await plies(page)) === 4 ? 4 : null), 3000);
+      await page.waitForTimeout(5000);
+      const after = await plies(page);
+      assert(back === 4 && after === 4, "21.0 T2 按 Z 只收回这一步，对手也不再应着(收回后 " + back + "，5 秒后 " + after + " 个半着)");
+      // played anyway: the opponent answers once the hold is over
+      await clickMove(page, "h5", "f7");
+      const reply = await savedAt(page, 6, 20000);
+      assert(!!reply, "21.0 T2 不收回：等一会儿之后对手照常应着");
       assert(!errs.length, "失着提醒：页面没有报错", errs.join(" / "));
       done = true;
     } finally { await ctx.close(); }
@@ -1013,11 +1031,20 @@ await scenario("为什么", async () => {
   await page.waitForTimeout(200);
   // 18.0 R4: said once — under the engine line, or by the 关键时刻 card
   // when it is on this move (both at once was the walkthrough's duplicate)
-  const at = await page.evaluate(() => {
+  const whyAt = () => page.evaluate(() => {
     const w = document.getElementById("why-line");
     const card = document.querySelector('#rv-km:not([hidden]) .km-card[data-ply="16"]');
-    return { line: w && !w.hidden ? w.textContent : "", card: card ? card.textContent : "" };
+    return { line: w && !w.hidden ? w.textContent : "", card: card ? card.textContent : "", folded: !!card && !card.querySelector(".km-why:not([hidden])") };
   });
+  let at = await whyAt();
+  // 21.0 T1: on the card, a move you can replay opens folded — the reason is
+  // the answer — and 为什么 opens it
+  if (at.card && at.folded) {
+    assert(!/捉双/.test(at.line + at.card), "21.0 T1 为什么：能再试一次的这一步，理由先不说（它就是答案）", JSON.stringify(at));
+    await page.click('#rv-km button[data-act="why"]');
+    await page.waitForTimeout(200);
+    at = await whyAt();
+  }
   const said = at.line || at.card;
   assert(/捉双/.test(said) && /车/.test(said) && !(at.line && at.card),
     "为什么：光标停在 9. a3 上，这一句说一次（引擎线下面，或关键时刻卡片）", JSON.stringify(at));
@@ -1772,7 +1799,10 @@ const filedGames = async (page) => {
 };
 /** Play against the normal rung with the pass going; the waits and what the pass filed. */
 async function playBesideThePass(settings) {
-  const { ctx, page, errs } = await openPage(Object.assign({ mode: "ai", difficulty: "normal", humanColor: "w" }, settings), null, F4_VIEW);
+  // 21.0 T2: the coach now looks before the reply, and a flagged move holds the
+  // reply for a take-back — that is the coach's time, not the scheduler's,
+  // which is what this measures; the coach's own path is 失着提醒's
+  const { ctx, page, errs } = await openPage(Object.assign({ mode: "ai", difficulty: "normal", humanColor: "w", coachOn: false }, settings), null, F4_VIEW);
   await clickMove(page, "e2", "e4");
   await until(() => plies(page).then((p) => (p >= 2 ? p : 0)), 30000, 150); // the boot
   const quiet = await replyWaits(page, 6);

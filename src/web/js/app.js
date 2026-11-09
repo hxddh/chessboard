@@ -11,6 +11,7 @@ import { ChessTree } from "./game-tree.js";
 import { ChessHost } from "./host.js";
 import { ChessI18n } from "./i18n.js";
 import { tdot } from "./tdot.js";
+import { createPlayHint } from "./play-hint.js";
 import { ChessIcons } from "./icons.js";
 import { setPortrait } from "./portraits.js";
 import { createIdleCard } from "./idle-card.js";
@@ -27,7 +28,7 @@ import { createNativeCommands } from "./native-commands.js";
 import { createLibraryUI } from "./library-ui.js";
 import { readLook } from "./look.js";
 import { initialState } from "./app-state.js";
-import { wireAbout } from "./about-ui.js";
+import { wireAboutLazy } from "./about-lazy.js";
 import { createRepertoireUI } from "./repertoire-ui.js";
 import { createSettingsUI } from "./settings-ui.js";
 import { createTrainerContent } from "./trainer/content.js";
@@ -54,7 +55,6 @@ import { createRetry } from "./review/retry.js";
 import { createMomentsLazy } from "./review/moments-lazy.js";
 import { createExplorerLazy } from "./explorer/lazy.js";
 import { createGameEnd } from "./game-end.js";
-import { migrateSlots } from "./save-slots.js";
 import { createMaterialStrip } from "./material-strip.js";
 import { createGameController } from "./game-controller.js";
 import { createIO } from "./io.js";
@@ -850,6 +850,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     if (eng.length) s = { arrows: eng.concat(s.arrows), circles: s.circles };
     // the queued premove is drawn as a yellow arrow — the one colour the
     // player's own annotations use least
+    s = PlayHint.withRing(s);
     if (store.session.premove && isLive()) {
       s = { arrows: s.arrows.concat({ from: store.session.premove.from, to: store.session.premove.to, color: "Y" }), circles: s.circles };
     }
@@ -1048,7 +1049,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   function invalidateEngine() {
     store.game.engineToken++;
     store.session.engineThinking = false;
-    store.session.hintMove = null;
+    store.session.hintMove = store.session.hintPiece = null; // 21.0 T3: a first press's ring goes with any mutation (Codex on #133)
     store.session.premove = null;
     if (ChessEngine) ChessEngine.cancel();
   }
@@ -1121,6 +1122,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     // v10-0-plan A1: on the analysis board nobody is playing the engine
     if (store.session.mode !== "ai" || !ChessEngine || store.session.analysisBoard) return;
     if (appGameOver() || game.turn() === store.session.humanColor) return;
+    if (GameCtl.coachHolds()) return; // 21.0 T2: the coach is holding the reply for a take-back
     // a failed boot is not retried by moving: the pill says so instead
     if (engineOut()) { sync(); return; }
     const token = ++store.game.engineToken;
@@ -1186,31 +1188,10 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
 
   // --- engine hint: full-strength best move drawn as an arrow ---
 
-  async function requestHint() {
-    if (store.session.mode === "learn" && store.session.learn) { learnHint(); return; }
-    if (store.session.mode === "puzzle") { showPuzzleAnswer(); return; }
-    if (!ChessEngine) { toast(t("msg.engine.unavailable"), "fault"); return; }
-    if (engineOut()) { engineDownToast(); return; }
-    if (!isLive()) { toast(t("msg.replay.returnToLive"), "fix"); return; }
-    if (appGameOver()) return;
-    if (store.session.mode === "ai" && (store.session.engineThinking || game.turn() !== store.session.humanColor)) return;
-    if (store.session.hintPending || store.session.analyzing) return;
-    const sig = game.fen();
-    store.session.hintPending = true;
-    await stopLiveAnalysis();
-    store.commit("session", "sync");
-    let e = null;
-    try { e = await ChessEngine.analyze(sig, 400); } catch (_) {}
-    store.session.hintPending = false;
-    if (!isLive() || game.fen() !== sig) { sync(); return; }
-    if (!e || !e.best) { sync(); toast(t("msg.engine.noHint"), "fault"); return; }
-    const from = e.best.slice(0, 2);
-    const to = e.best.slice(2, 4);
-    const vmv = game.moves({ verbose: true }).find((m) => m.from === from && m.to === to);
-    store.session.hintMove = { from, to };
-    store.commit("session", "sync");
-    toast(tdot(t("chrome.hint"), vmv ? vmv.san : from + " → " + to));
-  }
+  // 21.0 T3: the piece first, the move on the second press (play-hint.js)
+  const PlayHint = createPlayHint({ store, t, toast, game, isLive, appGameOver, engineOut, engineDownToast, stopLiveAnalysis: () => stopLiveAnalysis(),
+    learnHint: () => learnHint(), showPuzzleAnswer: () => showPuzzleAnswer(), sync: () => sync() });
+  const requestHint = () => PlayHint.request();
 
   // --- two-player clock (base + Fischer increment; flag fall is terminal) ---
   /** time control id → {base, inc} seconds or null: presets and c<min>+<inc> (time-control.js) */
@@ -2842,7 +2823,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
       // the label is its own span beside the icon (7.7 §7), and it is written
       // only when it changes: this runs on every commit, under the pointer
       setText(el("btn-hint-label"), store.session.mode === "puzzle" ? t(hintLevel() === "hint" ? "chrome.hint" : "chrome.answer")
-        : busy ? t("chrome.thinking") : t("chrome.hint"));
+        : busy ? t("chrome.thinking") : t(PlayHint.ringed() ? "chrome.answer" : "chrome.hint")); // 21.0 T3
       // on the puzzle page this is the only 「答案」 (the panel's copy went in
       // 7.4), so its tooltip says what it does there, not "engine hint"
       hintBtn.title = t(store.session.mode === "puzzle" ? (hintLevel() === "hint" ? "tip.puzzle.hint" : "tip.puzzle.answer") : "tip.hint");
@@ -3140,11 +3121,10 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     if (game.in_checkmate()) playEnding(game.turn() === "w" ? "b" : "w");
     else if (naturalGameOver()) playEnding(null);
     if (!appGameOver()) syncAutoFlip();
-    coachRemember(mv);
     sync();
     saveGame();
     recordGameIfOver();
-    maybeEngineTurn();
+    replyAfterCoach(mv); // 21.0 T2: the coach looks before the engine answers
   }
 
   /**
@@ -3260,7 +3240,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   });
   const {
     canTakeBack, undo, requestNewGame, openNewGame, closeNewGame, startFromDialog, retryFromHere, doResign,
-    recordOutcome, coachRemember, coachAfterEngineReply, doOfferDraw, acceptDraw, doClaimDraw,
+    recordOutcome, coachAfterEngineReply, replyAfterCoach, doOfferDraw, acceptDraw, doClaimDraw,
     gameResultToken, resultFromFile, clearEndingFlags, forgetFileResult, adoptHeaderResult,
   } = GameCtl;
 
@@ -4366,7 +4346,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   /** The version the bundle was built from; empty when run unbundled. */
   const APP_VERSION = typeof __CHESS_VERSION__ === "string" ? __CHESS_VERSION__ : "";
   // 关于 and 检查更新 (about-ui.js)
-  const aboutModal = wireAbout({ doc: document, t, tf, Dlg, Host, APP_VERSION, copyText, dialogOpen });
+  const aboutModal = wireAboutLazy({ doc: document, t, tf, Dlg, Host, APP_VERSION, copyText, dialogOpen });
 
   document.getElementById("clear-save").onclick = async () => {
     if (!(await confirmNative(t("dlg.clearSave"), t("act.clearSave"),
@@ -4476,8 +4456,9 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   }
 
   // 19.0 S7: the save slots are gone; games left in them go into the library
-  // once, when it is in (save-slots.js), after the launch's quiet
-  setTimeout(() => LibraryUI.ready().then((c) => c && migrateSlots({ Persist, t, tf,
+  // once, when it is in, after the launch's quiet. 21.0 E: save-slots.js is a
+  // chunk (chunk-slots.js), fetched only by a profile that still has slots
+  setTimeout(() => Persist.read("slots").value && LibraryUI.ready().then((c) => c && loadChunk("chunk-slots.js", "migrateSlots")).then((migrate) => migrate && migrate({ Persist, t, tf,
     importPgnToLibrary: (text, label, opts) => LibraryUI.importPgnToLibrary(text, label, opts) })).catch(() => {}), 2500);
 
   {

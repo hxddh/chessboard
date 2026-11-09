@@ -391,7 +391,7 @@ export function createLibraryUI(d) {
     // ?? at 400ms" is exactly the sentence that withdraws the ones 200ms
     // minted, and returning early on an empty list would throw it away.
     const rv = Mistakes.reviseMines(store.session.mines, cands, pass, entry.side, rev);
-    const r = Mistakes.addMines(rv.list, cands, Date.now(), solvedIds);
+    const r = Mistakes.addMines(rv.list, Mistakes.capPerGame(cands, Mistakes.PER_GAME, rv.list), Date.now(), solvedIds); // 21.0 T5
     const dropped = rv.retired.concat(r.dropped);
     if (!r.added && !dropped.length && !rv.updated.length && !rv.filled.length) return none;
     store.session.mines = r.list;

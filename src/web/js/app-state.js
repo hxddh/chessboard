@@ -118,6 +118,8 @@ export function initialState() {
       analyzeMarks: null,
       /** engine hint arrow {from,to}; cleared whenever the game mutates */
       hintMove: null,
+      /** 21.0 T3: {fen, from, to, san} — a hint's first press rings the piece (play-hint.js) */
+      hintPiece: null,
       hintPending: false,
       /** blunder coach: warn after ??-level moves in AI games */
       coachOn: true,
@@ -141,6 +143,8 @@ export function initialState() {
       /** editor runtime: {board, turn, castling, brush} | null */
       editor: null,
       coachPending: null,
+      /** 21.0 T2: {fen, san} while the opponent waits for a take-back; else null */
+      coachHold: null,
       drawOfferPending: false,
       /** 7.7 §4: the ending whose result card was put away with ✕ */
       goDismissed: null, goAch: null,

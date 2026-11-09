@@ -331,7 +331,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "mm.promoted": "已升变为{0}",
       "mm.goLiveFirst": "请先「回到最新一着」再走子",
       "mm.backToMove": "已回到第 {0} 着，继续对弈",
-      "mm.blunder": "刚才的 {0} 可能是严重失误 —— 可按 Z 悔棋重想",
+      "mm.blunder": "刚才的 {0} 可能是严重失误 —— 可按 Z 悔棋重想", "mm.blunderHold": "{0} 可能是严重失误 —— 对手先等一下，按 Z 收回这步",
       "mm.plies": "{0} 着",
       "mm.fileTooLarge": "文件超过 {0} KB，读不进来 —— 请先把棋谱库拆小再导入",
       "act.reportExport": "导出复盘图", "tip.reportExport": "把复盘结论存成一张图",

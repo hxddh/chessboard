@@ -1583,11 +1583,19 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       const twice = await pg.evaluate(() => ({ line: !document.getElementById("why-line").hidden,
         retries: [...document.querySelectorAll("#rv-km button, #why-line button")].filter((b) => b.offsetParent && b.textContent.trim() === "再试一次").length }));
       assert(!twice.line && twice.retries === 1, "18.0 R4：关键时刻卡片讲着的这一步，理由和「再试一次」只出现一次 " + JSON.stringify(twice));
-      // v10-0-plan A2: 为什么 is open as the moment comes up — no click
-      const why = (await km()).why;
+      // 21.0 T1: a moment you can replay opens on 再试一次, the answer folded —
+      // 为什么's reason is the better move, and it was printed right above the
+      // button that asks you to find it
+      const k1 = await km();
+      const main = await pg.evaluate(() => { const b = document.querySelector('#rv-km .km-acts button:not([hidden])'); return b ? { act: b.dataset.act, main: b.classList.contains("primary") } : null; });
+      assert(k1.why === "" && main && main.act === "retry" && main.main,
+        "21.0 T1：能再试一次的关键时刻，先给「再试一次」(主按钮)，不先给出答案(" + JSON.stringify({ why: k1.why, main }) + ")");
+      await pg.click('#rv-km button[data-act="why"]');
+      await settle(pg);
       // 19.0 T2: the card's own line says the win chance; 为什么 is the coach's
       // reason in words, and does not say the numbers again
-      assert(why.length > 6 && !/\d+%/.test(why), "A4 / A2 / 19.0 T2：「为什么」默认展开，给出教练的解释，不再复述胜率（" + why + "）");
+      const why = (await km()).why;
+      assert(why.length > 6 && !/\d+%/.test(why), "A4 / 19.0 T2 / 21.0 T1：点「为什么」给出教练的解释，不复述胜率（" + why + "）");
       await pg.click('#rv-km button[data-act="why"]');
       await settle(pg);
       assert((await km()).why === "", "A2：再点「为什么」收起");

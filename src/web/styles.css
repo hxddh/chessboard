@@ -439,8 +439,13 @@
          current move, the selected state. Status — a win, a gain — is
          --win, never the accent. */
       --faint: var(--ink-faint);
-      --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
-      --accent-line: color-mix(in srgb, var(--accent) 55%, transparent);
+      /* 21.0 G5: plain values first, like the 10.1 tokens below them — the
+         mixed tint and line replace them under @supports. Until 21.0 these
+         two were color-mix() outright, so on a WebKit without it (macOS 11's
+         Safari 14 and 15) every selected state that reads them — the rail's
+         current page, 设置's category, a chosen chip — had no fill at all. */
+      --accent-soft: var(--control-hover);
+      --accent-line: var(--accent);
       --data: var(--muted);
       /* 12.0 C: the charts' dress (charts.js) — the data line, how faint the
          area under it, a reference hairline, the one "now" point, the words */
@@ -465,6 +470,8 @@
         --btn-edge: color-mix(in srgb, var(--ink) 11%, transparent);
         --seg-tray: color-mix(in srgb, var(--ink) 6%, transparent);
         --seg-on: color-mix(in srgb, var(--surface-raised) 86%, white 14%);
+        --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+        --accent-line: color-mix(in srgb, var(--accent) 55%, transparent);
       }
       .today-ring { --ring-track: color-mix(in srgb, var(--ink) 18%, var(--card)); }
     }
@@ -3295,6 +3302,9 @@
     .km-win { margin: 2px 0 0; color: var(--muted); }
     .km-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
     .km-acts .pv-act { margin-left: 0; white-space: nowrap; }
+    /* 21.0 T1: 再试一次 is the card's main action — the accent, filled, the way
+       .tool-btn.primary is everywhere else */
+    .km-acts .pv-act.primary { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
     /* 10.1 F5: the coach's reasons are paragraphs — the prose leading */
     .km-why { margin: 8px 0 0; color: var(--muted); line-height: var(--lh-prose); }
     .km-coach { color: var(--text); }

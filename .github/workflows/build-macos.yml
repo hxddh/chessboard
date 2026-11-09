@@ -164,9 +164,21 @@ jobs:
   # It runs beside `build`, not after it, so the release package does not
   # wait for it; a release still needs it green (release.yml's publish needs
   # this whole workflow).
+  #
+  # 21.0 G1: and the real-WebView gate. 20.0 passed every job here and was
+  # broken on real machines, because these checks asked whether elements and
+  # marks existed and never looked at the screen. The `pages` scenario walks
+  # every main page and has the page judge it drawn (the stylesheet applies,
+  # the rail and buttons have boxes, nothing in the main column is squashed
+  # to no width, the board canvas holds pixels, no uncaught error), and the
+  # driver screenshots the real window at each page into webview-shots/,
+  # uploaded as webview-shots-<os> whatever the result, for a person (or
+  # Claude) to look at before a release. Any judgement or missing shot is red.
+  # 25 minutes, not 20: the walk holds thirteen pages 5 s each and reviews a
+  # game with the real engine.
   automation:
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 25
     name: automation (not released)
     steps:
       - uses: actions/checkout@v7
@@ -204,10 +216,10 @@ jobs:
       # then the scenarios (scripts/automation-scenarios.mjs header): the
       # repertoire's databases across restarts, sync against a local fake
       # server with the main loop timed meanwhile, the library prefetch, the
-      # menu commands
+      # menu commands, and (21.0 G1) every main page judged and photographed
       - name: automation scenarios
-        timeout-minutes: 12
-        run: node scripts/automation-scenarios.mjs "$AUTO_EXE" --manifest build/app.macos.zon --out automation-macos.json
+        timeout-minutes: 17
+        run: node scripts/automation-scenarios.mjs "$AUTO_EXE" --manifest build/app.macos.zon --out automation-macos.json --shots webview-shots
       # the numbers §9 M4's provisional thresholds are to be replaced with
       - uses: actions/upload-artifact@v7
         if: always()
@@ -215,3 +227,11 @@ jobs:
           name: automation-report-macOS
           path: automation-macos.json
           if-no-files-found: ignore
+      # 21.0 G1: the real WKWebView's pages, one PNG each, and pages.json with
+      # what the page measured on each — look at these before a release
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: webview-shots-macos
+          path: webview-shots/
+          if-no-files-found: warn

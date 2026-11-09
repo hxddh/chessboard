@@ -38,8 +38,16 @@
  *   prefetch-read  the page: the boot's prefetch answered with all of them
  *   menus          menu-command game.new → 新对局 opens; view.repertoire →
  *                  训练 · 开局's 我的开局书 (B1–B5's command path; 19.0 S1)
+ *   pages          21.0 G1: the page walks every main page and judges each
+ *                  one drawn (selftest-scenarios.js judgePage); at each
+ *                  "shot:<name>" report this takes a screenshot of the real
+ *                  window into --shots (screencapture on macOS, .NET
+ *                  CopyFromScreen on Windows), and a shot that is missing,
+ *                  empty or taken after the page moved on fails. The SDK's
+ *                  own `screenshot` verb only reads gpu_surface views, never
+ *                  a WebView (v8-2-plan §9 M1), so the picture is the OS's.
  *
- *   node scripts/automation-scenarios.mjs <exe> [--manifest build/app.macos.zon] [--out report.json] [--only sync,menus] [--real-profile-ok]
+ *   node scripts/automation-scenarios.mjs <exe> [--manifest build/app.macos.zon] [--out report.json] [--shots dir] [--only sync,menus] [--real-profile-ok]
  *   node scripts/automation-scenarios.mjs <null-platform exe> --null
  *
  * --null (Linux, a `-Dplatform=null -Dautomation=true` build, one frame and
@@ -78,17 +86,21 @@ export const THRESHOLDS = {
   prefetchMs: 7000,
   /** a launch, from spawn to its scenario's last report */
   launchMs: 180000,
+  /** 21.0 G1: the pages launch — thirteen pages held 5 s each for their screenshot, and a review by the real engine */
+  pagesLaunchMs: 420000,
 };
 /** What sync.zig sends as its User-Agent (SYNC_USER_AGENT). */
 const USER_AGENT = "chessboard (+https://github.com/hxddh/chessboard)";
 
 const args = process.argv.slice(2);
 const opt = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null);
-const exe = args.find((a, i) => !a.startsWith("--") && !["--manifest", "--out", "--only"].includes(args[i - 1]));
+const exe = args.find((a, i) => !a.startsWith("--") && !["--manifest", "--out", "--only", "--shots"].includes(args[i - 1]));
 const nullMode = args.includes("--null");
 const manifest = opt("--manifest") || "app.zon";
 const only = opt("--only") ? opt("--only").split(",") : null;
 const outFile = opt("--out");
+/** 21.0 G1: where the pages' screenshots go (uploaded as webview-shots-<os>). */
+const shotsDir = path.resolve(opt("--shots") || "webview-shots");
 
 const results = [];
 const check = (name, pass, detail) => { results.push({ name, pass: !!pass, detail }); console.log((pass ? "ok" : "FAIL") + ": " + name + " —— " + detail); };
@@ -178,6 +190,63 @@ function foreignConnections(pid) {
   return { skipped: "no connection lister on " + process.platform };
 }
 
+/**
+ * 21.0 G1: a screenshot of the app's window (pid) into `file`, PNG.
+ * macOS: the window by its id (screencapture -l, which reads it even when
+ * another window covers it), the id from CGWindowListCopyWindowInfo through
+ * JXA; the whole screen when that fails. Windows: the window brought to the
+ * front, then the whole virtual screen through .NET CopyFromScreen, DPI
+ * aware so the pixels are the screen's. Never throws: {how, err}.
+ */
+export function captureWindow(pid, file) {
+  fs.rmSync(file, { force: true });
+  const run = (cmd, argv) => execFileSync(cmd, argv, { encoding: "utf8", timeout: 20000, stdio: ["ignore", "pipe", "pipe"] });
+  const got = () => fs.existsSync(file) && fs.statSync(file).size > 0;
+  const errs = [];
+  const say = (e) => errs.push(String((e && (e.stderr || e.message)) || e).trim().split("\n")[0]);
+  if (process.platform === "darwin") {
+    try {
+      const js = "ObjC.import('CoreGraphics');" +
+        "var list = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo(0, 0))) || [];" +
+        "var mine = list.filter(function (w) { return w.kCGWindowOwnerPID === " + Number(pid) + " && w.kCGWindowLayer === 0 && w.kCGWindowBounds; })" +
+        ".sort(function (a, b) { return b.kCGWindowBounds.Width * b.kCGWindowBounds.Height - a.kCGWindowBounds.Width * a.kCGWindowBounds.Height; });" +
+        "mine.length ? String(mine[0].kCGWindowNumber) : ''";
+      const id = run("osascript", ["-l", "JavaScript", "-e", js]).trim();
+      if (!/^\d+$/.test(id)) throw new Error("no window of pid " + pid + " (" + id + ")");
+      run("screencapture", ["-x", "-o", "-l" + id, file]);
+      if (got()) return { how: "screencapture -l" + id };
+    } catch (e) { say(e); }
+    try {
+      run("screencapture", ["-x", file]);
+      if (got()) return { how: "screencapture (whole screen)", err: errs.join(" | ") };
+    } catch (e) { say(e); }
+    return { how: "none", err: errs.join(" | ") };
+  }
+  if (process.platform === "win32") {
+    const ps = [
+      "$ErrorActionPreference = 'Stop'",
+      "Add-Type -AssemblyName System.Windows.Forms, System.Drawing",
+      "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class ChessShotW { [DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr h, int n); [DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware(); }'",
+      "[ChessShotW]::SetProcessDPIAware() | Out-Null",
+      "$p = Get-Process -Id " + Number(pid) + " -ErrorAction SilentlyContinue",
+      "if ($p -and $p.MainWindowHandle -ne 0) { [ChessShotW]::ShowWindow($p.MainWindowHandle, 9) | Out-Null; [ChessShotW]::SetForegroundWindow($p.MainWindowHandle) | Out-Null; Start-Sleep -Milliseconds 300 }",
+      "$b = [System.Windows.Forms.SystemInformation]::VirtualScreen",
+      "$bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height",
+      "$g = [System.Drawing.Graphics]::FromImage($bmp)",
+      "$g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)",
+      "$bmp.Save('" + file.replace(/'/g, "''") + "', [System.Drawing.Imaging.ImageFormat]::Png)",
+    ].join("; ");
+    try {
+      // -EncodedCommand (UTF-16LE base64): the C# inside has double quotes, which
+      // a -Command argument would have to survive Windows' command-line quoting with
+      run("powershell", ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(ps, "utf16le").toString("base64")]);
+      if (got()) return { how: "CopyFromScreen" };
+    } catch (e) { say(e); }
+    return { how: "none", err: errs.join(" | ") };
+  }
+  return { how: "none", err: "no screenshot tool on " + process.platform };
+}
+
 async function runLive() {
   const { work, profile } = makeWork("chess-scenarios-");
   const declared = declaredMenus(fs.readFileSync(manifest, "utf8"));
@@ -216,14 +285,15 @@ async function runLive() {
       // caught here, not where it is awaited: a rejection left pending while
       // the loop below polls would end the whole run as an unhandled one
       const side = (during ? during(app, reportNow, snap) : Promise.resolve()).catch((e) => check(name + ":drive", false, e.message));
-      while (Date.now() - t0 < THRESHOLDS.launchMs) {
+      const limit = name === "pages" ? THRESHOLDS.pagesLaunchMs : THRESHOLDS.launchMs;
+      while (Date.now() - t0 < limit) {
         report = reportNow();
         if (report && report.stage === "done") break;
         if (app.state.exited !== null) throw new Error("应用退出了（" + app.state.exited + "）");
         await sleep(200);
       }
       await side;
-      if (!report || report.stage !== "done") throw new Error(THRESHOLDS.launchMs / 1000 + " 秒内页面没有报告 done（最后的报告：" + JSON.stringify(report) + "）");
+      if (!report || report.stage !== "done") throw new Error(limit / 1000 + " 秒内页面没有报告 done（最后的报告：" + JSON.stringify(report) + "）");
     } catch (e) {
       check(name + ":launch", false, e.message);
     } finally {
@@ -337,6 +407,39 @@ async function runLive() {
       check("menus:drive", false, e.message);
     }
   });
+
+  // 21.0 G1: the pages, each judged by the page and photographed from here
+  const shots = {};
+  if (!only || only.includes("pages")) fs.mkdirSync(shotsDir, { recursive: true });
+  await scenario("pages", async (app, reportNow) => {
+    let n = 0;
+    for (;;) {
+      const r = reportNow();
+      if (r && r.stage === "done") return;
+      if (app.state.exited !== null) return;
+      const name = r && /^shot:[\w-]+$/.test(r.stage || "") ? r.stage.slice(5) : null;
+      if (name && !shots[name]) {
+        n += 1;
+        const file = path.join(shotsDir, String(n).padStart(2, "0") + "-" + name + ".png");
+        const t0 = Date.now();
+        const how = captureWindow(app.child.pid, file);
+        const after = reportNow();
+        shots[name] = { file: path.basename(file), how: how.how, err: how.err, ms: Date.now() - t0,
+          bytes: fs.existsSync(file) ? fs.statSync(file).size : 0, late: !after || after.stage !== r.stage };
+      }
+      await sleep(100);
+    }
+  });
+  if (reports.pages) {
+    const steps = Object.keys(reports.pages.checks || {}).filter((k) => k.startsWith("page:")).map((k) => k.slice(5));
+    for (const name of steps) {
+      const s = shots[name];
+      check("G1:shot:" + name, s && s.bytes > 1000 && !s.late,
+        s ? s.file + "（" + s.how + "，" + s.bytes + " 字节，" + s.ms + " ms" + (s.late ? "，截图时页面已经翻走了" : "") + (s.err ? "；" + s.err : "") + "）" : "没有截到图（页面没有报告 shot:" + name + "）");
+    }
+    fs.writeFileSync(path.join(shotsDir, "pages.json"), JSON.stringify({ platform: process.platform, shots, checks: reports.pages.checks }, null, 2));
+    extra.shots = shots;
+  }
 
   if (notLaunched.length) {
     check("page:silent", false, "页面在 " + silentAt + " 的启动里一份报告都没写（页面没在运行？），其后 " + notLaunched.length + " 个场景没有再启动：" + notLaunched.join("、"));

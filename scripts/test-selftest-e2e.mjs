@@ -21,6 +21,7 @@
  */
 import fs from "fs";
 import http from "http";
+import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { launchBrowser, ENGINE } from "./e2e-browser.mjs";
@@ -214,6 +215,71 @@ const menus = await launch("menus", async (page, stage) => {
   await page.evaluate(() => window.__fire("shortcut", JSON.stringify({ command: "view.repertoire" })));
 });
 assert(menus.checks["game.new"].pass && menus.checks["view.repertoire"].pass, "menus: game.new opens 新对局, view.repertoire shows 我的开局书");
+
+// 21.0 G1: the pages walk — every page judged as drawn, each held for the
+// driver's screenshot (here page.screenshot stands in for screencapture /
+// CopyFromScreen), the review's engine scripted as test-review-e2e.mjs does
+const shotDir = fs.mkdtempSync(path.join(os.tmpdir(), "chess-g1-"));
+const shotsTaken = {};
+const pages = await launch("pages", async (page) => {
+  await page.waitForFunction(() => window.__chess && window.__chess.engine);
+  await page.evaluate(() => {
+    window.__chess.engine.isReady = () => true;
+    window.__chess.engine.analyze = async (fen) => ({ cp: 20, mate: null, turn: fen.split(" ")[1], best: null, pv: [] });
+  });
+  const end = Date.now() + 240000;
+  while (Date.now() < end) {
+    const st = await page.evaluate(() => { const r = window.__reports[window.__reports.length - 1]; return r ? r.stage : null; });
+    if (st === "done") return;
+    if (st && st.startsWith("shot:") && !(st.slice(5) in shotsTaken)) {
+      await page.screenshot({ path: path.join(shotDir, st.slice(5) + ".png") });
+      const after = await page.evaluate(() => window.__reports[window.__reports.length - 1].stage);
+      shotsTaken[st.slice(5)] = after === st;
+    }
+    await page.waitForTimeout(100);
+  }
+});
+const pageChecks = Object.keys(pages.checks || {}).filter((k) => k.startsWith("page:"));
+assert(pageChecks.length === 13 && pageChecks.every((k) => pages.checks[k].pass),
+  "21.0 G1 pages: 13 pages judged drawn (" + pageChecks.map((k) => k.slice(5) + (pages.checks[k].pass ? "" : " ✗ " + pages.checks[k].err)).join("，") + ")");
+assert(Object.keys(shotsTaken).length === 13 && Object.values(shotsTaken).every(Boolean),
+  "21.0 G1 pages: each page held still for its screenshot (" + JSON.stringify(shotsTaken) + ")");
+const play = pages.checks["page:play"] || {};
+assert(play.board && play.board.colours >= 2 && !play.board.tainted, "21.0 G1 pages: the board canvas was read as pixels (" + JSON.stringify(play.board) + ")");
+assert(pages.checks.errors && pages.checks.errors.pass, "21.0 G1 pages: no uncaught error (" + (pages.checks.errors && pages.checks.errors.err) + ")");
+fs.rmSync(shotDir, { recursive: true, force: true });
+
+// 21.0 G1: the judge is not a rubber stamp. judgePage, imported into a live
+// page as a module, must fail a page whose stylesheet never arrived and a
+// board canvas with nothing drawn on it — what 20.0 shipped with green CI.
+async function judgeIn(page, step, before) {
+  return page.evaluate(async ({ step, before }) => {
+    const m = await import("/js/selftest-scenarios.js");
+    document.querySelector("#rail .rail-btn[data-view=\"" + step.view + "\"]").click();
+    await new Promise((r) => setTimeout(r, 600));
+    if (before === "clear-board") { const cv = document.getElementById("board"); cv.getContext("2d").clearRect(0, 0, cv.width, cv.height); }
+    try { m.judgePage(step, m.uaDefaults()); return "passed"; } catch (e) { return e.message; }
+  }, { step, before });
+}
+{
+  const page = await ctx.newPage();
+  await page.route("**/styles.css", (r) => r.abort());
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForFunction(() => window.__chess && document.getElementById("rail"));
+  const said = await judgeIn(page, { name: "home", view: "home" });
+  await page.close();
+  assert(/styles\.css has 0 rules/.test(said) && /browser default|browser's button style|display:block/.test(said),
+    "21.0 G1 judge: a page without its stylesheet fails (" + said.slice(0, 200) + ")");
+}
+{
+  const page = await ctx.newPage();
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForFunction(() => window.__chess && document.getElementById("rail"));
+  const ok = await judgeIn(page, { name: "play", view: "play", board: true });
+  const said = await judgeIn(page, { name: "play", view: "play", board: true }, "clear-board");
+  await page.close();
+  assert(ok === "passed" && /board canvas is blank/.test(said), "21.0 G1 judge: the drawn board passes, a cleared one fails (" + ok + " / " + said.slice(0, 160) + ")");
+}
 
 const none = await launch("no-such", null, false);
 assert(none && none.stage === "done" && none.ok === false && /no scenario/.test(none.err || ""), "an unknown scenario reports itself failed, not ok (" + (none && none.err) + ")");
