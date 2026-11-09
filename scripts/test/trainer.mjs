@@ -399,6 +399,17 @@ export async function run() {
         "21.0 T5: six candidates from one game keep the three costliest, in the order played (" + kept.map((c) => c.ply) + ")");
       assert(M.capPerGame(many.slice(0, 2)).length === 2 && M.capPerGame([]).length === 0 && M.capPerGame(null).length === 0,
         "21.0 T5: …and a game with three or fewer keeps them all");
+      // Codex on #133: the cap is per game, not per pass — a deeper pass that
+      // ranks a different three first adds nothing past what the book holds
+      const from = { kind: "game", id: "g1" };
+      const pass1 = [mk(2, 600), mk(5, 500), mk(9, 400), mk(11, 300)].map((c) => Object.assign(c, { from }));
+      const first = M.capPerGame(pass1, M.PER_GAME, []);
+      const pass2 = [mk(2, 400), mk(5, 500), mk(9, 600), mk(11, 700)].map((c) => Object.assign(c, { from }));
+      const second = M.capPerGame(pass2, M.PER_GAME, first);
+      assert(first.length === 3 && second.length === 0,
+        "21.0 T5: a game analysed twice stays at three drills (" + first.length + " + " + second.length + ")");
+      const other = M.capPerGame([mk(30, 900)].map((c) => Object.assign(c, { from: { kind: "game", id: "g2" } })), M.PER_GAME, first);
+      assert(other.length === 1, "21.0 T5: …while another game has its own three");
     }
     assert(M.candidatesFrom({ ...base, bests: [null, "g8f6"] }, "w", C).length === 0,
       "a judgement without a stored answer is not a drill");
@@ -675,7 +686,7 @@ export async function run() {
     // 5.1: …after letting the pass revise what the book already says about this
     // game — corrected answers and withdrawn ?? — through the same module
     assert(/Mistakes\.reviseMines\(store\.session\.mines, cands, pass, store\.session\.humanColor, rev\)/.test(appSrc) &&
-           /Mistakes\.addMines\(rv\.list, Mistakes\.capPerGame\(cands\), Date\.now\(\), solvedIds\)/.test(appSrc),
+           /Mistakes\.addMines\(rv\.list, Mistakes\.capPerGame\(cands, Mistakes\.PER_GAME, rv\.list\), Date\.now\(\), solvedIds\)/.test(appSrc),
       "a deeper pass revises the book before extending it (audit F2), and adds at most 21.0 T5's few");
     // 7.1: and the library's pass banks them too — v7-plan §6.3, which 7.0
     // shipped without and then recorded in neither of §10's two tables
@@ -684,7 +695,7 @@ export async function run() {
     const libUiSrc = fs.readFileSync(path.join(root, "src/web/js/library-ui.js"), "utf8");
     assert(/run\.mined \+= mineLibraryGame\(next, r\.pass, LIB_BUDGET\)\.added/.test(libUiSrc),
       "每分析完一局棋谱库的棋，就把这一局的失误收进错题本");
-    assert(/function mineLibraryGame[\s\S]{0,900}Mistakes\.reviseMines\(store\.session\.mines, cands, pass, entry\.side, rev\)[\s\S]{0,300}Mistakes\.addMines\(rv\.list, Mistakes\.capPerGame\(cands\), Date\.now\(\), solvedIds\)/.test(libUiSrc),
+    assert(/function mineLibraryGame[\s\S]{0,900}Mistakes\.reviseMines\(store\.session\.mines, cands, pass, entry\.side, rev\)[\s\S]{0,300}Mistakes\.addMines\(rv\.list, Mistakes\.capPerGame\(cands, Mistakes\.PER_GAME, rv\.list\), Date\.now\(\), solvedIds\)/.test(libUiSrc),
       "棋谱库走的是和棋盘同一套规则，先修正再扩充，不是第二份实现");
     assert(/withMotifs\(Mistakes\.candidatesFrom\(/.test(appSrc),
       "每道错题带着它的母题 —— 分层保留靠它，否则一次导入会冲掉一整类");

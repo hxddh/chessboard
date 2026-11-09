@@ -201,7 +201,7 @@ export function createAnalysis(d) {
       // this game — a changed answer, a ?? that did not survive the depth —
       // and only then adds what is new (audit F2)
       const rv = Mistakes.reviseMines(store.session.mines, cands, pass, store.session.humanColor, rev);
-      const r = Mistakes.addMines(rv.list, Mistakes.capPerGame(cands), Date.now(), solvedIds); // 21.0 T5
+      const r = Mistakes.addMines(rv.list, Mistakes.capPerGame(cands, Mistakes.PER_GAME, rv.list), Date.now(), solvedIds); // 21.0 T5
       const dropped = rv.retired.concat(r.dropped);
       if (r.added || dropped.length || rv.updated.length || rv.filled.length) {
         store.session.mines = r.list;

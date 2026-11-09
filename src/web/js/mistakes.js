@@ -320,17 +320,29 @@ function reviseMines(list, cands, a, side, rev) {
 const PER_GAME = 3;
 
 /**
- * 21.0 T5: the few of one game's candidates worth a drill — the costliest
- * first (a `??` costs more than a `?`; an unmeasured cost ranks last), at most
- * `max` — handed back in the order they were played. Only what is *added* is capped: reviseMines() still sees every
- * candidate, so a deeper pass corrects drills the cap would leave out.
+ * 21.0 T5: the few of one game's candidates worth a new drill — the costliest
+ * first (a `??` costs more than a `?`; an unmeasured cost ranks last) —
+ * handed back in the order they were played. Only what is *added* is capped:
+ * reviseMines() still sees every candidate, so a deeper pass corrects drills
+ * the cap left in.
+ *
+ * The cap is per game, not per pass (Codex on #133): a deeper pass can rank a
+ * different three first, and capping each pass alone let a game that was
+ * analysed twice keep four or more. The drills the book already holds from
+ * this game (`from`) use up the room first.
  * @param {object[]} cands candidatesFrom() of one game
  * @param {number} [max]
+ * @param {object[]} [book] the personal book as it stands (after reviseMines)
  */
-function capPerGame(cands, max = PER_GAME) {
-  if (!Array.isArray(cands) || cands.length <= max) return cands || [];
+function capPerGame(cands, max = PER_GAME, book) {
+  if (!Array.isArray(cands) || !cands.length) return [];
+  const src = (m) => (m && m.from ? m.from.kind + ":" + m.from.id : null);
+  const key = src(cands.find((c) => c.from));
+  const mine = key && Array.isArray(book) ? book.filter((m) => src(m) === key) : [];
+  const have = new Set(mine.map((m) => m.id));
+  const room = Math.max(0, max - mine.length);
   const rank = (c) => (Number.isFinite(c.loss) ? c.loss : -1);
-  return cands.slice().sort((x, y) => rank(y) - rank(x)).slice(0, max).sort((x, y) => x.ply - y.ply);
+  return cands.filter((c) => !have.has(c.id)).sort((x, y) => rank(y) - rank(x)).slice(0, room).sort((x, y) => x.ply - y.ply);
 }
 
 /**

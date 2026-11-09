@@ -1049,7 +1049,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   function invalidateEngine() {
     store.game.engineToken++;
     store.session.engineThinking = false;
-    store.session.hintMove = null;
+    store.session.hintMove = store.session.hintPiece = null; // 21.0 T3: a first press's ring goes with any mutation (Codex on #133)
     store.session.premove = null;
     if (ChessEngine) ChessEngine.cancel();
   }
