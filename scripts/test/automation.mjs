@@ -57,8 +57,9 @@ export async function run() {
     assert(/pattern: Chessboard-\*/.test(rel) && (rel.match(/uses: actions\/download-artifact@/g) || []).length === 1,
       "release.yml downloads only the Chessboard-* artifacts (never automation-report-*)");
     const attached = (/gh release create[\s\S]*?\n\s*(dist\/[^\n]*)\n/.exec(rel) || [])[1] || "";
-    assert(attached.trim() === "dist/Chessboard-macOS-arm64.zip dist/Chessboard-macOS-arm64.dmg dist/Chessboard-Windows-x64.zip",
-      "release.yml attaches exactly the three shipped packages (" + attached.trim() + ")");
+    // 21.0: and their checksums (scripts/test/real-gate.mjs holds what is in the file)
+    assert(attached.trim() === "dist/Chessboard-macOS-arm64.zip dist/Chessboard-macOS-arm64.dmg dist/Chessboard-Windows-x64.zip dist/SHA256SUMS.txt",
+      "release.yml attaches exactly the three shipped packages and SHA256SUMS.txt (" + attached.trim() + ")");
     assert(!/dist-auto|-Dautomation/.test(rel), "release.yml never names the automation build");
   }
 
