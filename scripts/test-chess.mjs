@@ -34,11 +34,12 @@ import * as fen from "./test/fen.mjs";
 import * as layout from "./test/layout.mjs";
 import * as appModules from "./test/app-modules.mjs";
 import * as syncChartsSounds from "./test/sync-charts-sounds.mjs";
+import * as realGate from "./test/real-gate.mjs";
 
 for (const domain of [
   rules, content, keyboard, design, opponents, review, drills, tools, trainer,
   i18nUi, achievements, nativeBridge, scope, copy, readme, persist, humanWorker, errlog, firstPaint,
-  automation, visionDrills, ci, fen, layout, appModules, syncChartsSounds,
+  automation, visionDrills, ci, fen, layout, appModules, syncChartsSounds, realGate,
 ]) {
   await domain.run();
 }

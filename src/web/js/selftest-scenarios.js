@@ -34,6 +34,13 @@
  *   menus        the native menu commands reach the page and do what the
  *                menu says: game.new opens 新对局, view.repertoire goes to
  *                训练 · 开局's 我的开局书 (B1–B5's command path; 19.0 S1)
+ *   pages        21.0 G1: 今天, 下棋, 训练's five segments, 我的, 设置, a
+ *                review of a short game, then 今天 / 下棋 / 设置 in dark —
+ *                each judged as drawn (the stylesheet applies, the rail and
+ *                the buttons have boxes and are visible, nothing in the main
+ *                column has no width, the board canvas holds pixels) and held
+ *                on screen while the driver screenshots the real window; then
+ *                no uncaught error, seen or in the errlog key
  *
  * The page reports facts and judges only what is not a timing; the timing
  * thresholds live with the driver. Checks say `pass`, never `ok`.
@@ -140,6 +147,182 @@ export function seedPgn(n) {
     out.push("[Event \"selftest\"]\n[Site \"selftest-" + i + "\"]\n[Date \"2026.08." + day + "\"]\n[White \"seed_" + i + "\"]\n[Black \"opp\"]\n[Result \"1-0\"]\n\n" + lines[i % lines.length] + " 1-0");
   }
   return out.join("\n\n");
+}
+
+const pressEscape = () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+/** Close whatever dialog a launch opened (the first-run guide); a check's body. */
+async function clearDialogs() {
+  const shown = (sel) => !!document.querySelector(sel);
+  for (let i = 0; i < 10 && shown(".modal-bg.show"); i++) {
+    const later = document.querySelector(".modal-bg.show #pick-cancel");
+    if (later) later.click(); else pressEscape();
+    await sleep(300);
+  }
+  if (shown(".modal-bg.show")) throw new Error("a dialog would not close");
+  return {};
+}
+
+/**
+ * 21.0 G1: the pages the `pages` scenario walks, in order, each held on
+ * screen for the driver's screenshot. `view` is the rail's data-view, `seg`
+ * 训练's segment, `board` that the board canvas must show pixels, `review`
+ * that a short game is pasted into 分析一局 and reviewed first, `dark` that
+ * the appearance is switched to dark first (and stays so for what follows).
+ */
+export const PAGE_STEPS = [
+  { name: "home", view: "home" },
+  { name: "play", view: "play", board: true },
+  { name: "train-course", view: "train", seg: "course", board: true },
+  { name: "train-puzzle", view: "train", seg: "puzzle", board: true },
+  { name: "train-opening", view: "train", seg: "opening", board: true },
+  { name: "train-endgame", view: "train", seg: "endgame", board: true },
+  { name: "train-classic", view: "train", seg: "classic", board: true },
+  { name: "me", view: "me" },
+  { name: "settings", view: "settings" },
+  { name: "review", view: "play", review: true, board: true },
+  { name: "dark-home", view: "home", dark: true },
+  { name: "dark-play", view: "play", board: true },
+  { name: "dark-settings", view: "settings" },
+];
+/** How long each page stays put after its "shot:<name>" report — the driver's window to capture it. */
+export const SHOT_DWELL_MS = 5000;
+/** The short game the review step pastes (Fool's mate: four plies, a fast pass with the real engine). */
+const REVIEW_PGN = "[Event \"selftest\"]\n[White \"a\"]\n[Black \"b\"]\n[Result \"0-1\"]\n\n1. f3 e5 2. g4 Qh4# 0-1";
+
+/** The rendered box of `el`, or null when it takes no space (display: none, detached, under a hidden parent). */
+function boxOf(el) {
+  if (!el || !el.getClientRects().length) return null;
+  const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+  return { w: Math.round(r.width), h: Math.round(r.height), vis: cs.visibility, op: Number(cs.opacity) };
+}
+const isTransparent = (c) => !c || c === "transparent" || /^rgba\(.*,\s*0\)$/.test(c);
+const label = (el) => (el.id ? "#" + el.id : el.tagName.toLowerCase() + (el.className && typeof el.className === "string" ? "." + el.className.trim().split(/\s+/).join(".") : ""));
+
+/**
+ * What a page with no stylesheet would compute: an empty frame's body and
+ * button, styled by nothing but the browser. A style of ours that did not
+ * apply reads the same as these. (A frame that computes nothing answers
+ * empty strings, and the comparisons with them pass: weaker, never red.)
+ */
+export function uaDefaults() {
+  const f = document.createElement("iframe");
+  f.setAttribute("aria-hidden", "true");
+  f.hidden = true; // [hidden] is display: none; the frame still computes its styles
+  document.body.appendChild(f);
+  try {
+    const doc = f.contentDocument;
+    const b = doc.createElement("button");
+    b.textContent = "x";
+    doc.body.appendChild(b);
+    const w = f.contentWindow;
+    return { font: w.getComputedStyle(doc.body).fontFamily, btnBg: w.getComputedStyle(b).backgroundColor, btnColor: w.getComputedStyle(b).color };
+  } finally { f.remove(); }
+}
+
+/**
+ * The board canvas as pixels: a 16×16 grid of samples, how many are not
+ * transparent and how many colours (quantised) they hold. A canvas the
+ * renderer never drew on is all transparent; a board has at least its two
+ * square colours. `tainted` when the canvas will not be read (then the
+ * driver's screenshot is the only witness, and this check says so).
+ */
+function boardPixels(cv) {
+  const out = { w: cv.width, h: cv.height };
+  let data = null;
+  try {
+    const g = cv.getContext("2d");
+    if (!g) return Object.assign(out, { err: "no 2d context" });
+    data = g.getImageData(0, 0, cv.width, cv.height).data;
+  } catch (err) { return Object.assign(out, { tainted: String((err && err.name) || err) }); }
+  let opaque = 0, n = 0;
+  const colours = new Set();
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const px = Math.min(cv.width - 1, Math.floor((x + 0.5) * cv.width / 16)), py = Math.min(cv.height - 1, Math.floor((y + 0.5) * cv.height / 16));
+    const i = (py * cv.width + px) * 4;
+    n++;
+    if (data[i + 3] > 200) { opaque++; colours.add((data[i] >> 4) + "," + (data[i + 1] >> 4) + "," + (data[i + 2] >> 4)); }
+  }
+  return Object.assign(out, { samples: n, opaque, colours: colours.size });
+}
+
+/**
+ * The regions a page is made of, by view: a page of its own (今天, 我的,
+ * 设置) is its `main.page`; 下棋 and 训练 are the board and the panel.
+ */
+function regionsOf(view) {
+  const page = document.getElementById("page-" + view);
+  if (page) return { need: [page], maybe: [] };
+  return { need: [document.getElementById("board-wrap")], maybe: [document.getElementById("side")] };
+}
+
+/**
+ * 21.0 G1: is the page really drawn — not "do the elements exist", which is
+ * all 20.0's native checks asked while its UI was broken on real machines.
+ * Throws with every finding; returns the facts otherwise.
+ */
+export function judgePage(step, ua) {
+  const bad = [];
+  const facts = {};
+  // the stylesheet arrived and applies
+  const sheet = [...document.styleSheets].find((s) => /styles\.css(\?|$)/.test(s.href || ""));
+  let rules = 0;
+  try { rules = sheet ? sheet.cssRules.length : 0; } catch (_) { rules = 0; } // ours is same-origin: unreadable is not loaded
+  const root = getComputedStyle(document.documentElement), body = getComputedStyle(document.body);
+  facts.css = { rules, bg: body.backgroundColor, font: body.fontFamily, vars: ["--bg", "--text", "--font-ui"].map((v) => !!root.getPropertyValue(v).trim()) };
+  if (rules < 200) bad.push("styles.css has " + rules + " rules (not loaded?)");
+  if (facts.css.vars.includes(false)) bad.push("custom properties missing: " + JSON.stringify(facts.css.vars));
+  if (isTransparent(body.backgroundColor)) bad.push("body has no background (" + body.backgroundColor + ")");
+  if (body.fontFamily === ua.font) bad.push("body font is the browser default (" + body.fontFamily + ")");
+  // the rail: five buttons, each with a box, visible, and styled
+  const rail = document.getElementById("rail");
+  const railBox = boxOf(rail);
+  const btns = rail ? [...rail.querySelectorAll(".rail-btn")] : [];
+  facts.rail = { box: railBox, display: rail ? getComputedStyle(rail).display : null, n: btns.length };
+  if (!railBox || railBox.w < 20 || railBox.h < 20 || railBox.vis !== "visible" || railBox.op === 0) bad.push("rail not visible: " + JSON.stringify(railBox));
+  if (facts.rail.display === "block" || facts.rail.display === "inline") bad.push("rail is display:" + facts.rail.display + " (its layout rule did not apply)");
+  if (btns.length !== 5) bad.push("rail has " + btns.length + " buttons");
+  for (const b of btns) {
+    const bx = boxOf(b), cs = getComputedStyle(b);
+    if (!bx || bx.w < 16 || bx.h < 16 || bx.vis !== "visible" || bx.op === 0) bad.push("rail button " + b.dataset.view + " " + JSON.stringify(bx));
+    if (cs.backgroundColor === ua.btnBg && cs.color === ua.btnColor) bad.push("rail button " + b.dataset.view + " has the browser's button style (" + cs.backgroundColor + ")");
+  }
+  // the page's regions, and nothing in their main column squashed to no width
+  const { need, maybe } = regionsOf(step.view);
+  facts.regions = {};
+  const zero = [];
+  for (const el of need.concat(maybe)) {
+    if (!el) continue;
+    const bx = boxOf(el);
+    facts.regions[label(el)] = bx;
+    if (need.includes(el) && (!bx || bx.w < 200 || bx.h < 150 || bx.vis !== "visible")) bad.push(label(el) + " is not on screen: " + JSON.stringify(bx));
+    if (!bx) continue;
+    const inner = el.querySelector(":scope > .page-inner") || el;
+    for (const k of inner.children) {
+      if (!k.getClientRects().length || k.classList.contains("sr-only")) continue;
+      const cs = getComputedStyle(k);
+      if (/^inline|^contents$/.test(cs.display) || cs.position === "fixed") continue;
+      if (k.getBoundingClientRect().width < 1) zero.push(label(k));
+    }
+  }
+  if (zero.length) bad.push("zero width in the main column: " + zero.join(", "));
+  // the buttons on the page: a box each, and at least one
+  const scope = need.concat(maybe).filter(Boolean);
+  const buttons = scope.flatMap((el) => [...el.querySelectorAll("button")]).filter((b) => b.getClientRects().length && getComputedStyle(b).visibility === "visible");
+  const flat = buttons.filter((b) => { const r = b.getBoundingClientRect(); return r.width < 1 || r.height < 1; });
+  facts.buttons = { n: buttons.length, flat: flat.length };
+  if (!buttons.length) bad.push("no visible button on the page");
+  if (flat.length) bad.push("buttons with no size: " + flat.slice(0, 8).map(label).join(", "));
+  // the board: on screen, and pixels on it
+  if (step.board) {
+    const cv = document.getElementById("board");
+    const bx = boxOf(cv);
+    facts.board = Object.assign({ box: bx }, cv ? boardPixels(cv) : {});
+    if (!bx || bx.w < 160 || bx.h < 160 || bx.vis !== "visible") bad.push("board canvas not on screen: " + JSON.stringify(bx));
+    if (!facts.board.tainted && !(facts.board.opaque >= facts.board.samples * 0.9 && facts.board.colours >= 2)) bad.push("board canvas is blank: " + JSON.stringify(facts.board));
+  }
+  if (bad.length) throw Object.assign(new Error(bad.join("; ")), { out: facts });
+  return facts;
 }
 
 const SCENARIOS = {
@@ -270,18 +453,9 @@ const SCENARIOS = {
   },
   async menus(d, c, report) {
     const shown = (sel) => !!document.querySelector(sel);
-    const escape = () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     // whatever a launch opened (the first-run guide) is closed first: a
     // native command waits while any dialog is up (native-commands.js run)
-    await c("clear", async () => {
-      for (let i = 0; i < 10 && shown(".modal-bg.show"); i++) {
-        const later = document.querySelector(".modal-bg.show #pick-cancel");
-        if (later) later.click(); else escape();
-        await sleep(300);
-      }
-      if (shown(".modal-bg.show")) throw new Error("a dialog would not close");
-      return {};
-    });
+    await c("clear", clearDialogs);
     const got = [];
     d.Host.onAppLifecycle({ shortcut: (detail) => {
       try { const x = typeof detail === "string" ? JSON.parse(detail) : detail; got.push(x && (x.command || x.id)); } catch (_) { got.push(null); }
@@ -290,7 +464,7 @@ const SCENARIOS = {
     await c("game.new", async () => {
       if (!await until(() => got.includes("game.new"), 30000, 100)) throw new Error("no shortcut event for game.new; saw " + JSON.stringify(got));
       if (!await until(() => shown("#newgame-modal.show"), 5000, 100)) throw new Error("新对局 did not open");
-      escape();
+      pressEscape();
       if (!await until(() => !shown(".modal-bg.show"), 5000, 100)) throw new Error("新对局 would not close");
       return {};
     });
@@ -305,6 +479,86 @@ const SCENARIOS = {
       }, 5000, 100);
       if (!ok) throw new Error("训练 · 开局's 我的开局书 is not what is shown");
       return {};
+    });
+  },
+  /**
+   * 21.0 G1: every main page, each judged as drawn (judgePage) and then held
+   * for SHOT_DWELL_MS after a "shot:<name>" report, while the driver takes a
+   * screenshot of the real window (automation-scenarios.mjs --shots). Ends
+   * with the page's uncaught errors: those seen meanwhile, and the errlog
+   * appdata key (errlog.js), which holds the boot's too.
+   */
+  async pages(d, c, report) {
+    const errors = [];
+    const onErr = (ev) => errors.push(String((ev && ev.error && (ev.error.stack || ev.error.message)) || (ev && ev.message) || "error"));
+    const onRej = (ev) => errors.push("rejection: " + d.errText(ev && ev.reason));
+    window.addEventListener("error", onErr);
+    window.addEventListener("unhandledrejection", onRej);
+    await c("clear", clearDialogs);
+    const ua = uaDefaults();
+    const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const click = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) throw new Error("no " + sel);
+      el.click();
+    };
+    const lightBg = { v: null };
+    for (const step of PAGE_STEPS) {
+      await c("page:" + step.name, async () => {
+        if (step.dark) {
+          click("#rail .rail-btn[data-view=\"settings\"]");
+          await sleep(300);
+          click("#cat-general");
+          await sleep(300);
+          lightBg.v = getComputedStyle(document.body).backgroundColor;
+          click("button[data-appearance=\"dark\"]");
+          await sleep(500);
+          const now = getComputedStyle(document.body).backgroundColor;
+          if (now === lightBg.v) throw new Error("the dark appearance left the background at " + now);
+        }
+        if (step.review) {
+          click("#rail .rail-btn[data-view=\"home\"]");
+          await sleep(500);
+          click("#today-analyse");
+          if (!await until(() => document.querySelector("#analyse-modal.show"), 5000, 100)) throw new Error("分析一局 did not open");
+          document.getElementById("an-text").value = REVIEW_PGN;
+          click("#an-go");
+          // the real engine's pass over four plies (scripted in the browser check)
+          if (!await until(() => { const r = document.getElementById("report-card"); return r && !r.hidden && boxOf(r); }, 90000, 250)) {
+            throw new Error("the review's report card did not appear in 90 s");
+          }
+        }
+        click("#rail .rail-btn[data-view=\"" + step.view + "\"]");
+        if (step.seg) {
+          await sleep(300);
+          click("#train-seg button[data-seg=\"" + step.seg + "\"]");
+        }
+        await until(() => regionsOf(step.view).need.every((el) => boxOf(el)), 10000, 100);
+        if (step.board) await until(() => { const p = boardPixels(document.getElementById("board")); return p.tainted || p.colours >= 2; }, 5000, 200);
+        await sleep(800);
+        await frame();
+        const facts = judgePage(step, ua);
+        if (step.dark) facts.lightBg = lightBg.v;
+        return facts;
+      });
+      await report("shot:" + step.name);
+      await sleep(SHOT_DWELL_MS);
+      // the page is about to change: a shot finished after this is of the wrong page
+      await report("left:" + step.name);
+    }
+    // back to the appearance the profile had
+    try { click("#rail .rail-btn[data-view=\"settings\"]"); click("#cat-general"); click("button[data-appearance=\"system\"]"); } catch (_) { /* reported by the steps already */ }
+    await c("errors", async () => {
+      window.removeEventListener("error", onErr);
+      window.removeEventListener("unhandledrejection", onRej);
+      let logged = [];
+      try {
+        const r = await d.within(d.Host.appdataReadKey("errlog"), 10000, "errlog");
+        const list = r && typeof r.text === "string" ? JSON.parse(r.text) : null;
+        logged = list && Array.isArray(list.entries) ? list.entries.map((e) => e.kind + ": " + e.msg) : [];
+      } catch (err) { logged = ["errlog unreadable: " + d.errText(err)]; }
+      if (errors.length || logged.length) throw Object.assign(new Error("uncaught errors: " + errors.concat(logged).slice(0, 10).join(" | ")), { out: { seen: errors, logged } });
+      return { seen: 0, logged: 0 };
     });
   },
 };

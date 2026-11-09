@@ -200,9 +200,21 @@ jobs:
   # fixed it went green twice in a row (runs 37571031877, 37573325903).
   # The smoke and scenario steps carry their own limits under the job's, so
   # a hang ends a step "failed" with its report, not the job "cancelled".
+  #
+  # 21.0 G1: and the real-WebView gate. 20.0 passed every job here and was
+  # broken on real machines, because these checks asked whether elements and
+  # marks existed and never looked at the screen. The `pages` scenario walks
+  # every main page and has the page judge it drawn (the stylesheet applies,
+  # the rail and buttons have boxes, nothing in the main column is squashed
+  # to no width, the board canvas holds pixels, no uncaught error), and the
+  # driver screenshots the real window at each page into webview-shots/,
+  # uploaded as webview-shots-<os> whatever the result, for a person (or
+  # Claude) to look at before a release. Any judgement or missing shot is red.
+  # 25 minutes, not 20: the walk holds thirteen pages 5 s each and reviews a
+  # game with the real engine.
   automation:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     name: automation (not released)
     defaults:
       run:
@@ -237,12 +249,20 @@ jobs:
       - name: automation smoke
         timeout-minutes: 3
         run: node scripts/automation-smoke.mjs "$AUTO_EXE"
+      # 21.0 G1: the scenarios end with every main page judged and photographed
       - name: automation scenarios
-        timeout-minutes: 12
-        run: node scripts/automation-scenarios.mjs "$AUTO_EXE" --out automation-windows.json
+        timeout-minutes: 17
+        run: node scripts/automation-scenarios.mjs "$AUTO_EXE" --out automation-windows.json --shots webview-shots
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: automation-report-Windows
           path: automation-windows.json
           if-no-files-found: ignore
+      # 21.0 G1: the real WebView2's pages — see build-macos.yml
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: webview-shots-windows
+          path: webview-shots/
+          if-no-files-found: warn

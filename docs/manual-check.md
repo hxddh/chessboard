@@ -21,6 +21,17 @@
 
 ---
 
+## 21.0 G1：发版前先看真 WebView 的截图（5 分钟）
+
+20.0 的 CI 全绿，真机上界面却是坏的：原生作业只问「元素在不在」，从没看过屏幕。从 21.0 起，`build-macos.yml` / `build-windows.yml` 的 automation 作业在打包后的 WKWebView 和 WebView2 里逐页走一遍（`selftest-scenarios.js` 的 `pages` 场景），每页先由页面自己判「真的画出来了」，再由驱动截一张整窗的图：
+
+- 判什么：`styles.css` 加载且生效（规则数、自定义属性、`body` 有背景、字体不是浏览器默认、导航按钮不是浏览器默认的按钮样式）；导航栏和页面上的按钮有尺寸、可见；页面主栏里没有宽度为 0 的块；有棋盘的页面，画布上真有像素（采样里不透明、至少两种颜色）；深色外观真的换了背景；整个过程没有未捕获的错误（页面上看到的，加上 `errlog` 存档键里的）。任何一条不过，作业红。
+- 截图：作业结束后在 Actions 的 artifact 里，`webview-shots-macos` 和 `webview-shots-windows`，每页一张 PNG（今天、下棋、训练五段、我的、设置、一局短棋的复盘，再加深色的今天 / 下棋 / 设置），旁边的 `pages.json` 是页面量到的数字。
+
+**发版前**：把两个 artifact 下载下来，逐张看一遍——有没有空白页、没样式的页、错位、乱码、看不见的按钮。截图是 CI 虚拟机的（dpr 1、最新系统），Retina 和老系统仍要靠下面的真机路线。
+
+---
+
 ## 8.2 真机路线（30 分钟）—— v8-2-plan V1 第 3 步、§8 第 8 条
 
 8.2 起，下面「8.1 真机清单」R1–R19 里凡是「打包后能不能用」的条目，改由 CI 驱动打包后的应用来走：`build-macos.yml` / `build-windows.yml` 的 **automation** 作业（同一提交、同一清单、同一打包命令的第二份构建，打开 SDK 的 automation server，**这份构建从不发布**），经 `scripts/automation-scenarios.mjs` 跑页面里的场景（`src/web/js/selftest-scenarios.js`），同步对着 runner 上的假服务器（`scripts/fake-sync-server.mjs`）。每条现在标了「CI 已覆盖（作业名）」或「只能人看」。

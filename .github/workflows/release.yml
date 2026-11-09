@@ -386,6 +386,15 @@ jobs:
           if find dist -mindepth 1 -type d -name 'Chessboard-*' | grep -q .; then
             echo "artifacts were not merged into dist/"; exit 1
           fi
+      # 21.0: one checksum file for the three packages, attached beside them,
+      # so a download can be checked against what this run tested
+      # (`sha256sum -c SHA256SUMS.txt` in the download folder)
+      - name: checksums
+        working-directory: dist
+        run: |
+          sha256sum Chessboard-macOS-arm64.zip Chessboard-macOS-arm64.dmg Chessboard-Windows-x64.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
       # The tag names the commit every job above checked out and tested.
       #
       # And it has to be retryable. Until 2.0 a failure after this point left
@@ -435,7 +444,7 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "$TAG" \
             --notes-file ".github/release-notes/${TAG}.md" \
-            dist/Chessboard-macOS-arm64.zip dist/Chessboard-macOS-arm64.dmg dist/Chessboard-Windows-x64.zip
+            dist/Chessboard-macOS-arm64.zip dist/Chessboard-macOS-arm64.dmg dist/Chessboard-Windows-x64.zip dist/SHA256SUMS.txt
       - name: the release must actually have both downloads
         if: ${{ !inputs.rehearse }}
         env:
@@ -446,6 +455,7 @@ jobs:
           echo "assets: $assets"
           case "$assets" in *macOS-arm64.zip*) ;; *) echo "missing the macOS zip"; exit 1;; esac
           case "$assets" in *Windows-x64.zip*) ;; *) echo "missing the Windows zip"; exit 1;; esac
+          case "$assets" in *SHA256SUMS.txt*) ;; *) echo "missing SHA256SUMS.txt"; exit 1;; esac
       - name: publish
         if: ${{ !inputs.rehearse }}
         env:
