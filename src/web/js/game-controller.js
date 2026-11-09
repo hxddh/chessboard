@@ -52,6 +52,7 @@ export function createGameController(d) {
     if (!isLive()) { goLive(); return; }
     if (refusePgnEdit()) return;
     invalidateEngine();
+    store.session.coachHold = null; // 21.0 T2: a held reply is not owed any more
     gameUndo();
     // in AI mode take back the engine reply too, so it's the human's turn again
     if (store.session.mode === "ai") {
@@ -306,26 +307,73 @@ export function createGameController(d) {
     }
   }
 
+  /** How far the move dropped the mover's eval, in centipawns, or null. */
+  async function coachLoss(p) {
+    let a = null, b = null;
+    try {
+      a = await ChessEngine.analyze(p.before, 120);
+      b = await ChessEngine.analyze(p.after, 120);
+    } catch (_) { return null; }
+    const sa = evalScalar(a), sb = evalScalar(b);
+    if (sa == null || sb == null) return null;
+    const moverIsWhite = p.before.split(" ")[1] === "w";
+    return moverIsWhite ? sa - sb : sb - sa;
+  }
+
   async function coachAfterEngineReply() {
     const p = store.session.coachPending;
     store.session.coachPending = null;
     if (!p || !store.session.coachOn || store.session.mode !== "ai" || appGameOver()) return;
     if (!coachWorthChecking(p.before, p.after)) return;
-    let a = null, b = null;
-    try {
-      a = await ChessEngine.analyze(p.before, 120);
-      b = await ChessEngine.analyze(p.after, 120);
-    } catch (_) { return; }
-    const sa = evalScalar(a), sb = evalScalar(b);
-    if (sa == null || sb == null) return;
+    const loss = await coachLoss(p);
+    if (loss == null) return;
     // the move must still be part of the live game (no undo / new game since)
     const h = sanHistory();
     if (h.length < p.len || h[p.len - 1] !== p.san) return;
-    const moverIsWhite = p.before.split(" ")[1] === "w";
-    const loss = moverIsWhite ? sa - sb : sb - sa;
     // "fix", not the default "ok": it is a warning that asks for Z, and 2.2 s
     // of success-green was gone before it could be read (7.5)
     if (loss >= 300) toast(tf("mm.blunder", [p.san]), "fix");
+  }
+
+  /** 21.0 T2: is the reply being held for a take-back? A hold left behind by another position is dropped. */
+  function coachHolds() {
+    const hold = store.session.coachHold;
+    if (hold && hold.fen === game.fen()) return true;
+    store.session.coachHold = null;
+    return false;
+  }
+
+  /** 21.0 T2: how long the opponent waits after a warned move before it answers. */
+  const COACH_HOLD_MS = 4000;
+
+  /**
+   * 21.0 T2: the warning comes before the reply. Through 19.x the coach looked
+   * at your move only after the engine had answered it, so 「可按 Z 悔棋」 took
+   * back the reply too, and the warning arrived when the opponent's move had
+   * already drawn your eye. Now, in an untimed game, a move the cheap screen
+   * flags is checked first; if it drops 3 pawns or more the opponent waits
+   * COACH_HOLD_MS with the warning up — Z (or the toast's 悔棋) takes back
+   * just your move — and then plays as usual. A timed game keeps the old
+   * order: holding the reply would run the engine's clock.
+   * @param {object} mv the move just made (chess.js verbose)
+   */
+  async function replyAfterCoach(mv) {
+    coachRemember(mv);
+    const p = store.session.coachPending;
+    if (!p || store.game.clock || appGameOver()) { maybeEngineTurn(); return; }
+    store.session.coachPending = null;
+    if (!coachWorthChecking(p.before, p.after)) { maybeEngineTurn(); return; }
+    const hold = { fen: game.fen(), san: p.san };
+    store.session.coachHold = hold; // maybeEngineTurn() waits while this stands
+    const loss = await coachLoss(p);
+    if (store.session.coachHold !== hold) return; // taken back, or a new game, meanwhile
+    if (loss == null || loss < 300 || game.fen() !== hold.fen) { store.session.coachHold = null; maybeEngineTurn(); return; }
+    toast(tf("mm.blunderHold", [p.san]), "fix", { label: t("chrome.undo"), onClick: () => { if (store.session.coachHold === hold) undo(); } });
+    setTimeout(() => {
+      if (store.session.coachHold !== hold) return;
+      store.session.coachHold = null;
+      maybeEngineTurn();
+    }, COACH_HOLD_MS);
   }
 
   // --- draw offer: pvp = both agree on the spot; ai = engine judges the eval ---
@@ -436,7 +484,7 @@ export function createGameController(d) {
 
   return {
     canTakeBack, undo, requestNewGame, playNext, openNewGame, closeNewGame, startFromDialog, retryFromHere, doResign,
-    recordOutcome, coachRemember, coachAfterEngineReply, doOfferDraw, acceptDraw, doClaimDraw,
+    recordOutcome, coachRemember, coachAfterEngineReply, replyAfterCoach, coachHolds, doOfferDraw, acceptDraw, doClaimDraw,
     gameResultToken, resultFromFile, clearEndingFlags, forgetFileResult, adoptHeaderResult,
   };
 }

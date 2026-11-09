@@ -1300,6 +1300,19 @@ for (const v of ["home", "me", "settings"]) {
     assert(line && !/第 1 课/.test(line) && /开完局之后/.test(line),
       "19.1 F6 定级 1675、还没学完一课:「继续」的课程卡从中局思路开始，不是第 1 课(" + line + ")");
     assert(errs.length === 0, "19.1 F6:没有页面异常 " + errs.join(" / "));
+    // 21.0 E: 关于 is a chunk now — its first click fetches it and still opens the dialog
+    const about0 = await page.evaluate(() => typeof window.wireAbout);
+    await page.evaluate(() => document.getElementById("about-open").click());
+    let about = null;
+    for (let i = 0; i < 40 && !(about && about.open); i++) {
+      await page.waitForTimeout(100);
+      about = await page.evaluate(() => {
+        const m = document.getElementById("about-modal");
+        return { open: !!m && !m.hidden && getComputedStyle(m).display !== "none", ver: document.getElementById("about-version").textContent };
+      });
+    }
+    assert(about0 === "undefined" && about && about.open && /\d+\.\d+\.\d+|—/.test(about.ver),
+      "21.0 E:关于不在首屏包里，第一次点开时取到分块并打开，写着版本号(" + JSON.stringify({ about0, about }) + ")");
     await ctx.close();
   }
   {

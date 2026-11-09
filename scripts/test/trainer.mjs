@@ -390,6 +390,16 @@ export async function run() {
         "T2: …and one already in the queue keeps its place on the ladder");
       assert(M.addMines(r.list, w, 7000, new Set()).ids.length === 0, "T2: the same drill again adds nothing to queue");
     }
+    // 21.0 T5: one game adds at most PER_GAME drills — the costliest, in the order played
+    {
+      const mk = (ply, loss) => ({ id: "mine:" + ply, ply, loss });
+      const many = [mk(2, 120), mk(5, 900), mk(9, null), mk(11, 300), mk(14, 450), mk(20, 150)];
+      const kept = M.capPerGame(many);
+      assert(M.PER_GAME === 3 && kept.map((c) => c.ply).join() === "5,11,14",
+        "21.0 T5: six candidates from one game keep the three costliest, in the order played (" + kept.map((c) => c.ply) + ")");
+      assert(M.capPerGame(many.slice(0, 2)).length === 2 && M.capPerGame([]).length === 0 && M.capPerGame(null).length === 0,
+        "21.0 T5: …and a game with three or fewer keeps them all");
+    }
     assert(M.candidatesFrom({ ...base, bests: [null, "g8f6"] }, "w", C).length === 0,
       "a judgement without a stored answer is not a drill");
     assert(M.candidatesFrom({ ...base, bests: ["e2e4", "g8f6"] }, "w", C).length === 0,
@@ -665,8 +675,8 @@ export async function run() {
     // 5.1: …after letting the pass revise what the book already says about this
     // game — corrected answers and withdrawn ?? — through the same module
     assert(/Mistakes\.reviseMines\(store\.session\.mines, cands, pass, store\.session\.humanColor, rev\)/.test(appSrc) &&
-           /Mistakes\.addMines\(rv\.list, cands, Date\.now\(\), solvedIds\)/.test(appSrc),
-      "a deeper pass revises the book before extending it (audit F2)");
+           /Mistakes\.addMines\(rv\.list, Mistakes\.capPerGame\(cands\), Date\.now\(\), solvedIds\)/.test(appSrc),
+      "a deeper pass revises the book before extending it (audit F2), and adds at most 21.0 T5's few");
     // 7.1: and the library's pass banks them too — v7-plan §6.3, which 7.0
     // shipped without and then recorded in neither of §10's two tables
     // 7.2 (P2): 棋谱库那一整块搬进了 library-ui.js，这两条跟着它走 —— 也因此
@@ -674,7 +684,7 @@ export async function run() {
     const libUiSrc = fs.readFileSync(path.join(root, "src/web/js/library-ui.js"), "utf8");
     assert(/run\.mined \+= mineLibraryGame\(next, r\.pass, LIB_BUDGET\)\.added/.test(libUiSrc),
       "每分析完一局棋谱库的棋，就把这一局的失误收进错题本");
-    assert(/function mineLibraryGame[\s\S]{0,900}Mistakes\.reviseMines\(store\.session\.mines, cands, pass, entry\.side, rev\)[\s\S]{0,300}Mistakes\.addMines\(rv\.list, cands, Date\.now\(\), solvedIds\)/.test(libUiSrc),
+    assert(/function mineLibraryGame[\s\S]{0,900}Mistakes\.reviseMines\(store\.session\.mines, cands, pass, entry\.side, rev\)[\s\S]{0,300}Mistakes\.addMines\(rv\.list, Mistakes\.capPerGame\(cands\), Date\.now\(\), solvedIds\)/.test(libUiSrc),
       "棋谱库走的是和棋盘同一套规则，先修正再扩充，不是第二份实现");
     assert(/withMotifs\(Mistakes\.candidatesFrom\(/.test(appSrc),
       "每道错题带着它的母题 —— 分层保留靠它，否则一次导入会冲掉一整类");

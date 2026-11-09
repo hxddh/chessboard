@@ -301,7 +301,7 @@
       "mm.promoted": "Promoted to {0}",
       "mm.goLiveFirst": "Return to the latest move before playing",
       "mm.backToMove": "Back at move {0} — play on",
-      "mm.blunder": "{0} may have been a serious mistake — press Z to take it back",
+      "mm.blunder": "{0} may have been a serious mistake — press Z to take it back", "mm.blunderHold": "{0} may be a serious mistake — your opponent waits a moment; press Z to take it back",
       "mm.plies": "{0:move|moves}",
       "mm.fileTooLarge": "Over the {0} KB read limit — split the library up and import the parts",
       "act.reportExport": "Export report", "tip.reportExport": "Save the review as a picture",

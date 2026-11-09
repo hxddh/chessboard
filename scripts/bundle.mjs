@@ -107,6 +107,10 @@ export const CHUNKS = [
   { entry: "src/web/js/onboarding.js", out: "src/web/js/chunk-onboarding.js", global: "createOnboarding", min: 500 },
   // 19.0 S3: 我的 is never the first page — its renderers come when it opens (app.js)
   { entry: "src/web/js/me-page.js", out: "src/web/js/chunk-me.js", global: "createMePage", min: 5000 },
+  // 21.0 E: the 18.0 save slots' one-time move into the library, for a profile that still has them (app.js)
+  { entry: "src/web/js/save-slots.js", out: "src/web/js/chunk-slots.js", global: "migrateSlots", min: 500 },
+  // 21.0 E: 关于, on its button's first click (about-lazy.js)
+  { entry: "src/web/js/about-ui.js", out: "src/web/js/chunk-about.js", global: "wireAbout", min: 1000 },
   // v10-0-plan A3: the ⌘K panel, on the key's first press (palette-lazy.js)
   { entry: "src/web/js/palette.js", out: "src/web/js/chunk-palette.js", global: "createPalette", min: 2000 },
   // v8-0-plan B4: the ladder, personas, rating and styles (opponents-lazy.js)

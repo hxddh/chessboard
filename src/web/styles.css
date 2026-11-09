@@ -3295,6 +3295,9 @@
     .km-win { margin: 2px 0 0; color: var(--muted); }
     .km-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
     .km-acts .pv-act { margin-left: 0; white-space: nowrap; }
+    /* 21.0 T1: 再试一次 is the card's main action — the accent, filled, the way
+       .tool-btn.primary is everywhere else */
+    .km-acts .pv-act.primary { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
     /* 10.1 F5: the coach's reasons are paragraphs — the prose leading */
     .km-why { margin: 8px 0 0; color: var(--muted); line-height: var(--lh-prose); }
     .km-coach { color: var(--text); }

@@ -41,7 +41,7 @@ export function createMoments(d) {
    * still be folded away, until the card turns.
    */
   function view() {
-    if (!store.session._km) store.session._km = { at: 0, whyOpen: true, forA: null, lines: null };
+    if (!store.session._km) store.session._km = { at: 0, whyOpen: null, forA: null, lines: null };
     return store.session._km;
   }
 
@@ -78,7 +78,7 @@ export function createMoments(d) {
   function go(list, k) {
     const v = view();
     v.at = Math.max(0, Math.min(list.length - 1, k));
-    v.whyOpen = true;
+    v.whyOpen = null;
     v.lines = null;
     setViewIndex(list[v.at].ply + 1);
   }
@@ -89,7 +89,7 @@ export function createMoments(d) {
     const a = analysisFor();
     const list = a && !inModal() ? momentsOf(a) : [];
     const v = view();
-    if (a !== v.forA) Object.assign(v, { forA: a, at: 0, whyOpen: true, lines: null });
+    if (a !== v.forA) Object.assign(v, { forA: a, at: 0, whyOpen: null, lines: null });
     // 看引擎线 stood the board before this moment's move — after the move
     // before it, which may be a moment too: while the board stays there, the
     // card stays on the moment whose lines these are (#89 review)
@@ -97,18 +97,26 @@ export function createMoments(d) {
     // the board standing on a moment (a click on the curve, the move list,
     // the keys) turns the card to it: the card follows the board
     const here = v.lines == null ? list.findIndex((m) => m.ply + 1 === store.game.viewIndex) : -1;
-    if (here >= 0 && here !== v.at) Object.assign(v, { at: here, whyOpen: true });
+    if (here >= 0 && here !== v.at) Object.assign(v, { at: here, whyOpen: null });
     if (v.at >= list.length) v.at = 0;
-    const at = v.at, whyOpen = v.whyOpen;
+    const at = v.at;
     renderLearn(row, a);
     renderSummary(a, list);
     if (!box) return;
     box.hidden = !list.length;
     if (!list.length) { box.dataset.key = ""; return; }
     const m = list[at];
-    const ex = whyOpen ? Retry.mistakeFacts(m.ply) : null;
     // 14.0 B: 再试一次 is for your own moves — the opponent's are not yours to replay
     const canRetry = (!you() || m.side === you()) && !!(Retry.retryFacts(m.ply) || {}).better;
+    // 21.0 T1: a moment you can replay opens on 再试一次, not on the answer.
+    // 为什么 is the coach's reason, and for a mistake that reason is the better
+    // move (「更好的是 Bxd4…」) — open by default, it was the answer printed
+    // right above the 再试一次 that asked you to find it. Until you open it
+    // yourself (whyOpen true / false), it is open only where there is nothing
+    // to replay, and for a good move, where it spoils nothing.
+    const good0 = m.grade === "brilliant" || m.grade === "only";
+    const whyOpen = v.whyOpen == null ? good0 || !canRetry : v.whyOpen;
+    const ex = whyOpen ? Retry.mistakeFacts(m.ply) : null;
     // 7.6: rebuilt only when what it shows changes — the step keys are
     // written once in the page and never rebuilt, so they can be pressed
     // again and again while the card under them turns
@@ -160,13 +168,14 @@ export function createMoments(d) {
       acts.appendChild(b);
       return b;
     };
-    const whyBtn = act("why", "rv.km.why", () => { v.whyOpen = !v.whyOpen; render(); });
-    whyBtn.setAttribute("aria-expanded", whyOpen ? "true" : "false");
-    // 19.0 T2: no reason in words, no 为什么 — it only said the win chance again
-    const good0 = m.grade === "brilliant" || m.grade === "only";
-    whyBtn.hidden = !good0 && !Retry.mistakeFacts(m.ply);
+    // 21.0 T1: 再试一次 first, and the card's main action
     const retry = act("retry", "rv.retry", () => Retry.startRetry(m.ply));
     retry.hidden = !canRetry;
+    retry.classList.add("primary");
+    const whyBtn = act("why", "rv.km.why", () => { v.whyOpen = !whyOpen; render(); });
+    whyBtn.setAttribute("aria-expanded", whyOpen ? "true" : "false");
+    // 19.0 T2: no reason in words, no 为什么 — it only said the win chance again
+    whyBtn.hidden = !good0 && !Retry.mistakeFacts(m.ply);
     act("lines", "rv.km.lines", () => {
       // the position before the move: the review's lines and their arrows
       // are the engine's answer there (setAnalyzeUI draws them on the sync)
