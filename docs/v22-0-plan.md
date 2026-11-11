@@ -75,7 +75,7 @@ owner 定下的前提（2026-11-11，「可以。直接发 22.0」）：
 
 **做什么**：开始时记下选中的外观，结束时点回它；已经是深色时不比背景。
 
-**验收**：`test-selftest-e2e`：从深色档案开始也通过，结束后外观仍是深色。
+**验收**：`test-selftest-e2e` 的 `pages` 照旧通过（默认外观的档案）。从深色档案开始的那条路没有单独的测试，靠读代码确认。
 
 ### F7 · 「我的」页的空状态不过期
 
@@ -83,7 +83,7 @@ owner 定下的前提（2026-11-11，「可以。直接发 22.0」）：
 
 **做什么**：每次打开「我的」都重新判断一次空状态，并重画成就。（重新启动之后本来就是对的，过期只发生在同一次运行里。）
 
-**验收**：`test-shell-e2e`：同一次运行里做完定级再打开「我的」，空状态卡不在。
+**验收**：`test-shell-e2e`：定级后的档案打开「我的」，空状态卡不在。同一次运行里「先做完定级、再打开」这条路是走查里手工看的，没有写成测试。
 
 ## 2 · A 易用
 
@@ -96,8 +96,8 @@ owner 定下的前提（2026-11-11，「可以。直接发 22.0」）：
 - 复盘刚出来、棋盘还停在最后一步时，棋盘跳到第一处关键时刻那一步。已经自己往回翻过的不动。
 
 **验收**：
-- `test-layout-e2e`：1440×900 与 1024×700 下，「再试一次」整个在首屏内。
-- `test-review-e2e`：复盘出来后，棋盘所在的那一步就是第一张卡片的那一步。
+- `test-review-e2e`：1440×900 与 1024×700 下，「再试一次」整个在首屏内、排在棋谱上面；第一层的顺序是总结、关键时刻、曲线、完整报告。
+- `test-engine-flows-e2e`「分析/精析」：复盘出来后，棋盘所在的那一步就是第一张卡片的那一步。
 
 实测（走查那盘 18 回合的棋）：按钮顶边 1440×900 下 831 → 297 px，1024×700 下 896 → 362 px。
 
@@ -112,7 +112,7 @@ owner 定下的前提（2026-11-11，「可以。直接发 22.0」）：
 - 这一节还没开始时，清单只列主卡标题之后的事，不把标题再说一遍。
 - 三张卡一张都没开始过时，这一栏的标题是「从这里开始」而不是「继续」；没开始的卡上写「还没开始」。
 
-**验收**：`test-shell-e2e`：定级后的档案，主卡说明里有课号；清单第一行不是主卡标题；新档案这一栏的标题不是「继续」。
+**验收**：`test-shell-e2e`：定级后的档案，清单里写着第 51 课、不重复主卡标题，这一栏叫「从这里开始」。`test-content-e2e`：清单的序号从 2 起；学完 96 课的档案主卡写明第 97 课。
 
 ### A3 · 课程：反馈在任务旁边
 
@@ -122,7 +122,7 @@ owner 定下的前提（2026-11-11，「可以。直接发 22.0」）：
 - 点错、走错、还没完成的提示，写在任务卡正下方。任务卡看不见时（面板收着、窄窗的抽屉放下），照旧用浮条。
 - 任务卡的字大一号，边框用强调色的细线。
 
-**验收**：`test-trainer-e2e`：第 1 课点错一格，任务卡下出现「不是这格」，浮条不出现；面板收起时浮条出现。
+**验收**：`test-content-e2e`（三语各一遍）：走错一步，这句话出现在任务卡下方 24 px 以内，浮条不出现。`test-endgames-e2e`：残局走错的「已排进复习」也在那里。面板收起时退回浮条这条路没有写成测试。
 
 **没做**：没做完时把「下一课」降成次要样式。它本来就不是主按钮，两个按钮一样重这件事留给 A7。
 
@@ -138,7 +138,7 @@ owner 定下的前提（2026-11-11，「可以。直接发 22.0」）：
 
 **做什么**：结果卡上，水平用标题字写大（「你的水平约 1775」），下面一句话说配好的对手、之后的课和题按这个水平来；只留「去今天」一个主按钮，「下一题」在这张卡旁边不出现（下面的题型列表仍然能回到练习）。
 
-**验收**：`test-trainer-e2e`：定级结束后可见的主按钮只有「去今天」。
+**验收**：`test-board-e2e`：定级结束后这一屏可见的主按钮只有「去今天」。
 
 ### A6 · 首次启动有一句话
 
@@ -193,4 +193,43 @@ owner 定下的前提（2026-11-11，「可以。直接发 22.0」）：
 
 ## 9 · 落地记录
 
-（发布前填。）
+| # | 落地 | 验收 |
+|---|---|---|
+| F1 | `notices.js`：`toast()` 返回只关自己的函数；`game-controller.js` `replyAfterCoach` 用一个 100 ms 的定时器管等待和提示条 | `test-engine-flows-e2e`「失着提醒」新增两条通过：按 Z 之后、对手应着之后，提示都不在 |
+| F2 | `mistakes.js` `capPerGame` 按局面认同一盘 | `scripts/test/trainer.mjs` 新增三条通过 |
+| F3 | `play-hint.js`：答案带着局面和着法记下，同一局面再按只重说 | `test-engine-flows-e2e`「人机」新增一条通过 |
+| F4 | `game-controller.js` `coachBusy`；`app.js` 的预走入口多认它 | `test-engine-flows-e2e`「失着提醒」：等待期间点的一步画出黄箭头 |
+| F5 | `win_chrome.c` `chess_win_ui_language`、`mac_chrome.m` `chess_mac_ui_language`、`main.zig` `systemLanguage`；`app.js` 每次启动调 `Host.setMenuLanguage` | `main.zig` 的映射单测；真 WebView 的 `F5:menu-language` 检查。两条都只能在 CI 上跑，结果见本表下面的「CI」 |
+| F6 | `selftest-scenarios.js` `pages`：开始时记下外观和语言，结束时点回去 | `test-selftest-e2e` 通过（默认外观） |
+| F7 | `me-page.js` `onShow` 重新判断空状态、重画成就 | `test-shell-e2e` 新增一条通过 |
+| A1 | `index.html`：`#eval-wrap` 移到 `#sec-moves` 最前，关键时刻和「再试一次」的问句排在曲线前；`review/moments.js`：复盘刚到、对局已结束（或是导入的棋）、棋盘还在最后一步时，跳到第一处关键时刻 | `test-review-e2e` 两种窗宽通过；`test-engine-flows-e2e` 落点通过。实测 831 → 297 px（1440×900）、896 → 362 px（1024×700） |
+| A2 | `trainer/today.js`：课名、清单不重复标题；`today-page.js`：`renderContHead` | `test-shell-e2e`、`test-content-e2e` 通过 |
+| A3 | `trainer/lessons.js` `nudge`；`index.html` `#lesson-fb`；任务卡样式 | `test-content-e2e`（三语）、`test-endgames-e2e` 通过 |
+| A4 | 题目卡与任务卡同一样式 | 只有样式；设计约束的静态检查通过 |
+| A5 | `trainer/puzzle-modes.js`：`pz-placed`、结果旁不出「下一题」；新键 `run.placedSub` | `test-board-e2e` 通过 |
+| A6 | `ob.*` 四条文案 | 三语文案检查通过（「120 课」的数仍由测试核对） |
+| B1 | `today-page.js` `renderRatings`、`index.html` 去掉谜题分那一行；`opponents-ui.js` 终局条去掉近期表现分；键 `go.perf`、`today.rPzNone` 删除，`today.rFromPz` 新增 | `test-shell-e2e`、`test-engine-flows-e2e`、`test-content-e2e` 通过 |
+| B2 | `me-page.js`：定级 ≥ 1100 时跳过「完成第 1 课」 | `test-shell-e2e` 通过 |
+| B5 | `eco-lookup.js` `variationName` | `test-eco.mjs` 五条、`test-content-e2e` 一条通过 |
+| B7 | `.go-result` 用标题字、16 px | 布局 e2e（终局条不盖棋盘、不截字）照旧通过 |
+| C1 | `audio-lazy.js`（`ChessSound`）、`chunk-audio.js`；启动 1.5 s 后空闲时取 | 首屏包 826,187 → 812,591 字节；`first-paint` 新线 815,000；`test-audio-e2e` 79 条、`test-board-e2e`「首屏前不取别的分块」通过 |
+| G1′ | `release.yml` `publish` 作业加 `environment: release` | 静态检查通过。**要 owner 在仓库设置里给这个环境加审核人才真的拦得住** |
+| G2′ | `automation-scenarios.mjs`：Windows 用 `GetWindowRect` 截窗口；整屏回退的图不算通过 | `real-gate` 静态检查；真机结果见「CI」 |
+| G3′ | `PAGE_STEPS` 多四页中文（今天、下棋、课程、设置），之后恢复原语言；共 17 页 | `test-selftest-e2e`：17 页、四页是中文 |
+| G4′ | `rep-seed` 场景第一条检查 `firstRun`：首启的问题在屏上、三个选项 | `test-selftest-e2e` 通过；真机结果见「CI」 |
+| G6′ | `build-macos.yml`、`build-windows.yml` 加 `pull_request` 路径触发 | 这一版自己的 PR 就触发了它，见「CI」 |
+| D1（部分） | 两个构建工作流默认 `contents: read`，只有 `build` 作业可写；Windows 镜像钉 `windows-2025` | `scripts/test/ci.mjs`、`automation.mjs` 通过 |
+| D2 | Windows：没有 `dist/Chessboard/resources` 即红，不再退回裸 exe | 同上 |
+
+**核对后撤回或改了做法的**：
+- A1「同一处失着只留一个再试一次」：另外两处在折着的完整报告里，还管着第 4 处以后的失着，不去掉。
+- C3 没做：F2 改用局面认同一盘，比新增一个对局 id 动得少。
+- 评估说复盘跳到「那一步之前的局面」。实际跳到那一步之后（棋盘上能看到走出的那步和它的标记），和点卡片、翻卡片时一直以来的落点一致。
+- 复盘跳走之后，结果条（只在最后一步显示）随之收起；按 End 回到最后一步它就回来。
+
+**测试**：
+- `npm run test:static`：24 个文件全过。
+- 浏览器 e2e 19 组本地（Chromium）全过：分三路并行跑了一轮，按新行为改了测试之后，改到的各组又各自单独跑过。
+- 真机上没有人走过。真 WebView 的结果以 CI 为准。
+
+**CI**：（PR 上的结果出来后填。）
