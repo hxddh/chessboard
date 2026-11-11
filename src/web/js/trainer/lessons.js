@@ -390,6 +390,25 @@ export function createLessonsUI(d) {
     }, 380);
   }
 
+  /** Where in the lesson a word of feedback belongs: this task, this tap. */
+  const fbAt = (lr) => lr.ti + ":" + (lr.tapStep || 0);
+  /**
+   * 22.0 A3: a wrong try is answered beside the task it was a try at. The
+   * answer used to be a toast under the board, half a screen from the task
+   * card, so a learner looked in two places to read one exchange. Where the
+   * card is out of sight (the panel shut, the narrow window's sheet down)
+   * the toast still says it.
+   */
+  function nudge(msg) {
+    const lr = store.session.learn, task = document.getElementById("lesson-task");
+    const r = task && task.offsetParent ? task.getBoundingClientRect() : null;
+    const view = document.defaultView;
+    if (!lr || !r || r.bottom <= 0 || r.top >= (view ? view.innerHeight : 0)) { toast(msg, "fix"); return; }
+    lr.fb = { msg, at: fbAt(lr) };
+    const fb = document.getElementById("lesson-fb");
+    if (fb) { fb.textContent = msg; fb.hidden = false; }
+  }
+
   function learnTaskText() {
     if (store.session.learn.gs) return Gs.m.task();
     const task = curTask();
@@ -424,7 +443,7 @@ export function createLessonsUI(d) {
         else sync();
       } else {
         // the localised tip, not the authored one — same reason as learnTaskText
-        toast(tf("lm.wrongSquare", [taskText(curLesson(), store.session.learn.ti).step(store.session.learn.tapStep)]));
+        nudge(tf("lm.wrongSquare", [taskText(curLesson(), store.session.learn.ti).step(store.session.learn.tapStep)]));
         learnRegisterMiss();
       }
       return;
@@ -448,7 +467,7 @@ export function createLessonsUI(d) {
       return;
     }
     if (task.only && piece && piece.color === "w" && piece.type !== task.only) {
-      toast(tf("lm.onlyPiece", [PIECE_NAMES[task.only]]));
+      nudge(tf("lm.onlyPiece", [PIECE_NAMES[task.only]]));
       return;
     }
     clearSelection();
@@ -460,7 +479,7 @@ export function createLessonsUI(d) {
     // T2: a camp position that went wrong joins the review queue (srs.js)
     const eg = store.session.learn.eg;
     if (eg) Endgames.record(eg, false, false);
-    toast(eg ? tf("lm.tip2", [msg, t("eg.queued")]) : msg, "fix");
+    nudge(eg ? tf("lm.tip2", [msg, t("eg.queued")]) : msg);
     const token = store.session.learn.token;
     setTimeout(() => { if (store.session.learn && store.session.learn.token === token) startLearnTask(); }, 1400);
   }
@@ -517,7 +536,7 @@ export function createLessonsUI(d) {
       store.session.learn.last = null;
       // the translated retry hint, not the raw Chinese one on the task
       // a lesson retry is a correction, not a receipt
-      toast(taskText(curLesson(), store.session.learn.ti).retry || t("lm.retry"), "fix");
+      nudge(taskText(curLesson(), store.session.learn.ti).retry || t("lm.retry"));
       learnRegisterMiss();
       sync();
       return;
@@ -734,7 +753,7 @@ export function createLessonsUI(d) {
     // ✓, and the course offers it again (it was ✓ through 18.0, the same as
     // one found unaided); a lesson learnt before keeps its ✓
     if (store.session.learn.shown && !store.session.learnState.done[L.id]) {
-      toast(t("lm.notYet"), "fix");
+      nudge(t("lm.notYet"));
       sync();
       return;
     }
@@ -836,6 +855,12 @@ export function createLessonsUI(d) {
     if (info) { info.hidden = !read; info.setAttribute("aria-expanded", String(!(textEl && textEl.hidden))); }
     const task = document.getElementById("lesson-task");
     if (task) task.textContent = learnTaskText();
+    const fb = document.getElementById("lesson-fb");
+    if (fb) {
+      const say = lr.fb && lr.fb.at === fbAt(lr) ? lr.fb.msg : "";
+      fb.hidden = !say;
+      if (fb.textContent !== say) fb.textContent = say;
+    }
     const demoBtn = document.getElementById("lesson-demo");
     if (demoBtn) {
       const curT = curTask();

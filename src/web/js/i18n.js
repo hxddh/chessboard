@@ -680,7 +680,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "ob.oftenLabel": "常下棋",
       "ob.oftenSub": "从更难的题开始定级；在 Lichess / Chess.com 下过的棋，可以在设置 · 数据里同步进来",
       "run.rule.place": "定级 · 第 {0} 题，共 {1} 题 · 答对变难，答错变易",
-      "run.placed": "定级完成：谜题等级分约 {0}，已为你选好对手 {1}",
+      "run.placed": "你的水平约 {0}", "run.placedSub": "定级完成。对手配好了：{0}；接下来的课和题都按这个水平来。",
       "run.toToday": "去今天",
       "focus.h": "本周重点",
       "focus.motif": "战术：{0} {1} 题",

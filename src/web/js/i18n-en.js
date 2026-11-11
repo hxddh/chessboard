@@ -648,7 +648,7 @@
       "ob.oftenLabel": "I play regularly",
       "ob.oftenSub": "Placement starts from harder puzzles; games on Lichess or Chess.com can be synced in Settings · Data",
       "run.rule.place": "Placement · puzzle {0} of {1} · right makes it harder, wrong easier",
-      "run.placed": "Placed: puzzle rating about {0}; your opponent is {1}",
+      "run.placed": "Your level is about {0}", "run.placedSub": "Placement done. Your opponent is {0}; lessons and puzzles now follow this level.",
       "run.toToday": "Go to Today",
       "focus.h": "This week's focus",
       "focus.motif": "Tactics: {0}, {1:puzzle|puzzles}",

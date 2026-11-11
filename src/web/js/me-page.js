@@ -53,7 +53,12 @@ export function createMePage(d) {
     };
     const unlocked = res.filter((r) => r.unlocked);
     const locked = res.filter((r) => !r.unlocked).sort((a, b) => frac(b) - frac(a));
-    const next = locked[0];
+    // 22.0 B2: the badge within reach follows the level. A player the
+    // placement has sent past the rules lessons (planner.js lessonFrom: 1100
+    // and up) was still told the next thing to earn was 「完成第 1 课」.
+    const placed = (store.session.puzzleState || {}).placed;
+    const past = !!placed && placed.r >= 1100;
+    const next = locked.find((r) => !(past && r.ach.id === "first-lesson")) || locked[0];
     if (next) {
       const tip = document.createElement("div");
       tip.className = "ach-next";
@@ -440,6 +445,8 @@ export function createMePage(d) {
     /** 19.0 S3: the puzzle rating moved (an answer) — and S2: the diagnosis's source row changed */
     renderRatings: () => invalidate(), renderDiag: () => invalidate(true),
     /** The page is opening (shell.js): draw it at the size it opens at. */
-    onShow: () => { invalidate(true); renderEndgames(); },
+    // 22.0 F7: the entry card is asked again each time the page opens — a placement
+    // finished a minute ago had left 「现在还空着」 standing over its own rating
+    onShow: () => { renderRecordEntry(); renderAchievements(); invalidate(true); renderEndgames(); },
   };
 }
