@@ -1,5 +1,5 @@
 import { CHESS_ACHIEVEMENTS } from "./achievements.js";
-import { ChessAudio } from "./audio.js";
+import { ChessSound as ChessAudio } from "./audio-lazy.js";
 import { ChessBoardView } from "./board.js";
 import { Chess } from "./chess.js";
 import { ChessDialog } from "./dialog.js";
@@ -1738,7 +1738,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     bookNow, el, loadStats, motifKeyOf, owedNow, puzzlesInCat,
     runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
-    sync, t, tf, toast, pieceSrc: (k, px) => BoardView.pieceSrc(k, px), game, isOver: () => appGameOver(), isLive: () => isLive(),
+    sync, t, tf, toast, lessonText, pieceSrc: (k, px) => BoardView.pieceSrc(k, px), game, isOver: () => appGameOver(), isLive: () => isLive(),
     Shell: { go: (id) => Shell.go(id), openTrain: (g) => Shell.openTrain(g) }, rep: { due: () => (RepUI.booted() ? RepUI.dueDrills().length : 0), start: () => startRepDrills(true) }, ecoName: (e, n) => LibraryUI.libEcoName(e, n),
   });
   const {
@@ -3190,7 +3190,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     }
     // engine's move: a click now is a premove, played the instant the reply
     // lands if it is still legal then (v6-plan Q2.8)
-    const play = movePath(() => { if (store.session.engineThinking) premoveClick(sq); });
+    const play = movePath(() => { if (store.session.engineThinking || GameCtl.coachBusy()) premoveClick(sq); });
     if (!play) return;
     const g = isLive() ? game : viewGame();
     const piece = g.get(sq);
@@ -4663,6 +4663,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   document.documentElement.setAttribute("data-text", store.ui.textSize);
   SettingsUI.applyLook();
   if (I18n) { I18n.setLang(store.ui.langId); I18n.apply(document); document.documentElement.setAttribute("lang", store.ui.langId); document.title = t("app.title"); }
+  Host.setMenuLanguage(store.ui.langId.split("-")[0]); // 22.0 F5: every launch — the menu bar of the next one is in the page's language, whoever chose it
   // v8-0-plan F5: chunk-boot.js loaded the saved language ahead of this
   // script. Should its guess have missed (a profile restored since, storage
   // it could not read), fetch the language now and repaint in it on arrival.

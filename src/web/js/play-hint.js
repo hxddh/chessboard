@@ -38,11 +38,15 @@ export function createPlayHint(d) {
     const shown = piece();
     if (shown) {
       store.session.hintPiece = null;
-      store.session.hintMove = { from: shown.from, to: shown.to };
+      store.session.hintMove = { from: shown.from, to: shown.to, fen: shown.fen, san: shown.san };
       store.commit("session", "sync");
       toast(tdot(t("chrome.hint"), shown.san));
       return;
     }
+    // 22.0 F3: a third press says the answer again; through 21.0 it searched
+    // afresh and put the ring back over an arrow already given
+    const told = store.session.hintMove;
+    if (told && told.fen === game.fen() && isLive()) { toast(tdot(t("chrome.hint"), told.san)); return; }
     if (store.session.hintPending || store.session.analyzing) return;
     const sig = game.fen();
     store.session.hintPending = true;

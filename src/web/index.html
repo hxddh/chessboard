@@ -472,6 +472,73 @@
       </section>
 
       <section class="side-section grow-sec" id="sec-moves">
+        <!-- 22.0 A1: the review comes first. Through 21.0 it stood under the
+             whole notation, the transport keys and the 复盘 button, and its
+             one thing to press — 再试一次 — began at 896px in a 700px window.
+             An analysed game opens on its first key moment: the card at the
+             top of the panel, the board on that move, the curve and the
+             notation under them. -->
+        <!-- 9.0 M2: the review in two layers. On top, what a player reads
+             first after an analysis: one sentence for the game (the
+             opponent's, in a game against the engine), the win-rate curve
+             (drag it: the board follows), and the key moments, each with
+             再试一次 on the card. Under them, folded, the full report: the
+             accuracies and every grade counted, 从错误中学 and every ? / ??. -->
+        <div id="eval-wrap" hidden>
+          <p class="rv-summary" id="rv-summary" hidden></p>
+          <!-- v8-0-plan A4: three key moments a side, one card at a time
+               (review/moments.js builds the card; the step keys are written
+               here once and never rebuilt) -->
+          <section class="rv-km" id="rv-km" aria-labelledby="rv-km-h" hidden>
+            <div class="km-head">
+              <h3 class="km-h" id="rv-km-h" data-i18n="rv.keyMoments">关键时刻</h3>
+              <span class="km-pos num" aria-live="polite"></span>
+              <button type="button" class="km-step km-prev" aria-label="上一个关键时刻" data-i18n-aria="rv.km.prev" title="上一个关键时刻" data-i18n-title="rv.km.prev"><span data-icon="chevron-left" aria-hidden="true"></span></button>
+              <button type="button" class="km-step km-next" aria-label="下一个关键时刻" data-i18n-aria="rv.km.next" title="下一个关键时刻" data-i18n-title="rv.km.next"><span data-icon="chevron-right" aria-hidden="true"></span></button>
+            </div>
+            <div class="km-body"></div>
+          </section>
+          <!-- 22.0 A1: the question 再试一次 asks stands under the card that asked it -->
+          <div class="retry-box" id="retry-box" hidden></div>
+          <!-- v8-0-plan A4: the graph, large, with its axes: White's win
+               chance up the side, the move numbers along the bottom -->
+          <div class="curve-box">
+            <div class="curve-cap" data-i18n="rv.curveCap">白方胜率</div>
+            <div class="curve-plot">
+              <div class="curve-y num" id="curve-y" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div>
+              <!-- Focusable and a slider: the pointer already scrubs it, and the
+                   global ← / → / Home / End replay keys move it once it has focus,
+                   so the keyboard gets the same time machine (5.1, work package D). -->
+              <canvas id="eval-curve" tabindex="0" role="slider" aria-label="局势曲线" data-i18n-aria="aria.evalCurve" aria-describedby="analysis-legend" title="复盘后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误" data-i18n-title="hint.analysis"></canvas>
+            </div>
+            <div class="curve-x num" id="curve-x" aria-hidden="true"></div>
+          </div>
+          <!-- 7.8 §2: the move and score under the pointer; it replaces the
+               canvas's own title, which would stack a second, stale label
+               on top of this one after a second's rest -->
+          <div class="curve-tip num" id="curve-tip" aria-hidden="true" hidden></div>
+          <details class="rv-full" id="rv-full" hidden>
+            <summary data-i18n="rv.full">完整报告</summary>
+            <!-- 7.7 §5: one card. The two accuracies are the headline, once —
+                 they used to be a line above the report and a row inside it. -->
+            <div class="report-card" id="report-card" hidden>
+              <div class="acc-hero" id="acc-line" hidden title="按每一步的胜率变化换算，与在线平台的「准确率」同一口径" data-i18n-title="tip.accuracy"></div>
+              <div class="review" id="review-body" hidden></div>
+            </div>
+            <div class="link-row fit-row" id="rv-learn-row" hidden>
+              <button type="button" class="act-btn" id="rv-learn" title="把本局所有 ? 与 ?? 串成一组「再试一次」，一处接一处练" data-i18n-title="tip.learn"></button>
+            </div>
+            <!-- 7.8 §3: every ? and ?? with its reason and 再试一次 (retry.js) -->
+            <div class="rv-mistakes" id="rv-mistakes" hidden></div>
+          </details>
+          <div class="pv-line num" id="pv-line" hidden></div>
+          <!-- 13.0 I: 「人会怎么走」 (review/human-line.js; it moves itself under
+               #live-line on the analysis board) -->
+          <div class="human-line" id="human-line" hidden></div>
+          <!-- 7.8 §3: on a ? / ??, why it was one; and 再试一次 from the
+               position before it (built by renderWhyLine / renderRetry). -->
+          <div class="why-line" id="why-line" hidden></div>
+        </div>
         <div class="side-h-row">
           <h2 class="side-h" data-i18n="side.moves">棋谱</h2>
           <span class="side-h-meta num" id="replay-pos">0 / 0</span>
@@ -583,66 +650,6 @@
           <!-- 6.0 (v6-plan Q2.6): the running analysis of the position on the
                board — depth, and one row per line with its win chance. -->
           <div class="pv-line num" id="live-line" hidden></div>
-        </div>
-        <!-- 9.0 M2: the review in two layers. On top, what a player reads
-             first after an analysis: one sentence for the game (the
-             opponent's, in a game against the engine), the win-rate curve
-             (drag it: the board follows), and the key moments, each with
-             再试一次 on the card. Under them, folded, the full report: the
-             accuracies and every grade counted, 从错误中学 and every ? / ??. -->
-        <div id="eval-wrap" hidden>
-          <p class="rv-summary" id="rv-summary" hidden></p>
-          <!-- v8-0-plan A4: the graph, large, with its axes: White's win
-               chance up the side, the move numbers along the bottom -->
-          <div class="curve-box">
-            <div class="curve-cap" data-i18n="rv.curveCap">白方胜率</div>
-            <div class="curve-plot">
-              <div class="curve-y num" id="curve-y" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div>
-              <!-- Focusable and a slider: the pointer already scrubs it, and the
-                   global ← / → / Home / End replay keys move it once it has focus,
-                   so the keyboard gets the same time machine (5.1, work package D). -->
-              <canvas id="eval-curve" tabindex="0" role="slider" aria-label="局势曲线" data-i18n-aria="aria.evalCurve" aria-describedby="analysis-legend" title="复盘后曲线可点击跳转 · ?! 小失误 · ? 失误 · ?? 严重失误" data-i18n-title="hint.analysis"></canvas>
-            </div>
-            <div class="curve-x num" id="curve-x" aria-hidden="true"></div>
-          </div>
-          <!-- 7.8 §2: the move and score under the pointer; it replaces the
-               canvas's own title, which would stack a second, stale label
-               on top of this one after a second's rest -->
-          <div class="curve-tip num" id="curve-tip" aria-hidden="true" hidden></div>
-          <!-- v8-0-plan A4: three key moments a side, one card at a time
-               (review/moments.js builds the card; the step keys are written
-               here once and never rebuilt) -->
-          <section class="rv-km" id="rv-km" aria-labelledby="rv-km-h" hidden>
-            <div class="km-head">
-              <h3 class="km-h" id="rv-km-h" data-i18n="rv.keyMoments">关键时刻</h3>
-              <span class="km-pos num" aria-live="polite"></span>
-              <button type="button" class="km-step km-prev" aria-label="上一个关键时刻" data-i18n-aria="rv.km.prev" title="上一个关键时刻" data-i18n-title="rv.km.prev"><span data-icon="chevron-left" aria-hidden="true"></span></button>
-              <button type="button" class="km-step km-next" aria-label="下一个关键时刻" data-i18n-aria="rv.km.next" title="下一个关键时刻" data-i18n-title="rv.km.next"><span data-icon="chevron-right" aria-hidden="true"></span></button>
-            </div>
-            <div class="km-body"></div>
-          </section>
-          <details class="rv-full" id="rv-full" hidden>
-            <summary data-i18n="rv.full">完整报告</summary>
-            <!-- 7.7 §5: one card. The two accuracies are the headline, once —
-                 they used to be a line above the report and a row inside it. -->
-            <div class="report-card" id="report-card" hidden>
-              <div class="acc-hero" id="acc-line" hidden title="按每一步的胜率变化换算，与在线平台的「准确率」同一口径" data-i18n-title="tip.accuracy"></div>
-              <div class="review" id="review-body" hidden></div>
-            </div>
-            <div class="link-row fit-row" id="rv-learn-row" hidden>
-              <button type="button" class="act-btn" id="rv-learn" title="把本局所有 ? 与 ?? 串成一组「再试一次」，一处接一处练" data-i18n-title="tip.learn"></button>
-            </div>
-            <!-- 7.8 §3: every ? and ?? with its reason and 再试一次 (retry.js) -->
-            <div class="rv-mistakes" id="rv-mistakes" hidden></div>
-          </details>
-          <div class="pv-line num" id="pv-line" hidden></div>
-          <!-- 13.0 I: 「人会怎么走」 (review/human-line.js; it moves itself under
-               #live-line on the analysis board) -->
-          <div class="human-line" id="human-line" hidden></div>
-          <!-- 7.8 §3: on a ? / ??, why it was one; and 再试一次 from the
-               position before it (built by renderWhyLine / renderRetry). -->
-          <div class="why-line" id="why-line" hidden></div>
-          <div class="retry-box" id="retry-box" hidden></div>
         </div>
         <!-- 7.7 (v7-7-plan §3): three weights. The game's own actions are
              the outlined buttons (secondary). The file and position tools are
@@ -782,13 +789,13 @@
             <h2 class="side-h" id="today-ratings-h" data-i18n="today.ratings">等级分</h2>
             <div class="today-card today-ratings">
               <div class="today-rating">
-                <div><span class="setting-k" data-i18n="me.gameRating">对局等级分</span><b class="num" id="today-r-game"></b></div>
+                <div><b class="num" id="today-r-game"></b></div>
                 <canvas id="today-r-game-cv" aria-hidden="true"></canvas>
               </div>
-              <div class="today-rating">
-                <div><span class="setting-k" data-i18n="rec.rating">谜题等级分</span><b class="num" id="today-r-pz"></b></div>
-                <canvas id="today-r-pz-cv" aria-hidden="true"></canvas>
-              </div>
+              <!-- 22.0 B1: one number. The puzzle rating, the per-theme ratings and
+                   the performance figure are 我的's detail; here, and on the
+                   result bar, there is 你的水平 and nothing beside it. -->
+              <p class="hint" id="today-r-note" hidden></p>
             </div>
           </section>
         </div>

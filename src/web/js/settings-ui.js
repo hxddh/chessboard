@@ -17,7 +17,7 @@
  * file's copy too).
  * @module settings-ui
  */
-import { ChessAudio } from "./audio.js";
+import { ChessSound as ChessAudio } from "./audio-lazy.js";
 import { ChessBoardView } from "./board.js";
 import { ChessEngine } from "./engine.js";
 import { ChessHost } from "./host.js";

@@ -410,6 +410,19 @@ export async function run() {
         "21.0 T5: a game analysed twice stays at three drills (" + first.length + " + " + second.length + ")");
       const other = M.capPerGame([mk(30, 900)].map((c) => Object.assign(c, { from: { kind: "game", id: "g2" } })), M.PER_GAME, first);
       assert(other.length === 1, "21.0 T5: …while another game has its own three");
+      // 22.0 F2: the three ways the cap leaked through 21.0
+      const bare1 = [mk(2, 600), mk(5, 500), mk(9, 400), mk(11, 300)];
+      const bareFirst = M.capPerGame(bare1, M.PER_GAME, []);
+      const bare2 = [mk(2, 400), mk(5, 500), mk(9, 600), mk(11, 700)];
+      assert(bareFirst.length === 3 && M.capPerGame(bare2, M.PER_GAME, bareFirst).length === 0,
+        "22.0 F2: a game not yet filed (no `from`) analysed twice still stays at three");
+      const asLib = pass2.map((c) => Object.assign({}, c, { from: { kind: "lib", id: "L9" } }));
+      assert(M.capPerGame(asLib, M.PER_GAME, first).length === 0,
+        "22.0 F2: …and so does one game met as game:<id> and then as lib:<id>");
+      const elsewhere = [Object.assign(mk(5, 900), { from: { kind: "game", id: "g7" } })];
+      const fresh = M.capPerGame([mk(2, 300), mk(5, 900), mk(9, 200), mk(11, 100)].map((c) => Object.assign(c, { from: { kind: "game", id: "g8" } })), M.PER_GAME, elsewhere);
+      assert(fresh.map((c) => c.ply).join() === "2,9",
+        "22.0 F2: a candidate the book already holds from elsewhere takes its place and no more — the next two are added (" + fresh.map((c) => c.ply) + ")");
     }
     assert(M.candidatesFrom({ ...base, bests: [null, "g8f6"] }, "w", C).length === 0,
       "a judgement without a stored answer is not a drill");

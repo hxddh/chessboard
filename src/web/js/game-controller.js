@@ -15,7 +15,7 @@
  * seam patches this file's copy too).
  * @module game-controller
  */
-import { ChessAudio } from "./audio.js";
+import { ChessSound as ChessAudio } from "./audio-lazy.js";
 import { Chess } from "./chess.js";
 import { ChessDialog } from "./dialog.js";
 import { ChessEngine } from "./engine.js";
@@ -368,13 +368,25 @@ export function createGameController(d) {
     const loss = await coachLoss(p);
     if (store.session.coachHold !== hold) return; // taken back, or a new game, meanwhile
     if (loss == null || loss < 300 || game.fen() !== hold.fen) { store.session.coachHold = null; maybeEngineTurn(); return; }
-    toast(tf("mm.blunderHold", [p.san]), "fix", { label: t("chrome.undo"), onClick: () => { if (store.session.coachHold === hold) undo(); } });
-    setTimeout(() => {
-      if (store.session.coachHold !== hold) return;
-      store.session.coachHold = null;
-      maybeEngineTurn();
-    }, COACH_HOLD_MS);
+    // 22.0 F1: the warning lives exactly as long as the wait. Through 21.0 the
+    // toast kept its own clock (16.8 s) and nobody closed it, so 「对手先等一下」
+    // and a dead 悔棋 button sat over moves the opponent had long since made —
+    // and over the end of the game. One owned timer now ends both together,
+    // whichever way the wait ends: time, a take-back, a new game, the result.
+    const close = toast(tf("mm.blunderHold", [p.san]), "fix", { label: t("chrome.undo"), onClick: () => { if (store.session.coachHold === hold) undo(); } });
+    const since = Date.now();
+    const tick = setInterval(() => {
+      const stands = store.session.coachHold === hold && game.fen() === hold.fen && store.session.mode === "ai" && !appGameOver();
+      if (stands && Date.now() - since < COACH_HOLD_MS) return;
+      clearInterval(tick);
+      close();
+      if (store.session.coachHold === hold) store.session.coachHold = null;
+      if (stands) maybeEngineTurn();
+    }, 100);
   }
+
+  /** 22.0 F4: is the reply owed but not started — the coach looking, or waiting for a take-back? A click then is a premove. */
+  const coachBusy = () => !!store.session.coachHold && store.session.coachHold.fen === game.fen();
 
   // --- draw offer: pvp = both agree on the spot; ai = engine judges the eval ---
   async function doOfferDraw() {
@@ -484,7 +496,7 @@ export function createGameController(d) {
 
   return {
     canTakeBack, undo, requestNewGame, playNext, openNewGame, closeNewGame, startFromDialog, retryFromHere, doResign,
-    recordOutcome, coachRemember, coachAfterEngineReply, replyAfterCoach, coachHolds, doOfferDraw, acceptDraw, doClaimDraw,
+    recordOutcome, coachRemember, coachAfterEngineReply, replyAfterCoach, coachHolds, coachBusy, doOfferDraw, acceptDraw, doClaimDraw,
     gameResultToken, resultFromFile, clearEndingFlags, forgetFileResult, adoptHeaderResult,
   };
 }

@@ -338,7 +338,14 @@ function capPerGame(cands, max = PER_GAME, book) {
   if (!Array.isArray(cands) || !cands.length) return [];
   const src = (m) => (m && m.from ? m.from.kind + ":" + m.from.id : null);
   const key = src(cands.find((c) => c.from));
-  const mine = key && Array.isArray(book) ? book.filter((m) => src(m) === key) : [];
+  // 22.0 F2: "this game's drills" are also the ones on this game's own
+  // positions (a drill's id is its position and move). Going by `from` alone
+  // leaked three ways: a game not yet filed has no `from`, so every pass
+  // started from an empty count; the same game met as game:<id> and lib:<id>
+  // counted as two; and a candidate already in the book from elsewhere took
+  // one of the three places and was then dropped by addMines().
+  const ids = new Set(cands.map((c) => c.id));
+  const mine = Array.isArray(book) ? book.filter((m) => ids.has(m.id) || (key && src(m) === key)) : [];
   const have = new Set(mine.map((m) => m.id));
   const room = Math.max(0, max - mine.length);
   const rank = (c) => (Number.isFinite(c.loss) ? c.loss : -1);

@@ -201,7 +201,13 @@ export function createNotices(d) {
    */
   function toast(msg, tier, action) {
     const el = doc.getElementById("toast");
-    if (!el) return;
+    if (!el) return () => {};
+    // 22.0 B4: a toast has an owner. What is returned closes this toast and
+    // only this one — the state that raised it calls it when that state ends,
+    // so 「对手先等一下」 cannot outlive the wait it describes.
+    const mine = String((Number(el.dataset.seq) || 0) + 1);
+    el.dataset.seq = mine;
+    const close = () => { if (el.dataset.seq === mine) dismissToast(); };
     const kind = TOAST_MS[tier] === undefined ? "ok" : tier;
     const ms = TOAST_MS[kind];
     // The live region has to be told how loudly to speak *before* the text
@@ -251,6 +257,7 @@ export function createNotices(d) {
     if (ms) store().ui.toastTimer = setTimeout(() => { el.classList.remove("show"); el.style.pointerEvents = ""; }, action && action.label ? 4 * ms : ms);
     el.onclick = ms ? null : dismissToast;
     el.style.cursor = ms ? "" : "pointer"; el.style.pointerEvents = ms && action && action.label ? "auto" : "";
+    return close;
   }
 
   /**

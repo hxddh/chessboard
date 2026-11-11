@@ -184,6 +184,13 @@ export function createTodayPage(d) {
       fillCard(card("classic"), fenOfClassic(ci), tdot(t("train.classic"), String(c.year)),
         tx.white + " – " + tx.black, Math.min(total, Object.keys(gs).filter((k) => gs[k]).length), total);
     }
+    renderContHead();
+  }
+
+  /** 22.0 A2: 「继续」 only over something begun; a profile that has begun none of the three reads 「从这里开始」. */
+  function renderContHead() {
+    const begun = [...doc.querySelectorAll("#today-cont .today-c:not([hidden]) .today-bar")].some((b) => !b.classList.contains("fresh"));
+    put($("today-cont-h"), t(begun ? "today.continue" : "today.startHere"));
   }
 
   function renderGames() {
@@ -229,18 +236,20 @@ export function createTodayPage(d) {
   function renderRatings() {
     // v10-0-plan T5: a rating not yet earned says how to earn it — no dash,
     // no flat line, no 1500 nobody has played for
-    const rate = (id, has, text, ys) => {
-      const b = $(id), cv = $(id + "-cv");
-      put(b, has ? text : t(id === "today-r-game" ? "today.rGameNone" : "today.rPzNone"));
-      if (b) b.classList.toggle("today-invite", !has);
-      if (cv) cv.hidden = ys.length < 2;
-      if (cv && cv.clientWidth && ys.length > 1) drawRatingTrend(cv, ys);
-    };
+    // 22.0 B1: one level. A played game's rating; before the first game, the
+    // placement's (the puzzle rating), marked as borrowed; before either, how
+    // to get one. The two used to stand side by side — 1775 beside 1331, and
+    // nothing to say which of them you were.
+    const b = $("today-r-game"), cv = $("today-r-game-cv"), note = $("today-r-note");
     const series = Metrics.gameRatingSeries(loadStats().games, 60);
-    rate("today-r-game", series.length > 0, series.length ? String(series[series.length - 1].r) : "", series.map((p) => p.r));
     const st = store.session.puzzleState || {};
-    const ys = (Array.isArray(st.rhist) ? st.rhist : []).map((h) => h.r);
-    rate("today-r-pz", ys.length > 0, puzzleRatingText(), ys);
+    const placed = !series.length && Array.isArray(st.rhist) && st.rhist.length > 0;
+    const ys = series.map((p) => p.r);
+    put(b, series.length ? String(ys[ys.length - 1]) : placed ? puzzleRatingText() : t("today.rGameNone"));
+    if (b) b.classList.toggle("today-invite", !series.length && !placed);
+    if (note) { note.hidden = !placed; put(note, placed ? t("today.rFromPz") : ""); }
+    if (cv) cv.hidden = ys.length < 2;
+    if (cv && cv.clientWidth && ys.length > 1) drawRatingTrend(cv, ys);
   }
 
   function render() {

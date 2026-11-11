@@ -178,3 +178,14 @@ int chess_mac_haptic(void) {
                                                       performanceTime:NSHapticFeedbackPerformanceTimeNow];
     return 1;
 }
+
+/// 22.0 F5: the first of the user's preferred languages, for a first launch
+/// that has no saved choice yet: 0 Chinese, 1 English (and everything else),
+/// 2 Japanese. WKWebView's navigator.languages is the same list, so the menu
+/// bar and the page agree from the start.
+int chess_mac_ui_language(void) {
+    NSString *first = [[NSLocale preferredLanguages] firstObject];
+    if ([first hasPrefix:@"zh"]) return 0;
+    if ([first hasPrefix:@"ja"]) return 2;
+    return 1;
+}

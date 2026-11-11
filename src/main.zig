@@ -324,17 +324,22 @@ pub const App = struct {
         };
     }
 
-    /// The language the page last saved through chess.setMenuLanguage, or
-    /// "zh" (app.zon's own labels). Read once, at launch: the menu bar is
-    /// built before the page runs and the Runtime offers no rebuild.
+    /// The language the page last saved through chess.setMenuLanguage. Read
+    /// once, at launch: the menu bar is built before the page runs and the
+    /// Runtime offers no rebuild.
+    ///
+    /// 22.0 F5: with nothing saved, the system's own interface language —
+    /// through 21.0 this was always "zh", while the page's first run followed
+    /// navigator.languages: an English or Japanese system got a translated
+    /// page under a Chinese menu bar and the title 国际象棋.
     fn launchLanguage(self: *@This()) []const u8 {
         var path_buf: [1200]u8 = undefined;
-        const path = self.appdataChild(&path_buf, LANG_FILE) orelse return "zh";
-        var file = std.Io.Dir.openFileAbsolute(self.io, path, .{}) catch return "zh";
+        const path = self.appdataChild(&path_buf, LANG_FILE) orelse return systemLanguage();
+        var file = std.Io.Dir.openFileAbsolute(self.io, path, .{}) catch return systemLanguage();
         defer file.close(self.io);
         var raw: [16]u8 = undefined;
-        const n = file.readPositionalAll(self.io, &raw, 0) catch return "zh";
-        return languageTag(std.mem.trim(u8, raw[0..n], " \t\r\n")) orelse "zh";
+        const n = file.readPositionalAll(self.io, &raw, 0) catch return systemLanguage();
+        return languageTag(std.mem.trim(u8, raw[0..n], " \t\r\n")) orelse systemLanguage();
     }
 
     /// Q1.6: the manifest menus with their labels swapped for `lang`, or null
@@ -391,6 +396,34 @@ fn onStop(context: *anyopaque, runtime: *native_sdk.Runtime) anyerror!void {
 }
 
 extern fn chess_mac_chrome_init() void;
+extern fn chess_mac_ui_language() c_int;
+extern fn chess_win_ui_language() c_int;
+
+/// 22.0 F5: what the system shows its own interface in, as one of the three
+/// menu languages. A shell with no window system of its own (the null
+/// platform the tests run on) keeps app.zon's Chinese.
+fn systemLanguage() []const u8 {
+    var code: c_int = 0;
+    if (comptime runner.mac_shell) code = chess_mac_ui_language();
+    if (comptime runner.win_shell) code = chess_win_ui_language();
+    return menuLanguageOf(code);
+}
+
+/// The code the native side answers with (0 zh, 1 en, 2 ja), as a menu language.
+fn menuLanguageOf(code: c_int) []const u8 {
+    return switch (code) {
+        1 => "en",
+        2 => "ja",
+        else => "zh",
+    };
+}
+
+test "the system language code maps onto the three menu languages" {
+    try std.testing.expectEqualStrings("zh", menuLanguageOf(0));
+    try std.testing.expectEqualStrings("en", menuLanguageOf(1));
+    try std.testing.expectEqualStrings("ja", menuLanguageOf(2));
+    try std.testing.expectEqualStrings("zh", menuLanguageOf(9));
+}
 
 pub fn main(init: std.process.Init) !void {
     var app_state = App{ .env_map = init.environ_map, .io = init.io };
