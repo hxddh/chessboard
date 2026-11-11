@@ -177,7 +177,9 @@ const occ = (page, sq) => page.evaluate((q) => {
   assert((await occ(page, "d1")) && (await occ(page, "c2")), "局面摆上了（d1 马、c2 兵）");
   // wrong: Kf2 lets the pawn run; the engine queens at full strength
   await clickMove(page, "g2", "f2");
-  const failedRun = await until(() => page.evaluate(() => window.__toasts.find((s) => /已排进复习/.test(s)) || null), 20000, 250);
+  // 22.0 A3: said under the task card (the toast is for when the card is out of sight)
+  const failedRun = await until(() => page.evaluate(() => { const fb = document.getElementById("lesson-fb");
+    return (fb && !fb.hidden && /已排进复习/.test(fb.textContent) ? fb.textContent : null) || window.__toasts.find((s) => /已排进复习/.test(s)) || null; }), 20000, 250);
   assert(!!failedRun, "走错：引擎升变，判失败并排进复习", failedRun);
   let lk = await learnKey(page);
   const e1 = lk && lk.eg && lk.eg.srs && lk.eg.srs["mi-n-stop"];

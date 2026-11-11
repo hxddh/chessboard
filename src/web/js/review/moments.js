@@ -95,8 +95,10 @@ export function createMoments(d) {
       // 22.0 A1: a review that has just arrived opens on its first key
       // moment. The board stood on the last move while the card spoke of
       // move 7 — two positions on one screen. Only from the end of the game:
-      // a reader who has already stepped back is left where they are.
-      if (fresh && list.length && store.game.viewIndex === sanHistory().length && !store.session.analyzing && !store.session.retry) {
+      // a reader who has already stepped back is left where they are, and a
+      // game still being played here keeps its board on the move to be made.
+      const over = store.game.imported || (!!result && result() !== "*");
+      if (fresh && over && list.length && store.game.viewIndex === sanHistory().length && !store.session.analyzing && !store.session.retry) {
         setViewIndex(list[0].ply + 1);
         return;
       }

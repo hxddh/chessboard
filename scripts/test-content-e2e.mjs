@@ -994,10 +994,11 @@ if (hasTab && REAL.length) {
       localStorage.setItem("chess.puzzles", JSON.stringify({ v: 1, idv: 2, solved: {}, missed: { "mine:t5": { s: 0, n: 1, due: 0, ivl: 0 } }, cat: "m1" }));
     });
     const h = await todayHero(pg);
-    assert(h.title === "先清复习 1 题" && /昨天那局第 23 步的失误/.test(h.meta) && h.steps.length >= 2 && h.steps.length <= 3,
-      "T2 / T5:到期的错题排在第一,写明是昨天那局第 23 步;最多三项", JSON.stringify(h));
+    assert(h.title === "先清复习 1 题" && /昨天那局第 23 步的失误/.test(h.meta) && h.steps.length >= 1 && h.steps.length <= 2,
+      "T2 / T5:到期的错题排在第一,写明是昨天那局第 23 步;连主卡在内最多三项", JSON.stringify(h));
     const dots = await pg.evaluate(() => [...document.querySelectorAll("#daily-plan .daily-dot")].map((x) => x.textContent));
-    assert(dots.join() === dots.map((_, i) => String(i + 1)).join(), "T5:课表的圆点写序号,不像单选框", JSON.stringify(dots));
+    // 22.0 A2: before it starts the card's title is step 1, so the list begins at 2
+    assert(dots.length >= 1 && dots.join() === dots.map((_, i) => String(i + 2)).join(), "T5 / 22.0 A2:课表的圆点写序号(主卡标题是第 1 项,清单从 2 起),不像单选框", JSON.stringify(dots));
     await ctx.close();
   }
 }
@@ -1020,10 +1021,10 @@ if (hasTab && REAL.length) {
 
   // 9.0 S1: the plan is 今天's hero card; its go button (#today-go) starts it
   const h0 = await todayHero(pg);
-  assert(h0.view === "home" && h0.go === "开始" && h0.steps.length > 1 && !h0.steps.some((x) => x.cur || x.done),
+  assert(h0.view === "home" && h0.go === "开始" && h0.steps.length >= 1 && !h0.steps.some((x) => x.cur || x.done),
     "开工前:今天的主卡片按钮是「开始」,课表里没有哪一步算开始了", JSON.stringify(h0));
-  assert(/^先清复习 1 题$/.test(h0.title) && /到期的复习/.test(h0.meta) && /今天第 1 项，共 \d 项/.test(h0.meta) && h0.steps[0].what === h0.title,
-    "第一步永远是欠账(主卡片和课表第一行都是它)", JSON.stringify(h0));
+  assert(/^先清复习 1 题$/.test(h0.title) && /到期的复习/.test(h0.meta) && /今天第 1 项，共 \d 项/.test(h0.meta) && h0.steps.every((x) => x.what !== h0.title),
+    "第一步永远是欠账(主卡片说它;22.0 A2:课表不把它再说一遍)", JSON.stringify(h0));
   await pg.click("#today-go");
   await pg.waitForTimeout(700);
   const st1 = await pg.evaluate(() => ({
@@ -1359,7 +1360,7 @@ if (hasTab && REAL.length) {
 
 // --- 7.5 §3:开局书外的开局,族名也说中文 -----------------------------------
 // 1.e4 c5 2.Bc4 是 B20 Sicilian Defense: Bowdler Attack,开局书没有这条线。
-// 以前侧栏整条显示英文;现在族名本地化、变例名保留英文。表是按需加载的分块,
+// 以前侧栏整条显示英文;7.5 起族名本地化;22.0 B5 起没有译名的变例不再接在后面。表是按需加载的分块,
 // 所以等它到了再读。
 {
   const ctx5 = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
@@ -1388,10 +1389,10 @@ if (hasTab && REAL.length) {
   let line = "";
   for (let i = 0; i < 30; i++) {
     line = await pg.evaluate(() => document.getElementById("opening-line").textContent);
-    if (/B20/.test(line) && /Bowdler/.test(line)) break;
+    if (/B20/.test(line) && /西西里/.test(line)) break;
     await pg.waitForTimeout(150);
   }
-  assert(line === "B20 · 西西里防御：Bowdler Attack", "开局书外的 B20:族名说中文,变例名保留英文", line);
+  assert(line === "B20 · 西西里防御", "开局书外的 B20:族名说中文;22.0 B5:变例没有译名时不夹英文", line);
   await ctx5.close();
 }
 
@@ -1832,8 +1833,8 @@ if (hasTab && REAL.length) {
     const want = "第 97 课 · " + ADV.lessons[0].title;
     const hero = await pg.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
       title: document.getElementById("today-hero-title").textContent, meta: document.getElementById("today-hero-meta").textContent }));
-    assert(hero.view === "home" && /学一节新课/.test(hero.title) && /课程的下一课/.test(hero.meta),
-      "T1:前 96 课都学完，今天的主卡片是「学一节新课」（课程的下一课）", JSON.stringify(hero));
+    assert(hero.view === "home" && /学一节新课/.test(hero.title) && hero.meta.includes(want),
+      "T1 / 22.0 A2:前 96 课都学完，今天的主卡片是「学一节新课」，并写明是第 97 课", JSON.stringify(hero));
     await pg.click("#today-go");
     let title = "";
     for (let i = 0; i < 40 && !title.includes(ADV.lessons[0].title); i++) {
