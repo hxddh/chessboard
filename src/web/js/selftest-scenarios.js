@@ -165,7 +165,8 @@ async function clearDialogs() {
 
 /**
  * 21.0 G1: the pages the `pages` scenario walks, in order, each held on
- * screen for the driver's screenshot. `view` is the rail's data-view, `seg`
+ * screen for the driver's screenshot. `lang` switches the interface language
+ * first ("restore": back to the profile's own) and it stays for what follows. `view` is the rail's data-view, `seg`
  * 训练's segment, `board` that the board canvas must show pixels, `review`
  * that a short game is pasted into 分析一局 and reviewed first, `dark` that
  * the appearance is switched to dark first (and stays so for what follows).
@@ -181,7 +182,14 @@ export const PAGE_STEPS = [
   { name: "me", view: "me" },
   { name: "settings", view: "settings" },
   { name: "review", view: "play", review: true, board: true },
-  { name: "dark-home", view: "home", dark: true },
+  // 22.0 G3′: the source language, in the real WebView. The runners are
+  // English systems, so through 21.0 not one Chinese page was ever judged or
+  // photographed there — the CJK fallback faces and line breaks least of all.
+  { name: "zh-home", view: "home", lang: "zh-CN" },
+  { name: "zh-play", view: "play", board: true },
+  { name: "zh-train-course", view: "train", seg: "course", board: true },
+  { name: "zh-settings", view: "settings" },
+  { name: "dark-home", view: "home", dark: true, lang: "restore" },
   { name: "dark-play", view: "play", board: true },
   { name: "dark-settings", view: "settings" },
 ];
@@ -327,6 +335,18 @@ export function judgePage(step, ua) {
 
 const SCENARIOS = {
   async "rep-seed"(d, c) {
+    // 22.0 G4′: this is a fresh profile's first launch, and what a person
+    // sees on it is the first-run question. Every scenario used to close it
+    // unseen. Here it must be up, with its three ways in; the language the
+    // page came up in goes into the report (the driver holds the menu bar's
+    // against it — F5).
+    await c("firstRun", async () => {
+      if (!await until(() => document.querySelector("#pick-modal.show"), 20000, 100)) throw new Error("the first-run question did not open");
+      const options = [...document.querySelectorAll("#pick-list button")].filter((b) => boxOf(b)).length;
+      const title = (document.getElementById("pick-title").textContent || "").trim();
+      if (options !== 3 || !title) throw new Error(options + " options under the title \"" + title + "\"");
+      return { options, lang: document.documentElement.lang };
+    });
     // R5 on the way: the first launch of a fresh profile — 允许联网同步 is off
     await c("syncOff", async () => {
       const on = syncPrefs(d.Persist.read("sync").value).on;
@@ -503,8 +523,22 @@ const SCENARIOS = {
       el.click();
     };
     const lightBg = { v: null };
+    const openGeneral = async () => { click("#rail .rail-btn[data-view=\"settings\"]"); await sleep(300); click("#cat-general"); await sleep(300); };
+    const picked = (sel, key) => { const b = document.querySelector(sel); return b ? b.dataset[key] : null; };
+    // 22.0 F6: what the profile had, to put back — it was set to 跟随系统
+    // whatever it had been, and a profile already dark failed the dark step
+    await openGeneral();
+    const was = { look: picked("button[data-appearance].active", "appearance") || "system", lang: picked("#lang-seg button.active", "lang") || document.documentElement.lang };
+    const speak = async (lang) => {
+      if (document.documentElement.lang === lang) return;
+      await openGeneral();
+      click("#lang-seg button[data-lang=\"" + lang + "\"]");
+      if (!await until(() => document.documentElement.lang === lang, 15000, 100)) throw new Error("the page did not switch to " + lang);
+      await sleep(2600); // the menu-language toast has left the picture
+    };
     for (const step of PAGE_STEPS) {
       await c("page:" + step.name, async () => {
+        if (step.lang) await speak(step.lang === "restore" ? was.lang : step.lang);
         if (step.dark) {
           click("#rail .rail-btn[data-view=\"settings\"]");
           await sleep(300);
@@ -514,7 +548,7 @@ const SCENARIOS = {
           click("button[data-appearance=\"dark\"]");
           await sleep(500);
           const now = getComputedStyle(document.body).backgroundColor;
-          if (now === lightBg.v) throw new Error("the dark appearance left the background at " + now);
+          if (was.look !== "dark" && now === lightBg.v) throw new Error("the dark appearance left the background at " + now);
         }
         if (step.review) {
           click("#rail .rail-btn[data-view=\"home\"]");
@@ -538,6 +572,11 @@ const SCENARIOS = {
         await sleep(800);
         await frame();
         const facts = judgePage(step, ua);
+        if (/^zh-/.test(step.name)) {
+          const label = (document.querySelector("#rail .rail-btn[data-view=\"home\"]") || {}).textContent || "";
+          if (document.documentElement.lang !== "zh-CN" || !/[\u4e00-\u9fff]/.test(label)) throw new Error("not in Chinese: lang " + document.documentElement.lang + ", rail \"" + label.trim() + "\"");
+          facts.lang = document.documentElement.lang;
+        }
         if (step.dark) facts.lightBg = lightBg.v;
         return facts;
       });
@@ -547,7 +586,7 @@ const SCENARIOS = {
       await report("left:" + step.name);
     }
     // back to the appearance the profile had
-    try { click("#rail .rail-btn[data-view=\"settings\"]"); click("#cat-general"); click("button[data-appearance=\"system\"]"); } catch (_) { /* reported by the steps already */ }
+    try { await openGeneral(); click("button[data-appearance=\"" + was.look + "\"]"); await speak(was.lang); } catch (_) { /* reported by the steps already */ }
     await c("errors", async () => {
       window.removeEventListener("error", onErr);
       window.removeEventListener("unhandledrejection", onRej);

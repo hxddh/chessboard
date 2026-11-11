@@ -476,7 +476,8 @@ async function openFilters(page) {
   await page.click('#rail button[data-view="home"]');
   await page.waitForTimeout(500);
   assert(await page.isVisible("#daily-plan"), "S1 今天：计划的步骤摆在主卡里");
-  const plan = await page.textContent("#daily-plan");
+  // 22.0 A2: the first step is the card's own title; the list is what follows it
+  const plan = (await page.textContent("#today-hero-title")) + " " + (await page.textContent("#daily-plan"));
   assert(/捉双/.test(plan),
     "题库战绩一片空白时，弱项从他自己的棋里读出来 —— 「捉双」", plan);
   assert(/还没复盘的 5 局/.test(plan),

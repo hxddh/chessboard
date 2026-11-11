@@ -398,6 +398,15 @@ await scenario("人机", async () => {
   const san = hint ? hint.replace(/^提示 · /, "").trim() : "";
   const legal = g ? g.moves() : [];
   assert(!!hint && legal.includes(san), "按 H：第二下给出当前局面里一手合法的棋", hint + " / " + (g && g.fen()));
+  // 22.0 F3: a third press says it again — it used to search afresh and put the ring back
+  await page.keyboard.press("Escape"); // the second press's toast away, so this one is the third's
+  await page.waitForTimeout(200);
+  await page.keyboard.press("h");
+  await page.waitForTimeout(900);
+  const third = await page.evaluate(() => { const el = document.getElementById("toast"); return { up: el.classList.contains("show"), says: el.textContent.trim(),
+    ring: window.__chess.shapes().circles.length, btn: document.getElementById("btn-hint").textContent.trim(), pending: /…|\.\.\./.test(document.getElementById("btn-hint").textContent) }; });
+  assert(third.up && third.says.startsWith(hint) && third.ring === 0 && third.btn !== "答案",
+    "22.0 F3 按 H：第三下把同一句答案再说一遍，不回到亮圈", JSON.stringify(third));
   assert(!errs.length, "人机：页面没有报错", errs.join(" / "));
   await ctx.close();
 });
@@ -440,10 +449,23 @@ await scenario("失着提醒", async () => {
       await page.waitForTimeout(5000);
       const after = await plies(page);
       assert(back === 4 && after === 4, "21.0 T2 按 Z 只收回这一步，对手也不再应着(收回后 " + back + "，5 秒后 " + after + " 个半着)");
+      // 22.0 F1: the warning goes with the wait it describes. Through 21.0 the
+      // toast kept a 16.8 s clock of its own: 「对手先等一下」 and a dead 悔棋
+      // stood over moves already answered, and over the end of the game.
+      const holdUp = () => page.evaluate(() => { const el = document.getElementById("toast"); return !!el && el.classList.contains("show") && /Qxf7/.test(el.textContent || ""); });
+      assert(!(await holdUp()), "22.0 F1 按 Z 收回之后，「对手先等一下」不再挂在屏上");
       // played anyway: the opponent answers once the hold is over
       await clickMove(page, "h5", "f7");
+      const up = await until(holdUp, 5000, 50);
+      // 22.0 F4: a click while the opponent is held is a premove, as it is while it thinks
+      const ek = "e1", to = "d1";
+      await clickMove(page, ek, to);
+      const queued = await page.evaluate(() => window.__chess.shapes().arrows.some((a) => a.color === "Y"));
       const reply = await savedAt(page, 6, 20000);
       assert(!!reply, "21.0 T2 不收回：等一会儿之后对手照常应着");
+      assert(!!up && queued, "22.0 F4 等待期间点的一步进了预走（黄箭头），不再被悄悄丢掉", JSON.stringify({ up: !!up, queued }));
+      await page.waitForTimeout(400);
+      assert(!(await holdUp()), "22.0 F1 对手应着之后，这条提示已经收掉");
       assert(!errs.length, "失着提醒：页面没有报错", errs.join(" / "));
       done = true;
     } finally { await ctx.close(); }
@@ -475,6 +497,16 @@ await scenario("分析/精析", async () => {
   });
   const ms = await run("#an-run", 60000);
   let r = await read();
+  // 22.0 A1: a review that has just arrived opens on its first key moment —
+  // the board on that move, not on the last one under a card about another
+  {
+    const at = await until(() => page.evaluate(() => {
+      const card = document.querySelector("#rv-km .km-card");
+      const pos = (document.getElementById("replay-pos").textContent || "").split("/")[0].trim();
+      return card && Number(pos) === Number(card.dataset.ply) + 1 ? { pos: Number(pos), ply: Number(card.dataset.ply) } : null;
+    }), 5000, 100);
+    assert(!!at && at.pos < 13, "22.0 A1 复盘一出来，棋盘就停在第一处关键时刻那一步(" + JSON.stringify(at) + ")，不留在最后一步");
+  }
   assert(r.tags.some((t) => t === "?" || t === "??") && !!r.acc,
     "分析：" + (ms / 1000).toFixed(1) + " 秒完成，标出 ? / ??，精准度一行不为空", JSON.stringify(r));
   const msDeep = await run("#an-deep", 90000);
@@ -712,6 +744,11 @@ await scenario("分析中锁棋谱", async () => {
   await page.click("#an-run");
   await until(busy, 3000, 50);
   await until(async () => !(await busy()), 60000);
+  // (22.0 A1: the review opens on its first key moment — once its card's chunk
+  // is in; this is about the last position, so wait for that and go back)
+  await until(() => page.evaluate(() => !/^13 \//.test((document.getElementById("replay-pos").textContent || "").trim())), 5000, 100);
+  await page.keyboard.press("End");
+  await page.waitForTimeout(300);
   const state = () => page.evaluate(() => {
     const save = document.querySelector("#pv-line .pv-act");
     return { save: save ? save.disabled : null, plies: document.querySelectorAll(".move-list .mlmove:not(.mlgap)").length };
@@ -911,6 +948,11 @@ await scenario("多主变", async () => {
   const { ctx, page, errs } = await openPage({ mode: "pvp", multipv: 3 });
   await openPgn(page, TRAP);
   await runAn(page, "#an-run", 90000);
+  // (22.0 A1: the review opens on its first key moment — once its card's chunk
+  // is in; this is about the last position, so wait for that and go back)
+  await until(() => page.evaluate(() => !/^13 \//.test((document.getElementById("replay-pos").textContent || "").trim())), 5000, 100);
+  await page.keyboard.press("End");
+  await page.waitForTimeout(300);
   // 7.8 §2: the review's desk — three rows numbered 1 2 3 (the principal line
   // is no longer a separate 「引擎主变」), each one line of text with a score box
   const desk = (sel) => page.evaluate((s) => {
@@ -1553,7 +1595,7 @@ await scenario("你将死引擎", async () => {
   assert(ready && after.last && after.last.r === "win" && after.last.diff === "beginner" && Number.isFinite(after.last.ra),
     "你将死引擎：记为你赢，计入人机等级分", JSON.stringify({ ready, last: after.last }));
   // 10.0 M0: a provisional rating is shown alone — no 「本局 +305」 jump
-  assert(/^对局等级分 \d+（暂定）/.test(after.rate) && !/本局/.test(after.rate), "你将死引擎：结果卡当场写着新分数（不等下一次重画），暂定不写本局的跳幅", after.rate);
+  assert(/^你的水平 \d+（暂定）$/.test(after.rate), "你将死引擎 / 22.0 B1：结果卡当场写着「你的水平」这一个数（不等下一次重画），暂定不写本局的跳幅，也不再带近期表现分", after.rate);
   // Codex #89: clearing the statistics takes the filing off the result card too
   // (9.0 S5: Ctrl+, opens the settings page; 清除统计 is in its 数据 category,
   // and the rail, not the window's ×, goes back to the board)
@@ -1594,7 +1636,7 @@ await scenario("续下后结果卡", async () => {
   await page.waitForTimeout(600);
   const again = await filedOf(page);
   const card = await page.evaluate(() => !document.getElementById("go-card").hidden);
-  assert(/^对局等级分 /.test(first.rate) && card && again.n === first.n && again.rate === "",
+  assert(/^你的水平 /.test(first.rate) && card && again.n === first.n && again.rate === "",
     "续下后结果卡：续下再将死，结果卡在，但不再挂着上一个结局的等级分行", JSON.stringify({ first: first.rate, again: again.rate, n: [first.n, again.n], card }));
   assert(!errs.length, "续下后结果卡：页面没有报错", errs.join(" / "));
   await ctx.close();
@@ -1632,7 +1674,7 @@ await scenario("中途换档", async () => {
   await restart();
   await resign(page);
   const one = await filedOf(page);
-  assert(!!one.last && one.last.diff === "beginner" && Number.isFinite(one.last.ra) && /^对局等级分 /.test(one.rate),
+  assert(!!one.last && one.last.diff === "beginner" && Number.isFinite(one.last.ra) && /^你的水平 /.test(one.rate),
     "中途换档：同一档下完（中间重开过），按这一档计分", JSON.stringify(one));
   // two: 新手 for the engine's reply, then 满强度 before resigning → unrated
   await newGame();

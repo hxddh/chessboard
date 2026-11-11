@@ -86,8 +86,8 @@ export const THRESHOLDS = {
   prefetchMs: 7000,
   /** a launch, from spawn to its scenario's last report */
   launchMs: 180000,
-  /** 21.0 G1: the pages launch — thirteen pages held 5 s each for their screenshot, and a review by the real engine */
-  pagesLaunchMs: 420000,
+  /** 21.0 G1: the pages launch — the pages held 5 s each for their screenshot (22.0 G3′: seventeen, four of them in Chinese), and a review by the real engine */
+  pagesLaunchMs: 480000,
 };
 /** What sync.zig sends as its User-Agent (SYNC_USER_AGENT). */
 const USER_AGENT = "chessboard (+https://github.com/hxddh/chessboard)";
@@ -194,9 +194,10 @@ function foreignConnections(pid) {
  * 21.0 G1: a screenshot of the app's window (pid) into `file`, PNG.
  * macOS: the window by its id (screencapture -l, which reads it even when
  * another window covers it), the id from CGWindowListCopyWindowInfo through
- * JXA; the whole screen when that fails. Windows: the window brought to the
- * front, then the whole virtual screen through .NET CopyFromScreen, DPI
- * aware so the pixels are the screen's. Never throws: {how, err}.
+ * JXA; the whole screen when that fails (kept as evidence; 22.0 G2′: it no
+ * longer passes). Windows: the window brought to the front, then its own
+ * rectangle through .NET CopyFromScreen, DPI aware so the pixels are the
+ * screen's — no window, no picture. Never throws: {how, err}.
  */
 export function captureWindow(pid, file) {
   fs.rmSync(file, { force: true });
@@ -226,21 +227,27 @@ export function captureWindow(pid, file) {
     const ps = [
       "$ErrorActionPreference = 'Stop'",
       "Add-Type -AssemblyName System.Windows.Forms, System.Drawing",
-      "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class ChessShotW { [DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr h, int n); [DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware(); }'",
+      "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class ChessShotW { [StructLayout(LayoutKind.Sequential)] public struct R { public int L, T, Rt, B; } [DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr h, int n); [DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware(); [DllImport(\"user32.dll\")] public static extern bool GetWindowRect(IntPtr h, out R r); }'",
       "[ChessShotW]::SetProcessDPIAware() | Out-Null",
       "$p = Get-Process -Id " + Number(pid) + " -ErrorAction SilentlyContinue",
-      "if ($p -and $p.MainWindowHandle -ne 0) { [ChessShotW]::ShowWindow($p.MainWindowHandle, 9) | Out-Null; [ChessShotW]::SetForegroundWindow($p.MainWindowHandle) | Out-Null; Start-Sleep -Milliseconds 300 }",
-      "$b = [System.Windows.Forms.SystemInformation]::VirtualScreen",
-      "$bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height",
+      // 22.0 G2′: the window, not the screen. Through 21.0 this copied the
+      // whole virtual screen and passed whether or not the app was on it.
+      "if (-not $p -or $p.MainWindowHandle -eq 0) { throw 'no main window for pid " + Number(pid) + "' }",
+      "[ChessShotW]::ShowWindow($p.MainWindowHandle, 9) | Out-Null; [ChessShotW]::SetForegroundWindow($p.MainWindowHandle) | Out-Null; Start-Sleep -Milliseconds 300",
+      "$r = New-Object ChessShotW+R",
+      "if (-not [ChessShotW]::GetWindowRect($p.MainWindowHandle, [ref]$r)) { throw 'GetWindowRect failed' }",
+      "$w = $r.Rt - $r.L; $h = $r.B - $r.T",
+      "if ($w -lt 200 -or $h -lt 150) { throw ('window is ' + $w + 'x' + $h) }",
+      "$bmp = New-Object System.Drawing.Bitmap $w, $h",
       "$g = [System.Drawing.Graphics]::FromImage($bmp)",
-      "$g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)",
+      "$g.CopyFromScreen($r.L, $r.T, 0, 0, $bmp.Size)",
       "$bmp.Save('" + file.replace(/'/g, "''") + "', [System.Drawing.Imaging.ImageFormat]::Png)",
     ].join("; ");
     try {
       // -EncodedCommand (UTF-16LE base64): the C# inside has double quotes, which
       // a -Command argument would have to survive Windows' command-line quoting with
       run("powershell", ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(ps, "utf16le").toString("base64")]);
-      if (got()) return { how: "CopyFromScreen" };
+      if (got()) return { how: "CopyFromScreen (window)" };
     } catch (e) { say(e); }
     return { how: "none", err: errs.join(" | ") };
   }
@@ -319,7 +326,12 @@ async function runLive() {
     return samples;
   }
 
+  const menuScript = { v: null };
   await scenario("rep-seed", async (app, _r, snap) => {
+    // 22.0 F5: the menu bar's labels as this first launch drew them — compared
+    // with the page's language once the page has reported it (below)
+    const labels = [...(snap || "").matchAll(/label="([^"]*)"/g)].map((m) => m[1]).join("");
+    menuScript.v = /[\u3040-\u30ff]/.test(labels) ? "ja" : /[\u3400-\u9fff]/.test(labels) ? "zh" : "en";
     const listed = snapshotMenus(snap);
     check("menus", listed.join(",") === declared.join(","), "快照 " + listed.length + " 项，" + manifest + " 声明 " + declared.length + " 项");
     const mode = await app.bridge({ id: "a1", command: "chess.selftestMode", payload: {} });
@@ -342,6 +354,15 @@ async function runLive() {
     if (conn.skipped) console.log("note: R5 连接检查跳过：" + conn.skipped);
     else check("R5:connections", conn.lines.length === 0, conn.lines.length ? "进程有对外连接：" + conn.lines.join(" | ") : "应用进程没有任何对外连接（WebView 的网络进程不在此 pid 下）");
   });
+  // 22.0 F5 / G4′: a fresh profile's first launch. The page said which
+  // language it came up in (and that the first-run question was on screen —
+  // its own check, firstRun); the menu bar built before the page ran must be
+  // in the same one. Through 21.0 it was always Chinese.
+  {
+    const first = reports["rep-seed"] && reports["rep-seed"].checks && reports["rep-seed"].checks.firstRun;
+    const pageLang = first && typeof first.lang === "string" ? first.lang.split("-")[0] : null;
+    if (reports["rep-seed"]) check("F5:menu-language", !!pageLang && pageLang === menuScript.v, "页面 " + pageLang + "，菜单栏 " + menuScript.v);
+  }
   await scenario("rep-index");
   await scenario("rep-read");
   {
@@ -434,7 +455,8 @@ async function runLive() {
     const steps = Object.keys(reports.pages.checks || {}).filter((k) => k.startsWith("page:")).map((k) => k.slice(5));
     for (const name of steps) {
       const s = shots[name];
-      check("G1:shot:" + name, s && s.bytes > 1000 && !s.late,
+      // 22.0 G2′: a picture of the whole screen is not a picture of the app
+      check("G1:shot:" + name, s && s.bytes > 1000 && !s.late && !/whole screen/.test(s.how),
         s ? s.file + "（" + s.how + "，" + s.bytes + " 字节，" + s.ms + " ms" + (s.late ? "，截图时页面已经翻走了" : "") + (s.err ? "；" + s.err : "") + "）" : "没有截到图（页面没有报告 shot:" + name + "）");
     }
     fs.writeFileSync(path.join(shotsDir, "pages.json"), JSON.stringify({ platform: process.platform, shots, checks: reports.pages.checks }, null, 2));

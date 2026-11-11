@@ -354,6 +354,14 @@ jobs:
     # commit already; anything failed or cancelled still stops the release
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
     runs-on: ubuntu-latest
+    # 22.0 G1′: the human gate. The two builds above have uploaded their
+    # real-WebView screenshots (webview-shots-macos / -windows) by the time
+    # this job is reached; with a required reviewer set on the `release`
+    # environment (Settings → Environments), nothing is tagged or published
+    # until that person has approved — the moment to open the screenshots.
+    # Without a reviewer configured the environment is only a name and the
+    # job runs straight through, as before.
+    environment: release
     steps:
       - uses: actions/checkout@v7
       # v8 (v8-1-plan F1) decides whether to unzip by the blob's content-type

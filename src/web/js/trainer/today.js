@@ -24,7 +24,7 @@ export function createTodayUI(d) {
     avail, bookNow, el, loadStats, motifKeyOf, owedNow, puzzlesInCat,
     runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
-    sync, t, tf, toast, pieceSrc, game, isOver, isLive, rep, ecoName,
+    sync, t, tf, toast, pieceSrc, game, isOver, isLive, rep, ecoName, lessonText,
   } = d;
   const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -230,6 +230,11 @@ export function createTodayUI(d) {
       return tf("daily.why.mineFrom", [when, Math.floor(first.ply / 2) + 1]);
     }
     if (step.kind === "focus") return tdot(t("focus.h"), focusWhy(step.item));
+    // 22.0 A2: which lesson — 「课程的下一课」 named nothing
+    if (step.kind === "lesson") {
+      const L = LESSONS[step.i];
+      if (L) return tf("today.lessonN", [step.i + 1, lessonText(L).title]);
+    }
     return t("daily.why." + step.kind);
   }
 
@@ -261,6 +266,9 @@ export function createTodayUI(d) {
     ol.dataset.sig = sig;
     ol.replaceChildren();
     steps.forEach((step, i) => {
+      // 22.0 A2: before the session starts the card's own title is step 1;
+      // the list is what comes after it, not the title said again
+      if (current < 0 && i === 0) return;
       const li = document.createElement("li");
       li.className = "daily-step" + (i < current ? " done" : i === current ? " current" : "");
       const row = document.createElement(i === go ? "button" : "div");

@@ -75,3 +75,18 @@ int chess_win_chrome_set(int dark) {
     EnumWindows(chess_chrome_each, (LPARAM)&w);
     return w.windows + (w.mica ? 0x100 : 0);
 }
+
+/*
+ * 22.0 F5: the language Windows shows its own interface in, for a first
+ * launch that has no saved choice yet: 0 Chinese, 1 English (and everything
+ * else), 2 Japanese. The page picks its language from the same preference
+ * (navigator.languages), so the menu bar and the page agree from the start.
+ */
+int chess_win_ui_language(void) {
+    LANGID id = GetUserDefaultUILanguage();
+    switch (PRIMARYLANGID(id)) {
+        case LANG_CHINESE: return 0;
+        case LANG_JAPANESE: return 2;
+        default: return 1;
+    }
+}

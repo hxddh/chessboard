@@ -2157,6 +2157,11 @@
       border-radius: var(--radius-md);
       font-size: 0.875rem; font-weight: 400; color: var(--text); line-height: var(--lh-body);
     }
+    /* 22.0 A3: the task is what the panel is for while a lesson is on — the
+       one bordered card, a size up from the reading text; a wrong try is
+       answered right under it (22.0 A4: the puzzle's card the same) */
+    #lesson-task, #puzzle-task { font-size: 1rem; border-color: var(--accent-line, var(--card-edge)); }
+    .lesson-fb { margin: -4px 0 12px; padding: 0 16px; font-size: 0.875rem; line-height: var(--lh-body); color: var(--judge-mid); }
     .lesson-controls {
       display: flex; gap: 8px; margin-bottom: 12px;
     }
@@ -4003,7 +4008,8 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .go-card.won .go-mark { color: var(--win); }
 .go-txt { flex: 1 1 auto; min-width: 0; height: 32px; display: flex; flex-direction: column; justify-content: center; }
 .go-result, .go-sub { margin: 0; overflow: hidden; text-overflow: ellipsis; }
-.go-result { font-size: 0.875rem; font-weight: 600; line-height: var(--lh-tight); color: var(--text); }
+/* 22.0 B7: the result in the title face, a size up — the one line of the game that is a verdict, in the bar's own height */
+.go-result { font-family: var(--font-title); font-size: 1rem; font-weight: 600; line-height: var(--lh-tight); color: var(--text); }
 .go-sub { font-size: 0.75rem; line-height: var(--lh-tight); color: var(--muted); }
 /* v8-0-plan B4: your engine-game rating, after the reason */
 .go-rating:not([hidden])::before { content: " · "; }
@@ -4316,6 +4322,9 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .pz-modes-row .act-btn[aria-busy="true"] { opacity: 0.6; }
 #pz-themes-row .tool-txt { margin-left: -12px; } /* 10.1 L4: its words under the text above */
 .pz-run-stats { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+/* 22.0 A5: a finished placement — the level in the page-title face, the consequence under it */
+.pz-placed #pz-run-head { font-family: var(--font-title); font-size: 1.875rem; line-height: var(--lh-tight); margin-bottom: 4px; }
+.pz-placed #pz-run-best { font-size: 0.875rem; color: var(--text); margin-bottom: 12px; }
 /* v8-2-plan T2: the answer field and its button, one row */
 .pz-vis-row { display: flex; gap: 8px; margin-top: 8px; }
 .pz-vis-row .text-input { flex: 1 1 0; min-width: 0; min-height: var(--ctl-h); }
@@ -4885,3 +4894,4 @@ span[data-icon] { display: inline-grid; place-items: center; }
 .xp-mine-row > .theme-row > button { white-space: nowrap; }
 /* v8-1-plan T3: where your games and your book disagree (rep-page.js) */
 .rep-cross { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.pz-placed .pz-run-stats { display: none; }

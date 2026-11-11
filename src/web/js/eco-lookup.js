@@ -206,17 +206,22 @@ import { CHESS_OPENINGS, CHESS_OPENING_NAMES } from "./openings.js";
 
   /**
    * `"Two Knights Defense, Fried Liver Attack"` → `"双马防御，炸肝攻击"`.
-   * All or nothing (7.9 §5): if any segment is missing from the table, the
-   * whole variation comes back exactly as it went in, in English — never
-   * 「古典变例，Center Attack」, which reads as unfinished where all-English
-   * reads as a proper name.
+   * Never mixed (7.9 §5: 「古典变例，Center Attack」 reads as unfinished), and
+   * since 22.0 never English under a translated family either: the segments
+   * this language has, up to the first it has not.
    */
   function variationName(rest, lang) {
     const tbl = VARIATION[lang] && VARIATION[lang]();
     if (!tbl || !rest) return rest;
     const segs = rest.split(",").map((s) => s.trim());
-    if (!segs.every((s) => tbl[s])) return rest;
-    return segs.map((s) => tbl[s]).join(LIST_SEP[lang]);
+    // 22.0 B5: as far as the table goes, and no further. 7.9 kept a
+    // variation whole in English when any segment was missing, so a Chinese
+    // panel was headed 「法兰西防御：Hecht-Reefschläger Variation」; the name
+    // now stops at the last segment that has one in this language — the
+    // family alone when the first does not. The ECO code beside it still
+    // tells the lines apart.
+    const known = segs.findIndex((s) => !tbl[s]);
+    return (known < 0 ? segs : segs.slice(0, known)).map((s) => tbl[s]).join(LIST_SEP[lang]);
   }
 
   /**

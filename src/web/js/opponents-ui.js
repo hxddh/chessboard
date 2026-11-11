@@ -241,7 +241,6 @@ export function createOpponentsUI(d) {
     // the rating alone, marked 暂定, until it settles
     const parts = [ChessRating.isProvisional(filed.after) ? tf("go.ratingProv", [fmtRating(filed.after)])
       : tf("go.rating", [fmtRating(filed.after), delta > 0 ? "+" + delta : delta < 0 ? "−" + -delta : "±0"])];
-    if (filed.perf != null) parts.push(tf("go.perf", [filed.perf]));
     return tdot(...parts);
   }
   function adviceLine(filed, level) {

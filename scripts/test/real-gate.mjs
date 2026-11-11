@@ -205,11 +205,19 @@ export async function run() {
     const { SCENARIO_NAMES, PAGE_STEPS } = await import("../../src/web/js/selftest-scenarios.js");
     assert(SCENARIO_NAMES.includes("pages"), "G1: the page side has a `pages` scenario");
     const views = new Set(PAGE_STEPS.map((s) => s.view));
-    const segs = PAGE_STEPS.filter((s) => s.view === "train").map((s) => s.seg).sort();
+    const segs = [...new Set(PAGE_STEPS.filter((s) => s.view === "train").map((s) => s.seg))].sort();
     assert(["home", "play", "train", "me", "settings"].every((v) => views.has(v)) && segs.join() === "classic,course,endgame,opening,puzzle" &&
       PAGE_STEPS.some((s) => s.review) && PAGE_STEPS.some((s) => s.dark),
       "G1: the walk covers 今天, 下棋, 训练's five segments, 我的, 设置, a review and the dark appearance (" + PAGE_STEPS.map((s) => s.name).join(", ") + ")");
+    // 22.0 G3′: Chinese — the source language — is walked in the real WebView too, and the profile's own language put back
+    const zh = PAGE_STEPS.filter((s) => /^zh-/.test(s.name));
+    assert(zh.length >= 4 && zh[0].lang === "zh-CN" && ["home", "play", "train", "settings"].every((v) => zh.some((s) => s.view === v)) &&
+      PAGE_STEPS.some((s) => s.lang === "restore"),
+      "22.0 G3′: the walk has 今天, 下棋, 课程 and 设置 in Chinese, and restores the profile's language after them (" + zh.map((s) => s.name).join(", ") + ")");
     const driver = read("scripts/automation-scenarios.mjs");
+    // 22.0 G2′ / F5: a whole-screen picture does not pass; the first launch's menu bar is held against the page's language
+    assert(/!\/whole screen\/\.test\(s\.how\)/.test(driver) && /GetWindowRect/.test(driver) && /check\("F5:menu-language"/.test(driver),
+      "22.0 G2′ / F5: the driver fails a whole-screen shot, captures the Windows window by its rectangle, and checks the menu bar's language");
     assert(/await scenario\("pages",/.test(driver) && /captureWindow\(app\.child\.pid, file\)/.test(driver) && /check\("G1:shot:" \+ name, s && s\.bytes > 1000 && !s\.late/.test(driver),
       "G1: automation-scenarios.mjs runs `pages`, screenshots each page from outside, and fails a missing, empty or late shot");
     assert(/screencapture/.test(driver) && /CopyFromScreen/.test(driver), "G1: the screenshots are the OS's — screencapture on macOS, CopyFromScreen on Windows");

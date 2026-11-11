@@ -733,7 +733,11 @@ export function createPuzzleModes(d) {
     avail(card, !!run);
     if (run) {
       const place = run.kind === "place";
-      if (!run.own) setText(el("pz-run-head"), place && run.why === "placed" ? tf("run.placed", [Math.round(run.est), run.opp || "—"])
+      // 22.0 A5: the end of a placement is a result, not a line of status —
+      // the level large, what follows from it under it, and one way on
+      const placedNow = place && run.why === "placed";
+      card.classList.toggle("pz-placed", placedNow);
+      if (!run.own) setText(el("pz-run-head"), placedNow ? tf("run.placed", [Math.round(run.est)])
         : run.over ? t("run.over." + (run.why || "stopped"))
         : place ? tf("run.rule.place", [run.k + 1, Runs.RUN_RULES.place.steps.length]) : t("run.rule." + run.kind));
       setText(el("pz-run-score"), tf("run.score", [run.score]));
@@ -743,8 +747,8 @@ export function createPuzzleModes(d) {
       if (!run.own) setText(strikes, tf("run.strikes", [run.strikes, Runs.RUN_RULES[run.kind].strikes]));
       paintClock(run);
       if (run.over) avail(el("pz-run-clock"), false);
-      setText(el("pz-run-best"), place ? "" : run.over && run.newBest ? tf("run.newBest", [run.score]) : tf("run.best", [Runs.bestOf(st, run.kind)]));
-      avail(el("pz-run-best"), !place);
+      setText(el("pz-run-best"), placedNow ? tf("run.placedSub", [run.opp || "—"]) : place ? "" : run.over && run.newBest ? tf("run.newBest", [run.score]) : tf("run.best", [Runs.bestOf(st, run.kind)]));
+      avail(el("pz-run-best"), !place || placedNow);
       avail(el("pz-run-stop"), !run.over);
       // a placement is not played again: its end goes to 今天, where the plan is
       avail(el("pz-run-again"), run.over);
@@ -754,7 +758,9 @@ export function createPuzzleModes(d) {
       avail(el("row-op-side"), false);
     }
     avail(el("puzzle-retry"), !run);
-    avail(el("puzzle-next"), !run || !!run.over); // 19.0 S6: and over, it is the way back to practice
+    // 19.0 S6: and over, it is the way back to practice — 22.0 A5: but not beside a
+    // placement's result, whose 去今天 is the one way on (the picker under it still leads to practice)
+    avail(el("puzzle-next"), !run || (!!run.over && !(run.kind === "place" && run.why === "placed")));
     // the picker is practice's: a run owns the board until it is over, and
     // then the picker is the way on (its score card stays above it)
     const picking = !run || !!run.over;
