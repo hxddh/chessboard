@@ -19,6 +19,22 @@ on:
         description: "@native-sdk/cli version (npm dist-tag or exact version)"
         required: false
         default: "0.10.1"
+  # 22.0 G6′: a pull request that changes the shell, the packaging or the
+  # real-WebView scenarios runs this workflow — both jobs, the automation one
+  # with its 13 pages in a real WebView. Through 21.0 the first real WebView a
+  # change met was the release's own run. No tag: nothing is uploaded anywhere.
+  pull_request:
+    paths:
+      - "src/**/*.zig"
+      - "src/native/**"
+      - "build.zig"
+      - "build.zig.zon"
+      - "app.zon"
+      - "scripts/automation-scenarios.mjs"
+      - "scripts/lib/automation.mjs"
+      - "scripts/selftest-app.mjs"
+      - "src/web/js/selftest-scenarios.js"
+      - ".github/workflows/build-macos.yml"
   # 7.6: release.yml calls this workflow directly, in parallel with its test
   # jobs, and takes the package from the uploaded artifact once every test is
   # green. It passes no release_tag, so nothing is uploaded from here; a hand
@@ -34,11 +50,17 @@ on:
         required: false
         default: "0.10.1"
 
+# 22.0 D1: read by default. Only `build` may write — it is the one job that
+# uploads to a release (and only when release_tag is set); `automation` runs a
+# third-party setup action and a global npm install and needs no token that
+# can write.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
+    permissions:
+      contents: write
     # macos-14 was retired on 2026-11-02 (github.blog changelog 2026-10-01):
     # its jobs got no runner and were cancelled, which cancelled the v19.0.0
     # release. macos-26 is the image macos-latest maps to, the one checks.yml's

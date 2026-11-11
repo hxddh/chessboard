@@ -265,7 +265,7 @@ export async function run() {
         const rest = page.replace(/\bid="[^"]+"/g, "");
         const read = [...WEB_MODULES.values()].join("\n") + fs.readFileSync(path.join(root, "src/web/styles.css"), "utf8") +
           scriptFiles().filter((n) => !n.startsWith("_")).map((n) => fs.readFileSync(path.join(root, "scripts", n), "utf8")).join("\n");
-        const JOINED = new Set(["result-w", "result-b", "today-r-game-cv", "today-r-pz-cv"]);
+        const JOINED = new Set(["result-w", "result-b", "today-r-game-cv"]);
         const esc = (x) => x.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&");
         const unread = ids.filter((id) => !JOINED.has(id) &&
           !new RegExp("(?:aria-[a-z]+|for)=\"[^\"]*\\b" + esc(id) + "\\b").test(rest) &&

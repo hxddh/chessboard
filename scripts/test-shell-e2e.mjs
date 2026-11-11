@@ -523,7 +523,7 @@ const state = (page) => page.evaluate(() => {
       cont: [...document.querySelectorAll("#today-cont .today-c")].filter(vis)
         .map((c) => c.dataset.seg + ":" + c.querySelector("b").textContent.trim() + ":" + c.querySelectorAll(".mini-sq").length),
       gamesEmpty: vis(document.getElementById("today-games-empty")),
-      ratings: [txt("today-r-game"), txt("today-r-pz")],
+      ratings: [txt("today-r-game")],
     };
   });
   {
@@ -1299,6 +1299,34 @@ for (const v of ["home", "me", "settings"]) {
     }
     assert(line && !/第 1 课/.test(line) && /开完局之后/.test(line),
       "19.1 F6 定级 1675、还没学完一课:「继续」的课程卡从中局思路开始，不是第 1 课(" + line + ")");
+    // 22.0 A2 / B1: the same profile's 今天 — the plan names the lesson, the list
+    // does not say the card's title again, and there is one level, the
+    // placement's, said to be borrowed until a game has been played
+    const today22 = await page.evaluate(() => {
+      const vis = (el) => !!el && !el.hidden && el.getClientRects().length > 0;
+      const txt = (id) => { const el = document.getElementById(id); return vis(el) ? el.textContent.trim() : ""; };
+      return {
+        title: txt("today-hero-title"), meta: txt("today-hero-meta"),
+        plan: [...document.querySelectorAll("#daily-plan .daily-step")].map((li) => li.textContent.trim()),
+        contHead: txt("today-cont-h"), level: txt("today-r-game"), note: txt("today-r-note"),
+        nums: [...document.querySelectorAll(".today-ratings b.num")].filter(vis).length,
+      };
+    });
+    assert(today22.plan.length >= 1 && !today22.plan[0].includes(today22.title) && today22.plan.some((x) => /第 51 课/.test(x)),
+      "22.0 A2 今天：清单不把主卡的标题再说一遍，「学一节新课」写明是第 51 课(" + JSON.stringify([today22.title, today22.plan]) + ")");
+    assert(today22.contHead === "从这里开始", "22.0 A2 今天：三张卡都没开始过时，这一栏不叫「继续」(" + today22.contHead + ")");
+    assert(today22.nums === 1 && /^1675/.test(today22.level) && /定级/.test(today22.note),
+      "22.0 B1 今天：只有一个水平数；还没下过棋时用定级的结果，并写明是暂定(" + JSON.stringify([today22.level, today22.note, today22.nums]) + ")");
+    // 22.0 B2 / F7: 我的 — the badge within reach follows the placement, and
+    // the entry card does not say 「现在还空着」 over a rating
+    await page.click('#rail button[data-view="me"]');
+    let me22 = null;
+    for (let i = 0; i < 50 && !(me22 && me22.next); i++) {
+      await page.waitForTimeout(100);
+      me22 = await page.evaluate(() => ({ next: (document.querySelector("#ach-body .ach-next") || {}).textContent || "", empty: !document.getElementById("record-empty").hidden }));
+    }
+    assert(me22 && me22.next && !/完成第 1 课/.test(me22.next) && !me22.empty,
+      "22.0 B2 / F7 我的：定级 1675 的人，下一枚够得着的成就不是「完成第 1 课」，页顶也不写「现在还空着」(" + JSON.stringify(me22) + ")");
     assert(errs.length === 0, "19.1 F6:没有页面异常 " + errs.join(" / "));
     // 21.0 E: 关于 is a chunk now — its first click fetches it and still opens the dialog
     const about0 = await page.evaluate(() => typeof window.wireAbout);

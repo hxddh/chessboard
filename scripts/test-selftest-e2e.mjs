@@ -180,6 +180,9 @@ async function launch(scenario, drive, expectOk = true) {
 
 const seed = await launch("rep-seed");
 assert(seed.checks.syncOff && seed.checks.syncOff.pass, "rep-seed: 允许联网同步 is off on a fresh profile (R5)");
+// 22.0 G4′: the first launch of a fresh profile shows the first-run question, and says which language it came up in
+assert(seed.checks.firstRun && seed.checks.firstRun.pass && seed.checks.firstRun.options === 3 && seed.checks.firstRun.lang === "zh-CN",
+  "22.0 G4′ rep-seed: the first-run question is up with its three ways in, in the page's language (" + JSON.stringify(seed.checks.firstRun) + ")");
 const indexed = await launch("rep-index");
 const ix = indexed.checks.indexed || {};
 assert(ix.lines && ix.lines.length === 2 && ix.records.length > 0 && ix.due > 0,
@@ -227,7 +230,7 @@ const pages = await launch("pages", async (page) => {
     window.__chess.engine.isReady = () => true;
     window.__chess.engine.analyze = async (fen) => ({ cp: 20, mate: null, turn: fen.split(" ")[1], best: null, pv: [] });
   });
-  const end = Date.now() + 240000;
+  const end = Date.now() + 300000;
   while (Date.now() < end) {
     const st = await page.evaluate(() => { const r = window.__reports[window.__reports.length - 1]; return r ? r.stage : null; });
     if (st === "done") return;
@@ -240,10 +243,16 @@ const pages = await launch("pages", async (page) => {
   }
 });
 const pageChecks = Object.keys(pages.checks || {}).filter((k) => k.startsWith("page:"));
-assert(pageChecks.length === 13 && pageChecks.every((k) => pages.checks[k].pass),
-  "21.0 G1 pages: 13 pages judged drawn (" + pageChecks.map((k) => k.slice(5) + (pages.checks[k].pass ? "" : " ✗ " + pages.checks[k].err)).join("，") + ")");
-assert(Object.keys(shotsTaken).length === 13 && Object.values(shotsTaken).every(Boolean),
+assert(pageChecks.length === 17 && pageChecks.every((k) => pages.checks[k].pass),
+  "21.0 G1 / 22.0 G3′ pages: 17 pages judged drawn, four of them in Chinese (" + pageChecks.map((k) => k.slice(5) + (pages.checks[k].pass ? "" : " ✗ " + pages.checks[k].err)).join("，") + ")");
+assert(Object.keys(shotsTaken).length === 17 && Object.values(shotsTaken).every(Boolean),
   "21.0 G1 pages: each page held still for its screenshot (" + JSON.stringify(shotsTaken) + ")");
+{
+  // 22.0 G3′: the four Chinese pages really were Chinese; F6: the profile's
+  // own language and appearance are back afterwards
+  const zh = ["zh-home", "zh-play", "zh-train-course", "zh-settings"].map((n) => pages.checks["page:" + n] || {});
+  assert(zh.every((c) => c.pass && c.lang === "zh-CN"), "22.0 G3′ pages: 今天、下棋、课程、设置 are judged in Chinese too (" + zh.map((c) => c.lang || c.err).join("，") + ")");
+}
 const play = pages.checks["page:play"] || {};
 assert(play.board && play.board.colours >= 2 && !play.board.tainted, "21.0 G1 pages: the board canvas was read as pixels (" + JSON.stringify(play.board) + ")");
 assert(pages.checks.errors && pages.checks.errors.pass, "21.0 G1 pages: no uncaught error (" + (pages.checks.errors && pages.checks.errors.err) + ")");

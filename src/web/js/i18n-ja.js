@@ -89,11 +89,11 @@
       "msg.fault.happened": "問題が発生しました —— 現在の局面は保存済みです。再発する場合は診断情報をコピーして報告してください。", "msg.fault.copy": "診断情報をコピー", "msg.fault.copied": "診断情報をコピーしました",
       "lang.name": "日本語",
       // first-run onboarding (ob.*)
-      "ob.title": "どこから始めますか？",
+      "ob.title": "ようこそ。どこから始めますか？",
       "ob.newLabel": "指したことがない",
-      "ob.newSub": "120 課の対話式レッスンを最初から：盤の見方から読みと形勢判断まで、1 課 1 課題",
+      "ob.newSub": "120 のレッスン。盤の見方から、1 課に 1 つの課題で学びます",
       "ob.knowLabel": "駒の動きは分かる",
-      "ob.knowSub": "6 問でレベルを判定し、結果に合わせて相手とパズルの難しさを決めます",
+      "ob.knowSub": "6 問で実力を測り、相手と問題の難しさを合わせます",
       "ob.later": "あとで", "ob.recommended": "おすすめ",
       // post-game review (rv.*)
       "rv.title": "対局レビュー", "rv.dot": "  ·  ",
@@ -646,7 +646,7 @@
       "today.notStarted": "未着手", "today.startHere": "ここから始める",
       "today.rGameNone": "1 局指すと出ます", "today.rFromPz": "定級の暫定値です。1 局指すと対局で決まります",
       "ob.oftenLabel": "よく指す",
-      "ob.oftenSub": "難しめの問題から判定します。Lichess / Chess.com の対局は 設定 · データ で同期できます",
+      "ob.oftenSub": "難しめの問題から判定します",
       "run.rule.place": "レベル判定 · {1} 問中 {0} 問目 · 正解で難しく、不正解でやさしく",
       "run.placed": "あなたの実力は約 {0}", "run.placedSub": "判定が終わりました。相手は {0}。レッスンと問題はこの実力に合わせます。",
       "run.toToday": "今日へ",

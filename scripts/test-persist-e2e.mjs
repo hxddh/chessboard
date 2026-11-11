@@ -793,7 +793,8 @@ const PLACEMENT = STUDY.split(" ")[0];
     // 7.5: nor is the one self-test probe every page load makes; 11.0 W: nor
     // the window's appearance, asked whenever the theme is applied
     const calls = (await page.evaluate(() => window.__calls))
-      .filter((c) => c !== "chess.appdataWrite" && c !== "chess.appdataRead" && c !== "chess.selftestMode" && c !== "chess.setChrome");
+      .filter((c) => c !== "chess.appdataWrite" && c !== "chess.appdataRead" && c !== "chess.selftestMode" && c !== "chess.setChrome" &&
+        c !== "chess.setMenuLanguage"); // 22.0 F5: nor the page's language, told to the shell at every launch
     assert(calls.join("→") === "chess.openPgn",
       `……走的是原生侧的「对话框 + 读文件」这一条命令,别无他路,也不再签发路径(${calls.join("→")})`);
     const openArgs = await page.evaluate(() => window.__openArgs);

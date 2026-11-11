@@ -398,6 +398,13 @@ await scenario("人机", async () => {
   const san = hint ? hint.replace(/^提示 · /, "").trim() : "";
   const legal = g ? g.moves() : [];
   assert(!!hint && legal.includes(san), "按 H：第二下给出当前局面里一手合法的棋", hint + " / " + (g && g.fen()));
+  // 22.0 F3: a third press says it again — it used to search afresh and put the ring back
+  const said = await page.evaluate(() => window.__toasts.length);
+  await page.keyboard.press("h");
+  await page.waitForTimeout(900);
+  const third = await page.evaluate((k) => ({ again: window.__toasts.slice(k), ring: window.__chess.shapes().circles.length, btn: document.getElementById("btn-hint").textContent.trim() }), said);
+  assert(third.again.length === 1 && third.again[0] === hint && third.ring === 0 && third.btn !== "答案",
+    "22.0 F3 按 H：第三下把同一句答案再说一遍，不回到亮圈", JSON.stringify(third));
   assert(!errs.length, "人机：页面没有报错", errs.join(" / "));
   await ctx.close();
 });
@@ -440,10 +447,23 @@ await scenario("失着提醒", async () => {
       await page.waitForTimeout(5000);
       const after = await plies(page);
       assert(back === 4 && after === 4, "21.0 T2 按 Z 只收回这一步，对手也不再应着(收回后 " + back + "，5 秒后 " + after + " 个半着)");
+      // 22.0 F1: the warning goes with the wait it describes. Through 21.0 the
+      // toast kept a 16.8 s clock of its own: 「对手先等一下」 and a dead 悔棋
+      // stood over moves already answered, and over the end of the game.
+      const holdUp = () => page.evaluate(() => { const el = document.getElementById("toast"); return !!el && el.classList.contains("show") && /Qxf7/.test(el.textContent || ""); });
+      assert(!(await holdUp()), "22.0 F1 按 Z 收回之后，「对手先等一下」不再挂在屏上");
       // played anyway: the opponent answers once the hold is over
       await clickMove(page, "h5", "f7");
+      const up = await until(holdUp, 5000, 50);
+      // 22.0 F4: a click while the opponent is held is a premove, as it is while it thinks
+      const ek = "e1", to = "d1";
+      await clickMove(page, ek, to);
+      const queued = await page.evaluate(() => window.__chess.shapes().arrows.some((a) => a.color === "Y"));
       const reply = await savedAt(page, 6, 20000);
       assert(!!reply, "21.0 T2 不收回：等一会儿之后对手照常应着");
+      assert(!!up && queued, "22.0 F4 等待期间点的一步进了预走（黄箭头），不再被悄悄丢掉", JSON.stringify({ up: !!up, queued }));
+      await page.waitForTimeout(400);
+      assert(!(await holdUp()), "22.0 F1 对手应着之后，这条提示已经收掉");
       assert(!errs.length, "失着提醒：页面没有报错", errs.join(" / "));
       done = true;
     } finally { await ctx.close(); }
@@ -475,6 +495,16 @@ await scenario("分析/精析", async () => {
   });
   const ms = await run("#an-run", 60000);
   let r = await read();
+  // 22.0 A1: a review that has just arrived opens on its first key moment —
+  // the board on that move, not on the last one under a card about another
+  {
+    const at = await until(() => page.evaluate(() => {
+      const card = document.querySelector("#rv-km .km-card");
+      const pos = (document.getElementById("replay-pos").textContent || "").split("/")[0].trim();
+      return card && Number(pos) === Number(card.dataset.ply) + 1 ? { pos: Number(pos), ply: Number(card.dataset.ply) } : null;
+    }), 5000, 100);
+    assert(!!at && at.pos < 13, "22.0 A1 复盘一出来，棋盘就停在第一处关键时刻那一步(" + JSON.stringify(at) + ")，不留在最后一步");
+  }
   assert(r.tags.some((t) => t === "?" || t === "??") && !!r.acc,
     "分析：" + (ms / 1000).toFixed(1) + " 秒完成，标出 ? / ??，精准度一行不为空", JSON.stringify(r));
   const msDeep = await run("#an-deep", 90000);

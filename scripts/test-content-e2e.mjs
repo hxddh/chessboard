@@ -969,16 +969,19 @@ if (hasTab && REAL.length) {
     const h = await todayHero(pg);
     const page = await pg.evaluate(() => ({
       list: document.getElementById("daily-plan").hidden,
-      rg: document.getElementById("today-r-game").textContent, rp: document.getElementById("today-r-pz").textContent,
+      rg: document.getElementById("today-r-game").textContent, note: document.getElementById("today-r-note").hidden,
+      contHead: document.getElementById("today-cont-h").textContent,
       cv: [...document.querySelectorAll(".today-rating canvas")].filter((c) => !c.hidden).length,
       bars: [...document.querySelectorAll("#today-cont .today-c:not([hidden]) .today-bar")].map((b) => b.dataset.n),
     }));
     assert(h.title === "学一节新课" && page.list && h.steps.length <= 1,
       "T5:新档案的今天只有一件事(第 1 课),不再列一张只有一行的单子", JSON.stringify(h));
-    assert(page.rg === "和电脑下完一盘就有" && page.rp === "做几道谜题就有" && page.cv === 0,
-      "T5:还没有的等级分写怎么得到,不画横线和平线", JSON.stringify(page));
-    assert(page.bars.length >= 2 && page.bars.every((n) => n === "从这里开始"),
-      "T5:没开始的「继续」写「从这里开始」,不写 0/7", JSON.stringify(page.bars));
+    // 22.0 B1: one level, and before there is one, how to get it
+    assert(page.rg === "下完一盘就有" && page.note && page.cv === 0,
+      "T5 / 22.0 B1:还没有水平数时写怎么得到,只此一行,不画横线和平线", JSON.stringify(page));
+    // 22.0 A2: nothing begun — the block is 「从这里开始」, not 「继续」, and each card says 还没开始
+    assert(page.contHead === "从这里开始" && page.bars.length >= 2 && page.bars.every((n) => n === "还没开始"),
+      "T5 / 22.0 A2:一张都没开始时这一栏叫「从这里开始」,卡上写「还没开始」,不写 0/7", JSON.stringify([page.contHead, page.bars]));
     await ctx.close();
   }
   // M. a drill from yesterday's game, due: the review step says which move of which game
@@ -1775,8 +1778,15 @@ if (hasTab && REAL.length) {
           const wrong = g.moves({ verbose: true }).find((m) => !(t.accept || []).includes(m.san) && !m.promotion);
           await tapQ(wrong.from); await tapQ(wrong.to);
           await pg.waitForTimeout(300);
-          const said = await pg.evaluate(() => document.getElementById("toast").textContent);
+          // 22.0 A3: said under the task it was a try at, not in a toast below the board
+          const { said, toasted, gap } = await pg.evaluate(() => {
+            const fb = document.getElementById("lesson-fb"), task = document.getElementById("lesson-task"), toast = document.getElementById("toast");
+            return { said: fb && !fb.hidden ? fb.textContent : "", toasted: toast.classList.contains("show") ? toast.textContent : "",
+              gap: fb && task ? Math.round(fb.getBoundingClientRect().top - task.getBoundingClientRect().bottom) : null };
+          });
           assert(said.includes(W.tasks[0].retry), `T1 ${lang}:走错时提示这一步的「${lang === "zh-CN" ? "再想想" : "retry"}」`, said.slice(0, 60));
+          assert(!toasted.includes(W.tasks[0].retry) && gap !== null && gap >= 0 && gap <= 24,
+            `22.0 A3 ${lang}:这句话写在任务卡正下方(相距 ${gap} px),不再另出浮条`, toasted.slice(0, 60));
           await skipDemo();
         }
         const mv = g.move(t.solution[0]);

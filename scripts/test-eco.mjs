@@ -205,9 +205,9 @@ assert(ChessEco.size >= 3000, "the table has at least 3000 positions (" + ChessE
   assert(bowdler && bowdler.eco === "B20" && bowdler.name === "Sicilian Defense: Bowdler Attack",
     "1.e4 c5 2.Bc4 is B20 Sicilian Defense: Bowdler Attack (" + (bowdler && bowdler.name) + ")");
   assert(!ChessEco.BOOK_ID_BY_ENTRY["B20|Sicilian Defense: Bowdler Attack"], "…which the book does not translate");
-  assert(ChessEco.localName(bowdler, "zh-CN") === OPENING_FAMILIES_ZH["Sicilian Defense"] + "：Bowdler Attack",
-    "Chinese shows the family in Chinese and the rest in English (" + ChessEco.localName(bowdler, "zh-CN") + ")");
-  assert(ChessEco.localName(bowdler, "ja") === OPENING_FAMILIES_JA["Sicilian Defense"] + "：Bowdler Attack",
+  assert(ChessEco.localName(bowdler, "zh-CN") === OPENING_FAMILIES_ZH["Sicilian Defense"],
+    "22.0 B5: Chinese shows the family, and stops where its names stop — no English after it (" + ChessEco.localName(bowdler, "zh-CN") + ")");
+  assert(ChessEco.localName(bowdler, "ja") === OPENING_FAMILIES_JA["Sicilian Defense"],
     "Japanese too (" + ChessEco.localName(bowdler, "ja") + ")");
   assert(ChessEco.localName(bowdler, "en") === "Sicilian Defense: Bowdler Attack", "English is unchanged");
   // 7.5's own example, 「意大利开局：Giuoco Piano, Greco's Attack」, is shown by
@@ -216,8 +216,8 @@ assert(ChessEco.size >= 3000, "the table has at least 3000 positions (" + ChessE
   assert(ChessEco.localName(greco, "zh-CN") === "意大利开局：朱奥科·皮亚诺，格列柯攻击",
     "7.5's example now reads 意大利开局：朱奥科·皮亚诺，格列柯攻击 (" + ChessEco.localName(greco, "zh-CN") + ")");
   const far = { eco: "A00", name: "Formation: Hippopotamus Attack" };
-  assert(ChessEco.localName(far, "zh-CN") === OPENING_FAMILIES_ZH.Formation + "：Hippopotamus Attack",
-    "an A00 oddity keeps its variation in English (" + ChessEco.localName(far, "zh-CN") + ")");
+  assert(ChessEco.localName(far, "zh-CN") === OPENING_FAMILIES_ZH.Formation,
+    "22.0 B5: an A00 oddity is its family alone (" + ChessEco.localName(far, "zh-CN") + ")");
   // a name with no colon is all family
   const kg = { eco: "Z99", name: "King's Gambit" };
   assert(ChessEco.localName(kg, "zh-CN") === OPENING_FAMILIES_ZH["King's Gambit"], "a name with no colon is translated whole");
@@ -330,13 +330,13 @@ assert(ChessEco.size >= 3000, "the table has at least 3000 positions (" + ChessE
   const center = { eco: "C54", name: "Italian Game: Classical Variation, Center Attack" };
   assert(ChessEco.localName(center, "zh-CN") === "意大利开局：古典变例，中心攻击",
     "7.9's example reads 意大利开局：古典变例，中心攻击 (" + ChessEco.localName(center, "zh-CN") + ")");
-  // a segment outside the table takes the whole variation back to English
+  // 22.0 B5: a segment outside the table ends the name at the one before it
   const mixed = { eco: "C55", name: "Italian Game: Two Knights Defense, Perreux Variation" };
-  assert(ChessEco.localName(mixed, "zh-CN") === "意大利开局：Two Knights Defense, Perreux Variation",
-    "a segment outside the table keeps the whole variation English, not 双马防御，Perreux Variation (" + ChessEco.localName(mixed, "zh-CN") + ")");
+  assert(ChessEco.localName(mixed, "zh-CN") === "意大利开局：双马防御",
+    "a segment outside the table ends the name before it: 意大利开局：双马防御, never 双马防御，Perreux Variation (" + ChessEco.localName(mixed, "zh-CN") + ")");
   const polerio = { eco: "C58", name: "Italian Game: Two Knights Defense, Polerio Defense" };
-  assert(ChessEco.localName(polerio, "ja") === OPENING_FAMILIES_JA["Italian Game"] + "：Two Knights Defense, Polerio Defense",
-    "…and so does a registered one (" + ChessEco.localName(polerio, "ja") + ")");
+  assert(ChessEco.localName(polerio, "ja") === OPENING_FAMILIES_JA["Italian Game"] + "：ツー・ナイツ・ディフェンス",
+    "…and so in Japanese (" + ChessEco.localName(polerio, "ja") + ")");
   assert(ChessEco.localName(fried, "en") === fried.name, "English is unchanged");
   console.log("  segments: " + all.map((s) => s + "=" + (OPENING_VARIATIONS_ZH[s] || "—")).join(", "));
 }

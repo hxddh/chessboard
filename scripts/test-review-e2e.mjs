@@ -1392,8 +1392,9 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   });
   assert(layer.first === "rv-summary" && /^全盘的转折是 \d+(\.|…) ?\S+：(白方|黑方)胜率从 \d+% 掉到 \d+%。$/.test(layer.summary),
     "M2：复盘区第一行是一句话总结，双人对局用中性口吻（「" + layer.summary + "」，首块 " + layer.first + "）");
-  assert(layer.sum < layer.curve && layer.curve < layer.km && layer.km < layer.full,
-    "M2：第一层自上而下是总结、胜率曲线、关键时刻，完整报告在它们之下");
+  // 22.0 A1: the key moments stand above the curve — the card with 再试一次 is the first thing under the summary
+  assert(layer.sum < layer.km && layer.km < layer.curve && layer.curve < layer.full,
+    "M2 / 22.0 A1：第一层自上而下是总结、关键时刻、胜率曲线，完整报告在它们之下");
   assert(layer.retryShown && layer.retryBottom <= layer.fold,
     "M2：总结、曲线和关键时刻卡上的「再试一次」在同一屏里（按钮底 " + Math.round(layer.retryBottom) + " ≤ " + layer.fold + "）");
   assert(layer.fullShown && !layer.open && layer.inFull && !layer.cardSeen,
@@ -1590,6 +1591,25 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
       const main = await pg.evaluate(() => { const b = document.querySelector('#rv-km .km-acts button:not([hidden])'); return b ? { act: b.dataset.act, main: b.classList.contains("primary") } : null; });
       assert(k1.why === "" && main && main.act === "retry" && main.main,
         "21.0 T1：能再试一次的关键时刻，先给「再试一次」(主按钮)，不先给出答案(" + JSON.stringify({ why: k1.why, main }) + ")");
+      // 22.0 A1: 再试一次 is on the first screen, above the notation — at the
+      // default window and at 1024×700, where through 21.0 it began at 896 px
+      {
+        const vp0 = pg.viewportSize();
+        for (const [w, h] of [[1440, 900], [1024, 700]]) {
+          await pg.setViewportSize({ width: w, height: h });
+          await settle(pg);
+          const g = await pg.evaluate(() => {
+            const b = document.querySelector('#rv-km button[data-act="retry"]');
+            for (let n = b; n; n = n.parentElement) n.scrollTop = 0;
+            const r = b.getBoundingClientRect(), ml = document.getElementById("move-list").getBoundingClientRect();
+            return { top: Math.round(r.top), bottom: Math.round(r.bottom), vh: innerHeight, list: Math.round(ml.top) };
+          });
+          assert(g.top >= 0 && g.bottom <= g.vh && g.bottom <= g.list,
+            "22.0 A1：" + w + "×" + h + " 下「再试一次」整个在首屏内，排在棋谱上面(" + JSON.stringify(g) + ")");
+        }
+        await pg.setViewportSize(vp0);
+        await settle(pg);
+      }
       await pg.click('#rv-km button[data-act="why"]');
       await settle(pg);
       // 19.0 T2: the card's own line says the win chance; 为什么 is the coach's
@@ -1991,6 +2011,9 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
   assert(n1.w === "Morphy" && n1.b === "Allies", "14.0 A1：粘贴的对局，两条名牌是文件里的白方、黑方", JSON.stringify(n1));
   // …and the result bar, which stands in the bottom strip's place, keeps that
   // strip's name (it hid 「Li Ming」 under 「1–0 白方胜」)
+  // (22.0 A1: the review opened on its first key moment; the result bar is the last position's)
+  await pg.keyboard.press("End");
+  await settle(pg);
   const reason = await pg.evaluate(() => { const c = document.getElementById("go-card"); return c && !c.hidden ? document.getElementById("go-reason").textContent : null; });
   assert(reason != null && /^Morphy · /.test(reason), "14.0 A1：结果条盖住的那一方的名字留在结果条上", reason);
   // …and a paste with no headers at all is 玩家 1 / 玩家 2, White won — not 「尼可 · 你赢了」

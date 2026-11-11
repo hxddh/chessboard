@@ -119,11 +119,11 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "msg.fault.happened": "出了问题 —— 当前局面已保存。若再次发生，请复制诊断信息反馈。", "msg.fault.copy": "复制诊断信息", "msg.fault.copied": "已复制诊断信息",
       "lang.name": "中文",
       // first-run onboarding (ob.*)
-      "ob.title": "先从哪里开始？",
+      "ob.title": "欢迎来下棋。先从哪里开始？",
       "ob.newLabel": "没下过棋",
-      "ob.newSub": "120 课互动教程从头学起：从认棋盘到计算与局面判断，每课一个任务",
+      "ob.newSub": "120 课互动教程，从认棋盘学起，每课一个小任务",
       "ob.knowLabel": "会走子",
-      "ob.knowSub": "做 6 道题定个级，按结果配好对手与谜题难度",
+      "ob.knowSub": "做 6 道题定级，配好对手和题目难度",
       "ob.later": "以后再说", "ob.recommended": "推荐",
       // post-game review (rv.*)
       "rv.title": "对局回顾", "rv.dot": "  ·  ",
@@ -678,7 +678,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "today.notStarted": "还没开始", "today.startHere": "从这里开始",
       "today.rGameNone": "下完一盘就有", "today.rFromPz": "按定级暂定，下完一盘就按对局算",
       "ob.oftenLabel": "常下棋",
-      "ob.oftenSub": "从更难的题开始定级；在 Lichess / Chess.com 下过的棋，可以在设置 · 数据里同步进来",
+      "ob.oftenSub": "从更难的题开始定级",
       "run.rule.place": "定级 · 第 {0} 题，共 {1} 题 · 答对变难，答错变易",
       "run.placed": "你的水平约 {0}", "run.placedSub": "定级完成。对手配好了：{0}；接下来的课和题都按这个水平来。",
       "run.toToday": "去今天",

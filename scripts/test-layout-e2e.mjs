@@ -5004,7 +5004,7 @@ async function todayChecks(tag, page) {
       drawn: [...home.querySelectorAll(".mini-board")].filter(vis).every((b) => b.querySelectorAll(".mini-sq").length === 64 && b.querySelector("img")),
       rings: [...home.querySelectorAll(".today-ring")].filter(vis).length,
       games: home.querySelectorAll("#today-games li").length,
-      ratings: ["today-r-game", "today-r-pz"].map((id) => document.getElementById(id).textContent.trim()),
+      ratings: ["today-r-game"].map((id) => document.getElementById(id).textContent.trim()),
       hero: document.getElementById("today-hero-title").textContent.trim(), go: document.getElementById("today-go").textContent.trim(),
     };
   });

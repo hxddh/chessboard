@@ -43,7 +43,7 @@ export async function run() {
       const a = jobs.automation || "";
       assert(!/name: Chessboard-|gh release|upload-artifact[\s\S]*?path: dist\//.test(a) && /--output dist-auto\//.test(a) && !/--output dist\//.test(a),
         rel + ": the automation job packages into dist-auto/ and uploads no package (only its report)");
-      // 21.0 G1: 25, not 20 — the pages walk holds thirteen pages for their screenshots
+      // 21.0 G1: 25, not 20 — the pages walk holds its pages (22.0: seventeen) for their screenshots
       assert(/timeout-minutes: 25\b/.test(a), rel + ": the automation job has its 25-minute limit");
       assert(/node scripts\/automation-smoke\.mjs/.test(a) && /node scripts\/automation-scenarios\.mjs/.test(a), rel + ": the automation job runs the smoke test and the scenarios");
       // §9 M4: a job its own limit stops ends "cancelled", which continue-on-error

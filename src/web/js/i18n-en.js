@@ -89,11 +89,11 @@
       "msg.fault.happened": "Something went wrong — the game has been saved. If it happens again, copy the diagnostics and report it.", "msg.fault.copy": "Copy diagnostics", "msg.fault.copied": "Diagnostics copied",
       "lang.name": "English",
       // first-run onboarding (ob.*)
-      "ob.title": "Where would you like to start?",
+      "ob.title": "Welcome. Where shall we start?",
       "ob.newLabel": "I have never played",
-      "ob.newSub": "120 interactive lessons from the very start: the board first, then calculation and judging positions, one task each",
+      "ob.newSub": "120 interactive lessons from the board up, one small task each",
       "ob.knowLabel": "I know how the pieces move",
-      "ob.knowSub": "Six puzzles to place you; the opponent and the puzzles follow from the result",
+      "ob.knowSub": "Six puzzles to place you and pick your opponent",
       "ob.later": "Maybe later", "ob.recommended": "Recommended",
       // post-game review (rv.*)
       "rv.title": "Game review", "rv.dot": "  ·  ",
@@ -646,7 +646,7 @@
       "today.notStarted": "Not started", "today.startHere": "Start here",
       "today.rGameNone": "Finish one game to get it", "today.rFromPz": "From your placement, until your first game",
       "ob.oftenLabel": "I play regularly",
-      "ob.oftenSub": "Placement starts from harder puzzles; games on Lichess or Chess.com can be synced in Settings · Data",
+      "ob.oftenSub": "Placement, starting from harder puzzles",
       "run.rule.place": "Placement · puzzle {0} of {1} · right makes it harder, wrong easier",
       "run.placed": "Your level is about {0}", "run.placedSub": "Placement done. Your opponent is {0}; lessons and puzzles now follow this level.",
       "run.toToday": "Go to Today",
