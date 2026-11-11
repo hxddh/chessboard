@@ -232,4 +232,9 @@ owner 定下的前提（2026-11-11，「可以。直接发 22.0」）：
 - 浏览器 e2e 19 组本地（Chromium）全过：分三路并行跑了一轮，按新行为改了测试之后，改到的各组又各自单独跑过。
 - 真机上没有人走过。真 WebView 的结果以 CI 为准。
 
-**CI**：（PR 上的结果出来后填。）
+**CI**（PR #134，提交 91fa05a，2026-11-11）：
+- `checks`（run 42985012155）：Chromium 与 WebKit 两套浏览器 e2e、三个系统的静态测试、macOS 与 Windows 的 `zig build test`，全绿。
+- `build-windows`（run 42985012180）与 `build-macos`（run 42985012157）：由这一版新加的 PR 触发跑起来，两个都通过。原生的三处改动（Zig、C、Objective-C）在两个平台上都编过了。
+- Windows 的真 WebView 场景日志逐条看过：69 项全过；17 页都判定画出来了，其中 `zh-home`、`zh-play`、`zh-train-course`、`zh-settings` 四页的 `lang` 是 `zh-CN`；17 张图都是 `CopyFromScreen (window)`，没有一张是整屏。
+- macOS 的场景作业同样通过（整屏回退现在算失败，所以通过即说明截到的是窗口）；它的日志没有逐条看。
+- **截图本身这次没有人看过**：这个会话取不到 Actions 的 artifact。21.0 是 Claude 看过截图代签的，这一版没有；要看的话，两个 run 的 `webview-shots-*` 里各有 17 张。
