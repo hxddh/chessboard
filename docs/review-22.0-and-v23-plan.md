@@ -163,6 +163,73 @@ owner 的要求：「全面 review 最新版本。另外底层所依赖的组件
 
 ---
 
+## 5A · 第二轮评估（2026-11-13，「继续评估」）
+
+### 5A.1 · SDK 0.11.1 的 CI 实测
+
+用两个构建工作流自带的 `sdk_version` 输入，在本分支上以 `0.11.1` 手动各跑一次（`release_tag` 为空，不上传任何东西）。
+
+- **build-macos（run 43422568227）**：在编译之前就被 `manifest-check.mjs --sdk` 拦下：
+  > FAIL: SDK 交叉检查: AppInfo.webview_inspection 是 SDK 的字段，但 src/runner.zig 的 appInfo 不给它赋值
+- 这正是 2.1 预期的那一处。门禁按设计工作：fork 落后于 SDK 时不会悄悄编过去。
+- 同一次检查里其余各项都对得上 0.11.1：WindowOptions 18 个字段、schema 词表、平台源文件 7 个、系统库 22 个、框架 15 个、应用清单 1 个，`build.zig` 全都有。这印证了 2.1「链接层不用动」的判断。
+- 所以 **0.11.1 的实际编译要等 S1 改完 `runner.zig` 才能验**；改动量就是 2.1 写的那两处。
+
+### 5A.2 · 原生桥与同步的安全审查
+
+范围：页面 ↔ 原生的 16 个 `chess.*` 命令、`sync.zig`、CSP、DOM 注入点、PGN 解析、外链与导航、Windows 注册脚本。**没有高危。**
+
+| # | 级别 | 位置 | 问题 | 修法 |
+|---|---|---|---|---|
+| X1 | 中 | `src/web/js/chess.js:1758-1761`，经 `io.js:278`、`app.js:338` | **PGN 导入可以把界面卡死**。自研解析器失败时退回 chess.js 的 `load_pgn`，传入的是整份文本；chess.js 去变着的 `while (rav_regex.test(ms)) ms = ms.replace(…)` 对深层嵌套是平方级。本次复测：嵌套 5,000 / 10,000 / 20,000 层分别用 0.28 / 1.24 / 4.5 s，约 80 KB 的文件 4.5 s，按平方增长 400 KB 约 2 分钟。谁都能做出这样的 .pgn（双击打开、粘贴、拖入） | 退回前限大小与嵌套深度（如 > 64 KB 或深度 > 256 不退回），或者去掉整份文件的退回 |
+| X2 | 低 | `src/bridge.zig:91`、`:282-306`；`host.js:261` | **`chess.writeTextFile` 是没有调用方的写入能力**。业务代码里没有人调用它，但它能截断改写任何被签发过的路径（拖入或系统打开的文件，不限 .pgn），而且跟随符号链接 | 从 `APP_COMMANDS` 与 `host.js` 删掉；真要留，就限 .pgn、`O_NOFOLLOW`、写临时文件再 rename |
+| X3 | 低 | `src/bridge.zig:233` `appendIssuedPath` | 系统「打开」事件来的路径直接签发，不过 `pathAllowed`；拖入的路径过（`:147`）。本机别的进程 `open -a` 一个点文件，页面就能读写它（前提是本机已能执行代码） | `appendIssuedPath` 也过 `pathAllowed` |
+| X4 | 低（待确认） | `src/web/js/pgn.js:17` `stripResult` | 结尾正则 `\s*(?:…)\s*$` 对长空白是平方级（8 万个空格 4.5 s）；只在导出走 chess.js 退回时用到，注释能否进到那里没核实 | `/(?:\s+(?:1-0\|0-1\|1\/2-1\/2\|\*))?\s*$/`，或先 `trimEnd` |
+| X5 | 低 | `src/sync.zig:574-583` | 同步请求没设 `redirect_behavior`，Zig std 默认跟最多 3 次、任意主机、含 http | `.redirect_behavior = .not_allowed`，或校验 Location 仍在两个固定主机 |
+| X6 | 低（数据） | `library.js:182` | 导入一个 1 万局的文件会按导入时间挤掉原有的库（含已分析的对局），只有一条提示 | 超上限时导入前先问 |
+
+**核对过、没有问题的**：
+- 自检与自动化接缝在发布件里编译期关闭（`comptime !automation_build`，`-Dautomation` 默认 false，发布工作流不带它）。
+- 开发 origin 只在 Debug 或 `-Ddev-origins` 时保留，桥与导航共用这份列表。
+- appdata：键名白名单、长度上限、排除 Windows 设备名；临时文件 + fsync + .bak + rename 的原子写；单文件 16 MiB、分块暂存的上限与一致性校验。
+- openPgn / saveText：路径不回给页面，只给 basename 和 token；按 token 读、校验大小与 mtime。
+- 同步：用户名两侧校验、URL 前缀写死、解压后 16 MiB 上限、超时与并发上限、JSON 转义完整。
+- CSP：`script-src 'self' 'wasm-unsafe-eval'`，无 `unsafe-inline`，`connect-src 'self'`，`object-src 'none'`，`base-uri 'none'`，`form-action 'none'`。
+- DOM：非生成代码里只有两处 `insertAdjacentHTML`，输入都是常量表；没有 `eval` / `new Function`；`document.write` 只写白名单里的分块名。
+- 外链 deny，更新与源码链接只复制到剪贴板；Windows 注册脚本的路径与 `%1` 都有引号。
+- IndexedDB 配额错误两处都显式处理。
+
+### 5A.3 · 无障碍（自动扫描）
+
+- 工具：axe-core 4.10.3，规则集 WCAG 2.0 A / AA 与 2.1 AA（含对比度），Chromium，1440×900。
+- 范围：今天、下棋、课程、谜题（深色）、我的（浅色）、设置、棋谱库，各中文、英文一遍，共 14 次。
+- 结果：**0 条违规**。为确认扫描真的在跑，往页面里插了一个无 alt 的 `<img>`，axe 当场报出 `image-alt`。
+- 局限：自动扫描只覆盖 WCAG 里机器能判的那部分。读屏的实际体验（3.1-10、3.1-11 那类）仍要真机加读屏走一遍。
+
+### 5A.4 · 启动性能
+
+`scripts/measure-boot.mjs --runs=7`，Chromium，各取中位数：
+
+| 语言 | DOMContentLoaded | 可交互 |
+|---|---|---|
+| zh-CN | 270 ms | 185 ms |
+| en | 290 ms | 206 ms |
+| ja | 298 ms | 191 ms |
+
+首屏包 `bundle.js` 812,591 字节，预算 942,990。这一块没有要做的。
+
+### 5A.5 · 对 22.1 的补充
+
+S2 之后加一条：
+
+| # | 做什么 | 验收 |
+|---|---|---|
+| S2′ | X1（PGN 退回限大小与深度）、X2（删 `chess.writeTextFile`）、X3（打开事件也过 `pathAllowed`）、X5（不跟重定向）；X4 顺手改正则 | X1：单测喂 20,000 层嵌套 + 一个非法着法，导入在 100 ms 内返回失败；X2：`manifest-check` 的「应用桥」从 16 个变 15 个；X3、X5：`zig build test` 加用例 |
+
+X6 是产品决定，放进第 7 节。
+
+---
+
 ## 6 · 下一步建议
 
 ### 6.1 · 22.1：「稳」（建议先发，存档不变）
@@ -197,6 +264,7 @@ Playwright 1.65 单独一个 PR，不进 22.1：它改的是测试驱动，不�
 5. **Maia-3**：要不要在 23.x 立一个研究项（只量体积、加载与许可，不进产品）？
 6. **证书**：没有新消息就继续等。签名、公证、自动更新仍卡在这里。
 7. **`release` 环境的审核人**：22.0 加了 `environment: release`，要你在仓库 Settings → Environments 里把自己设成审核人才真的拦得住，这一步 Claude 做不了。现在设了吗？
+8. **棋谱库满了怎么办**（5A.2 X6）：现在导入超过 1 万局时悄悄挤掉最旧的（含已分析的）。推荐改成导入前先问「会挤掉 N 局，继续吗」；或者提高上限；或者保持现状。
 
 ---
 
