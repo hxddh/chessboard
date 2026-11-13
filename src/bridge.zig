@@ -1301,7 +1301,7 @@ test "every app command has a chess. name and no two share one" {
         // a handler of one kind or the other, never both, never neither
         try std.testing.expect((cmd.invoke_fn == null) != (cmd.async_fn == null));
     }
-    try std.testing.expectEqual(@as(usize, 16), APP_COMMANDS.len);
+    try std.testing.expectEqual(@as(usize, 15), APP_COMMANDS.len);
 }
 
 test "the network commands are asynchronous and reach the SDK's async registry" {
