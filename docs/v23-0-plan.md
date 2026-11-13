@@ -44,10 +44,13 @@
 
 ## 测试
 
-- `npm run test:static`：见 PR。
-- 浏览器 e2e：改到的几组本地（Chromium）单独跑过，见 PR。
-- 真机：没有人走过；真 WebView 的结果以 CI 为准（这一版改到了前端与原生，两个构建工作流都会由 PR 触发）。
+- `npm run test:static`：24 个文件全过（本机，Node 22）。
+- 浏览器 e2e（本机 Chromium，三路并行）：19 组都跑过，全过。`test-library-e2e` 第一次红在新加的「库满先问」读问句的选择器上（`.confirm-msg` 先碰到新局对话框里藏着的「会结束当前这盘」），改读 `#confirm-message` 后重跑通过。
+- `zig ast-check`：改到的 Zig 文件本机过；编译与 `zig build test` 只在 CI 上（本机对 0.11.1 的编译被会话的安全检查拦下）。
 
-## CI
+## CI（PR #135）
 
-见 PR #135。
+- b0ae0b3（只有 S1）：`checks`、`build-macos`、`build-windows` 全绿：SDK 0.11.1 在两个平台上编过、单测过、真 WebView 场景过。
+- eb6a04a：`zig (macos-latest)` 红在 `bridge.zig` 的命令计数单测（16 → 15，删 `chess.writeTextFile` 时漏改），e233271 修。
+- e233271：`browser (chromium/webkit, game library)` 红在上面那个选择器（b443adf 修）；`panel layout 1/5` 红在首启语言：de-DE 原来断言回落中文，按 23.0 的决定改成英文（261f077）。
+- 261f077：`checks`（三个系统的静态测试、Chromium 与 WebKit 两套浏览器 e2e、两平台 `zig build test` / `zig build`）、`build-macos`、`build-windows`（真 WebView 17 页）全绿。
