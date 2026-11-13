@@ -2248,7 +2248,7 @@ function tenThousand() {
   const ids0 = new Set((await libOf(second.page)).games.map((g) => g.id));
   await importFile(second.page, extra);
   const asked = await second.page.waitForSelector("#confirm-ok", { state: "visible", timeout: 10000 }).then(() => true, () => false);
-  const askText = asked ? await second.page.evaluate(() => (document.getElementById("confirm-msg") || document.querySelector(".confirm-msg") || document.body).textContent) : "";
+  const askText = asked ? await second.page.evaluate(() => (document.getElementById("confirm-message") || {}).textContent || "") : "";
   assert(asked && /10000|10,000/.test(askText) && /1 局/.test(askText), "23.0 库满再导入：先问会挤掉几局", askText.slice(0, 160));
   if (asked) await second.page.click("#confirm-cancel");
   await second.page.waitForTimeout(400);
