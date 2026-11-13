@@ -77,14 +77,46 @@ int chess_win_chrome_set(int dark) {
 }
 
 /*
- * 22.0 F5: the language Windows shows its own interface in, for a first
- * launch that has no saved choice yet: 0 Chinese, 1 English (and everything
- * else), 2 Japanese. The page picks its language from the same preference
- * (navigator.languages), so the menu bar and the page agree from the start.
+ * 22.0 F5 / 23.0: the language for a first launch that has no saved choice
+ * yet: 0 Chinese, 1 English, 2 Japanese. Walks the user's preferred UI
+ * languages in order, the way the page's detectLang (lang-ids.js) walks
+ * navigator.languages — WebView2 derives that list from the same preference —
+ * and takes the first one of ours; none of ours is English, as on the page.
+ * 22.0 looked at the first language only, so ["fr", "ja"] gave an English
+ * menu bar over a Japanese page (review-22.0 §3.1-1).
+ *
+ * GetUserPreferredUILanguages is looked up at run time like dwmapi above, so
+ * the header's _WIN32_WINNT does not matter; without it, the single default
+ * UI language is the answer, as in 22.0.
  */
+typedef BOOL (WINAPI *ChessPreferredUiLangsFn)(DWORD, PULONG, PZZWSTR, PULONG);
+#define CHESS_MUI_LANGUAGE_NAME 0x8
+
+static int chess_lang_code_of(const WCHAR *tag) {
+    /* "zh-CN", "zh-Hant-TW", "ja-JP", "en-US" … : the primary subtag decides */
+    WCHAR a = tag[0] | 0x20, b = tag[1] | 0x20, c = tag[2];
+    if (c != 0 && c != L'-' && c != L'_') return -1;
+    if (a == L'z' && b == L'h') return 0;
+    if (a == L'e' && b == L'n') return 1;
+    if (a == L'j' && b == L'a') return 2;
+    return -1;
+}
+
 int chess_win_ui_language(void) {
-    LANGID id = GetUserDefaultUILanguage();
-    switch (PRIMARYLANGID(id)) {
+    HMODULE k32 = GetModuleHandleW(L"kernel32.dll");
+    ChessPreferredUiLangsFn get = k32 ? (ChessPreferredUiLangsFn)(void *)GetProcAddress(k32, "GetUserPreferredUILanguages") : NULL;
+    if (get) {
+        WCHAR buf[512];
+        ULONG count = 0, len = (ULONG)(sizeof buf / sizeof buf[0]);
+        if (get(CHESS_MUI_LANGUAGE_NAME, &count, buf, &len)) {
+            for (const WCHAR *p = buf; p < buf + len && *p; p += lstrlenW(p) + 1) {
+                int code = chess_lang_code_of(p);
+                if (code >= 0) return code;
+            }
+            return 1;
+        }
+    }
+    switch (PRIMARYLANGID(GetUserDefaultUILanguage())) {
         case LANG_CHINESE: return 0;
         case LANG_JAPANESE: return 2;
         default: return 1;

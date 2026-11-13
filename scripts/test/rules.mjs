@@ -158,6 +158,21 @@ export async function run() {
     assert(ChessPgn.stripResult("1. e4 e5 *") === "1. e4 e5", "a trailing * is stripped");
     assert(ChessPgn.stripResult("1. e4 e5 1/2-1/2\n") === "1. e4 e5", "a trailing draw token is stripped");
     assert(ChessPgn.stripResult("1. e4 e5") === "1. e4 e5", "nothing to strip leaves the text alone");
+    // 23.0 (review-22.0 §5A.2 X4): linear, whatever the whitespace — the old
+    // regex took 4.5 s on a comment of 80,000 spaces
+    {
+      const t0 = Date.now();
+      assert(ChessPgn.stripResult("{" + " ".repeat(80000) + "x") === "{" + " ".repeat(80000) + "x" &&
+        ChessPgn.stripResult(" ".repeat(80000) + "1-0") === "" && ChessPgn.stripResult("1. e4 x1-0") === "1. e4 x1-0" &&
+        Date.now() - t0 < 200, "stripResult is linear on long whitespace, and strips only a whole result token (" + (Date.now() - t0) + " ms)");
+    }
+    // 23.0 (X1): chess.js's load_pgn is never handed a text whose variations
+    // would freeze it (quadratic in the nesting), nor a very long one
+    {
+      const deep = "(a ".repeat(20000) + ")".repeat(20000);
+      assert(!ChessPgn.legacyReadable(deep) && !ChessPgn.legacyReadable("1. e4 ".repeat(20000)) &&
+        ChessPgn.legacyReadable("1. e4 (1. d4 (1. c4 c5)) e5 2. Nf3 *"), "legacyReadable: deep or huge texts are kept from load_pgn, ordinary ones are not");
+    }
     const g = new Chess();
     g.load_pgn('[Event "x"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 1-0', { sloppy: true });
     const body = ChessPgn.stripResult(g.pgn().split("\n\n").pop());

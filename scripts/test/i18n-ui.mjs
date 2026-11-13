@@ -45,9 +45,13 @@ export async function run() {
     assert(det(["zh-TW"]) === "zh-CN", "any Chinese variant picks Chinese");
     assert(det(["ja-JP"]) === "ja", "ja-JP picks Japanese");
     assert(det(["ja"]) === "ja", "a bare ja tag picks Japanese");
-    assert(det(["fr-FR"]) === "zh-CN", "an unsupported locale falls back to the base language");
-    assert(det([]) === "zh-CN", "no locale information falls back");
-    assert(I.detectLang({}) === "zh-CN", "a navigator with no language fields falls back");
+    // 23.0: the first-run fallback is English, the same as the menu bar's
+    // (mac_chrome.m / win_chrome.c), so the two agree on a first launch
+    assert(det(["fr-FR"]) === "en", "an unsupported locale falls back to English");
+    assert(det(["fr-FR", "ja-JP"]) === "ja", "an unsupported first choice does not stop the walk: ja second picks Japanese");
+    assert(det(["de-DE", "zh-TW"]) === "zh-CN", "…and a Chinese second choice picks Chinese");
+    assert(det([]) === "en", "no locale information falls back to English");
+    assert(I.detectLang({}) === "en", "a navigator with no language fields falls back to English");
     I.setLang("en");
     assert(I.t("nope.missing") === "nope.missing", "unknown keys fall back to the key itself");
     I.setLang("zh-CN");

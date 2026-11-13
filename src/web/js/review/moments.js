@@ -100,6 +100,10 @@ export function createMoments(d) {
       const over = store.game.imported || (!!result && result() !== "*");
       if (fresh && over && list.length && store.game.viewIndex === sanHistory().length && !store.session.analyzing && !store.session.retry) {
         setViewIndex(list[0].ply + 1);
+        // 23.0 (review-22.0 §3.1-11): said, not only shown — to a screen
+        // reader the board otherwise just moved under them
+        const live = document.getElementById("board-live"), san = sanHistory()[list[0].ply];
+        if (live && san) live.textContent = tdot(t("rv.keyMoments"), boardMoveNo(list[0].ply) + ((list[0].ply + 1) % 2 ? ". " : "… ") + san);
         return;
       }
     }

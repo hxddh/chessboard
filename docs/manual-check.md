@@ -21,6 +21,17 @@
 
 ---
 
+## 23.0 真机核对（10 分钟）
+
+自动化够不到的几条，23.0 改到了它们：
+
+1. **[M] 检查器只在开发构建里有**：在发布的 `Chessboard.app` 窗口里右键，菜单里**没有**「检查元素」；Safari「开发」菜单里也看不到这个应用。`zig build run` 出来的开发版**有**。
+2. **首次启动的语言**：删掉数据目录里的 `lang` 文件（macOS `~/Library/Application Support/dev.hxddh.chessboard/lang`，Windows `%APPDATA%\dev.hxddh.chessboard\lang`），系统首选语言设成「法语、日语」两项，启动：页面和菜单栏都是日文。只留「法语」：两边都是英文。
+3. **[M] 第一声**（评估 3.1-7）：全新启动后 1 秒内就走一步棋，有落子声。WKWebView 若让这一声没响，记下来。
+4. **[W] 系统切换深浅色**（评估 2.1 / sdk-fork-notes B15）：棋盘主题是「木」时把 Windows 切到浅色，标题栏可能被 SDK 改回浅色；切一次棋盘主题后应恢复。记下实际表现。
+
+---
+
 ## 21.0 G1：发版前先看真 WebView 的截图（5 分钟）
 
 20.0 的 CI 全绿，真机上界面却是坏的：原生作业只问「元素在不在」，从没看过屏幕。从 21.0 起，`build-macos.yml` / `build-windows.yml` 的 automation 作业在打包后的 WKWebView 和 WebView2 里逐页走一遍（`selftest-scenarios.js` 的 `pages` 场景），每页先由页面自己判「真的画出来了」，再由驱动截一张整窗的图：

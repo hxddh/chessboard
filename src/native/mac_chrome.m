@@ -179,13 +179,20 @@ int chess_mac_haptic(void) {
     return 1;
 }
 
-/// 22.0 F5: the first of the user's preferred languages, for a first launch
-/// that has no saved choice yet: 0 Chinese, 1 English (and everything else),
-/// 2 Japanese. WKWebView's navigator.languages is the same list, so the menu
-/// bar and the page agree from the start.
+/// 22.0 F5 / 23.0: the language for a first launch that has no saved choice
+/// yet: 0 Chinese, 1 English, 2 Japanese. Walks the user's preferred
+/// languages in order — WKWebView's navigator.languages is the same list —
+/// the way the page's detectLang (lang-ids.js) does, and takes the first one
+/// of ours; none of ours is English, as on the page. 22.0 looked at the first
+/// language only, so ["fr", "ja"] gave an English menu bar over a Japanese
+/// page (review-22.0 §3.1-1).
 int chess_mac_ui_language(void) {
-    NSString *first = [[NSLocale preferredLanguages] firstObject];
-    if ([first hasPrefix:@"zh"]) return 0;
-    if ([first hasPrefix:@"ja"]) return 2;
+    for (NSString *tag in [NSLocale preferredLanguages]) {
+        NSString *base = [[tag lowercaseString] componentsSeparatedByCharactersInSet:
+            [NSCharacterSet characterSetWithCharactersInString:@"-_"]].firstObject;
+        if ([base isEqualToString:@"zh"]) return 0;
+        if ([base isEqualToString:@"en"]) return 1;
+        if ([base isEqualToString:@"ja"]) return 2;
+    }
     return 1;
 }

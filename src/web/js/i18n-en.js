@@ -742,7 +742,7 @@
       "lib.analyseEta": "Review the remaining {0} (about {1})", "lib.etaMin": "{0:minute|minutes}", "lib.etaHour": "{0} hours",
       "lib.working": "Reviewing game {0} of {1} \u00B7 {2}",
       "lib.added": "Added {0:game|games}; {1} were already in the library", "lib.addedNone": "Nothing added: the file's {0:game was|games were} already in the library",
-      "lib.dropped": "The library holds {0}; the {1} oldest imports were pushed out",
+      "lib.dropped": "The library holds {0}; the {1} oldest imports were pushed out", "lib.dropAsk": "The library holds {0} games. Importing these pushes out the {1} oldest imports, with their reviews. Go ahead?",
       "lib.noneClaimed": "None of these games are yours yet — enter the name you play under in the field above.",
       "lib.needMore": "{0:more game|more games} needed for a diagnosis ({1}/{2} reviewed)",
       "lib.busy": "The engine is busy; import once this review is done",

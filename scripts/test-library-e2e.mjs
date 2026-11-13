@@ -2241,6 +2241,25 @@ function tenThousand() {
   }
   assert(b2.games.length === 10000 && diff.length === 0,
     `C1 整库导出(${(text.length / 1048576).toFixed(1)} MB PGN)再导进空库：1 万局逐局相等(${fields.length} 个字段${diff.length ? "；不等 " + diff.slice(0, 5).join(", ") : ""})`);
+  // 23.0 (review-22.0 §5A.2 X6): a full library asks before a file pushes
+  // games out. Through 22.0 the oldest import went, analysis and all, with a
+  // toast after the fact.
+  const extra = '[Event "Twenty-three"]\n[White "hxddh"]\n[Black "Zed"]\n[Result "1-0"]\n\n1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0\n';
+  const ids0 = new Set((await libOf(second.page)).games.map((g) => g.id));
+  await importFile(second.page, extra);
+  const asked = await second.page.waitForSelector("#confirm-ok", { state: "visible", timeout: 10000 }).then(() => true, () => false);
+  const askText = asked ? await second.page.evaluate(() => (document.getElementById("confirm-msg") || document.querySelector(".confirm-msg") || document.body).textContent) : "";
+  assert(asked && /10000|10,000/.test(askText) && /1 局/.test(askText), "23.0 库满再导入：先问会挤掉几局", askText.slice(0, 160));
+  if (asked) await second.page.click("#confirm-cancel");
+  await second.page.waitForTimeout(400);
+  const kept = (await libOf(second.page)).games;
+  assert(kept.length === 10000 && kept.every((g) => ids0.has(g.id)), "23.0 选「取消」：库原样，一局没挤掉，新的也没进来", String(kept.length));
+  await importFile(second.page, extra);
+  await second.page.waitForSelector("#confirm-ok", { state: "visible", timeout: 10000 }).catch(() => {});
+  await second.page.click("#confirm-ok").catch(() => {});
+  await second.page.waitForFunction((n) => window.__chess.library().games.some((g) => !n.includes(g.id)), [...ids0], { timeout: 20000 }).catch(() => {});
+  const took = (await libOf(second.page)).games;
+  assert(took.length === 10000 && took.filter((g) => !ids0.has(g.id)).length === 1, "23.0 选「导入」：进来 1 局，挤出最早的 1 局", String(took.length));
   assert(errs.length === 0 && second.errs.length === 0, "C1 1 万局：没有 JS 异常", errs.concat(second.errs).join(" / "));
   await ctx2.close();
   await ctx.close();

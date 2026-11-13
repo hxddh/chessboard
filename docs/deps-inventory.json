@@ -301,19 +301,19 @@
     {
       "name": "lichess-org/chess-openings（ECO 表）",
       "kind": "data (CC0)",
-      "current": "c67912be581f0793dbaa776be5ccf111e01f88d9（2026-09-20 的提交，2026-09-29 取），3815 个局面",
+      "current": "3ba6b20d31b2e6125cb0e6a2e792f400717d9d39（2026-11-05 的提交，2026-11-13 取），3865 个局面",
       "pinnedIn": [
         "src/web/js/eco.js 文件头",
         "scripts/gen-eco.mjs"
       ],
-      "latest": "c67912be（2026-09-20，#399：补了几条 E16 线）",
+      "latest": "3ba6b20（2026-11-05；另有标签 2026.10.28）",
       "source": [
         "git clone https://github.com/lichess-org/chess-openings",
         "git ls-remote … HEAD + raw.githubusercontent.com/…/master/{a..e}.tsv（gen-eco --refresh）"
       ],
-      "checkedAt": "2026-09-29",
-      "recommendation": "done-8.1",
-      "note": "8.1 F1 已刷新：gen-eco --refresh，4b86227 → c67912be，3810 → 3815 个局面（新增 5 个 E16：Capablanca ×3、Riumin ×2），0 个重复。chunk-eco.js 485,191 → 485,817 字节（+626），主包不变。test-eco 通过；开局浏览器「书」核对：1011 个分支点（1005 个局面）一致。"
+      "checkedAt": "2026-11-13",
+      "recommendation": "done-23.0",
+      "note": "8.1 F1 已刷新：gen-eco --refresh，4b86227 → c67912be，3810 → 3815 个局面（新增 5 个 E16：Capablanca ×3、Riumin ×2），0 个重复。chunk-eco.js 485,191 → 485,817 字节（+626），主包不变。test-eco 通过；开局浏览器「书」核对：1011 个分支点（1005 个局面）一致。 23.0 刷新：c67912be → 3ba6b20，3815 → 3865 个局面（A31 Kasparov-Vaganian Gambit、Benoni、D07/D35、E33 若干线）；Mieses-Kotroc Variation 改名 Mieses-Kotrč Variation（test-eco 的无定名登记跟着改）。"
     },
     {
       "name": "棋子图（Merida / cburnett / 经典；19.0 S8 去掉了 Chessnut、Fantasy、Celtic、Spatial）",

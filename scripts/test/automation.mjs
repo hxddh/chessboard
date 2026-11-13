@@ -36,9 +36,21 @@ export async function run() {
     for (const rel of [".github/workflows/build-macos.yml", ".github/workflows/build-windows.yml"]) {
       const jobs = jobsOf(code(rel));
       const auto = Object.entries(jobs).filter(([, j]) => /-Dautomation=true/.test(j));
-      const shipping = Object.entries(jobs).filter(([, j]) => /name: Chessboard-/.test(j) || /gh release upload/.test(j));
+      const packs = Object.entries(jobs).filter(([, j]) => /upload-artifact@[^\n]*\n\s*with:\n\s*name: Chessboard-/.test(j));
+      const releases = Object.entries(jobs).filter(([, j]) => /gh release upload/.test(j));
       assert(auto.length === 1 && auto[0][0] === "automation", rel + ": one job builds with -Dautomation=true, `automation` (" + auto.map(([n]) => n).join(", ") + ")");
-      assert(shipping.length === 1 && shipping[0][0] === "build", rel + ": only `build` uploads a Chessboard-* artifact or to a release (" + shipping.map(([n]) => n).join(", ") + ")");
+      assert(packs.length === 1 && packs[0][0] === "build", rel + ": only `build` uploads a Chessboard-* artifact (" + packs.map(([n]) => n).join(", ") + ")");
+      // 23.0 (review-22.0 §3.1-4): `build` runs a pull request's own code, so it
+      // is read-only; the one job that may write takes `build`'s artifact to
+      // the release, only with a tag, and checks nothing out
+      const pub = jobs.publish || "";
+      assert(releases.length === 1 && releases[0][0] === "publish", rel + ": only `publish` uploads to a release (" + releases.map(([n]) => n).join(", ") + ")");
+      assert(/needs: build\b/.test(pub) && /if: \$\{\{ inputs\.release_tag != '' \}\}/.test(pub) && /contents: write/.test(pub) &&
+        !/actions\/checkout@|npm |run: node /.test(pub) && /download-artifact@[^\n]*\n\s*with:\n\s*name: Chessboard-/.test(pub),
+        rel + ": `publish` needs build, runs only with a release tag, checks nothing out and uploads build's artifact");
+      assert(/permissions:\n\s*contents: read/.test(jobs.build || "") && !/contents: write/.test(jobs.build || ""), rel + ": `build` is read-only");
+      assert(/^concurrency:/m.test(code(rel)) && /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/.test(code(rel)),
+        rel + ": a pull request's newer run cancels its older one, and nothing else is ever cancelled");
       assert(!/-Dautomation/.test(jobs.build || ""), rel + ": the shipped package is built without automation");
       const a = jobs.automation || "";
       assert(!/name: Chessboard-|gh release|upload-artifact[\s\S]*?path: dist\//.test(a) && /--output dist-auto\//.test(a) && !/--output dist\//.test(a),

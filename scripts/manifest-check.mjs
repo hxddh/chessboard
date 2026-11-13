@@ -688,7 +688,9 @@ if (sdkPath && fs.existsSync(path.join(sdkPath, "src", "platform", "types.zig"))
     check(!!row && row[1] === "async_fn", `应用桥: ${name} 要是异步处理器(.async_fn)—— 联网不能占住平台循环的线程(v8-1-plan N1)`);
   }
   // Q1.2: the two file commands consult the issued-path table
-  for (const fn of ["writeTextFile", "readTextFile"]) {
+  // 23.0 (review-22.0 §5A.2 X2): and there is no write to an issued path any more
+  check(!/"chess\.writeTextFile"/.test(mainSrc), `应用桥: chess.writeTextFile 又注册回来了 —— 一个没人调用、却能改写任何签发过的路径的写入能力(23.0 删掉的)`);
+  for (const fn of ["readTextFile"]) {
     const body = new RegExp(`fn ${fn}\\([\\s\\S]*?\\n\\}`).exec(mainSrc);
     check(!!body && /self\.issued\.contains\(path\)/.test(body[0]), `应用桥: ${fn} 没有查签发路径表(issued.contains)—— 任意绝对路径又能读写了`);
   }

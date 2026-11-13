@@ -774,7 +774,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "lib.analyseEta": "复盘剩下的 {0} 局（约 {1}）", "lib.etaMin": "{0} 分钟", "lib.etaHour": "{0} 小时",
       "lib.working": "正在复盘第 {0}/{1} 局 · {2}",
       "lib.added": "收进 {0} 局，重复的 {1} 局跳过了", "lib.addedNone": "这个文件里的 {0} 局全都已经在库里了",
-      "lib.dropped": "库满 {0} 局，最早导入的 {1} 局被挤出去了",
+      "lib.dropped": "库满 {0} 局，最早导入的 {1} 局被挤出去了", "lib.dropAsk": "棋谱库最多 {0} 局。导入这些会挤掉最早导入的 {1} 局（连同它们的复盘），继续吗？",
       "lib.noneClaimed": "一局都没认出是你下的 —— 在上面填上你在棋谱里的名字",
       "lib.needMore": "还差 {0} 局才够给诊断（已复盘 {1}/{2}）",
       "lib.busy": "引擎正忙，等这轮复盘完再导",

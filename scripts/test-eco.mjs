@@ -242,7 +242,7 @@ assert(ChessEco.size >= 3000, "the table has at least 3000 positions (" + ChessE
   // a made-up transliteration would read as a name nobody uses.
   const NO_ESTABLISHED_NAME = new Set([
     "Agincourt Defense", "Polerio Defense", "Neo-Catalan", "Neo-Catalan Declined",
-    "Bastrikov Variation", "Mieses-Kotroc Variation", "Pierce Defense", "Nyezhmetdinov-Rossolimo Attack",
+    "Bastrikov Variation", "Mieses-Kotrč Variation", "Pierce Defense", "Nyezhmetdinov-Rossolimo Attack",
     // 7.9
     "Czerniak Defense", "Haxo Gambit", "Suhle Defense", "Rio Gambit Accepted", "l'Hermet Variation",
     "Stoltz Variation", "Bryan Countergambit", "Dufresne Defense",
