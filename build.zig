@@ -49,6 +49,12 @@ pub fn build(b: *std.Build) void {
     const trace_option = b.option(TraceOption, "trace", "Trace output: off, events, runtime, all") orelse .events;
     const debug_overlay = b.option(bool, "debug-overlay", "Enable debug overlay output") orelse false;
     const automation_enabled = b.option(bool, "automation", "Enable Native SDK automation artifacts") orelse false;
+    // SDK 0.11 (#690): whether the macOS WKWebView can be inspected (Safari's
+    // Develop menu, right-click "Inspect Element"). Unset, src/runner.zig
+    // follows the exe's role — on for Debug, off for anything release-shaped.
+    // SDK 0.10.1 turned it on unconditionally, so every release through 22.0
+    // could be inspected and its page and saved data edited (review-22.0 §2.1).
+    const webview_inspection = b.option(bool, "webview-inspect", "Enable macOS system WebView inspection (default: Debug builds only)");
     const js_bridge_enabled = b.option(bool, "js-bridge", "Enable optional JavaScript bridge stubs") orelse false;
     const web_engine_override = b.option(WebEngineOption, "web-engine", "Override app.zon web engine: system, chromium");
     const web_layer_override = b.option(WebLayerOption, "web-layer", "Override app.zon webview_layer: auto, include, exclude");
@@ -109,6 +115,7 @@ pub fn build(b: *std.Build) void {
         .js_bridge = js_bridge_enabled,
         .web_layer = web_layer,
         .dev_origins = dev_origins_request orelse (optimize == .Debug),
+        .webview_inspection = webview_inspection,
     };
     const options_mod = buildOptionsModule(b, build_opts);
 
@@ -252,6 +259,7 @@ const BuildOptionValues = struct {
     js_bridge: bool,
     web_layer: bool,
     dev_origins: bool,
+    webview_inspection: ?bool,
 };
 
 fn buildOptionsModule(b: *std.Build, values: BuildOptionValues) *std.Build.Module {
@@ -261,6 +269,7 @@ fn buildOptionsModule(b: *std.Build, values: BuildOptionValues) *std.Build.Modul
     options.addOption([]const u8, "web_engine", values.web_engine);
     options.addOption(bool, "debug_overlay", values.debug_overlay);
     options.addOption(bool, "automation", values.automation);
+    options.addOption(?bool, "webview_inspection", values.webview_inspection);
     options.addOption(bool, "js_bridge", values.js_bridge);
     options.addOption(bool, "web_layer", values.web_layer);
     options.addOption(bool, "dev_origins", values.dev_origins);

@@ -12,13 +12,13 @@ on:
         default: ""
       sdk_version:
         # Pinned, like release.yml's input of the same name (see the comment
-        # there). D7: this used to default to "latest", and the `|| '0.10.1'`
+        # there). D7: this used to default to "latest", and the `|| '0.11.1'`
         # below only catches an EMPTY string — so every hand-dispatched build
         # got whatever npm had that day, while the step's comment claimed the
         # opposite. The fallback stays for a caller that passes "".
         description: "@native-sdk/cli version (npm dist-tag or exact version)"
         required: false
-        default: "0.10.1"
+        default: "0.11.1"
   # 22.0 G6′: a pull request that changes the shell, the packaging or the
   # real-WebView scenarios runs this workflow — both jobs, the automation one
   # with its 13 pages in a real WebView. Through 21.0 the first real WebView a
@@ -48,7 +48,7 @@ on:
       sdk_version:
         type: string
         required: false
-        default: "0.10.1"
+        default: "0.11.1"
 
 # 22.0 D1: read by default. Only `build` may write — it is the one job that
 # uploads to a release (and only when release_tag is set); `automation` runs a
@@ -86,7 +86,7 @@ jobs:
       - name: install Native SDK CLI
         env:
           # see release.yml's sdk_version input for why this is not 'latest'
-          SDK_VERSION: ${{ inputs.sdk_version || '0.10.1' }}
+          SDK_VERSION: ${{ inputs.sdk_version || '0.11.1' }}
         run: |
           npm install -g "@native-sdk/cli@${SDK_VERSION}"
           native --version || true
@@ -211,7 +211,7 @@ jobs:
         run: npm ci
       - name: install Native SDK CLI
         env:
-          SDK_VERSION: ${{ inputs.sdk_version || '0.10.1' }}
+          SDK_VERSION: ${{ inputs.sdk_version || '0.11.1' }}
         run: |
           npm install -g "@native-sdk/cli@${SDK_VERSION}"
           echo "resolved: $(npm ls -g --depth=0 @native-sdk/cli || true)"
