@@ -225,10 +225,11 @@ import { CHESS_OPENINGS, CHESS_OPENING_NAMES } from "./openings.js";
   }
 
   /**
-   * `"Italian Game: Giuoco Piano"` → `"意大利开局：Giuoco Piano"`, or null
-   * when the family is not in `lang`'s table. The variation's segments
-   * are translated too, when variationName() knows every one of them
-   * (v7-8-plan §6, 7.9 §5). A name with no colon is all
+   * `"Italian Game: Giuoco Piano"` → `"意大利开局：<the variation in zh>"`, or
+   * just the family (`"意大利开局"`) when variationName() has no translation for
+   * the variation's first segment — never an English segment in a CJK name
+   * (22.0 B5; through 21.0 the untranslated variation stayed in English). Null
+   * when the family is not in `lang`'s table. A name with no colon is all
    * family. Both CJK languages join with the full-width colon, as the rest
    * of their copy does (scripts/cjk-punct.mjs).
    */
@@ -246,8 +247,8 @@ import { CHESS_OPENINGS, CHESS_OPENING_NAMES } from "./openings.js";
    * The name to show for a table entry in `lang`.
    *
    * The book's translation when the entry is one of the book's lines, else
-   * the family translated with the variation left in English, else the
-   * lichess English name. English also prefers lichess: the book's English
+   * the family translated with as much of the variation as has a translation
+   * (familyName), else the lichess English name. English also prefers lichess: the book's English
    * is a translation of its Chinese, the table's is the source.
    * @param {{eco: string, name: string}} entry from lookupPosition / openingForGame
    * @param {"zh-CN"|"en"|"ja"} lang

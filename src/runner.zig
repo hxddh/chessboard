@@ -65,6 +65,15 @@ pub const RunOptions = struct {
             // create — the two checks would disagree at runtime.
             .declares_tray = manifestDeclaresTrayCapability(),
             .has_web_content = manifestHasWebContent(),
+            // SDK 0.11 (#690): the macOS host makes the WKWebView inspectable
+            // only when this is true. -Dwebview-inspect pins it; unset, it
+            // follows this module's optimize mode, so the ReleaseFast exe
+            // that `zig build package` wraps is never inspectable. Same rule
+            // as upstream's runner.
+            .webview_inspection = if (@hasDecl(build_options, "webview_inspection"))
+                build_options.webview_inspection orelse (@import("builtin").mode == .Debug)
+            else
+                @import("builtin").mode == .Debug,
             // Pairs with declares_tray: an app that never declared "tray" has
             // no way back to a hidden window, so the SDK refuses to hide it
             // from the Dock. We keep the default (visible) — but wired, so

@@ -3011,14 +3011,14 @@ if (scenario()) {
 // de-DE all came up in Chinese, and the guide never appeared. Both of those are
 // what docs/manual-check.md A3 names as the failure, and A3 has never been run.
 if (scenario()) {
-  // de-DE is here on purpose: an unsupported locale falls back to Chinese by
-  // design (test-chess pins fr-FR → zh-CN), so it proves the fallback still
-  // works rather than that everything is Chinese again.
+  // de-DE is here on purpose: an unsupported locale falls back by design —
+  // to English since 23.0, the menu bar's fallback too (test-chess pins
+  // fr-FR → en) — so it proves the fallback works, not that one language won.
   for (const [locale, lang, tab] of [
     // 9.0 S5: read off the rail's 设置 (nav.settings) — the panel's 对局 tab,
     // which this used to read, is gone with the tab row
     ["en-US", "en", "Settings"], ["ja-JP", "ja", "設定"],
-    ["zh-CN", "zh-CN", "设置"], ["de-DE", "zh-CN", "设置"],
+    ["zh-CN", "zh-CN", "设置"], ["de-DE", "en", "Settings"],
   ]) {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale });
     const page = await ctx.newPage();          // nothing seeded: a new install

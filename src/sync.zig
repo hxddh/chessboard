@@ -575,6 +575,12 @@ fn httpGet(client: *std.http.Client, url: []const u8, accept: []const u8, body: 
     const uri = std.Uri.parse(url) catch return 0;
     var req = client.request(.GET, uri, .{
         .keep_alive = false,
+        // 23.0 (review-22.0 §5A.2 X5): a 3xx is handed back as its status, not
+        // followed. std's default followed three, to any host and to plain
+        // http — the two fixed https hosts were checked only before the first
+        // request. Neither API redirects a request it answers; a redirect is a
+        // failed fetch, said as one.
+        .redirect_behavior = .unhandled,
         .headers = .{ .user_agent = .{ .override = SYNC_USER_AGENT } },
         .extra_headers = &.{.{ .name = "accept", .value = accept }},
     }) catch return 0;

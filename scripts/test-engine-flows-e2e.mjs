@@ -461,11 +461,22 @@ await scenario("失着提醒", async () => {
       const ek = "e1", to = "d1";
       await clickMove(page, ek, to);
       const queued = await page.evaluate(() => window.__chess.shapes().arrows.some((a) => a.color === "Y"));
+      // 23.0 (review-22.0 §3.1-2): through 22.0 the premove's own 「已预走」
+      // toast replaced this one — the 悔棋 button went in exactly the seconds it
+      // was for. The yellow arrow says the premove; the warning stays.
+      const kept = await holdUp();
+      assert(!!up && queued, "22.0 F4 等待期间点的一步进了预走（黄箭头），不再被悄悄丢掉", JSON.stringify({ up: !!up, queued }));
+      assert(kept, "23.0 设了预走之后，失着提醒和它的「悔棋」还在屏上");
+      // 23.0 (§3.1-3): the opponent's reply is waited for, not slept past —
+      // and the F1 check below can no longer pass on the premove's toast
       const reply = await savedAt(page, 6, 20000);
       assert(!!reply, "21.0 T2 不收回：等一会儿之后对手照常应着");
-      assert(!!up && queued, "22.0 F4 等待期间点的一步进了预走（黄箭头），不再被悄悄丢掉", JSON.stringify({ up: !!up, queued }));
-      await page.waitForTimeout(400);
-      assert(!(await holdUp()), "22.0 F1 对手应着之后，这条提示已经收掉");
+      const gone = await until(async () => ((await holdUp()) ? null : true), 1500, 50);
+      assert(!!gone, "22.0 F1 对手应着之后，这条提示已经收掉（应着后 1.5 秒内）");
+      // 22.0 F4's acceptance: the premove is played once the reply is in
+      const played = await savedAt(page, 7, 5000);
+      const last = played ? played.history({ verbose: true }).slice(-1)[0] : null;
+      assert(!!last && last.from === ek && last.to === to, "22.0 F4 对手应着之后，预走的那一步被走出(" + (played ? played.history().join(" ") : "没有第 7 个半着") + ")");
       assert(!errs.length, "失着提醒：页面没有报错", errs.join(" / "));
       done = true;
     } finally { await ctx.close(); }

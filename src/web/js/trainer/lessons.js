@@ -406,7 +406,15 @@ export function createLessonsUI(d) {
     if (!lr || !r || r.bottom <= 0 || r.top >= (view ? view.innerHeight : 0)) { toast(msg, "fix"); return; }
     lr.fb = { msg, at: fbAt(lr) };
     const fb = document.getElementById("lesson-fb");
-    if (fb) { fb.textContent = msg; fb.hidden = false; }
+    if (!fb) return;
+    // 23.0 (review-22.0 §3.1-10): the same slip twice left the live region's
+    // text unchanged, and a screen reader says nothing for an unchanged text —
+    // emptied first, the second slip is announced like the first
+    const again = fb.textContent === msg && !fb.hidden;
+    fb.hidden = false;
+    if (!again) { fb.textContent = msg; return; }
+    fb.textContent = "";
+    (view && view.requestAnimationFrame ? view.requestAnimationFrame.bind(view) : (f) => setTimeout(f, 16))(() => { fb.textContent = msg; });
   }
 
   function learnTaskText() {

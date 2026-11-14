@@ -190,7 +190,12 @@ export function createTodayPage(d) {
   /** 22.0 A2: 「继续」 only over something begun; a profile that has begun none of the three reads 「从这里开始」. */
   function renderContHead() {
     const begun = [...doc.querySelectorAll("#today-cont .today-c:not([hidden]) .today-bar")].some((b) => !b.classList.contains("fresh"));
-    put($("today-cont-h"), t(begun ? "today.continue" : "today.startHere"));
+    const h = $("today-cont-h"), key = begun ? "today.continue" : "today.startHere";
+    // 23.0 (review-22.0 §3.1-8): the key goes on the element too, so a change
+    // of language (I18n.apply re-reads data-i18n) keeps 「从这里开始」 instead
+    // of putting back the 「继续」 index.html starts with
+    if (h) h.dataset.i18n = key;
+    put(h, t(key));
   }
 
   function renderGames() {
@@ -243,7 +248,9 @@ export function createTodayPage(d) {
     const b = $("today-r-game"), cv = $("today-r-game-cv"), note = $("today-r-note");
     const series = Metrics.gameRatingSeries(loadStats().games, 60);
     const st = store.session.puzzleState || {};
-    const placed = !series.length && Array.isArray(st.rhist) && st.rhist.length > 0;
+    // 23.0 (§3.1-9): only the placement makes the puzzle rating a stand-in for
+    // the player's level — puzzles solved without one are not "provisional by placement"
+    const placed = !series.length && !!st.placed && Array.isArray(st.rhist) && st.rhist.length > 0;
     const ys = series.map((p) => p.r);
     put(b, series.length ? String(ys[ys.length - 1]) : placed ? puzzleRatingText() : t("today.rGameNone"));
     if (b) b.classList.toggle("today-invite", !series.length && !placed);

@@ -12,16 +12,16 @@ on:
         default: ""
       sdk_version:
         # Pinned, like release.yml's input of the same name (see the comment
-        # there). D7: this used to default to "latest", and the `|| '0.10.1'`
+        # there). D7: this used to default to "latest", and the `|| '0.11.1'`
         # below only catches an EMPTY string — so every hand-dispatched build
         # got whatever npm had that day, while the step's comment claimed the
         # opposite. The fallback stays for a caller that passes "".
         description: "@native-sdk/cli version (npm dist-tag or exact version)"
         required: false
-        default: "0.10.1"
+        default: "0.11.1"
   # 22.0 G6′: a pull request that changes the shell, the packaging or the
   # real-WebView scenarios runs this workflow — both jobs, the automation one
-  # with its 13 pages in a real WebView. Through 21.0 the first real WebView a
+  # with its 17 pages in a real WebView. Through 21.0 the first real WebView a
   # change met was the release's own run. No tag: nothing is uploaded anywhere.
   pull_request:
     paths:
@@ -35,6 +35,14 @@ on:
       - "scripts/selftest-app.mjs"
       - "src/web/js/selftest-scenarios.js"
       - ".github/workflows/build-macos.yml"
+      # 23.0 (review-22.0 §3.1-4): the page is half of what the real WebView
+      # runs. Through 22.0 a front-end-only change — 22.0's own chunk-audio.js
+      # was one — first met a real WebView in the release run.
+      - "src/web/**"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/bundle.mjs"
+      - "scripts/sync-dist.mjs"
   # 7.6: release.yml calls this workflow directly, in parallel with its test
   # jobs, and takes the package from the uploaded artifact once every test is
   # green. It passes no release_tag, so nothing is uploaded from here; a hand
@@ -48,7 +56,7 @@ on:
       sdk_version:
         type: string
         required: false
-        default: "0.10.1"
+        default: "0.11.1"
 
 # 22.0 D1: read by default. Only `build` may write — it is the one job that
 # uploads to a release (and only when release_tag is set); `automation` runs a
@@ -57,10 +65,20 @@ on:
 permissions:
   contents: read
 
+# 23.0: a pull request's newer push cancels its older run (macOS minutes are
+# the expensive ones). Keyed by event too, so a release's call or a hand
+# dispatch never shares a group with a PR run, and is never cancelled.
+concurrency:
+  group: build-macos-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
+    # 23.0 (review-22.0 §3.1-4): read-only. On a pull request this job runs the
+    # PR's own code and a global npm install; it held a token that could write
+    # to the repository. Uploading to a release is the `publish` job below.
     permissions:
-      contents: write
+      contents: read
     # macos-14 was retired on 2026-11-02 (github.blog changelog 2026-10-01):
     # its jobs got no runner and were cancelled, which cancelled the v19.0.0
     # release. macos-26 is the image macos-latest maps to, the one checks.yml's
@@ -86,7 +104,7 @@ jobs:
       - name: install Native SDK CLI
         env:
           # see release.yml's sdk_version input for why this is not 'latest'
-          SDK_VERSION: ${{ inputs.sdk_version || '0.10.1' }}
+          SDK_VERSION: ${{ inputs.sdk_version || '0.11.1' }}
         run: |
           npm install -g "@native-sdk/cli@${SDK_VERSION}"
           native --version || true
@@ -166,10 +184,25 @@ jobs:
           path: |
             dist/Chessboard-macOS-arm64.zip
             dist/Chessboard-macOS-arm64.dmg
+
+  # 23.0: the only job that may write, and only with a release tag. It runs no
+  # code from the checkout: it takes the package `build` uploaded as an
+  # artifact and hands it to the release.
+  publish:
+    needs: build
+    if: ${{ inputs.release_tag != '' }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: Chessboard-macOS-arm64
+          path: dist
       - name: upload to release
-        if: ${{ inputs.release_tag != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.release_tag }}
         run: gh release upload "$TAG" dist/Chessboard-macOS-arm64.zip dist/Chessboard-macOS-arm64.dmg --clobber
 
@@ -211,7 +244,7 @@ jobs:
         run: npm ci
       - name: install Native SDK CLI
         env:
-          SDK_VERSION: ${{ inputs.sdk_version || '0.10.1' }}
+          SDK_VERSION: ${{ inputs.sdk_version || '0.11.1' }}
         run: |
           npm install -g "@native-sdk/cli@${SDK_VERSION}"
           echo "resolved: $(npm ls -g --depth=0 @native-sdk/cli || true)"

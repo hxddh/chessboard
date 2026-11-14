@@ -11,8 +11,16 @@
 
   /** Every interface language, the Chinese source first. */
   export const LANG_IDS = ["zh-CN", "en", "ja"];
-  /** The source language, and what anything unknown falls back to. */
+  /** The source language: the dictionary every other one is checked against, and what a stored but unknown id falls back to. */
   export const FALLBACK_LANG = "zh-CN";
+  /**
+   * The first-run guess when none of the system's preferred languages is one
+   * of ours. 23.0: English, not the Chinese source — a French or German
+   * system is likelier to read English, and the menu bar (main.zig
+   * systemLanguage, mac_chrome.m / win_chrome.c) falls back to English too, so
+   * the page and the menus agree on a first launch (review-22.0 §3.1-1).
+   */
+  export const FIRST_RUN_FALLBACK = "en";
   /**
    * Each language's name for itself, for the picker — which lists every
    * language whether or not its dictionary is here yet. test-chess.mjs holds
@@ -31,7 +39,7 @@
    */
   export function detectLang(nav) {
     const src = nav || (typeof navigator !== "undefined" ? navigator : null);
-    if (!src) return FALLBACK_LANG;
+    if (!src) return FIRST_RUN_FALLBACK;
     const tags = [].concat(src.languages || [], src.language || []);
     for (const raw of tags) {
       const tag = String(raw || "").toLowerCase();
@@ -42,5 +50,5 @@
       const exact = LANG_IDS.find((id) => id.toLowerCase() === tag);
       if (exact) return exact;
     }
-    return FALLBACK_LANG;
+    return FIRST_RUN_FALLBACK;
   }

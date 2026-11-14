@@ -273,7 +273,7 @@ export function createIO(d) {
       const g = ChessPgnParser.parsePgn(text0).games[0];
       parsed = !!g && g.root.children.length > 0;
     } catch (_) { parsed = false; }
-    if (!parsed) {
+    if (!parsed && ChessPgn.legacyReadable(text0)) { // 23.0: never a text that would freeze it (pgn.js)
       const probe = new Chess();
       parsed = probe.load_pgn(text0, { sloppy: true }) && probe.history().length > 0;
     }

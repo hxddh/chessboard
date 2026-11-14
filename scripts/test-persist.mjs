@@ -140,27 +140,26 @@ function loadHost(zero, over) {
   // 2 MB, with a four-byte character every so often so that piece boundaries
   // land inside UTF-8 sequences
   const big = Array.from({ length: 70000 }, (_, i) => (i % 97 ? "e4 e5 Nf3 Nc6 Bb5 a6 " : "😀 国际象棋 ")).join("").slice(0, 2 * 1024 * 1024);
-  await H.writeTextFile("/Users/me/all.json", big);
-  const writes = zero.frames.filter((f) => f.cmd === "chess.writeTextFile");
+  // 23.0: chess.writeTextFile is gone (review-22.0 §5A.2 X2); the staged
+  // write path it shared is the appdata pair's, held here the same way
+  assert((await H.appdataWriteKey("all", big)) === true, "a 2 MB appdata write is accepted");
+  const writes = zero.frames.filter((f) => f.cmd === "chess.appdataWrite");
   assert(writes.length >= Math.ceil(Buffer.byteLength(big) / (512 * 1024)) &&
     writes.every((f) => Buffer.from(f.a.b64, "base64").length <= 512 * 1024),
-    `a 2 MB export goes as ${writes.length} pieces of ≤ 512 KiB (not one ${Buffer.byteLength(big)}-byte frame)`);
+    `a 2 MB write goes as ${writes.length} pieces of ≤ 512 KiB (not one ${Buffer.byteLength(big)}-byte frame)`);
   assert(writes.every((f) => f.size <= 1024 * 1024), "…every frame under the SDK's 1 MiB");
   assert(new Set(writes.map((f) => f.a.txn)).size === 1 && writes.every((f) => f.a.total === Buffer.byteLength(big)),
     "…all one transfer, each naming the total");
-  assert(zero.files.get("path:/Users/me/all.json").toString("utf8") === big, "…and the file on disk is the text, exactly");
+  assert(zero.files.get("appdata:all").toString("utf8") === big, "…and the file on disk is the text, exactly");
+  // an issued path (a dropped file) reads back in pieces
+  zero.files.set("path:/Users/me/all.json", Buffer.from(big, "utf8"));
   zero.frames.length = 0;
   const back = await H.readTextFile("/Users/me/all.json");
   const reads = zero.frames.filter((f) => f.cmd === "chess.readTextFile");
   assert(back === big, `it reads back equal, in ${reads.length} pieces`);
   assert(reads.map((f) => f.a.offset || 0).join(",") === "0,524288,1048576,1572864" || reads.length === Math.ceil(Buffer.byteLength(big) / 524288),
     "…each piece asking for the next offset");
-
-  // small stays the pre-F3 shape: one frame, no staging fields
-  zero.frames.length = 0;
-  await H.writeTextFile("/Users/me/a.pgn", "1. e4 e5");
-  assert(zero.frames.length === 1 && zero.frames[0].a.txn == null && zero.frames[0].a.total == null,
-    "a small file is one frame without txn/total, as every earlier shell expects");
+  assert(typeof H.writeTextFile === "undefined", "23.0: Host has no writeTextFile any more");
 
   // the per-key appdata pair
   const lib = JSON.stringify({ v: 1, games: Array.from({ length: 30000 }, (_, i) => ({ id: "lib:" + i, sans: "e4 e5 Nf3 Nc6 Bb5" })) });

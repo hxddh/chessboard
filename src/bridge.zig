@@ -88,7 +88,6 @@ const AppCommand = struct {
 /// while the shell's thread stays free. chess.fetchProgress is how the sync
 /// dialog reads 已取到 k 局 meanwhile.
 pub const APP_COMMANDS = [_]AppCommand{
-    .{ .name = "chess.writeTextFile", .invoke_fn = writeTextFile },
     .{ .name = "chess.readTextFile", .invoke_fn = readTextFile },
     .{ .name = "chess.openPgn", .invoke_fn = openPgn },
     .{ .name = "chess.saveText", .invoke_fn = saveText },
@@ -232,6 +231,10 @@ fn emitOpenFiles(self: *App, runtime: *native_sdk.Runtime, payload: anytype) voi
 
 fn appendIssuedPath(self: *App, buf: []u8, n: *usize, count: *usize, p: []const u8) bool {
     if (p.len == 0 or p.len > ISSUED_PATH_MAX) return true; // skip, keep the rest
+    // 23.0 (review-22.0 §5A.2 X3): the same gate a dropped file passes. An
+    // "open" event is a request from whatever process sent it (`open -a`), and
+    // through 22.0 it issued any path at all — a dot file, ~/Library — to the page.
+    if (!pathAllowed(self.pathPolicy(), p)) return true;
     self.issued.add(p);
     if (count.* > 0 and !jsonAppend(buf, n, ",")) return false;
     if (!jsonAppendString(buf, n, p)) return false;
@@ -878,31 +881,12 @@ fn unissuedPath(output: []u8) anyerror![]const u8 {
     return std.fmt.bufPrint(output, "{{\"error\":\"unissued_path\"}}", .{}) catch return error.HandlerFailed;
 }
 
-fn writeTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
-    const self: *App = @ptrCast(@alignCast(context));
-    var path_buf: [4096]u8 = undefined;
-    const payload = invocation.request.payload;
-    const path = jsonStringField(payload, "path", &path_buf) orelse return error.InvalidRequest;
-    if (path.len == 0) return error.InvalidRequest;
-    // Q1.2: only a path the native side issued this process (see IssuedPaths)
-    if (!self.issued.contains(path)) return unissuedPath(output);
-
-    // v8-0-plan F3: whole, or piece by piece on the heap until the last one
-    var incoming: Incoming = undefined;
-    var answer: []const u8 = "";
-    switch (try receive(self, payload, path, output, &incoming, &answer)) {
-        .answered => return answer,
-        .pending => return pendingAnswer(output),
-        .ready => {},
-    }
-    defer finishReceive(self, incoming);
-
-    var file = std.Io.Dir.createFileAbsolute(self.io, path, .{ .truncate = true }) catch return error.HandlerFailed;
-    defer file.close(self.io);
-    file.writeStreamingAll(self.io, incoming.bytes) catch return error.HandlerFailed;
-
-    return std.fmt.bufPrint(output, "true", .{}) catch "true";
-}
+// 23.0 (review-22.0 §5A.2 X2): chess.writeTextFile is gone. Nothing in the
+// page had called it since the file dialogs moved native (v8-1-plan N2:
+// saveText writes what the user picked, through dialogs.zig), yet it could
+// truncate and rewrite any path issued to the page — every file ever dropped
+// on the window or opened by the OS, .pgn or not, following symlinks. A
+// compromised page had a write primitive nobody was using.
 
 fn readTextFile(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
     const self: *App = @ptrCast(@alignCast(context));
@@ -1317,7 +1301,7 @@ test "every app command has a chess. name and no two share one" {
         // a handler of one kind or the other, never both, never neither
         try std.testing.expect((cmd.invoke_fn == null) != (cmd.async_fn == null));
     }
-    try std.testing.expectEqual(@as(usize, 16), APP_COMMANDS.len);
+    try std.testing.expectEqual(@as(usize, 15), APP_COMMANDS.len);
 }
 
 test "the network commands are asynchronous and reach the SDK's async registry" {

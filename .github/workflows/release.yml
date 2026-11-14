@@ -35,14 +35,14 @@ on:
         # webview2_host.cpp. The undefined symbol was our source list lagging
         # upstream, not upstream breaking. Fixed in build.zig (the file plus
         # d2d1/dwrite, matching the SDK's own list), so the pin now moves to
-        # 0.10.1. It stays a pin because everything else this gate depends on
+        # 0.10.1, and in 23.0 to 0.11.1. It stays a pin because everything else this gate depends on
         # is pinned too (playwright 1.64.0, zig 0.16.0): the SDK was the one
         # dependency that could change under a release with nobody changing
         # anything. Raise it deliberately, with a run that proves both
         # platforms still build.
         description: "@native-sdk/cli version both platform builds install"
         required: false
-        default: "0.10.1"
+        default: "0.11.1"
       # v8-1-plan F1: a major bump of download-artifact changes how the
       # packages reach dist/, and the only way to see that is to run this
       # workflow. A rehearsal runs every gate and both builds, downloads and

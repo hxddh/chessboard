@@ -4,6 +4,9 @@
  * own; scripts/test-chess.mjs exercises them directly.
  * @module pgn
  */
+  /** The four result tokens a movetext can end with. */
+  const RESULTS = new Set(["1-0", "0-1", "1/2-1/2", "*"]);
+
   /**
    * Movetext without its trailing result token.
    *
@@ -14,7 +17,39 @@
    * @returns {string}
    */
   function stripResult(movetext) {
-    return String(movetext || "").replace(/\s*(?:1-0|0-1|1\/2-1\/2|\*)\s*$/, "");
+    // 23.0 (review-22.0 §5A.2 X4): the old pattern opened with \s* and
+    // backtracked through every run of spaces — quadratic, 4.5 s on a
+    // comment of 80,000 spaces. Now no regex at all: the last token is looked at
+    const s = String(movetext || "").trimEnd();
+    let i = s.length;
+    while (i > 0 && !/\s/.test(s[i - 1])) i--;
+    return RESULTS.has(s.slice(i)) ? s.slice(0, i).trimEnd() : s;
+  }
+
+  /** Above these, chess.js's load_pgn is not asked to read a text (legacyReadable). */
+  const LEGACY_MAX_CHARS = 64 * 1024;
+  const LEGACY_MAX_DEPTH = 64;
+
+  /**
+   * Whether a text the parser could not place may be handed to chess.js's
+   * load_pgn as a last try. 23.0 (review-22.0 §5A.2 X1): load_pgn strips
+   * variations with `while (rav.test(ms)) ms = ms.replace(rav, '')`, which is
+   * quadratic in the nesting — 20,000 nested `(` took 4.5 s on the main
+   * thread, 400 KB about two minutes — and the text is whatever file was
+   * opened, pasted or dropped. Real games are neither that long nor that deep.
+   * @param {string} text
+   * @returns {boolean}
+   */
+  function legacyReadable(text) {
+    const s = String(text || "");
+    if (s.length > LEGACY_MAX_CHARS) return false;
+    let depth = 0;
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      if (c === 40 && ++depth > LEGACY_MAX_DEPTH) return false;
+      else if (c === 41 && depth > 0) depth--;
+    }
+    return true;
   }
 
   /**
@@ -85,4 +120,4 @@
     return m ? m[1].trim() || null : null;
   }
 
-  export const ChessPgn = { splitGames, tag, summary, startFen, stripResult };
+  export const ChessPgn = { splitGames, tag, summary, startFen, stripResult, legacyReadable };

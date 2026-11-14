@@ -224,19 +224,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return Object.assign({}, first, { bytes, more: false });
   }
 
-  /** A write answer that says the native side did not take it. */
-  function throwIfWriteRefused(r, path) {
-    throwIfRefused(r, path);
-    if (r && typeof r === "object") {
-      if (r.tooLarge) throw fileTooLargeError(r.limit);
-      if (typeof r.error === "string") throw new Error("write failed: " + r.error);
-    }
-  }
-
   /**
    * `err.name` on the rejection for a path the native side never issued.
    *
-   * v6-plan Q1.2: chess.readTextFile / chess.writeTextFile accept only a path
+   * v6-plan Q1.2: chess.readTextFile accepts only a path (23.0: chess.writeTextFile, unused, is gone)
    * the native side handed out in this process — one that was dropped on the
    * window, or one the OS opened; main.zig issues both itself (v8-0-plan F3).
    * The file dialogs no longer hand the page a path at all: they run in
@@ -256,13 +247,6 @@ const global = typeof window !== "undefined" ? window : globalThis;
   /** The refusal, if `r` is one; the old "true" / bare-string shapes pass. */
   function throwIfRefused(r, path) {
     if (r && typeof r === "object" && r.error === "unissued_path") throw unissuedPathError(path);
-  }
-
-  async function writeTextFile(path, text) {
-    if (!hasZero()) throw new Error("no bridge");
-    const r = await sendBytes((f) => global.zero.invoke("chess.writeTextFile", f),
-      { path: path }, textSource(text));
-    throwIfWriteRefused(r, path);
   }
 
   /**
@@ -877,7 +861,6 @@ const global = typeof window !== "undefined" ? window : globalThis;
   export const ChessHost = {
     hasZero,
     bytesToBase64,
-    writeTextFile,
     readTextFile,
     ALL_DATA_MAX,
     FILE_TOO_LARGE,

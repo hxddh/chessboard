@@ -335,7 +335,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
       // ending (adoptHeaderResult), [FEN] the start (startFen)
       if (r) restoreHeaders(headers);
     } else {
-      r = game.load_pgn(pgn, opts);
+      r = ChessPgn.legacyReadable(pgn) && game.load_pgn(pgn, opts); // 23.0: see pgn.js legacyReadable
       forgetHistory();
       if (r && store.game._treeSync) treeRebuild();
     }
@@ -1714,7 +1714,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   // library-ui.js since 7.2 (v7-2-plan §4). What is left here is the bag it
   // borrows from this file and the names the rest of this file calls it by.
   const LibraryUI = createLibraryUI({
-    doc: document, store, Persist, game, t, tf, toast, sync,
+    doc: document, store, Persist, game, t, tf, toast, confirmNative, sync,
     SCAN_BUDGET, evalScalar, importPgnText: (text, label, prompt) => importPgnText(text, label, prompt), invalidateEngine, judgeColours,
     leaveTrainer, plyLosses, sansOf, saveGame, saveMines, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setViewIndex, stopLiveAnalysis, withMotifs, recallAnalysis,
@@ -3146,7 +3146,8 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     if (store.game.selection && store.game.selection.premove && store.game.selection.targets.includes(sq)) {
       store.session.premove = { from: store.game.selection.sq, to: sq };
       store.game.selection = null;
-      toast(tf("msg.premove.set", [store.session.premove.from + "→" + sq]));
+      // 23.0: while the coach holds the reply, its 「悔棋」 toast is the one that matters — the yellow arrow says the rest
+      if (!GameCtl.coachBusy()) toast(tf("msg.premove.set", [store.session.premove.from + "→" + sq]));
       draw();
       return;
     }

@@ -780,6 +780,21 @@ async function bootLibrary(d) {
       fresh.push(e);
     }
     if (!fresh.length && !back.length) { toast(t("msg.import.badPgn"), "fault"); return null; }
+    // 23.0 (review-22.0 §5A.2 X6): a file that would push games out asks
+    // first. Through 22.0 a 10,000-game archive silently replaced the library,
+    // analyses and all, with one toast after the fact.
+    const would = Library.addGames(store.session.library, fresh).dropped.length;
+    if (would && d.confirmNative) {
+      const ok = await d.confirmNative(tf("lib.dropAsk", [Library.MAX_GAMES, would]), t("dlg.importPgnTitle"),
+        { ok: t("dlg.import"), cancel: t("act.cancel") });
+      // the waiting is over: what was true before the question is asked again
+      const kept = new Set(store.session.library.map((g) => g.id));
+      if (!ok || libBusy() || store.session.libUnreadable || frozen) {
+        for (const e of fresh) if (!kept.has(e.id)) st.pk.delete(e.id);
+        if (ok) toast(t("lib.busy"), "fix");
+        return null;
+      }
+    }
     const r = Library.addGames(store.session.library, fresh);
     store.session.library = r.list;
     for (const id of r.dropped) st.pk.delete(id);
