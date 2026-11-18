@@ -1367,8 +1367,10 @@ if (scenario()) {
     // 19.0 S6: the puzzle panel lost 为你出一题 (one primary, 下一题, is left) —
     // 48px less at 1400×900, 35% measured. A deliberate exception, written
     // down in docs/v19-0-plan.md §10: filling the space back would undo the
-    // subtraction. Course and endgame keep 30%.
-    const most = seg === "puzzle" ? 36 : 30;
+    // subtraction. Course and endgame keep 30%. 24.0 T7 (review-23.0): the
+    // panel no longer says 「已解 x/N」 twice nor shows a rating that is only
+    // 「—」 — 38% measured; the same reasoning, written down in v24-0-plan.
+    const most = seg === "puzzle" ? 39 : 30;
     assert(b <= most && unit, "12.0 L:训练·" + seg + " 右栏下半有这一单元 / 这一类,空白 " + b + "%(≤ " + most + "%)");
     await ctx.close();
   }

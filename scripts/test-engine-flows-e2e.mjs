@@ -1453,8 +1453,10 @@ await scenario("对手角色", async () => {
   await page.keyboard.press("Space");
   await page.waitForTimeout(150);
   const top = await dialog();
-  assert(top.cards.find((c) => c.id === "ivy").on && shownIds(top).join() === "sol,leo,ivy,max,iris" && top.focus === "ivy",
-    "对手角色（S5）：键盘空格选艾薇，五张卡挪到她两边，焦点留在她身上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
+  // 24.0 (review-23.0 W7): a card already on screen is picked where it is —
+  // the five no longer re-centre under the pointer (the picked card jumped)
+  assert(top.cards.find((c) => c.id === "ivy").on && shownIds(top).join() === "nico,vera,sol,leo,ivy" && top.focus === "ivy",
+    "对手角色（24.0 W7）：键盘空格选艾薇，五张卡原地不动，焦点留在她身上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
   // 10.0 M0: 更多选项 open is the whole ladder on the cards — the one place a
   // rung is chosen; 莉娜 is at its foot. 19.0 S5: 「全部 21 位对手」 opens it too
   const allBtn = await page.evaluate(() => { const b = document.getElementById("op-all"); return b && !b.hidden ? b.textContent.trim() : ""; });

@@ -136,7 +136,12 @@ export function createOpponentsUI(d) {
     // 24.0 (review-23.0 W7): the five are chosen once per opening of the
     // dialog — a click picks a card, it does not re-centre the row under the
     // pointer (the picked card jumped from the left end to the middle)
-    if (ng.from == null) ng.from = Math.max(0, Math.min(all.length - SHOWN, at - 2));
+    // It moves only when it has to: the full ladder folded away after a pick
+    // there, or a pick that is off the five (the pick centres it then).
+    const around = (i) => Math.max(0, Math.min(all.length - SHOWN, i - 2));
+    if (ng.from == null) ng.from = around(at);
+    else if (!full && (ng.wasFull || picked < ng.from || picked >= ng.from + SHOWN)) ng.from = around(picked);
+    ng.wasFull = full;
     const from = full ? 0 : ng.from;
     const shown = full ? all.length : SHOWN;
     // 15.0 F: open, the ladder is faces in six rows; the one picked is named under it
