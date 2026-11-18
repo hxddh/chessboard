@@ -1939,7 +1939,7 @@ for (const appearance of ["light", "dark"]) {
     const sub = await page.evaluate(() => document.getElementById("pz-run-best").textContent);
     const primaries = await page.evaluate(() => [...document.querySelectorAll("#sec-puzzle button.primary")].filter((b) => b.offsetParent).map((b) => b.id));
     assert(primaries.join() === "pz-run-again", "22.0 A5:定级结束后这一屏只有一个主按钮「去今天」", primaries.join());
-    assert(/^你的水平约 400$/.test(done) && /定级完成。对手配好了：皮普/.test(sub) && st.pz.rating && st.pz.rating.r === 400 && st.pz.placed &&
+    assert(/^你的水平约 400$/.test(done) && /定级完成。先配一位好上手的对手：皮普/.test(sub) && st.pz.rating && st.pz.rating.r === 400 && st.pz.placed &&
       st.set.difficulty === "beginner", "T1 六题之后:谜题等级分 400 起步、对手配成皮普(新手)", done + " " + JSON.stringify(st.pz.rating) + " " + st.set.difficulty);
     // 18.0 R3: and the puzzles open near it — 战术 serves near the rating;
     // through 17.0 the category stayed 一步杀, served from #1 in list order

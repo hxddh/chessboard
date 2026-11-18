@@ -650,6 +650,10 @@ export function createPuzzleModes(d) {
     const p = pz && pz.p;
     const kind = p && !run && isRatedCat(p.cat) ? ALL_PUZZLES.filter((q) => q.cat === p.cat) : [];
     box.hidden = !kind.length;
+    // 24.0 (review-23.0 T7): the head's 「已解 x/N」 and this box's 「这一类 x/N」
+    // were one count said twice — with the box up, the head keeps quiet
+    const prog = el("puzzle-progress");
+    if (prog) prog.hidden = !box.hidden;
     if (box.hidden) return;
     const st = store.session.puzzleState;
     const ids = pz.done || pz.usedAnswer ? themesOf(p, motifKeyOf(p)) : [];
@@ -687,7 +691,8 @@ export function createPuzzleModes(d) {
     const gated = themesOf(p, null).includes(p.cat);
     const kr = gated && themeRating(p.cat);
     const out = [head(t("pz.aboutKind")), kindRow, bar];
-    if (gated) out.push(row(t("pz.aboutRating"), kr ? ratingText(kr) : "—"));
+    // (T7: and no second rating that is only a dash — the hero above has the rating)
+    if (gated && kr) out.push(row(t("pz.aboutRating"), ratingText(kr)));
     out.push(row(t("pz.aboutFirst"), tf("pz.aboutRec", [tl.solve || 0, tl.miss || 0])));
     // …and once it is over, what it was about
     if (ids.length) {

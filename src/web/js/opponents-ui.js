@@ -133,7 +133,11 @@ export function createOpponentsUI(d) {
     const picked = Math.max(0, on ? all.indexOf(on) : all.findIndex((p) => p.level === pick.difficulty));
     const me = d.rating();
     const at = me && Number.isFinite(me.r) ? nearestTo(all, me.r) : picked;
-    const from = full ? 0 : Math.max(0, Math.min(all.length - SHOWN, at - 2));
+    // 24.0 (review-23.0 W7): the five are chosen once per opening of the
+    // dialog — a click picks a card, it does not re-centre the row under the
+    // pointer (the picked card jumped from the left end to the middle)
+    if (ng.from == null) ng.from = Math.max(0, Math.min(all.length - SHOWN, at - 2));
+    const from = full ? 0 : ng.from;
     const shown = full ? all.length : SHOWN;
     // 15.0 F: open, the ladder is faces in six rows; the one picked is named under it
     if (grid.classList.contains("full") !== full) grid.classList.toggle("full", full);

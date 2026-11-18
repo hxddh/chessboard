@@ -188,8 +188,14 @@ export function createNotices(d) {
     if (!el.classList.contains("show")) return false;
     el.classList.remove("show"); el.style.pointerEvents = "";
     if (store().ui.toastTimer) { clearTimeout(store().ui.toastTimer); store().ui.toastTimer = null; }
+    // 24.0: a word that waited behind a toast with a way forward, if it still is news
+    const held = store().ui.toastHeld;
+    store().ui.toastHeld = null;
+    if (held && Date.now() - held.at < HELD_MS) toast(held.msg);
     return true;
   }
+  /** How long a held informational toast stays worth saying once the way it waited for is gone. */
+  const HELD_MS = 3000;
 
   /**
    * @param {string} msg
@@ -205,6 +211,16 @@ export function createNotices(d) {
     // 22.0 B4: a toast has an owner. What is returned closes this toast and
     // only this one — the state that raised it calls it when that state ends,
     // so 「对手先等一下」 cannot outlive the wait it describes.
+    // 24.0 (review-23.0 W11, T5): one toast at a time, and a plain word does
+    // not push out a toast that offers a way forward — 「对手先等一下 · 悔棋」
+    // was replaced by 「已预走」 or 「已保存」 in the seconds it was for. The
+    // word waits and is said when that toast goes, if it is still news.
+    const kind0 = TOAST_MS[tier] === undefined ? "ok" : tier;
+    if (kind0 === "ok" && !(action && action.label) && el.classList.contains("show") && el.dataset.act === "1") {
+      store().ui.toastHeld = { msg, at: Date.now() };
+      return () => {};
+    }
+    el.dataset.act = action && action.label ? "1" : "";
     const mine = String((Number(el.dataset.seq) || 0) + 1);
     el.dataset.seq = mine;
     const close = () => { if (el.dataset.seq === mine) dismissToast(); };

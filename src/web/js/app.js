@@ -1682,7 +1682,8 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   /** everything is localised at render time, so a language switch relabels it */
   function historyLabel(rec) {
     const res = t(rec.result === "win" ? "hist.win" : rec.result === "loss" ? "hist.loss" : "hist.draw");
-    return tdot(res, diffName(rec.diff), t(rec.color === "b" ? "hist.black" : "hist.white"));
+    const who = OppUI.strip(rec.diff, rec.style).name; // 24.0 W17: the opponent by name, its rung when it has none
+    return tdot(res, who && who !== "Stockfish" ? who : diffName(rec.diff), t(rec.color === "b" ? "hist.black" : "hist.white"));
   }
 
   function historySub(rec) {
