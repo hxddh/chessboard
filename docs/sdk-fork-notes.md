@@ -7,6 +7,7 @@ v8-2-plan F2。这个仓库有两份从 Native SDK 抄来、再自己改过的�
 | `src/runner.zig` | `src/app_runner/root.zig` | 0.1.0 时分叉，之后手动跟 |
 | `build.zig` | `build/app.zig` | 手抄本，只留这个应用用得到的 |
 | `src/window_placement.zig` | `src/app_runner/window_placement.zig` | 8.2 M4 起原样抄入（runner.zig 的恢复窗口要它，见 R15），登记表里没有差异 |
+| `src/native/webview2_host.cpp` | `src/platform/windows/webview2_host.cpp` | 24.0 起抄入，只多一段关 DevTools 的代码（B16） |
 
 每次升 SDK 都要拿新上游和这两个文件对 diff。0.8.0 就栽在这里：上游多编了一个源文件（`gpu_surface_renderer.cpp`），手抄本没跟上，Windows 构建链接失败（`release.yml` 的注释）。直接看 diff 是 174 块、三千多行，几乎全是有意的，真正要看的那几行淹在里面。
 
@@ -95,10 +96,17 @@ node scripts/sdk-diff.mjs <SDK 目录> --suggest   # 另外把每个没登记的
 | B14 | ours | **应用自己的 macOS 窗口外壳**（11.0 W）。<br>SDK 0.10.1 的拖动区只给它自己的画布控件用，WKWebView 盖住标题栏后网页里无法声明可拖动区域。`src/native/mac_chrome.m` 由我们自己编译（只在 macOS 分支，带 `-fobjc-arc`），链 WebKit：标题栏透明、内容通到顶，WebView 上方一条 28 pt 的原生拖动条，窗口外观跟主题（`chess.setChrome`）。<br>上游没有对应的东西；SDK 哪天有了网页拖动区，就整组删掉、改用 SDK 的。 |
 | B15 | ours | **应用自己的 Windows 窗口外壳**（12.0 N）。<br>SDK 的 Windows 主机（0.10.1、0.11.1 相同）只让标准标题栏**跟随系统**的深浅（`applyStandardTitlebarColorScheme` 写 immersive dark mode），应用不能自己指定，也没有 Mica：系统是浅色时，深色主题（木、夜）下标题栏是一条亮边。注意系统切换深浅色时 SDK 会重写这个属性，盖掉我们按棋盘主题设的值，直到下一次 `chess.setChrome`。`src/native/win_chrome.c` 由我们自己编译（只在 Windows 分支），`chess.setChrome` 时把本进程的顶层窗口设成 immersive dark mode（跟主题明暗），并在 Windows 11 上把系统背景设成 Mica；dwmapi 运行时加载，不加链接依赖，Windows 10 上 Mica 那一步失败就跳过。<br>上游哪天有了窗口外观的接口，就整组删掉、改用 SDK 的。 |
 
+## src/native/webview2_host.cpp ↔ src/platform/windows/webview2_host.cpp
+
+| 组 | 类 | 内容与理由 |
+|---|---|---|
+| B16 | ours | **WebView2 主机的副本：没有检查能力的构建关掉 DevTools**（24.0，`review-23.0-and-v24-plan.md` §2.2）。<br>SDK 0.11 的 `webview_inspection`（#690）只接进了 macOS 主机；Windows 主机从不碰 `ICoreWebView2Settings`，WebView2 的默认是 DevTools 开，所以 23.0 及以前的 Windows 发布件按 F12 就能打开 DevTools、改页面和存档。<br>我们编译这份副本而不是 SDK 的：`get_CoreWebView2` 之后多一段 `put_AreDevToolsEnabled(FALSE)`，用 `#ifndef CHESS_WEBVIEW_INSPECTION` 包住；`build.zig` 的 `linkPlatform` 多一个 `inspect` 参数（与 runner 的 `webview_inspection` 同一规则：`-Dwebview-inspect`，不给时 Debug 开、发布关），开时传这个宏。文件头加了出处与 Apache-2.0 说明。`"gpu_surface_renderer.h"` 仍从 SDK 目录取（加了一条 include 路径）。<br>`build.zig` 里对应的三行改动登记在它们原来所在的组里（linkPlatform 的签名与两处调用、编译这份副本的那一行）。<br>上游哪天让 `webview_inspection` 也管 WebView2，就整组删掉、改回编译 SDK 的文件。<br>真机核对：`docs/manual-check.md`「24.0 真机核对」。 |
+
 ## 数字（登记于 0.11.1）
 
-- **31 组，180 块**：ours 20 组、unused 4 组、lag 7 组（组没有变，块是 23.0 按 0.11.1 重新切的；0.10.1 时是 177 块）。
+- **32 组**：ours 21 组、unused 4 组、lag 7 组（24.0 加了 B16；23.0 按 0.11.1 重新切块；0.10.1 时是 31 组 177 块）。块数以 `test-sdk-diff` 的输出为准。
 - **runner.zig**：16 组，96 块，上游 1,424 行对我们 904 行。
 - **build.zig**：14 组，84 块，上游 3,191 行对我们 774 行。
 - **window_placement.zig**：没有差异。
+- **webview2_host.cpp**：1 组（B16），上游 8,095 行，我们多 19 行。
 - 23.0 唯一采纳的上游改动是 `webview_inspection`（#690）：`build.zig` 的 `-Dwebview-inspect`（B05）与 `runner.zig` appInfo 的同名字段（R08 只登记我们多写的那段注释）。0.10.1 的 macOS 主机无条件打开 WKWebView 的检查器，所以 22.0 及以前的发布件都能被检查；0.11.1 默认关，跟 exe 的构建模式走。

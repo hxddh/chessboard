@@ -13,6 +13,10 @@
   {
    "ours": "src/window_placement.zig",
    "upstream": "src/app_runner/window_placement.zig"
+  },
+  {
+   "ours": "src/native/webview2_host.cpp",
+   "upstream": "src/platform/windows/webview2_host.cpp"
   }
  ],
  "groups": [
@@ -201,6 +205,12 @@
    "file": "build.zig",
    "kind": "ours",
    "title": "Windows 上编译应用自己的窗口外壳（src/native/win_chrome.c）：标题栏跟主题明暗、Windows 11 上 Mica（12.0 N）"
+  },
+  {
+   "id": "B16",
+   "file": "src/native/webview2_host.cpp",
+   "kind": "ours",
+   "title": "WebView2 主机的副本：没有检查能力的构建关掉 DevTools（24.0，评估 23.0 §2.2）"
   }
  ],
  "hunks": [
@@ -5804,7 +5814,7 @@
     "    b.getInstallStep().dependOn(&install.step);"
    ],
    "ours": [
-    "    linkPlatform(b, target, app_mod, exe, selected_platform, web_engine, web_layer, native_sdk_path, cef_dir, cef_auto_install);",
+    "    linkPlatform(b, target, app_mod, exe, selected_platform, web_engine, web_layer, native_sdk_path, cef_dir, cef_auto_install, webview_inspection orelse (optimize == .Debug));",
     "    b.installArtifact(exe);"
    ],
    "after": [
@@ -5951,7 +5961,7 @@
     "        if (target.result.os.tag == .windows and package_optimize != .Debug) {",
     "            built.subsystem = .windows;",
     "        }",
-    "        linkPlatform(b, target, package_app_mod, built, selected_platform, web_engine, web_layer, native_sdk_path, cef_dir, cef_auto_install);",
+    "        linkPlatform(b, target, package_app_mod, built, selected_platform, web_engine, web_layer, native_sdk_path, cef_dir, cef_auto_install, webview_inspection orelse (package_optimize == .Debug));",
     "        break :pkg built;",
     "    };",
     "",
@@ -6846,7 +6856,7 @@
     "    addPlatformLinkSearchPaths(b, platform, web_engine, cef_dir, app_mod);"
    ],
    "ours": [
-    "fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.Build.Module, exe: *std.Build.Step.Compile, platform: PlatformOption, web_engine: WebEngineOption, web_layer: bool, native_sdk_path: []const u8, cef_dir: []const u8, cef_auto_install: bool) void {"
+    "fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.Build.Module, exe: *std.Build.Step.Compile, platform: PlatformOption, web_engine: WebEngineOption, web_layer: bool, native_sdk_path: []const u8, cef_dir: []const u8, cef_auto_install: bool, inspect: bool) void {"
    ],
    "after": [
     "    if (platform == .macos) {",
@@ -7183,7 +7193,12 @@
    ],
    "ours": [
     "                app_mod.addIncludePath(nativeSdkPath(b, native_sdk_path, \"third_party/webview2/include\"));",
-    "                app_mod.addCSourceFile(.{ .file = nativeSdkPath(b, native_sdk_path, \"src/platform/windows/webview2_host.cpp\"), .flags = &.{ \"-std=c++17\" } });",
+    "                // 24.0 (sdk-fork-notes B16): our copy of the host, which turns",
+    "                // WebView2's DevTools off unless this exe is inspectable — the",
+    "                // SDK's webview_inspection reaches only the macOS host. Its",
+    "                // \"gpu_surface_renderer.h\" still comes from the SDK.",
+    "                app_mod.addIncludePath(nativeSdkPath(b, native_sdk_path, \"src/platform/windows\"));",
+    "                app_mod.addCSourceFile(.{ .file = b.path(\"src/native/webview2_host.cpp\"), .flags = if (inspect) &.{ \"-std=c++17\", \"-DCHESS_WEBVIEW_INSPECTION=1\" } else &.{\"-std=c++17\"} });",
     "                // The host calls createWindowsGpuRenderer() from 0.8.0 on, and",
     "                // that lives here. See the comment on windowsGpuSources below:",
     "                // this list is a hand-kept copy of the SDK's own build/app.zig,",
@@ -8047,6 +8062,54 @@
    ],
    "after": [
     "}"
+   ]
+  },
+  {
+   "group": "B16",
+   "file": "src/native/webview2_host.cpp",
+   "at": 1,
+   "before": [],
+   "up": [],
+   "ours": [
+    "// Copied from @native-sdk/cli 0.11.1, src/platform/windows/webview2_host.cpp",
+    "// (Apache-2.0, Copyright the Native SDK authors; see its LICENSE). Modified",
+    "// by chessboard: one block after get_CoreWebView2 turns WebView2's DevTools",
+    "// off in builds without inspection. Every difference from upstream is",
+    "// registered in docs/sdk-fork.json (group B16) and checked by",
+    "// scripts/sdk-diff.mjs, like src/runner.zig and build.zig."
+   ],
+   "after": [
+    "#include <windows.h>",
+    "#include <shellapi.h>"
+   ]
+  },
+  {
+   "group": "B16",
+   "file": "src/native/webview2_host.cpp",
+   "at": 5323,
+   "before": [
+    "                    found->second.controller = controller;",
+    "                    controller->get_CoreWebView2(&found->second.webview);"
+   ],
+   "up": [],
+   "ours": [
+    "                    // chessboard (24.0, review-23.0 §2.2): the SDK's webview_inspection",
+    "                    // reaches only the macOS host; WebView2's default is DevTools on,",
+    "                    // so every Windows release through 23.0 opened them on F12. Off",
+    "                    // unless the build asked for inspection (build.zig passes",
+    "                    // CHESS_WEBVIEW_INSPECTION for Debug / -Dwebview-inspect=true).",
+    "#ifndef CHESS_WEBVIEW_INSPECTION",
+    "                    if (found->second.webview) {",
+    "                        ComPtr<ICoreWebView2Settings> chess_settings;",
+    "                        if (SUCCEEDED(found->second.webview->get_Settings(&chess_settings)) && chess_settings) {",
+    "                            chess_settings->put_AreDevToolsEnabled(FALSE);",
+    "                        }",
+    "                    }",
+    "#endif"
+   ],
+   "after": [
+    "                    RECT bounds = webViewRect(found->second);",
+    "                    controller->put_Bounds(bounds);"
    ]
   }
  ]
