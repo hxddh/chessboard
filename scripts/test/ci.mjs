@@ -5,6 +5,7 @@
  * Part of scripts/test-chess.mjs, which runs every module here in order.
  */
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { build } from "../bundle.mjs";
 import { assert, root, WEB_MODULES, scriptFiles } from "./harness.mjs";
@@ -182,9 +183,11 @@ export async function run() {
           "          node scripts/ci-browser-deps.mjs key ${{ matrix.engine }}",
         ].join("\n");
         const tail = [
-          "      - name: restore ${{ matrix.engine }}'s system packages", "        uses: actions/cache/restore@v6", "        with:",
+          "      - name: restore ${{ matrix.engine }}'s system packages", "        id: debs", "        uses: actions/cache/restore@v6", "        with:",
           "          path: ${{ steps.pw.outputs.dir }}", "          key: ${{ steps.pw.outputs.key }}",
+          "          restore-keys: ${{ steps.pw.outputs.prefix }}",
           "      - name: system packages for ${{ matrix.engine }}", "        id: deps",
+          "        env:", "          CACHE_EXACT: ${{ steps.debs.outputs.cache-hit }}",
           "        run: node scripts/ci-browser-deps.mjs install ${{ matrix.engine }}",
           "      - name: cache ${{ matrix.engine }}'s system packages", "        if: steps.deps.outputs.save == 'true'",
           "        uses: actions/cache/save@v6", "        with:",
@@ -206,14 +209,24 @@ export async function run() {
         const key = (v, e, iv) => D.cacheKey({ version: v, engine: e, env: { ImageOS: "ubuntu24", ImageVersion: iv }, arch: "x64" });
         let noVersion = false;
         try { D.cacheKey({ version: "", engine: "webkit" }); } catch { noVersion = true; }
+        // apt's newer download replaces the earlier image's file of the same package
+        const mdir = fs.mkdtempSync(path.join(os.tmpdir(), "debs-")), gdir = fs.mkdtempSync(path.join(os.tmpdir(), "got-"));
+        for (const n of ["libfoo_1.0_amd64.deb", "libbar_2.0_amd64.deb"]) fs.writeFileSync(path.join(mdir, n), "");
+        fs.writeFileSync(path.join(gdir, "libfoo_1.1_amd64.deb"), "");
+        const merged = D.mergeDebs(mdir, D.debsIn(gdir)).map((f) => path.basename(f));
+        const mergeOk = merged.join() === "libbar_2.0_amd64.deb,libfoo_1.1_amd64.deb" && D.debName("/x/libfoo_1.1_amd64.deb") === "libfoo";
+        fs.rmSync(mdir, { recursive: true }); fs.rmSync(gdir, { recursive: true });
         assert(installs === 3 && bad.length === 0 &&
           key("1.64.0", "webkit", "20261005.1") === "playwright-1.64.0-webkit-debs-ubuntu24-20261005.1-x64" &&
           key("1.64.0", "webkit", "20261012.1") !== key("1.64.0", "webkit", "20261005.1") &&
           key("1.65.0", "webkit", "20261005.1") !== key("1.64.0", "webkit", "20261005.1") &&
           key("1.64.0", "chromium", "20261005.1") !== key("1.64.0", "webkit", "20261005.1") && noVersion &&
           /Dir::Cache::Archives "\/var\/cache\/apt\/playwright-debs\/"/.test(D.aptConf()) &&
-          D.debsIn(path.join(root, "no-such-dir")).length === 0,
-          "浏览器作业的系统依赖走缓存（键是 Playwright 版本 + 引擎 + runner 镜像），不再 --with-deps 每次从 apt 镜像下（" + installs + " 处；v8-4-plan V2）" +
+          D.debsIn(path.join(root, "no-such-dir")).length === 0 && mergeOk &&
+          D.cachePrefix({ version: "1.64.0", engine: "webkit", env: { ImageOS: "ubuntu24", ImageVersion: "20261012.1" } }) === "playwright-1.64.0-webkit-debs-ubuntu24-" &&
+          key("1.64.0", "webkit", "20261005.1").startsWith(D.cachePrefix({ version: "1.64.0", engine: "webkit", env: { ImageOS: "ubuntu24", ImageVersion: "20261012.1" } })) &&
+          !key("1.64.0", "chromium", "20261005.1").startsWith(D.cachePrefix({ version: "1.64.0", engine: "webkit", env: { ImageOS: "ubuntu24" } })),
+          "浏览器作业的系统依赖走缓存（键是 Playwright 版本 + 引擎 + runner 镜像；新镜像先用同一系统上一镜像的缓存，restore-keys），不再 --with-deps 每次从 apt 镜像下（" + installs + " 处；v8-4-plan V2、24.0）" +
           (bad.length ? " —— " + bad.join("；") : ""));
       }
       // v8-2-plan V4: both workflows run the same browser groups (release.yml

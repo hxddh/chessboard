@@ -295,12 +295,16 @@ jobs:
       # and, the day the mirror was slow, 441 s. The mirror stays the fallback;
       # scripts/ci-browser-deps.mjs says when, and why not the container image.
       - name: restore ${{ matrix.engine }}'s system packages
+        id: debs
         uses: actions/cache/restore@v6
         with:
           path: ${{ steps.pw.outputs.dir }}
           key: ${{ steps.pw.outputs.key }}
+          restore-keys: ${{ steps.pw.outputs.prefix }}
       - name: system packages for ${{ matrix.engine }}
         id: deps
+        env:
+          CACHE_EXACT: ${{ steps.debs.outputs.cache-hit }}
         run: node scripts/ci-browser-deps.mjs install ${{ matrix.engine }}
       - name: cache ${{ matrix.engine }}'s system packages
         if: steps.deps.outputs.save == 'true'
@@ -381,12 +385,16 @@ jobs:
           node scripts/ci-browser-deps.mjs key ${{ matrix.engine }}
       # v8-4-plan V2: the same system packages from the same cache
       - name: restore ${{ matrix.engine }}'s system packages
+        id: debs
         uses: actions/cache/restore@v6
         with:
           path: ${{ steps.pw.outputs.dir }}
           key: ${{ steps.pw.outputs.key }}
+          restore-keys: ${{ steps.pw.outputs.prefix }}
       - name: system packages for ${{ matrix.engine }}
         id: deps
+        env:
+          CACHE_EXACT: ${{ steps.debs.outputs.cache-hit }}
         run: node scripts/ci-browser-deps.mjs install ${{ matrix.engine }}
       - name: cache ${{ matrix.engine }}'s system packages
         if: steps.deps.outputs.save == 'true'

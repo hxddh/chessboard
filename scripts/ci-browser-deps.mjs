@@ -29,11 +29,22 @@
  *      install-deps` as before (the mirror), with apt keeping what it
  *      downloads in a directory of its own, copied out for the cache to save.
  *
- *   node scripts/ci-browser-deps.mjs key ENGINE       → $GITHUB_OUTPUT key=…, dir=…
+ *   node scripts/ci-browser-deps.mjs key ENGINE       → $GITHUB_OUTPUT key=…, prefix=…, dir=…
  *   node scripts/ci-browser-deps.mjs install ENGINE   → $GITHUB_OUTPUT source=image|cache|apt, save=true|false
  *
- * `save` is true only when the cache came up empty and step 3 left .debs:
- * a key that was restored is never saved over (caches are immutable).
+ * A new runner image is a new key, and on the day it lands every browser job
+ * of a run misses at once and goes to the mirror together (2026-11-18: four
+ * WebKit jobs past their timeout at 275 kB/s, one 28 minutes in this step).
+ * So the restore also takes the newest cache of an earlier image of the same
+ * OS (`restore-keys: prefix`): Ubuntu's packages rarely move between two
+ * weekly images, step 2 installs them offline, and when one did move the
+ * check fails and step 3 runs as before. CACHE_EXACT (the restore's
+ * `cache-hit`) says whether what came back was this image's own key.
+ *
+ * `save` is true when this image's key was not restored and the .debs in the
+ * cache directory now satisfy the check: those from the earlier image as they
+ * were, or with what step 3 downloaded put in place of the versions it
+ * replaced. An exact key is never saved over (caches are immutable).
  */
 import fs from "fs";
 import os from "os";
@@ -57,6 +68,31 @@ const APT_CONF = "/etc/apt/apt.conf.d/99playwright-debs";
 export function cacheKey({ version, engine, env = process.env, arch = process.arch }) {
   if (!version || !engine) throw new Error("cacheKey: version and engine are required");
   return ["playwright", version, engine, "debs", env.ImageOS || process.platform, env.ImageVersion || "local", arch].join("-");
+}
+
+/**
+ * The restore-keys prefix: the key up to and including the image name, so a
+ * cache from an earlier image of the same OS (and the same Playwright and
+ * engine) is taken when this image has none yet.
+ */
+export function cachePrefix({ version, engine, env = process.env }) {
+  return cacheKey({ version, engine, env }).split("-").slice(0, 5).join("-") + "-";
+}
+
+/** a .deb's package name (Debian file names are name_version_arch.deb) */
+export const debName = (file) => path.basename(file).split("_")[0];
+
+/**
+ * Put `got` into `dir`, removing first any older file of the same packages,
+ * so the directory never holds two versions of one package for apt to choose
+ * between. Returns the files now in `dir`.
+ */
+export function mergeDebs(dir, got) {
+  fs.mkdirSync(dir, { recursive: true });
+  const names = new Set(got.map(debName));
+  for (const f of debsIn(dir)) if (names.has(debName(f))) fs.rmSync(f);
+  for (const f of got) fs.copyFileSync(f, path.join(dir, path.basename(f)));
+  return debsIn(dir);
 }
 
 /** the .deb files in `dir`, sorted; none when it does not exist */
@@ -97,8 +133,9 @@ function install(engine) {
   const t0 = Date.now();
   const { cli } = playwrightCli();
   const cached = debsIn(DEBS_DIR);
+  const exact = process.env.CACHE_EXACT === "true";
   let source = null, save = false;
-  console.log(`${engine}: checking system packages (cache: ${cached.length} .deb)`);
+  console.log(`${engine}: checking system packages (cache: ${cached.length} .deb, ${cached.length ? (exact ? "this image's" : "an earlier image's") : "none"})`);
   if (satisfied(cli, engine)) source = "image";
   if (!source && cached.length) {
     // As local files, with no package sources: given a .deb whose version is
@@ -109,7 +146,7 @@ function install(engine) {
     const none = fs.mkdtempSync(path.join(os.tmpdir(), "no-sources-"));
     const r = sudo("apt-get", ["install", "-y", "--no-install-recommends", "-o", "DPkg::Lock::Timeout=120",
       "-o", "Dir::Etc::SourceList=/dev/null", "-o", "Dir::Etc::SourceParts=" + none, ...cached]);
-    if (r.status === 0 && satisfied(cli, engine)) source = "cache";
+    if (r.status === 0 && satisfied(cli, engine)) { source = "cache"; save = !exact; }
     else console.log(`::warning::${engine}: the cached packages did not install cleanly (exit ${r.status}); falling back to apt`);
   }
   if (!source) {
@@ -121,11 +158,7 @@ function install(engine) {
     if (r.status !== 0) { console.error(`playwright install-deps ${engine} exited ${r.status}`); process.exit(r.status || 1); }
     source = "apt";
     const got = ok ? debsIn(APT_ARCHIVES) : [];
-    if (!cached.length && got.length) {
-      fs.mkdirSync(DEBS_DIR, { recursive: true });
-      for (const f of got) fs.copyFileSync(f, path.join(DEBS_DIR, path.basename(f)));
-      save = true;
-    }
+    if (!exact && got.length) { mergeDebs(DEBS_DIR, got); save = true; }
     console.log(`${engine}: apt downloaded ${got.length} .deb` + (save ? `, copied to ${DEBS_DIR} for the cache` : ""));
   }
   console.log(`${engine}: system packages from ${source}, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
@@ -138,6 +171,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.error("usage: node scripts/ci-browser-deps.mjs key|install chromium|webkit");
     process.exit(2);
   }
-  if (cmd === "key") output({ key: cacheKey({ version: playwrightCli().version, engine }), dir: DEBS_DIR });
+  if (cmd === "key") {
+    const version = playwrightCli().version;
+    output({ key: cacheKey({ version, engine }), prefix: cachePrefix({ version, engine }), dir: DEBS_DIR });
+  }
   else install(engine);
 }
