@@ -4196,7 +4196,8 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
 
   // Drop a .pgn onto the window to import it — host bridge in the packaged
   // app, DataTransfer in browsers.
-  Host.onDropFiles(async (payload) => {
+  // …and 24.0: a .pgn the OS opened with the app (Host.onOpenFiles), the same way
+  const openPaths = async (payload) => {
     const paths = Host.normalizePaths(payload && payload.paths ? payload.paths : payload);
     const p = paths.find((x) => /\.(pgn|txt)$/i.test(x)) || paths[0];
     if (!p) return;
@@ -4204,7 +4205,9 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
       importPgnText(await Host.readTextFile(p), p);
       Host.addRecentDocument(p);
     } catch (err) { toastReadFailure(err); }
-  });
+  };
+  Host.onDropFiles(openPaths);
+  Host.onOpenFiles(openPaths);
   window.addEventListener("dragover", (ev) => ev.preventDefault());
   window.addEventListener("drop", (ev) => {
     ev.preventDefault();

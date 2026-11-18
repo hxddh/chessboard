@@ -23,6 +23,8 @@
 // Nothing here is compiled except on macOS (build.zig).
 
 #import <AppKit/AppKit.h>
+#import <CoreServices/CoreServices.h> // kAEOpenDocuments, keyDirectObject, typeFileURL (enum constants only)
+#include <string.h>
 #import <WebKit/WebKit.h>
 #import <objc/runtime.h>
 
@@ -137,8 +139,67 @@ static void ChessConfigure(NSWindow *window) {
 
 /// Called once, before the runner creates any window (main.zig): every
 /// titled window that becomes key or main is configured the first time.
+// 24.0 (review-23.0 §2.1 P1): documents Finder asks us to open — a
+// double-clicked .pgn, or 「打开方式」. The SDK's AppKit host does not take the
+// kAEOpenDocuments event, so through 23.0 the app came to the front and opened
+// nothing. The handler is installed when the app is about to finish launching
+// (Apple's documented place to take over an Apple Event from NSApplication),
+// keeps the file paths here, and the page takes them with chess.takeOpenFiles
+// (bridge.zig) at launch and whenever the window comes back to the front.
+static NSMutableArray<NSString *> *ChessOpenQueue;
+
+@interface ChessOpenDocuments : NSObject
+- (void)openDocuments:(NSAppleEventDescriptor *)event withReply:(NSAppleEventDescriptor *)reply;
+@end
+
+@implementation ChessOpenDocuments
+- (void)openDocuments:(NSAppleEventDescriptor *)event withReply:(NSAppleEventDescriptor *)reply {
+    (void)reply;
+    NSAppleEventDescriptor *list = [event paramDescriptorForKeyword:keyDirectObject];
+    NSInteger n = list.numberOfItems;
+    for (NSInteger i = 1; i <= n; i++) {
+        NSAppleEventDescriptor *item = [[list descriptorAtIndex:i] coerceToDescriptorType:typeFileURL];
+        NSString *text = item ? [[NSString alloc] initWithData:item.data encoding:NSUTF8StringEncoding] : nil;
+        NSURL *url = text ? [NSURL URLWithString:text] : nil;
+        if (url.isFileURL && url.path.length) {
+            @synchronized (ChessOpenQueue) {
+                if (ChessOpenQueue.count < 8) [ChessOpenQueue addObject:url.path];
+            }
+        }
+    }
+}
+@end
+
+static ChessOpenDocuments *ChessOpenHandler;
+
+/// The next document Finder asked us to open, as UTF-8 into `buf`: its length,
+/// 0 when there is none, -1 for one too long for `cap` (dropped).
+int chess_mac_take_open_path(char *buf, int cap) {
+    if (!ChessOpenQueue) return 0;
+    NSString *path = nil;
+    @synchronized (ChessOpenQueue) {
+        if (ChessOpenQueue.count == 0) return 0;
+        path = ChessOpenQueue.firstObject;
+        [ChessOpenQueue removeObjectAtIndex:0];
+    }
+    const char *utf8 = path.fileSystemRepresentation;
+    size_t len = utf8 ? strlen(utf8) : 0;
+    if (len == 0 || len >= (size_t)cap) return -1;
+    memcpy(buf, utf8, len);
+    return (int)len;
+}
+
 void chess_mac_chrome_init(void) {
     NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
+    ChessOpenQueue = [NSMutableArray array];
+    ChessOpenHandler = [ChessOpenDocuments new];
+    [nc addObserverForName:NSApplicationWillFinishLaunchingNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
+        (void)note;
+        [[NSAppleEventManager sharedAppleEventManager] setEventHandler:ChessOpenHandler
+                                                         andSelector:@selector(openDocuments:withReply:)
+                                                       forEventClass:kCoreEventClass
+                                                          andEventID:kAEOpenDocuments];
+    }];
     void (^configure)(NSNotification *) = ^(NSNotification *note) {
         if ([note.object isKindOfClass:[NSWindow class]]) ChessConfigure((NSWindow *)note.object);
     };

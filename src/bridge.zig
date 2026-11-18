@@ -89,6 +89,7 @@ const AppCommand = struct {
 /// dialog reads 已取到 k 局 meanwhile.
 pub const APP_COMMANDS = [_]AppCommand{
     .{ .name = "chess.readTextFile", .invoke_fn = readTextFile },
+    .{ .name = "chess.takeOpenFiles", .invoke_fn = takeOpenFiles },
     .{ .name = "chess.openPgn", .invoke_fn = openPgn },
     .{ .name = "chess.saveText", .invoke_fn = saveText },
     .{ .name = "chess.appdataRead", .invoke_fn = appdataRead },
@@ -152,34 +153,7 @@ pub fn issueDroppedPaths(self: *App, event: native_sdk.Event) void {
     }
 }
 
-// ---------------------------------------------------------------- open:files
-//
-// Q1.5 ".pgn association": with the document type declared (Info.plist /
-// registry, see scripts/add-pgn-doctype.sh and scripts/register-pgn.reg) the
-// OS hands a double-clicked .pgn to the running app as an event. The SDK's
-// Event union is not on disk in this checkout, so the variant is probed BY
-// NAME at comptime: when this SDK has none of the names below, everything
-// here compiles to nothing and the page simply never receives "open:files".
-// When it has one, its payload is walked generically (a slice of paths, or a
-// struct with .paths / .files / .path). The paths are registered as issued —
-// the OS chose them, not the page — and forwarded as one window event the
-// page subscribes to with host.js onOpenFiles().
-//
-// Unverified until a Zig CI run against the pinned SDK sees it (task note in
-// the 6.0 report); an event that arrives before the page subscribed is lost.
-const OPEN_FILE_VARIANTS = [_][]const u8{ "open_files", "open_file", "open_urls", "open_documents" };
-
-pub fn forwardOpenFiles(self: *App, runtime: *native_sdk.Runtime, event: native_sdk.Event) void {
-    inline for (OPEN_FILE_VARIANTS) |variant| {
-        if (comptime @hasField(native_sdk.Event, variant)) {
-            if (event == @field(std.meta.Tag(native_sdk.Event), variant)) {
-                emitOpenFiles(self, runtime, @field(event, variant));
-            }
-        }
-    }
-}
-
-/// One path out of whatever element type the payload carries.
+/// One path out of whatever element type a drop payload carries.
 fn openFilePathOf(item: anytype) ?[]const u8 {
     const T = @TypeOf(item);
     if (comptime @typeInfo(T) == .pointer) {
@@ -193,53 +167,91 @@ fn openFilePathOf(item: anytype) ?[]const u8 {
     return null;
 }
 
-fn emitOpenFiles(self: *App, runtime: *native_sdk.Runtime, payload: anytype) void {
-    const P = @TypeOf(payload);
-    var detail_buf: [8192]u8 = undefined;
-    var n: usize = 0;
-    if (!jsonAppend(&detail_buf, &n, "{\"paths\":[")) return;
-    var count: usize = 0;
-    if (comptime @typeInfo(P) == .pointer) {
-        for (payload) |item| {
-            if (openFilePathOf(item)) |p| {
-                if (!appendIssuedPath(self, &detail_buf, &n, &count, p)) return;
-            }
-        }
-    } else if (comptime @typeInfo(P) == .@"struct") {
-        if (comptime @hasField(P, "paths")) {
-            for (payload.paths) |item| {
-                if (openFilePathOf(item)) |p| {
-                    if (!appendIssuedPath(self, &detail_buf, &n, &count, p)) return;
-                }
-            }
-        } else if (comptime @hasField(P, "files")) {
-            for (payload.files) |item| {
-                if (openFilePathOf(item)) |p| {
-                    if (!appendIssuedPath(self, &detail_buf, &n, &count, p)) return;
-                }
-            }
-        } else if (comptime @hasField(P, "path")) {
-            if (openFilePathOf(payload.path)) |p| {
-                if (!appendIssuedPath(self, &detail_buf, &n, &count, p)) return;
-            }
-        } else return;
-    } else return;
-    if (count == 0) return;
-    if (!jsonAppend(&detail_buf, &n, "]}")) return;
-    runtime.emitWindowEvent(1, "open:files", detail_buf[0..n]) catch {};
+// ------------------------------------------------------- opened documents
+//
+// 24.0 (review-23.0 §2.1 P1): a .pgn the OS opens with this app. Through 23.0
+// this was `forwardOpenFiles`, probing the SDK's Event union for an
+// "open_files" variant — SDK 0.10.1 and 0.11.1 have none (platform/types.zig
+// Event: files_dropped only), so it compiled to nothing; main.zig never read
+// the command line Windows hands the exe ("%1", scripts/register-pgn.reg);
+// and no page code subscribed to the event anyway. A double-clicked .pgn had
+// never opened.
+//
+// Now the native side keeps the paths it was asked to open — Windows: the
+// launch arguments (main.zig noteLaunchArgs); macOS: the kAEOpenDocuments
+// Apple Event, which src/native/mac_chrome.m answers itself (the SDK's host
+// does not) — and the page takes them with chess.takeOpenFiles, at launch and
+// whenever the window comes back to the front (host.js onOpenFiles). Taken
+// paths are issued; a taken path is gone from the list.
+//
+// The rule is not the drop rule (pathAllowed): an OS open is the user's own
+// request, and the drop rule's home-or-removable test refused iCloud Drive,
+// Mail attachments, C:\chess and a zip opened in Explorer (%TEMP%). It is
+// narrower in a different way: a .pgn file, absolute, with no `.`/`..` or dot
+// component — which is all the file association can name.
+pub const PENDING_OPEN_MAX = 8;
+
+pub const PendingOpen = struct {
+    paths: [PENDING_OPEN_MAX][ISSUED_PATH_MAX]u8 = undefined,
+    lens: [PENDING_OPEN_MAX]usize = [_]usize{0} ** PENDING_OPEN_MAX,
+    count: usize = 0,
+
+    /// Kept when it is a .pgn this rule allows and there is room; the rest are dropped.
+    pub fn add(self: *PendingOpen, windows: bool, path: []const u8) void {
+        if (self.count >= PENDING_OPEN_MAX or !openPathAllowed(windows, path)) return;
+        @memcpy(self.paths[self.count][0..path.len], path);
+        self.lens[self.count] = path.len;
+        self.count += 1;
+    }
+};
+
+/// Whether an OS-opened path may be handed to the page (see above).
+pub fn openPathAllowed(windows: bool, path: []const u8) bool {
+    if (path.len < 5 or path.len > ISSUED_PATH_MAX) return false;
+    if (std.mem.indexOfScalar(u8, path, 0) != null) return false;
+    if (!std.ascii.endsWithIgnoreCase(path, ".pgn")) return false;
+    if (windows) {
+        const drive = path.len >= 3 and std.ascii.isAlphabetic(path[0]) and path[1] == ':' and isSep(path[2], true);
+        const unc = path.len >= 3 and isSep(path[0], true) and isSep(path[1], true) and path[2] != '?' and path[2] != '.';
+        if (!drive and !unc) return false;
+    } else if (path[0] != '/') return false;
+    const seps: []const u8 = if (windows) "/\\" else "/";
+    var it = std.mem.splitAny(u8, path, seps);
+    while (it.next()) |comp| {
+        if (comp.len == 0) continue;
+        if (comp[0] == '.') return false;
+    }
+    return true;
 }
 
-fn appendIssuedPath(self: *App, buf: []u8, n: *usize, count: *usize, p: []const u8) bool {
-    if (p.len == 0 or p.len > ISSUED_PATH_MAX) return true; // skip, keep the rest
-    // 23.0 (review-22.0 §5A.2 X3): the same gate a dropped file passes. An
-    // "open" event is a request from whatever process sent it (`open -a`), and
-    // through 22.0 it issued any path at all — a dot file, ~/Library — to the page.
-    if (!pathAllowed(self.pathPolicy(), p)) return true;
-    self.issued.add(p);
-    if (count.* > 0 and !jsonAppend(buf, n, ",")) return false;
-    if (!jsonAppendString(buf, n, p)) return false;
-    count.* += 1;
-    return true;
+extern fn chess_mac_take_open_path(buf: [*]u8, cap: c_int) c_int;
+
+/// chess.takeOpenFiles: the documents the OS asked this app to open since the
+/// last call, issued, as {"paths":[…]}; [] when there are none.
+fn takeOpenFiles(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    const self: *App = @ptrCast(@alignCast(context));
+    _ = invocation;
+    if (comptime @import("runner").mac_shell) {
+        var buf: [ISSUED_PATH_MAX]u8 = undefined;
+        while (true) {
+            const got = chess_mac_take_open_path(&buf, @intCast(buf.len));
+            if (got == 0) break;
+            if (got > 0) self.pending_open.add(false, buf[0..@intCast(got)]);
+        }
+    }
+    var n: usize = 0;
+    if (!jsonAppend(output, &n, "{\"paths\":[")) return error.HandlerFailed;
+    var written: usize = 0;
+    for (0..self.pending_open.count) |i| {
+        const p = self.pending_open.paths[i][0..self.pending_open.lens[i]];
+        self.issued.add(p);
+        if (written > 0 and !jsonAppend(output, &n, ",")) return error.HandlerFailed;
+        if (!jsonAppendString(output, &n, p)) return error.HandlerFailed;
+        written += 1;
+    }
+    self.pending_open.count = 0;
+    if (!jsonAppend(output, &n, "]}")) return error.HandlerFailed;
+    return output[0..n];
 }
 
 pub fn jsonAppend(buf: []u8, n: *usize, s: []const u8) bool {
@@ -730,7 +742,7 @@ pub fn jsonStringField(payload: []const u8, key: []const u8, out: []u8) ?[]const
 //
 //   * a drop (issueDroppedPaths above, v8-0-plan F3: the SDK's files_dropped
 //     event, before the page hears "drop:files");
-//   * the OS's open-document event (forwardOpenFiles above), because the OS,
+//   * a document the OS opened (chess.takeOpenFiles above, 24.0), because the OS,
 //     not the page, chose those paths.
 //
 // The file dialogs issue nothing: they run natively (chess.openPgn /
@@ -1301,7 +1313,7 @@ test "every app command has a chess. name and no two share one" {
         // a handler of one kind or the other, never both, never neither
         try std.testing.expect((cmd.invoke_fn == null) != (cmd.async_fn == null));
     }
-    try std.testing.expectEqual(@as(usize, 15), APP_COMMANDS.len);
+    try std.testing.expectEqual(@as(usize, 16), APP_COMMANDS.len);
 }
 
 test "the network commands are asynchronous and reach the SDK's async registry" {
@@ -1594,6 +1606,34 @@ test "the issued-path table remembers what it was given, FIFO, bounded" {
     table.add(&long);
     try std.testing.expect(!table.contains(&long));
     try std.testing.expect(!table.contains(""));
+}
+
+test "an OS-opened document is a .pgn the user asked for, wherever it lives" {
+    // 24.0: the places the drop rule refused, and a double-click comes from
+    try std.testing.expect(openPathAllowed(false, "/Users/me/Library/Mobile Documents/com~apple~CloudDocs/棋谱/a.pgn"));
+    try std.testing.expect(openPathAllowed(false, "/Users/me/Library/CloudStorage/Dropbox/a.PGN"));
+    try std.testing.expect(openPathAllowed(false, "/Users/me/Library/Containers/com.apple.mail/Data/Library/Mail Downloads/1F2E/a.pgn"));
+    try std.testing.expect(openPathAllowed(false, "/Users/Shared/a.pgn"));
+    try std.testing.expect(openPathAllowed(true, "C:\\chess\\a.pgn"));
+    try std.testing.expect(openPathAllowed(true, "C:\\Users\\me\\AppData\\Local\\Temp\\Temp1_games.zip\\a.pgn"));
+    try std.testing.expect(openPathAllowed(true, "\\\\server\\share\\a.pgn"));
+    // only a .pgn, absolute, no dot component
+    try std.testing.expect(!openPathAllowed(false, "/Users/me/.ssh/id_ed25519"));
+    try std.testing.expect(!openPathAllowed(false, "/Users/me/Library/Keychains/login.keychain-db"));
+    try std.testing.expect(!openPathAllowed(false, "/Users/me/.hidden/a.pgn"));
+    try std.testing.expect(!openPathAllowed(false, "/Users/me/../other/a.pgn"));
+    try std.testing.expect(!openPathAllowed(false, "a.pgn"));
+    try std.testing.expect(!openPathAllowed(false, "/Users/me/a.pgn.json"));
+    try std.testing.expect(!openPathAllowed(false, "/Users/me/a\x00.pgn"));
+    try std.testing.expect(!openPathAllowed(true, "\\\\?\\C:\\a.pgn"));
+    try std.testing.expect(!openPathAllowed(true, "chess\\a.pgn"));
+    // the pending list keeps what the rule allows, up to its size
+    var pend: PendingOpen = .{};
+    pend.add(false, "/Users/me/.ssh/x.pgn");
+    pend.add(false, "/Users/me/Desktop/a.pgn");
+    try std.testing.expectEqual(@as(usize, 1), pend.count);
+    for (0..PENDING_OPEN_MAX + 3) |_| pend.add(false, "/Users/me/Desktop/b.pgn");
+    try std.testing.expectEqual(@as(usize, PENDING_OPEN_MAX), pend.count);
 }
 
 test "a dropped or OS-opened path is issued only when it is a user's file, not the system's" {

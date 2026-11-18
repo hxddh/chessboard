@@ -46,7 +46,7 @@ const PathPolicy = @import("bridge.zig").PathPolicy;
 const SEP = @import("bridge.zig").SEP;
 const STORE_DIR = @import("bridge.zig").STORE_DIR;
 const Stages = @import("bridge.zig").Stages;
-const forwardOpenFiles = @import("bridge.zig").forwardOpenFiles;
+const PendingOpen = @import("bridge.zig").PendingOpen;
 const issueDroppedPaths = @import("bridge.zig").issueDroppedPaths;
 const Opened = @import("dialogs.zig").Opened;
 const commandDetail = @import("menus.zig").commandDetail;
@@ -150,6 +150,10 @@ pub const App = struct {
     appdata_seq: u32 = 0,
     /// Q1.2 — the paths the native side has issued to the page this process.
     issued: IssuedPaths = .{},
+    /// 24.0 — documents the OS asked us to open, until the page takes them
+    /// (bridge.zig chess.takeOpenFiles). Windows fills it from the launch
+    /// arguments; macOS keeps its own queue in mac_chrome.m.
+    pending_open: PendingOpen = .{},
     /// v8-1-plan N2 — the Runtime, for the file dialogs chess.openPgn /
     /// chess.saveText open. A bridge handler is handed no Runtime, so
     /// runner.zig fills this in (RunOptions.runtime_slot) before the loop
@@ -315,6 +319,13 @@ pub const App = struct {
         return std.fmt.bufPrint(buf, "{s}{s}{s}{s}{s}.json{s}", .{ self.appdata_dir, SEP, STORE_DIR, SEP, key, suffix }) catch null;
     }
 
+    /// 24.0: the launch arguments that name a document to open (Windows; see main).
+    fn noteLaunchArgs(self: *@This(), init: std.process.Init) void {
+        const args = init.minimal.args.toSlice(init.arena.allocator()) catch return;
+        if (args.len < 2) return;
+        for (args[1..]) |arg| self.pending_open.add(true, arg);
+    }
+
     pub fn pathPolicy(self: *@This()) PathPolicy {
         const home_var: []const u8 = if (builtin.os.tag == .windows) "USERPROFILE" else "HOME";
         return .{
@@ -382,7 +393,6 @@ fn onEvent(context: *anyopaque, runtime: *native_sdk.Runtime, event: native_sdk.
         },
         else => {},
     }
-    forwardOpenFiles(self, runtime, event);
     issueDroppedPaths(self, event);
 }
 
@@ -434,6 +444,9 @@ pub fn main(init: std.process.Init) !void {
     app_state.resolveAssetRoot();
     // v8-4-plan V1: before the runner, which creates the WebView2 environment
     app_state.resolveWebView2UserData();
+    // 24.0: a double-clicked .pgn reaches a Windows exe as its argument
+    // (register-pgn.reg: "chessboard.exe" "%1"); kept for chess.takeOpenFiles
+    if (comptime runner.win_shell) app_state.noteLaunchArgs(init);
     const lang = app_state.launchLanguage();
     // 11.0 W: the Mac's inset window shell — set up before the runner opens
     // its window (src/native/mac_chrome.m; build.zig compiles it on macOS only)

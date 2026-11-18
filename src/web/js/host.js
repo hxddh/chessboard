@@ -584,31 +584,34 @@ const global = typeof window !== "undefined" ? window : globalThis;
   }
 
   /**
-   * A document the OS opened with this app (a double-clicked .pgn, once the
-   * type is registered — scripts/add-pgn-doctype.sh / register-pgn.reg).
-   * main.zig forwards it as "open:files" with the same {paths} shape as
-   * drop:files and has already issued the paths. Deduplicated over a short
-   * window in case the SDK also relays the OS event to the page itself.
+   * Documents the OS opened with this app — a double-clicked .pgn, once the
+   * type is registered (scripts/add-pgn-doctype.sh / register-pgn.reg).
+   *
+   * 24.0: taken, not pushed. Through 23.0 this listened for an "open:files"
+   * event that no SDK sends and nothing subscribed to, so a double-clicked
+   * .pgn never opened (review-23.0 §2.1 P1). The native side now keeps what
+   * it was asked to open (Windows: the launch arguments; macOS: Finder's
+   * open-documents event) and chess.takeOpenFiles hands the paths over,
+   * issued, once each. Asked at subscribe time (a launch with a file) and
+   * whenever the window comes back to the front (a file opened while running).
    * @returns {function} unsubscribe
    */
   function onOpenFiles(handler) {
-    if (!hasZero() || typeof global.zero.on !== "function") return function () {};
-    let lastKey = "";
-    let lastAt = 0;
-    try {
-      return global.zero.on("open:files", function (payload) {
-        const paths = eventPaths(payload);
-        if (!paths.length) return;
-        const key = paths.join("\n");
-        const now = Date.now();
-        if (key === lastKey && now - lastAt < 1000) return;
-        lastKey = key;
-        lastAt = now;
-        return handler({ paths: paths });
-      });
-    } catch (_) {
-      return function () {};
+    if (!hasZero() || typeof global.zero.invoke !== "function") return function () {};
+    let busy = false;
+    async function take() {
+      if (busy) return;
+      busy = true;
+      try {
+        const r = await global.zero.invoke("chess.takeOpenFiles", {});
+        const paths = r && Array.isArray(r.paths) ? r.paths.filter((p) => typeof p === "string" && p) : [];
+        if (paths.length) await handler({ paths: paths });
+      } catch (_) { /* an older shell without the command: nothing to open */ } finally { busy = false; }
     }
+    take();
+    const onFocus = function () { take(); };
+    if (typeof global.addEventListener === "function") global.addEventListener("focus", onFocus);
+    return function () { if (typeof global.removeEventListener === "function") global.removeEventListener("focus", onFocus); };
   }
 
   // ---- app data (v6-plan Q1.1) --------------------------------------------
