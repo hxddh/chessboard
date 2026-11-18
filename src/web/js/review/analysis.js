@@ -224,7 +224,6 @@ export function createAnalysis(d) {
     // 24.0 (review-23.0 W4): against the engine, your mistakes only — the same
     // count as the key moments below it (it said 4 where the card said 3)
     const first = baseGame().turn();
-    const hasYou = store.session.mode === "ai" && !store.session.analysisBoard && (!store.game.imported || store.game.recordedId != null);
     const mine = (i) => !hasYou || ((i % 2 === 0) === (first === "w") ? "w" : "b") === store.session.humanColor; // as keyMoment() below
     const bad = tags.filter((tag, i) => (tag === "?" || tag === "??") && mine(i)).length;
     // Stop while deepening (p.deepCut): graded and filed all the same (review of PR #87)
