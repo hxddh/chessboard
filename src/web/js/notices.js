@@ -275,7 +275,19 @@ export function createNotices(d) {
    * fallback is not an error path — every platform feature here is optional
    * by construction, and `Host.showMessage` answering null is how it says so.
    */
-  async function confirmNative(message, title, buttons) {
+  /**
+   * 24.0 (review-23.0 §2.1 P2): one question at a time. There is one confirm
+   * box and one resolver; a second question asked while the first was open
+   * replaced its resolver, and the first caller waited forever (an import
+   * left hanging, its index entries never taken back). Now each waits its turn.
+   */
+  function confirmNative(message, title, buttons) {
+    const ui = store().ui; // beside confirmResolver: the one box's queue
+    const turn = (ui.confirmChain || Promise.resolve()).then(() => askConfirm(message, title, buttons));
+    ui.confirmChain = turn.then(() => {}, () => {});
+    return turn;
+  }
+  async function askConfirm(message, title, buttons) {
     const okLabel = (buttons && buttons.ok) || t("act.ok");
     const cancelLabel = (buttons && buttons.cancel) || t("act.cancel");
     const altLabel = buttons && buttons.alt;

@@ -3147,7 +3147,8 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
       store.session.premove = { from: store.game.selection.sq, to: sq };
       store.game.selection = null;
       // 23.0: while the coach holds the reply, its 「悔棋」 toast is the one that matters — the yellow arrow says the rest
-      if (!GameCtl.coachBusy()) toast(tf("msg.premove.set", [store.session.premove.from + "→" + sq]));
+      const said = tf("msg.premove.set", [store.session.premove.from + "→" + sq]); // 24.0: said to a screen reader either way (§2.1 P6)
+      if (!GameCtl.coachBusy()) toast(said); else { const live = document.getElementById("board-live"); if (live) live.textContent = said; }
       draw();
       return;
     }
