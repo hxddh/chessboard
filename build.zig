@@ -139,7 +139,7 @@ pub fn build(b: *std.Build) void {
     if (target.result.os.tag == .windows and optimize != .Debug) {
         exe.subsystem = .windows;
     }
-    linkPlatform(b, target, app_mod, exe, selected_platform, web_engine, web_layer, native_sdk_path, cef_dir, cef_auto_install);
+    linkPlatform(b, target, app_mod, exe, selected_platform, web_engine, web_layer, native_sdk_path, cef_dir, cef_auto_install, webview_inspection orelse (optimize == .Debug));
     b.installArtifact(exe);
 
     // The web side has no npm project of its own (D12: `frontend/` never
@@ -196,7 +196,7 @@ pub fn build(b: *std.Build) void {
         if (target.result.os.tag == .windows and package_optimize != .Debug) {
             built.subsystem = .windows;
         }
-        linkPlatform(b, target, package_app_mod, built, selected_platform, web_engine, web_layer, native_sdk_path, cef_dir, cef_auto_install);
+        linkPlatform(b, target, package_app_mod, built, selected_platform, web_engine, web_layer, native_sdk_path, cef_dir, cef_auto_install, webview_inspection orelse (package_optimize == .Debug));
         break :pkg built;
     };
 
@@ -372,7 +372,7 @@ fn externalModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
     });
 }
 
-fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.Build.Module, exe: *std.Build.Step.Compile, platform: PlatformOption, web_engine: WebEngineOption, web_layer: bool, native_sdk_path: []const u8, cef_dir: []const u8, cef_auto_install: bool) void {
+fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.Build.Module, exe: *std.Build.Step.Compile, platform: PlatformOption, web_engine: WebEngineOption, web_layer: bool, native_sdk_path: []const u8, cef_dir: []const u8, cef_auto_install: bool, inspect: bool) void {
     if (platform == .macos) {
         switch (web_engine) {
             .system => {
@@ -490,7 +490,12 @@ fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.B
                 // turns on the host's embedded-WebView layer; the host
                 // fails the compile by design if it cannot be found.
                 app_mod.addIncludePath(nativeSdkPath(b, native_sdk_path, "third_party/webview2/include"));
-                app_mod.addCSourceFile(.{ .file = nativeSdkPath(b, native_sdk_path, "src/platform/windows/webview2_host.cpp"), .flags = &.{ "-std=c++17" } });
+                // 24.0 (sdk-fork-notes B16): our copy of the host, which turns
+                // WebView2's DevTools off unless this exe is inspectable — the
+                // SDK's webview_inspection reaches only the macOS host. Its
+                // "gpu_surface_renderer.h" still comes from the SDK.
+                app_mod.addIncludePath(nativeSdkPath(b, native_sdk_path, "src/platform/windows"));
+                app_mod.addCSourceFile(.{ .file = b.path("src/native/webview2_host.cpp"), .flags = if (inspect) &.{ "-std=c++17", "-DCHESS_WEBVIEW_INSPECTION=1" } else &.{"-std=c++17"} });
                 // The host calls createWindowsGpuRenderer() from 0.8.0 on, and
                 // that lives here. See the comment on windowsGpuSources below:
                 // this list is a hand-kept copy of the SDK's own build/app.zig,
