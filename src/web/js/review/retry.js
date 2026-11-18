@@ -434,7 +434,10 @@ export function createRetry(d) {
       writeSan(a2, r.reply, r.side === "w" ? "b" : "w");
       after.append(document.createTextNode(tpl[0]), a1, document.createTextNode(tpl[1] || ""), a2, document.createTextNode(tpl[2] || ""));
     }
-    if (answerShown(r)) {
+    // 24.0 (review-23.0 W10): a right answer is not followed by the old
+    // mistake again — the engine's move only when it is another, no 「why」
+    const right = r.verdict === "right", other = !right || (r.ex.better && r.ex.better.san !== r.tried);
+    if (answerShown(r) && other) {
       const best = p("rt-best");
       const tpl = t("rt.best").split("{0}");
       const bs = document.createElement("span");
@@ -443,7 +446,7 @@ export function createRetry(d) {
       best.append(document.createTextNode(tpl[0]), bs, document.createTextNode(tpl[1] || ""));
       // a move that was the engine's own choice (a !! or ! key moment) has no
       // reason: explain.js would only say 「更好的是」 the move itself (#89 review)
-      if (r.ex.played != null) writeWhy(p("rt-why"), r.ex);
+      if (r.ex.played != null && !right) writeWhy(p("rt-why"), r.ex);
     }
     const row = document.createElement("div");
     row.className = "rt-acts";

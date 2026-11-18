@@ -23,6 +23,7 @@ import { paintMini, measureMinis } from "./mini-board.js";
 import { ChessProgressMetrics as Metrics } from "./progress-metrics.js";
 import { ChessProgress } from "./progress.js";
 import { ChessPlanner } from "./planner.js";
+import { ChessRating } from "./rating.js";
 
 /** Today's goals: one lesson, five puzzles, one game — a sitting, not a quota. */
 export const TODAY_GOALS = { lesson: 1, puzzle: 5, game: 1 };
@@ -56,7 +57,8 @@ export function createTodayPage(d) {
     const lesson = Object.values(ls.done || {}).filter(at).length
       + Object.values((ls.eg && ls.eg.done) || {}).filter(at).length;
     const st = store.session.puzzleState || {};
-    const puzzle = (Array.isArray(st.rhist) ? st.rhist : []).filter((h) => Number(h.t) >= from && !h.place).length;
+    const puzzle = (Array.isArray(st.rhist) ? st.rhist : []).filter((h) => Number(h.t) >= from)
+      .reduce((n, h) => n + (h.place ? Number(h.n) || 0 : 1), 0); // 24.0 W6: the placement's answers count
     const game = loadStats().games.filter((g) => Number(g.t) >= from).length;
     return { lesson, puzzle, game };
   }
@@ -252,9 +254,14 @@ export function createTodayPage(d) {
     // the player's level — puzzles solved without one are not "provisional by placement"
     const placed = !series.length && !!st.placed && Array.isArray(st.rhist) && st.rhist.length > 0;
     const ys = series.map((p) => p.r);
-    put(b, series.length ? String(ys[ys.length - 1]) : placed ? puzzleRatingText() : t("today.rGameNone"));
+    // 24.0 (review-23.0 W3): the same words as the result card — 暂定 while the
+    // game rating is provisional — and, after a resignation, that it was a loss
+    const stats = loadStats(), last = stats.games[stats.games.length - 1];
+    const prov = series.length && ChessRating.isProvisional(stats.rating);
+    put(b, series.length ? (prov ? tf("rating.prov", [ys[ys.length - 1]]) : String(ys[ys.length - 1])) : placed ? puzzleRatingText() : t("today.rGameNone"));
     if (b) b.classList.toggle("today-invite", !series.length && !placed);
-    if (note) { note.hidden = !placed; put(note, placed ? t("today.rFromPz") : ""); }
+    const why = placed ? t("today.rFromPz") : series.length && last && last.ending === "resigned" && last.ra != null ? t("go.resignLoss") : "";
+    if (note) { note.hidden = !why; put(note, why); }
     if (cv) cv.hidden = ys.length < 2;
     if (cv && cv.clientWidth && ys.length > 1) drawRatingTrend(cv, ys);
   }

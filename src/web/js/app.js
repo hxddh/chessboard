@@ -1031,7 +1031,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     has: (_, k) => DIFF_IDS.includes(k),
   });
   // v8-0-plan B4: the personas, the engine's clock plan, resign and draw offers, your rating
-  const OppUI = createOpponentsLazy({ loadStats, saveStats, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), portrait: (slot, id) => setPortrait(slot, id), parseTc: (x) => parseTc(x), onReady: () => {
+  const OppUI = createOpponentsLazy({ loadStats, saveStats, placed: () => (store.session.puzzleState || {}).placed, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), portrait: (slot, id) => setPortrait(slot, id), parseTc: (x) => parseTc(x), onReady: () => {
       // 19.0 S5: no 陪练风格 row — the style is the rung's persona's; an 18.0
       // pick of a rung with another style reads as that persona
       const own = OppUI.styleOf(store.session.difficulty);

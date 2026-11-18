@@ -127,7 +127,8 @@ export function createMoments(d) {
     if (!list.length) { box.dataset.key = ""; return; }
     const m = list[at];
     // 14.0 B: 再试一次 is for your own moves — the opponent's are not yours to replay
-    const canRetry = (!you() || m.side === you()) && !!(Retry.retryFacts(m.ply) || {}).better;
+    // 24.0 (W10): not while a retry is on — the panel below has its own 「再走一次」
+    const canRetry = !store.session.retry && (!you() || m.side === you()) && !!(Retry.retryFacts(m.ply) || {}).better;
     // 21.0 T1: a moment you can replay opens on 再试一次, not on the answer.
     // 为什么 is the coach's reason, and for a mistake that reason is the better
     // move (「更好的是 Bxd4…」) — open by default, it was the answer printed

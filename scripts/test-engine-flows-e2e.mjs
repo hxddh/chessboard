@@ -2026,11 +2026,11 @@ await scenario("人会怎么走", async () => {
   });
   await page.keyboard.press("Home");
   const at0 = await until(line, 20000, 100);
-  assert(!!at0 && /^1500 分的人：/.test(at0.text) && /e4 \d+%/.test(at0.text) && at0.under === "pv-line",
+  assert(!!at0 && /^和你水平相近的人（约 1500 分）：/.test(at0.text) && /e4 \d+%/.test(at0.text) && at0.under === "pv-line",
     "人会怎么走：复盘的引擎线下面，开局局面里 1500 分的人走 e4 的比例", JSON.stringify(at0));
   for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowRight");
   const at6 = await until(() => line().then((l) => (l && l.text !== (at0 && at0.text) ? l : null)), 10000, 100);
-  assert(!!at6 && /^1500 分的人：/.test(at6.text), "人会怎么走：跟着复盘游标走（第 6 步之后换了一行）", JSON.stringify(at6));
+  assert(!!at6 && /^和你水平相近的人（约 1500 分）：/.test(at6.text), "人会怎么走：跟着复盘游标走（第 6 步之后换了一行）", JSON.stringify(at6));
   const t0 = Date.now();
   for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowRight");
   const fast = await until(() => line().then((l) => (l && l.text !== (at6 && at6.text) ? l : null)), 10000, 50);

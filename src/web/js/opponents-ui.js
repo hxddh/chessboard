@@ -392,7 +392,8 @@ export function createOpponentsUI(d) {
         checks: theirs.filter((m) => /[+#]/.test(m.san)).length,
       }) || "";
     }
-    const rl = mine ? [ratingLine(mine), adviceLine(mine, mine.level)].filter(Boolean).join(" · ") : "";
+    // 24.0 (review-23.0 W3, owner 2026-11-18): a resignation is scored as a loss, and the card says so
+    const rl = mine ? tdot(ratingLine(mine), store.game.resigned && t("go.resignLoss"), adviceLine(mine, mine.level)) : "";
     for (const [node, text] of [[say, line], [rate, rl]]) {
       if (!node) continue;
       if (text) setText(node, text);

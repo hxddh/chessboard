@@ -18,10 +18,16 @@ const CHUNK = { file: "chunk-opponents.js", global: "CHESS_OPPONENTS" };
 
 
 /** @param {object} d opponents-ui.js's bag, plus loadStats and onReady */
+/** How sure a placement's six puzzles are about a game rating: provisional, but not a stranger's 350. */
+const SEED_RD = 200;
+
 export function createOpponentsLazy(d) {
   let mod = null, ui = null;
   const late = []; // filings waiting for the chunk: {id, rec, done}
-  const filing = (stats, rec) => Object.assign({ id: rec.id, level: rec.diff }, mod.Opponents.fileRating(stats, rec, rec.t));
+  // 24.0 (review-23.0 W3): a player's first game starts from where the
+  // placement put them, not from 1500 — one loss took a 1375 placement to 1165
+  const seed = () => { const p = d.placed && d.placed(); return p && Number.isFinite(p.r) ? { r: p.r, rd: SEED_RD, vol: 0.06 } : null; };
+  const filing = (stats, rec) => Object.assign({ id: rec.id, level: rec.diff }, mod.Opponents.fileRating(stats, rec, rec.t, seed()));
   /**
    * The chunk is here: rate the waiting games in the order they were played,
    * each on the saved record (it has the later games after it by now), on one

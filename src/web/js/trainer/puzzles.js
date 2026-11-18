@@ -357,13 +357,13 @@ export function createPuzzlesUI(d) {
             if (v && v.ok) { toast(tf("pz.mine.alsoFine", [mv.san, (v.loss / 100).toFixed(1)])); puzzleSolved(); return; }
             puzzleWrong(c === "win"
               ? (mv.captured ? t("pz.wrongCapture") : t("pz.biggerPrize"))
-              : tf("pz.findMotif", [puzzleMotif(pz0.p)]));
+              : findMotifText(pz0.p));
           });
           return;
         }
         puzzleWrong(
           c === "win" ? (mv.captured ? t("pz.wrongCapture") : t("pz.biggerPrize")) :
-          c === "tac" ? (store.session.puzzle.stage === 0 ? tf("pz.findMotif", [puzzleMotif(store.session.puzzle.p)]) : t("pz.takeTarget")) :
+          c === "tac" ? (store.session.puzzle.stage === 0 ? findMotifText(store.session.puzzle.p) : t("pz.takeTarget")) :
           c === "draw" ? t("pz.notDrawn") :
           c === "mine" ? (mv.san === store.session.puzzle.p.played ? t("pz.mine.repeat") : t("pz.mine.stronger")) :
           openingWhy(g, mv, script[store.session.puzzle.stage]));
@@ -465,8 +465,8 @@ export function createPuzzlesUI(d) {
     avail(box, !!fb);
     if (!fb) return;
     box.classList.toggle("ok", fb.ok);
-    box.classList.toggle("bad", !fb.ok);
-    setIcon(el("puzzle-fb-ic"), fb.ok ? "check" : "x");
+    box.classList.toggle("bad", !fb.ok && !fb.seen); box.classList.toggle("seen", !!fb.seen);
+    setIcon(el("puzzle-fb-ic"), fb.ok ? "check" : fb.seen ? "eye" : "x");
     setText(el("puzzle-fb-head"), fb.head);
     setText(el("puzzle-fb-sub"), fb.sub || "");
     const meta = el("puzzle-fb-meta");
@@ -480,7 +480,7 @@ export function createPuzzlesUI(d) {
     setText(meta, tdot(...parts));
     if (meta) meta.classList.toggle("up", !!(pz.rating && pz.rating.delta > 0));
     // the way to the answer, after a miss, while there is still a question
-    avail(el("puzzle-fb-hint"), !fb.ok && !pz.done && !pz.helpArrow);
+    avail(el("puzzle-fb-hint"), !fb.ok && !fb.seen && !pz.done && !pz.helpArrow);
   }
 
   /** Arrow for the correct move at the current stage. */
@@ -492,6 +492,7 @@ export function createPuzzlesUI(d) {
   const hintLevel = () => Hint.level(store.session.puzzle);
 
   /** A right move's ✓, on the square the solver's move landed on (v8-0-plan A5). */
+  const findMotifText = (p, a = (p.solution && p.solution[0]) || "") => tf(/[+#]$/.test(a) ? "pz.findMotif" : /x/.test(a) ? "pz.findMotifCapture" : "pz.findMotifQuiet", [puzzleMotif(p)]); // 24.0 W2: the answer's kind of move
   function markRight() {
     const sq = store.session.puzzle.solverTo;
     return sq ? { sq, ok: true } : null;
@@ -499,9 +500,9 @@ export function createPuzzlesUI(d) {
 
   function puzzleSolved() {
     store.session.puzzle.done = true;
-    store.session.puzzle.mark = markRight();
+    store.session.puzzle.mark = store.session.puzzle.usedAnswer ? null : markRight(); // 24.0 W1: a shown answer is no solve
     store.game.selection = null;
-    Audio2.playWin();
+    if (!store.session.puzzle.usedAnswer) Audio2.playWin();
     if (store.session.puzzle.run) { Modes.runSolved(); return; } // v8-0-plan B1
     // an opening drill is credited to the line the board is on (7.6)
     const sp = opCurrent(store.session.puzzle);
@@ -543,7 +544,7 @@ export function createPuzzlesUI(d) {
     // so — the tick, the verb, the puzzle's name (7.7 §4; was a toast)
     const clean = unaided;
     store.session.pzStreak = clean ? store.session.pzStreak + 1 : 0;
-    store.session.puzzle.fb = { ok: true, head: clean ? t("pz.fb.best") : pz.usedAnswer ? t("pz.fb.answered") : verb,
+    store.session.puzzle.fb = { ok: !pz.usedAnswer, seen: !!pz.usedAnswer, head: clean ? t("pz.fb.best") : pz.usedAnswer ? t("pz.fb.answered") : verb,
       sub: tdot(clean ? verb : "", puzzleName(sp), why) };
     sync();
   }
@@ -854,7 +855,7 @@ export function createPuzzlesUI(d) {
       // the goal alone is the trainers' bar's (15.0 S3: the strip has the rating)
       task.dataset.goal = puzzleGoalText();
       task.textContent = store.session.puzzle.done && !store.session.puzzle.run
-        ? t("pz.solvedNext")
+        ? t(store.session.puzzle.usedAnswer ? "pz.answeredNext" : "pz.solvedNext")
         : tdot(puzzleGoalText(), store.session.puzzle.shownR != null && tf("pz.ratingOf", [store.session.puzzle.shownR]));
     }
     renderPuzzleLine();
