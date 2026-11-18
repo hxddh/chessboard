@@ -435,9 +435,9 @@ export function createRetry(d) {
       after.append(document.createTextNode(tpl[0]), a1, document.createTextNode(tpl[1] || ""), a2, document.createTextNode(tpl[2] || ""));
     }
     // 24.0 (review-23.0 W10): a right answer is not followed by the old
-    // mistake again — the engine's move only when it is another, no 「why」
-    const right = r.verdict === "right", other = !right || (r.ex.better && r.ex.better.san !== r.tried);
-    if (answerShown(r) && other) {
+    // mistake's 「why」 again — the engine's move stays, as confirmation
+    const right = r.verdict === "right";
+    if (answerShown(r)) {
       const best = p("rt-best");
       const tpl = t("rt.best").split("{0}");
       const bs = document.createElement("span");
