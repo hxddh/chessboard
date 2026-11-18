@@ -794,7 +794,8 @@ const PLACEMENT = STUDY.split(" ")[0];
     // the window's appearance, asked whenever the theme is applied
     const calls = (await page.evaluate(() => window.__calls))
       .filter((c) => c !== "chess.appdataWrite" && c !== "chess.appdataRead" && c !== "chess.selftestMode" && c !== "chess.setChrome" &&
-        c !== "chess.setMenuLanguage"); // 22.0 F5: nor the page's language, told to the shell at every launch
+        c !== "chess.setMenuLanguage" && // 22.0 F5: nor the page's language, told to the shell at every launch
+        c !== "chess.takeOpenFiles"); // 24.0: nor the question at launch whether the OS opened a .pgn with us
     assert(calls.join("→") === "chess.openPgn",
       `……走的是原生侧的「对话框 + 读文件」这一条命令,别无他路,也不再签发路径(${calls.join("→")})`);
     const openArgs = await page.evaluate(() => window.__openArgs);
@@ -1822,6 +1823,46 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   const off2 = await read();
   assert(off2.pressed === "false" && off2.saved === false, `S2 关掉之后重新载入，它还是关的(${JSON.stringify(off2)})`);
   assert(errs.length === 0, `S2 持续分析设置：没有页面异常${errs.length ? " — " + errs[0] : ""}`);
+  await ctx.close();
+}
+
+// --- 24.0 (review-23.0 §2.1 P1): a .pgn the OS opened with the app -----------
+// Through 23.0 nothing took it: no SDK sends the "open:files" event the page
+// listened for. Now the native side keeps the path and chess.takeOpenFiles
+// hands it over — at launch, and again when the window comes back to the front.
+{
+  const ctx = await freshContext();
+  await ctx.addInitScript(() => {
+    const queue = [["/Users/me/Library/Mobile Documents/com~apple~CloudDocs/a.pgn"]];
+    window.__taken = 0;
+    window.__queueOpen = (p) => queue.push([p]);
+    window.zero = {
+      invoke: (cmd, a) => {
+        if (cmd === "chess.takeOpenFiles") { window.__taken++; return Promise.resolve({ paths: queue.shift() || [] }); }
+        if (cmd === "chess.readTextFile") {
+          const text = /a\.pgn$/.test(a.path) ? '[Event "Opened"]\n[White "A"]\n[Black "B"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 *\n'
+            : '[Event "Second"]\n[White "C"]\n[Black "D"]\n[Result "*"]\n\n1. d4 d5 *\n';
+          return Promise.resolve({ b64: btoa(text), more: false });
+        }
+        return Promise.resolve({});
+      },
+      on: () => () => {},
+      platform: { supports: () => Promise.resolve(true) },
+      os: {},
+    };
+  });
+  const { page, errs } = await open(ctx);
+  await page.waitForTimeout(600);
+  const sans = () => page.evaluate(() => [...document.querySelectorAll(".move-list .mlmove:not(.mlgap)")].map((e) => e.textContent.trim()).join(" "));
+  const first = await sans();
+  assert(/e4/.test(first) && /f3/.test(first), "24.0 启动时原生侧报来一个双击的 .pgn（iCloud 里的），棋盘上就是这局 (" + first + ")");
+  await page.evaluate(() => window.__queueOpen("/Users/me/Downloads/b.pgn"));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForTimeout(600);
+  const second = await sans();
+  const taken = await page.evaluate(() => window.__taken);
+  assert(/d4/.test(second) && taken >= 2, "24.0 应用开着时再双击一个：窗口回到前面就取一次，载入新的那局 (" + second + "；取了 " + taken + " 次)");
+  assert(errs.length === 0, "24.0 打开文件：没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
 

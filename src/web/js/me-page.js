@@ -23,6 +23,8 @@
 /**
  * @param {object} d everything this module borrows from app.js
  */
+import { ChessRating } from "./rating.js";
+
 export function createMePage(d) {
   const {
     Icons, evalAch, libPlayedAt, loadStats, store, t, tf, Library, LIB_MIN_GAMES, drawRatingTrend, libEcoName,
@@ -214,11 +216,15 @@ export function createMePage(d) {
     const pz = renderPzRating();
     // the engine-game rating: v8-0-plan B4 files one per game (Metrics.ratingAfter)
     const series = Metrics.gameRatingSeries(stats.games, 60);
-    const showRating = series.length >= 2;
-    byId("me-rating-head").hidden = byId("me-rating").hidden = !showRating;
+    // 24.0 (review-23.0 W3): the level from the first rated game on, as 今天
+    // and the result card show it (暂定 included); the curve from the second
+    const showRating = series.length >= 1;
+    byId("me-rating-head").hidden = !showRating;
+    byId("me-rating").hidden = series.length < 2;
     if (showRating) {
-      setTxt(byId("me-rating-meta"), String(series[series.length - 1].r));
-      drawRatingTrend(byId("me-rating"), series.map((p) => p.r));
+      const now = series[series.length - 1].r;
+      setTxt(byId("me-rating-meta"), ChessRating.isProvisional(stats.rating) ? tf("rating.prov", [now]) : String(now));
+      if (series.length >= 2) drawRatingTrend(byId("me-rating"), series.map((p) => p.r));
     }
     rs.hidden = !pz && !showRating;
     // the calendar and its streak

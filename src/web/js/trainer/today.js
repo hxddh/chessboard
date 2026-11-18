@@ -187,7 +187,9 @@ export function createTodayUI(d) {
       fresh: !st.placed && !games.length && !store.session.library.some((g) => g.side) && !store.session.mines.length &&
         !Object.keys(store.session.learnState.done || {}).length && !Object.keys(st.tally || {}).length &&
         !Object.keys(st.missed || {}).length && !Object.keys(st.solved || {}).length,
-      weakCat: w ? w.cat : null,
+      // 24.0 (review-23.0 W15): 今天 names a weak kind from a handful of answers
+      // only — two first tries made 「弱项 · 战绩最弱的题型」 of a kind
+      weakCat: w && w.attempts >= 6 ? w.cat : null,
       weakMotif: (Picker.weakestMotif(st, Object.keys(st.mtally || {})) || {}).motif || null,
       lessonNext: Planner.lessonFrom(LESSONS, store.session.learnState.done || {}, st.placed ? st.placed.r : null),
       opUnsolved: ALL_PUZZLES.some((p) => p.cat === "op" && !st.solved[p.id]),

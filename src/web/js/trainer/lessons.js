@@ -540,11 +540,12 @@ export function createLessonsUI(d) {
         learnRetryTask(t("lm.stalemateFail"));
         return;
       }
+      const why = moveFact(g, mv, task); // read before the move is taken back
       g.undo();
       store.session.learn.last = null;
       // the translated retry hint, not the raw Chinese one on the task
       // a lesson retry is a correction, not a receipt
-      nudge(taskText(curLesson(), store.session.learn.ti).retry || t("lm.retry"));
+      nudge(tdot(why, taskText(curLesson(), store.session.learn.ti).retry || t("lm.retry")));
       learnRegisterMiss();
       sync();
       return;
@@ -562,6 +563,30 @@ export function createLessonsUI(d) {
       if (task.eg && task.goal !== "draw") { egSlipCheck(g, task); return; }
       learnEngineReply();
     }
+  }
+
+  /**
+   * 24.0 (review-23.0 W13, B3): what the move you made did, for the goals a
+   * position can answer by itself — before the lesson's own retry hint, which
+   * is about the task, not about your move. 「Nd6 没有将军」, 「Rxe5 之后对方可以
+   * 走 Bxe5 吃掉它」. "" for the goals it cannot (one-of: a list of good moves).
+   * `g` is the position after `mv`.
+   */
+  function moveFact(g, mv, task) {
+    if (task.goal === "check" || task.goal === "mate") {
+      if (!g.in_check()) return tf("lm.why.noCheck", [mv.san]);
+      if (task.goal === "mate" && !g.in_checkmate()) return tf("lm.why.escapes", [mv.san, g.moves()[0]]);
+      return "";
+    }
+    if (task.goal === "capture") {
+      if (!mv.captured) return tf("lm.why.noCapture", [mv.san]);
+      return mv.to !== task.target ? tf("lm.why.wrongTarget", [mv.san, task.target]) : "";
+    }
+    if (task.goal === "safe") {
+      const hit = g.moves({ verbose: true }).find((m) => m.to === mv.to);
+      return hit ? tf("lm.why.hangs", [mv.san, hit.san]) : "";
+    }
+    return "";
   }
 
   /**

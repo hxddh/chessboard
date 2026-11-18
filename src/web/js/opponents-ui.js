@@ -133,7 +133,16 @@ export function createOpponentsUI(d) {
     const picked = Math.max(0, on ? all.indexOf(on) : all.findIndex((p) => p.level === pick.difficulty));
     const me = d.rating();
     const at = me && Number.isFinite(me.r) ? nearestTo(all, me.r) : picked;
-    const from = full ? 0 : Math.max(0, Math.min(all.length - SHOWN, at - 2));
+    // 24.0 (review-23.0 W7): the five are chosen once per opening of the
+    // dialog — a click picks a card, it does not re-centre the row under the
+    // pointer (the picked card jumped from the left end to the middle)
+    // It moves only when it has to: the full ladder folded away after a pick
+    // there, or a pick that is off the five (the pick centres it then).
+    const around = (i) => Math.max(0, Math.min(all.length - SHOWN, i - 2));
+    if (ng.from == null) ng.from = around(at);
+    else if (!full && (ng.wasFull || picked < ng.from || picked >= ng.from + SHOWN)) ng.from = around(picked);
+    ng.wasFull = full;
+    const from = full ? 0 : ng.from;
     const shown = full ? all.length : SHOWN;
     // 15.0 F: open, the ladder is faces in six rows; the one picked is named under it
     if (grid.classList.contains("full") !== full) grid.classList.toggle("full", full);
@@ -392,7 +401,8 @@ export function createOpponentsUI(d) {
         checks: theirs.filter((m) => /[+#]/.test(m.san)).length,
       }) || "";
     }
-    const rl = mine ? [ratingLine(mine), adviceLine(mine, mine.level)].filter(Boolean).join(" · ") : "";
+    // 24.0 (review-23.0 W3, owner 2026-11-18): a resignation is scored as a loss, and the card says so
+    const rl = mine ? tdot(ratingLine(mine), store.game.resigned && t("go.resignLoss"), adviceLine(mine, mine.level)) : "";
     for (const [node, text] of [[say, line], [rate, rl]]) {
       if (!node) continue;
       if (text) setText(node, text);

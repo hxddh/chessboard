@@ -434,6 +434,9 @@ export function createRetry(d) {
       writeSan(a2, r.reply, r.side === "w" ? "b" : "w");
       after.append(document.createTextNode(tpl[0]), a1, document.createTextNode(tpl[1] || ""), a2, document.createTextNode(tpl[2] || ""));
     }
+    // 24.0 (review-23.0 W10): a right answer is not followed by the old
+    // mistake's 「why」 again — the engine's move stays, as confirmation
+    const right = r.verdict === "right";
     if (answerShown(r)) {
       const best = p("rt-best");
       const tpl = t("rt.best").split("{0}");
@@ -443,7 +446,7 @@ export function createRetry(d) {
       best.append(document.createTextNode(tpl[0]), bs, document.createTextNode(tpl[1] || ""));
       // a move that was the engine's own choice (a !! or ! key moment) has no
       // reason: explain.js would only say 「更好的是」 the move itself (#89 review)
-      if (r.ex.played != null) writeWhy(p("rt-why"), r.ex);
+      if (r.ex.played != null && !right) writeWhy(p("rt-why"), r.ex);
     }
     const row = document.createElement("div");
     row.className = "rt-acts";

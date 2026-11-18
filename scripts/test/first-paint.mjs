@@ -80,9 +80,13 @@ export async function run() {
     // 22.0 C1: v22-0-plan §4 — the sounds' code went to chunk-audio.js
     // (812,591 bytes measured with 22.0's own additions in); the line is that
     // and 2,409 bytes of room
-    const BUNDLE_BYTES_220 = 815000;
-    assert(bundleBytes <= BUNDLE_BYTES_220,
-      "22.0: bundle.js stays within v22-0-plan's 815,000 bytes (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_220 ? " ≤ " : " > ") + BUNDLE_BYTES_220 + " bytes)");
+    // 24.0: v24-0-plan §3 — the fixes that answer the 23.0 review (a .pgn the
+    // OS opened, the confirm queue, the puzzle and rating wording, the review's
+    // counts) are first-paint code and moved nothing out: 815,218 bytes
+    // measured part-way, the line is 818,000. The next version pays it back.
+    const BUNDLE_BYTES_240 = 818000;
+    assert(bundleBytes <= BUNDLE_BYTES_240,
+      "24.0: bundle.js stays within v24-0-plan's 818,000 bytes (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_240 ? " ≤ " : " > ") + BUNDLE_BYTES_240 + " bytes)");
     // …minified without renaming: a player's stack trace still names the code
     assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
       "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");

@@ -1031,7 +1031,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     has: (_, k) => DIFF_IDS.includes(k),
   });
   // v8-0-plan B4: the personas, the engine's clock plan, resign and draw offers, your rating
-  const OppUI = createOpponentsLazy({ loadStats, saveStats, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), portrait: (slot, id) => setPortrait(slot, id), parseTc: (x) => parseTc(x), onReady: () => {
+  const OppUI = createOpponentsLazy({ loadStats, saveStats, placed: () => (store.session.puzzleState || {}).placed, lang: () => I18n.getLang(), tiers: ChessEngine.TIERS, icon: (n) => Icons.icon(n), portrait: (slot, id) => setPortrait(slot, id), parseTc: (x) => parseTc(x), onReady: () => {
       // 19.0 S5: no 陪练风格 row — the style is the rung's persona's; an 18.0
       // pick of a rung with another style reads as that persona
       const own = OppUI.styleOf(store.session.difficulty);
@@ -1682,7 +1682,8 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   /** everything is localised at render time, so a language switch relabels it */
   function historyLabel(rec) {
     const res = t(rec.result === "win" ? "hist.win" : rec.result === "loss" ? "hist.loss" : "hist.draw");
-    return tdot(res, diffName(rec.diff), t(rec.color === "b" ? "hist.black" : "hist.white"));
+    const who = OppUI.strip(rec.diff, rec.style).name; // 24.0 W17: the opponent by name, its rung when it has none
+    return tdot(res, who && who !== "Stockfish" ? who : diffName(rec.diff), t(rec.color === "b" ? "hist.black" : "hist.white"));
   }
 
   function historySub(rec) {
@@ -3147,7 +3148,8 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
       store.session.premove = { from: store.game.selection.sq, to: sq };
       store.game.selection = null;
       // 23.0: while the coach holds the reply, its 「悔棋」 toast is the one that matters — the yellow arrow says the rest
-      if (!GameCtl.coachBusy()) toast(tf("msg.premove.set", [store.session.premove.from + "→" + sq]));
+      const said = tf("msg.premove.set", [store.session.premove.from + "→" + sq]); // 24.0: said to a screen reader either way (§2.1 P6)
+      if (!GameCtl.coachBusy()) toast(said); else { const live = document.getElementById("board-live"); if (live) live.textContent = said; }
       draw();
       return;
     }
@@ -4196,7 +4198,8 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
 
   // Drop a .pgn onto the window to import it — host bridge in the packaged
   // app, DataTransfer in browsers.
-  Host.onDropFiles(async (payload) => {
+  // …and 24.0: a .pgn the OS opened with the app (Host.onOpenFiles), the same way
+  const openPaths = async (payload) => {
     const paths = Host.normalizePaths(payload && payload.paths ? payload.paths : payload);
     const p = paths.find((x) => /\.(pgn|txt)$/i.test(x)) || paths[0];
     if (!p) return;
@@ -4204,7 +4207,9 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
       importPgnText(await Host.readTextFile(p), p);
       Host.addRecentDocument(p);
     } catch (err) { toastReadFailure(err); }
-  });
+  };
+  Host.onDropFiles(openPaths);
+  Host.onOpenFiles(openPaths);
   window.addEventListener("dragover", (ev) => ev.preventDefault());
   window.addEventListener("drop", (ev) => {
     ev.preventDefault();

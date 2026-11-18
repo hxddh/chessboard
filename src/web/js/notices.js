@@ -188,8 +188,14 @@ export function createNotices(d) {
     if (!el.classList.contains("show")) return false;
     el.classList.remove("show"); el.style.pointerEvents = "";
     if (store().ui.toastTimer) { clearTimeout(store().ui.toastTimer); store().ui.toastTimer = null; }
+    // 24.0: a word that waited behind a toast with a way forward, if it still is news
+    const held = store().ui.toastHeld;
+    store().ui.toastHeld = null;
+    if (held && Date.now() - held.at < HELD_MS) toast(held.msg);
     return true;
   }
+  /** How long a held informational toast stays worth saying once the way it waited for is gone. */
+  const HELD_MS = 3000;
 
   /**
    * @param {string} msg
@@ -205,6 +211,16 @@ export function createNotices(d) {
     // 22.0 B4: a toast has an owner. What is returned closes this toast and
     // only this one — the state that raised it calls it when that state ends,
     // so 「对手先等一下」 cannot outlive the wait it describes.
+    // 24.0 (review-23.0 W11, T5): one toast at a time, and a plain word does
+    // not push out a toast that offers a way forward — 「对手先等一下 · 悔棋」
+    // was replaced by 「已预走」 or 「已保存」 in the seconds it was for. The
+    // word waits and is said when that toast goes, if it is still news.
+    const kind0 = TOAST_MS[tier] === undefined ? "ok" : tier;
+    if (kind0 === "ok" && !(action && action.label) && el.classList.contains("show") && el.dataset.act === "1") {
+      store().ui.toastHeld = { msg, at: Date.now() };
+      return () => {};
+    }
+    el.dataset.act = action && action.label ? "1" : "";
     const mine = String((Number(el.dataset.seq) || 0) + 1);
     el.dataset.seq = mine;
     const close = () => { if (el.dataset.seq === mine) dismissToast(); };
@@ -275,7 +291,19 @@ export function createNotices(d) {
    * fallback is not an error path — every platform feature here is optional
    * by construction, and `Host.showMessage` answering null is how it says so.
    */
-  async function confirmNative(message, title, buttons) {
+  /**
+   * 24.0 (review-23.0 §2.1 P2): one question at a time. There is one confirm
+   * box and one resolver; a second question asked while the first was open
+   * replaced its resolver, and the first caller waited forever (an import
+   * left hanging, its index entries never taken back). Now each waits its turn.
+   */
+  function confirmNative(message, title, buttons) {
+    const ui = store().ui; // beside confirmResolver: the one box's queue
+    const turn = (ui.confirmChain || Promise.resolve()).then(() => askConfirm(message, title, buttons));
+    ui.confirmChain = turn.then(() => {}, () => {});
+    return turn;
+  }
+  async function askConfirm(message, title, buttons) {
     const okLabel = (buttons && buttons.ok) || t("act.ok");
     const cancelLabel = (buttons && buttons.cancel) || t("act.cancel");
     const altLabel = buttons && buttons.alt;

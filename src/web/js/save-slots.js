@@ -40,7 +40,8 @@ export async function migrateSlots(d) {
   const moving = st.slots.map((s, i) => (s && s.pgn && hasMoves(s.pgn) ? i : -1)).filter((i) => i >= 0);
   if (!moving.length) return 0;
   const text = moving.map((i) => tagged(st.slots[i].pgn, d.tf("slots.legacyN", [i + 1]))).join("\n\n");
-  const r = await d.importPgnToLibrary(text, d.t("slots.legacy"), { wait: true });
+  // 24.0: noEvict — a migration nobody asked for at this moment never pushes games out of a full library
+  const r = await d.importPgnToLibrary(text, d.t("slots.legacy"), { wait: true, noEvict: true });
   if (!r) return 0;   // refused or unreadable: the slots stay, the next launch tries again
   const left = st.slots.map((s, i) => (moving.includes(i) ? null : s));
   if (left.some(Boolean)) d.Persist.setJson("slots", { v: 1, slots: left });

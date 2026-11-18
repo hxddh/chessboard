@@ -52,8 +52,11 @@ export function createMoments(d) {
    * B: in a game of yours, yours first, then the opponent's (the review is
    * about what you can change; it led with whichever came first).
    */
+  /** Who moved first in the game on the board (a [FEN] start may be black's move). */
+  const firstMoverOf = () => (startFen() ? (startFen().split(" ")[1] === "b" ? "b" : "w") : "w");
   function momentsOf(a) {
-    const firstMover = startFen() ? (startFen().split(" ")[1] === "b" ? "b" : "w") : "w";
+    // 24.0 (review-23.0 §2.1 P5): one rule for who moved first, also for the announcement above
+    const firstMover = firstMoverOf();
     const graded = a.v === 2 && Array.isArray(a.grades) ? a.grades : null;
     const m = Grade.keyMoments({ sans: sanHistory(), scalars: a.scalars, bests: a.bests, seconds: a.seconds || [] },
       graded, firstMover, boardMoveNo);
@@ -103,7 +106,7 @@ export function createMoments(d) {
         // 23.0 (review-22.0 §3.1-11): said, not only shown — to a screen
         // reader the board otherwise just moved under them
         const live = document.getElementById("board-live"), san = sanHistory()[list[0].ply];
-        if (live && san) live.textContent = tdot(t("rv.keyMoments"), boardMoveNo(list[0].ply) + ((list[0].ply + 1) % 2 ? ". " : "… ") + san);
+        if (live && san) live.textContent = tdot(t("rv.keyMoments"), boardMoveNo(list[0].ply) + ((list[0].ply % 2 === 0) === (firstMoverOf() === "w") ? ". " : "… ") + san);
         return;
       }
     }
@@ -124,7 +127,8 @@ export function createMoments(d) {
     if (!list.length) { box.dataset.key = ""; return; }
     const m = list[at];
     // 14.0 B: 再试一次 is for your own moves — the opponent's are not yours to replay
-    const canRetry = (!you() || m.side === you()) && !!(Retry.retryFacts(m.ply) || {}).better;
+    // 24.0 (W10): not while a retry is on — the panel below has its own 「再走一次」
+    const canRetry = !store.session.retry && (!you() || m.side === you()) && !!(Retry.retryFacts(m.ply) || {}).better;
     // 21.0 T1: a moment you can replay opens on 再试一次, not on the answer.
     // 为什么 is the coach's reason, and for a mistake that reason is the better
     // move (「更好的是 Bxd4…」) — open by default, it was the answer printed

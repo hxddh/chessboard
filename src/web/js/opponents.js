@@ -349,9 +349,10 @@ function rateHistory(games) {
  * in place — its `rating` — and the game record gains `rb` (before),
  * `ra` (after) and `perf` (the shape the progress page reads).
  *
+ * @param {?object} [seed] the rating a first game starts from (24.0: the placement's), else 1500
  * @returns {{before: ?object, after: object, perf: ?number, advice: ?string}|null}
  */
-function fileRating(stats, rec, now) {
+function fileRating(stats, rec, now, seed) {
   if (!stats || !rec) return null;
   // only the games before this one: a game filed late (the chunk was still
   // loading) may already have later games after it in the list (Codex #89)
@@ -360,7 +361,8 @@ function fileRating(stats, rec, now) {
   const at = games.indexOf(rec);
   // …and the unrated ones before it are no part of its performance or advice
   const prior = (at >= 0 ? games.slice(0, at) : games).filter((g) => !g.unrated);
-  const before = validRating(stats.rating) ? stats.rating : rateHistory(prior);
+  // 24.0: `seed` (the placement's rating) is where a first game starts from
+  const before = validRating(stats.rating) ? stats.rating : rateHistory(prior) || (validRating(seed) ? seed : null);
   // filed now: against today's ladder, and it says so for any later replay
   if (rec.lad == null) rec.lad = LADDER;
   const after = rateGame(before, rec.diff, rec.result, now, rec.lad);

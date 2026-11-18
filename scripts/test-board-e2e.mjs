@@ -1726,7 +1726,8 @@ for (const appearance of ["light", "dark"]) {
   assert(w2 === "pip*,tomo,lina,kai,ada", `S5:选了皮普再收起,五张卡挪到梯子底,皮普亮着(${w2})`);
   await page.click('#ng-host #op-grid .op-card[data-op="kai"]'); await settle(page);
   const w3 = await cardsNow();
-  assert(w3 === "tomo,lina,kai*,ada,remy", `S5:收起时选凯,五张卡的窗口跟着他(${w3})`);
+  // 24.0 (review-23.0 W7): 凯 is on screen — picked where he is, the five stay
+  assert(w3 === "pip,tomo,lina,kai*,ada", `24.0 W7:收起时选凯(已在屏上),五张卡原地不动(${w3})`);
   await page.keyboard.press("Escape"); await settle(page);
   s = await state();
   assert(!s.open && s.settings.difficulty === "hard", `……Esc 不开始:设置里还是高级(${s.settings.difficulty})`);
@@ -1939,7 +1940,7 @@ for (const appearance of ["light", "dark"]) {
     const sub = await page.evaluate(() => document.getElementById("pz-run-best").textContent);
     const primaries = await page.evaluate(() => [...document.querySelectorAll("#sec-puzzle button.primary")].filter((b) => b.offsetParent).map((b) => b.id));
     assert(primaries.join() === "pz-run-again", "22.0 A5:定级结束后这一屏只有一个主按钮「去今天」", primaries.join());
-    assert(/^你的水平约 400$/.test(done) && /定级完成。对手配好了：皮普/.test(sub) && st.pz.rating && st.pz.rating.r === 400 && st.pz.placed &&
+    assert(/^你的水平约 400$/.test(done) && /定级完成。先配一位好上手的对手：皮普/.test(sub) && st.pz.rating && st.pz.rating.r === 400 && st.pz.placed &&
       st.set.difficulty === "beginner", "T1 六题之后:谜题等级分 400 起步、对手配成皮普(新手)", done + " " + JSON.stringify(st.pz.rating) + " " + st.set.difficulty);
     // 18.0 R3: and the puzzles open near it — 战术 serves near the rating;
     // through 17.0 the category stayed 一步杀, served from #1 in list order
@@ -1952,7 +1953,9 @@ for (const appearance of ["light", "dark"]) {
     // 14.0 A1: the placement set a rating, it answered no puzzle of the day —
     // 题 read 1/5 here while 已解 said 0
     const ring = await page.evaluate(() => (document.querySelector('#today-rings .today-ring[data-k="puzzle"] b') || {}).textContent);
-    assert(ring === "0/5", "14.0 A1 定级之后:今天的「题」还是 0/5,和「已解 0」一致", ring);
+    // 24.0 (review-23.0 W6): the six placement answers are answers — 题 read
+    // 0/5 after six of them. (已解 counts the right ones; this run got none.)
+    assert(ring === "6", "24.0 W6 定级之后:今天的「题」算上定级的六次作答", ring);
     await page.click("#today-go");
     await page.waitForTimeout(600);
     const play = await page.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),

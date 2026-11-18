@@ -1453,8 +1453,10 @@ await scenario("对手角色", async () => {
   await page.keyboard.press("Space");
   await page.waitForTimeout(150);
   const top = await dialog();
-  assert(top.cards.find((c) => c.id === "ivy").on && shownIds(top).join() === "sol,leo,ivy,max,iris" && top.focus === "ivy",
-    "对手角色（S5）：键盘空格选艾薇，五张卡挪到她两边，焦点留在她身上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
+  // 24.0 (review-23.0 W7): a card already on screen is picked where it is —
+  // the five no longer re-centre under the pointer (the picked card jumped)
+  assert(top.cards.find((c) => c.id === "ivy").on && shownIds(top).join() === "nico,vera,sol,leo,ivy" && top.focus === "ivy",
+    "对手角色（24.0 W7）：键盘空格选艾薇，五张卡原地不动，焦点留在她身上", JSON.stringify({ shown: shownIds(top), focus: top.focus }));
   // 10.0 M0: 更多选项 open is the whole ladder on the cards — the one place a
   // rung is chosen; 莉娜 is at its foot. 19.0 S5: 「全部 21 位对手」 opens it too
   const allBtn = await page.evaluate(() => { const b = document.getElementById("op-all"); return b && !b.hidden ? b.textContent.trim() : ""; });
@@ -2026,11 +2028,11 @@ await scenario("人会怎么走", async () => {
   });
   await page.keyboard.press("Home");
   const at0 = await until(line, 20000, 100);
-  assert(!!at0 && /^1500 分的人：/.test(at0.text) && /e4 \d+%/.test(at0.text) && at0.under === "pv-line",
+  assert(!!at0 && /^和你水平相近的人（约 1500 分）：/.test(at0.text) && /e4 \d+%/.test(at0.text) && at0.under === "pv-line",
     "人会怎么走：复盘的引擎线下面，开局局面里 1500 分的人走 e4 的比例", JSON.stringify(at0));
   for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowRight");
   const at6 = await until(() => line().then((l) => (l && l.text !== (at0 && at0.text) ? l : null)), 10000, 100);
-  assert(!!at6 && /^1500 分的人：/.test(at6.text), "人会怎么走：跟着复盘游标走（第 6 步之后换了一行）", JSON.stringify(at6));
+  assert(!!at6 && /^和你水平相近的人（约 1500 分）：/.test(at6.text), "人会怎么走：跟着复盘游标走（第 6 步之后换了一行）", JSON.stringify(at6));
   const t0 = Date.now();
   for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowRight");
   const fast = await until(() => line().then((l) => (l && l.text !== (at6 && at6.text) ? l : null)), 10000, 50);

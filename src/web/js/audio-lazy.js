@@ -48,7 +48,9 @@ const setting = (k) => (...args) => {
   // only the last of each setting is owed (init excepted: it runs once, first) —
   // 23.0 (§3.1-6): through 22.0 noteClock queued one entry per clock tick
   // for as long as the chunk was missing
-  if (k !== "init") S.kept = S.kept.filter(([kk]) => kk !== k);
+  // (24.0: noteClock is per side — white's and black's are two settings, review-23.0 §2.1 P4)
+  const same = k === "noteClock" ? ([kk, a]) => kk === k && a[0] === args[0] : ([kk]) => kk === k;
+  if (k !== "init") S.kept = S.kept.filter((e) => !same(e));
   S.kept.push([k, args]);
   if (S.booked) return;
   S.booked = true;

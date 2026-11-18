@@ -21,6 +21,17 @@
 
 ---
 
+## 24.0 真机核对（15 分钟）—— 24.0 做完即发（owner 2026-11-18），这一节在发布后补走
+
+1. **[M] 双击 .pgn**：Finder 里双击一个 .pgn（`~/Downloads` 一个、iCloud Drive 一个、邮件附件存下来的一个），应用打开并载入这局。应用开着时再双击另一个：窗口回到前面，载入新的那局。
+2. **[W] 双击 .pgn**：运行随包的 `register-pgn.cmd`，双击 `C:\chess\a.pgn` 一个、在资源管理器里打开 zip 后双击里面的一个：应用启动并载入这局。
+3. **[W] DevTools**：发布件里按 F12、Ctrl+Shift+I、在页面空白处右键：都打不开开发者工具。（`zig build run` 出来的开发版能打开。）
+4. **谜题**：做一道题，按两下提示看答案再走完：面板写「看过答案」，棋盘上没有绿勾，没有胜利音。
+5. **水平数**：全新档案，选「会走子」做完定级，和推荐的对手下一盘、认输：终局条、今天页、「我的」写的是同一个数，都带「暂定」，终局条有「认输按负计」；分数没有比定级低两三百。
+6. 上一版（23.0）这一节的 4 条仍然有效，一起走。
+
+---
+
 ## 23.0 真机核对（10 分钟）
 
 自动化够不到的几条，23.0 改到了它们：
@@ -355,8 +366,8 @@
 | J7 | 用 `zig build -Doptimize=ReleaseFast` 的 exe 跑 `native dev`（页面从 `http://127.0.0.1:5173` 来）| 导航被拒 / 桥命令 `permission_denied` —— 发布二进制不信任开发 origin（runner.zig 按 `http://` 过滤）；同一命令加 `-Ddev-origins=true` 或 Debug 构建则正常 |
 | J8 | 产物里 `index.html` 旁边 | 有 `licenses/LICENSE.txt` 和 `licenses/stockfish-COPYING.txt` |
 | J9 | **[M]** `plutil -p Chessboard.app/Contents/Info.plist`，再 `codesign --verify --deep --strict` | 含 `CFBundleDocumentTypes`（`com.chessboard.pgn`）与 `UTExportedTypeDeclarations`；签名验证通过 |
-| J10 | **[M]** 在 Finder 里对一个 `.pgn` 右键「打开方式」 | 列表里有 Chessboard；选它后应用启动（或激活）并**载入这局** —— 这一半靠 `open:files` 事件，是最没把握的一条：SDK 若不发这个事件，应用只会启动而不载入 |
-| J11 | **[W]** 解压后运行 `register-pgn.cmd`，双击一个 `.pgn` | 应用启动；载入与否同 J10。`register-pgn.cmd /u` 能撤销 |
+| J10 | **[M]** 在 Finder 里对一个 `.pgn` 右键「打开方式」 | 列表里有 Chessboard；选它后应用启动（或激活）并**载入这局**（24.0 起：`mac_chrome.m` 接管 kAEOpenDocuments，页面经 `chess.takeOpenFiles` 取；23.0 及以前这一步从来没工作过） |
+| J11 | **[W]** 解压后运行 `register-pgn.cmd`，双击一个 `.pgn` | 应用启动并载入这局（24.0 起读启动参数）。`register-pgn.cmd /u` 能撤销 |
 | J12 | 设置里切到 English，调用 `setMenuLanguage("en")` 的那条路 | 提示需要重启；**重启后**菜单栏是 Game / View / Help，窗口标题是 Chessboard；切回中文再重启则回到 对局 / 视图 / 帮助 与「国际象棋」 |
 | J13 | 切到 日本語 同上 | 対局 / 表示 / ヘルプ；各菜单项是日文 |
 | J14 | 关于面板「检查更新」（接上 `checkUpdate` 之后） | 5 秒内返回：有新版本提示 tag 与链接，或「已是最新」；断网时提示网络错误，界面不卡死 |

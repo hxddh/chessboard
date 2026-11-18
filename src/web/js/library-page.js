@@ -729,6 +729,17 @@ async function bootLibrary(d) {
    * nothing) a running pass is waited out rather than refused.
    * @returns {Promise<{added: number, dup: number}|null>}
    */
+  /**
+   * 24.0 (review-23.0 §2.1 P2): `fn` runs with the import lock held, so a
+   * second import (a sync's games, another dropped file) waits for this one's
+   * question instead of running to the end underneath it.
+   */
+  async function holdWhile(fn) {
+    let release;
+    importing = new Promise((r) => { release = r; });
+    try { return await fn(); } finally { importing = null; release(); }
+  }
+
   async function importPgn(text, label, opts) {
     const wait = !!(opts && opts.wait);
     const text0 = (text || "").trim();
@@ -784,14 +795,18 @@ async function bootLibrary(d) {
     // first. Through 22.0 a 10,000-game archive silently replaced the library,
     // analyses and all, with one toast after the fact.
     const would = Library.addGames(store.session.library, fresh).dropped.length;
-    if (would && d.confirmNative) {
-      const ok = await d.confirmNative(tf("lib.dropAsk", [Library.MAX_GAMES, would]), t("dlg.importPgnTitle"),
-        { ok: t("dlg.import"), cancel: t("act.cancel") });
-      // the waiting is over: what was true before the question is asked again
+    if (would) {
+      // 24.0 (review-23.0 §2.1 P3): an import nobody asked for just now (the
+      // 18.0 save-slot migration at launch) does not push games out and does
+      // not ask — it waits for a library with room
+      const ok = !(opts && opts.noEvict) && d.confirmNative && await holdWhile(() => d.confirmNative(
+        tf("lib.dropAsk", [Library.MAX_GAMES, would]), t("dlg.importPgnTitle"), { ok: t("dlg.import"), cancel: t("act.cancel") }));
       const kept = new Set(store.session.library.map((g) => g.id));
-      if (!ok || libBusy() || store.session.libUnreadable || frozen) {
+      // an analysis pass begun while the question was open: the games do not go in under it
+      const busyNow = ok && libBusy();
+      if (!ok || busyNow || store.session.libUnreadable || frozen) {
         for (const e of fresh) if (!kept.has(e.id)) st.pk.delete(e.id);
-        if (ok) toast(t("lib.busy"), "fix");
+        if (busyNow) toast(t("lib.busy"), "fix");
         return null;
       }
     }

@@ -1433,7 +1433,8 @@ for (const v of ["home", "me", "settings"]) {
     shown: !document.getElementById("me-rating").hidden && document.getElementById("me-rating").getClientRects().length > 0,
     meta: (document.getElementById("me-rating-meta") || {}).textContent || "",
   }));
-  assert(me.shown && me.meta.trim() === String(ras[2]), "B4→B5 「我的」页的评级曲线出现，末点就是最后一盘之后的分数（" + JSON.stringify(me) + "）");
+  // 24.0 (review-23.0 W3): the number as 今天 and the result card say it — 「477（暂定）」 while provisional
+  assert(me.shown && (me.meta.trim() === String(ras[2]) || me.meta.trim() === String(ras[2]) + "（暂定）"), "B4→B5 「我的」页的评级曲线出现，末点就是最后一盘之后的分数（" + JSON.stringify(me) + "）");
   assert(errs.length === 0, "B4→B5:没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }
