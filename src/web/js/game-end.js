@@ -130,9 +130,13 @@ export function createGameEnd(d) {
    * 9.0 M1: an achievement the ending unlocked is a badge on the result bar,
    * not a toast over the board. True when the bar took it.
    */
+  const GAME_ACH = new Set(["first-win", "win-10", "extreme-win", "veteran"]);
   function takeAch(ach) {
     const end = gameEnding();
     if (!end || !isLive() || !ach) return false;
+    // 25.0 (review-24.0 N10): only what this game earned — a puzzle badge filed
+    // late took a lost game's bar and cut its rating line short
+    if (!GAME_ACH.has(ach.id)) return false;
     store.session.goAch = { sig: end.sig, id: ach.id, icon: ach.icon, name: ach.nameKey ? t(ach.nameKey) : ach.name };
     store.commit("session", "sync");
     return true;

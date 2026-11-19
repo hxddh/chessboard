@@ -391,7 +391,8 @@ export function createLessonsUI(d) {
   }
 
   /** Where in the lesson a word of feedback belongs: this task, this tap. */
-  const fbAt = (lr) => lr.ti + ":" + (lr.tapStep || 0);
+  // 25.0 (review-24.0 N2): a finished lesson is a step of its own — the last task's slip does not stand under 「完成！」
+  const fbAt = (lr) => lr.ti + ":" + (lr.tapStep || 0) + (lr.done ? ":done" : "");
   /**
    * 22.0 A3: a wrong try is answered beside the task it was a try at. The
    * answer used to be a toast under the board, half a screen from the task

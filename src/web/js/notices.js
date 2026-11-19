@@ -194,8 +194,13 @@ export function createNotices(d) {
     if (held && Date.now() - held.at < HELD_MS) toast(held.msg);
     return true;
   }
-  /** How long a held informational toast stays worth saying once the way it waited for is gone. */
-  const HELD_MS = 3000;
+  /**
+   * How old a held informational toast may be and still be said when the
+   * toast it waited behind goes. 25.0 (review-24.0 P2): counted from when it
+   * was held, so it has to outlast that toast — an action toast stays 4 × its
+   * tier (8.8 s for 「已预走」 behind a blunder warning); 3 s dropped them all.
+   */
+  const HELD_MS = 12000;
 
   /**
    * @param {string} msg
@@ -270,7 +275,9 @@ export function createNotices(d) {
     el.classList.add("show");
     if (store().ui.toastTimer) clearTimeout(store().ui.toastTimer);
     store().ui.toastTimer = null;
-    if (ms) store().ui.toastTimer = setTimeout(() => { el.classList.remove("show"); el.style.pointerEvents = ""; }, action && action.label ? 4 * ms : ms);
+    // 25.0 (review-24.0 P2): a toast that times out goes the same way as one
+    // closed by hand — through dismissToast, which says the word held behind it
+    if (ms) store().ui.toastTimer = setTimeout(() => { store().ui.toastTimer = null; if (el.dataset.seq === mine) dismissToast(); }, action && action.label ? 4 * ms : ms);
     el.onclick = ms ? null : dismissToast;
     el.style.cursor = ms ? "" : "pointer"; el.style.pointerEvents = ms && action && action.label ? "auto" : "";
     return close;

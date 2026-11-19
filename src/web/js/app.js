@@ -1436,7 +1436,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     dailyStepIsHere: (s) => dailyStepIsHere(s),
     renderPuzzleTally: () => renderPuzzleTally(), goHome: () => Shell.go("home"),
     // the opponent sits 300 below the placed puzzle rating: a puzzle rating runs ahead of a whole game's
-    onPlaced: (r) => { const lv = OppUI.levelNear(r - 300); if (!lv) return ""; store.session.difficulty = lv; store.session.personaId = "off"; saveSettings(); const o = OppUI.strip(lv, "off"); return tdot(o.name, o.level); },
+    onPlaced: (r) => { const lv = OppUI.levelNear(r - 300); if (!lv) return ""; const st = OppUI.styleOf(lv) || "off"; store.session.difficulty = lv; store.session.personaId = st; saveSettings(); const o = OppUI.strip(lv, st); return tdot(o.name, o.level); }, // 25.0 N3: the rung's own persona, styled or not
   });
   const {
     onMinedArrived, ALL_PUZZLES, Library, Mistakes, loadMines, saveMines, Progress, Planner,
@@ -2078,7 +2078,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     }
     if (store.session.mode === "puzzle") {
       if (!store.session.puzzle) return t("st.puzzle");
-      if (store.session.puzzle.done) return t("st.puzzleDone");
+      if (store.session.puzzle.done) return t(store.session.puzzle.usedAnswer ? "st.puzzleSeen" : "st.puzzleDone"); // 25.0 N: the status line too
       // 7.3 B4: this used to return puzzleGoalText() — the whole instruction,
       // 「实战里你走了 d3 —— 找出更强的一手 · 当时亏 3.2 分」 — and the task
       // card two centimetres away said the same sentence, word for word, at
@@ -4207,6 +4207,10 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
       importPgnText(await Host.readTextFile(p), p);
       Host.addRecentDocument(p);
     } catch (err) { toastReadFailure(err); }
+    // 25.0 (review-24.0 P3): one board — the others go into the library, not away
+    for (const q of paths.filter((x) => x !== p && /\.pgn$/i.test(x))) {
+      try { await LibraryUI.importPgnToLibrary(await Host.readTextFile(q), q, { wait: true }); Host.addRecentDocument(q); } catch (err) { toastReadFailure(err); }
+    }
   };
   Host.onDropFiles(openPaths);
   Host.onOpenFiles(openPaths);

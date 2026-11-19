@@ -19,7 +19,7 @@ const CHUNK = { file: "chunk-opponents.js", global: "CHESS_OPPONENTS" };
 
 /** @param {object} d opponents-ui.js's bag, plus loadStats and onReady */
 /** How sure a placement's six puzzles are about a game rating: provisional, but not a stranger's 350. */
-const SEED_RD = 200;
+const SEED_RD = 150; // 25.0 (review-24.0 P7, owner): 200 still took a first resignation ~160 below the placement
 
 export function createOpponentsLazy(d) {
   let mod = null, ui = null;

@@ -474,7 +474,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "st.result10": "1-0 · 白方胜", "st.result01": "0-1 · 黑方胜", "st.resultDraw": "½-½ · 和棋",
       "st.flagDraw": "超时 · 和棋（对方无子力将杀）", "st.flagWhite": "超时 · 黑方胜", "st.flagBlack": "超时 · 白方胜",
       "st.editing": "编辑局面中", "st.editingReady": "可开始对局",
-      "st.learn": "教学模式", "st.puzzle": "做题练习", "st.lessonDone": "课程完成", "st.puzzleDone": "解出 · 下一题",
+      "st.learn": "教学模式", "st.puzzle": "做题练习", "st.lessonDone": "课程完成", "st.puzzleDone": "解出 · 下一题", "st.puzzleSeen": "看过答案 · 下一题",
       "ach.unlocked": "成就解锁",
       "brand": "国际象棋", "vs.player": "你",
       
@@ -922,7 +922,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "tip.clock.custom": "自己定每方几分钟、每步加几秒",
       "ng.opponent": "对手是谁",
       "ng.allOps": "全部 {0} 位对手", "ng.yourRating": "你的对局等级分：{0}",
-      "ng.noRating": "下完一盘人机对局，这里会出现你的对局等级分。",
+      "ng.noRating": "下完一盘人机对局，这里会出现你的对局等级分。", "ng.placedRating": "你的水平：{0}（按定级暂定，下完一盘就按对局算）",
       "go.rating": "你的水平 {0}，本局 {1}",
       "go.up": "可以升一档：{0}（{1}）",
       "go.down": "可以降一档：{0}（{1}）",

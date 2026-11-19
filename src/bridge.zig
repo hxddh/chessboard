@@ -217,11 +217,31 @@ pub fn openPathAllowed(windows: bool, path: []const u8) bool {
     } else if (path[0] != '/') return false;
     const seps: []const u8 = if (windows) "/\\" else "/";
     var it = std.mem.splitAny(u8, path, seps);
+    var first = true;
     while (it.next()) |comp| {
         if (comp.len == 0) continue;
         if (comp[0] == '.') return false;
+        if (windows) {
+            // 25.0 (review-24.0 P8): a share is a file server, not a WebDAV
+            // URL in disguise (\\host@SSL\DavWWWRoot\…), and no component
+            // is a legacy device name (C:\x\CON.pgn opens the console)
+            if (first and std.mem.indexOfScalar(u8, comp, '@') != null) return false;
+            if (isDeviceName(comp)) return false;
+        }
+        first = false;
     }
     return true;
+}
+
+/// CON, PRN, AUX, NUL, COM1–COM9, LPT1–LPT9 — with any extension, any case.
+fn isDeviceName(comp: []const u8) bool {
+    const stem = comp[0 .. std.mem.indexOfScalar(u8, comp, '.') orelse comp.len];
+    const trimmed = std.mem.trimEnd(u8, stem, " ");
+    for ([_][]const u8{ "CON", "PRN", "AUX", "NUL" }) |n| {
+        if (std.ascii.eqlIgnoreCase(trimmed, n)) return true;
+    }
+    if (trimmed.len == 4 and (std.ascii.startsWithIgnoreCase(trimmed, "COM") or std.ascii.startsWithIgnoreCase(trimmed, "LPT")) and trimmed[3] >= '1' and trimmed[3] <= '9') return true;
+    return false;
 }
 
 extern fn chess_mac_take_open_path(buf: [*]u8, cap: c_int) c_int;
@@ -1617,6 +1637,11 @@ test "an OS-opened document is a .pgn the user asked for, wherever it lives" {
     try std.testing.expect(openPathAllowed(true, "C:\\chess\\a.pgn"));
     try std.testing.expect(openPathAllowed(true, "C:\\Users\\me\\AppData\\Local\\Temp\\Temp1_games.zip\\a.pgn"));
     try std.testing.expect(openPathAllowed(true, "\\\\server\\share\\a.pgn"));
+    try std.testing.expect(!openPathAllowed(true, "\\\\host@SSL\\DavWWWRoot\\a.pgn"));
+    try std.testing.expect(!openPathAllowed(true, "C:\\x\\CON.pgn"));
+    try std.testing.expect(!openPathAllowed(true, "C:\\COM1\\a.pgn"));
+    try std.testing.expect(openPathAllowed(true, "C:\\x\\CONsole.pgn"));
+    try std.testing.expect(openPathAllowed(false, "/Users/me/CON.pgn"));
     // only a .pgn, absolute, no dot component
     try std.testing.expect(!openPathAllowed(false, "/Users/me/.ssh/id_ed25519"));
     try std.testing.expect(!openPathAllowed(false, "/Users/me/Library/Keychains/login.keychain-db"));
