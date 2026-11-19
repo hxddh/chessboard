@@ -53,3 +53,8 @@
 ## 4 · CI
 
 见 PR #136。
+
+## 5 · 发布之后
+
+- **v24.0.0 已发布**（2026-11-18 17:34 UTC），macOS dmg / zip、Windows zip、`SHA256SUMS.txt` 四个文件都在。CI 上没有测试红过：PR 和 main 上的 `checks` 各有几个 WebKit 作业被取消，原因都是在超时前还没装完系统依赖，重跑后通过；main 上 `zig (macos-latest)` 一次 16 分钟没分到机器，也是重跑通过。
+- **之后的修正（CI）**：取消的原因是 runner 镜像当天换了版本，系统依赖缓存的键里有镜像版本，于是一次运行里所有 WebKit 作业同时没命中，一起去慢镜像（275 kB/s）下 180 个包，最长的一个在这一步花了 28 分钟。现在恢复缓存时带 `restore-keys`：本镜像没有就取同一系统上一个镜像的缓存，离线装；装不上或检查不过再走 apt，和原来一样。用上一镜像的包装成了，或从 apt 补了新版本，就按本镜像的键存一份，下一个作业直接命中。`scripts/ci-browser-deps.mjs` 的 `cachePrefix` / `mergeDebs`，`checks.yml` 两处、`release.yml` 一处；`scripts/test/ci.mjs` 跟着改。

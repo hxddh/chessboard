@@ -297,12 +297,16 @@ jobs:
       # key: Playwright version, engine, runner image), the apt mirror only as
       # the fallback — step for step as in checks.yml
       - name: restore ${{ matrix.engine }}'s system packages
+        id: debs
         uses: actions/cache/restore@v6
         with:
           path: ${{ steps.pw.outputs.dir }}
           key: ${{ steps.pw.outputs.key }}
+          restore-keys: ${{ steps.pw.outputs.prefix }}
       - name: system packages for ${{ matrix.engine }}
         id: deps
+        env:
+          CACHE_EXACT: ${{ steps.debs.outputs.cache-hit }}
         run: node scripts/ci-browser-deps.mjs install ${{ matrix.engine }}
       - name: cache ${{ matrix.engine }}'s system packages
         if: steps.deps.outputs.save == 'true'
