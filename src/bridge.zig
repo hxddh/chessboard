@@ -251,6 +251,7 @@ extern fn chess_mac_take_open_path(buf: [*]u8, cap: c_int) c_int;
 fn takeOpenFiles(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
     const self: *App = @ptrCast(@alignCast(context));
     _ = invocation;
+    if (comptime @import("runner").win_shell) self.takeOpenQueue();
     if (comptime @import("runner").mac_shell) {
         var buf: [ISSUED_PATH_MAX]u8 = undefined;
         while (true) {

@@ -973,9 +973,9 @@ export function createPuzzlesUI(d) {
       store.session.puzzleState.opSide = picked.side === "b" ? "b" : "w";
     savePuzzleState();
     const list = puzzlesInCat(pick.cat);
-    const idx = Math.max(0, list.findIndex((p) => p.id === pick.id));
+    const idx = Math.max(0, list.findIndex((p) => p.id === pick.id)), prevId = store.session.puzzle && store.session.puzzle.p && store.session.puzzle.p.id;
     startPuzzleAt(pick.cat, idx);
-    toast(pick.kind === "review" ? tf("pz.smart.review", [pick.due]) :
+    toast(pick.kind === "review" ? (pick.id === prevId ? t("pz.smart.again") : tf("pz.smart.review", [pick.due])) : // 25.0 L3: the same one, said so
           pick.kind === "rated" ? tf("pz.smart.rated", [pick.rating]) :
           pick.kind === "motif" ? tf("pz.smart.motif", [t("motif." + pick.motif)]) :
           pick.kind === "weak" ? tf("pz.smart.weak", [t("pz.cat." + pick.cat)]) :

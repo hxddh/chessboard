@@ -609,9 +609,21 @@ const global = typeof window !== "undefined" ? window : globalThis;
       } catch (_) { /* an older shell without the command: nothing to open */ } finally { busy = false; }
     }
     take();
+    // 25.0 (review-24.0 P4/P5): focus alone missed a document opened while the
+    // window already had it (the Dock's recent files, a drop on the Dock icon,
+    // a second launch on Windows) — so also on becoming visible, and every
+    // 1.5 s while visible. The call is a local bridge round trip.
     const onFocus = function () { take(); };
+    const doc = global.document;
+    const tick = typeof global.setInterval === "function"
+      ? global.setInterval(function () { if (!doc || doc.visibilityState !== "hidden") take(); }, 1500) : null;
     if (typeof global.addEventListener === "function") global.addEventListener("focus", onFocus);
-    return function () { if (typeof global.removeEventListener === "function") global.removeEventListener("focus", onFocus); };
+    if (doc && typeof doc.addEventListener === "function") doc.addEventListener("visibilitychange", onFocus);
+    return function () {
+      if (typeof global.removeEventListener === "function") global.removeEventListener("focus", onFocus);
+      if (doc && typeof doc.removeEventListener === "function") doc.removeEventListener("visibilitychange", onFocus);
+      if (tick != null) global.clearInterval(tick);
+    };
   }
 
   // ---- app data (v6-plan Q1.1) --------------------------------------------

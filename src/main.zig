@@ -42,6 +42,8 @@ const APP_COMMANDS = @import("bridge.zig").APP_COMMANDS;
 const BUILTIN_COMMANDS = @import("bridge.zig").BUILTIN_COMMANDS;
 const IssuedPaths = @import("bridge.zig").IssuedPaths;
 const LANG_FILE = @import("bridge.zig").LANG_FILE;
+/// 25.0: documents a later launch left for the one instance (Windows), one path a line
+const OPEN_QUEUE = "open-queue.txt";
 const PathPolicy = @import("bridge.zig").PathPolicy;
 const SEP = @import("bridge.zig").SEP;
 const STORE_DIR = @import("bridge.zig").STORE_DIR;
@@ -326,6 +328,41 @@ pub const App = struct {
         for (args[1..]) |arg| self.pending_open.add(true, arg);
     }
 
+    /// 25.0 (review-24.0 P5): another instance is open — leave this launch's
+    /// documents in its queue and let it raise its window. The file existing
+    /// is the signal, so a bare second launch (no document) still raises it.
+    fn forwardLaunchArgs(self: *@This(), init: std.process.Init) void {
+        var path_buf: [1200]u8 = undefined;
+        const path = self.appdataChild(&path_buf, OPEN_QUEUE) orelse return;
+        var file = std.Io.Dir.createFileAbsolute(self.io, path, .{ .truncate = false }) catch return;
+        defer file.close(self.io);
+        const args = init.minimal.args.toSlice(init.arena.allocator()) catch return;
+        if (args.len < 2) return;
+        var at = file.length(self.io) catch return;
+        for (args[1..]) |arg| {
+            if (!@import("bridge.zig").openPathAllowed(true, arg)) continue;
+            file.writePositionalAll(self.io, arg, at) catch return;
+            at += arg.len;
+            file.writePositionalAll(self.io, "\n", at) catch return;
+            at += 1;
+        }
+    }
+
+    /// 25.0: the one instance takes what later launches left (chess.takeOpenFiles),
+    /// and comes to the front for them.
+    pub fn takeOpenQueue(self: *@This()) void {
+        var path_buf: [1200]u8 = undefined;
+        const path = self.appdataChild(&path_buf, OPEN_QUEUE) orelse return;
+        var file = std.Io.Dir.openFileAbsolute(self.io, path, .{}) catch return;
+        var buf: [16 * 1024]u8 = undefined;
+        const n = file.readPositionalAll(self.io, &buf, 0) catch 0;
+        file.close(self.io);
+        std.Io.Dir.deleteFileAbsolute(self.io, path) catch {};
+        var it = std.mem.tokenizeAny(u8, buf[0..n], "\r\n");
+        while (it.next()) |line| self.pending_open.add(true, line);
+        if (comptime runner.win_shell) chess_win_raise();
+    }
+
     pub fn pathPolicy(self: *@This()) PathPolicy {
         const home_var: []const u8 = if (builtin.os.tag == .windows) "USERPROFILE" else "HOME";
         return .{
@@ -408,6 +445,9 @@ fn onStop(context: *anyopaque, runtime: *native_sdk.Runtime) anyerror!void {
 extern fn chess_mac_chrome_init() void;
 extern fn chess_mac_ui_language() c_int;
 extern fn chess_win_ui_language() c_int;
+extern fn chess_win_claim_instance() c_int;
+extern fn chess_win_allow_foreground() void;
+extern fn chess_win_raise() void;
 
 /// 22.0 F5: what the system shows its own interface in, as one of the three
 /// menu languages. A shell with no window system of its own (the null
@@ -446,7 +486,16 @@ pub fn main(init: std.process.Init) !void {
     app_state.resolveWebView2UserData();
     // 24.0: a double-clicked .pgn reaches a Windows exe as its argument
     // (register-pgn.reg: "chessboard.exe" "%1"); kept for chess.takeOpenFiles
-    if (comptime runner.win_shell) app_state.noteLaunchArgs(init);
+    // 25.0 (review-24.0 P5): …and only by the one instance; a later launch
+    // hands its documents to that one and goes
+    if (comptime runner.win_shell) {
+        if (chess_win_claim_instance() == 0) {
+            app_state.forwardLaunchArgs(init);
+            chess_win_allow_foreground();
+            return;
+        }
+        app_state.noteLaunchArgs(init);
+    }
     const lang = app_state.launchLanguage();
     // 11.0 W: the Mac's inset window shell — set up before the runner opens
     // its window (src/native/mac_chrome.m; build.zig compiles it on macOS only)

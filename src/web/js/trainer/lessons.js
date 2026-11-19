@@ -545,8 +545,11 @@ export function createLessonsUI(d) {
       g.undo();
       store.session.learn.last = null;
       // the translated retry hint, not the raw Chinese one on the task
-      // a lesson retry is a correction, not a receipt
-      nudge(tdot(why, taskText(curLesson(), store.session.learn.ti).retry || t("lm.retry")));
+      // a lesson retry is a correction, not a receipt — 25.0 (review-24.0 N4):
+      // a capture task's hint is about a wrong capture (「b7 兵有 b8 车保护！吃它…」);
+      // to a move that took nothing it describes a move you did not make
+      const own = task.goal === "capture" && !mv.captured ? null : taskText(curLesson(), store.session.learn.ti).retry;
+      nudge(tdot(why, own || t("lm.retry")));
       learnRegisterMiss();
       sync();
       return;
@@ -1148,7 +1151,13 @@ export function createLessonsUI(d) {
     };
     const pick = (ev) => {
       const b = ev.target.closest("button[data-i]");
-      if (b && (store.session.learn || store.session.study)) startLesson(Number(b.dataset.i));
+      if (b && (store.session.learn || store.session.study)) {
+        startLesson(Number(b.dataset.i));
+        // 25.0 (review-24.0 N11): picked from the long list, the panel stayed
+        // scrolled down there — the task card was off-screen, only 「到你了！」 showed
+        const task = document.getElementById("lesson-task");
+        if (task && task.scrollIntoView) setTimeout(() => task.scrollIntoView({ block: "nearest" }), 0);
+      }
       const cb = ev.target.closest("button[data-c]");
       if (cb) startClassic(Number(cb.dataset.c));
       const gb = ev.target.closest("button[data-gs]");
