@@ -4487,6 +4487,62 @@ if (scenario()) {
   // asserts the pane is at the top)
 }
 
+// --- 25.0（review-24.0 N9 / review-23.0 W11，§7 问题 6 a）：失着提醒在棋盘下沿 ---
+// 7.7 把提示条放在棋盘上方那一条 —— 那是对手栏：名字、等级分、吃子，还有
+// 「悔棋 / 提示」。失着提醒「…对手先等一下 · 悔棋」就压在顶栏自己的「悔棋」
+// 旁边；英文折成两行（58px），连第 8 横线也盖了，对手名截成「Leo Intermedi…」。
+// 现在：棋盘在屏上时，提示条在棋盘下沿，居中、不宽于棋盘、一行；与棋盘的格子、
+// 对手栏、顶栏的按钮都不相交。引擎是假的：第三手 Qxf7+ 白丢一后。
+if (scenario()) {
+  const sqAt = async (page, sq) => page.evaluate((s) => {
+    const r = document.getElementById("board").getBoundingClientRect();
+    const f = s.charCodeAt(0) - 97, rk = 8 - Number(s[1]);
+    return { x: r.left + (f + 0.5) * (r.width / 8), y: r.top + (rk + 0.5) * (r.height / 8) };
+  }, sq);
+  const tap = async (page, sq) => { const p = await sqAt(page, sq); await page.mouse.click(p.x, p.y); await settle(page); };
+  for (const vp of [{ width: 1440, height: 900 }, { width: 1024, height: 700 }, { width: 600, height: 900 }]) {
+    for (const lang of ["zh-CN", "en"]) {
+      for (const theme of ["day", "wood"]) {
+        const what = `25.0 失着提醒 ${vp.width}×${vp.height} ${lang} ${theme}`;
+        const { ctx, page, errs } = await open(lang, "ai", "play", theme, vp);
+        await page.evaluate(() => {
+          const e = window.__chess.engine;
+          e.isReady = () => true;
+          const rs = [{ from: "e7", to: "e5" }, { from: "b8", to: "c6" }, { from: "e8", to: "f7" }];
+          let i = 0;
+          e.bestMove = async () => rs[i++] || null;
+          // the mover's side is level before the move and 9 pawns down after it
+          e.analyze = async (fen) => { const turn = fen.split(" ")[1]; return { cp: turn === "b" ? 900 : 0, turn, depth: 10, pv: [] }; };
+        });
+        for (const [from, to] of [["e2", "e4"], ["d1", "h5"]]) { await tap(page, from); await tap(page, to); await page.waitForTimeout(500); }
+        await tap(page, "h5"); await tap(page, "f7");
+        await page.waitForSelector(".toast.show .toast-action", { timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(300); // the toast's own transition
+        const m = await page.evaluate(() => {
+          const R = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return r.width ? [r.left, r.top, r.right, r.bottom] : null; };
+          const x = (a, b) => !!a && !!b && a[0] < b[2] - 0.5 && b[0] < a[2] - 0.5 && a[1] < b[3] - 0.5 && b[1] < a[3] - 0.5;
+          const t = document.getElementById("toast");
+          const tr = R(t), br = R(document.getElementById("board"));
+          const opp = R([...document.querySelectorAll("#board-wrap > .pstrip")].find((s) => !s.classList.contains("at-bottom")));
+          const btns = ["undo", "btn-hint", "toggle-panel"].map((id) => [id, R(document.getElementById(id))]).filter(([, r]) => r);
+          const span = [...t.children].find((n) => n.tagName === "SPAN" && !n.className);
+          return { shown: t.classList.contains("show"), text: t.textContent, full: span ? (span.title || span.textContent) : "",
+            t: tr && tr.map(Math.round), b: br && br.map(Math.round), board: x(tr, br), opp: x(tr, opp),
+            btns: btns.filter(([, r]) => x(tr, r)).map(([id]) => id), h: tr ? tr[3] - tr[1] : 0, vh: innerHeight,
+            act: !!t.querySelector(".toast-action") };
+        });
+        assert(m.shown && m.act && /Qxf7/.test(m.text), `${what}：Qxf7+ 之后失着提醒和它的「悔棋」在屏上（「${m.text.slice(0, 40)}」）`);
+        assert(!m.board && m.t[1] >= m.b[3], `${what}：提示条在棋盘下沿，不压格子（提示条 ${m.t} / 棋盘 ${m.b}）`);
+        assert(!m.opp && m.btns.length === 0, `${what}：不压对手栏，不压顶栏的「悔棋 / 提示 / ☰」（压到 ${m.opp ? "对手栏 " : ""}${m.btns.join(", ")}）`);
+        assert(m.h <= 44 && m.t[3] <= m.vh && m.t[2] - m.t[0] <= m.b[2] - m.b[0] + 1, `${what}：一行（高 ${Math.round(m.h)}px），不宽于棋盘，不出窗口`);
+        assert(/Qxf7\+/.test(m.full) && /Z/.test(m.full), `${what}：截短时整句仍在（${m.full.slice(0, 60)}）`);
+        assert(!errs.length, `${what}：页面没有报错（${errs.join(" / ")}）`);
+        await ctx.close();
+      }
+    }
+  }
+}
+
 // --- 7.9 §2a / §2c：棋谱大一号，回合号与着法同一条基线 ----------------------
 // 7.8.0 量到：「标准」下棋谱着法 13px，面板文字只有 12 和 13 两档；回合号装在
 // 一个居中的小方块里，文字下缘比着法高 2.6px。三种语言 × 三种宽度各量一遍。

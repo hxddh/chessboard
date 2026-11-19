@@ -2269,7 +2269,8 @@
        be read. */
     /* 7.7 §1d: at the top, over the chrome's row, not on the board's first
        rank; toast() centres it on the board and moves it off the board where
-       the row is too short (placeToast in app.js). */
+       the row is too short (placeToast in app.js). 25.0: with the board in
+       view it stands at the board's bottom edge instead — toast-place.js. */
     .toast {
       position: absolute; left: 50%; top: 4px; z-index: 70;
       transform: translateX(-50%) translateY(-6px);
@@ -2296,6 +2297,14 @@
       transition: opacity var(--dur-quick) var(--ease), background var(--dur-quick) var(--ease);
     }
     .toast-close:hover { opacity: 1; background: var(--btn-ghost); }
+    /* 25.0 (review-24.0 N9): at the board's bottom edge a toast is one line
+       — a second would reach the first rank — so a sentence longer than the
+       board ends in 「…」, its buttons kept whole. toast-place.js sets the
+       class only where wrapping would not fit, and the line's title. */
+    .toast.toast-1l > span:not([class]) {
+      flex: 0 1 auto; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
     /* The way forward, where the app has one. Reads as a control rather than
        as part of the sentence — a fault that can be retried should not make
        you guess that the word is clickable. */
