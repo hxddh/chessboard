@@ -27,6 +27,25 @@
  * has room beside the board it stands in the bottom right corner, over
  * nothing; the bottom place is taken only clear of the strip under the
  * board, not just of the squares.
+ *
+ * 25.0 (review-24.0 N9 / review-23.0 W11, §7 Q6 a): during a game the
+ * strip above the board is the opponent's — name, rating, what they have
+ * taken — and it holds 悔棋 and 提示. The blunder warning stood there,
+ * 「…对手先等一下 · 悔棋」 beside the bar's own 悔棋, and in English it
+ * wrapped to 58px, over the 8th rank too, and cut 「Leo Intermedi…」. So a
+ * toast with the board in view now stands at the board's bottom edge,
+ * centred on the board and no wider than it:
+ *   - under the player's own strip, where the window has room there;
+ *   - otherwise on that strip, between the last rank and whatever is below
+ *     (the window's edge, the portrait sheet) — your own name for a few
+ *     seconds, never a square and never the opponent's line;
+ *   - a message too long for that, as it wraps, is held to one line and
+ *     ends in 「…」 (the whole of it stays the live region's text and the
+ *     line's title); a fault is never cut, and takes the place above if it
+ *     does not fit.
+ * A window with room beside the board keeps its corner (above). When the
+ * trainers' bar or the result bar is under the board, or nothing fits at
+ * the bottom, the older places apply unchanged.
  * @module toast-place
  */
 /**
@@ -43,6 +62,9 @@ export function placeToastAt(el, appEl) {
   const b = board.getBoundingClientRect();
   const w = wrap.getBoundingClientRect();
   if (!b.width) return; // not laid out (a hidden window): keep the stylesheet's place
+  const text = [...el.children].find((n) => n.tagName === "SPAN" && !n.className);
+  el.classList.remove("toast-1l");
+  if (text) text.title = "";
   el.style.maxWidth = Math.round(Math.max(200, Math.min(560, w.width - 16))) + "px";
   // measured where it has the most room — near an edge an absolute box shrinks to fit
   el.style.width = "";
@@ -71,9 +93,47 @@ export function placeToastAt(el, appEl) {
     el.style.left = Math.round(b.right - a.left + room - EDGE - half) + "px";
     return;
   }
+  if (atBoardFoot(el, a, b, wrap, s, text)) return;
   const top = a.bottom - under >= h + LOW + GAP && !onSheet(a.height - LOW - h) ? a.height - LOW - h
     : b.top - a.top < h + 2 * GAP && a.bottom - b.bottom >= h + 2 * GAP && !onSheet(b.bottom - a.top + GAP) && !barUp() ? b.bottom - a.top + GAP
     : Math.max(0, Math.min(GAP, b.top - a.top - h));
   el.style.top = Math.round(top) + "px";
   el.style.left = Math.round(w.left - a.left + w.width / 2) + "px";
+}
+
+/**
+ * 25.0: the board's bottom edge (see the module comment). Places the toast
+ * and answers true, or answers false and leaves the place to the old rule.
+ * @param {HTMLElement} el the toast
+ * @param {DOMRect} a #app
+ * @param {DOMRect} b the board
+ * @param {HTMLElement} wrap #board-wrap
+ * @param {DOMRect|null} s #side
+ * @param {HTMLElement} [text] the toast's sentence
+ */
+function atBoardFoot(el, a, b, wrap, s, text) {
+  // under the board: the player's strip may be covered; the trainers' bar
+  // and the result bar may not (15.0 S3) — with one up, the old rule
+  const under = (n) => { const r = n.getBoundingClientRect(); return r.height > 0 && r.left < b.right && r.right > b.left && r.top >= b.bottom - 1 ? r : null; };
+  if ([...wrap.querySelectorAll(":scope > .tr-bar, :scope > .go-card")].some((n) => !n.hidden && under(n))) return false;
+  const strip = wrap.querySelector(":scope > .pstrip.at-bottom");
+  const below = (strip && under(strip) || b).bottom;
+  // the bottom ends at the window, or at the portrait sheet where it rises under the board
+  const sheet = !!s && s.width > 0 && s.height > 0 && s.left < b.right && s.right > b.left && s.bottom > b.bottom;
+  if (sheet && s.top < b.bottom) return false;
+  const floor = sheet ? Math.min(a.bottom, s.top) : a.bottom;
+  const fault = el.classList.contains("t-fault"), mw = el.style.maxWidth;
+  el.style.maxWidth = Math.round(fault ? Math.max(200, Math.min(560, b.width)) : Math.max(160, b.width - 16)) + "px";
+  el.style.left = Math.round(b.left - a.left + b.width / 2) + "px";
+  const place = () => {
+    const h = el.offsetHeight;
+    return floor - below >= h + 8 ? below + 4 // under the player's strip
+      : floor - b.bottom >= h ? b.bottom + Math.min(4, (floor - b.bottom - h) / 2) : null; // on it, clear of the squares
+  };
+  // a sentence too long for one line is cut to one — never a fault
+  const top = place() ?? (!fault && text ? (el.classList.add("toast-1l"), place()) : null);
+  if (top == null) { el.classList.remove("toast-1l"); el.style.maxWidth = mw; return false; }
+  if (text && text.scrollWidth > text.clientWidth) text.title = text.textContent;
+  el.style.top = Math.round(top - a.top) + "px";
+  return true;
 }

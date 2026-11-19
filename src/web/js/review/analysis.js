@@ -221,13 +221,14 @@ export function createAnalysis(d) {
       }
     }
     sync();
-    // 24.0 (review-23.0 W4): against the engine, your mistakes only — the same
-    // count as the key moments below it (it said 4 where the card said 3)
-    const first = baseGame().turn();
-    const mine = (i) => !hasYou || ((i % 2 === 0) === (first === "w") ? "w" : "b") === store.session.humanColor; // as keyMoment() below
-    const bad = tags.filter((tag, i) => (tag === "?" || tag === "??") && mine(i)).length;
+    // 25.0 (review-24.0 N5, 一本账): the count is the key moments card's own
+    // list — the same call, the same side — not a second tally of ?/?? tags
+    // (24.0 still said 「1 处失着」 over a card of 「2 / 2」: a ?! and a good move)
+    const an = store.session.analysis;
+    const km = Grade.keyMoments({ sans: h, scalars, bests, seconds: an.seconds || [] }, an.grades, baseGame().turn(), (i) => i);
+    const bad = store.session.mode === "ai" ? km[store.session.humanColor].length : km.w.length + km.b.length;
     // Stop while deepening (p.deepCut): graded and filed all the same (review of PR #87)
-    toast(tdot(bad ? tf("msg.analysis.doneBad", [bad]) : t("msg.analysis.doneClean"), mined ? tf("msg.mined", [mined]) : "",
+    toast(tdot(bad ? tf("msg.analysis.doneMoments", [bad]) : t("msg.analysis.doneClean"), mined ? tf("msg.mined", [mined]) : "",
       revised ? tf("msg.minesRevised", [revised]) : "", withdrawn ? tf("msg.minesWithdrawn", [withdrawn]) : "", p.deepCut && t("msg.analysis.deepStopped")));
     // A deep pass is 400ms a ply — over half a minute on a long game, which is
     // long enough that people go and do something else. A toast behind another

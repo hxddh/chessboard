@@ -1680,8 +1680,9 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   await page.keyboard.press("n");
   await page.waitForTimeout(700);
   const st2 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles") || "{}"));
-  assert(st2.cat === "review" && /先清复习/.test((await h.text("#toast")) || ""),
-    "19.0 S6: 下一题（N）先清欠的复习", JSON.stringify({ cat: st2.cat, toast: await h.text("#toast") }));
+  // 25.0 (review-24.0 N8): the review it serves is the one just missed, and it says so
+  assert(st2.cat === "review" && /先清复习|刚才那题再来一次/.test((await h.text("#toast")) || ""),
+    "19.0 S6 / 25.0: 下一题（N）先清欠的复习（是刚错的那题就说「刚才那题再来一次」）", JSON.stringify({ cat: st2.cat, toast: await h.text("#toast") }));
   // …and the next puzzle starts at the rating the answer gave it
   assert((await diff()) === moved, "19.0 S6: 下一道开始时才显示更新后的难度", JSON.stringify({ shown: await diff(), moved }));
   await solveCurrent(page, h);

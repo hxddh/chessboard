@@ -19,7 +19,6 @@ import { Chess } from "../chess.js";
 import { ChessBoardView } from "../board.js";
 import { ChessEngine } from "../engine.js";
 import { ChessExplain } from "../explain.js";
-import { ChessMistakes } from "../mistakes.js";
 import { ChessReview } from "../review.js";
 
 /**
@@ -33,7 +32,6 @@ export function createRetry(d) {
   } = d;
   const document = doc;
   const BoardView = ChessBoardView;
-  const Mistakes = ChessMistakes;
   const Review = ChessReview;
 
   // --- 7.8 §3: why a ? or ?? was a mistake, and 再试一次 ---------------------
@@ -219,7 +217,8 @@ export function createRetry(d) {
    * Judged by the rule the personal drills use: the engine's move is right,
    * the mistake again is wrong, anything else is searched after both moves at
    * the budget of the pass that marked it and accepted when it costs less
-   * than Review.MISTAKE against the best (Mistakes.judgeAlt).
+   * than Review.WIN_MISTAKE win-percentage points against the best (25.0;
+   * through 24.0 it was Review.MISTAKE centipawns, Mistakes.judgeAlt).
    */
   function startRetry(i, run) {
     const ex = retryFacts(i);
@@ -354,8 +353,11 @@ export function createRetry(d) {
     if (store.session.retry !== r) return;
     const cpBest = evalScalar(eBest), cpAlt = evalScalar(eAlt);
     if (cpBest == null || cpAlt == null) { r.verdict = "unknown"; sync(); return; }
-    const v = Mistakes.judgeAlt(cpBest, cpAlt, r.side, Review.MISTAKE);
-    settle(r, v.ok ? "right" : "wrong");
+    // 25.0 (review-24.0 N1, owner): judged on the review's own scale — the
+    // win-percentage it gave away, as the move it retries was marked. In
+    // centipawns, +5.85 against a best of +7.15 was 「不对」 in a won game.
+    const drop = Review.winPctDrop(cpBest, cpAlt, r.side);
+    settle(r, drop != null && drop < Review.WIN_MISTAKE ? "right" : "wrong");
     missed(r, eAlt);
     sync();
   }
@@ -379,8 +381,11 @@ export function createRetry(d) {
       sync();
     }).catch(() => {});
   }
+  // 25.0 (review-24.0 N1): the reply is named only when it does something —
+  // takes, checks or mates. 「Qxh7 之后，对方可以走 Rh8」 named a move that
+  // threatens nothing, as if it were the reason.
   function replySan(g, uci) {
-    try { const m = new Chess(g.fen()).move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" }); return m ? m.san : null; } catch (_) { return null; }
+    try { const m = new Chess(g.fen()).move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" }); return m && /[x+#]/.test(m.san) ? m.san : null; } catch (_) { return null; }
   }
   /** Is the engine's answer on screen: a right move, an unjudged one, the second miss or 看答案. */
   function answerShown(r) {
@@ -436,8 +441,10 @@ export function createRetry(d) {
     }
     // 24.0 (review-23.0 W10): a right answer is not followed by the old
     // mistake's 「why」 again — the engine's move stays, as confirmation
+    // — unless it is the very move you played (25.0, review-24.0: 「Bg5 · 走对了 /
+    // 引擎的最佳：Bg5」 said it twice)
     const right = r.verdict === "right";
-    if (answerShown(r)) {
+    if (answerShown(r) && !(right && r.tried === r.ex.better.san)) {
       const best = p("rt-best");
       const tpl = t("rt.best").split("{0}");
       const bs = document.createElement("span");

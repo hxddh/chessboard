@@ -260,7 +260,7 @@ export function createTodayPage(d) {
     const prov = series.length && ChessRating.isProvisional(stats.rating);
     put(b, series.length ? (prov ? tf("rating.prov", [ys[ys.length - 1]]) : String(ys[ys.length - 1])) : placed ? puzzleRatingText() : t("today.rGameNone"));
     if (b) b.classList.toggle("today-invite", !series.length && !placed);
-    const why = placed ? t("today.rFromPz") : series.length && last && last.ending === "resigned" && last.ra != null ? t("go.resignLoss") : "";
+    const why = placed ? t("today.rFromPz") : series.length && last && last.ending === "resigned" && last.result === "loss" && last.ra != null ? t("go.resignLoss") : "";
     if (note) { note.hidden = !why; put(note, why); }
     if (cv) cv.hidden = ys.length < 2;
     if (cv && cv.clientWidth && ys.length > 1) drawRatingTrend(cv, ys);

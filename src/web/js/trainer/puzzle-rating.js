@@ -131,13 +131,16 @@ export function createPuzzleRating(d) {
     const lc = pz && pz.p.id === id && pz.p.src === "lichess" ? pz.p : null;
     const p = lc || bookNow().find((x) => x.id === id);
     if (!p) return;
+    // 25.0 (review-24.0 N7): a puzzle already owed is not a new first answer —
+    // a miss, then its retry with the answer shown, was 「错 2」 for one puzzle
+    const again = !!store.session.puzzleState.missed[id];
     store.session.puzzleState.missed[id] = Srs.onMiss(store.session.puzzleState.missed[id], Date.now());
     if (lc) Bank.note(store.session.puzzleState, lc);
     // 6.0 (v6-plan Q3.1): the first answer to a puzzle moves both ratings
     ratePuzzleOnce(id, 0);
     // …and into the lifetime tally, which unlike the queue survives
     // graduation — it is the memory 为你出一题 reads (see picker.js)
-    Picker.recordAnswer(store.session.puzzleState, p.cat, true, motifKeyOf(p));
+    if (!again) Picker.recordAnswer(store.session.puzzleState, p.cat, true, motifKeyOf(p));
     // …and into this week's bucket — the tally is the total, this is the change
     Progress.recordAnswer(store.session.progress, p.cat, true, Date.now());
     saveProgress();

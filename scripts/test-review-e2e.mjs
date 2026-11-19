@@ -1682,8 +1682,9 @@ assert(errs.length === 0, "no JS exception through analysis and replay — " + e
         const found = await pg.evaluate(() => ({ verdict: (document.querySelector("#retry-box .rt-verdict") || {}).className || "",
           best: (document.querySelector("#retry-box .rt-best") || {}).textContent || "",
           why: (document.querySelector("#retry-box .rt-why") || {}).textContent || "" }));
-        assert(/is-right/.test(found.verdict) && /引擎的最佳/.test(found.best) && found.why === "",
-          "A4：妙着「再试一次」走对了，面板不再说「更好的是」刚走的这步（" + JSON.stringify(found) + "）");
+        // 25.0 (review-24.0): nor 「引擎的最佳」 the move just played — it was that move
+        assert(/is-right/.test(found.verdict) && found.best === "" && found.why === "",
+          "A4：妙着「再试一次」走对了，面板不再说「更好的是」或「引擎的最佳」刚走的这步（" + JSON.stringify(found) + "）");
         await pg.click("#rt-back").catch(() => {});
         await settle(pg);
       } else assert(false, "A4：妙着是一个关键时刻，而且能「再试一次」", JSON.stringify({ kb, bril }));

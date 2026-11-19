@@ -1835,12 +1835,15 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   await ctx.addInitScript(() => {
     const queue = [["/Users/me/Library/Mobile Documents/com~apple~CloudDocs/a.pgn"]];
     window.__taken = 0;
-    window.__queueOpen = (p) => queue.push([p]);
+    window.__queueOpen = (p) => queue.push(Array.isArray(p) ? p : [p]);
+    window.__reads = [];
     window.zero = {
       invoke: (cmd, a) => {
         if (cmd === "chess.takeOpenFiles") { window.__taken++; return Promise.resolve({ paths: queue.shift() || [] }); }
         if (cmd === "chess.readTextFile") {
+          window.__reads.push(a.path);
           const text = /a\.pgn$/.test(a.path) ? '[Event "Opened"]\n[White "A"]\n[Black "B"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 *\n'
+            : /c\.pgn$/.test(a.path) ? '[Event "Third"]\n[White "E"]\n[Black "F"]\n[Result "*"]\n\n1. c4 c5 *\n'
             : '[Event "Second"]\n[White "C"]\n[Black "D"]\n[Result "*"]\n\n1. d4 d5 *\n';
           return Promise.resolve({ b64: btoa(text), more: false });
         }
@@ -1862,6 +1865,18 @@ const snapshot = (page) => page.evaluate((keys) => Object.fromEntries(keys.map((
   const second = await sans();
   const taken = await page.evaluate(() => window.__taken);
   assert(/d4/.test(second) && taken >= 2, "24.0 应用开着时再双击一个：窗口回到前面就取一次，载入新的那局 (" + second + "；取了 " + taken + " 次)");
+  // 25.0 (review-24.0 P4): opened while the window already had the focus —
+  // no focus event comes; the page still takes it within a couple of seconds
+  await page.evaluate(() => window.__queueOpen("/Users/me/Downloads/c.pgn"));
+  await page.waitForTimeout(2200);
+  const third = await sans();
+  assert(/c4/.test(third), "25.0 应用在前台时打开一个 .pgn（没有焦点事件）：两秒内载入 (" + third + ")");
+  // 25.0 (review-24.0 P3): several at once — every one is read, none dropped
+  await page.evaluate(() => { window.__reads.length = 0; window.__queueOpen(["/Users/me/x/a.pgn", "/Users/me/x/b.pgn", "/Users/me/x/c.pgn"]); });
+  await page.waitForTimeout(2600);
+  const reads = await page.evaluate(() => window.__reads.slice());
+  assert(["a.pgn", "b.pgn", "c.pgn"].every((n) => reads.some((r) => r.endsWith("/x/" + n))),
+    "25.0 一次打开三个 .pgn：三个都读了（第一个上棋盘，其余进棋谱库），不丢 (" + reads.join(", ") + ")");
   assert(errs.length === 0, "24.0 打开文件：没有页面异常 " + errs.join(" / "));
   await ctx.close();
 }

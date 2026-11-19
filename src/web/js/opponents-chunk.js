@@ -11,5 +11,8 @@
 import { Opponents } from "./opponents.js";
 import { createOpponentsUI } from "./opponents-ui.js";
 import { ChessPersona } from "./persona.js";
+import { thinkMs } from "./think-time.js";
 
-export const CHESS_OPPONENTS = { Opponents, createOpponentsUI, ChessPersona };
+// 25.0 N13: the reply's hold rides with the styles engine.js already gets
+// (opponents-lazy.js style()), so the bundle carries one call, not the module
+export const CHESS_OPPONENTS = { Opponents, createOpponentsUI, ChessPersona: Object.assign({}, ChessPersona, { thinkMs }) };

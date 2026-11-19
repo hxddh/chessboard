@@ -134,7 +134,7 @@ function install(engine) {
   const { cli } = playwrightCli();
   const cached = debsIn(DEBS_DIR);
   const exact = process.env.CACHE_EXACT === "true";
-  let source = null, save = false;
+  let source = null, save = false, partial = false;
   console.log(`${engine}: checking system packages (cache: ${cached.length} .deb, ${cached.length ? (exact ? "this image's" : "an earlier image's") : "none"})`);
   if (satisfied(cli, engine)) source = "image";
   if (!source && cached.length) {
@@ -147,7 +147,10 @@ function install(engine) {
     const r = sudo("apt-get", ["install", "-y", "--no-install-recommends", "-o", "DPkg::Lock::Timeout=120",
       "-o", "Dir::Etc::SourceList=/dev/null", "-o", "Dir::Etc::SourceParts=" + none, ...cached]);
     if (r.status === 0 && satisfied(cli, engine)) { source = "cache"; save = !exact; }
-    else console.log(`::warning::${engine}: the cached packages did not install cleanly (exit ${r.status}); falling back to apt`);
+    else {
+      partial = r.status === 0; // installed, yet something is still missing: apt adds to what the cache gave
+      console.log(`::warning::${engine}: the cached packages did not install cleanly (exit ${r.status}); falling back to apt`);
+    }
   }
   if (!source) {
     let ok = sudo("mkdir", ["-p", APT_ARCHIVES + "/partial"]).status === 0;
@@ -158,7 +161,15 @@ function install(engine) {
     if (r.status !== 0) { console.error(`playwright install-deps ${engine} exited ${r.status}`); process.exit(r.status || 1); }
     source = "apt";
     const got = ok ? debsIn(APT_ARCHIVES) : [];
-    if (!exact && got.length) { mergeDebs(DEBS_DIR, got); save = true; }
+    // 25.0 (review-24.0 P6): when the cached .debs did not install (an atomic
+    // failure — nothing of them is on the system), apt fetched the whole set:
+    // that set is what this image's key keeps, not the earlier image's files
+    // with these laid over them, or every later job fails offline the same way
+    if (!exact && got.length) {
+      if (!partial) fs.rmSync(DEBS_DIR, { recursive: true, force: true });
+      mergeDebs(DEBS_DIR, got);
+      save = true;
+    }
     console.log(`${engine}: apt downloaded ${got.length} .deb` + (save ? `, copied to ${DEBS_DIR} for the cache` : ""));
   }
   console.log(`${engine}: system packages from ${source}, ${((Date.now() - t0) / 1000).toFixed(1)} s`);

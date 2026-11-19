@@ -253,7 +253,9 @@ export function createMoments(d) {
     if (lost && store.game.flagFall === me && last != null && last >= 40 && last <= 60) return tf("rv.sum.flagDrawn", [Math.round(last)]);
     if (!lost) return null;
     let peak = null;
-    sc.forEach((x, i) => { const w = winOf(x); if (w != null && (!peak || w > peak.w)) peak = { w, i }; });
+    // 25.0 (review-24.0 N12): not from the opening — an 89% at move 3 against a
+    // beginner's slip is not 「一盘赢棋」; from move 7 on (ply 12) it is a position
+    sc.forEach((x, i) => { const w = winOf(x); if (i >= 12 && w != null && (!peak || w > peak.w)) peak = { w, i }; });
     return peak && peak.w >= 85 ? tf("rv.sum.reversed", [Math.round(peak.w), boardMoveNo(Math.max(0, peak.i - 1))]) : null;
   }
   function summaryText(a, list) {

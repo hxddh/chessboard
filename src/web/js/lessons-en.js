@@ -422,7 +422,7 @@
       text: [
         "In check with no legal answer at all = checkmate. The game ends at once and the mating side wins.",
         "One of the most common patterns is the back-rank mate: the king is boxed in by his own pawns and a heavy piece checks along the last rank.",
-        "Want more mating practice? Go to Mode → Puzzles — mate-in-one and mate-in-two sets are waiting.",
+        "Want more mating practice? Go to Puzzles — mate-in-one and mate-in-two sets are waiting.",
       ],
       tasks: [
         { prompt: "Mate in one: the black king is trapped on the back rank by his own pawns",

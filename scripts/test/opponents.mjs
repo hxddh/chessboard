@@ -446,4 +446,52 @@ export async function run() {
       assert(stale.length === 0, "B4: the run measured the rungs that ship (re-run scripts/test-ladder.mjs)" + (stale.length ? " — " + stale.join(",") : ""));
     }
   }
+
+  // 25.0 N13 (对手用时像人): unclocked, a rung's minMs is a mean, not a
+  // constant — quicker for an only move, a check to answer, a recapture or
+  // the opening, slower where there is a lot to look at, and the same FEN
+  // always held the same time (think-time.js; a clock keeps thinkPlan's pace)
+  {
+    loadModule(ctx, "src/web/js/think-time.js");
+    loadModule(ctx, "src/web/js/classics.js");
+    const E = ctx.ChessEngine, ms = ctx.thinkMs, fac = ctx.thinkFactor;
+    const rungs = ["beginner", "normalminus", "normal"].map((id) => [id, E.TIERS[id].minMs]);
+    const forced = "k7/8/8/8/8/8/1r6/K7 w - - 0 1";
+    const busy = "r1bq1rk1/ppp2ppp/2np1n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQ1RK1 w - - 0 7";
+    const check = "rnbqkbnr/ppp2ppp/3p4/1B2p3/4P3/8/PPPP1PPP/RNBQK1NR b KQkq - 1 3";
+    assert(new Chess(forced).moves().length === 1 && new Chess(busy).moves().length > 30 && new Chess(check).in_check(),
+      "N13: the forced position has one move, the busy one many, and the third is a check");
+    assert(rungs.every(([, m]) => ms(m, forced, "b2", Chess) < ms(m, busy, "e3", Chess) * 0.6 && ms(m, check, "c6", Chess) < ms(m, busy, "e3", Chess)),
+      "N13: an only move and a check to answer come quicker than a busy middlegame, on every rung (" +
+      rungs.map(([id, m]) => id + " " + ms(m, forced, "b2", Chess) + "/" + ms(m, check, "c6", Chess) + "/" + ms(m, busy, "e3", Chess)).join(", ") + " ms)");
+    // a recapture: 1.e4 d5 2.exd5, and the queen takes back on d5
+    {
+      const g = new Chess(), fens = [g.fen()];
+      for (const m of ["e4", "d5", "exd5"]) { g.move(m); fens.push(g.fen()); }
+      const now = g.fen();
+      assert(fac(now, "d5", Chess, fens) < 0.7 && fac(now, "d5", Chess, fens.slice(-2)) < 0.7 && fac(now, "d5", Chess, ["8/8/8/8/8/8/8/8 w - - 0 1", now]) > 0.7,
+        "N13: a recapture is quick (and a capture on a square nothing was just taken on is not one)");
+    }
+    // the mean over a fixed sample (every position of the ten classics) stays within ±15% of the old fixed minimum
+    const sample = [];
+    for (const c of ctx.CHESS_CLASSICS) {
+      const g = new Chess(); g.load_pgn(c.pgn, { sloppy: true });
+      const r = new Chess(), fens = [r.fen()];
+      for (const m of g.history({ verbose: true })) { sample.push([r.fen(), m.to, fens.slice()]); r.move(m); fens.push(r.fen()); }
+    }
+    for (const [id, m] of rungs) {
+      const xs = sample.map(([f, to, h]) => ms(m, f, to, Chess, h));
+      const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+      assert(sample.length > 400 && Math.abs(mean - m) <= 0.15 * m && Math.min(...xs) >= Math.floor(0.35 * m) && Math.max(...xs) <= Math.ceil(1.7 * m),
+        "N13: " + id + " holds " + Math.round(mean) + " ms on average over " + sample.length + " positions (minMs " + m + ", ±15%), " + Math.min(...xs) + "–" + Math.max(...xs) + " ms");
+    }
+    const same = sample.slice(0, 60).every(([f, to, h]) => ms(600, f, to, Chess, h) === ms(600, f, to, Chess, h.slice()));
+    const tt = fs.readFileSync(path.join(root, "src/web/js/think-time.js"), "utf8");
+    assert(same && !/Math\.random/.test(tt), "N13: the same FEN is held the same time (a position hash, not Math.random)");
+    assert(ms(600, "not a fen", "e4", Chess) === 600, "N13: a position it cannot read holds the rung's minimum");
+    const eng = fs.readFileSync(path.join(root, "src/web/js/engine.js"), "utf8");
+    const chunk = fs.readFileSync(path.join(root, "src/web/js/opponents-chunk.js"), "utf8");
+    assert(/const hold = pace != null \? pace : P && P\.thinkMs/.test(eng) && !/^import .*think-time/m.test(eng) && /thinkMs \}/.test(chunk),
+      "N13: a clocked game keeps thinkPlan's pace; the module comes with the opponents chunk, not the bundle");
+  }
 }

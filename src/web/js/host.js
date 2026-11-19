@@ -609,9 +609,17 @@ const global = typeof window !== "undefined" ? window : globalThis;
       } catch (_) { /* an older shell without the command: nothing to open */ } finally { busy = false; }
     }
     take();
+    // 25.0 (review-24.0 P4/P5): focus alone missed a document opened while the
+    // window already had it (the Dock's recent files, a drop on the Dock icon,
+    // a second launch on Windows) — so also every 1.5 s while the page is not
+    // hidden, which covers coming back into view too. A local bridge round trip.
     const onFocus = function () { take(); };
+    const tick = setInterval(function () { if (global.document.visibilityState !== "hidden") take(); }, 1500);
     if (typeof global.addEventListener === "function") global.addEventListener("focus", onFocus);
-    return function () { if (typeof global.removeEventListener === "function") global.removeEventListener("focus", onFocus); };
+    return function () {
+      if (typeof global.removeEventListener === "function") global.removeEventListener("focus", onFocus);
+      clearInterval(tick);
+    };
   }
 
   // ---- app data (v6-plan Q1.1) --------------------------------------------

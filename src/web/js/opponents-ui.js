@@ -169,7 +169,9 @@ export function createOpponentsUI(d) {
     const pickEl = el("op-pick");
     if (pickEl) { pickEl.hidden = !full || !on; if (full && on) setText(pickEl, on ? grid.querySelector('[data-op="' + on.id + '"]').getAttribute("aria-label") : ""); }
     const r = d.rating();
-    setText(el("op-you"), r ? tf("ng.yourRating", [fmtRating(r)]) : t("ng.noRating"));
+    // 25.0 (review-24.0 N6): before the first game the placement is the level Today already shows
+    const pl = !r && d.placed && d.placed();
+    setText(el("op-you"), r ? tf("ng.yourRating", [fmtRating(r)]) : pl && Number.isFinite(pl.r) ? tf("ng.placedRating", [Math.round(pl.r)]) : t("ng.noRating"));
   }
 
   /** the persona whose rung's rating is nearest `r` */
@@ -401,8 +403,9 @@ export function createOpponentsUI(d) {
         checks: theirs.filter((m) => /[+#]/.test(m.san)).length,
       }) || "";
     }
-    // 24.0 (review-23.0 W3, owner 2026-11-18): a resignation is scored as a loss, and the card says so
-    const rl = mine ? tdot(ratingLine(mine), store.game.resigned && t("go.resignLoss"), adviceLine(mine, mine.level)) : "";
+    // 24.0 (review-23.0 W3, owner 2026-11-18): a resignation is scored as a loss, and the card says so —
+    // 25.0 (review-24.0 P1): yours; when the engine resigns the game is your win
+    const rl = mine ? tdot(ratingLine(mine), store.game.resigned === store.session.humanColor && t("go.resignLoss"), adviceLine(mine, mine.level)) : "";
     for (const [node, text] of [[say, line], [rate, rl]]) {
       if (!node) continue;
       if (text) setText(node, text);

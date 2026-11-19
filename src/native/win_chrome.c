@@ -122,3 +122,43 @@ int chess_win_ui_language(void) {
         default: return 1;
     }
 }
+
+/*
+ * 25.0 (review-24.0 P5, owner 2026-11-19): one instance. A double-clicked
+ * .pgn while the app is open started a second process, which then shared the
+ * first one's appdata and WebView2 profile — last writer wins on the library.
+ * Now the second launch leaves its paths in the open queue (main.zig) and
+ * goes; the first picks them up when the page next asks (host.js polls).
+ *
+ * Returns 1 when this process is the one instance, 0 when another holds it.
+ * The handle is kept for the process's life: the mutex goes with the process.
+ */
+static HANDLE chess_instance;
+int chess_win_claim_instance(void) {
+    chess_instance = CreateMutexW(NULL, FALSE, L"Local\\dev.hxddh.chessboard.instance");
+    if (!chess_instance) return 1; /* cannot tell: behave as before, run */
+    return GetLastError() == ERROR_ALREADY_EXISTS ? 0 : 1;
+}
+
+/* The launch that is about to go hands the foreground on: the one instance
+   raises its window when it takes the queue, which Windows would otherwise
+   refuse to a process the user did not just click. */
+void chess_win_allow_foreground(void) {
+    AllowSetForegroundWindow(ASFW_ANY);
+}
+
+static BOOL CALLBACK chess_raise_each(HWND hwnd, LPARAM lp) {
+    (void)lp;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (pid != GetCurrentProcessId()) return TRUE;
+    if ((GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_CAPTION) != WS_CAPTION || !IsWindowVisible(hwnd)) return TRUE;
+    if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+    SetForegroundWindow(hwnd);
+    return FALSE;
+}
+
+/* The one instance, when a later launch left something in the queue. */
+void chess_win_raise(void) {
+    EnumWindows(chess_raise_each, 0);
+}

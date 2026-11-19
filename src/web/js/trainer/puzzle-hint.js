@@ -41,6 +41,9 @@ export function createPuzzleHint(d) {
     return null;
   }
 
+  // 25.0 (review-24.0 N8): the first step's word goes when the second step
+  // shows the answer — 「再按一次看答案」 stood beside the arrow it promised
+  let closeHint = null;
   /** The key: the piece first, the answer after it. */
   function show() {
     const pz = store.session.puzzle;
@@ -52,8 +55,9 @@ export function createPuzzleHint(d) {
     if (!pz.helpPiece && !pz.helpArrow) {
       pz.helpPiece = mv.from;
       pz.usedHint = true;
-      toast(t("pz.hintPiece"));
+      closeHint = toast(t("pz.hintPiece"));
     } else {
+      if (closeHint) { closeHint(); closeHint = null; }
       pz.helpArrow = mv;
       pz.usedAnswer = true;
       markMissed(pz.p.id); // relying on the answer counts as a miss

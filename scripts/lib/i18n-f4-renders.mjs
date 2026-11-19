@@ -71,8 +71,9 @@ export const F4_RENDERS = [
     "已导入 23 回合", "Imported 23 moves", "読み込みました 23 手"],
   ["msg.analysis.kept", (t, tf, tdot, diff) => tf("msg.analysis.kept", [17]),
     "已停止复盘 · 保留前 17 步结果", "Review stopped · kept the first 17 plies", "振り返りを中止しました · 最初の 17 手分を残しました"],
-  ["msg.analysis.doneBad", (t, tf, tdot, diff) => tdot(tf("msg.analysis.doneBad", [3]), tf("msg.mined", [2]), "", "", t("msg.analysis.deepStopped")),
-    "复盘完成 · 3 处失着 · 收进 2 道错题 · 加深已停止，部分着法只做了快速评估", "Review complete · 3 flagged · 2 mistakes banked as drills · deeper check stopped, some moves graded on the quick scan", "振り返り完了 · 3 個の悪手 · 失着 2 件をドリルに収録 · 深掘りは中止、一部の手はクイックスキャンで評価"],
+  // 25.0 (review-24.0 N5): the count is the key moments' — a deliberate change of words
+  ["msg.analysis.doneMoments", (t, tf, tdot, diff) => tdot(tf("msg.analysis.doneMoments", [3]), tf("msg.mined", [2]), "", "", t("msg.analysis.deepStopped")),
+    "复盘完成 · 3 个关键时刻 · 收进 2 道错题 · 加深已停止，部分着法只做了快速评估", "Review complete · 3 key moments · 2 mistakes banked as drills · deeper check stopped, some moves graded on the quick scan", "振り返り完了 · キーモーメント 3 個 · 失着 2 件をドリルに収録 · 深掘りは中止、一部の手はクイックスキャンで評価"],
   ["lm.doneNext", (t, tf, tdot, diff) => tf("lm.doneThen", [t("lm.tapNext")]),
     "完成！点「下一课」继续", "Done! Tap “Next lesson” to continue", "できました！ 「次のレッスン」で進みましょう"],
   ["lm.doneEg", (t, tf, tdot, diff) => tf("lm.doneThen", [t("eg.allDone")]),

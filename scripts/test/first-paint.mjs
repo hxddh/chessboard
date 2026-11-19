@@ -84,9 +84,14 @@ export async function run() {
     // OS opened, the confirm queue, the puzzle and rating wording, the review's
     // counts) are first-paint code and moved nothing out: 815,218 bytes
     // measured part-way, the line is 818,000. The next version pays it back.
-    const BUNDLE_BYTES_240 = 818000;
-    assert(bundleBytes <= BUNDLE_BYTES_240,
-      "24.0: bundle.js stays within v24-0-plan's 818,000 bytes (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_240 ? " ≤ " : " > ") + BUNDLE_BYTES_240 + " bytes)");
+    // 25.0: v25-0-plan §2 — it was not paid back. The review's own fixes,
+    // the Windows single-instance pickup and the blunder warning at the
+    // board's foot (toast-place.js) are first-paint code again: 819,171
+    // measured, the line is 820,000. What would pay it back (the retry panel
+    // or the eval graph as a chunk) touches every board frame; it is 25.x work.
+    const BUNDLE_BYTES_250 = 820000;
+    assert(bundleBytes <= BUNDLE_BYTES_250,
+      "25.0: bundle.js stays within v25-0-plan's 820,000 bytes (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_250 ? " ≤ " : " > ") + BUNDLE_BYTES_250 + " bytes)");
     // …minified without renaming: a player's stack trace still names the code
     assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
       "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");
