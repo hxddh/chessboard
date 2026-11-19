@@ -625,7 +625,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // the opponent still reads as "thinking" instead of snapping back.
     // v8-0-plan B4: a clocked game paces the reply to the clock instead
     // (opponents.js thinkPlan) — longer in a long game, never past the cap.
-    const hold = pace != null ? pace : tier.minMs;
+    // 25.0 N13: unclocked, the rung's minimum is a mean (think-time.js)
+    const hold = pace != null ? pace : P && P.thinkMs && picked ? P.thinkMs(tier.minMs, fen, picked.to, persona.Chess, persona.fens) : tier.minMs;
     if (picked && hold) {
       const left = hold - (Date.now() - startedAt);
       if (left > 0) await new Promise((r) => setTimeout(r, left));
