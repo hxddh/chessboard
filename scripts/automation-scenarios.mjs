@@ -431,26 +431,27 @@ async function runLive() {
 
   // 21.0 G1: the pages, each judged by the page and photographed from here
   const shots = {};
-  if (!only || only.includes("pages")) fs.mkdirSync(shotsDir, { recursive: true });
+  if (!only || only.includes("pages")) {
+    fs.mkdirSync(shotsDir, { recursive: true });
+    // 25.1: the capture's cold start, paid here — before the app is launched,
+    // so it can neither block the loop below (captureWindow is synchronous)
+    // nor run into a page's SHOT_DWELL_MS. Each capture is a fresh process,
+    // and the first on a new runner was 8.4 s (v25.1.0's release run: Windows
+    // PowerShell, WinForms, compiling the Add-Type helper; 01-home was taken
+    // after the page had moved on). This runner's own process has no window,
+    // so the capture fails after paying for everything a real one does.
+    const t0 = Date.now(), scratch = path.join(shotsDir, "00-warm.png");
+    const w = captureWindow(process.pid, scratch);
+    fs.rmSync(scratch, { force: true });
+    extra.shotWarm = { ms: Date.now() - t0, how: w.how };
+  }
   await scenario("pages", async (app, reportNow) => {
     let n = 0;
-    // 25.1: one throwaway capture before the first real one. Each capture is a
-    // fresh process, and the first on a new runner pays the cold start (on
-    // Windows: PowerShell, WinForms, compiling the Add-Type helper) — 8.4 s in
-    // the v25.1.0 release run, past the page's SHOT_DWELL_MS of 5 s, so
-    // 01-home was taken after the page had moved on. The others took ~1 s.
-    // Taken once the window exists and before the page reports its first shot.
-    let warm = false;
     for (;;) {
       const r = reportNow();
       if (r && r.stage === "done") return;
       if (app.state.exited !== null) return;
       const name = r && /^shot:[\w-]+$/.test(r.stage || "") ? r.stage.slice(5) : null;
-      if (!warm && !name) {
-        const scratch = path.join(shotsDir, "00-warm.png");
-        warm = captureWindow(app.child.pid, scratch).how !== "none";
-        fs.rmSync(scratch, { force: true });
-      }
       if (name && !shots[name]) {
         n += 1;
         const file = path.join(shotsDir, String(n).padStart(2, "0") + "-" + name + ".png");

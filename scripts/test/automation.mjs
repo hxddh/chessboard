@@ -151,9 +151,11 @@ export async function run() {
   // shot, not inside its SHOT_DWELL_MS (v25.1.0's release run: 01-home 8.4 s)
   {
     const src = fs.readFileSync(path.join(scriptsDir, "automation-scenarios.mjs"), "utf8");
-    const loop = src.slice(src.indexOf('await scenario("pages"'), src.indexOf("if (reports.pages)"));
-    assert(/if \(!warm && !name\) \{[\s\S]{0,200}captureWindow\(app\.child\.pid, scratch\)/.test(loop) &&
-      loop.indexOf("!warm && !name") < loop.indexOf("const how = captureWindow(app.child.pid, file)"),
-      "pages: one throwaway capture before the first shot, so the cold start is not inside the page's dwell");
+    const at = src.indexOf('await scenario("pages"');
+    const before = src.slice(src.indexOf("const shots = {};"), at), loop = src.slice(at, src.indexOf("if (reports.pages)"));
+    // before the launch, not in the loop: captureWindow blocks, and a warm-up
+    // inside the loop ran while the page was already counting down 01-home
+    assert(/captureWindow\(process\.pid, scratch\)/.test(before) && (loop.match(/captureWindow\(/g) || []).length === 1,
+      "pages: the capture's cold start is paid before the app is launched, and the loop captures only real shots");
   }
 }
