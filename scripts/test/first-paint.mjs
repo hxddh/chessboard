@@ -92,6 +92,15 @@ export async function run() {
     const BUNDLE_BYTES_250 = 820000;
     assert(bundleBytes <= BUNDLE_BYTES_250,
       "25.0: bundle.js stays within v25-0-plan's 820,000 bytes (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_250 ? " ≤ " : " > ") + BUNDLE_BYTES_250 + " bytes)");
+    // 25.2: paid back — the classics went to their chunk (below): 805,763
+    // measured, the line is 808,000. 25.0 had said 815,000.
+    const BUNDLE_BYTES_252 = 808000;
+    assert(bundleBytes <= BUNDLE_BYTES_252,
+      "25.2: bundle.js stays within 808,000 bytes (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_252 ? " ≤ " : " > ") + BUNDLE_BYTES_252 + " bytes)");
+    // 25.2 (v25-1-plan §5 第 1 条): the ten classics ride chunk-classics-more.js
+    // now; their games and Chinese notes were 22 KB of first-paint code
+    assert(!bundleSrc.includes("anderssen-dufresne-1852") && !/from "\.\.\/classics\.js"/.test(fs.readFileSync(path.join(root, "src/web/js/trainer/lessons.js"), "utf8")),
+      "25.2: the classics are not in bundle.js — trainer/lessons.js fills its catalog from the chunk");
     // …minified without renaming: a player's stack trace still names the code
     assert(/\bfunction createSettingsUI\(/.test(bundleSrc) && !/\n\s{2,}\S/.test(bundleSrc.slice(0, 20000)),
       "F2: bundle.js is minified (no indented lines) and keeps its identifiers (createSettingsUI)");

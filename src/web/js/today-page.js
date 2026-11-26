@@ -35,7 +35,7 @@ const RECENT = 4;
  */
 export function createTodayPage(d) {
   const {
-    doc, store, t, tf, tdot, Chess, pieceSrc, LESSONS, lessonText, Endgames, CLASSICS, classicsTotal, classicText,
+    doc, store, t, tf, tdot, Chess, pieceSrc, LESSONS, lessonText, Endgames, CLASSICS, classicsTotal, classicsEnsure, classicText,
     loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText, drawRatingTrend,
     Shell, playNext, smartPuzzle,
   } = d;
@@ -176,6 +176,11 @@ export function createTodayPage(d) {
     // 名局: the game last opened, and how many of the forty were guessed through
     const ci = Math.max(0, Math.min(ls.cl || 0, CLASSICS.length - 1));
     const c = CLASSICS[ci];
+    // 25.2: the catalog is a chunk now; until it is in the card waits, as the
+    // endgame card does (its arrival repaints)
+    const cc = card("classic");
+    if (cc) cc.hidden = !c;
+    if (!c && classicsEnsure) classicsEnsure();
     if (c) {
       const tx = classicText(c);
       const gs = ls.gs || {};

@@ -16,7 +16,7 @@ import { ChessMistakes as Mistakes } from "../mistakes.js";
  */
 export function createPuzzleMine(d) {
   const {
-    BoardView, Review, evalScalar, store, sync, t, tf, writeSan, saveMines, puzzleScript,
+    BoardView, Review, evalScalar, store, sync, t, tf, toast, writeSan, saveMines, puzzleScript, onSolved, onWrong,
   } = d;
 
   /**
@@ -68,6 +68,21 @@ export function createPuzzleMine(d) {
     return v;
   }
   const verifyMineAlt = (mv) => verifyAlt(mv, { remember: true });
+  /**
+   * 25.2: a first move other than the stored one, put to the engine (`ask`:
+   * verifyAlt or verifyMineAlt) — right and said so, wrong in `wrongWords(v)`,
+   * or not judged and taken back. The personal book and the mined 战术 / 得子
+   * puzzles answered this in two copies in trainer/puzzles.js.
+   */
+  function judgeOffered(mv, ask, wrongWords) {
+    const pz = store.session.puzzle;
+    ask(mv).then((v) => {
+      if (store.session.puzzle !== pz || pz.done) return;
+      if (!v) { puzzleUnjudged(); return; }
+      if (v.ok) { toast(tf("pz.mine.alsoFine", [mv.san, (v.loss / 100).toFixed(1)])); onSolved(); return; }
+      onWrong(wrongWords(v));
+    });
+  }
   /** 25.1: verifyAlt could not judge the move — taken back, and not counted as a miss */
   function puzzleUnjudged() {
     const pz = store.session.puzzle;
@@ -149,6 +164,6 @@ export function createPuzzleMine(d) {
   }
 
   return {
-    verifyAlt, verifyMineAlt, puzzleUnjudged, mineWhy, renderPuzzleLine,
+    verifyAlt, verifyMineAlt, judgeOffered, mineWhy, renderPuzzleLine,
   };
 }
