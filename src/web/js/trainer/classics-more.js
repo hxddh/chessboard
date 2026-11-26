@@ -24,6 +24,8 @@ const LANG_AT = { "zh-CN": 0, en: 1, ja: 2 };
 /** how many games the chunk appends — so a count can say 40 before it arrives
  * (10.0 M0: 今天 said 0/10 beside 训练's 全部 40 局); test-classics checks it */
 export const MORE_COUNT = 30;
+/** 25.2: …and the first ten, which ride in the same chunk now (classics.js) */
+export const BASE_COUNT = 10;
 
 /**
  * @param {{store: object, list: object[], onReady: () => void}} d `list` is
@@ -33,6 +35,7 @@ export function createMoreClassics(d) {
   const { store, list, onReady } = d;
   let groups = null;
   let asked = null;
+  const waiting = [];
   function ensure() {
     if (groups || asked) return;
     asked = new Promise((r) => (typeof requestAnimationFrame === "function"
@@ -40,8 +43,11 @@ export function createMoreClassics(d) {
       .then(() => loadChunk(MORE_CHUNK.file, MORE_CHUNK.global))
       .then((m) => {
         if (groups) return;
+        // 25.2: the ten first, so every index stays what it was (0–9, then 10–39)
+        list.push(...m.base);
         for (const g of m.games) list.push(Object.assign({}, g, { tr: { en: m.en[g.id], ja: m.ja[g.id] } }));
         groups = m.groups;
+        for (const fn of waiting.splice(0)) fn();
         onReady();
       }, () => { asked = null; }); // a failed load is retried the next time the list draws
   }
@@ -50,7 +56,9 @@ export function createMoreClassics(d) {
     const gr = groups && groups.find((x) => x.id === id);
     return gr ? gr.n[LANG_AT[store.ui.langId] || 0] || gr.n[0] : "";
   }
-  /** every classic, the chunk's thirty counted whether or not they are here yet */
-  const total = () => (groups ? list.length : list.length + MORE_COUNT);
-  return { ensure, groupName, ready: () => !!groups, total };
+  /** every classic, counted whether or not they are here yet */
+  const total = () => (groups ? list.length : BASE_COUNT + MORE_COUNT);
+  /** 25.2: `fn` once the catalog is in — at once if it already is (the Endgames shape) */
+  function whenReady(fn) { if (groups) fn(); else { waiting.push(fn); ensure(); } }
+  return { ensure, whenReady, groupName, ready: () => !!groups, total };
 }

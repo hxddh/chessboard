@@ -4267,7 +4267,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   Shell.wire();
   // 9.0 S1: 今天 — the page around the coach's card (today-page.js)
   const TodayPage = createTodayPage({ doc: document, store, t, tf, tdot, Chess, pieceSrc: (k, px) => BoardView.pieceSrc(k, px), LESSONS, lessonText, Endgames: LessonsUI.Endgames,
-    CLASSICS: LessonsUI.CLASSICS, classicsTotal: LessonsUI.classicsTotal, classicText: LessonsUI.classicText, loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText: () => ratingLabel(),
+    CLASSICS: LessonsUI.CLASSICS, classicsTotal: LessonsUI.classicsTotal, classicsEnsure: LessonsUI.classicsEnsure, classicText: LessonsUI.classicText, loadStats, historyGames, historyLabel, historySub, loadHistoryRecord, puzzleRatingText: () => ratingLabel(),
     drawRatingTrend, Shell, playNext: () => GameCtl.playNext(), smartPuzzle: () => PuzzlesUI.smartNext() });
   TodayPage.wire();
   // v10-0-plan A1: 分析一局 — into the review in one step — and the blank analysis board

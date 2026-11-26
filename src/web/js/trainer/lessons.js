@@ -14,7 +14,6 @@
  */
 import { Chess } from "../chess.js";
 import { loadChunk } from "../chunk.js";
-import { CHESS_CLASSICS } from "../classics.js";
 import { ChessDrills } from "../drills.js";
 import { ChessEngine } from "../engine.js";
 import { ChessTree } from "../game-tree.js";
@@ -78,7 +77,9 @@ export function createLessonsUI(d) {
   // v8-4-plan T2: the first ten are in the bundle, thirty more are appended
   // when their chunk arrives (trainer/classics-more.js) — to a copy, so the
   // module's own array stays the ten
-  const CLASSICS = (CHESS_CLASSICS || []).slice();
+  // 25.2: empty until the classics chunk arrives (trainer/classics-more.js),
+  // which fills it in index order — the ten, then the thirty
+  const CLASSICS = [];
   const More = createMoreClassics({ store, list: CLASSICS, onReady: () => sync() });
   function classicText(c) {
     // the thirty carry their own translations; the ten read the language chunks
@@ -189,7 +190,19 @@ export function createLessonsUI(d) {
   /** Read a classic, or guess it: 名局's one switch (store.ui.classicMode). */
   const guessing = () => store.ui.classicMode === "guess";
   /** Open classic `ci` the way the switch says. */
-  function openClassic(ci) { if (guessing()) startGuess(ci); else startClassic(ci); }
+  // 25.2: the catalog is a chunk; opened before it is in, the game opens on its arrival
+  function openClassic(ci) {
+    if (!More.ready()) {
+      // opened on arrival — unless the player has opened something else
+      // meanwhile (a lesson from the list, another segment): the lesson state
+      // is then a different object, or the mode is not 学习 any more
+      const before = store.session.learn;
+      More.whenReady(() => { if (store.session.mode === "learn" && store.session.learn === before && !store.session.study) { openClassic(ci); sync(); } });
+      return;
+    }
+    const i = Math.max(0, Math.min(ci, CLASSICS.length - 1));
+    if (guessing()) startGuess(i); else startClassic(i);
+  }
   /**
    * Into segment `seg` (学习 is on): where the player left it — the lesson
    * bookmarked, the endgame last opened (or the first not done), the
@@ -206,7 +219,7 @@ export function createLessonsUI(d) {
         sync();
       });
       return;
-    } else if (seg === "classic") openClassic(Math.max(0, Math.min(store.session.learnState.cl || 0, CLASSICS.length - 1)));
+    } else if (seg === "classic") openClassic(store.session.learnState.cl || 0);
     sync();
   }
 
@@ -1172,6 +1185,6 @@ export function createLessonsUI(d) {
     wireLessonPanel,
     LESSONS, loadLearnState, saveLearnState, startLearn, stopLearn, syncStudyUI,
     curTask, startLesson, startLearnTask, learnModel, learnClick, learnEngineReply, learnUndo,
-    learnHint, syncLearnUI, learnTaskText, Endgames, startEndgame, learnSeg, openSeg, CLASSICS, classicText, classicsTotal: More.total,
+    learnHint, syncLearnUI, learnTaskText, Endgames, startEndgame, learnSeg, openSeg, CLASSICS, classicText, classicsTotal: More.total, classicsEnsure: More.ensure,
   };
 }

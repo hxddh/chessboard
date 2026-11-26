@@ -83,7 +83,7 @@ export function createPuzzlesUI(d) {
   const { playerRating, puzzleRatingOf, ratePuzzleOnce, markMissed, clearMissed } = Rating;
   const { opCurrent, opTreeMove, gradeCard, seatRepSide, openingWhy, syncOpSideSeg } =
     createPuzzleOpenings({ ...d, ...Book, puzzleWrong, puzzleSolved });
-  const { verifyAlt, verifyMineAlt, puzzleUnjudged, mineWhy, renderPuzzleLine } = createPuzzleMine({ ...d, ...Book, puzzleScript });
+  const { verifyAlt, verifyMineAlt, judgeOffered, mineWhy, renderPuzzleLine } = createPuzzleMine({ ...d, ...Book, puzzleScript, onSolved: () => puzzleSolved(), onWrong: (r) => puzzleWrong(r) });
   // v8-0-plan B1: 冲刺 / 连胜, the themes, the rating on the view (puzzle-modes.js);
   // the book and the ratings go in whole (ALL_PUZZLES, isRatedCat, savePuzzleState,
   // puzzleRating, playerRating are what it reads of them)
@@ -319,12 +319,7 @@ export function createPuzzlesUI(d) {
       const p = store.session.puzzle.p;
       if (Mistakes.isAccepted(p, mv.san)) { puzzleSolved(); return; }
       if (mv.san === p.played) { puzzleWrong(tf("pz.mine.repeatWhy", [mineWhy(p)])); return; }
-      verifyMineAlt(mv).then((v) => {
-        if (store.session.puzzle !== undefined && store.session.puzzle && store.session.puzzle.p === p) {
-          if (!v) { puzzleUnjudged(); return; } if (v.ok) { toast(tf("pz.mine.alsoFine", [mv.san, (v.loss / 100).toFixed(1)])); puzzleSolved(); return; }
-          puzzleWrong(tf("pz.mine.strongerCost", [(v.loss / 100).toFixed(1)]));
-        }
-      });
+      judgeOffered(mv, verifyMineAlt, (v) => tf("pz.mine.strongerCost", [(v.loss / 100).toFixed(1)]));
       return;
     }
     if (isOpeningCat(store.session.puzzle.p.cat)) { opTreeMove(g, mv); return; }
@@ -352,13 +347,8 @@ export function createPuzzlesUI(d) {
         if ((c === "tac" || c === "win") && store.session.puzzle.stage === 0) {
           const pz0 = store.session.puzzle;
           if (Array.isArray(pz0.p.alts) && pz0.p.alts.includes(mv.san)) { puzzleSolved(); return; }
-          verifyAlt(mv, { remember: true }).then((v) => {
-            if (store.session.puzzle !== pz0 || pz0.done) return;
-            if (!v) { puzzleUnjudged(); return; } if (v.ok) { toast(tf("pz.mine.alsoFine", [mv.san, (v.loss / 100).toFixed(1)])); puzzleSolved(); return; }
-            puzzleWrong(c === "win"
-              ? (mv.captured ? t("pz.wrongCapture") : t("pz.biggerPrize"))
-              : findMotifText(pz0.p));
-          });
+          judgeOffered(mv, (m) => verifyAlt(m, { remember: true }),
+            () => (c === "win" ? (mv.captured ? t("pz.wrongCapture") : t("pz.biggerPrize")) : findMotifText(pz0.p)));
           return;
         }
         puzzleWrong(
