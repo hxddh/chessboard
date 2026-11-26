@@ -380,24 +380,19 @@ export function createIO(d) {
    * 25.1 (review-25.0 §2): one after the other. The board's import was not
    * awaited: the library's ran beside its confirm and its game picker, a
    * cancelled or refused file was listed as a recent document all the same,
-   * and a failure reached nobody. And one request, even when it arrives in
-   * parts — Windows starts a process per file of a multi-selection, so the
-   * one instance takes them a few at a time, and each part took the board
-   * from the one before it. A part that comes within OPEN_BURST_MS of the
-   * last goes into the library whole.
+   * and a failure reached nobody. (A time window that sent a second take
+   * to the library was tried and dropped: two files opened a second apart
+   * on purpose are two requests, and the board is where the second one goes.)
    */
-  const OPEN_BURST_MS = 3000;
   async function openPaths(payload) {
     const paths = Host.normalizePaths(payload && payload.paths ? payload.paths : payload);
-    const p = Date.now() - store.session.openedAt < OPEN_BURST_MS ? null : paths.find((x) => /\.(pgn|txt)$/i.test(x));
-    store.session.openedAt = Date.now();
+    const p = paths.find((x) => /\.(pgn|txt)$/i.test(x));
     if (p) {
       try { if (await importPgnText(await Host.readTextFile(p), p)) Host.addRecentDocument(p); } catch (err) { toastReadFailure(err); }
     }
     for (const q of paths.filter((x) => x !== p && /\.pgn$/i.test(x))) {
       try { await LibraryUI.importPgnToLibrary(await Host.readTextFile(q), q, { wait: true }); Host.addRecentDocument(q); } catch (err) { toastReadFailure(err); }
     }
-    store.session.openedAt = Date.now();
   }
 
   /** Open a .pgn file: native dialog via the host bridge, <input> in browsers. */

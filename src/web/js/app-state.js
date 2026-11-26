@@ -110,8 +110,6 @@ export function initialState() {
       engineDown: false,
       /** the boot in flight, shared by everyone who asks for one (7.4) */
       engineBoot: null,
-      /** 25.1: when io.js openPaths last finished — a part within its burst goes to the library */
-      openedAt: 0,
       analyzing: false,
       /** set by the stop button; the analysis loop bails at the next position */
       analyzeAbort: false,
