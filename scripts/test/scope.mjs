@@ -7,8 +7,9 @@
 import fs from "fs";
 import path from "path";
 import vm from "vm";
+import { createRequire } from "module";
 import { compileModuleSync } from "../bundle.mjs";
-import { assert, root, Chess, loadModule, webJsFiles, allAppSource } from "./harness.mjs";
+import { assert, root, Chess, loadModule, webJsFiles, allAppSource, GENERATED_JS } from "./harness.mjs";
 
 export async function run() {
   // --- state that has to be let go of, and state that has to be held on to ---
@@ -95,7 +96,50 @@ export async function run() {
     try { compileModuleSync(path.join(root, "src/web/js/app.js")); }
     catch (e) { err = e; }
     if (err) console.error("  " + (err.message || err));
-    assert(!err, "no identifier is read without being bound (the bundle resolves)");
+    assert(!err, "every import resolves (the bundle builds)");
+  }
+
+  // --- …and the half the bundler does not do: a name read and bound nowhere.
+  //
+  // 25.1 (review-25.0 §1): "the bundle resolves" was not "every name is
+  // bound". An ES module may read any name it likes off the global object,
+  // and esbuild leaves such a read alone — that is how review/analysis.js
+  // shipped `body: done` with no `done` anywhere (every analysis that
+  // finished behind another window threw instead of notifying). This is
+  // scope-check.mjs again, without a second parser: esbuild's `define`
+  // replaces a name only where no declaration binds it, so every word of
+  // every module is defined as a marker, and the markers left in the output
+  // are the free names. The ones a page may read are listed; anything else
+  // is a name nothing declares.
+  {
+    const esbuild = createRequire(import.meta.url)("esbuild");
+    const dir = path.join(root, "src/web/js");
+    const files = webJsFiles(dir).filter((f) => !GENERATED_JS.test(f) && !/^maia-1/.test(f));
+    const RESERVED = new Set(("break case catch class const continue debugger default delete do else export extends finally for function if " +
+      "import in instanceof new return super switch this throw try typeof var void while with yield let static enum await implements package " +
+      "protected interface private public null true false undefined NaN Infinity arguments eval async of get set from as").split(" "));
+    const NODE_ONLY = new Set(["process", "Buffer", "global", "require", "module", "exports", "setImmediate", "clearImmediate"]);
+    const BROWSER = new Set(["window", "document", "navigator", "location", "localStorage", "indexedDB", "IDBKeyRange", "Worker", "FileReader",
+      "Image", "IntersectionObserver", "MutationObserver", "ResizeObserver", "KeyboardEvent", "Node", "getComputedStyle",
+      "requestAnimationFrame", "self", "__CHESS_VERSION__"]);
+    const allowed = (n) => BROWSER.has(n) || (!NODE_ONLY.has(n) && n in globalThis);
+    const free = new Map();
+    for (const f of files) {
+      const src = fs.readFileSync(path.join(dir, f), "utf8");
+      const define = {};
+      for (const [w] of src.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)) if (!RESERVED.has(w)) define[w] = "__FREE__" + w;
+      let out = "";
+      try { out = esbuild.transformSync(src, { format: "esm", define, logLevel: "silent" }).code; }
+      catch (e) { free.set("(" + f + " does not parse)", new Set([f])); continue; }
+      for (const [, n] of out.matchAll(/__FREE__([A-Za-z0-9_]+)/g)) {
+        if (allowed(n)) continue;
+        if (!free.has(n)) free.set(n, new Set());
+        free.get(n).add(f);
+      }
+    }
+    for (const [n, where] of free) console.error("  free: " + n + " (" + [...where].join(", ") + ")");
+    assert(files.length > 100 && free.size === 0,
+      "no module reads a name that nothing binds (" + files.length + " modules" + (free.size ? "; free: " + [...free.keys()].join(", ") : "") + ")");
   }
 
   // --- the other half of that rule: a name that is imported is not also read

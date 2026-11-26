@@ -19,7 +19,9 @@ import { Chess } from "../chess.js";
 import { ChessBoardView } from "../board.js";
 import { ChessEngine } from "../engine.js";
 import { ChessExplain } from "../explain.js";
+import { ChessMistakes } from "../mistakes.js";
 import { ChessReview } from "../review.js";
+import { youSide } from "../app-state.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -120,10 +122,11 @@ export function createRetry(d) {
     if (!a || !a.tags) return [];
     const out = [];
     const firstMover = startFen() ? (startFen().split(" ")[1] === "b" ? "b" : "w") : "w";
+    const you = youSide(store);
     a.tags.forEach((tag, i) => {
       if (tag !== "?" && tag !== "??") return;
       const side = (i % 2 === 0) === (firstMover === "w") ? "w" : "b";
-      if (store.session.mode === "ai" && side !== store.session.humanColor) return;
+      if (you && side !== you) return;
       if (a.bests && a.bests[i]) out.push(i);
     });
     return out;
@@ -218,7 +221,8 @@ export function createRetry(d) {
    * the mistake again is wrong, anything else is searched after both moves at
    * the budget of the pass that marked it and accepted when it costs less
    * than Review.WIN_MISTAKE win-percentage points against the best (25.0;
-   * through 24.0 it was Review.MISTAKE centipawns, Mistakes.judgeAlt).
+   * through 24.0 it was Review.MISTAKE centipawns). Since 25.1 both ask
+   * Mistakes.judgeAlt, which is that rule.
    */
   function startRetry(i, run) {
     const ex = retryFacts(i);
@@ -339,7 +343,9 @@ export function createRetry(d) {
     moveSound(mv, r.g);
     const quick = ChessExplain.retryQuick(mv.san, r.ex);
     if (quick) { settle(r, quick); missed(r); sync(); return; }
-    if (!ChessEngine || !ChessEngine.isReady || !ChessEngine.isReady()) { r.verdict = "unknown"; sync(); return; }
+    // 25.1 (review-25.0 §5): analyze() boots an engine nothing has started
+    // yet (a review opened from the library); only a failed boot is 「判断不了」
+    if (!ChessEngine || (store.session.engineDown && !ChessEngine.isReady())) { r.verdict = "unknown"; sync(); return; }
     r.verdict = "checking";
     sync();
     const probe = new Chess(r.fen);
@@ -356,8 +362,8 @@ export function createRetry(d) {
     // 25.0 (review-24.0 N1, owner): judged on the review's own scale — the
     // win-percentage it gave away, as the move it retries was marked. In
     // centipawns, +5.85 against a best of +7.15 was 「不对」 in a won game.
-    const drop = Review.winPctDrop(cpBest, cpAlt, r.side);
-    settle(r, drop != null && drop < Review.WIN_MISTAKE ? "right" : "wrong");
+    // 25.1: the drills' rule, Mistakes.judgeAlt, is that scale too now — one rule
+    settle(r, ChessMistakes.judgeAlt(cpBest, cpAlt, r.side, Review).ok ? "right" : "wrong");
     missed(r, eAlt);
     sync();
   }

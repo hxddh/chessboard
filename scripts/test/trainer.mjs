@@ -542,11 +542,16 @@ export async function run() {
         "没测到的那一手不算「没问题」—— 分数缺一头就什么都不说");
       assert(M.reviseMines(rv.list, [], { fens: [fen, "x"], sans: ["e4"], tags: [null] }, "w", { budget: 400 }).retired.length === 0,
         "连分数都没给的 pass，照旧只认显式的 ?/?!");
-      // alternatives: accepted when they cost less than a mistake against the best
-      assert(M.judgeAlt(50, 20, "w", 100).ok && M.judgeAlt(50, 20, "w", 100).loss === 30, "a move 30cp short of the best is accepted");
-      assert(!M.judgeAlt(50, -80, "w", 100).ok, "a move 130cp short is not");
-      assert(M.judgeAlt(-50, -20, "b", 100).loss === 30 && M.judgeAlt(-50, 80, "b", 100).ok === false &&
-             M.judgeAlt(-50, -80, "b", 100).loss === 0,
+      // alternatives: accepted when they cost less than a mistake against the
+      // best — 25.1: a mistake on the review's scale (win-percentage points),
+      // the one 复盘重试 judges by, not Review.MISTAKE centipawns
+      const R = ctx.ChessReview;
+      assert(M.judgeAlt(50, 20, "w", R).ok && M.judgeAlt(50, 20, "w", R).loss === 30, "a move 30cp short of the best is accepted");
+      assert(!M.judgeAlt(50, -80, "w", R).ok, "a move 130cp short of an equal position is not");
+      assert(M.judgeAlt(715, 585, "w", R).ok && M.judgeAlt(715, 585, "w", R).loss === 130,
+        "25.1: +5.85 against +7.15 in a won game is right, as 复盘重试 says (130cp, under 10 points)");
+      assert(M.judgeAlt(-50, -20, "b", R).loss === 30 && M.judgeAlt(-50, 80, "b", R).ok === false &&
+             M.judgeAlt(-50, -80, "b", R).loss === 0 && M.judgeAlt(-50, -80, "b", R).ok,
         "the loss is read from the mover's side for Black too");
       const m = Object.assign({}, deep, { alts: ["c4"] });
       assert(M.isAccepted(m, "d4") && M.isAccepted(m, "c4") && !M.isAccepted(m, "e4"),
@@ -687,10 +692,24 @@ export async function run() {
       "achievement totals stay on the frozen book — badges must not drift with a set that retires itself");
     // mining happens where the judgement is born, for the player's side only
     // (Codex on #113: an imported game has a "you" only when it is this app's own record)
-    assert(/const hasYou = store\.session\.mode === "ai" && !store\.session\.analysisBoard &&\s*\(!store\.game\.imported \|\| store\.game\.recordedId != null\);/.test(appSrc) &&
+    // 25.1 (review-25.0 §3): the rule has one home, app-state.js ownSide, and
+    // the engine's reply asks it too
+    const stateSrc = fs.readFileSync(path.join(root, "src/web/js/app-state.js"), "utf8");
+    assert(/return youSide\(store\) && \(!store\.game\.imported \|\| store\.game\.recordedId != null\) \? store\.session\.humanColor : null;/.test(stateSrc) &&
+           /const hasYou = !!ownSide\(store\);/.test(appSrc) &&
            /if \(hasYou\) \{[\s\S]{0,900}Mistakes\.candidatesFrom\(pass, store\.session\.humanColor, Chess, rev\)/.test(appSrc) &&
            /const pass = \{ fens, sans: h, tags, bests, scalars, pvs, losses: plyLosses\(fens, scalars\) \}/.test(appSrc),
       "analyzeGame banks the human side's ?? plies, and only in games with a human side");
+    {
+      // …and everything else that says "you" asks the same question: the
+      // engine's reply, the moments card, the mistake list, the verdicts, the
+      // human line (a .pgn opened in an engine game was answered and reviewed as yours)
+      const rv = (f) => fs.readFileSync(path.join(root, "src/web/js/review", f), "utf8");
+      const bare = ["moments.js", "panel.js", "retry.js", "human-line.js", "analysis.js"].filter((f) =>
+        /store\.session\.mode (?:===|!==) "ai"[^\n]{0,40}humanColor|humanColor[^\n]{0,40}store\.session\.mode === "ai"/.test(rv(f)));
+      assert(/if \(!ownSide\(store\) \|\| !ChessEngine\) return;/.test(appSrc) && bare.length === 0,
+        "25.1: the review speaks to you where youSide says, the engine plays on only where ownSide says" + (bare.length ? " — " + bare.join(", ") : ""));
+    }
     // 7.1 C4: the drill's cost comes from the one clamped routine, not from a
     // third copy of the subtraction (v7-1-plan §3.4)
     assert(/const raw = a\.losses \? a\.losses\[i\] : null;/
@@ -712,7 +731,8 @@ export async function run() {
       "棋谱库走的是和棋盘同一套规则，先修正再扩充，不是第二份实现");
     assert(/withMotifs\(Mistakes\.candidatesFrom\(/.test(appSrc),
       "每道错题带着它的母题 —— 分层保留靠它，否则一次导入会冲掉一整类");
-    assert(/Mistakes\.isAccepted\(p, mv\.san\)/.test(appSrc) && /Mistakes\.judgeAlt\(cpBest, cpAlt, side, Review\.MISTAKE\)/.test(appSrc),
+    assert(/Mistakes\.isAccepted\(p, mv\.san\)/.test(appSrc) && /Mistakes\.judgeAlt\(cpBest, cpAlt, side, Review\)/.test(appSrc) &&
+           /ChessMistakes\.judgeAlt\(cpBest, cpAlt, r\.side, Review\)\.ok/.test(appSrc),
       "a personal drill accepts a verified alternative, not only the stored string (audit F3)");
     assert(/for \(const id of r\.dropped\) \{\s*delete store\.session\.puzzleState\.solved\[id\];\s*delete store\.session\.puzzleState\.missed\[id\];/.test(appSrc),
       "a retired drill takes its solved/missed entries with it — no orphan reviews owed");

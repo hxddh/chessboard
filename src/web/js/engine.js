@@ -554,7 +554,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
     const human = base.maia && persona && persona.Chess && persona.fens ? await humanMove(fen, base, persona, styled ? P : null) : null;
     if (myGen !== gen) return null;
     const only = human && base.guard ? human.H.guardMoves(human.pol) : null;
-    if (human) tier = { depth: 8, minMs: base.minMs, multipv: only ? only.length : 0 };
+    // 25.1 (review-25.0 §4): within the clock's ceiling too, less what the
+    // net already took — a guarded rung scores every move the net could play
+    // to depth 8, and at ten seconds left that ran past what the clock allots
+    if (human) tier = { depth: 8, minMs: base.minMs, multipv: only ? only.length : 0, movetime: ceil ? Math.max(20, Math.floor(ceil - (Date.now() - startedAt))) : 0 };
     // UCI options are sticky on the worker — always set every knob a tier
     // could have touched so no search inherits another tier's handicap.
     send("setoption name MultiPV value " + (tier.multipv || 1));
@@ -794,7 +797,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
       // 6.1: Hash changes what the search finds, so everything already in the
       // eval cache was computed by a different engine. Served on, it would
       // hide the very change the player just asked for.
-      if (hash !== options.hash) { options.hash = hash; evalCache.clear(); }
+      if (hash !== options.hash) { options.hash = hash; evalCache.clear(); cacheEpoch++; }
     }
     return { ...options };
   }
@@ -848,6 +851,9 @@ const global = typeof window !== "undefined" ? window : globalThis;
    */
   const EVAL_CACHE_MAX = 512;
   const evalCache = new Map();
+  /** 25.1 (review-25.0 §4): bumped with every clear — a search that began
+      before it is the old engine's answer, and is not written back after it */
+  let cacheEpoch = 0;
   function cacheKey(fen, budget, multipv, hash) {
     const f = fen.split(" ");
     return f.slice(0, 5).join(" ") + "|" + (multipv || 1) + "|" + nodesFor(budget) + (hash ? "|h" + hash : "");
@@ -882,13 +888,14 @@ const global = typeof window !== "undefined" ? window : globalThis;
     const hash = opts && opts.hash > 0 ? opts.hash : 0;
     const hit = cachedEval(fen, budget, multipv, hash);
     if (hit) return Promise.resolve(hit);
+    const epoch = cacheEpoch;
     // v8-1-plan F4: `{bg: true}` is a pass over many positions — the lowest
     // level, preempted by anything else, and on the second worker when that
     // is turned on
     const run = opts && opts.bg ? analyzeBatch(fen, budget, multipv, !!opts.wide)
       : exclusive((job) => analyzeInner(fen, budget, multipv, job, hash), PRIO.PLAY, "eval");
     return run.then((r) => {
-      rememberEval(fen, budget, multipv, r, hash);
+      if (epoch === cacheEpoch) rememberEval(fen, budget, multipv, r, hash);
       return r;
     });
   }
@@ -966,7 +973,16 @@ const global = typeof window !== "undefined" ? window : globalThis;
     return exclusive((job) => analyzeInner(fen, budget, multipv, job), PRIO.BATCH, "batch");
   }
 
-  /** Parse one `info` line into what the review keeps of it. */
+  /**
+   * Parse one `info` line into what the review keeps of it.
+   *
+   * 25.1 (review-25.0 §4): a `lowerbound` / `upperbound` line is a fail-high
+   * or fail-low the search is about to re-search — its score is a bound,
+   * not a value, and bestMoveInner has never read one. Here it overwrote the
+   * last exact line, and a search stopped by its node count mid-re-search
+   * handed that bound to the review as the position's score. Kept only
+   * where a line has nothing yet.
+   */
   function readInfo(line, into) {
     const mv = line.match(/\bmultipv (\d+)\b/);
     const idx = mv ? Number(mv[1]) : 1;
@@ -974,6 +990,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     const pm = line.match(/\bpv\s+(.+)$/);
     const dm = line.match(/\bdepth (\d+)\b/);
     if (!m && !pm) return;
+    if (/\b(lower|upper)bound\b/.test(line) && into.has(idx)) return;
     const slot = into.get(idx) || { cp: null, mate: null, pv: null, depth: 0 };
     if (m) { slot.cp = m[1] === "cp" ? Number(m[2]) : null; slot.mate = m[1] === "mate" ? Number(m[2]) : null; }
     if (pm) slot.pv = pm[1].trim().split(/\s+/);

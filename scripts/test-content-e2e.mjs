@@ -888,6 +888,24 @@ if (hasTab && REAL.length) {
   // repeating the game's move gets its own message; another wrong move the generic one
   await mv2("e2", "e4");
   assert(/实战里丢分的那一手/.test(await toastText()), "重蹈覆辙被单独点名", await toastText());
+  // 25.1 (review-25.0 §5): this page's engine is a stub that never boots, so
+  // another move cannot be judged — it is taken back and not counted wrong
+  // (through 25.0 it was 「更强的一手」, a miss and a rating loss, untried)
+  const missesBefore = await pg.evaluate(() => JSON.parse(localStorage.getItem("chess.puzzles")).missed["mine:t1"]);
+  await mv2("d2", "d4");
+  await pg.waitForTimeout(400);
+  assert(/判断不了/.test(await toastText()), "25.1：引擎起不来时，另一步判断不了，就说判断不了", await toastText());
+  const unjudged = await pg.evaluate(() => ({ fen: window.__chess.puzzle(), missed: JSON.parse(localStorage.getItem("chess.puzzles")).missed["mine:t1"] }));
+  assert(/ w /.test(unjudged.fen) && JSON.stringify(unjudged.missed) === JSON.stringify(missesBefore),
+    "25.1：判断不了的那一步撤回，不另记一次错", JSON.stringify(unjudged));
+  // with an engine that answers (the test seam), a weaker move is the generic wrong
+  await pg.evaluate(() => {
+    const E = window.__chess.engine; let n = 0;
+    E.isReady = () => true;
+    // verifyAlt asks after the stored best, then after the offered move: the
+    // second leaves the side to move four pawns up
+    E.analyze = (fen) => Promise.resolve({ cp: n++ % 2 ? 400 : 0, mate: null, turn: fen.split(" ")[1], best: null });
+  });
   await mv2("d2", "d4");
   assert(/更强的一手/.test(await toastText()), "一般走错说的是「引擎另有更强一手」", await toastText());
   // …and both wrongs queued it for review

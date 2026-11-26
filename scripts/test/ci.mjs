@@ -25,12 +25,18 @@ export async function run() {
     const scriptsIn = (cmd) => [...String(cmd || "").matchAll(/node (scripts\/[\w-]+\.mjs)/g)].map((m) => m[1]);
     const checksWf = fs.readFileSync(path.join(root, ".github/workflows/checks.yml"), "utf8").replace(/\r\n/g, "\n");
     const releaseWf = fs.readFileSync(path.join(root, ".github/workflows/release.yml"), "utf8").replace(/\r\n/g, "\n");
+    // 25.1 (review-25.0 §7): what the workflows run, not what their comments
+    // say. release.yml's comment 「every script in `npm run test:engine:sample`」
+    // satisfied the engine check below on its own, and test-coach.mjs was in
+    // that npm script and in no release job.
+    const yamlCode = (text) => text.replace(/^\s*#.*$/gm, "").replace(/\s+#.*$/gm, "");
+    const checksRun = yamlCode(checksWf), releaseRun = yamlCode(releaseWf);
     // Only the e2e lists are spelled out: both workflows run `test:static` and
     // `test:engine` through npm, which is the shape that cannot drift. The e2e
     // loop cannot, because each browser engine needs its own env.
     for (const [group, where, text] of [
-      ["test:e2e", "checks.yml", checksWf],
-      ["test:e2e", "release.yml", releaseWf],
+      ["test:e2e", "checks.yml", checksRun],
+      ["test:e2e", "release.yml", releaseRun],
     ]) {
       const want = scriptsIn(pkg.scripts[group]);
       const missing = want.filter((f) => !text.includes(f));
@@ -42,7 +48,7 @@ export async function run() {
     // quietly stops running is exactly the failure this whole block exists to
     // prevent. Three places, one rule each.
     const nightlyWf = fs.readFileSync(path.join(root, ".github/workflows/nightly.yml"), "utf8");
-    assert(/--sample=150/.test(checksWf),
+    assert(/--sample=150/.test(checksRun),
       "PR CI 跑抽样的题库门禁 —— 7.0 之前 PR 上一条引擎检查都没有");
     // 7.6: release.yml runs the sampled tier as a matrix, one job per script,
     // so it no longer says `npm run test:engine:sample`. Each command of that
@@ -50,10 +56,10 @@ export async function run() {
     // dropped a script, or dropped `--sample=150` and so ran the two-hour full
     // sweep, fails here just as a missing `npm run` line did.
     const sampleCmds = String(pkg.scripts["test:engine:sample"]).split("&&").map((c) => c.trim()).filter(Boolean);
-    const sampleMissing = sampleCmds.filter((c) => !releaseWf.includes(c));
-    const fullMined = [...releaseWf.matchAll(/scripts\/test-mined\.mjs(?! --sample=)/g)].length;
-    assert((/npm run test:engine:sample/.test(releaseWf) || sampleMissing.length === 0) &&
-      !/run: npm run test:engine$/m.test(releaseWf) && fullMined === 0,
+    const sampleMissing = sampleCmds.filter((c) => !releaseRun.includes(c));
+    const fullMined = [...releaseRun.matchAll(/scripts\/test-mined\.mjs(?! --sample=)/g)].length;
+    assert((/run: npm run test:engine:sample\s*$/m.test(releaseRun) || sampleMissing.length === 0) &&
+      !/run: npm run test:engine\s*$/m.test(releaseRun) && fullMined === 0,
       "发布跑的是抽样档，不是两个半小时的全量" +
       (sampleMissing.length ? " —— 漏了 " + sampleMissing.join(", ") : "") +
       (fullMined ? " —— test-mined 没带 --sample" : ""));

@@ -25,6 +25,7 @@ import { ChessReview } from "../review.js";
 import { ChessReviewGrade as Grade } from "../review-grade.js";
 import { ChessRepertoire } from "../repertoire.js";
 import { tdot } from "../tdot.js";
+import { youSide } from "../app-state.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -198,7 +199,7 @@ export function createReviewPanel(d) {
     const acc = { w: sum.acc.w, b: sum.acc.b };
     if (a.acc) { if (a.acc.w != null) acc.w = a.acc.w; if (a.acc.b != null) acc.b = a.acc.b; }
     const soft = !!store.ui.showSoftMark;
-    const isPlayer = (side) => store.session.mode === "ai" && side === store.session.humanColor;
+    const you = youSide(store), isPlayer = (side) => side === you;
     const worstBest = sum.worst && a.bests ? a.bests[sum.worst.ply] : null;
     const cand = sum.worst && worstBest ? worstDrill(sum.worst, worstBest) : null;
     const banked = !!cand && store.session.mines.some((m) => m.id === cand.id);
@@ -211,7 +212,7 @@ export function createReviewPanel(d) {
     // when something it shows has changed.
     const key = JSON.stringify([acc, sum.counts, sum.acpl, sum.judged, sum.measured, gc,
       sum.worst && [sum.worst.ply, Math.round(sum.worst.drop)], soft, store.ui.langId,
-      store.session.mode, store.session.humanColor, !!worstBest, banked, sanHistory().length,
+      store.session.mode, you, !!worstBest, banked, sanHistory().length,
       (a.tags || []).join(","), a.budget || 0, rep.lines(store.session.humanColor).length]);
     if (el.dataset.key === key && el.childElementCount) return;
     el.dataset.key = key;
@@ -321,7 +322,7 @@ export function createReviewPanel(d) {
       if (vk === "rv.verdict.tooShort") { short = true; continue; }
       // 「挑战更高难度」 is advice to the player about the engine's level
       if (vk === "rv.verdict.excellent" && !isPlayer(side)) vk = "rv.verdict.excellentPlain";
-      if (store.session.mode === "ai" && !isPlayer(side)) continue;
+      if (you && !isPlayer(side)) continue;
       if (vk) notes.push(tdot(sideName(side), t(vk)));
     }
     if (short) notes.unshift(tf("rv.verdict.tooShort", [sum.measured]));
@@ -362,9 +363,9 @@ export function createReviewPanel(d) {
    * the starting position; a move the opponent left the book with is theirs.
    */
   function renderBookCheck(line) {
-    const side = store.session.humanColor, sans = sanHistory();
+    const side = youSide(store), sans = sanHistory();
     const sf = startFen(); // null: the standard start
-    if (store.session.mode !== "ai" || (sf && sf !== START_FEN) || sans.length < 2) return;
+    if (!side || (sf && sf !== START_FEN) || sans.length < 2) return;
     const c = ChessRepertoire.checkGame(rep.lines(side), sans, side);
     const mv = (p) => Math.floor(p / 2) + 1;
     const upto = c.kind === "empty" ? sans.slice(0, Math.min(sans.length, BOOK_PLIES)) : sans.slice(0, (c.ply || 0) + 1);

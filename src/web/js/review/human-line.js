@@ -39,7 +39,7 @@ export function bandOf(r) {
  * @param {object} d everything this module borrows from app.js
  */
 export function createHumanLine(d) {
-  const { doc, store, t, tf, viewGame, gameAt, sanHistory, analysisFor, inModal, loadStats, writeSan, setText, Chess, engine } = d;
+  const { doc, store, t, tf, viewGame, gameAt, sanHistory, analysisFor, inModal, loadStats, writeSan, setText, Chess, engine, youSide } = d;
   const document = doc;
   /** band|fen chain → [{uci, p}] */
   const answers = new Map();
@@ -72,7 +72,7 @@ export function createHumanLine(d) {
   }
   const keyOf = (b, fens) => b + "|" + fens.join("/");
   /** Whose move ply `i` is (the side to move in gameAt(i)). */
-  const mine = (i) => store.session.mode !== "ai" || gameAt(i).turn() === store.session.humanColor;
+  const mine = (i) => { const you = youSide(store); return !you || gameAt(i).turn() === you; };
 
   /** The band's answer for these positions: from memory, or asked for (null meanwhile). */
   function answer(b, fens) {

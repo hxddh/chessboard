@@ -372,6 +372,29 @@ export function createIO(d) {
     toast(t("msg.file.readFailed"), "fault");
   }
 
+  /**
+   * Files dropped on the window (Host.onDropFiles) and 24.0's documents the
+   * OS opened with the app (Host.onOpenFiles): the first on the board, the
+   * other .pgn files into the library (25.0, review-24.0 P3).
+   *
+   * 25.1 (review-25.0 §2): one after the other. The board's import was not
+   * awaited: the library's ran beside its confirm and its game picker, a
+   * cancelled or refused file was listed as a recent document all the same,
+   * and a failure reached nobody. (A time window that sent a second take
+   * to the library was tried and dropped: two files opened a second apart
+   * on purpose are two requests, and the board is where the second one goes.)
+   */
+  async function openPaths(payload) {
+    const paths = Host.normalizePaths(payload && payload.paths ? payload.paths : payload);
+    const p = paths.find((x) => /\.(pgn|txt)$/i.test(x));
+    if (p) {
+      try { if (await importPgnText(await Host.readTextFile(p), p)) Host.addRecentDocument(p); } catch (err) { toastReadFailure(err); }
+    }
+    for (const q of paths.filter((x) => x !== p && /\.pgn$/i.test(x))) {
+      try { await LibraryUI.importPgnToLibrary(await Host.readTextFile(q), q, { wait: true }); Host.addRecentDocument(q); } catch (err) { toastReadFailure(err); }
+    }
+  }
+
   /** Open a .pgn file: native dialog via the host bridge, <input> in browsers. */
   /**
    * @param {(text: string, label: string) => any} [sink] where the file goes.
@@ -562,6 +585,6 @@ export function createIO(d) {
 
   return {
     copyText, pgnForExport, pgnFileName, savedToast, exportText, downloadPgn, pickFromList, finishPick,
-    importPgnText, pastePgn, toastReadFailure, openPgnFile,
+    importPgnText, pastePgn, toastReadFailure, openPgnFile, openPaths,
   };
 }

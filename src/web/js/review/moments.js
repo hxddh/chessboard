@@ -27,7 +27,7 @@
 export function createMoments(d) {
   const {
     doc, store, t, tf, tdot, sideName, analysisFor, sanHistory, startFen, boardMoveNo, setViewIndex, writeSan,
-    inModal, Retry, Grade, oppName, Review, result, LESSONS, lessonText, openLesson,
+    inModal, Retry, Grade, oppName, Review, result, LESSONS, lessonText, openLesson, youSide,
   } = d;
   const document = doc;
 
@@ -46,7 +46,7 @@ export function createMoments(d) {
   }
 
   /** Your side, in a game against the engine; null where nobody at the board is "you". */
-  const you = () => (store.session.mode === "ai" ? store.session.humanColor : null);
+  const you = () => youSide(store);
   /**
    * The moments of the analysed game, in the order they were played — 14.0
    * B: in a game of yours, yours first, then the opponent's (the review is
@@ -259,8 +259,7 @@ export function createMoments(d) {
     return peak && peak.w >= 85 ? tf("rv.sum.reversed", [Math.round(peak.w), boardMoveNo(Math.max(0, peak.i - 1))]) : null;
   }
   function summaryText(a, list) {
-    const ai = store.session.mode === "ai";
-    const you = store.session.humanColor;
+    const you = youSide(store), ai = !!you;
     const drops = list.filter((m) => m.grade !== "brilliant" && m.grade !== "only" && (!ai || m.side === you));
     const m = drops.reduce((w, x) => (!w || x.swing > w.swing ? x : w), null);
     const pct = (x) => Math.round(x);
