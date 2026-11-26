@@ -434,11 +434,23 @@ async function runLive() {
   if (!only || only.includes("pages")) fs.mkdirSync(shotsDir, { recursive: true });
   await scenario("pages", async (app, reportNow) => {
     let n = 0;
+    // 25.1: one throwaway capture before the first real one. Each capture is a
+    // fresh process, and the first on a new runner pays the cold start (on
+    // Windows: PowerShell, WinForms, compiling the Add-Type helper) — 8.4 s in
+    // the v25.1.0 release run, past the page's SHOT_DWELL_MS of 5 s, so
+    // 01-home was taken after the page had moved on. The others took ~1 s.
+    // Taken once the window exists and before the page reports its first shot.
+    let warm = false;
     for (;;) {
       const r = reportNow();
       if (r && r.stage === "done") return;
       if (app.state.exited !== null) return;
       const name = r && /^shot:[\w-]+$/.test(r.stage || "") ? r.stage.slice(5) : null;
+      if (!warm && !name) {
+        const scratch = path.join(shotsDir, "00-warm.png");
+        warm = captureWindow(app.child.pid, scratch).how !== "none";
+        fs.rmSync(scratch, { force: true });
+      }
       if (name && !shots[name]) {
         n += 1;
         const file = path.join(shotsDir, String(n).padStart(2, "0") + "-" + name + ".png");

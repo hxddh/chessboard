@@ -147,4 +147,13 @@ export async function run() {
       assert(r.status === 1 && /^REFUSED: .*--real-profile-ok/m.test(r.stderr), s + " live mode refuses off CI without --real-profile-ok (exit " + r.status + ": " + (r.stderr || "").trim().slice(0, 120) + ")");
     }
   }
+  // 25.1: the first capture's cold start is paid before the page's first
+  // shot, not inside its SHOT_DWELL_MS (v25.1.0's release run: 01-home 8.4 s)
+  {
+    const src = fs.readFileSync(path.join(scriptsDir, "automation-scenarios.mjs"), "utf8");
+    const loop = src.slice(src.indexOf('await scenario("pages"'), src.indexOf("if (reports.pages)"));
+    assert(/if \(!warm && !name\) \{[\s\S]{0,200}captureWindow\(app\.child\.pid, scratch\)/.test(loop) &&
+      loop.indexOf("!warm && !name") < loop.indexOf("const how = captureWindow(app.child.pid, file)"),
+      "pages: one throwaway capture before the first shot, so the cold start is not inside the page's dwell");
+  }
 }
