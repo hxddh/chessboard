@@ -193,11 +193,14 @@ export function createLessonsUI(d) {
   // 25.2: the catalog is a chunk; opened before it is in, the game opens on its arrival
   function openClassic(ci) {
     if (!More.ready()) {
-      // opened on arrival — unless the player has opened something else
-      // meanwhile (a lesson from the list, another segment): the lesson state
-      // is then a different object, or the mode is not 学习 any more
-      const before = store.session.learn;
-      More.whenReady(() => { if (store.session.mode === "learn" && store.session.learn === before && !store.session.study) { openClassic(ci); sync(); } });
+      // opened on arrival, as a run of its own: taking a run token cancels a
+      // lesson still waiting for its body (the default one switchMode("learn")
+      // starts — Codex on #141), and anything the player starts meanwhile
+      // takes the next token and cancels this
+      const my = ++store.session.learnRuns;
+      const still = () => my === store.session.learnRuns && store.session.mode === "learn";
+      // the chunk did not come: the lesson this request superseded opens after all (Codex on #142)
+      More.whenReady(() => { if (still()) { openClassic(ci); sync(); } }, () => { if (still()) { startLearn(); sync(); } });
       return;
     }
     const i = Math.max(0, Math.min(ci, CLASSICS.length - 1));
@@ -209,7 +212,9 @@ export function createLessonsUI(d) {
    * classic last opened.
    */
   function openSeg(seg) {
-    if (seg === learnSeg()) return;
+    // 25.2: "already there" needs something open — while a classic waits for its
+    // chunk nothing is, learnSeg() reads 课程, and 课程 has to start a lesson (Codex on #142)
+    if (seg === learnSeg() && (store.session.learn || store.session.study)) return;
     if (seg === "course") startLesson(Math.max(0, Math.min(store.session.learnState.last || 0, LESSONS.length - 1)));
     else if (seg === "endgame") {
       Endgames.whenReady(() => {
