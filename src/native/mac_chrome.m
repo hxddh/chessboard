@@ -179,6 +179,23 @@ static NSMutableArray<NSString *> *ChessOpenQueue;
     for (NSWindow *window in app.windows) {
         if ((window.styleMask & NSWindowStyleMaskTitled) && window.isMiniaturized) [window deminiaturize:nil];
     }
+    // 25.1 (review-25.1 §2): and a window the red button or ⌘W closed. The
+    // macOS manifest declares close_policy "hide" (scripts/gen-manifest.mjs),
+    // and the SDK's host answers that with orderOut: — neither hidden nor
+    // miniaturized, just off the glass, its page hidden. The Dock icon brings
+    // it back through the host's applicationShouldHandleReopen:, which an
+    // open-documents event never sends; ask it the same question here, so
+    // the host's own bookkeeping (its policy-hidden set, the frame it
+    // reports) moves with the window. It answers for policy-hidden windows
+    // only, and does nothing while one is on the glass.
+    BOOL onGlass = NO;
+    for (NSWindow *window in app.windows) {
+        if ((window.styleMask & NSWindowStyleMaskTitled) && window.isVisible) { onGlass = YES; break; }
+    }
+    id<NSApplicationDelegate> delegate = app.delegate;
+    if (!onGlass && [delegate respondsToSelector:@selector(applicationShouldHandleReopen:hasVisibleWindows:)]) {
+        [delegate applicationShouldHandleReopen:app hasVisibleWindows:NO];
+    }
     // (activation is LaunchServices' own part of an open-documents event)
 }
 @end

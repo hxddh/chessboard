@@ -431,7 +431,20 @@ async function runLive() {
 
   // 21.0 G1: the pages, each judged by the page and photographed from here
   const shots = {};
-  if (!only || only.includes("pages")) fs.mkdirSync(shotsDir, { recursive: true });
+  if (!only || only.includes("pages")) {
+    fs.mkdirSync(shotsDir, { recursive: true });
+    // 25.1: the capture's cold start, paid here — before the app is launched,
+    // so it can neither block the loop below (captureWindow is synchronous)
+    // nor run into a page's SHOT_DWELL_MS. Each capture is a fresh process,
+    // and the first on a new runner was 8.4 s (v25.1.0's release run: Windows
+    // PowerShell, WinForms, compiling the Add-Type helper; 01-home was taken
+    // after the page had moved on). This runner's own process has no window,
+    // so the capture fails after paying for everything a real one does.
+    const t0 = Date.now(), scratch = path.join(shotsDir, "00-warm.png");
+    const w = captureWindow(process.pid, scratch);
+    fs.rmSync(scratch, { force: true });
+    extra.shotWarm = { ms: Date.now() - t0, how: w.how };
+  }
   await scenario("pages", async (app, reportNow) => {
     let n = 0;
     for (;;) {

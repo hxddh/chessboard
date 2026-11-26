@@ -147,4 +147,15 @@ export async function run() {
       assert(r.status === 1 && /^REFUSED: .*--real-profile-ok/m.test(r.stderr), s + " live mode refuses off CI without --real-profile-ok (exit " + r.status + ": " + (r.stderr || "").trim().slice(0, 120) + ")");
     }
   }
+  // 25.1: the first capture's cold start is paid before the page's first
+  // shot, not inside its SHOT_DWELL_MS (v25.1.0's release run: 01-home 8.4 s)
+  {
+    const src = fs.readFileSync(path.join(scriptsDir, "automation-scenarios.mjs"), "utf8");
+    const at = src.indexOf('await scenario("pages"');
+    const before = src.slice(src.indexOf("const shots = {};"), at), loop = src.slice(at, src.indexOf("if (reports.pages)"));
+    // before the launch, not in the loop: captureWindow blocks, and a warm-up
+    // inside the loop ran while the page was already counting down 01-home
+    assert(/captureWindow\(process\.pid, scratch\)/.test(before) && (loop.match(/captureWindow\(/g) || []).length === 1,
+      "pages: the capture's cold start is paid before the app is launched, and the loop captures only real shots");
+  }
 }
