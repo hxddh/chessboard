@@ -551,7 +551,12 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // draw rules), and the rung's own Stockfish row plays if Maia cannot
     // — or, on a guarded rung (human/pick.js guardPolicy), scores the moves
     // the net could play, so the draw can leave out the ones that blunder
-    const human = base.maia && persona && persona.Chess && persona.fens ? await humanMove(fen, base, persona, styled ? P : null) : null;
+    // 25.1 (review-25.1 §3): within the clock's ceiling as well — a net move
+    // is ~60 ms (docs/measured.json human), but a first load, or a worker
+    // that stopped answering, waited out H.policy's 2 s however little was
+    // left. Past half the ceiling the rung's Stockfish row plays instead.
+    const human = base.maia && persona && persona.Chess && persona.fens
+      ? await humanMove(fen, base, persona, styled ? P : null, ceil ? Math.max(100, Math.floor(ceil / 2)) : 0) : null;
     if (myGen !== gen) return null;
     const only = human && base.guard ? human.H.guardMoves(human.pol) : null;
     // 25.1 (review-25.0 §4): within the clock's ceiling too, less what the
@@ -588,6 +593,9 @@ const global = typeof window !== "undefined" ? window : globalThis;
       if (!tier.multipv) return;
       const pv = line.match(/\bpv\s+([a-h][1-8][a-h][1-8][qrbn]?)/);
       if (!mv || !pv) return;
+      // 25.1: readInfo's rule — a bound or a line without a score does not
+      // replace a line that had one (a movetime cut can stop mid-re-search)
+      if ((sc == null || /\b(lower|upper)bound\b/.test(line)) && cands.has(Number(mv[1]))) return;
       cands.set(Number(mv[1]), { uci: pv[1], score: sc });
     };
     lineHandlers.push(collect);
@@ -647,14 +655,19 @@ const global = typeof window !== "undefined" ? window : globalThis;
    */
   // what the last Maia move cost in the worker, and how many fell back (e2e)
   let humanFailures = 0, humanMs = 0;
-  async function humanMove(fen, tier, persona, P) {
+  /** @param {number} within ms the net may take, 0 for no bound (an untimed game waits for a first load) */
+  async function humanMove(fen, tier, persona, P, within) {
+    let timer = null;
+    const late = within > 0 ? new Promise((_, no) => { timer = setTimeout(() => no(new Error("maia: past the clock")), within); }) : null;
+    const bounded = (p) => (late ? Promise.race([p, late]) : p);
     try {
-      const H = await humanEngine();
-      await H.load(tier.maia);
+      const H = await bounded(humanEngine());
+      // past the bound the load goes on in the background; a later move finds it done
+      await bounded(H.load(tier.maia));
       const g = new persona.Chess(fen);
       const legal = g.moves({ verbose: true }).map((m) => m.from + m.to + (m.promotion || ""));
       const fens = persona.fens[persona.fens.length - 1] === fen ? persona.fens : persona.fens.concat([fen]);
-      const { pol, ms } = await H.policy(tier.maia, fens.slice(-100), legal, 2000);
+      const { pol, ms } = await bounded(H.policy(tier.maia, fens.slice(-100), legal, 2000));
       humanMs = ms;
       const before = new persona.Chess(fen);
       const styleOf = P ? (uci) => {
@@ -666,7 +679,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     } catch (_) {
       humanFailures++;
       return null;
-    }
+    } finally { clearTimeout(timer); }
   }
 
   /**

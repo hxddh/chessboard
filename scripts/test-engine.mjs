@@ -81,6 +81,8 @@ function makeClock() {
  *                   compile does (`__sf_fail__`); later ones succeed
  * cfg.deafInitFrom — workers from this index on never answer the wasm
  *                   (a second worker that does not boot, v8-1-plan F4)
+ * cfg.lines       — the info lines a finished search prints (default: one
+ *                   exact line at its depth and score)
  */
 function boot(cfg = {}) {
   const clock = makeClock();
@@ -112,7 +114,7 @@ function boot(cfg = {}) {
     }
     finish(depth, cp) {
       this.searching = false;
-      this.say("info depth " + depth + " multipv 1 score cp " + cp + " pv e2e4 e7e5");
+      for (const l of cfg.lines || ["info depth " + depth + " multipv 1 score cp " + cp + " pv e2e4 e7e5"]) this.say(l);
       this.say("bestmove e2e4");
     }
     postMessage(m) {
@@ -271,6 +273,36 @@ const FEN2 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
   E.setOptions({ hash: 512 });
   const same = E.analyze(FEN, 100); await clock.advance(1); await same;
   assert(gos() === 2, "setting the same value again keeps the cache");
+}
+
+// --- 25.1 (review-25.0 §4): a search begun before a Hash change is not cached after it
+{
+  const { E, clock, state } = boot({ goDelay: 50 });
+  const p = E.init(); await clock.advance(1); await p;
+  const gos = () => state.last().cmds.filter((c) => /^go\b/.test(c)).length;
+  const old = E.analyze(FEN, 100);
+  await clock.advance(10); // the search is on the worker at the old Hash
+  E.setOptions({ hash: 256 });
+  await clock.advance(100); await old;
+  const again = E.analyze(FEN, 100); await clock.advance(100); await again;
+  assert(gos() === 2, "the old Hash's answer, finished after the change, is not served from the cache (" + gos() + " searches)");
+}
+
+// --- 25.1 (review-25.0 §4): a fail-high / fail-low bound does not replace the exact score
+{
+  const { E, clock } = boot({ lines: [
+    "info depth 14 multipv 1 score cp 35 pv e2e4 e7e5",
+    "info depth 15 multipv 1 score cp 120 lowerbound pv d2d4 d7d5",
+  ] });
+  const p = E.init(); await clock.advance(1); await p;
+  const r = E.analyze(FEN, 100); await clock.advance(1);
+  const got = await r;
+  assert(got && got.cp === 35 && got.pv && got.pv[0] === "e2e4", "a lowerbound after an exact line leaves the exact score and line (" + (got && got.cp) + ")");
+  const { E: E2, clock: c2 } = boot({ lines: ["info depth 1 multipv 1 score cp 50 upperbound pv e2e4"] });
+  const p2 = E2.init(); await c2.advance(1); await p2;
+  const r2 = E2.analyze(FEN, 100); await c2.advance(1);
+  const only = await r2;
+  assert(only && only.cp === 50, "…and a bound is kept where nothing else came (" + (only && only.cp) + ")");
 }
 
 // --- v8-3-plan M2 评审: a search at its own Hash hands the game back the player's

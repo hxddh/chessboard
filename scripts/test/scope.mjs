@@ -118,20 +118,30 @@ export async function run() {
     const RESERVED = new Set(("break case catch class const continue debugger default delete do else export extends finally for function if " +
       "import in instanceof new return super switch this throw try typeof var void while with yield let static enum await implements package " +
       "protected interface private public null true false undefined NaN Infinity arguments eval async of get set from as").split(" "));
-    const NODE_ONLY = new Set(["process", "Buffer", "global", "require", "module", "exports", "setImmediate", "clearImmediate"]);
-    const BROWSER = new Set(["window", "document", "navigator", "location", "localStorage", "indexedDB", "IDBKeyRange", "Worker", "FileReader",
-      "Image", "IntersectionObserver", "MutationObserver", "ResizeObserver", "KeyboardEvent", "Node", "getComputedStyle",
-      "requestAnimationFrame", "self", "__CHESS_VERSION__"]);
-    const allowed = (n) => BROWSER.has(n) || (!NODE_ONLY.has(n) && n in globalThis);
+    // 25.1 (review-25.1 §4): what a page may read, written down — not
+    // "whatever this Node has on its global". Node 22 already carries fetch,
+    // WebSocket, navigator and crypto; under `node -e` also fs, path and url;
+    // and a test earlier in the same process could have left anything there.
+    // The language's own globals come from a fresh context (no Node, no
+    // host); the host's are listed, so a new one (fetch, which zero:// does
+    // not serve) is a decision someone makes, not a pass by default.
+    const LANGUAGE = new Set(vm.runInNewContext("Object.getOwnPropertyNames(globalThis)"));
+    const HOST = new Set(["window", "self", "document", "navigator", "location", "localStorage", "indexedDB", "IDBKeyRange",
+      "Worker", "FileReader", "Image", "Blob", "URL", "TextEncoder", "TextDecoder", "Event", "KeyboardEvent", "Node",
+      "BroadcastChannel", "IntersectionObserver", "MutationObserver", "ResizeObserver", "getComputedStyle",
+      "requestAnimationFrame", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "queueMicrotask",
+      "structuredClone", "atob", "btoa", "performance", "__CHESS_VERSION__"]);
+    const allowed = (n) => LANGUAGE.has(n) || HOST.has(n);
     const free = new Map();
     for (const f of files) {
       const src = fs.readFileSync(path.join(dir, f), "utf8");
       const define = {};
-      for (const [w] of src.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)) if (!RESERVED.has(w)) define[w] = "__FREE__" + w;
+      // `$` is an identifier character too: `$x` read and bound nowhere is as free as `x`
+      for (const [w] of src.matchAll(/[A-Za-z_$][\w$]*/g)) if (!RESERVED.has(w)) define[w] = "__FREE__" + w;
       let out = "";
       try { out = esbuild.transformSync(src, { format: "esm", define, logLevel: "silent" }).code; }
       catch (e) { free.set("(" + f + " does not parse)", new Set([f])); continue; }
-      for (const [, n] of out.matchAll(/__FREE__([A-Za-z0-9_]+)/g)) {
+      for (const [, n] of out.matchAll(/__FREE__([\w$]+)/g)) {
         if (allowed(n)) continue;
         if (!free.has(n)) free.set(n, new Set());
         free.get(n).add(f);
