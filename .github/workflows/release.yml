@@ -10,7 +10,7 @@ name: release
 #
 #   preflight ─┐
 #   static ────┤
-#   engine ×8 ─┤
+#   engine ×10 ─┤
 #   browser ×16┼──► publish: tag → draft with both packages → verify → publish
 #   build-macos┤
 #   build-win ─┘
@@ -165,6 +165,9 @@ jobs:
           - node scripts/test-mines.mjs
           - node scripts/test-mined.mjs --sample=150
           - node scripts/test-motif.mjs --games=6
+          # 25.1 (review-25.0 §7): in test:engine:sample since it was written,
+          # and in no job here — ci.mjs read this file's comments as commands
+          - node scripts/test-coach.mjs
           # v8-1-plan T2: every endgame of the camp played to its goal
           - node scripts/test-endgames-play.mjs
     name: engine (${{ matrix.check }})

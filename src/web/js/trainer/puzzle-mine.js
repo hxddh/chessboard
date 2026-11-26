@@ -30,7 +30,12 @@ export function createPuzzleMine(d) {
     const pz = store.session.puzzle;
     const p = pz.p;
     const g = pz.g;
-    if (!ChessEngine || !ChessEngine.isReady || !ChessEngine.isReady()) return null;
+    // 25.1 (review-25.0 §5): asked, not only when already up — analyze()
+    // boots it. Through 25.0 a puzzle opened before anything had started the
+    // engine (the trainer never does) answered null here, and every other
+    // first move was marked wrong and cost rating. Only a boot that already
+    // failed says no at once.
+    if (!ChessEngine || (store.session.engineDown && !ChessEngine.isReady())) return null;
     const stored = puzzleScript(p)[0];
     if (!stored) return null;
     // 120 and not SCAN_BUDGET: this is what a drill mined BEFORE the budget
@@ -55,7 +60,7 @@ export function createPuzzleMine(d) {
     if (store.session.puzzle !== pz || pz.done) return null;
     const cpBest = evalScalar(eBest), cpAlt = evalScalar(eAlt);
     if (cpBest == null || cpAlt == null) return null;
-    const v = Mistakes.judgeAlt(cpBest, cpAlt, side, Review.MISTAKE);
+    const v = Mistakes.judgeAlt(cpBest, cpAlt, side, Review);
     if (v.ok && opts && opts.remember) {
       p.alts = Array.isArray(p.alts) ? p.alts : [];
       if (!p.alts.includes(mv.san)) { p.alts.push(mv.san); saveMines(); }
@@ -63,6 +68,14 @@ export function createPuzzleMine(d) {
     return v;
   }
   const verifyMineAlt = (mv) => verifyAlt(mv, { remember: true });
+  /** 25.1: verifyAlt could not judge the move — taken back, and not counted as a miss */
+  function puzzleUnjudged() {
+    const pz = store.session.puzzle;
+    pz.g.undo();
+    pz.mark = pz.last = null;
+    pz.fb = { ok: false, head: t("pz.fb.retry"), sub: t("rt.noEngine") };
+    sync();
+  }
 
   /** Why the stored answer is the answer — from the numbers the pass kept. */
   function mineWhy(p) {
@@ -136,6 +149,6 @@ export function createPuzzleMine(d) {
   }
 
   return {
-    verifyAlt, verifyMineAlt, mineWhy, renderPuzzleLine,
+    verifyAlt, verifyMineAlt, puzzleUnjudged, mineWhy, renderPuzzleLine,
   };
 }

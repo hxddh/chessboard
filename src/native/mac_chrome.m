@@ -157,16 +157,29 @@ static NSMutableArray<NSString *> *ChessOpenQueue;
     (void)reply;
     NSAppleEventDescriptor *list = [event paramDescriptorForKeyword:keyDirectObject];
     NSInteger n = list.numberOfItems;
+    BOOL queued = NO;
     for (NSInteger i = 1; i <= n; i++) {
         NSAppleEventDescriptor *item = [[list descriptorAtIndex:i] coerceToDescriptorType:typeFileURL];
         NSString *text = item ? [[NSString alloc] initWithData:item.data encoding:NSUTF8StringEncoding] : nil;
         NSURL *url = text ? [NSURL URLWithString:text] : nil;
         if (url.isFileURL && url.path.length) {
             @synchronized (ChessOpenQueue) {
-                if (ChessOpenQueue.count < 8) [ChessOpenQueue addObject:url.path];
+                if (ChessOpenQueue.count < 8) { [ChessOpenQueue addObject:url.path]; queued = YES; }
             }
         }
     }
+    // 25.1 (review-25.0 §2): the page takes the queue only while it is shown,
+    // and a window in the Dock (miniaturized) or a hidden app (⌘H) shows a
+    // hidden page — the document waited there, unopened, until the user
+    // found the window. Bring it back, as a click on the Dock icon would.
+    // (At launch there is no window yet, and nothing to bring back.)
+    if (!queued) return;
+    NSApplication *app = [NSApplication sharedApplication];
+    if (app.isHidden) [app unhide:nil];
+    for (NSWindow *window in app.windows) {
+        if ((window.styleMask & NSWindowStyleMaskTitled) && window.isMiniaturized) [window deminiaturize:nil];
+    }
+    // (activation is LaunchServices' own part of an open-documents event)
 }
 @end
 

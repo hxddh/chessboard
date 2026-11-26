@@ -214,6 +214,9 @@ pub fn openPathAllowed(windows: bool, path: []const u8) bool {
         const drive = path.len >= 3 and std.ascii.isAlphabetic(path[0]) and path[1] == ':' and isSep(path[2], true);
         const unc = path.len >= 3 and isSep(path[0], true) and isSep(path[1], true) and path[2] != '?' and path[2] != '.';
         if (!drive and !unc) return false;
+        // 25.1 (review-25.0 §2): no colon past the drive's — C:\x\a.txt:s.pgn
+        // names an alternate data stream of a.txt, not a .pgn
+        if (std.mem.indexOfScalarPos(u8, path, 2, ':') != null) return false;
     } else if (path[0] != '/') return false;
     const seps: []const u8 = if (windows) "/\\" else "/";
     var it = std.mem.splitAny(u8, path, seps);
@@ -653,13 +656,13 @@ fn readChunk(io: std.Io, path: []const u8, offset: usize, buf: []u8, limit: usiz
 }
 
 /// Raw (still-escaped) bytes of a JSON string field, without the quotes.
+///
+/// 25.1 (review-25.0 §6): found the way the number and boolean fields are
+/// (jsonFieldValue) — through 25.0 it took the first `"key"` anywhere, so a
+/// string value spelling the name ({"title":"name","name":"a.pgn"}, a
+/// Chess.com user called `game`) hid the real field behind it.
 pub fn jsonStringFieldRaw(payload: []const u8, key: []const u8) ?[]const u8 {
-    var key_buf: [96]u8 = undefined;
-    if (key.len + 2 > key_buf.len) return null;
-    const needle = std.fmt.bufPrint(&key_buf, "\"{s}\"", .{key}) catch return null;
-    const at = std.mem.indexOf(u8, payload, needle) orelse return null;
-    var i = at + needle.len;
-    while (i < payload.len and (payload[i] == ' ' or payload[i] == '\t' or payload[i] == '\n' or payload[i] == '\r' or payload[i] == ':')) : (i += 1) {}
+    var i = jsonFieldValue(payload, key) orelse return null;
     if (i >= payload.len or payload[i] != '"') return null;
     i += 1;
     const start = i;
@@ -1561,6 +1564,14 @@ test "base64 survives the round trip the bridge puts it through" {
     }
 }
 
+test "a string value that spells a key's name does not hide the field (25.1)" {
+    var buf: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("a.pgn", jsonStringField("{\"title\":\"name\",\"name\":\"a.pgn\"}", "name", &buf).?);
+    try std.testing.expectEqualStrings("lichess", jsonStringField("{\"user\":\"site\", \"site\" : \"lichess\"}", "site", &buf).?);
+    try std.testing.expect(jsonStringField("{\"user\":\"game\"}", "game", &buf) == null);
+    try std.testing.expect(jsonStringField("{\"max\":20}", "max", &buf) == null);
+}
+
 test "jsonStringField unescapes what the page escaped" {
     var buf: [256]u8 = undefined;
     // a Windows path: JSON.stringify doubles every separator, and the handler
@@ -1653,6 +1664,8 @@ test "an OS-opened document is a .pgn the user asked for, wherever it lives" {
     try std.testing.expect(!openPathAllowed(false, "/Users/me/a\x00.pgn"));
     try std.testing.expect(!openPathAllowed(true, "\\\\?\\C:\\a.pgn"));
     try std.testing.expect(!openPathAllowed(true, "chess\\a.pgn"));
+    try std.testing.expect(!openPathAllowed(true, "C:\\x\\a.txt:s.pgn"));
+    try std.testing.expect(!openPathAllowed(true, "\\\\server\\share\\a.txt:s.pgn"));
     // the pending list keeps what the rule allows, up to its size
     var pend: PendingOpen = .{};
     pend.add(false, "/Users/me/.ssh/x.pgn");

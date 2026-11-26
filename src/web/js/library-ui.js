@@ -850,12 +850,13 @@ export function createLibraryUI(d) {
     const ok = await importPgnText(libraryPgn(entry), t("lib.title"),
       { msg: t("dlg.loadLib"), title: t("dlg.loadLibTitle"), ok: t("dlg.loadLibOk") });
     if (!ok) return false;
-    // an imported game has no "you" by default; the library knows who you are
+    // an imported game has no "you" by default; the library knows who you
+    // are, and the board is turned to your side. 25.1 (review-25.0 §3): only
+    // turned — humanColor is the side you take against the engine, a saved
+    // setting, and through 25.0 opening a game you had played as Black made
+    // the next game against the engine yours as Black too.
     store.session.mode = "pvp";
-    if (entry.side === "w" || entry.side === "b") {
-      store.session.humanColor = entry.side;
-      store.game.flipped = entry.side === "b";
-    }
+    if (entry.side === "w" || entry.side === "b") store.game.flipped = entry.side === "b";
     store.game.recordedId = null;
     invalidateEngine();
     const an = entry.an;

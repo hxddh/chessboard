@@ -27,7 +27,7 @@ import { createA11y } from "./a11y.js";
 import { createNativeCommands } from "./native-commands.js";
 import { createLibraryUI } from "./library-ui.js";
 import { readLook } from "./look.js";
-import { initialState } from "./app-state.js";
+import { initialState, ownSide, youSide } from "./app-state.js";
 import { wireAboutLazy } from "./about-lazy.js";
 import { createRepertoireUI } from "./repertoire-ui.js";
 import { createSettingsUI } from "./settings-ui.js";
@@ -1119,8 +1119,9 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
 
   /** If it's the engine's turn in AI mode, think and play its reply. */
   async function maybeEngineTurn() {
-    // v10-0-plan A1: on the analysis board nobody is playing the engine
-    if (store.session.mode !== "ai" || !ChessEngine || store.session.analysisBoard) return;
+    // v10-0-plan A1: on the analysis board nobody is playing the engine — nor
+    // in a file opened mid-game (25.1, review-25.0 §3: ownSide, app-state.js)
+    if (!ownSide(store) || !ChessEngine) return;
     if (appGameOver() || game.turn() === store.session.humanColor) return;
     if (GameCtl.coachHolds()) return; // 21.0 T2: the coach is holding the reply for a take-back
     // a failed boot is not retried by moving: the pill says so instead
@@ -1465,7 +1466,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   const {
     sansOf, stopLiveAnalysis, syncLiveAnalysis, renderLiveAnalysis, deskHead, lineRows, paintLineRow, reviewLines,
   } = Lines;
-  const HumanLine = createHumanLineLazy({ Chess, doc: document, store, t, tf, viewGame, gameAt, sanHistory, analysisFor: () => analysisFor(), inModal, loadStats, writeSan, setText });
+  const HumanLine = createHumanLineLazy({ Chess, doc: document, store, youSide, t, tf, viewGame, gameAt, sanHistory, analysisFor: () => analysisFor(), inModal, loadStats, writeSan, setText });
 
   /** textContent, written only when it differs — a same-text write still
       replaces the text node, and still costs a layout. */
@@ -1509,7 +1510,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   });
   const { renderMistakeList, renderWhyLine, retryModel, retryClick, renderRetry } = Retry;
   // v8-0-plan A4: the key moments and 从错误中学 live in review/moments.js, a chunk
-  const Moments = createMomentsLazy({ doc: document, store, t, tf, tdot, sideName, analysisFor, sanHistory, startFen, boardMoveNo,
+  const Moments = createMomentsLazy({ doc: document, store, youSide, t, tf, tdot, sideName, analysisFor, sanHistory, startFen, boardMoveNo,
     setViewIndex, writeSan, inModal, Retry, Review: ChessReview, result: () => gameResultToken(), LESSONS, lessonText, openLesson: (i) => { store.session.learnState.last = i; Shell.openTrain("course"); }, // 9.0 M2: the summary speaks as the game's opponent
     oppName: () => { const o = store.game.opp; return OppUI.strip(o ? o.diff : store.session.difficulty, o ? o.style : store.session.personaId).name; } });
 
@@ -4197,23 +4198,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   }
 
   // Drop a .pgn onto the window to import it — host bridge in the packaged
-  // app, DataTransfer in browsers.
-  // …and 24.0: a .pgn the OS opened with the app (Host.onOpenFiles), the same way
-  const openPaths = async (payload) => {
-    const paths = Host.normalizePaths(payload && payload.paths ? payload.paths : payload);
-    const p = paths.find((x) => /\.(pgn|txt)$/i.test(x)) || paths[0];
-    if (!p) return;
-    try {
-      importPgnText(await Host.readTextFile(p), p);
-      Host.addRecentDocument(p);
-    } catch (err) { toastReadFailure(err); }
-    // 25.0 (review-24.0 P3): one board — the others go into the library, not away
-    for (const q of paths.filter((x) => x !== p && /\.pgn$/i.test(x))) {
-      try { await LibraryUI.importPgnToLibrary(await Host.readTextFile(q), q, { wait: true }); Host.addRecentDocument(q); } catch (err) { toastReadFailure(err); }
-    }
-  };
-  Host.onDropFiles(openPaths);
-  Host.onOpenFiles(openPaths);
+  // app (io.js openPaths, with the documents the OS opened), DataTransfer in browsers.
   window.addEventListener("dragover", (ev) => ev.preventDefault());
   window.addEventListener("drop", (ev) => {
     ev.preventDefault();
@@ -4351,6 +4336,8 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     copyText, pgnForExport, pgnFileName, savedToast, exportText, downloadPgn, pickFromList, finishPick,
     importPgnText, pastePgn, toastReadFailure, openPgnFile,
   } = IO;
+  Host.onDropFiles(IO.openPaths);
+  Host.onOpenFiles(IO.openPaths);
 
   // --- 6.0: about (v6-plan Q1.6) ---------------------------------------------
   /** The version the bundle was built from; empty when run unbundled. */

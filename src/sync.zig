@@ -81,7 +81,7 @@ const JobSpec = struct {
     test_ctx: ?*anyopaque = null,
 };
 
-/// A sync fetches at most 1 + SYNC_MONTHS_SINCE_MAX pages; this is generous
+/// A sync fetches at most 1 + SYNC_MONTHS_MAX pages; this is generous
 /// for that and still well inside sync-ui.js's own 75 s backstop.
 const SYNC_DEADLINE_MS: u64 = 60_000;
 /// The About panel's check: host.js gives up at 10 s.
@@ -693,13 +693,18 @@ const SYNC_NAME_MIN: usize = 2;
 const SYNC_NAME_MAX: usize = 30;
 /// A full piece's base64 is what the frame is proven to carry (see the test).
 const SYNC_ANSWER_MAX: usize = WRITE_B64_MAX;
-/// Chess.com files games by month: this many months back, at most, to find N
-/// on a first sync…
-const SYNC_MONTHS_MAX: usize = 3;
-/// …and on a later one, the months from the one before `since`, oldest first
-/// (a player back after years gets the oldest N of these 24; the next sync
-/// goes on from there — not 30 requests' worth past the deadline).
-const SYNC_MONTHS_SINCE_MAX: usize = 24;
+/// Chess.com files games by month: on a first sync, back from the newest
+/// month until N are found; on a later one, forward from the month before
+/// `since`, oldest first (a player back after years gets the oldest N of
+/// these; the next sync goes on from there). At most this many months either
+/// way — what the deadline was sized for, not 30 requests' worth past it.
+///
+/// 25.1 (review-25.0 §7): through 25.0 a first sync stopped after three
+/// months. A player with 15 games in those three who asked for 100 got 15,
+/// and no later sync could reach further back: from then on every sync only
+/// walks forward from the newest game in the library. Lichess gives the N
+/// newest however old; Chess.com now does too, within the 24 months.
+const SYNC_MONTHS_MAX: usize = 24;
 const SYNC_USER_AGENT = "chessboard (+https://github.com/hxddh/chessboard)";
 
 const SyncSite = enum { lichess, chesscom };
@@ -1139,9 +1144,8 @@ fn syncFetch(gpa: std.mem.Allocator, getter: Getter, req: SyncRequest, output: [
                     if (archiveMonth(months[at])) |m| if (m >= from) break;
                 }
             }
-            const months_max = if (req.since > 0) SYNC_MONTHS_SINCE_MAX else SYNC_MONTHS_MAX;
             var walked: usize = 0;
-            while (walked < months_max and !answer.done()) : (walked += 1) {
+            while (walked < SYNC_MONTHS_MAX and !answer.done()) : (walked += 1) {
                 const i = if (req.since > 0) at + walked else months.len -% (walked + 1);
                 if (i >= months.len) break;
                 var month_body: std.Io.Writer.Allocating = .init(gpa);
@@ -2231,8 +2235,10 @@ test "T4 (review P2-2/P2-3): Chess.com, an incremental sync walks forward from t
     try std.testing.expectEqual(@as(usize, 9), first.count);
     // the newest standard game's end (the two Chess960 games after it are not the mark)
     try std.testing.expectEqual(@as(u64, 1790355872000), first.last);
-    // a first sync: the last three months, newest first
-    try std.testing.expectEqual(@as(usize, 4), stub.asked);
+    // a first sync: newest first, on back past three months while fewer than
+    // N are in hand (25.1) — here to 2026/06, which is not there: the nine
+    // already found are worth more than an error about the rest
+    try std.testing.expectEqual(@as(usize, 5), stub.asked);
     stub.routes = &.{
         .{ .url = base ++ "archives", .body = CHESSCOM_ARCHIVES_REAL },
         .{ .url = base ++ "2026/08", .body = august },
@@ -2253,7 +2259,7 @@ test "T4 (review P2-2/P2-3): Chess.com, an incremental sync walks forward from t
     try std.testing.expectEqual(@as(u64, 1790668800000), second.last);
     // every request of both syncs, in order: the second walks forward from
     // the month before `since`'s
-    const want = [_][]const u8{ base ++ "archives", base ++ "2026/09", base ++ "2026/08", base ++ "2026/07", base ++ "archives", base ++ "2026/08", base ++ "2026/09" };
+    const want = [_][]const u8{ base ++ "archives", base ++ "2026/09", base ++ "2026/08", base ++ "2026/07", base ++ "2026/06", base ++ "archives", base ++ "2026/08", base ++ "2026/09" };
     try std.testing.expectEqual(want.len, stub.asked);
     for (want, 0..) |w, i| try std.testing.expectEqualStrings(w, stub.url(i));
     // more new games than asked for: the oldest go first

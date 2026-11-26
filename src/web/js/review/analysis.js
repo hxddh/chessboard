@@ -32,6 +32,7 @@ import { ChessReviewPass } from "../review-pass.js";
 import { ChessSrs } from "../srs.js";
 import { motifOf } from "../motif.js";
 import { tdot } from "../tdot.js";
+import { ownSide, youSide } from "../app-state.js";
 
 /**
  * @param {object} d everything this module borrows from app.js
@@ -181,8 +182,7 @@ export function createAnalysis(d) {
     // pasted game and drilled whichever side humanColor last named — the
     // opponent's mistakes, half the time (Codex on #113). Only a game from
     // this app's own record (recordedId) has a "you".
-    const hasYou = store.session.mode === "ai" && !store.session.analysisBoard &&
-      (!store.game.imported || store.game.recordedId != null);
+    const hasYou = !!ownSide(store);
     // a library game on the board: the deeper look goes back to its entry
     // (7.6 §1c). The miner below only runs where the game has a "you";
     // anywhere else the library's own miner takes this one.
@@ -226,13 +226,16 @@ export function createAnalysis(d) {
     // (24.0 still said 「1 处失着」 over a card of 「2 / 2」: a ?! and a good move)
     const an = store.session.analysis;
     const km = Grade.keyMoments({ sans: h, scalars, bests, seconds: an.seconds || [] }, an.grades, baseGame().turn(), (i) => i);
-    const bad = store.session.mode === "ai" ? km[store.session.humanColor].length : km.w.length + km.b.length;
+    const you = youSide(store), bad = you ? km[you].length : km.w.length + km.b.length;
     // Stop while deepening (p.deepCut): graded and filed all the same (review of PR #87)
-    toast(tdot(bad ? tf("msg.analysis.doneMoments", [bad]) : t("msg.analysis.doneClean"), mined ? tf("msg.mined", [mined]) : "",
-      revised ? tf("msg.minesRevised", [revised]) : "", withdrawn ? tf("msg.minesWithdrawn", [withdrawn]) : "", p.deepCut && t("msg.analysis.deepStopped")));
+    const done = tdot(bad ? tf("msg.analysis.doneMoments", [bad]) : t("msg.analysis.doneClean"), mined ? tf("msg.mined", [mined]) : "",
+      revised ? tf("msg.minesRevised", [revised]) : "", withdrawn ? tf("msg.minesWithdrawn", [withdrawn]) : "", p.deepCut && t("msg.analysis.deepStopped"));
+    toast(done);
     // A deep pass is 400ms a ply — over half a minute on a long game, which is
     // long enough that people go and do something else. A toast behind another
-    // window is a message that was never delivered.
+    // window is a message that was never delivered. (25.1: `done` was read
+    // here and bound nowhere — every background finish threw instead of
+    // notifying; scope.mjs now checks free variables again.)
     if (!store.ui.appForeground) Host.notify({ title: t("ntf.analysisDone"), body: done });
   }
 
@@ -263,11 +266,11 @@ export function createAnalysis(d) {
     const a = store.session.analysis;
     if (!a || !a.tags) return null;
     const first = baseGame().turn();
-    // only a game with a "you" filters by side — the same test as the miner
-    // above: an imported game or the analysis board has none (Codex on #116)
-    const hasYou = store.session.mode === "ai" && !store.session.analysisBoard &&
-      (!store.game.imported || store.game.recordedId != null);
-    const mine = hasYou ? store.session.humanColor : null;
+    // only a game with a "you" filters by side — 25.1: the key moments card's
+    // test (app-state.js youSide), so 复盘这局 lands on the card it opens
+    // with; 11.0 (Codex on #116) used the miner's, and a pasted game landed
+    // on the opponent's ?? under a card that led with yours (14.0 B)
+    const mine = youSide(store);
     const side = (k) => ((k % 2 === 0) === (first === "w") ? "w" : "b");
     for (const want of ["??", "?"]) {
       const k = a.tags.findIndex((tag, i) => tag === want && (!mine || side(i) === mine));

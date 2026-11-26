@@ -44,6 +44,8 @@ const IssuedPaths = @import("bridge.zig").IssuedPaths;
 const LANG_FILE = @import("bridge.zig").LANG_FILE;
 /// 25.0: documents a later launch left for the one instance (Windows), one path a line
 const OPEN_QUEUE = "open-queue.txt";
+/// 25.1: what the queue holds at most — a hundred-odd paths; a launch past it is dropped
+const OPEN_QUEUE_MAX: usize = 16 * 1024;
 const PathPolicy = @import("bridge.zig").PathPolicy;
 const SEP = @import("bridge.zig").SEP;
 const STORE_DIR = @import("bridge.zig").STORE_DIR;
@@ -323,43 +325,61 @@ pub const App = struct {
 
     /// 24.0: the launch arguments that name a document to open (Windows; see main).
     fn noteLaunchArgs(self: *@This(), init: std.process.Init) void {
-        const args = init.minimal.args.toSlice(init.arena.allocator()) catch return;
+        const arena = init.arena.allocator();
+        const args = init.minimal.args.toSlice(arena) catch return;
         if (args.len < 2) return;
-        for (args[1..]) |arg| self.pending_open.add(true, arg);
+        const cwd = std.process.currentPathAlloc(self.io, arena) catch "";
+        for (args[1..]) |arg| self.pending_open.add(true, launchPathAbs(arena, cwd, arg, true) orelse continue);
     }
 
     /// 25.0 (review-24.0 P5): another instance is open — leave this launch's
-    /// documents in its queue and let it raise its window. The file existing
-    /// is the signal, so a bare second launch (no document) still raises it.
+    /// documents in its queue and let it raise its window. A bare second
+    /// launch (no document) leaves an empty line, which still raises it.
+    ///
+    /// 25.1 (review-25.0 §2): appended under the file's lock — two launches
+    /// at once (Explorer opens a multi-selection one process per file) each
+    /// wrote at the length they had read, over each other — and a path given
+    /// relative to the launch's own directory (`chessboard.exe game.pgn` in a
+    /// console) is made absolute here, where that directory is known.
     fn forwardLaunchArgs(self: *@This(), init: std.process.Init) void {
         var path_buf: [1200]u8 = undefined;
         const path = self.appdataChild(&path_buf, OPEN_QUEUE) orelse return;
-        var file = std.Io.Dir.createFileAbsolute(self.io, path, .{ .truncate = false }) catch return;
-        defer file.close(self.io);
-        const args = init.minimal.args.toSlice(init.arena.allocator()) catch return;
-        if (args.len < 2) return;
-        var at = file.length(self.io) catch return;
-        for (args[1..]) |arg| {
-            if (!@import("bridge.zig").openPathAllowed(true, arg)) continue;
-            file.writePositionalAll(self.io, arg, at) catch return;
-            at += arg.len;
-            file.writePositionalAll(self.io, "\n", at) catch return;
-            at += 1;
+        const arena = init.arena.allocator();
+        const args = init.minimal.args.toSlice(arena) catch return;
+        const cwd = std.process.currentPathAlloc(self.io, arena) catch "";
+        var lines: std.ArrayList(u8) = .empty;
+        for (args[@min(1, args.len)..]) |arg| {
+            const abs = launchPathAbs(arena, cwd, arg, true) orelse continue;
+            if (!@import("bridge.zig").openPathAllowed(true, abs)) continue;
+            lines.appendSlice(arena, abs) catch return;
+            lines.append(arena, '\n') catch return;
         }
+        if (lines.items.len == 0) lines.append(arena, '\n') catch return;
+        var file = std.Io.Dir.createFileAbsolute(self.io, path, .{ .truncate = false, .lock = .exclusive }) catch return;
+        defer file.close(self.io);
+        const at = file.length(self.io) catch return;
+        if (at + lines.items.len > OPEN_QUEUE_MAX) return;
+        file.writePositionalAll(self.io, lines.items, at) catch return;
     }
 
     /// 25.0: the one instance takes what later launches left (chess.takeOpenFiles),
     /// and comes to the front for them.
+    ///
+    /// 25.1: under the same lock, never waited for (the page asks again in
+    /// 1.5 s), and emptied rather than deleted — a launch appending between
+    /// the read and the delete was lost. What does not fit the pending list
+    /// stays in the file for the next take instead of being dropped.
     pub fn takeOpenQueue(self: *@This()) void {
         var path_buf: [1200]u8 = undefined;
         const path = self.appdataChild(&path_buf, OPEN_QUEUE) orelse return;
-        var file = std.Io.Dir.openFileAbsolute(self.io, path, .{}) catch return;
-        var buf: [16 * 1024]u8 = undefined;
-        const n = file.readPositionalAll(self.io, &buf, 0) catch 0;
-        file.close(self.io);
-        std.Io.Dir.deleteFileAbsolute(self.io, path) catch {};
-        var it = std.mem.tokenizeAny(u8, buf[0..n], "\r\n");
-        while (it.next()) |line| self.pending_open.add(true, line);
+        var file = std.Io.Dir.openFileAbsolute(self.io, path, .{ .mode = .read_write, .lock = .exclusive, .lock_nonblocking = true }) catch return;
+        defer file.close(self.io);
+        var buf: [OPEN_QUEUE_MAX]u8 = undefined;
+        const n = file.readPositionalAll(self.io, &buf, 0) catch return;
+        if (n == 0) return;
+        const rest = takeQueueLines(&self.pending_open, buf[0..n]);
+        file.setLength(self.io, 0) catch return;
+        if (rest.len > 0) file.writePositionalAll(self.io, rest, 0) catch {};
         if (comptime runner.win_shell) chess_win_raise();
     }
 
@@ -414,6 +434,30 @@ pub const App = struct {
     }
 };
 
+/// 25.1 (review-25.0 §2): a document named on the command line, absolute.
+/// Explorer passes full paths; a console launch passes what was typed, which
+/// openPathAllowed refused as relative. Null for an empty argument.
+pub fn launchPathAbs(alloc: std.mem.Allocator, cwd: []const u8, arg: []const u8, windows: bool) ?[]const u8 {
+    if (arg.len == 0) return null;
+    const abs = if (windows) std.fs.path.isAbsoluteWindows(arg) else std.fs.path.isAbsolutePosix(arg);
+    if (abs or cwd.len == 0) return arg;
+    return (if (windows) std.fs.path.resolveWindows(alloc, &.{ cwd, arg }) else std.fs.path.resolvePosix(alloc, &.{ cwd, arg })) catch null;
+}
+
+/// 25.1: the queue's lines into `pending`, while it has room; the lines
+/// left over (a slice of `text`), to be written back for the next take.
+pub fn takeQueueLines(pending: *PendingOpen, text: []const u8) []const u8 {
+    var at: usize = 0;
+    while (at < text.len) {
+        if (pending.count >= @import("bridge.zig").PENDING_OPEN_MAX) return text[at..];
+        const end = std.mem.indexOfScalarPos(u8, text, at, '\n') orelse text.len;
+        const line = std.mem.trim(u8, text[at..end], " \r");
+        if (line.len > 0) pending.add(true, line);
+        at = @min(text.len, end + 1);
+    }
+    return text[text.len..];
+}
+
 fn onEvent(context: *anyopaque, runtime: *native_sdk.Runtime, event: native_sdk.Event) anyerror!void {
     const self: *App = @ptrCast(@alignCast(context));
     switch (event) {
@@ -448,6 +492,7 @@ extern fn chess_win_ui_language() c_int;
 extern fn chess_win_claim_instance() c_int;
 extern fn chess_win_allow_foreground() void;
 extern fn chess_win_raise() void;
+extern fn chess_win_wake_instance() void;
 
 /// 22.0 F5: what the system shows its own interface in, as one of the three
 /// menu languages. A shell with no window system of its own (the null
@@ -492,6 +537,10 @@ pub fn main(init: std.process.Init) !void {
         if (chess_win_claim_instance() == 0) {
             app_state.forwardLaunchArgs(init);
             chess_win_allow_foreground();
+            // 25.1 (review-25.0 §2): a minimized window's page is hidden and
+            // does not poll the queue, so its own raise never came; the
+            // launch the user just made may bring it back itself
+            chess_win_wake_instance();
             return;
         }
         app_state.noteLaunchArgs(init);
@@ -535,6 +584,48 @@ test "the whole app is semantically analysed by the test build" {
 
 test {
     _ = @import("chrome.zig");
+}
+
+test "a document named on the command line is made absolute against the launch's directory (25.1)" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    try std.testing.expectEqualStrings("C:\\games\\a.pgn", launchPathAbs(a, "C:\\games", "a.pgn", true).?);
+    try std.testing.expectEqualStrings("C:\\x\\b.pgn", launchPathAbs(a, "C:\\games", "..\\x\\b.pgn", true).?);
+    try std.testing.expectEqualStrings("D:\\y\\c.pgn", launchPathAbs(a, "C:\\games", "D:\\y\\c.pgn", true).?);
+    try std.testing.expectEqualStrings("/home/me/d.pgn", launchPathAbs(a, "/home/me", "d.pgn", false).?);
+    try std.testing.expect(launchPathAbs(a, "C:\\games", "", true) == null);
+    // what it makes is still judged by the open rule: no climbing into a dot directory
+    const hidden = launchPathAbs(a, "C:\\games", ".secret\\e.pgn", true).?;
+    try std.testing.expect(!@import("bridge.zig").openPathAllowed(true, hidden));
+    try std.testing.expect(@import("bridge.zig").openPathAllowed(true, launchPathAbs(a, "C:\\games", "a.pgn", true).?));
+}
+
+test "the open queue: taken while the pending list has room, the rest kept for the next take (25.1)" {
+    const MAX = @import("bridge.zig").PENDING_OPEN_MAX;
+    var text_buf: [2048]u8 = undefined;
+    var n: usize = 0;
+    // a bare launch's empty line, a refused path, then more documents than fit
+    for ([_][]const u8{ "", "C:\\x\\.h\\no.pgn" }) |l| {
+        @memcpy(text_buf[n..][0..l.len], l);
+        n += l.len;
+        text_buf[n] = '\n';
+        n += 1;
+    }
+    for (0..MAX + 2) |i| {
+        const l = std.fmt.bufPrint(text_buf[n..], "C:\\g\\{d}.pgn\r\n", .{i}) catch unreachable;
+        n += l.len;
+    }
+    var pend: PendingOpen = .{};
+    const rest = takeQueueLines(&pend, text_buf[0..n]);
+    try std.testing.expectEqual(@as(usize, MAX), pend.count);
+    try std.testing.expectEqualStrings("C:\\g\\0.pgn", pend.paths[0][0..pend.lens[0]]);
+    try std.testing.expect(std.mem.startsWith(u8, rest, "C:\\g\\8.pgn"));
+    // the next take gets them, in order
+    pend.count = 0;
+    try std.testing.expectEqual(@as(usize, 0), takeQueueLines(&pend, rest).len);
+    try std.testing.expectEqual(@as(usize, 2), pend.count);
+    try std.testing.expectEqualStrings("C:\\g\\9.pgn", pend.paths[1][0..pend.lens[1]]);
 }
 
 test "the packaged page sits in resources beside bin (v8-3-plan V1)" {

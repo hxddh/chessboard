@@ -110,6 +110,8 @@ export function initialState() {
       engineDown: false,
       /** the boot in flight, shared by everyone who asks for one (7.4) */
       engineBoot: null,
+      /** 25.1: when io.js openPaths last finished — a part within its burst goes to the library */
+      openedAt: 0,
       analyzing: false,
       /** set by the stop button; the analysis loop bails at the next position */
       analyzeAbort: false,
@@ -257,4 +259,31 @@ export function initialState() {
       noteFor: null,
     },
   };
+}
+
+/**
+ * 25.1 (review-25.0 §3, 一本账): who "you" are in the game on the board —
+ * two questions, each asked in one place.
+ *
+ * youSide: whose game the review speaks to. A game against the engine,
+ * pasted or played, is yours (9.0 M2, 14.0 B: the summary is the
+ * opponent's, the key moments lead with yours); the analysis board and a
+ * two-player game have no "you".
+ * @returns {"w"|"b"|null}
+ */
+export function youSide(store) {
+  const s = store.session;
+  return s.mode === "ai" && !s.analysisBoard ? s.humanColor : null;
+}
+
+/**
+ * ownSide: …and whether that is a game of this app's own record — the only
+ * kind whose mistakes become drills (10.0, Codex on #113: a pasted game
+ * drilled whichever side humanColor last named) and the only kind the
+ * engine plays on. Through 25.0 the engine asked the mode alone, and a .pgn
+ * opened mid-way during an engine game was answered as if it were one.
+ * @returns {"w"|"b"|null}
+ */
+export function ownSide(store) {
+  return youSide(store) && (!store.game.imported || store.game.recordedId != null) ? store.session.humanColor : null;
 }

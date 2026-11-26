@@ -382,6 +382,15 @@ function isAccepted(m, san) {
  * mistake against the best: the drill asks for a move that does not lose the
  * position, not for the engine's exact preference (audit F3).
  *
+ * 25.1 (review-25.0 §5): "a mistake" on the review's own scale — the
+ * win-percentage points it gives away (`R` is review.js: winPctDrop,
+ * WIN_MISTAKE), as the ?/?? that minted the drill were marked. 25.0 moved
+ * 复盘重试 onto it and left the drills on Review.MISTAKE centipawns, so the
+ * same move in the same position was 「对」 in the review and 「不够好」 in
+ * the book: +5.9 against +7.2 in a won game. `loss` stays in centipawns,
+ * for the words. The measurement below was made in centipawns; at an equal
+ * position 100cp is about 18 points, so the rule is no stricter there.
+ *
  * Measured in 5.2 (scripts/test-mines.mjs → docs/measured.json
  * mineAlternatives): at the fixture games' ?? positions the second-best move
  * sits a median 116cp behind the best, and 40% of positions have at least
@@ -389,9 +398,10 @@ function isAccepted(m, san) {
  * never opens the floodgates — the threshold stays at Review.MISTAKE.
  * @returns {{ok: boolean, loss: number}} loss ≥ 0, from the mover's side
  */
-function judgeAlt(cpAfterBest, cpAfterAlt, side, mistake) {
+function judgeAlt(cpAfterBest, cpAfterAlt, side, R) {
   const loss = Math.max(0, Math.round(side === "w" ? cpAfterBest - cpAfterAlt : cpAfterAlt - cpAfterBest));
-  return { ok: loss < mistake, loss };
+  const drop = R.winPctDrop(cpAfterBest, cpAfterAlt, side);
+  return { ok: drop != null && drop < R.WIN_MISTAKE, loss };
 }
 
 export const ChessMistakes = { MAX_MINES, KEEP_PER_MOTIF, PER_GAME, MINED, capPerGame, mineId, candidatesFrom, drillFrom, addMines, reviseMines, queueFresh, isAccepted, judgeAlt };

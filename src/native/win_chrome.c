@@ -162,3 +162,38 @@ static BOOL CALLBACK chess_raise_each(HWND hwnd, LPARAM lp) {
 void chess_win_raise(void) {
     EnumWindows(chess_raise_each, 0);
 }
+
+/* 25.1 (review-25.0 §2): the launch that is about to go brings the one
+   instance's window back itself, restored if it was minimized. The raise
+   above only came when the one instance took the queue, and a minimized
+   window's page is hidden and does not ask: the file waited, and nothing on
+   screen moved, until the user found the window. This process was started
+   by the user's own click, so the foreground is still its to hand over.
+   Only a window of this very executable (its full path), never another app
+   that happens to share the name; not an owned dialog. */
+static WCHAR chess_self_exe[MAX_PATH];
+
+static BOOL CALLBACK chess_wake_each(HWND hwnd, LPARAM lp) {
+    (void)lp;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (pid == 0 || pid == GetCurrentProcessId()) return TRUE;
+    if ((GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_CAPTION) != WS_CAPTION || !IsWindowVisible(hwnd)) return TRUE;
+    if (GetWindow(hwnd, GW_OWNER)) return TRUE;
+    HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!proc) return TRUE;
+    WCHAR exe[MAX_PATH];
+    DWORD n = MAX_PATH;
+    BOOL same = QueryFullProcessImageNameW(proc, 0, exe, &n) && lstrcmpiW(exe, chess_self_exe) == 0;
+    CloseHandle(proc);
+    if (!same) return TRUE;
+    if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+    SetForegroundWindow(hwnd);
+    return FALSE;
+}
+
+void chess_win_wake_instance(void) {
+    DWORD n = MAX_PATH;
+    if (!QueryFullProcessImageNameW(GetCurrentProcess(), 0, chess_self_exe, &n)) return;
+    EnumWindows(chess_wake_each, 0);
+}

@@ -124,7 +124,8 @@ export async function run() {
       // 7.0: the picker takes a sink (the library import reuses it), so what
       // this looks for is the call, not the one destination it used to have
       ["the open dialog", /Host\.openPgn\(\{ title: t\("dlg\.openPgn"\), recent: true \}\)/],
-      ["a dropped file", /importPgnText\(await Host\.readTextFile\(p\), p\);\s*\n\s*Host\.addRecentDocument\(p\);/],
+      // 25.1 (review-25.0 §2): awaited, and only a file that did go on the board
+      ["a dropped file", /if \(await importPgnText\(await Host\.readTextFile\(p\), p\)\) Host\.addRecentDocument\(p\);/],
       ["clearing the save", /Persist\.clearAll\(\);[\s\S]{0,320}?Host\.clearRecentDocuments\(\);/],
     ]) assert(re.test(appSrc), "recent documents is recorded from " + what);
     assert(/if \(!store\.ui\.appForeground\) Host\.notify\(/.test(appSrc),
