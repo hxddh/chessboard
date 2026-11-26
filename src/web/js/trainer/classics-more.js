@@ -47,9 +47,12 @@ export function createMoreClassics(d) {
         list.push(...m.base);
         for (const g of m.games) list.push(Object.assign({}, g, { tr: { en: m.en[g.id], ja: m.ja[g.id] } }));
         groups = m.groups;
-        for (const fn of waiting.splice(0)) fn();
+        for (const w of waiting.splice(0)) w.ok();
         onReady();
-      }, () => { asked = null; }); // a failed load is retried the next time the list draws
+      }, () => {
+        asked = null; // a failed load is retried the next time the list draws
+        for (const w of waiting.splice(0)) if (w.fail) w.fail();
+      });
   }
   /** an era's name in the interface language ("" before the chunk) */
   function groupName(id) {
@@ -58,7 +61,8 @@ export function createMoreClassics(d) {
   }
   /** every classic, counted whether or not they are here yet */
   const total = () => (groups ? list.length : BASE_COUNT + MORE_COUNT);
-  /** 25.2: `fn` once the catalog is in — at once if it already is (the Endgames shape) */
-  function whenReady(fn) { if (groups) fn(); else { waiting.push(fn); ensure(); } }
+  /** 25.2: `fn` once the catalog is in — at once if it already is (the Endgames shape);
+   *  `fail` if this load fails (Codex on #142: the caller must not be left with nothing open) */
+  function whenReady(fn, fail) { if (groups) fn(); else { waiting.push({ ok: fn, fail }); ensure(); } }
   return { ensure, whenReady, groupName, ready: () => !!groups, total };
 }

@@ -1634,6 +1634,30 @@ if (hasTab && REAL.length) {
   assert(got.seg === "classic" && got.cur === "2", "25.2：名局的块比课文慢时，从别的模式进名局，仍打开书签上的第三局（不落在课程上）", JSON.stringify(got));
   await c.close();
 }
+// …and when the chunk does not come at all (Codex on #142): the request had
+// superseded the default lesson, so nothing was open and 课程 did nothing
+{
+  const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
+  await c.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem("chess.settings", JSON.stringify({ mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, view: "play", trainSeg: "classic" }));
+    localStorage.setItem("chess.panelOpen", "1");
+    localStorage.setItem("chess.learn", JSON.stringify({ v: 1, done: {}, last: 5, cl: 2 }));
+  });
+  const pg = await c.newPage();
+  pg.on("pageerror", (e) => errs.push("classic-fail: " + e.message));
+  await pg.route(/chunk-classics-more\.js/, (route) => route.abort());
+  await pg.goto(`http://127.0.0.1:${PORT}/`);
+  await pg.waitForTimeout(800);
+  await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  await pg.click('#rail button[data-view="train"]');
+  const title = () => pg.evaluate(() => document.getElementById("lesson-title").textContent);
+  let t1 = "";
+  for (let t = 0; t < 8000 && !/^第 6 课/.test(t1); t += 200) { t1 = await title(); await pg.waitForTimeout(200); }
+  assert(/^第 6 课/.test(t1), "25.2：名局的块载入失败时，退回书签上的课（第 6 课），不是一片空白", t1);
+  await c.close();
+}
 
 // --- 9.0 S3: 训练's segments — each its own catalog, each where it was left;
 // 名局 is one list of the forty, read or guessed by a switch ------------------

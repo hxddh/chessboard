@@ -92,7 +92,7 @@ export async function run() {
     const BUNDLE_BYTES_250 = 820000;
     assert(bundleBytes <= BUNDLE_BYTES_250,
       "25.0: bundle.js stays within v25-0-plan's 820,000 bytes (" + bundleBytes + (bundleBytes <= BUNDLE_BYTES_250 ? " ≤ " : " > ") + BUNDLE_BYTES_250 + " bytes)");
-    // 25.2: paid back — the classics went to their chunk (below): 805,742
+    // 25.2: paid back — the classics went to their chunk (below): 805,919
     // measured, the line is 808,000. 25.0 had said 815,000.
     const BUNDLE_BYTES_252 = 808000;
     assert(bundleBytes <= BUNDLE_BYTES_252,
