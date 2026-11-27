@@ -80,6 +80,8 @@ export function createLessonsUI(d) {
   // 25.2: empty until the classics chunk arrives (trainer/classics-more.js),
   // which fills it in index order — the ten, then the thirty
   const CLASSICS = [];
+  /** review-25.2: what deferOpen (below) is waiting for, and its run token */
+  const waiting = { seg: null, run: -1 };
   const More = createMoreClassics({ store, list: CLASSICS, onReady: () => sync() });
   function classicText(c) {
     // the thirty carry their own translations; the ten read the language chunks
@@ -169,14 +171,39 @@ export function createLessonsUI(d) {
   // the first start; a run is `learn.gs`, so until then there is none to draw
   const Gs = { m: null };
   function startGuess(ci) {
-    store.session.learnRuns++;
     store.session.learnState.cl = ci;
-    if (Gs.m) { Gs.m.start(ci); return; }
-    loadChunk("chunk-guess.js", "createGuess").then((create) => {
+    if (Gs.m) { store.session.learnRuns++; Gs.m.start(ci); return; }
+    // review-25.2 §1: through deferOpen, as 名局's catalog is — the
+    // chunk used to start the run on arrival whatever the player had opened
+    // meanwhile (its opponent's moves and their timers with it), and a failed
+    // load left 学习 empty after the default lesson had been superseded
+    deferOpen("classic", (ok, fail) => loadChunk("chunk-guess.js", "createGuess").then((create) => {
       Gs.m = Gs.m || create(Object.assign({ tdot, Chess, Engine: ChessEngine, Review: ChessReview, Grade: ChessReviewGrade, CLASSICS, classicText, carryToken, startClassic, saveLearnState }, d));
-      Gs.m.start(ci);
-    }, () => {}); // a failed load is retried on the next click
+      ok();
+    }, fail), () => Gs.m.start(ci));
   }
+
+  /**
+   * review-25.2 §1: one rule for whatever 学习 opens after a chunk —
+   * 名局's catalog, 名局猜着's runner, the endgame camp. Learned twice on
+   * 名局 (#141, #142): the wait is a run of its own (a learnRuns token), so it
+   * supersedes a lesson still waiting for its body, and anything the player
+   * starts meanwhile supersedes it; a chunk that does not come opens the
+   * lesson it superseded; and while it waits, learnSeg() names the segment
+   * waited for, so the switch over the panel (shell.js paintTrain) does not
+   * light 课程 and write it back as the saved segment.
+   * @param {string} seg what is being opened: "classic" or "endgame"
+   * @param {(ok: Function, fail: Function) => void} when calls one of the two once
+   * @param {Function} open what to open once it is in
+   */
+  function deferOpen(seg, when, open) {
+    const my = ++store.session.learnRuns;
+    Object.assign(waiting, { seg, run: my });
+    const still = () => my === store.session.learnRuns && store.session.mode === "learn";
+    when(() => { if (still()) { open(); sync(); } }, () => { if (still()) { startLearn(); sync(); } });
+  }
+  /** the segment a deferOpen is still waiting for, if nothing has superseded it */
+  function pendingSeg() { return waiting.run === store.session.learnRuns && store.session.mode === "learn" ? waiting.seg : null; }
 
   // --- 9.0 S3: 训练's segments ------------------------------------------------
 
@@ -185,24 +212,16 @@ export function createLessonsUI(d) {
     if (store.session.mode !== "learn") return null;
     const l = store.session.learn;
     if (store.session.study || (l && l.gs)) return "classic";
-    return l && l.eg ? "endgame" : "course";
+    if (l) return l.eg ? "endgame" : "course";
+    return pendingSeg() || "course";
   }
   /** Read a classic, or guess it: 名局's one switch (store.ui.classicMode). */
   const guessing = () => store.ui.classicMode === "guess";
   /** Open classic `ci` the way the switch says. */
   // 25.2: the catalog is a chunk; opened before it is in, the game opens on its arrival
   function openClassic(ci) {
-    if (!More.ready()) {
-      // opened on arrival, as a run of its own: taking a run token cancels a
-      // lesson still waiting for its body (the default one switchMode("learn")
-      // starts — Codex on #141), and anything the player starts meanwhile
-      // takes the next token and cancels this
-      const my = ++store.session.learnRuns;
-      const still = () => my === store.session.learnRuns && store.session.mode === "learn";
-      // the chunk did not come: the lesson this request superseded opens after all (Codex on #142)
-      More.whenReady(() => { if (still()) { openClassic(ci); sync(); } }, () => { if (still()) { startLearn(); sync(); } });
-      return;
-    }
+    // opened on arrival — deferOpen's rule (#141, #142)
+    if (!More.ready()) { deferOpen("classic", More.whenReady, () => openClassic(ci)); return; }
     const i = Math.max(0, Math.min(ci, CLASSICS.length - 1));
     if (guessing()) startGuess(i); else startClassic(i);
   }
@@ -217,13 +236,11 @@ export function createLessonsUI(d) {
     if (seg === learnSeg() && (store.session.learn || store.session.study)) return;
     if (seg === "course") startLesson(Math.max(0, Math.min(store.session.learnState.last || 0, LESSONS.length - 1)));
     else if (seg === "endgame") {
-      Endgames.whenReady(() => {
-        if (store.session.mode !== "learn" || learnSeg() === "endgame") return;
-        const id = Endgames.resumeId();
-        if (id) startEndgame(id);
-        sync();
-      });
-      return;
+      // review-25.2 §1: deferOpen's rule — a lesson picked while the
+      // camp was loading was taken over by it on arrival
+      const resume = () => { const id = Endgames.resumeId(); if (id) startEndgame(id); };
+      // (and on to the sync below, which paints the switch on 残局 while it waits)
+      if (Endgames.ready()) resume(); else deferOpen("endgame", Endgames.whenReady, resume);
     } else if (seg === "classic") openClassic(store.session.learnState.cl || 0);
     sync();
   }

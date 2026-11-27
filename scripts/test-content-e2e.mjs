@@ -1659,6 +1659,71 @@ if (hasTab && REAL.length) {
   await c.close();
 }
 
+// --- review-25.2 §1: the trainer's other chunks wait by the same rule.
+// While one loads, the switch shows the segment asked for (it lit 课程 and saved
+// it); a lesson picked meanwhile is not taken over on arrival; a chunk that
+// fails opens the lesson. 名局猜着's runner and the endgame camp.
+{
+  const seg25 = async (settings, chunkRe, how) => {
+    const c = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "zh-CN" });
+    await c.addInitScript((st) => {
+      if (sessionStorage.getItem("seeded")) return;
+      sessionStorage.setItem("seeded", "1");
+      localStorage.setItem("chess.settings", JSON.stringify(st));
+      localStorage.setItem("chess.panelOpen", "1");
+      localStorage.setItem("chess.learn", JSON.stringify({ v: 1, done: {}, last: 5, cl: 2 }));
+    }, settings);
+    const pg = await c.newPage();
+    pg.on("pageerror", (e) => errs.push("seg25: " + e.message));
+    await pg.route(chunkRe, async (route) => {
+      if (how === "abort") { await route.abort(); return; }
+      await new Promise((r) => setTimeout(r, 3000)); await route.continue();
+    });
+    await pg.goto(`http://127.0.0.1:${PORT}/`);
+    await pg.waitForTimeout(800);
+    await pg.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+    const look = () => pg.evaluate(() => ({ seg: (document.querySelector("#train-seg button.active") || { dataset: {} }).dataset.seg || null,
+      title: document.getElementById("lesson-title").textContent, saved: JSON.parse(localStorage.getItem("chess.settings") || "{}").trainSeg }));
+    return { c, pg, look };
+  };
+  const base = { mode: "pvp", langId: "zh-CN", sideTab: "play", soundOn: false, view: "play" };
+  // 名局猜着: the runner's chunk is slow; the switch says 名局 meanwhile, and 课程 picked then stays
+  {
+    const { c, pg, look } = await seg25(Object.assign({}, base, { trainSeg: "classic", classicMode: "guess" }), /chunk-guess\.js/, "slow");
+    await pg.click('#rail button[data-view="train"]');
+    await pg.waitForTimeout(1200);
+    const mid = await look();
+    assert(mid.seg === "classic" && mid.saved === "classic", "25.2 复核：猜着的块还没到时，顶栏亮的是名局、存下的也是名局（不洗回课程）", JSON.stringify(mid));
+    await pg.click('#train-seg button[data-seg="course"]');
+    await pg.waitForTimeout(3500);
+    const end = await look();
+    assert(end.seg === "course" && /^第 6 课/.test(end.title), "25.2 复核：等猜着时改点课程，块到了也不接管（还在第 6 课）", JSON.stringify(end));
+    await c.close();
+  }
+  // …and the runner's chunk fails: the lesson the wait superseded opens
+  {
+    const { c, pg, look } = await seg25(Object.assign({}, base, { trainSeg: "classic", classicMode: "guess" }), /chunk-guess\.js/, "abort");
+    await pg.click('#rail button[data-view="train"]');
+    let v = null;
+    for (let t = 0; t < 8000; t += 200) { v = await look(); if (/^第 6 课/.test(v.title)) break; await pg.waitForTimeout(200); }
+    assert(/^第 6 课/.test(v.title), "25.2 复核：猜着的块载入失败时退回书签上的课，不是一片空白", JSON.stringify(v));
+    await c.close();
+  }
+  // 残局: the camp's chunk is slow; the switch says 残局 meanwhile, and 课程 picked then stays
+  {
+    const { c, pg, look } = await seg25(Object.assign({}, base, { trainSeg: "endgame" }), /chunk-endgames\.js/, "slow");
+    await pg.click('#rail button[data-view="train"]');
+    await pg.waitForTimeout(1200);
+    const mid = await look();
+    assert(mid.seg === "endgame" && mid.saved === "endgame", "25.2 复核：残局的块还没到时，顶栏亮的是残局、存下的也是残局", JSON.stringify(mid));
+    await pg.click('#train-seg button[data-seg="course"]');
+    await pg.waitForTimeout(3500);
+    const end = await look();
+    assert(end.seg === "course" && /^第 6 课/.test(end.title), "25.2 复核：等残局时改点课程，块到了也不接管（还在第 6 课）", JSON.stringify(end));
+    await c.close();
+  }
+}
+
 // --- 9.0 S3: 训练's segments — each its own catalog, each where it was left;
 // 名局 is one list of the forty, read or guessed by a switch ------------------
 {

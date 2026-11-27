@@ -188,8 +188,12 @@ static NSMutableArray<NSString *> *ChessOpenQueue;
     // the host's own bookkeeping (its policy-hidden set, the frame it
     // reports) moves with the window. It answers for policy-hidden windows
     // only, and does nothing while one is on the glass.
+    // review-25.2 §3: a document window, by ChessConfigure's rule — not
+    // a panel (the About box, an alert) or a sheet, which are titled and
+    // visible too, and kept the closed board window closed behind them
     BOOL onGlass = NO;
     for (NSWindow *window in app.windows) {
+        if ([window isKindOfClass:[NSPanel class]] || window.sheetParent != nil) continue;
         if ((window.styleMask & NSWindowStyleMaskTitled) && window.isVisible) { onGlass = YES; break; }
     }
     id<NSApplicationDelegate> delegate = app.delegate;

@@ -562,7 +562,12 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // 25.1 (review-25.0 §4): within the clock's ceiling too, less what the
     // net already took — a guarded rung scores every move the net could play
     // to depth 8, and at ten seconds left that ran past what the clock allots
-    if (human) tier = { depth: 8, minMs: base.minMs, multipv: only ? only.length : 0, movetime: ceil ? Math.max(20, Math.floor(ceil - (Date.now() - startedAt))) : 0 };
+    const left = ceil ? Math.max(20, Math.floor(ceil - (Date.now() - startedAt))) : 0;
+    if (human) tier = { depth: 8, minMs: base.minMs, multipv: only ? only.length : 0, movetime: left };
+    // review-25.2 §2: and the rung's own row, when the net gave up —
+    // it kept the ceiling worked out before the net ran, so a net that used
+    // half of it left the fallback a whole one more
+    else if (base.maia && ceil && tier.movetime) tier = Object.assign({}, tier, { movetime: Math.min(tier.movetime, left) });
     // UCI options are sticky on the worker — always set every knob a tier
     // could have touched so no search inherits another tier's handicap.
     send("setoption name MultiPV value " + (tier.multipv || 1));

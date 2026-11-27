@@ -83,6 +83,8 @@ function makeClock() {
  *                   (a second worker that does not boot, v8-1-plan F4)
  * cfg.lines       — the info lines a finished search prints (default: one
  *                   exact line at its depth and score)
+ * cfg.hangHuman   — the Maia chunk never arrives (its script never loads)
+ * cfg.clockDate   — Date.now() reads the virtual clock (time the engine measures)
  */
 function boot(cfg = {}) {
   const clock = makeClock();
@@ -98,6 +100,7 @@ function boot(cfg = {}) {
   };
   ctx.globalThis = ctx;
   ctx.window = ctx;
+  if (cfg.clockDate) ctx.Date = class extends Date { static now() { return clock.now(); } };
   if (cfg.cores) ctx.navigator = { hardwareConcurrency: cfg.cores };
 
   ctx.Worker = class {
@@ -141,9 +144,10 @@ function boot(cfg = {}) {
   };
 
   ctx.document = {
-    createElement: () => ({ set src(_v) {}, set async(_v) {}, onload: null, onerror: null }),
+    createElement: () => ({ src: "", async: false, onload: null, onerror: null }),
     head: {
       appendChild(el) {
+        if (cfg.hangHuman && /chunk-human/.test(el.src)) return;
         state.injections++;
         ctx.CHESS_SF_LOADER = "/* loader */";
         ctx.CHESS_SF_WASM_B64 = "AAAAAA==";
@@ -580,6 +584,20 @@ const gosOf = (w) => w.cmds.filter((c) => /^(go|stop|ucinewgame|position)\b/.tes
   const v = vendored[0];
   assert(v && read.length && read.every((x) => x === v) && said.length && said.every((x) => x === v),
     "gen-engine-src.mjs reads and names the vendored Stockfish " + v + " (reads " + read.join("/") + ", header says " + said.join("/") + ")");
+}
+
+// --- review-25.2 §2: the net gave up at half the ceiling — the rung's own
+// Stockfish row searches what is left of it, not a whole ceiling more
+{
+  const { E, clock, state } = boot({ hangHuman: true, clockDate: true });
+  const p = E.init(); await clock.advance(1); await p;
+  const w = state.last();
+  const m = E.bestMove(FEN, "normal", { search: 0, pace: 0, ceil: 1000 }, { id: "off", Chess: function () {}, fens: [FEN] });
+  await clock.advance(700); // the net's bound is 500
+  const go = w.cmds.filter((c) => /^go\b/.test(c)).pop() || "";
+  const mt = Number((/\bmovetime (\d+)/.exec(go) || [])[1]);
+  assert(/^go depth 3\b/.test(go) && mt > 0 && mt <= 520, "Maia gave up at 500 of a 1000 ms ceiling: the fallback searches the rest (" + go + ")");
+  await clock.advance(2000); await m;
 }
 
 // --- v8-1-plan T1: the re-stepped rungs, as the worker sees them -------------

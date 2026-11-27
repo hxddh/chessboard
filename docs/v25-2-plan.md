@@ -26,3 +26,42 @@ B1 合入后的自动评审指出一处真问题：从别的模式进名局、�
 - `openings.js`（27 KB）按需加载：六个模块同步引用，牵涉开局训练与开局浏览器，单独做。
 - 截图门禁改成握手；Windows 多选打开被拆成两次取走；只下 960 的 Chess.com 月份；Stockfish 19.0.1、playwright 1.65.1、Zig 0.17。
 - 真机：25.0、25.1 与这一版的几条都还没走。
+
+## 25.2 之后的复核（2026-11-27）
+
+照旧先核实再改。四条线索，三条成立，一条（`openings.js` 还账）评估后决定这一版不做。
+
+| # | 线索 | 结论 | 机制与连带 |
+|---|---|---|---|
+| R1a | `startGuess` 等 `chunk-guess.js` | **成立** | 占了 `learnRuns` 号，块到时却不再核对，照样 `start()`，连对手的落子计时一起接管玩家后来开的东西；失败回调是空函数，而默认课已被那个号作废，学习页空白。与 #141、#142 同一类 |
+| R1b | `openSeg("endgame")` 等残局块 | **成立** | 不占号，只在块到时看 `learnSeg() === "endgame"`：等的时候玩家点了课程，块到就把课程换成残局。失败时默认课没被作废，不会空白 |
+| R1c | `shell.js` 的 `paintTrain` | **成立** | 等块期间 `learn`、`study` 都空，`learnSeg()` 退回「课程」，`paintTrain` 把它点亮并写回 `store.ui.trainSeg`（随后存盘）。另查出残局分支 `return` 掉了 `openSeg` 末尾的 `sync()`，等待期间顶栏根本不重画 |
+| R2 | Maia 超时回退的总耗时 | **成立** | `humanMove` 用掉半个上限后回退，回退那一行仍是开头算好的整个上限：最长 1.5 个上限 |
+| R3 | macOS `onGlass` 判据 | **成立（边缘）** | 只看「有标题栏且可见」，开着的「关于」面板、提示框、sheet 都算；`ChessConfigure` 早就排除了 `NSPanel` 与 sheet |
+| R4 | `openings.js` 迁出首屏 | **评估后不做** | 见下 |
+
+### 做了什么
+
+- **R1**：`lessons.js` 新增 `deferOpen(seg, when, open)`——名局目录、名局猜着、残局营共用一条规则：等待自己占一个 `learnRuns` 号（作废还在等课文的默认课，也被玩家之后开的任何东西作废）；块载入失败就开默认课；等待期间 `learnSeg()` 报所等的那一段（`pendingSeg()`），顶栏不再点亮并存下「课程」。`endgames.js` 的 `whenReady` 同 `classics-more.js` 一样加失败回调。残局分支走到 `openSeg` 末尾的 `sync()`。
+- **R2**：回退时 `movetime` 取「上限减已用」与原值的较小者。
+- **R3**：`onGlass` 用 `ChessConfigure` 的规则（跳过 `NSPanel` 与 sheet）。
+
+### 验收
+
+- `test-content-e2e` 新增五条：猜着的块慢时顶栏亮名局并存为名局、期间改点课程不被接管、块载入失败退回第 6 课；残局的块慢时顶栏亮残局、期间改点课程不被接管。**在 v25.2.0 的代码上五条全红**，修正后全绿。
+- `test-engine.mjs` 新增一条：Maia 的块不来、半个上限（500 ms）时放弃，回退搜索的 `movetime` 是 500（v25.2.0 上是 1000）。为此测试的假时钟可选让 `Date.now()` 走虚拟时间（`clockDate`）。
+- R3 只能真机看：`manual-check.md` 25.1 第 4 条补「开着『关于』面板时关掉主窗口再双击」。
+
+### `openings.js`：依赖切面与为什么这一版不做
+
+首屏里它约 27 KB（195 行着法 ≈ 13.8 KB，中文名 ≈ 9.2 KB），六个模块同步引用：
+
+| 引用者 | 用来做什么 | 首屏时就要？ |
+|---|---|---|
+| `trainer/puzzle-book.js` | 开局树（`OPENING_TREE`）与开局题（`OPENING_DRILLS`，id 由 ECO 与着法算出） | **是**：题库在启动时建好，复习欠账（`owedNow`）、今天页计数、成就都按它解析 id |
+| `eco-lookup.js` | 对局下方的开局名（精选书的前缀匹配）与 lichess 名 → 本书 id | **是**：走第一步就要显示 |
+| `trainer/content.js`、`trainer/puzzle-openings.js` | 开局中文名 | 开局题面 |
+| `repertoire-ui.js` | 开局书种子（`ChessRepSeed.linesFor`） | 首次建书时 |
+| `explorer/lazy.js` | 把书递给已经按需加载的浏览器 | 否 |
+
+**挡路的是存档安全**：`puzzle-book.js` 的 `forgetRetired()` 在挖掘题到齐后清掉「书里没有」的 id。开局题若还没载入，这一步会把玩家的开局进度当成退役题删掉——正是本条要求不能碰的存档。要安全迁出，至少要先做三件事：`forgetRetired` 与 `owedNow` 认得「开局块还没到」（像现在对 `mn-` 挖掘题那样）、对局的开局名改成「先空、块到再补」、中文名有一个不进首屏的去处（只是挪进首屏前加载的 boot 块，等于把字节换个文件，首屏成本不变）。这是一次牵动题库、复习与对局显示的改动，不是一次拆分；而首屏包现在有约 2 KB 余量（805,919，线 808,000），没有逼着现在做。留作下一版的单独一项，先写清上面三个前提。
