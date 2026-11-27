@@ -49,15 +49,18 @@ export function createEndgames(d) {
       .then((m) => {
         data = m;
         onReady();
-        for (const fn of later.splice(0)) fn();
+        for (const w of later.splice(0)) w.ok();
         if (meLater) { meLater = null; renderMe(); }
-      }, () => { asked = null; }); // a failed load is retried next time something asks
+      }, () => {
+        asked = null; // a failed load is retried next time something asks
+        for (const w of later.splice(0)) if (w.fail) w.fail();
+      });
   }
   const ready = () => !!data;
-  /** 9.0 S3: run `fn` once the camp is here (at once if it is). */
-  function whenReady(fn) {
+  /** 9.0 S3: run `fn` once the camp is here (at once if it is); review-25.2: `fail` if this load fails */
+  function whenReady(fn, fail) {
     if (data) { fn(); return; }
-    later.push(fn);
+    later.push({ ok: fn, fail });
     ensure();
   }
   /** Where 残局 picks up: the one last opened, else the first not done, else the first. */
