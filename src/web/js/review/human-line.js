@@ -58,11 +58,31 @@ export function createHumanLine(d) {
       (store.session.mode === "ai" || store.session.mode === "pvp") &&
       (!!store.session.analysisBoard || !!analysisFor());
   }
-  /** The FENs of plies max(0, n − 7) … n of the line on the board: the net reads eight. */
+  /**
+   * The FENs of the line on the board up to ply n: the net reads the last
+   * eight, and (25.4) marks a position it has seen before — so the history
+   * goes back as far as a repetition can: to the last capture or pawn move
+   * (the half-move clock), not only eight plies. Through 25.3 a position
+   * repeated from ten plies back was new to the net. Built by playing the
+   * moves on, not gameAt() per ply, which replays the game every time.
+   */
   function fensTo(n) {
-    const out = [];
-    for (let k = Math.max(0, n - 7); k <= n; k++) out.push(gameAt(k).fen());
+    const hm = Number(gameAt(n).fen().split(" ")[4]) || 0;
+    const from = Math.max(0, n - Math.max(7, Math.min(hm, 150)));
+    const g = gameAt(from), h = sanHistory(), out = [g.fen()];
+    for (let k = from; k < n; k++) out.push(g.move(h[k]) ? g.fen() : gameAt(k + 1).fen());
     return out;
+  }
+  /**
+   * 25.4: a position the game cannot go on from — mate, stalemate, dead
+   * material, fivefold, the 75-move rule (fide.js positionFinished's laws) —
+   * has nothing for the net to say, and is not worth a run of it.
+   */
+  function finished(fens) {
+    const fen = fens[fens.length - 1], g = new Chess(fen);
+    const key = (f) => f.split(" ").slice(0, 4).join(" ");
+    const reps = fens.filter((f) => key(f) === key(fen)).length;
+    return !g.moves().length || g.insufficient_material() || reps >= 5 || (Number(fen.split(" ")[4]) || 0) >= 150;
   }
   function fensAtCursor() {
     const vi = store.game.viewIndex;
@@ -125,7 +145,7 @@ export function createHumanLine(d) {
     const vi = store.game.viewIndex;
     const fens = fensAtCursor();
     const fen = fens[fens.length - 1];
-    const pol = new Chess(fen).moves().length ? answer(b, fens) : [];
+    const pol = finished(fens) ? [] : answer(b, fens);
     // the game's move from here, and the move that came here when it is a ? / ??
     const next = mine(vi) ? uciAt(vi) : null;
     const a = analysisFor();

@@ -145,6 +145,62 @@ assert(top(play([], "8/4P1k1/8/8/8/8/5K2/8 w - - 0 1"), 1) === "e7e8q" && top(pl
   assert(guardPolicy(pol, new Map(), 150) === pol, "…and keeps them all when nothing was scored");
 }
 
+// --- 25.4: a queen or rook hung for nothing is taken on the low rungs ------------
+{
+  const { freeTakes } = ctx;
+  assert(freeTakes("4k3/8/8/3q4/8/8/8/3RK3 w - - 0 1", Chess).join() === "d1d5", "25.4: an undefended queen is a free take");
+  assert(freeTakes("4k3/8/4p3/3q4/8/8/8/3RK3 w - - 0 1", Chess).length === 0, "…a defended one is not");
+  assert(freeTakes("4r1k1/5ppp/8/q7/8/8/5PPP/R5K1 w - - 0 1", Chess).length === 0, "…nor one whose capture walks into mate in one (Rxa5 Re1#)");
+  const pol = [{ uci: "e1e2", p: 0.5 }, { uci: "e1f2", p: 0.3 }, { uci: "d1d5", p: 0.2 }];
+  const seq = () => { let i = 0; return () => [0.1, 0.6, 0.3][i++ % 3]; };
+  const hot = { temp: 4.6 }, cold = { temp: 0.7 };
+  const r1 = seq(), r2 = seq();
+  const plain = [0, 1, 2].map(() => pickHuman(pol, hot, r1, null));
+  const guarded = [0, 1, 2].map(() => pickHuman(pol, hot, r2, null, ["d1d5"]));
+  assert(plain.some((u) => u !== "d1d5") && guarded.every((u) => u === "d1d5"), "25.4: a hot rung takes the free queen whatever it drew (" + plain.join(",") + " → " + guarded.join(",") + ")");
+  const r3 = seq(), r4 = seq();
+  assert([0, 1, 2].map(() => pickHuman(pol, cold, r3, null)).join() === [0, 1, 2].map(() => pickHuman(pol, cold, r4, null, ["d1d5"])).join(),
+    "…a rung at or below its band's temperature draws as before");
+  const r5 = seq(), r6 = seq();
+  assert([0, 1, 2].map(() => pickHuman(pol, hot, r5, null)).join() === [0, 1, 2].map(() => pickHuman(pol, hot, r6, null, [])).join(),
+    "…and without a free take the draw, and the generator, are untouched");
+}
+
+// --- 25.4: 「人会怎么走」 gives the net the history a repetition needs ---------------
+// and does not run it on a position the game cannot go on from
+{
+  const hl = loadAppModules(["src/web/js/chess.js", "src/web/js/review/human-line.js"]);
+  const fakeEl = () => ({ hidden: false, dataset: {}, children: [], previousElementSibling: null, textContent: "",
+    replaceChildren() { this.children = []; }, appendChild(c) { this.children.push(c); }, append(...c) { this.children.push(...c); },
+    setAttribute() {}, removeAttribute() {}, after() {} });
+  const lineFor = async (start, sans) => {
+    const calls = [];
+    const box = fakeEl();
+    const doc = { getElementById: (id) => (id === "human-line" ? box : null), createElement: fakeEl, createTextNode: (x) => x };
+    const store = { ui: { humanLine: true, langId: "en" }, session: { mode: "ai", analysisBoard: true }, game: { viewIndex: sans.length } };
+    const gameAt = (n) => { const g = new hl.Chess(start); for (let i = 0; i < n; i++) g.move(sans[i]); return g; };
+    const line = hl.createHumanLine({ doc, store, t: (k) => k, tf: (k) => k, viewGame: () => gameAt(store.game.viewIndex), gameAt,
+      sanHistory: () => sans, analysisFor: () => null, inModal: () => false, loadStats: () => null, writeSan: () => {}, setText: () => {},
+      Chess: hl.Chess, youSide: () => null,
+      engine: () => Promise.resolve({ policy: (b, fens) => { calls.push(fens); return Promise.resolve({ pol: [] }); } }) });
+    line.sync();
+    await new Promise((r) => setTimeout(r, 0));
+    return calls;
+  };
+  const START_FEN = new hl.Chess().fen();
+  // 1.Nf3 back to 5.Nf3: the position after 1.Nf3 comes back nine plies on
+  const shuffle = ["Nf3", "Nf6", "Ng1", "Ng8", "Nc3", "Nc6", "Nb1", "Nb8", "Nf3"];
+  const asked = await lineFor(START_FEN, shuffle);
+  const g1 = new hl.Chess(); g1.move("Nf3");
+  assert(asked.length === 1 && asked[0].length === 10 && asked[0][1] === g1.fen() && asked[0][0] === START_FEN,
+    "25.4: the line hands the net every position since the last pawn move or capture (" + (asked[0] || []).length + " positions), so a repetition ten plies back is seen");
+  const plane = encodePlanes(asked[0]);
+  assert(P(plane, 12).every((v) => v === 1), "…and the net marks the position as repeated");
+  assert((await lineFor("8/8/8/4k3/8/8/8/K7 w - - 0 1", [])).length === 0, "25.4: no net run on a dead-drawn position (bare kings)");
+  assert((await lineFor("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1", [])).length === 0, "…nor on a stalemate");
+  assert((await lineFor("8/8/8/4k3/8/8/8/KR6 w - - 0 1", [])).length === 1, "…but on a live one, yes");
+}
+
 // …and nothing in the worker is eval'd: the page's CSP has no 'unsafe-eval'
 // and a blob worker inherits it (the 13.0 e2e found the worker dead on that)
 {

@@ -918,6 +918,17 @@ export async function run() {
       // the same geometry with the values swapped is a skewer
       assert(M("4q3/8/4k3/8/8/8/8/4R2K w - - 0 1", "Re4+", ctx.Chess) === "skewer",
         "…and with the king in front it is a skewer");
+      // 25.4: a man with no legal move is pinned only if the king is why —
+      // the a8 knight is walled in by its own pawns, not pinned
+      assert(M("n3k3/2p5/1p6/8/8/8/8/1R2K3 w - - 0 1", "Ra1", ctx.Chess) === null,
+        "25.4: attacking a man walled in by its own pawns is not a pin");
+      assert(M("4k3/8/4n3/8/3P4/8/8/4R1K1 w - - 0 1", "d5", ctx.Chess) === "pin",
+        "…attacking a knight pinned to its king by the e1 rook still is");
+      // 25.4: a skewer wins a piece behind — a pawn there is only a check
+      assert(M("8/4p3/4k3/8/8/8/8/R5K1 w - - 0 1", "Re1+", ctx.Chess) === null,
+        "25.4: a king in front of a pawn on the line is not a skewer");
+      assert(M("8/4n3/4k3/8/8/8/8/R5K1 w - - 0 1", "Re1+", ctx.Chess) === "skewer",
+        "…a king in front of a knight is");
       // nothing certain reports nothing
       assert(M("8/8/8/8/8/8/4P3/4K2k w - - 0 1", "e4", ctx.Chess) === null,
         "a quiet pawn push is not given a motif it does not have");
