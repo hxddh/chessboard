@@ -199,8 +199,8 @@ fn utf8SeqLen(s: []const u8) usize {
 /// escaped. A name is bytes on macOS and UTF-16 narrowed by the SDK on Windows
 /// (lone surrogates and all); neither promises UTF-8, and one stray byte in a
 /// JSON string is enough for the page's JSON.parse to throw the whole answer
-/// away. jsonAppendString, which paths used, refuses control bytes instead.
-fn jsonAppendName(buf: []u8, n: *usize, s: []const u8) bool {
+/// away. v25.4: opened paths and the data directory (bridge.zig) use it too.
+pub fn jsonAppendName(buf: []u8, n: *usize, s: []const u8) bool {
     const hex = "0123456789abcdef";
     if (!jsonAppend(buf, n, "\"")) return false;
     var i: usize = 0;

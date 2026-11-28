@@ -10,6 +10,7 @@ const native_sdk = @import("native_sdk");
 const automation_build = @import("runner").automation_build;
 const openPgn = @import("dialogs.zig").openPgn;
 const saveText = @import("dialogs.zig").saveText;
+const jsonAppendName = @import("dialogs.zig").jsonAppendName;
 const App = @import("main.zig").App;
 const setMenuLanguage = @import("menus.zig").setMenuLanguage;
 const setChrome = @import("chrome.zig").setChrome;
@@ -263,17 +264,29 @@ fn takeOpenFiles(context: *anyopaque, invocation: native_sdk.bridge.Invocation, 
             if (got > 0) self.pending_open.add(false, buf[0..@intCast(got)]);
         }
     }
+    // v25.4 (review-25.3 §1): the list is emptied before anything can fail.
+    // Through 25.3 a path the old escaper (jsonAppendString) refused — any
+    // control byte but \t\r\n — failed the call after its paths were issued
+    // and before the reset, so every later take failed on the same path and
+    // no document opened again until a relaunch. Names go through
+    // jsonAppendName now (control bytes escaped, stray bytes as U+FFFD); one
+    // that still does not fit is dropped alone, never the whole answer.
+    const count = self.pending_open.count;
+    self.pending_open.count = 0;
+    const room = output[0 .. output.len -| 2]; // "]}"
     var n: usize = 0;
-    if (!jsonAppend(output, &n, "{\"paths\":[")) return error.HandlerFailed;
+    if (!jsonAppend(room, &n, "{\"paths\":[")) return error.HandlerFailed;
     var written: usize = 0;
-    for (0..self.pending_open.count) |i| {
+    for (0..count) |i| {
         const p = self.pending_open.paths[i][0..self.pending_open.lens[i]];
+        const mark = n;
+        if ((written > 0 and !jsonAppend(room, &n, ",")) or !jsonAppendName(room, &n, p)) {
+            n = mark;
+            continue;
+        }
         self.issued.add(p);
-        if (written > 0 and !jsonAppend(output, &n, ",")) return error.HandlerFailed;
-        if (!jsonAppendString(output, &n, p)) return error.HandlerFailed;
         written += 1;
     }
-    self.pending_open.count = 0;
     if (!jsonAppend(output, &n, "]}")) return error.HandlerFailed;
     return output[0..n];
 }
@@ -283,28 +296,6 @@ pub fn jsonAppend(buf: []u8, n: *usize, s: []const u8) bool {
     @memcpy(buf[n.*..][0..s.len], s);
     n.* += s.len;
     return true;
-}
-
-/// A JSON string literal, quotes included. Paths carry `\` on Windows and can
-/// carry `"`; both have to be escaped or the page's JSON.parse throws.
-fn jsonAppendString(buf: []u8, n: *usize, s: []const u8) bool {
-    if (!jsonAppend(buf, n, "\"")) return false;
-    for (s) |c| {
-        switch (c) {
-            '"' => if (!jsonAppend(buf, n, "\\\"")) return false,
-            '\\' => if (!jsonAppend(buf, n, "\\\\")) return false,
-            '\n' => if (!jsonAppend(buf, n, "\\n")) return false,
-            '\r' => if (!jsonAppend(buf, n, "\\r")) return false,
-            '\t' => if (!jsonAppend(buf, n, "\\t")) return false,
-            else => {
-                if (c < 0x20) return false; // other control bytes never occur in a path
-                if (n.* + 1 > buf.len) return false;
-                buf[n.*] = c;
-                n.* += 1;
-            },
-        }
-    }
-    return jsonAppend(buf, n, "\"");
 }
 
 // ------------------------------------------------ chunked transfer (v8-0-plan F3)
@@ -362,22 +353,58 @@ fn isJsonSpace(c: u8) bool {
     return c == ' ' or c == '\t' or c == '\n' or c == '\r';
 }
 
-/// Where the value of `"key":` starts. A quoted match that is not followed by
-/// a colon — a string value that happens to spell the name — is skipped.
+/// Where the value of the top-level `"key":` starts, or null.
+///
+/// v25.4 (review-25.3 §1): a walk over the object rather than a search for
+/// `"key"`. The search took the first match at any depth, so a nested object
+/// listed earlier ({"author":{"html_url":…},"html_url":…} from GitHub, or a
+/// page's {"meta":{"offset":0},"offset":9}) answered for the field, and what
+/// a field said depended on the order the sender wrote them in. Strings are
+/// skipped whole (escapes and all), so a value that spells a key is never
+/// one; nested objects and arrays are skipped by depth. The first top-level
+/// match wins. A payload that is not an object has no fields.
 pub fn jsonFieldValue(payload: []const u8, key: []const u8) ?usize {
-    var key_buf: [96]u8 = undefined;
-    if (key.len + 2 > key_buf.len) return null;
-    const needle = std.fmt.bufPrint(&key_buf, "\"{s}\"", .{key}) catch return null;
-    var from: usize = 0;
-    while (std.mem.indexOfPos(u8, payload, from, needle)) |at| {
-        var i = at + needle.len;
-        while (i < payload.len and isJsonSpace(payload[i])) : (i += 1) {}
-        if (i < payload.len and payload[i] == ':') {
+    var depth: usize = 0;
+    // at depth 1, the next string is a key (just after `{` or `,`)
+    var key_next = false;
+    var i: usize = 0;
+    while (i < payload.len) {
+        const c = payload[i];
+        if (c == '"') {
+            const start = i + 1;
+            i = start;
+            while (i < payload.len and payload[i] != '"') : (i += 1) {
+                if (payload[i] == '\\') i += 1;
+            }
+            if (i >= payload.len) return null;
+            const name = payload[start..i];
             i += 1;
-            while (i < payload.len and isJsonSpace(payload[i])) : (i += 1) {}
-            return i;
+            if (depth == 1 and key_next) {
+                key_next = false;
+                while (i < payload.len and isJsonSpace(payload[i])) : (i += 1) {}
+                if (i >= payload.len or payload[i] != ':') return null;
+                i += 1;
+                if (std.mem.eql(u8, name, key)) {
+                    while (i < payload.len and isJsonSpace(payload[i])) : (i += 1) {}
+                    return i;
+                }
+            }
+            continue;
         }
-        from = at + 1;
+        switch (c) {
+            '{', '[' => {
+                if (depth == 0 and c != '{') return null;
+                depth += 1;
+                key_next = depth == 1;
+            },
+            '}', ']' => {
+                if (depth <= 1) return null;
+                depth -= 1;
+            },
+            ',' => key_next = depth == 1,
+            else => {},
+        }
+        i += 1;
     }
     return null;
 }
@@ -1021,7 +1048,8 @@ fn appdataPath(context: *anyopaque, invocation: native_sdk.bridge.Invocation, ou
     if (self.appdata_dir.len == 0) return appdataUnavailable(output);
     var n: usize = 0;
     if (!jsonAppend(output, &n, "{\"path\":")) return error.HandlerFailed;
-    if (!jsonAppendString(output, &n, self.appdata_dir)) return error.HandlerFailed;
+    // v25.4: the same escaper as takeOpenFiles — %APPDATA% is the user's to set
+    if (!jsonAppendName(output, &n, self.appdata_dir)) return error.HandlerFailed;
     if (!jsonAppend(output, &n, "}")) return error.HandlerFailed;
     return output[0..n];
 }
@@ -1534,6 +1562,23 @@ test "a piece's fields are read as numbers and flags, not as look-alike text" {
     try std.testing.expectEqual(@as(?usize, null), jsonUintField("{\"path\":\"/tmp/\\\"offset\\\":1\"}", "offset"));
 }
 
+test "a field is the top level's, whatever came before it (v25.4)" {
+    // review-25.3 §1: a nested object listed first no longer answers for it
+    try std.testing.expectEqual(@as(?usize, 9), jsonUintField("{\"meta\":{\"offset\":0},\"offset\":9}", "offset"));
+    try std.testing.expectEqual(@as(?usize, 9), jsonUintField("{\"list\":[{\"offset\":0},1,\"offset\"],\"offset\" : 9}", "offset"));
+    try std.testing.expectEqual(@as(?usize, null), jsonUintField("{\"meta\":{\"offset\":0}}", "offset"));
+    try std.testing.expectEqualStrings("https://github.com/o/r/releases/tag/v1", jsonStringFieldRaw("{\"author\":{\"html_url\":\"https://github.com/u\"},\"html_url\":\"https://github.com/o/r/releases/tag/v1\"}", "html_url").?);
+    // a string holding `"key":` (escaped quotes, a backslash before the close) is skipped whole
+    try std.testing.expectEqual(@as(?usize, 3), jsonUintField("{\"path\":\"C:\\\\x\\\\\",\"b\":\"\\\"total\\\":1\",\"total\":3}", "total"));
+    // the order the sender wrote them in does not matter
+    try std.testing.expectEqual(@as(?bool, true), jsonBoolField("{\"bak\":true,\"more\":false}", "bak"));
+    try std.testing.expectEqual(@as(?bool, true), jsonBoolField("{\"more\":false,\"bak\":true}", "bak"));
+    // not an object, or broken before the key: no field
+    try std.testing.expectEqual(@as(?usize, null), jsonUintField("[\"offset\",1]", "offset"));
+    try std.testing.expectEqual(@as(?usize, null), jsonUintField("{\"a\":\"unterminated,\"offset\":1", "offset"));
+    try std.testing.expectEqual(@as(?usize, null), jsonUintField("", "offset"));
+}
+
 test "store keys are plain names that cannot leave the store" {
     for ([_][]const u8{ "save", "settings", "panelOpen", "meta", "selftest", "achievements", "a_b-c" }) |k| {
         try std.testing.expect(storeKeyValid(k));
@@ -1604,15 +1649,20 @@ test "jsonStringField unescapes what the page escaped" {
     try std.testing.expect(jsonStringField("{\"path\":\"abcd\"}", "path", &tiny) == null);
 }
 
-test "jsonAppendString escapes what a path can carry" {
+test "an opened path crosses as a JSON string, whatever bytes it carries (v25.4)" {
     var buf: [64]u8 = undefined;
     var n: usize = 0;
-    try std.testing.expect(jsonAppendString(&buf, &n, "C:\\Users\\a \"b\"\\g.pgn"));
+    try std.testing.expect(jsonAppendName(&buf, &n, "C:\\Users\\a \"b\"\\g.pgn"));
     try std.testing.expectEqualStrings("\"C:\\\\Users\\\\a \\\"b\\\"\\\\g.pgn\"", buf[0..n]);
+    // review-25.3 §1: a control byte is escaped, not refused (refusing it
+    // failed takeOpenFiles on every later call)
+    n = 0;
+    try std.testing.expect(jsonAppendName(&buf, &n, "/a\x01b.pgn"));
+    try std.testing.expectEqualStrings("\"/a\\u0001b.pgn\"", buf[0..n]);
     // no room → refused whole, never a cut string
     var tiny: [4]u8 = undefined;
     var m: usize = 0;
-    try std.testing.expect(!jsonAppendString(&tiny, &m, "abcdef"));
+    try std.testing.expect(!jsonAppendName(&tiny, &m, "abcdef"));
 }
 
 test "the issued-path table remembers what it was given, FIFO, bounded" {
