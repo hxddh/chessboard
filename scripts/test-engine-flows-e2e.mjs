@@ -1754,7 +1754,8 @@ await scenario("引擎提和", async () => {
 
 await scenario("棋钟节奏", async () => {
   // 30+0 at the beginner rung: the reply is paced to the clock (opponents.js
-  // thinkPlan: a 40th of it, halved, up to 3 s) — its own clock pays for it
+  // thinkPlan: a 40th of it, halved, up to 3 s; 25.4: scaled by the position,
+  // think-time.js, never past 3 s) — its own clock pays for it
   const { ctx, page, errs } = await openPage({ mode: "ai", difficulty: "beginner", humanColor: "w", timeControl: "30" });
   await clickMove(page, "e2", "e4");
   await until(() => plies(page).then((p) => (p >= 2 ? p : 0)), 30000, 150);   // the boot
@@ -1766,8 +1767,10 @@ await scenario("棋钟节奏", async () => {
   await until(() => plies(page).then((p) => (p >= 4 ? p : 0)), 15000, 50);
   const dt = Date.now() - t0;
   const clk1 = await page.evaluate(() => JSON.parse(localStorage.getItem("chess.save") || "{}").clock);
-  assert(dt >= 2600 && dt < 6000, "棋钟节奏：30 分钟的棋，新手档也按钟上的时间想 3 秒左右，不是 0.35 秒（" + dt + "ms）");
-  assert(!!clk0 && !!clk1 && clk0.b - clk1.b >= 2500, "棋钟节奏：想的时间记在它自己的钟上", JSON.stringify({ clk0, clk1 }));
+  // 25.4: the pace (3 s here) is a mean that breathes with the position —
+  // an opening move from memory is held about 0.55 of it — never past 3 s
+  assert(dt >= 1000 && dt < 6000, "棋钟节奏：30 分钟的棋，新手档也按钟上的时间想（开局凭记忆约 1.5 秒，不超过 3 秒），不是 0.35 秒（" + dt + "ms）");
+  assert(!!clk0 && !!clk1 && clk0.b - clk1.b >= 900, "棋钟节奏：想的时间记在它自己的钟上", JSON.stringify({ clk0, clk1 }));
   assert(!errs.length, "棋钟节奏：页面没有报错", errs.join(" / "));
   await ctx.close();
 });
