@@ -418,7 +418,8 @@ export function createAnalysis(d) {
     document.getElementById("an-run").onclick = () => {
       if (store.session.analyzing) {
         store.session.analyzeAbort = true;
-        if (ChessEngine) ChessEngine.cancel();
+        // 25.4: the pass's own searches too, at once (engine.js cancel)
+        if (ChessEngine) ChessEngine.cancel(true);
         return;
       }
       analyzeGame(SCAN_BUDGET);

@@ -36,6 +36,8 @@ export function createBgLane(d) {
   // 8.1 M2 review P3: once closed, for good — a search chained behind the
   // one close() cut off would otherwise boot a fresh worker nobody holds
   let closed = false;
+  // 25.4: the search in flight, {cut, tag} — stop() cuts it if it is tagged
+  let cur = null;
 
   function send(cmd) { if (worker) worker.postMessage(cmd); }
 
@@ -67,13 +69,16 @@ export function createBgLane(d) {
     return booting;
   }
 
-  async function search(fen, nodes, multipv) {
+  async function search(fen, nodes, multipv, me) {
     await boot();
     if (closed) throw new Error("engine lane closed");
+    const cut = () => { if (me.cut) throw Object.assign(new Error("engine search stopped"), { cut: true }); };
+    cut();
     send("ucinewgame");
     const drain = waitFor((l) => l === "readyok", 5000);
     send("isready");
     await drain;
+    cut();
     for (const c of d.optionCmds(multipv)) send(c);
     send("position fen " + fen);
     const slots = new Map();
@@ -83,15 +88,30 @@ export function createBgLane(d) {
     send("go nodes " + nodes);
     try {
       const line = await wait;
+      cut(); // a bestmove after a `stop` is a truncated search, never a result
       return { uci: line.split(/\s+/)[1], slots };
     } finally { handlers = handlers.filter((h) => h !== collect); }
   }
 
-  /** One analysis, after whatever this lane is already doing. */
-  function analyze(fen, nodes, multipv) {
-    const run = chain.then(() => search(fen, nodes, multipv));
-    chain = run.then(() => {}, () => {});
+  /**
+   * One analysis, after whatever this lane is already doing. `tag` true
+   * marks it as one stop() may cut (a review pass's, not a library run's).
+   */
+  function analyze(fen, nodes, multipv, tag) {
+    const me = { cut: false, tag: !!tag };
+    const run = chain.then(() => { cur = me; return search(fen, nodes, multipv, me); });
+    chain = run.then(() => {}, () => {}).then(() => { if (cur === me) cur = null; });
     return run;
+  }
+
+  /**
+   * 25.4: cut the tagged search in flight (the review's Stop): it rejects
+   * with `cut`, at once, and the lane stays up for the next one.
+   */
+  function stop() {
+    if (!cur || !cur.tag || cur.cut) return;
+    cur.cut = true;
+    send("stop");
   }
 
   /** Terminate the worker; whatever was waiting on it rejects. */
@@ -106,5 +126,5 @@ export function createBgLane(d) {
     for (const w of orphans) { clearTimeout(w.timer); w.reject(new Error("engine lane closed")); }
   }
 
-  return { analyze, close, up: () => !!worker };
+  return { analyze, close, stop, up: () => !!worker };
 }

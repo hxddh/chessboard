@@ -72,7 +72,7 @@ export async function startPlayer({ Chess, ChessEngine, ChessPersona, parseNet, 
       const moves = row.guard ? Pick.guardMoves(pol) : null;
       const look = await move(fen, { depth: 8, multipv: moves ? moves.length : 0 }, rng, "off", null, moves);
       const kept = moves && look ? Pick.guardPolicy(pol, new Map(look.list.map((c) => [c.uci, c.score])), row.guard) : pol;
-      const uci = Pick.pickHuman(kept, row, rng, styleOf);
+      const uci = Pick.pickHuman(kept, row, rng, styleOf, Pick.freeTakes ? Pick.freeTakes(fen, Chess) : null);
       return uci ? { uci, score: look ? look.score : null, nodes: look ? look.nodes : 0 } : null;
     }
     const tier = styled && !row.winT ? Object.assign({}, row, { multipv: Math.max(row.multipv || 0, 14) }) : row;

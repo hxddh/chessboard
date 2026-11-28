@@ -285,18 +285,22 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * Every search drains with an `isready` first, so a worker that answers
    * `isready` but never finishes a search used to alternate strike / reset
    * forever — the 6.0 rebuild above never fired, which is precisely the
-   * pre-6.0 failure it was written to end. Strikes are now counted per kind
-   * of wait ("search", "ready", "boot"), and only progress of that same kind
-   * clears them: a readyok is no evidence that searching works.
+   * pre-6.0 failure it was written to end. Only progress of the kind the
+   * run of strikes began with clears them (or a finished search, which
+   * proves everything): a readyok is no evidence that searching works.
+   *
+   * 25.4: and a timeout of another kind is a second strike, not a fresh
+   * start. A wedged worker misses its search's bestmove and then the next
+   * move's `isready` too — that change of kind used to reset the count, so
+   * the worker took three or more timeouts to be rebuilt, if ever.
    */
   function onTimeout(kind) {
-    if (kind !== strikeKind) { strikeKind = kind; strikes = 0; }
-    strikes++;
-    if (strikes >= 2) { teardown(); return; }
+    if (!strikes) strikeKind = kind;
+    if (++strikes >= 2) { teardown(); return; }
     send("stop");
   }
   function onProgress(kind) {
-    if (kind === strikeKind) { strikes = 0; strikeKind = null; }
+    if (kind === strikeKind || kind === "search") { strikes = 0; strikeKind = null; }
   }
   function teardown(reason) {
     booted = false;
@@ -430,6 +434,9 @@ const global = typeof window !== "undefined" ? window : globalThis;
       const uciWait = waitFor((l) => l === "uciok", 10000, "boot");
       send("uci");
       await uciWait;
+      // 25.4: the player's Hash from the first search on — the game search
+      // sets none of its own, so it used to play at Stockfish's default 16 MB
+      send("setoption name Hash value " + options.hash);
       booted = true;
       return true;
     })();
@@ -458,10 +465,20 @@ const global = typeof window !== "undefined" ? window : globalThis;
    * the pass would then file as if it were whole (it is only ever discarded
    * when the scheduler itself stopped it). The pass sees the change, if it
    * cares, through its own halt check after this search.
+   *
+   * 25.4: `pass` true is the review's Stop — then the background searches
+   * are cut too — a review pass's (`wide`), not a library run's — on the
+   * shared worker and on the lanes (engine-bg.js), and answer null: their pass ends at once instead of after its next ~1 s
+   * search. A cut search is never cached (rememberEval drops a null).
    */
-  function cancel() {
+  function cancel(pass) {
     gen++;
-    if (worker && !batchRunning()) send("stop");
+    const r = sched.running();
+    if (pass) {
+      for (const s of lanes) if (s.lane) s.lane.stop();
+      if (r && r.wide) r.cut = true;
+    }
+    if (worker && (!batchRunning() || pass && r.wide && r.searching)) send("stop");
   }
 
   // v8-1-plan F4: a `ucinewgame` in the middle of a background search clears
@@ -469,7 +486,10 @@ const global = typeof window !== "undefined" ? window : globalThis;
   let freshGame = false;
   // v8-3-plan M2 评审: an analysis at its own Hash (看N步's fixed 32 MB) leaves
   // that Hash on the worker; the game search sets no Hash of its own, so it
-  // puts the player's back once, before its next search
+  // puts the player's back once, before its next search. 25.4: so does a
+  // Hash the player changed (setOptions) — not sent there, because a
+  // `setoption Hash` waits for the search on the worker to finish, and a
+  // `go infinite` never does
   let foreignHash = false;
   function newGame() {
     gen++;
@@ -555,8 +575,11 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // is ~60 ms (docs/measured.json human), but a first load, or a worker
     // that stopped answering, waited out H.policy's 2 s however little was
     // left. Past half the ceiling the rung's Stockfish row plays instead.
+    // 25.4: under 4.8 s of a game without increment the ceiling is below
+    // 120 ms, and the net's 100 ms plus the fallback's 20 ms floor ran past
+    // it: the net gets what leaves the fallback its 20 ms, never more
     const human = base.maia && persona && persona.Chess && persona.fens
-      ? await humanMove(fen, base, persona, styled ? P : null, ceil ? Math.max(100, Math.floor(ceil / 2)) : 0) : null;
+      ? await humanMove(fen, base, persona, styled ? P : null, ceil ? Math.max(1, Math.min(ceil - 20, Math.max(100, ceil / 2)) | 0) : 0) : null;
     if (myGen !== gen) return null;
     const only = human && base.guard ? human.H.guardMoves(human.pol) : null;
     // 25.1 (review-25.0 §4): within the clock's ceiling too, less what the
@@ -614,7 +637,8 @@ const global = typeof window !== "undefined" ? window : globalThis;
     let picked = parseUci(line.split(/\s+/)[1]);
     if (human) {
       const pol = only ? human.H.guardPolicy(human.pol, new Map([...cands.values()].map((c) => [c.uci, c.score])), base.guard) : human.pol;
-      picked = parseUci(human.H.pick(pol, base, Math.random, human.styleOf)) || picked;
+      // 25.4: and a queen or rook hung for nothing is taken on the low rungs (human/pick.js freeTakes)
+      picked = parseUci(human.H.pick(pol, base, Math.random, human.styleOf, human.H.freeTakes && human.H.freeTakes(fen, persona.Chess))) || picked;
     } else if (tier.multipv && cands.size > 1 && tier.winT) {
       // the win-chance rungs weigh a style into the same draw instead of
       // letting it overrule the draw: the strength stays the rung's
@@ -642,7 +666,12 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // v8-0-plan B4: a clocked game paces the reply to the clock instead
     // (opponents.js thinkPlan) — longer in a long game, never past the cap.
     // 25.0 N13: unclocked, the rung's minimum is a mean (think-time.js)
-    const hold = pace != null ? pace : P && P.thinkMs && picked ? P.thinkMs(tier.minMs, fen, picked.to, persona.Chess, persona.fens) : tier.minMs;
+    // 25.4: and so is a clock's pace — an only move or a recapture comes
+    // quicker, a busy position takes longer — never past what the clock
+    // allows (thinkPlan's `most`) nor the ceiling of a depth rung
+    const mean = pace != null ? pace : tier.minMs;
+    let hold = P && P.thinkMs && picked ? P.thinkMs(mean, fen, picked.to, persona.Chess, persona.fens) : mean;
+    if (plan) hold = Math.min(hold, plan.most >= 0 ? plan.most : mean, ceil || 1e9);
     if (picked && hold) {
       const left = hold - (Date.now() - startedAt);
       if (left > 0) await new Promise((r) => setTimeout(r, left));
@@ -815,7 +844,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
       // 6.1: Hash changes what the search finds, so everything already in the
       // eval cache was computed by a different engine. Served on, it would
       // hide the very change the player just asked for.
-      if (hash !== options.hash) { options.hash = hash; evalCache.clear(); cacheEpoch++; }
+      if (hash !== options.hash) { options.hash = hash; evalCache.clear(); cacheEpoch++; foreignHash = true; }
     }
     return { ...options };
   }
@@ -970,9 +999,11 @@ const global = typeof window !== "undefined" ? window : globalThis;
         const mine = s.lane;
         const nodes = nodesFor(budget);
         try {
-          const r = await mine.analyze(fen, nodes, multipv);
+          const r = await mine.analyze(fen, nodes, multipv, wide);
           return resultOf(fen, r.uci, r.slots, nodes);
-        } catch (_) {
+        } catch (e) {
+          // 25.4: the review's Stop cut it (cancel(true)): nothing to redo
+          if (e && e.cut) return null;
           // it failed: no lane for the rest of the session, the shared worker
           // takes the search — but not when the setting closed it under it
           if (s.lane === mine) { laneDown = true; for (let i = 0; i < lanes.length; i++) closeLane(i); }
@@ -988,7 +1019,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
         }
       }
     }
-    return exclusive((job) => analyzeInner(fen, budget, multipv, job), PRIO.BATCH, "batch");
+    return exclusive((job) => { job.wide = wide; return analyzeInner(fen, budget, multipv, job); }, PRIO.BATCH, "batch");
   }
 
   /**
@@ -1035,7 +1066,7 @@ const global = typeof window !== "undefined" ? window : globalThis;
     // v8-1-plan F4: a background search does not answer to cancel(); only
     // the scheduler stops it, and then its result is not delivered at all
     const batch = job.prio === PRIO.BATCH;
-    const stale = () => job.preempted || (!batch && myGen !== gen);
+    const stale = () => job.preempted || job.cut || (!batch && myGen !== gen);
     // a clean engine for every analysis search — see NODES_PER_MS. It is
     // also what makes a preempted search's rerun the same search.
     send("ucinewgame");
