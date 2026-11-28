@@ -4521,7 +4521,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     // clock preset chosen but no saved clock state → fresh clocks
     if (store.game.timeControl !== "off" && !store.game.clock) resetClocks();
     syncAutoFlip(); // a resumed pvp game must face whoever is on move
-    if (store.session.mode === "learn") startLearn();
+    if (store.session.mode === "learn") startLearn(store.ui.trainSeg); // 25.4: the segment it was left on
     if (store.session.mode === "puzzle") startPuzzles();
     BoardView.resizeCanvas();
     applyLanguage(); // 15.0 P: it renders the stats, badges and record entry and syncs; the boot did all four again

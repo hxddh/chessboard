@@ -22,13 +22,21 @@
   const global = typeof window !== "undefined" ? window : globalThis;
   /** in-flight loads, so two callers share one script tag */
   const inflight = new Map();
+  /**
+   * 25.4: how long a load may take before it is given up (ms). A packaged
+   * file arrives within a frame or two or not at all; a script that neither
+   * loads nor errors used to leave its promise — and every later caller of
+   * that chunk — waiting for good.
+   */
+  export const CHUNK_MS = 30000;
 
   /**
    * @param {string} file  file name under js/, e.g. "chunk-eco.js"
    * @param {string} globalName  the global the chunk defines
+   * @param {number} [ms]  give up after this long (CHUNK_MS)
    * @returns {Promise<any>} the global's value
    */
-  export function loadChunk(file, globalName) {
+  export function loadChunk(file, globalName, ms) {
     if (global[globalName] != null) return Promise.resolve(global[globalName]);
     const already = inflight.get(file);
     if (already) return already;
@@ -36,12 +44,19 @@
       const doc = global.document;
       if (!doc || !doc.head) { reject(new Error("no document for " + file)); return; }
       const el = doc.createElement("script");
+      // a promise settles once, so a script that turns up after the
+      // time-out is harmless (all it can do is put its global on the window,
+      // where the next call finds it); a failed load's dead tag goes, so
+      // retries do not stack <script>s for one file
+      const end = (err) => {
+        clearTimeout(timer);
+        if (err) { el.remove(); reject(new Error(file + err)); } else resolve(global[globalName]);
+      };
+      const timer = setTimeout(() => end(" timed out"), ms || CHUNK_MS);
       el.src = "js/" + file;
       el.async = true;
-      el.onload = () => (global[globalName] != null
-        ? resolve(global[globalName])
-        : reject(new Error(file + " loaded without " + globalName)));
-      el.onerror = () => reject(new Error(file + " failed to load"));
+      el.onload = () => end(global[globalName] != null ? "" : " loaded without " + globalName);
+      el.onerror = () => end(" failed to load");
       doc.head.appendChild(el);
     });
     // a failed load must not be remembered as the answer: the next caller

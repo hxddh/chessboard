@@ -544,7 +544,9 @@ export function createIO(d) {
     let doc = null;
     try { doc = JSON.parse(text); } catch (_) { doc = null; }
     if (!Persist.isProfileDoc(doc)) { toast(t("msg.allData.badFile"), "fix"); return; }
-    Persist.restoreAll(doc);
+    // 25.4: refused (a full cache), the restore put everything back as it
+    // was — so no freeze, no "imported" and no reload onto a profile that is not there
+    if (!Persist.restoreAll(doc)) { toast(t("msg.storage.failed"), "fault"); return; }
     // v8-0-plan F3: the page still stands on the old profile until the reload
     // below, and the reload's own beforeunload saveGame() wrote that old game
     // over the imported save — the one key that never came back equal. Freeze

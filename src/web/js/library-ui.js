@@ -36,7 +36,7 @@ import { ChessProgress } from "./progress.js";
 import { ChessReview } from "./review.js";
 import { motifOf } from "./motif.js";
 import { reconcile } from "./keyed.js";
-import { prefetchSummary, LIBDB_CHUNK } from "./library-sum.js";
+import { prefetchSummary, LIBDB_CHUNK, DB_NAME as LIBDB_NAME } from "./library-sum.js";
 import { tdot } from "./tdot.js";
 
 /**
@@ -193,7 +193,16 @@ export function createLibraryUI(d) {
     names: () => (libDb ? libDb.shardNames() : null),
     read: (name) => (libDb ? libDb.shardText(name) : null),
     restore: (texts) => libDbReady.then((c) => c && c.restoreShards(texts)),
-    clear: () => { store.session.library = []; if (libDb) libDb.clear(); },
+    clear: () => {
+      store.session.library = [];
+      if (libDb) { libDb.clear(); return; }
+      // 25.4: before the chunk is in, the database by name (the repertoire's
+      // rule) — left alone, the chunk's boot read every game back — and the
+      // games it may have read meanwhile, once it is here
+      libEarly = null;
+      try { indexedDB.deleteDatabase(LIBDB_NAME); } catch (_) { /* no IndexedDB here */ }
+      libDbReady.then((c) => c && c.clear());
+    },
   });
   if (typeof window !== "undefined" && window.__chess) {
     // the e2e's view of the library (the games are no longer in localStorage)

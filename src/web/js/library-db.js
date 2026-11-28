@@ -628,7 +628,9 @@ function createLibraryStore(o) {
     local = [];
     pk.clear();
     sum.clear();
-    return backend.clear();
+    // 25.4: false, not a rejection, when the database went under it (清除全部存档
+    // before the chunk was in deletes it by name: library-ui.js)
+    return backend.clear().catch(() => false);
   }
 
   /** The shards this library's games are mirrored in, with their games. */
