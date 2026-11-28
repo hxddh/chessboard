@@ -508,8 +508,9 @@ fn updateWork(job: *Job, out: []u8) []const u8 {
     var body: std.Io.Writer.Allocating = .init(gpa);
     defer body.deinit();
     // GitHub refuses requests without a User-Agent
-    const status = httpGet(&client, RELEASES_LATEST_URL, "application/vnd.github+json", &body, null);
-    return updateReply(status, body.written(), out);
+    const got = httpGet(&client, RELEASES_LATEST_URL, "application/vnd.github+json", &body, null);
+    // a cut release document is no release document
+    return updateReply(if (got.truncated) 0 else got.status, body.written(), out);
 }
 
 /// The page's answer for GitHub's: the status first, then the body.
@@ -558,23 +559,52 @@ const Tick = struct {
     tick_fn: *const fn (context: *anyopaque, written: []const u8) void,
 };
 
+/// What one GET came back with.
+const Got = struct {
+    /// the HTTP status, or 0 when nothing came back
+    status: u32,
+    /// v25.4 (review-25.3 §2): the body went past HTTP_BODY_MAX and was cut
+    /// there. Through 25.3 the read just stopped at the cap, and a cut answer
+    /// was read as a whole one: Lichess's last game half there, Chess.com's
+    /// month a JSON error called "parse".
+    truncated: bool = false,
+    /// a 429's Retry-After, in seconds, when it gave one in seconds
+    retry_after_s: ?u32 = null,
+};
+
 /// Where the sync's GETs go: the network, or a test's canned answers.
 const Getter = struct {
     context: *anyopaque,
-    get_fn: *const fn (context: *anyopaque, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) u32,
+    get_fn: *const fn (context: *anyopaque, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) Got,
 
-    fn get(self: Getter, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) u32 {
+    fn get(self: Getter, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) Got {
         return self.get_fn(self.context, url, accept, body, tick);
     }
 };
 
-/// One GET into `body`, read as it arrives: the HTTP status, or 0 when
-/// nothing came back. std.http.Client.fetch's own steps (Client.zig fetch),
-/// with the read in pieces so `tick` can count what is in.
-fn httpGet(client: *std.http.Client, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) u32 {
-    const uri = std.Uri.parse(url) catch return 0;
+/// A Retry-After in its seconds form (RFC 9110 §10.2.3); null for the
+/// HTTP-date form or anything else.
+fn retryAfterSeconds(value: []const u8) ?u32 {
+    const v = std.mem.trim(u8, value, " \t");
+    if (v.len == 0 or v.len > 6) return null;
+    for (v) |c| if (!std.ascii.isDigit(c)) return null;
+    return std.fmt.parseInt(u32, v, 10) catch null;
+}
+
+/// One GET into `body`, read as it arrives: the HTTP status (0 when nothing
+/// came back), and whether the body was cut. std.http.Client.fetch's own
+/// steps (Client.zig fetch), with the read in pieces so `tick` can count what
+/// is in.
+///
+/// v25.4 (review-25.3 §2): keep-alive. A Chess.com sync asks up to 25 pages
+/// of one host through one client (syncWork); through 25.3 each opened its
+/// own TCP + TLS connection. The pool hands a connection back only once its
+/// body was read to the end — a cut or failed read closes it.
+fn httpGet(client: *std.http.Client, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) Got {
+    const no_answer: Got = .{ .status = 0 };
+    const uri = std.Uri.parse(url) catch return no_answer;
     var req = client.request(.GET, uri, .{
-        .keep_alive = false,
+        .keep_alive = true,
         // 23.0 (review-22.0 §5A.2 X5): a 3xx is handed back as its status, not
         // followed. std's default followed three, to any host and to plain
         // http — the two fixed https hosts were checked only before the first
@@ -583,31 +613,43 @@ fn httpGet(client: *std.http.Client, url: []const u8, accept: []const u8, body: 
         .redirect_behavior = .unhandled,
         .headers = .{ .user_agent = .{ .override = SYNC_USER_AGENT } },
         .extra_headers = &.{.{ .name = "accept", .value = accept }},
-    }) catch return 0;
+    }) catch return no_answer;
     defer req.deinit();
-    req.sendBodiless() catch return 0;
+    req.sendBodiless() catch return no_answer;
     var redirect_buffer: [8 * 1024]u8 = undefined;
-    var response = req.receiveHead(&redirect_buffer) catch return 0;
+    var response = req.receiveHead(&redirect_buffer) catch return no_answer;
     const status: u32 = @intFromEnum(response.head.status);
+    // before the body is read: the head's bytes do not outlive that
+    var retry_after_s: ?u32 = null;
+    if (status == 429) {
+        var it = response.head.iterateHeaders();
+        while (it.next()) |h| {
+            if (std.ascii.eqlIgnoreCase(h.name, "retry-after")) retry_after_s = retryAfterSeconds(h.value);
+        }
+    }
     const gpa = client.allocator;
     const decompress_buffer: []u8 = switch (response.head.content_encoding) {
         .identity => &.{},
-        .zstd => gpa.alloc(u8, std.compress.zstd.default_window_len) catch return 0,
-        .deflate, .gzip => gpa.alloc(u8, std.compress.flate.max_window_len) catch return 0,
-        .compress => return 0,
+        .zstd => gpa.alloc(u8, std.compress.zstd.default_window_len) catch return no_answer,
+        .deflate, .gzip => gpa.alloc(u8, std.compress.flate.max_window_len) catch return no_answer,
+        .compress => return no_answer,
     };
     defer if (decompress_buffer.len > 0) gpa.free(decompress_buffer);
     var transfer_buffer: [4096]u8 = undefined;
     var decompress: std.http.Decompress = undefined;
     const reader = response.readerDecompressing(&transfer_buffer, &decompress, decompress_buffer);
-    while (body.written().len < HTTP_BODY_MAX) {
-        _ = reader.stream(&body.writer, .limited(16 * 1024)) catch |err| switch (err) {
+    // read to one byte past the cap: a body that ends right at it is whole,
+    // one that has more is cut (Got.truncated)
+    while (true) {
+        const len = body.written().len;
+        if (len > HTTP_BODY_MAX) return .{ .status = status, .truncated = true, .retry_after_s = retry_after_s };
+        _ = reader.stream(&body.writer, .limited(@min(16 * 1024, HTTP_BODY_MAX + 1 - len))) catch |err| switch (err) {
             error.EndOfStream => break,
-            else => return 0,
+            else => return no_answer,
         };
         if (tick) |t| t.tick_fn(t.context, body.written());
     }
-    return status;
+    return .{ .status = status, .retry_after_s = retry_after_s };
 }
 
 const NetGetter = struct {
@@ -617,7 +659,7 @@ const NetGetter = struct {
         return .{ .context = self, .get_fn = get };
     }
 
-    fn get(context: *anyopaque, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) u32 {
+    fn get(context: *anyopaque, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) Got {
         const self: *NetGetter = @ptrCast(@alignCast(context));
         return httpGet(self.client, url, accept, body, tick);
     }
@@ -640,7 +682,16 @@ const NetGetter = struct {
 // (absent with no games). A first sync's are the newest N, newest first; an
 // incremental one's run oldest first (below). Or {"error":code}, code being one the
 // page words for the player — offline, rate_limited, not_found, bad_request,
-// parse, timeout, busy — or "http" with the "status".
+// parse, too_large, timeout, busy — or "http" with the "status".
+//
+// v25.4 (review-25.3 §2): an answer whose games stop short because a later
+// request failed — a Chess.com month after some were in, or a Lichess stream
+// cut at HTTP_BODY_MAX — also carries "partial":true and "stopped":code (one
+// of the codes above, with "status" for "http"). The games in it are still a
+// run with no hole (a failed month ends the walk; it is never skipped), but
+// the run is shorter than the player asked for: on a first sync the older
+// history was not reached, and no later sync goes back for it. Pages that
+// do not read the field see the answer they always did.
 //
 // v8-1-plan T4, incremental: the page sends `since`, worked out from its own
 // library — the newest game it already has from this site and name, less an
@@ -906,7 +957,7 @@ fn jsonEscapedLen(s: []const u8) usize {
 }
 
 /// `s` JSON-escaped into `buf` at `n`. The caller has made the room
-/// (jsonEscapedLen). Unlike jsonAppendString, any control byte is taken —
+/// (jsonEscapedLen). Any control byte is taken —
 /// as \u00XX — because a PGN from elsewhere is not ours to refuse.
 fn jsonEscapeInto(buf: []u8, n: *usize, s: []const u8) void {
     const hex = "0123456789abcdef";
@@ -951,10 +1002,15 @@ const SyncAnswer = struct {
     full: bool = false,
     /// the newest kept game's time, ms (0: none known)
     last: u64 = 0,
+    /// v25.4: why the games stop short, when a failed request ended them
+    /// (a code from the fixed list, never text an answer brought)
+    stopped: ?[]const u8 = null,
+    stopped_status: u32 = 0,
 
     const HEAD = "{\"pgn\":\"";
-    /// `","count":` and the number, `,"last":` and a timestamp, and `}`
-    const TAIL_MAX: usize = 48;
+    /// `","count":` and the number, `,"last":` and a timestamp,
+    /// `,"partial":true,"stopped":"…","status":…` and `}`
+    const TAIL_MAX: usize = 112;
 
     fn init(output: []u8, max: usize) SyncAnswer {
         var a: SyncAnswer = .{ .out = output[0..@min(output.len, SYNC_ANSWER_MAX)], .max = max };
@@ -988,12 +1044,28 @@ const SyncAnswer = struct {
         self.last = @max(self.last, ms);
     }
 
+    /// The games end here because a request failed (see "partial" above).
+    fn stop(self: *SyncAnswer, code: []const u8, status: u32) void {
+        self.stopped = code;
+        self.stopped_status = status;
+    }
+
     fn finish(self: *SyncAnswer) anyerror![]const u8 {
-        const tail = if (self.last > 0)
-            std.fmt.bufPrint(self.out[self.n..], "\",\"count\":{d},\"last\":{d}}}", .{ self.count, self.last }) catch return error.HandlerFailed
+        var n = self.n;
+        const head = if (self.last > 0)
+            std.fmt.bufPrint(self.out[n..], "\",\"count\":{d},\"last\":{d}", .{ self.count, self.last }) catch return error.HandlerFailed
         else
-            std.fmt.bufPrint(self.out[self.n..], "\",\"count\":{d}}}", .{self.count}) catch return error.HandlerFailed;
-        return self.out[0 .. self.n + tail.len];
+            std.fmt.bufPrint(self.out[n..], "\",\"count\":{d}", .{self.count}) catch return error.HandlerFailed;
+        n += head.len;
+        if (self.stopped) |code| {
+            const why = if (std.mem.eql(u8, code, "http"))
+                std.fmt.bufPrint(self.out[n..], ",\"partial\":true,\"stopped\":\"{s}\",\"status\":{d}", .{ code, self.stopped_status }) catch return error.HandlerFailed
+            else
+                std.fmt.bufPrint(self.out[n..], ",\"partial\":true,\"stopped\":\"{s}\"", .{code}) catch return error.HandlerFailed;
+            n += why.len;
+        }
+        if (!jsonAppend(self.out, &n, "}")) return error.HandlerFailed;
+        return self.out[0..n];
     }
 };
 
@@ -1012,6 +1084,11 @@ fn pgnGameStart(body: []const u8, from: usize) ?usize {
 /// is not wanted (T4).
 fn lichessAnswer(body: []const u8, max: usize, since: u64, output: []u8) anyerror![]const u8 {
     var answer = SyncAnswer.init(output, max);
+    lichessGames(body, since, &answer);
+    return answer.finish();
+}
+
+fn lichessGames(body: []const u8, since: u64, answer: *SyncAnswer) void {
     var at = pgnGameStart(body, 0);
     while (at) |start| {
         const next = pgnGameStart(body, start + 1);
@@ -1024,16 +1101,38 @@ fn lichessAnswer(body: []const u8, max: usize, since: u64, output: []u8) anyerro
         if (answer.done()) break;
         at = next;
     }
-    return answer.finish();
+}
+
+/// The start of the last game in `body` (0 when there is none).
+fn lastGameStart(body: []const u8) usize {
+    var last: usize = 0;
+    var at = pgnGameStart(body, 0);
+    while (at) |start| {
+        last = start;
+        at = pgnGameStart(body, start + 1);
+    }
+    return last;
 }
 
 /// What the page gets for Lichess's answer: the status decides first. A
 /// missing player is a 404 with Lichess's HTML error page as the body
 /// (src/sync-fixtures/lichess-missing.body), which read as PGN would be
 /// "no games" rather than "no such user".
-fn lichessReply(status: u32, body: []const u8, max: usize, since: u64, output: []u8) anyerror![]const u8 {
-    if (syncStatusError(status)) |code| return syncErrorAnswer(output, code, status);
-    return lichessAnswer(body, max, since, output);
+///
+/// v25.4 (review-25.3 §2): a stream cut at HTTP_BODY_MAX ends inside a game
+/// that began but did not finish arriving. That game is dropped and the
+/// whole ones before it kept — partial, unless N were in hand before the
+/// cut; with no whole game at all it is too_large.
+fn lichessReply(got: Got, body: []const u8, max: usize, since: u64, output: []u8) anyerror![]const u8 {
+    if (syncStatusError(got.status)) |code| return syncErrorAnswer(output, code, got.status);
+    if (!got.truncated) return lichessAnswer(body, max, since, output);
+    var answer = SyncAnswer.init(output, max);
+    lichessGames(body[0..lastGameStart(body)], since, &answer);
+    if (!answer.done()) {
+        if (answer.count == 0) return syncErrorAnswer(output, "too_large", 0);
+        answer.stop("too_large", 0);
+    }
+    return answer.finish();
 }
 
 /// T4 progress for Lichess: its answer is a stream of PGN, and each game
@@ -1082,8 +1181,10 @@ const ChesscomList = union(enum) {
     reply: []const u8,
 };
 
-fn chesscomList(arena: std.mem.Allocator, status: u32, body: []const u8, output: []u8) anyerror!ChesscomList {
-    if (syncStatusError(status)) |code| return .{ .reply = try syncErrorAnswer(output, code, status) };
+fn chesscomList(arena: std.mem.Allocator, got: Got, body: []const u8, output: []u8) anyerror!ChesscomList {
+    if (syncStatusError(got.status)) |code| return .{ .reply = try syncErrorAnswer(output, code, got.status) };
+    // v25.4: a cut list is said as one, not as a JSON error ("parse")
+    if (got.truncated) return .{ .reply = try syncErrorAnswer(output, "too_large", 0) };
     const months = chesscomArchives(arena, body) orelse return .{ .reply = try syncErrorAnswer(output, "parse", 0) };
     return .{ .months = months };
 }
@@ -1107,6 +1208,53 @@ fn chesscomMonth(arena: std.mem.Allocator, body: []const u8, since: u64, answer:
     return true;
 }
 
+/// v25.4 (review-25.3 §2): how often a Chess.com page is asked again after a
+/// 429, and the longest Retry-After waited for. A sync walks up to 24 months
+/// back to back and Chess.com throttles bursts; waiting a second or two once
+/// in a while is cheaper than ending the walk. A longer wait than this is the
+/// site saying "not now", and is said to the player as that (rate_limited)
+/// rather than sat out against the sync's 60 s deadline.
+const RETRY_429_MAX: u32 = 2;
+const RETRY_AFTER_MAX_S: u32 = 4;
+/// …and all the waits of one sync together: past this, a throttled month
+/// ends the walk (partial) instead of the deadline ending the whole sync
+/// with nothing (timeout).
+const RETRY_BUDGET_S: u32 = 10;
+
+/// How long to wait before asking again after the `tries`-th 429 (0-based),
+/// in seconds, or null when the site asked for longer than RETRY_AFTER_MAX_S.
+/// With no Retry-After: 1 s, then 2 s.
+fn retryWait(retry_after_s: ?u32, tries: u32) ?u32 {
+    const s = retry_after_s orelse tries + 1;
+    if (s > RETRY_AFTER_MAX_S) return null;
+    return @max(s, 1);
+}
+
+/// One Chess.com page into `body`, asked again after a 429 (above) and once
+/// after no answer at all — a kept-alive connection the server had already
+/// closed reads as that, and the retry opens a fresh one. The wait sleeps on
+/// the job's Io (none in tests, which have no job: they retry at once), and
+/// comes out of the sync's `budget` (seconds left of RETRY_BUDGET_S).
+fn chesscomGet(gpa: std.mem.Allocator, getter: Getter, url: []const u8, body: *std.Io.Writer.Allocating, job: ?*Job, budget: *u32) Got {
+    var tries: u32 = 0;
+    var reconnected = false;
+    while (true) {
+        const got = getter.get(url, "application/json", body, null);
+        if (got.status == 0 and !reconnected) {
+            reconnected = true;
+        } else {
+            if (got.status != 429 or tries >= RETRY_429_MAX) return got;
+            const wait_s = retryWait(got.retry_after_s, tries) orelse return got;
+            if (wait_s > budget.*) return got;
+            budget.* -= wait_s;
+            tries += 1;
+            if (job) |j| std.Io.sleep(j.spec.io, std.Io.Duration.fromMilliseconds(wait_s * 1000), .awake) catch return got;
+        }
+        body.deinit();
+        body.* = .init(gpa);
+    }
+}
+
 /// A whole sync: every request through `getter`, in the order the tests
 /// below read back. `job` (null in tests) hears the progress.
 fn syncFetch(gpa: std.mem.Allocator, getter: Getter, req: SyncRequest, output: []u8, job: ?*Job) anyerror![]const u8 {
@@ -1118,8 +1266,8 @@ fn syncFetch(gpa: std.mem.Allocator, getter: Getter, req: SyncRequest, output: [
             var body: std.Io.Writer.Allocating = .init(gpa);
             defer body.deinit();
             var counter: GameCounter = .{ .job = job, .max = req.max };
-            const status = getter.get(url, "application/x-chess-pgn", &body, counter.tick());
-            return lichessReply(status, body.written(), req.max, req.since, output);
+            const got = getter.get(url, "application/x-chess-pgn", &body, counter.tick());
+            return lichessReply(got, body.written(), req.max, req.since, output);
         },
         .chesscom => {
             var arena_state = std.heap.ArenaAllocator.init(gpa);
@@ -1128,8 +1276,9 @@ fn syncFetch(gpa: std.mem.Allocator, getter: Getter, req: SyncRequest, output: [
             const url = chesscomArchivesUrl(&url_buf, req.user()) orelse return syncErrorAnswer(output, "bad_request", 0);
             var list_body: std.Io.Writer.Allocating = .init(gpa);
             defer list_body.deinit();
-            const status = getter.get(url, "application/json", &list_body, null);
-            const months = switch (try chesscomList(arena, status, list_body.written(), output)) {
+            var budget: u32 = RETRY_BUDGET_S;
+            const got = chesscomGet(gpa, getter, url, &list_body, job, &budget);
+            const months = switch (try chesscomList(arena, got, list_body.written(), output)) {
                 .months => |m| m,
                 .reply => |r| return r,
             };
@@ -1150,14 +1299,31 @@ fn syncFetch(gpa: std.mem.Allocator, getter: Getter, req: SyncRequest, output: [
                 if (i >= months.len) break;
                 var month_body: std.Io.Writer.Allocating = .init(gpa);
                 defer month_body.deinit();
-                const month_status = getter.get(months[i], "application/json", &month_body, null);
-                // games already in hand are worth more than an error about the rest
-                if (syncStatusError(month_status)) |code| {
-                    if (answer.count > 0) break;
-                    return syncErrorAnswer(output, code, month_status);
+                const month = chesscomGet(gpa, getter, months[i], &month_body, job, &budget);
+                // games already in hand are worth more than an error about
+                // the rest — kept, and marked partial (v25.4: through 25.3 a
+                // walk ended by a failed month read as a whole one). The walk
+                // ends at the failed month rather than skipping it, so what
+                // is kept has no hole in it.
+                const failed: ?[]const u8 = if (syncStatusError(month.status)) |code| code else if (month.truncated) "too_large" else null;
+                if (failed) |code| {
+                    const status: u32 = if (month.truncated) 0 else month.status;
+                    if (answer.count > 0) {
+                        answer.stop(code, status);
+                        break;
+                    }
+                    return syncErrorAnswer(output, code, status);
                 }
-                if (!chesscomMonth(arena, month_body.written(), req.since, &answer)) {
-                    if (answer.count > 0) break;
+                // v25.4: each month parsed in its own arena, freed with it —
+                // through 25.3 every month's parse stayed in the sync's arena
+                // until the end, up to 24 months of games at once
+                var month_arena = std.heap.ArenaAllocator.init(gpa);
+                defer month_arena.deinit();
+                if (!chesscomMonth(month_arena.allocator(), month_body.written(), req.since, &answer)) {
+                    if (answer.count > 0) {
+                        answer.stop("parse", 0);
+                        break;
+                    }
                     return syncErrorAnswer(output, "parse", 0);
                 }
                 // T4 progress: Chess.com's is month by month
@@ -1230,10 +1396,10 @@ const RebaseGetter = struct {
         return if (self.base.len == 0) self.inner else .{ .context = self, .get_fn = get };
     }
 
-    fn get(context: *anyopaque, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) u32 {
+    fn get(context: *anyopaque, url: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) Got {
         const self: *RebaseGetter = @ptrCast(@alignCast(context));
         var buf: [768]u8 = undefined;
-        const local = rebaseUrl(&buf, self.base, url) orelse return 0;
+        const local = rebaseUrl(&buf, self.base, url) orelse return .{ .status = 0 };
         return self.inner.get(local, accept, body, tick);
     }
 };
@@ -1343,7 +1509,7 @@ const CHESSCOM_MONTH_SAMPLE =
 ;
 
 /// The answer as the page reads it.
-const SyncAnswerJson = struct { pgn: []const u8, count: usize, last: u64 = 0 };
+const SyncAnswerJson = struct { pgn: []const u8, count: usize, last: u64 = 0, partial: bool = false, stopped: []const u8 = "", status: u32 = 0 };
 
 test "a sync request is a site, a plain user name and a bounded count" {
     const a = syncRequest("{\"site\":\"lichess\",\"user\":\"sync_tester\",\"max\":20}").?;
@@ -1531,7 +1697,7 @@ test "real Lichess answer: five whole games, newest first, as the site sent them
     const out = try std.testing.allocator.alloc(u8, SYNC_ANSWER_MAX);
     defer std.testing.allocator.free(out);
     {
-        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(200, LICHESS_REAL, 20, 0, out), .{});
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(.{ .status = 200 }, LICHESS_REAL, 20, 0, out), .{});
         try std.testing.expectEqual(@as(usize, 5), parsed.count);
         const pgn = parsed.pgn;
         try std.testing.expectEqual(@as(usize, 5), std.mem.count(u8, pgn, "[Event "));
@@ -1545,7 +1711,7 @@ test "real Lichess answer: five whole games, newest first, as the site sent them
         try std.testing.expect(std.mem.endsWith(u8, pgn, "h5 { [%clk 0:04:49] } 0-1"));
     }
     {
-        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(200, LICHESS_REAL, 2, 0, out), .{});
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(.{ .status = 200 }, LICHESS_REAL, 2, 0, out), .{});
         try std.testing.expectEqual(@as(usize, 2), parsed.count);
         try std.testing.expect(std.mem.endsWith(u8, parsed.pgn, "b5 { [%clk 0:05:08] } 1-0"));
         try std.testing.expect(std.mem.indexOf(u8, parsed.pgn, "CzvAH3q1") == null);
@@ -1555,7 +1721,7 @@ test "real Lichess answer: five whole games, newest first, as the site sent them
 test "real Lichess 404: its HTML page means no such user, not an empty list" {
     var out: [256]u8 = undefined;
     try std.testing.expect(std.mem.startsWith(u8, LICHESS_MISSING_REAL, "<!DOCTYPE html>"));
-    try std.testing.expectEqualStrings("{\"error\":\"not_found\"}", try lichessReply(404, LICHESS_MISSING_REAL, 20, 0, &out));
+    try std.testing.expectEqualStrings("{\"error\":\"not_found\"}", try lichessReply(.{ .status = 404 }, LICHESS_MISSING_REAL, 20, 0, &out));
     // what the status going first saves the player from: the page read as PGN is "no games yet"
     try std.testing.expectEqualStrings("{\"pgn\":\"\",\"count\":0}", try lichessAnswer(LICHESS_MISSING_REAL, 20, 0, &out));
 }
@@ -1592,7 +1758,7 @@ test "real Lichess since= answer: twenty games oldest first, none before since (
     const out = try std.testing.allocator.alloc(u8, SYNC_ANSWER_MAX);
     defer std.testing.allocator.free(out);
     {
-        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(200, LICHESS_SINCE_REAL, 20, LICHESS_SINCE_REAL_SENT, out), .{});
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(.{ .status = 200 }, LICHESS_SINCE_REAL, 20, LICHESS_SINCE_REAL_SENT, out), .{});
         try std.testing.expectEqual(@as(usize, 20), parsed.count);
         const pgn = parsed.pgn;
         try std.testing.expectEqual(@as(usize, 20), std.mem.count(u8, pgn, "[Event "));
@@ -1606,7 +1772,7 @@ test "real Lichess since= answer: twenty games oldest first, none before since (
     }
     {
         // N cuts off the newest: the five from since, the next sync goes on from them
-        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(200, LICHESS_SINCE_REAL, 5, LICHESS_SINCE_REAL_SENT, out), .{});
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(.{ .status = 200 }, LICHESS_SINCE_REAL, 5, LICHESS_SINCE_REAL_SENT, out), .{});
         try std.testing.expectEqual(@as(usize, 5), parsed.count);
         try std.testing.expect(std.mem.endsWith(u8, parsed.pgn, "31. Nxe7 { [%clk 0:03:31] } 1-0"));
         try std.testing.expect(std.mem.indexOf(u8, parsed.pgn, "jsAg36KZ") == null);
@@ -1615,7 +1781,7 @@ test "real Lichess since= answer: twenty games oldest first, none before since (
     }
     {
         // a later since (U5LXU7K3's second) leaves out the six before it
-        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(200, LICHESS_SINCE_REAL, 20, 1789229851000, out), .{});
+        const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(.{ .status = 200 }, LICHESS_SINCE_REAL, 20, 1789229851000, out), .{});
         try std.testing.expectEqual(@as(usize, 14), parsed.count);
         try std.testing.expect(std.mem.indexOf(u8, parsed.pgn, "/U5LXU7K3\"]") != null);
         try std.testing.expect(std.mem.indexOf(u8, parsed.pgn, "/jsAg36KZ\"]") == null);
@@ -1627,7 +1793,7 @@ test "real Chess.com archives: every month passes the URL checks, the last is wa
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var out: [64]u8 = undefined;
-    const months = switch (try chesscomList(arena, 200, CHESSCOM_ARCHIVES_REAL, &out)) {
+    const months = switch (try chesscomList(arena, .{ .status = 200 }, CHESSCOM_ARCHIVES_REAL, &out)) {
         .months => |m| m,
         .reply => return error.TestUnexpectedResult,
     };
@@ -1645,12 +1811,12 @@ test "real Chess.com 404: no such user, from the status before the body" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var out: [64]u8 = undefined;
-    switch (try chesscomList(arena, 404, CHESSCOM_MISSING_REAL, &out)) {
+    switch (try chesscomList(arena, .{ .status = 404 }, CHESSCOM_MISSING_REAL, &out)) {
         .reply => |r| try std.testing.expectEqualStrings("{\"error\":\"not_found\"}", r),
         .months => return error.TestUnexpectedResult,
     }
     // the body is not a list: under a 200 it would be a parse error
-    switch (try chesscomList(arena, 200, CHESSCOM_MISSING_REAL, &out)) {
+    switch (try chesscomList(arena, .{ .status = 200 }, CHESSCOM_MISSING_REAL, &out)) {
         .reply => |r| try std.testing.expectEqualStrings("{\"error\":\"parse\"}", r),
         .months => return error.TestUnexpectedResult,
     }
@@ -1913,7 +2079,7 @@ fn stallWork(job: *Job, out: []u8) []const u8 {
     defer client.deinit();
     var body: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
     defer body.deinit();
-    const status = httpGet(&client, stall.url(), "application/x-chess-pgn", &body, null);
+    const status = httpGet(&client, stall.url(), "application/x-chess-pgn", &body, null).status;
     return std.fmt.bufPrint(out, "{{\"status\":{d}}}", .{status}) catch "{}";
 }
 
@@ -2014,8 +2180,11 @@ test "N1: the update check's answer — status first, then the body" {
 /// Canned answers by exact URL, and the URLs asked, in order. Bodies go out
 /// in 1000-byte pieces, the way a stream arrives.
 const StubGetter = struct {
-    const Route = struct { url: []const u8, status: u32 = 200, body: []const u8 };
+    /// `once`: answered the first time only, the next match after it from then
+    /// on (a 429 and then the page); `truncated`/`retry_after_s` as Got's
+    const Route = struct { url: []const u8, status: u32 = 200, body: []const u8, once: bool = false, truncated: bool = false, retry_after_s: ?u32 = null };
     routes: []const Route = &.{},
+    used: [16]bool = .{false} ** 16,
     asked_buf: [8][256]u8 = undefined,
     asked_len: [8]usize = .{0} ** 8,
     asked: usize = 0,
@@ -2032,25 +2201,27 @@ const StubGetter = struct {
         return self.asked_buf[i][0..self.asked_len[i]];
     }
 
-    fn get(context: *anyopaque, url_: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) u32 {
+    fn get(context: *anyopaque, url_: []const u8, accept: []const u8, body: *std.Io.Writer.Allocating, tick: ?Tick) Got {
         _ = accept;
         const self: *StubGetter = @ptrCast(@alignCast(context));
         @memcpy(self.asked_buf[self.asked][0..url_.len], url_);
         self.asked_len[self.asked] = url_.len;
         self.asked += 1;
-        for (self.routes) |r| {
+        for (self.routes, 0..) |r, ri| {
             if (!std.mem.eql(u8, r.url, url_)) continue;
+            if (r.once and self.used[ri]) continue;
+            self.used[ri] = true;
             var at: usize = 0;
             while (at < r.body.len) {
                 const end = @min(at + 1000, r.body.len);
-                body.writer.writeAll(r.body[at..end]) catch return 0;
+                body.writer.writeAll(r.body[at..end]) catch return .{ .status = 0 };
                 at = end;
                 if (tick) |t| t.tick_fn(t.context, body.written());
                 self.note();
             }
-            return r.status;
+            return .{ .status = r.status, .truncated = r.truncated, .retry_after_s = r.retry_after_s };
         }
-        return 404;
+        return .{ .status = 404 };
     }
 
     fn note(self: *StubGetter) void {
@@ -2237,7 +2408,10 @@ test "T4 (review P2-2/P2-3): Chess.com, an incremental sync walks forward from t
     try std.testing.expectEqual(@as(u64, 1790355872000), first.last);
     // a first sync: newest first, on back past three months while fewer than
     // N are in hand (25.1) — here to 2026/06, which is not there: the nine
-    // already found are worth more than an error about the rest
+    // already found are worth more than an error about the rest, and are
+    // said to stop short (v25.4: the months before 2026/06 were not reached)
+    try std.testing.expect(first.partial);
+    try std.testing.expectEqualStrings("not_found", first.stopped);
     try std.testing.expectEqual(@as(usize, 5), stub.asked);
     stub.routes = &.{
         .{ .url = base ++ "archives", .body = CHESSCOM_ARCHIVES_REAL },
@@ -2257,6 +2431,8 @@ test "T4 (review P2-2/P2-3): Chess.com, an incremental sync walks forward from t
     try std.testing.expect(inOrder(second.pgn, &.{ "aug_opp", "newer_opp" }));
     try std.testing.expect(!has(second.pgn, "old_opp") and !has(second.pgn, "Chess960"));
     try std.testing.expectEqual(@as(u64, 1790668800000), second.last);
+    // the walk ran out of months, not into a failure: whole
+    try std.testing.expect(!second.partial);
     // every request of both syncs, in order: the second walks forward from
     // the month before `since`'s
     const want = [_][]const u8{ base ++ "archives", base ++ "2026/09", base ++ "2026/08", base ++ "2026/07", base ++ "2026/06", base ++ "archives", base ++ "2026/08", base ++ "2026/09" };
@@ -2272,6 +2448,179 @@ test "T4 (review P2-2/P2-3): Chess.com, an incremental sync walks forward from t
     const cut = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(stub2.getter(), payload2, out, null), .{});
     try std.testing.expectEqual(@as(usize, 2), cut.count);
     try std.testing.expect(has(cut.pgn, "aug_opp") and !has(cut.pgn, "newer_opp"));
+}
+
+test "v25.4 (review-25.3 §2): a Lichess stream cut at the cap keeps its whole games, drops the half one" {
+    const alloc = std.testing.allocator;
+    const out = try alloc.alloc(u8, SYNC_ANSWER_MAX);
+    defer alloc.free(out);
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // the five real games, then a sixth that had begun arriving
+    const half = "[Event \"Rated blitz game\"]\n[Site \"https://lichess.org/Cut00001\"]\n[White \"thibault\"]\n\n1. e4 { [%clk 0:03:00] } 1... e";
+    const body = try std.mem.concat(alloc, u8, &.{ LICHESS_REAL, half });
+    defer alloc.free(body);
+    const cut: Got = .{ .status = 200, .truncated = true };
+    const a = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(cut, body, 20, 0, out), .{});
+    try std.testing.expectEqual(@as(usize, 5), a.count);
+    try std.testing.expect(!has(a.pgn, "Cut00001"));
+    try std.testing.expect(a.partial);
+    try std.testing.expectEqualStrings("too_large", a.stopped);
+    // N in hand before the cut: nothing asked for was lost
+    const b = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(cut, body, 3, 0, out), .{});
+    try std.testing.expectEqual(@as(usize, 3), b.count);
+    try std.testing.expect(!b.partial);
+    // not one whole game: too large, not "no games"
+    try std.testing.expectEqualStrings("{\"error\":\"too_large\"}", try lichessReply(cut, half, 20, 0, out));
+    // the same bytes as a whole answer: read as they always were
+    const c = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try lichessReply(.{ .status = 200 }, body, 20, 0, out), .{});
+    try std.testing.expectEqual(@as(usize, 6), c.count);
+    try std.testing.expect(!c.partial);
+}
+
+test "v25.4 (review-25.3 §2): Chess.com, a later month that fails ends the walk, keeps what is in, says partial" {
+    const alloc = std.testing.allocator;
+    const out = try alloc.alloc(u8, SYNC_ANSWER_MAX);
+    defer alloc.free(out);
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const base = "https://api.chess.com/pub/player/erik/games/";
+    const first_sync = "{\"site\":\"chesscom\",\"user\":\"erik\",\"max\":20}";
+    // a server error on 2026/08, after 2026/09's nine
+    var s503: StubGetter = .{ .routes = &.{
+        .{ .url = base ++ "archives", .body = CHESSCOM_ARCHIVES_REAL },
+        .{ .url = base ++ "2026/09", .body = CHESSCOM_MONTH_REAL },
+        .{ .url = base ++ "2026/08", .status = 503, .body = "" },
+    } };
+    const a = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(s503.getter(), first_sync, out, null), .{});
+    try std.testing.expectEqual(@as(usize, 9), a.count);
+    try std.testing.expect(a.partial);
+    try std.testing.expectEqualStrings("http", a.stopped);
+    try std.testing.expectEqual(@as(u32, 503), a.status);
+    // the failed month is where the walk ends, never skipped: 2026/07 not asked
+    try std.testing.expectEqual(@as(usize, 3), s503.asked);
+    // a month cut at the cap: the same, said as too_large (not "parse")
+    var cut: StubGetter = .{ .routes = &.{
+        .{ .url = base ++ "archives", .body = CHESSCOM_ARCHIVES_REAL },
+        .{ .url = base ++ "2026/09", .body = CHESSCOM_MONTH_REAL },
+        .{ .url = base ++ "2026/08", .body = "{\"games\":[{\"pgn\":\"[Event", .truncated = true },
+    } };
+    const b = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(cut.getter(), first_sync, out, null), .{});
+    try std.testing.expectEqual(@as(usize, 9), b.count);
+    try std.testing.expect(b.partial);
+    try std.testing.expectEqualStrings("too_large", b.stopped);
+    // the first month cut, or the list: an error that says what happened
+    var cut_first: StubGetter = .{ .routes = &.{
+        .{ .url = base ++ "archives", .body = CHESSCOM_ARCHIVES_REAL },
+        .{ .url = base ++ "2026/09", .body = CHESSCOM_MONTH_REAL[0..1000], .truncated = true },
+    } };
+    try std.testing.expectEqualStrings("{\"error\":\"too_large\"}", try syncOnce(cut_first.getter(), first_sync, out, null));
+    var cut_list: StubGetter = .{ .routes = &.{
+        .{ .url = base ++ "archives", .body = CHESSCOM_ARCHIVES_REAL[0..1000], .truncated = true },
+    } };
+    try std.testing.expectEqualStrings("{\"error\":\"too_large\"}", try syncOnce(cut_list.getter(), first_sync, out, null));
+    // a walk that runs out of months is whole, and its answer reads as before
+    var whole: StubGetter = .{ .routes = &.{
+        .{ .url = base ++ "archives", .body = "{\"archives\":[\"" ++ base ++ "2026/09\"]}" },
+        .{ .url = base ++ "2026/09", .body = CHESSCOM_MONTH_REAL },
+    } };
+    try std.testing.expect(!has(try syncOnce(whole.getter(), first_sync, out, null), "\"partial\""));
+    // the partial tail, exactly, and its room
+    var buf: [128]u8 = undefined;
+    var empty = SyncAnswer.init(&buf, 20);
+    empty.stop("http", 503);
+    try std.testing.expectEqualStrings("{\"pgn\":\"\",\"count\":0,\"partial\":true,\"stopped\":\"http\",\"status\":503}", try empty.finish());
+    const longest = "\",\"count\":150,\"last\":999999999999999,\"partial\":true,\"stopped\":\"rate_limited\",\"status\":4294967295}";
+    try std.testing.expect(longest.len <= SyncAnswer.TAIL_MAX);
+}
+
+test "v25.4 (review-25.3 §2): Chess.com, a 429 is waited out — Retry-After honoured, bounded — and asked again" {
+    const alloc = std.testing.allocator;
+    const out = try alloc.alloc(u8, SYNC_ANSWER_MAX);
+    defer alloc.free(out);
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const base = "https://api.chess.com/pub/player/erik/games/";
+    const first_sync = "{\"site\":\"chesscom\",\"user\":\"erik\",\"max\":20}";
+    const two_months = "{\"archives\":[\"" ++ base ++ "2026/08\",\"" ++ base ++ "2026/09\"]}";
+    // one 429 on 2026/09, then the page: nothing lost, nothing said
+    var once: StubGetter = .{ .routes = &.{
+        .{ .url = base ++ "archives", .body = two_months },
+        .{ .url = base ++ "2026/09", .status = 429, .body = "", .once = true, .retry_after_s = 1 },
+        .{ .url = base ++ "2026/09", .body = CHESSCOM_MONTH_REAL },
+        .{ .url = base ++ "2026/08", .body = "{\"games\":[]}" },
+    } };
+    const a = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(once.getter(), first_sync, out, null), .{});
+    try std.testing.expectEqual(@as(usize, 9), a.count);
+    try std.testing.expect(!a.partial);
+    const want = [_][]const u8{ base ++ "archives", base ++ "2026/09", base ++ "2026/09", base ++ "2026/08" };
+    try std.testing.expectEqual(want.len, once.asked);
+    for (want, 0..) |w, i| try std.testing.expectEqualStrings(w, once.url(i));
+    // a longer wait than RETRY_AFTER_MAX_S is not sat out: rate_limited, no second ask
+    var long: StubGetter = .{ .routes = &.{
+        .{ .url = base ++ "archives", .body = two_months },
+        .{ .url = base ++ "2026/09", .status = 429, .body = "", .retry_after_s = 60 },
+    } };
+    try std.testing.expectEqualStrings("{\"error\":\"rate_limited\"}", try syncOnce(long.getter(), first_sync, out, null));
+    try std.testing.expectEqual(@as(usize, 2), long.asked);
+    // throttled throughout: RETRY_429_MAX more asks, then rate_limited
+    var always: StubGetter = .{ .routes = &.{
+        .{ .url = base ++ "archives", .body = two_months },
+        .{ .url = base ++ "2026/09", .status = 429, .body = "" },
+    } };
+    try std.testing.expectEqualStrings("{\"error\":\"rate_limited\"}", try syncOnce(always.getter(), first_sync, out, null));
+    try std.testing.expectEqual(@as(usize, 2 + RETRY_429_MAX), always.asked);
+    // throttled on a later month, games in hand: kept, partial, rate_limited
+    var later: StubGetter = .{ .routes = &.{
+        .{ .url = base ++ "archives", .body = two_months },
+        .{ .url = base ++ "2026/09", .body = CHESSCOM_MONTH_REAL },
+        .{ .url = base ++ "2026/08", .status = 429, .body = "" },
+    } };
+    const b = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(later.getter(), first_sync, out, null), .{});
+    try std.testing.expectEqual(@as(usize, 9), b.count);
+    try std.testing.expect(b.partial);
+    try std.testing.expectEqualStrings("rate_limited", b.stopped);
+    // the waits of one sync share RETRY_BUDGET_S: 4 s + 4 s, and the third
+    // 4 s would pass it — that month ends the walk instead of the deadline
+    var budget: StubGetter = .{ .routes = &.{
+        .{ .url = base ++ "archives", .body = "{\"archives\":[\"" ++ base ++ "2026/07\",\"" ++ base ++ "2026/08\",\"" ++ base ++ "2026/09\"]}" },
+        .{ .url = base ++ "2026/09", .status = 429, .body = "", .once = true, .retry_after_s = 4 },
+        .{ .url = base ++ "2026/09", .body = CHESSCOM_MONTH_REAL },
+        .{ .url = base ++ "2026/08", .status = 429, .body = "", .once = true, .retry_after_s = 4 },
+        .{ .url = base ++ "2026/08", .body = "{\"games\":[]}" },
+        .{ .url = base ++ "2026/07", .status = 429, .body = "", .retry_after_s = 4 },
+    } };
+    const d = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(budget.getter(), first_sync, out, null), .{});
+    try std.testing.expectEqual(@as(usize, 9), d.count);
+    try std.testing.expect(d.partial);
+    try std.testing.expectEqualStrings("rate_limited", d.stopped);
+    try std.testing.expectEqual(@as(usize, 6), budget.asked);
+    // the archive list is asked again the same way
+    var list429: StubGetter = .{ .routes = &.{
+        .{ .url = base ++ "archives", .status = 429, .body = "", .once = true },
+        .{ .url = base ++ "archives", .body = two_months },
+        .{ .url = base ++ "2026/09", .body = CHESSCOM_MONTH_REAL },
+        .{ .url = base ++ "2026/08", .body = "{\"games\":[]}" },
+    } };
+    const c = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena, try syncOnce(list429.getter(), first_sync, out, null), .{});
+    try std.testing.expectEqual(@as(usize, 9), c.count);
+}
+
+test "v25.4: Retry-After's seconds form, and the waits made of it" {
+    try std.testing.expectEqual(@as(?u32, 3), retryAfterSeconds(" 3 "));
+    try std.testing.expectEqual(@as(?u32, 0), retryAfterSeconds("0"));
+    try std.testing.expectEqual(@as(?u32, null), retryAfterSeconds("Wed, 21 Oct 2026 07:28:00 GMT"));
+    try std.testing.expectEqual(@as(?u32, null), retryAfterSeconds(""));
+    try std.testing.expectEqual(@as(?u32, null), retryAfterSeconds("-1"));
+    // none given: 1 s, then 2 s; given: as given, at least 1 s, at most RETRY_AFTER_MAX_S
+    try std.testing.expectEqual(@as(?u32, 1), retryWait(null, 0));
+    try std.testing.expectEqual(@as(?u32, 2), retryWait(null, 1));
+    try std.testing.expectEqual(@as(?u32, 1), retryWait(0, 0));
+    try std.testing.expectEqual(@as(?u32, RETRY_AFTER_MAX_S), retryWait(RETRY_AFTER_MAX_S, 0));
+    try std.testing.expectEqual(@as(?u32, null), retryWait(RETRY_AFTER_MAX_S + 1, 0));
 }
 
 test "T4: progress — Lichess counts games as the stream arrives, Chess.com month by month" {
@@ -2356,6 +2705,9 @@ test "V1 seams: a sync through a base asks the same paths there, and without one
 const OneShotServer = struct {
     server: std.Io.net.Server,
     body: []const u8,
+    /// v25.4: the status line's tail, and header lines to add (each with its CRLF)
+    status: []const u8 = "200 OK",
+    extra: []const u8 = "",
     line_buf: [512]u8 = undefined,
     line_len: usize = 0,
 
@@ -2380,7 +2732,7 @@ const OneShotServer = struct {
         }
         var wbuf: [1024]u8 = undefined;
         var w = stream.writer(io, &wbuf);
-        w.interface.print("HTTP/1.1 200 OK\r\nContent-Type: application/x-chess-pgn\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n", .{self.body.len}) catch return;
+        w.interface.print("HTTP/1.1 {s}\r\nContent-Type: application/x-chess-pgn\r\nContent-Length: {d}\r\n{s}Connection: close\r\n\r\n", .{ self.status, self.body.len, self.extra }) catch return;
         w.interface.writeAll(self.body) catch return;
         w.interface.flush() catch {};
     }
@@ -2408,6 +2760,58 @@ test "V1 seams: a rebased sync goes over plain http to the loopback server and r
     const parsed = try std.json.parseFromSliceLeaky(SyncAnswerJson, arena_state.allocator(), answer, .{});
     try std.testing.expectEqual(@as(usize, 5), parsed.count);
     try std.testing.expectEqualStrings("GET " ++ LICHESS_URL_THIBAULT["https://lichess.org".len..] ++ " HTTP/1.1", one.line_buf[0..one.line_len]);
+}
+
+/// One GET of `one`'s answer through a real client (v25.4 tests below).
+fn oneShotGet(one: *OneShotServer, body: *std.Io.Writer.Allocating) !Got {
+    const io = std.testing.io;
+    const thread = try std.Thread.spawn(.{}, OneShotServer.serve, .{one});
+    defer thread.join();
+    var url_buf: [48]u8 = undefined;
+    const url = try std.fmt.bufPrint(&url_buf, "http://127.0.0.1:{d}/x", .{one.server.socket.address.getPort()});
+    var client: std.http.Client = .{ .allocator = std.testing.allocator, .io = io };
+    defer client.deinit();
+    return httpGet(&client, url, "application/x-chess-pgn", body, null);
+}
+
+test "v25.4 (review-25.3 §2): httpGet tells a body that ends at the cap from one cut there" {
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    const addr = try std.Io.net.IpAddress.parseIp4("127.0.0.1", 0);
+    const big = try alloc.alloc(u8, HTTP_BODY_MAX + 4096);
+    defer alloc.free(big);
+    @memset(big, 'x');
+    {
+        // exactly the cap: whole
+        var one: OneShotServer = .{ .server = try addr.listen(io, .{ .reuse_address = true }), .body = big[0..HTTP_BODY_MAX] };
+        defer one.server.deinit(io);
+        var body: std.Io.Writer.Allocating = .init(alloc);
+        defer body.deinit();
+        const got = try oneShotGet(&one, &body);
+        try std.testing.expectEqual(@as(u32, 200), got.status);
+        try std.testing.expect(!got.truncated);
+        try std.testing.expectEqual(HTTP_BODY_MAX, body.written().len);
+    }
+    {
+        // past it: cut, and said to be
+        var one: OneShotServer = .{ .server = try addr.listen(io, .{ .reuse_address = true }), .body = big };
+        defer one.server.deinit(io);
+        var body: std.Io.Writer.Allocating = .init(alloc);
+        defer body.deinit();
+        const got = try oneShotGet(&one, &body);
+        try std.testing.expectEqual(@as(u32, 200), got.status);
+        try std.testing.expect(got.truncated);
+    }
+    {
+        // a 429's Retry-After is read off the head
+        var one: OneShotServer = .{ .server = try addr.listen(io, .{ .reuse_address = true }), .body = "slow down", .status = "429 Too Many Requests", .extra = "Retry-After: 2\r\n" };
+        defer one.server.deinit(io);
+        var body: std.Io.Writer.Allocating = .init(alloc);
+        defer body.deinit();
+        const got = try oneShotGet(&one, &body);
+        try std.testing.expectEqual(@as(u32, 429), got.status);
+        try std.testing.expectEqual(@as(?u32, 2), got.retry_after_s);
+    }
 }
 
 test "V1 seams (M4 评审修正): a base's port is 1–65535" {

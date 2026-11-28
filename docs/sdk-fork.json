@@ -211,6 +211,12 @@
    "file": "src/native/webview2_host.cpp",
    "kind": "ours",
    "title": "WebView2 主机的副本：没有检查能力的构建关掉 DevTools（24.0，评估 23.0 §2.2）"
+  },
+  {
+   "id": "B17",
+   "file": "src/native/webview2_host.cpp",
+   "kind": "ours",
+   "title": "WebView2：新窗口请求按导航策略处理（external_links=deny 时什么也不开），桥消息读不到来源就丢弃、不当作 zero://inline（25.4，评审 25.3 §3）"
   }
  ],
  "hunks": [
@@ -8074,9 +8080,10 @@
     "// Copied from @native-sdk/cli 0.11.1, src/platform/windows/webview2_host.cpp",
     "// (Apache-2.0, Copyright the Native SDK authors; see its LICENSE). Modified",
     "// by chessboard: one block after get_CoreWebView2 turns WebView2's DevTools",
-    "// off in builds without inspection. Every difference from upstream is",
-    "// registered in docs/sdk-fork.json (group B16) and checked by",
-    "// scripts/sdk-diff.mjs, like src/runner.zig and build.zig."
+    "// off in builds without inspection (B16); new-window requests are held to",
+    "// the navigation policy and a bridge message without a source is dropped",
+    "// (B17). Every difference from upstream is registered in docs/sdk-fork.json",
+    "// and checked by scripts/sdk-diff.mjs, like src/runner.zig and build.zig."
    ],
    "after": [
     "#include <windows.h>",
@@ -8110,6 +8117,140 @@
    "after": [
     "                    RECT bounds = webViewRect(found->second);",
     "                    controller->put_Bounds(bounds);"
+   ]
+  },
+  {
+   "group": "B17",
+   "file": "src/native/webview2_host.cpp",
+   "at": 4972,
+   "before": [
+    "static const GUID kNativeSdkIID_WebResourceRequestedHandler = {0xab00b74c, 0x15f1, 0x4646, {0x80, 0xe8, 0xe7, 0x63, 0x41, 0xd2, 0x5d, 0x71}};",
+    "static const GUID kNativeSdkIID_NavigationStartingHandler = {0x9adbe429, 0xf36d, 0x432b, {0x9d, 0xdc, 0xf8, 0x88, 0x1f, 0xbd, 0x76, 0xe3}};"
+   ],
+   "up": [],
+   "ours": [
+    "// chessboard (v25.4, B17): ICoreWebView2NewWindowRequestedEventHandler",
+    "static const GUID kNativeSdkIID_NewWindowRequestedHandler = {0xd4c185fe, 0xc81c, 0x4989, {0x97, 0xaf, 0x2d, 0x3f, 0xa7, 0xab, 0x56, 0x51}};"
+   ],
+   "after": [
+    "",
+    "template <typename Interface> struct WebView2HandlerIid;"
+   ]
+  },
+  {
+   "group": "B17",
+   "file": "src/native/webview2_host.cpp",
+   "at": 4995,
+   "before": [
+    "    static const GUID &value() { return kNativeSdkIID_NavigationStartingHandler; }",
+    "};"
+   ],
+   "up": [],
+   "ours": [
+    "template <> struct WebView2HandlerIid<ICoreWebView2NewWindowRequestedEventHandler> {",
+    "    static const GUID &value() { return kNativeSdkIID_NewWindowRequestedHandler; }",
+    "};"
+   ],
+   "after": [
+    "",
+    "/* Every handler interface above declares a two-argument Invoke; this"
+   ]
+  },
+  {
+   "group": "B17",
+   "file": "src/native/webview2_host.cpp",
+   "at": 5363,
+   "before": [
+    "                                    std::string message = narrow(message_wide);",
+    ""
+   ],
+   "up": [
+    "                                    std::string origin = \"zero://inline\";"
+   ],
+   "ours": [
+    "                                    // chessboard (v25.4, review-25.3 §3): a message whose source",
+    "                                    // cannot be read is dropped. Upstream answers it as",
+    "                                    // \"zero://inline\", which app.zon allows — a failed read",
+    "                                    // was the most trusted origin there is."
+   ],
+   "after": [
+    "                                    LPWSTR source_bytes = nullptr;",
+    "                                    if (SUCCEEDED(args->get_Source(&source_bytes)) && source_bytes) {"
+   ]
+  },
+  {
+   "group": "B17",
+   "file": "src/native/webview2_host.cpp",
+   "at": 5365,
+   "before": [
+    "                                    std::string origin = \"zero://inline\";",
+    "                                    LPWSTR source_bytes = nullptr;"
+   ],
+   "up": [
+    "                                    if (SUCCEEDED(args->get_Source(&source_bytes)) && source_bytes) {",
+    "                                        std::wstring source_wide(source_bytes);",
+    "                                        CoTaskMemFree(source_bytes);",
+    "                                        std::string source_url = narrow(source_wide);",
+    "                                        auto source_webview = host->webviews.find(key);",
+    "                                        origin = source_webview == host->webviews.end()",
+    "                                            ? originForUrl(source_url)",
+    "                                            : bridgeOriginForWebViewUrl(source_webview->second, source_url);",
+    "                                    }"
+   ],
+   "ours": [
+    "                                    if (FAILED(args->get_Source(&source_bytes)) || !source_bytes) return S_OK;",
+    "                                    std::wstring source_wide(source_bytes);",
+    "                                    CoTaskMemFree(source_bytes);",
+    "                                    std::string source_url = narrow(source_wide);",
+    "                                    auto source_webview = host->webviews.find(key);",
+    "                                    std::string origin = source_webview == host->webviews.end()",
+    "                                        ? originForUrl(source_url)",
+    "                                        : bridgeOriginForWebViewUrl(source_webview->second, source_url);"
+   ],
+   "after": [
+    "",
+    "                                    host->bridge_callback("
+   ]
+  },
+  {
+   "group": "B17",
+   "file": "src/native/webview2_host.cpp",
+   "at": 5450,
+   "before": [
+    "                                return S_OK;",
+    "                            }).Get(), &token);"
+   ],
+   "up": [],
+   "ours": [
+    "                        // chessboard (v25.4, review-25.3 §3): window.open, target=_blank",
+    "                        // and a middle click raise NewWindowRequested, not",
+    "                        // NavigationStarting, and left unhandled WebView2 opens a popup",
+    "                        // of its own — outside the policy above. Always handled: no",
+    "                        // popup is made, and the external-link policy alone decides",
+    "                        // whether the system browser gets the URL (`deny` in app.zon:",
+    "                        // never).",
+    "                        EventRegistrationToken chess_new_window_token = {};",
+    "                        found->second.webview->add_NewWindowRequested(Callback<ICoreWebView2NewWindowRequestedEventHandler>(",
+    "                            [host, lifetime](ICoreWebView2 *, ICoreWebView2NewWindowRequestedEventArgs *args) -> HRESULT {",
+    "                                if (!args) return S_OK;",
+    "                                args->put_Handled(TRUE);",
+    "                                auto token = lifetime.lock();",
+    "                                if (!token) return S_OK;",
+    "                                std::lock_guard<std::recursive_mutex> guard(token->mutex);",
+    "                                if (!token->alive || host->external_link_action != 1) return S_OK;",
+    "                                LPWSTR uri_bytes = nullptr;",
+    "                                if (FAILED(args->get_Uri(&uri_bytes)) || !uri_bytes) return S_OK;",
+    "                                std::wstring uri_wide(uri_bytes);",
+    "                                CoTaskMemFree(uri_bytes);",
+    "                                if (policyListMatches(host->allowed_external_urls, narrow(uri_wide))) {",
+    "                                    ShellExecuteW(nullptr, L\"open\", uri_wide.c_str(), nullptr, nullptr, SW_SHOWNORMAL);",
+    "                                }",
+    "                                return S_OK;",
+    "                            }).Get(), &chess_new_window_token);"
+   ],
+   "after": [
+    "                        loadWebViewSource(found->second);",
+    "                    }"
    ]
   }
  ]

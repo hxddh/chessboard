@@ -195,4 +195,58 @@ export async function run() {
     assert(/function appAwake\(\)[\s\S]{0,300}?visibilityState !== "hidden"/.test(appSrc),
       "being away counts by the web signal as well as the native one");
   }
+
+  // --- v25.4 (review-25.3): the native fixes, held in the source ----------
+  // Zig and the Windows host do not build here; their own tests run in CI
+  // (zig build test) and on a real machine (docs/manual-check.md 25.4). These
+  // keep the shape of each fix from quietly coming undone in between.
+  {
+    const read = (f) => fs.readFileSync(path.join(root, f), "utf8");
+    const fnBody = (src, head) => {
+      const at = src.indexOf(head);
+      if (at < 0) return "";
+      const end = src.indexOf("\n}\n", at);
+      return src.slice(at, end < 0 ? src.length : end);
+    };
+    const bridge = read("src/bridge.zig");
+    const take = fnBody(bridge, "fn takeOpenFiles(");
+    assert(/jsonAppendName\(room, &n, p\)/.test(take) && !/jsonAppendString\(/.test(bridge),
+      "§1 takeOpenFiles escapes a path with jsonAppendName (control bytes, stray bytes), never the refusing jsonAppendString");
+    assert(take.indexOf("self.pending_open.count = 0;") >= 0 && take.indexOf("self.pending_open.count = 0;") < take.indexOf("for (0..count)"),
+      "§1 the open list is emptied before anything in takeOpenFiles can fail — one bad path is not a poison pill");
+    assert(/jsonAppendName\(output, &n, self\.appdata_dir\)/.test(fnBody(bridge, "fn appdataPath(")),
+      "§1 appdataPath uses the same escaper");
+    const field = fnBody(bridge, "pub fn jsonFieldValue(");
+    assert(/depth == 1/.test(field) && !/indexOfPos\(u8, payload, from, needle\)/.test(field),
+      "§1 jsonFieldValue walks the top-level object instead of searching for the first \"key\" anywhere");
+    const fwd = fnBody(read("src/main.zig"), "fn forwardLaunchArgs(");
+    const mk = fwd.indexOf("fsMakePath(self.io, self.appdata_dir)");
+    assert(mk >= 0 && mk < fwd.indexOf("createFileAbsolute("),
+      "§1 a second launch creates the data directory before it writes open-queue.txt");
+
+    const sync = read("src/sync.zig");
+    const get = fnBody(sync, "fn httpGet(");
+    assert(/\.keep_alive = true/.test(get) && /if \(len > HTTP_BODY_MAX\) return \.\{ \.status = status, \.truncated = true/.test(get)
+      && /error\.EndOfStream => break/.test(get),
+      "§2 httpGet keeps connections alive and tells a clean end of stream from a body cut at HTTP_BODY_MAX");
+    assert(/lichessGames\(body\[0\.\.lastGameStart\(body\)\]/.test(sync) && /"too_large"/.test(sync),
+      "§2 a cut Lichess stream drops its unfinished last game; a cut Chess.com page is too_large, not parse");
+    const fetch = fnBody(sync, "fn syncFetch(");
+    assert(/chesscomGet\(gpa, getter, months\[i\], &month_body, job, &budget\)/.test(fetch) && /var month_arena = std\.heap\.ArenaAllocator\.init\(gpa\);\s*defer month_arena\.deinit\(\);/.test(fetch)
+      && /answer\.stop\(code, status\);\s*break;/.test(fetch),
+      "§2 Chess.com months: 429 backoff, an arena per month, and a failed later month ends the walk marked partial");
+    assert(/,\\"partial\\":true,\\"stopped\\":\\"\{s\}\\"/.test(sync) && /const RETRY_AFTER_MAX_S: u32 = \d;/.test(sync),
+      "§2 the partial answer says so ({partial:true, stopped}) and Retry-After is bounded");
+
+    const wv = read("src/native/webview2_host.cpp");
+    assert(/add_NewWindowRequested\(Callback<ICoreWebView2NewWindowRequestedEventHandler>\(/.test(wv)
+      && /0xd4c185fe, 0xc81c, 0x4989/.test(wv)
+      && /ICoreWebView2NewWindowRequestedEventArgs \*args\) -> HRESULT \{\s*if \(!args\) return S_OK;\s*args->put_Handled\(TRUE\);/.test(wv),
+      "§3 WebView2 handles every new-window request itself (no popup); external_links decides the rest");
+    assert(!/std::string origin = "zero:\/\/inline";/.test(wv) && /if \(FAILED\(args->get_Source\(&source_bytes\)\) \|\| !source_bytes\) return S_OK;/.test(wv),
+      "§3 a bridge message whose source cannot be read is dropped, not taken as zero://inline");
+    const lang = fnBody(read("src/native/win_chrome.c"), "static int chess_lang_code_of(");
+    assert(lang.indexOf("tag[1] == 0") >= 0 && lang.indexOf("tag[1] == 0") < lang.indexOf("c = tag[2]"),
+      "§4 chess_lang_code_of stops at the terminator before reading tag[2]");
+  }
 }
