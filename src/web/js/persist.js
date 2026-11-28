@@ -233,21 +233,23 @@ export function createPersist(host, onWriteFailure) {
     if (bag && bag[name] === value && host.storageGet(key) === value) return true;
     const ok = host.storageSet(key, value);
     if (!bag) bag = {};
-    if (ok) {
-      bag[name] = value;
-      dirty.add(name);
-      // (Codex on #85) written again after a remove(): no longer removed, or
-      // the flush would null the files of the value it just committed
-      removed.delete(name);
-      // 6.1: the stamp decides who wins in recover(). A cache that takes new
-      // values under a frozen stamp reads as older than it is, and the file
-      // then overwrites it — so a refused stamp is a refused write.
-      if (!host.storageSet(STAMP_KEY, String(Date.now()))) { fail(name); return false; }
-      scheduleMirror();
-      return true;
-    }
-    fail(name);
-    return false;
+    // 25.4: refused by the cache (its quota, most often) or not, the value is
+    // the session's and still owed to the native file, which has room: a full
+    // localStorage used to stop the mirror too, so the one copy that could
+    // have kept the progress never heard of it. The file is then ahead of the
+    // cache (behind), and its manifest says so.
+    bag[name] = value;
+    dirty.add(name);
+    // (Codex on #85) written again after a remove(): no longer removed, or
+    // the flush would null the files of the value it just committed
+    removed.delete(name);
+    // 6.1: the stamp decides who wins in recover(). A cache that takes new
+    // values under a frozen stamp reads as older than it is, and the file
+    // then overwrites it — so a refused stamp is a refused write.
+    const stamped = ok && host.storageSet(STAMP_KEY, String(Date.now()));
+    if (!stamped) { behind = true; fail(name); }
+    scheduleMirror();
+    return stamped;
   }
 
   /**
@@ -296,6 +298,12 @@ export function createPersist(host, onWriteFailure) {
   let mirrorBlocked = false;
   // 6.1: set once a restore has rewritten storage — see set()
   let frozen = false;
+  // 25.4: the cache refused a write this session, so the native file holds
+  // what the cache does not — its manifest is stamped newer (flushKeys)
+  let behind = false;
+  // 25.4: 清除全部存档 ran this session — before recover() had answered, the
+  // file must not then be restored over the clear
+  let wiped = false;
   // keys whose cache value the store has not been given yet (set, remove,
   // restoreAll add to it; a flush takes it)
   const dirty = new Set();
@@ -443,6 +451,10 @@ export function createPersist(host, onWriteFailure) {
       // (the F3 line is 16). Newer than the stamp at worst, never older —
       // a change after this point marks it dirty again anyway.
       if (BULK.test(name)) {
+        // 25.4: a shard 清除全部存档 removed needs no port to say so — it goes
+        // from the manifest and its files now, loaded library or not, or the
+        // store kept the old games for the next restore to bring back
+        if (gone.has(name)) { values.push([name, null]); continue; }
         // a shard the library cannot serialise yet (not loaded) stays owed,
         // and the manifest keeps whatever file it already names
         if (!shardsKnown(name) && !(bulkOverride && bulkOverride.has(name))) continue;
@@ -455,7 +467,7 @@ export function createPersist(host, onWriteFailure) {
     if (!names.length && !gone.size) return true;
     for (const name of names) dirty.delete(name);
     removed.clear();
-    const meta = { app: "chessboard", schema: SCHEMA, writtenAt: stamp(), keys: [] };
+    const meta = { app: "chessboard", schema: SCHEMA, writtenAt: behind ? Date.now() : stamp(), keys: [] };
     try {
       // (Codex on #85) the manifest on disk, read fresh: a second window
       // (two instances share one store) may have committed since this one
@@ -504,6 +516,8 @@ export function createPersist(host, onWriteFailure) {
       const after = gone.size ? (await readDisk()).files : {};
       for (const name of gone) {
         if (after[name]) continue;
+        // a shard no manifest of this flush listed has no files to clear
+        if (BULK.test(name) && !base[name] && !cur[name]) continue;
         for (const file of [name, name + STORE_ALT]) {
           if ((await host.appdataWriteKey(file, "null")) == null) { mirrorEnabled = false; return false; }
         }
@@ -634,7 +648,7 @@ export function createPersist(host, onWriteFailure) {
     const cacheAt = Number(host.storageGet(STAMP_KEY) || 0) || 0;
     // the cache wins whenever it has anything and is not provably older: a
     // file must not undo what the player did in a session the file missed
-    if (!foundEmpty && (!cacheAt || src.at <= cacheAt)) {
+    if (wiped || (!foundEmpty && (!cacheAt || src.at <= cacheAt))) {
       scheduleMirror();
       return foundAt && src.at === foundAt ? "in-sync" : "kept";
     }
@@ -673,9 +687,11 @@ export function createPersist(host, onWriteFailure) {
   function touchBulk(names) {
     if (frozen) return true;
     for (const name of names) { if (BULK.test(name)) { dirty.add(name); removed.delete(name); } }
-    if (!host.storageSet(STAMP_KEY, String(Date.now()))) { fail("library"); return false; }
+    // 25.4: a refused stamp (a full cache) does not keep them from the file
+    const ok = host.storageSet(STAMP_KEY, String(Date.now()));
+    if (!ok) { behind = true; fail("library"); }
     scheduleMirror();
-    return true;
+    return ok;
   }
 
   /**
@@ -720,17 +736,28 @@ export function createPersist(host, onWriteFailure) {
     // quota; a half-written profile was then re-read and mirrored back over
     // the complete file. Now a refused write latches the failure and the
     // caller is told, so nothing downstream treats the result as a profile.
-    let ok = true;
-    for (const name of Object.keys(KEYS)) {
-      // the quarantine is evidence about this cache, not part of the profile
-      // being restored into it (6.1) — see read()
-      if (name === "quarantine") continue;
-      const v = doc.keys[name];
-      if (typeof v === "string") { if (!host.storageSet(KEYS[name], v)) ok = false; }
-      else { host.storageRemove(KEYS[name]); removed.add(name); }
-      // v8-0-plan F3: the whole profile changed, so the whole store is owed
-      dirty.add(name);
+    // 25.4: all or nothing. A refused key used to leave the cache half the
+    // document's, while IndexedDB took the document's games and the bag was
+    // reloaded from the mix — three copies that agreed on nothing. Now the
+    // cache is written whole first; if any write is refused it is put back
+    // as it was, and neither IndexedDB nor memory is touched.
+    const names = Object.keys(KEYS).filter((n) => n !== "quarantine");
+    const want = names.map((n) => [KEYS[n], typeof doc.keys[n] == "string" ? doc.keys[n] : null])
+      .concat([[SCHEMA_KEY, String(SCHEMA)], [STAMP_KEY, String(Number(doc.writtenAt) || Date.now())]]);
+    const was = want.map(([k]) => [k, host.storageGet(k)]);
+    // the removals first: they make room for what is written
+    // (and to put it back, every key goes first)
+    const put = (list, all) => { for (const [k, v] of list) if (all || v == null) host.storageRemove(k); return list.every(([k, v]) => v == null || host.storageSet(k, v)); };
+    if (!put(want)) {
+      put(was, 1);
+      fail("restore");
+      return false;
     }
+    names.forEach((n, i) => {
+      if (want[i][1] == null) removed.add(n);
+      // v8-0-plan F3: the whole profile changed, so the whole store is owed
+      dirty.add(n);
+    });
     // v8-0-plan C1: the library's games — into IndexedDB (the port), and into
     // the store from the document itself, not from the library the page is
     // still holding. A shard the document does not have is emptied.
@@ -748,12 +775,9 @@ export function createPersist(host, onWriteFailure) {
       return Promise.resolve().then(() => port.restore(mine));
     });
     bulkRestoring = restoring.length ? Promise.all(restoring) : null;
-    if (!host.storageSet(SCHEMA_KEY, String(doc.schema || SCHEMA))) ok = false;
-    if (!host.storageSet(STAMP_KEY, String(Number(doc.writtenAt) || Date.now()))) ok = false;
     bag = null;
     load();
-    if (!ok) fail("restore");
-    return ok;
+    return true;
   }
 
   /** JSON in one step, since every caller but panelOpen was doing it. */
@@ -773,7 +797,7 @@ export function createPersist(host, onWriteFailure) {
     // lost the "cleared" history came back from the file.
     // (Frozen after a restore, the stamp is the restored profile's and stays.)
     if (frozen) return;
-    if (!host.storageSet(STAMP_KEY, String(Date.now()))) fail(name);
+    if (!host.storageSet(STAMP_KEY, String(Date.now()))) { behind = true; fail(name); }
     scheduleMirror();
   }
 
@@ -791,14 +815,13 @@ export function createPersist(host, onWriteFailure) {
     host.storageRemove(STAMP_KEY);
     // v8-0-plan C1: the library's games are in IndexedDB and in the shards
     // the store lists; "clear my data" takes both
-    const names = Object.keys(committed || {});
-    for (const [, port] of portList()) {
-      names.push(...(port.names() || []));
-      if (port.clear) port.clear();
-    }
-    for (const name of names) {
-      if (BULK.test(name)) { dirty.add(name); removed.add(name); }
-    }
+    for (const [, port] of portList()) if (port.clear) port.clear();
+    // 25.4: every shard name BULK allows, not only those the manifest or a loaded library
+    // can name — a clear early in the launch (no manifest read yet, the
+    // library's chunk not in) left the store's shards listed, and the games
+    // came back with the next restore
+    for (let i = 0; i < 68; i++) { const n = i < 64 ? "lib" + (i < 16 ? "0" : "") + i.toString(16) : "rep" + (i - 64); dirty.add(n); removed.add(n); }
+    wiped = true;
     scheduleMirror();
   }
 
