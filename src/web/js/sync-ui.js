@@ -41,6 +41,8 @@ const SAY = {
   // 8.1 M2 review P2-1: the native side's own deadline, and a sync of its
   // still out, each in its own words rather than 连不上 / 同步没有完成（?）
   timeout: "sync.timeout", busy: "sync.busy",
+  // 25.4: the answer passed 16 MiB — said as itself, not as a parse failure
+  too_large: "sync.tooLarge",
 };
 
 /**
@@ -388,6 +390,9 @@ export function createSyncUI(d) {
     // took nothing in (it has said why).
     const got = await d.lib.importPgnToLibrary(r.pgn, site.name + " · " + user, { wait: true });
     busy = false;
+    // 25.4: the native side stopped early (a month that failed, a cut stream) —
+    // what came is in; say so, so a short first sync is not taken for the whole history
+    if (r.partial === true) d.toast(tf("sync.partial", [site.name]), "fix");
     if (got && pick.analyse) analyseSynced();
   }
 

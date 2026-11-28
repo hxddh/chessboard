@@ -4127,7 +4127,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
 
   // 9.0 S5: the settings page's look pickers and sync switch (prefs-ui.js);
   // a pick goes to settings-ui.js
-  const PrefsUI = createPrefsUI({ doc: document, t, getLook: () => store.ui, setLook: (p) => SettingsUI.applyLook(p), pieceSvgs: BoardView.setSvgs, netSync: { store, Persist, tf, lib: LibraryUI } });
+  const PrefsUI = createPrefsUI({ doc: document, t, getLook: () => store.ui, setLook: (p) => SettingsUI.applyLook(p), pieceSvgs: BoardView.setSvgs, netSync: { store, Persist, tf, toast, lib: LibraryUI } });
   PrefsUI.wire();
   // v8-0-plan F4: the settings page (settings-ui.js) — its view, the look
   // and the handlers behind its controls
