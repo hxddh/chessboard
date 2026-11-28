@@ -149,7 +149,9 @@ async function runPass(o) {
     if (why) return why;
     const e = await search(i, budget, quickMpv);
     const late = stop();
-    if (late === "gone") return late;
+    // 25.4: a search Stop cut short (engine.js cancel(true)) answers null —
+    // not a measured position, or the kept prefix would have a hole in it
+    if (late === "gone" || (late && !e)) return late;
     take(i, e);
     done[i] = true;
     if (o.progress) o.progress(++quick.done, n, p);
@@ -159,8 +161,11 @@ async function runPass(o) {
 
   // --- 2. deepening -------------------------------------------------------
   const count = { done: n, total: n };
+  // 25.4: asked once each, whatever came back — a failed deep search is not
+  // asked again every round
+  const tried = new Set();
   for (let round = 0; round < 4; round++) {
-    const targets = Grade.deepTargets(p, Chess);
+    const targets = Grade.deepTargets(p, Chess).filter((i) => !tried.has(i));
     if (!targets.length) break;
     count.total += targets.length;
     const cut = await pool(targets, async (i) => {
@@ -174,9 +179,11 @@ async function runPass(o) {
       // numbers and do not count the position as deepened (confirmed)
       const late = stop();
       if (late) return late;
-      // a failed deep search keeps the quick numbers rather than a hole
-      if (o.evalScalar(e) != null) take(i, e);
-      p.deep[i] = true;
+      tried.add(i);
+      // a failed deep search keeps the quick numbers rather than a hole —
+      // and (25.4) is not counted as deepened: `deep` is what confirms an
+      // only move or a brilliancy, and the quick numbers confirm nothing
+      if (o.evalScalar(e) != null) { take(i, e); p.deep[i] = true; }
       if (o.progress) o.progress(++count.done, count.total, p);
       return null;
     });
