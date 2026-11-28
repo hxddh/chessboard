@@ -155,7 +155,7 @@ const PACE_CAP_MS = 3000;
  * @param {object} tier   engine.js TIERS row
  * @param {number} clockMs the engine's remaining time
  * @param {number} incMs   increment per move
- * @returns {{search: number, pace: number}} milliseconds
+ * @returns {{search: number, pace: number, ceil: number, most: number}} milliseconds
  */
 function thinkPlan(tier, clockMs, incMs) {
   const alloc = Math.max(0, clockMs) / MOVES_TO_GO + 0.75 * Math.max(0, incMs || 0);
@@ -169,7 +169,13 @@ function thinkPlan(tier, clockMs, incMs) {
   // clock even depth 10 (大师, ~100 ms in a middlegame here, more on a slow
   // machine) must not outlast what the clock allots it — `ceil` bounds it
   const ceil = tier && tier.depth ? Math.max(20, Math.round(alloc)) : 0;
-  return { search: Math.round(search), pace: Math.min(pace, Math.max(0, clockMs / 20)), ceil };
+  // 25.4: the longest the reply may be held — the cap, a 20th of the clock,
+  // and on a depth rung its ceiling. Under 4.8 s of a game without increment
+  // the depth rung's 120 ms floor used to sit above that ceiling. engine.js
+  // lets the hold breathe with the position (think-time.js) around `pace`,
+  // never past `most`.
+  const most = Math.round(Math.min(PACE_CAP_MS, Math.max(0, clockMs / 20), ceil || Infinity));
+  return { search: Math.round(search), pace: Math.min(pace, most), ceil, most };
 }
 
 // --- resigning and offering a draw ---------------------------------------

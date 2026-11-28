@@ -173,6 +173,7 @@ import { LANG_IDS, LANG_NAMES, FALLBACK_LANG, detectLang as detectFrom } from ".
       "rv.km.lines": "看引擎线",
       "rv.km.win": "胜率 {0}% → {1}%",
       "rv.km.whyGood": "换任何别的走法，胜率都至少少 {0} 个百分点。",
+      "rv.km.whyPunish": "抓住了对手上一步的失误：对方送出的 {0} 个百分点胜率，这一步稳稳收下。",
       "rv.learn": "从错误中学 · {0}",
       "tip.learn": "把本局所有 ? 与 ?? 串成一组「再试一次」，一处接一处练",
       "rt.progress": "从错误中学 · {0} / {1}",

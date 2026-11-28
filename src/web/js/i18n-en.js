@@ -143,6 +143,7 @@
       "rv.km.lines": "Engine lines",
       "rv.km.win": "Win chance {0}% → {1}%",
       "rv.km.whyGood": "Any other move gives away at least {0} points of win chance.",
+      "rv.km.whyPunish": "Punished the opponent's mistake: this move keeps the {0} points of win chance they gave away.",
       "rv.learn": "Learn from mistakes · {0}",
       "tip.learn": "Every ? and ?? of this game as Try again, one after another",
       "rt.progress": "Learn from mistakes · {0} / {1}",

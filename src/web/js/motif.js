@@ -88,22 +88,29 @@ export function motifOf(fen, san, Chess) {
 /**
  * Does the key move attack an enemy man that is pinned to its king?
  *
- * "Pinned" is asked of the rules rather than worked out geometrically: if the
- * man has no legal move at all in a position where its side is to move, and
- * removing it would expose the king, it is pinned. chess.js already refuses to
- * generate the illegal moves, so the question is just "does this piece have
- * any move".
+ * "Pinned" is asked of the rules: the man has no legal move at all in a
+ * position where its side is to move. 25.4: and that is not enough on its
+ * own — a bishop hemmed in by its own pawns has no legal move either, and was
+ * called pinned. So the man must also have somewhere it could go by its own
+ * geometry (a pseudo-legal move: an empty square or an enemy man it hits),
+ * and lifting it off the board must open a line from one of the mover's
+ * line pieces to its king. Only then is "no legal move" the king's doing.
  */
 function exploitsPin(Chess, before, after, mv, them) {
   const g = load(Chess, onMove(after, them));
   if (!g || g.in_check()) return null;    // in check, everything is constrained
+  const grid = gridOf(g), k = kingOf(grid, them);
   const victims = attacksFrom(Chess, after, mv.to).filter((m) => m.captured);
   for (const v of victims) {
     const p = g.get(v.to);
-    if (!p || p.type === "k" || p.type === "p") continue;
+    if (!p || p.type === "k" || p.type === "p" || !k) continue;
     let moves = [];
     try { moves = g.moves({ square: v.to, verbose: true }) || []; } catch (_) { continue; }
-    if (moves.length === 0) return "pin";
+    if (moves.length) continue;
+    if (!hitsFrom(grid, v.to).some((s) => !grid[s] || grid[s].color !== them)) continue; // walled in, not pinned
+    const open = Object.assign({}, grid);
+    delete open[v.to];
+    if (hittersOf(open, k, mv.color).some((s) => between(s, k, v.to))) return "pin";
   }
   return null;
 }
@@ -115,6 +122,8 @@ function exploitsPin(Chess, before, after, mv, them) {
  * man behind it on the same ray. Which one it is depends on which of the two
  * is worth more: the valuable one in front is a skewer, behind is a pin.
  */
+/** The least the man behind is worth for the line to be a skewer: a minor piece. */
+const SKEWER_MIN = 3;
 const RAYS = {
   b: [[1, 1], [1, -1], [-1, 1], [-1, -1]],
   r: [[1, 0], [-1, 0], [0, 1], [0, -1]],
@@ -143,7 +152,9 @@ function lineTargets(Chess, fen, from, color) {
       // the king counts as the most valuable thing on the board
       const v = (x) => (x.type === "k" ? 100 : VALUE[x.type]);
       if (v(back) > v(front)) return "pin";
-      if (v(front) > v(back)) return "skewer";
+      // 25.4: a skewer wins what is behind — a pawn there is a check, or an
+      // attack on a queen, not a skewer; it takes a piece (SKEWER_MIN)
+      if (v(front) > v(back) && v(back) >= SKEWER_MIN) return "skewer";
     }
   }
   return null;

@@ -18,10 +18,21 @@
  * @param {{temp?: number, floor?: number}} tier
  * @param {() => number} rng
  * @param {((uci: string) => number|null)|null} styleOf
+ * @param {string[]} [free] freeTakes() of the position: on a rung drawn
+ *   hotter than its band (temp > 1, the low rungs), a free queen or rook is
+ *   taken whatever the draw said — see freeTakes
  * @returns {string|null}
  */
-export function pickHuman(pol, tier, rng, styleOf) {
+export function pickHuman(pol, tier, rng, styleOf, free) {
   if (!pol || !pol.length) return null;
+  // 25.4: the draw runs first either way, so the generator advances the same
+  // and a game without a hung major piece is the game it always was
+  const uci = draw(pol, tier, rng, styleOf);
+  if (!free || !free.length || !((tier.temp || 1) > 1) || free.includes(uci)) return uci;
+  return free.find((u) => pol.some((r) => r.uci === u)) || uci;
+}
+
+function draw(pol, tier, rng, styleOf) {
   let rows = pol.filter((r) => r.p >= (tier.floor || 0.01));
   if (!rows.length) rows = pol.slice(0, 1);
   const inv = 1 / Math.max(0.05, tier.temp || 1);
@@ -37,6 +48,32 @@ export function pickHuman(pol, tier, rng, styleOf) {
     if (sc != null && sc > bestS) { best = r; bestS = sc; }
   }
   return best.uci;
+}
+
+/**
+ * 25.4: the captures of an enemy queen or rook that cost nothing — after the
+ * capture nothing can take back on that square, and the opponent has no mate
+ * in one. A hot draw (a low rung, temp 4–5) spreads its weight so wide that
+ * it often walked past a queen hung for nothing — the one
+ * blunder of the opponent's that every beginner sees, and the bot missing it
+ * read as broken, not as weak. A defended piece, or a capture that loses to
+ * mate, is left to the draw: that is where a beginner's misses are real.
+ * @returns {string[]} UCI, the most valuable piece first
+ */
+export function freeTakes(fen, Chess) {
+  const out = [];
+  let g;
+  try { g = new Chess(fen); } catch (_) { return out; }
+  const caps = g.moves({ verbose: true }).filter((m) => m.captured === "q" || m.captured === "r")
+    .sort((a, b) => (b.captured === "q") - (a.captured === "q"));
+  for (const m of caps) {
+    g.move(m);
+    const replies = g.moves({ verbose: true });
+    const safe = !replies.some((r) => r.to === m.to) && !replies.some((r) => { g.move(r); const mate = g.in_checkmate(); g.undo(); return mate; });
+    g.undo();
+    if (safe) out.push(m.from + m.to + (m.promotion || ""));
+  }
+  return out;
 }
 
 /** The moves a guarded rung asks Stockfish about: what the draw could play, at most eight. */

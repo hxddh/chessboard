@@ -43,7 +43,7 @@ const rngFrom = (seed) => () => {
 
 const ctx = loadAppModules(["src/web/js/chess.js", "src/web/js/engine.js", "src/web/js/persona.js", "src/web/js/opponents.js", "src/web/js/human/maia-net.js", "src/web/js/human/pick.js"]);
 const { Chess, ChessEngine, ChessPersona, Opponents, parseNet, movePolicy } = ctx;
-const Pick = { pickHuman: ctx.pickHuman, guardMoves: ctx.guardMoves, guardPolicy: ctx.guardPolicy };
+const Pick = { pickHuman: ctx.pickHuman, freeTakes: ctx.freeTakes, guardMoves: ctx.guardMoves, guardPolicy: ctx.guardPolicy };
 
 // --- the fixture -----------------------------------------------------------------
 

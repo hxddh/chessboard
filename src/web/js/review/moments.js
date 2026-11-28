@@ -73,7 +73,7 @@ export function createMoments(d) {
     return Grade.GLYPH[m.grade] || m.tag || "";
   }
   function markClass(m) {
-    return m.grade === "brilliant" || m.grade === "only" ? "t-good"
+    return m.good ? "t-good"
       : m.tag === "??" ? "t-bad" : m.tag === "?" || m.grade === "miss" ? "t-mid" : "t-soft";
   }
 
@@ -135,7 +135,9 @@ export function createMoments(d) {
     // right above the 再试一次 that asked you to find it. Until you open it
     // yourself (whyOpen true / false), it is open only where there is nothing
     // to replay, and for a good move, where it spoils nothing.
-    const good0 = m.grade === "brilliant" || m.grade === "only";
+    // 25.4: a good move — an only move, a brilliancy, or the opponent's
+    // mistake cashed (review-grade.js keyMoments `good`)
+    const good0 = !!m.good;
     const whyOpen = v.whyOpen == null ? good0 || !canRetry : v.whyOpen;
     const ex = whyOpen ? Retry.mistakeFacts(m.ply) : null;
     // 7.6: rebuilt only when what it shows changes — the step keys are
@@ -215,8 +217,8 @@ export function createMoments(d) {
       // the coach's reason in words (explain.js, the mistakes list's own)
       // 19.0 T2: the coach's reason alone — the card's own line above already
       // says the win chance (「胜率 96% → 26%」), and 为什么 repeated it
-      const good = m.grade === "brilliant" || m.grade === "only";
-      if (good) why.textContent = tf("rv.km.whyGood", [Math.round(m.swing)]);
+      const good = good0;
+      if (good) why.textContent = tf(m.hl ? "rv.km.whyPunish" : "rv.km.whyGood", [Math.round(m.swing)]);
       if (ex) {
         const coach = document.createElement("span");
         coach.className = "km-coach";
@@ -260,7 +262,7 @@ export function createMoments(d) {
   }
   function summaryText(a, list) {
     const you = youSide(store), ai = !!you;
-    const drops = list.filter((m) => m.grade !== "brilliant" && m.grade !== "only" && (!ai || m.side === you));
+    const drops = list.filter((m) => !m.good && (!ai || m.side === you));
     const m = drops.reduce((w, x) => (!w || x.swing > w.swing ? x : w), null);
     const pct = (x) => Math.round(x);
     if (ai) {
