@@ -16,6 +16,7 @@ import { Chess } from "../chess.js";
 import { loadChunk } from "../chunk.js";
 import { ChessDrills } from "../drills.js";
 import { ChessEngine } from "../engine.js";
+import { explainMistake, explainText } from "../explain.js";
 import { ChessTree } from "../game-tree.js";
 import { CHESS_LESSONS } from "../lessons.js";
 import { ChessEndgameRules } from "../endgame-rules.js";
@@ -59,7 +60,9 @@ export function createLessonsUI(d) {
   // one-task drills in this runner (`learn.eg` names the position)
   const Endgames = createEndgames({ store, t, tf, saveLearnState, onReady: () => sync() });
 
-  function startLearn() {
+  /** 25.4: `seg` is the segment to open (a relaunch into 学习 restores the saved one) */
+  function startLearn(seg) {
+    if (/^(endgame|classic)$/.test(seg)) return openSeg(seg);
     startLesson(Math.max(0, Math.min(store.session.learnState.last || 0, LESSONS.length - 1)));
   }
   function stopLearn() { store.session.learnRuns++; if (store.session.learn) store.session.lastLearnToken = ++store.session.learn.token; store.session.learn = null; store.session.study = null; }
@@ -200,20 +203,30 @@ export function createLessonsUI(d) {
     const my = ++store.session.learnRuns;
     Object.assign(waiting, { seg, run: my });
     const still = () => my === store.session.learnRuns && store.session.mode === "learn";
-    when(() => { if (still()) { open(); sync(); } }, () => { if (still()) { startLearn(); sync(); } });
+    // a failed chunk opens the lesson only when nothing is open: a hot switch
+    // from a lesson keeps that lesson, at the step it was on (25.4)
+    when(() => { if (still()) { open(); sync(); } }, () => { if (still()) { store.session.learnRuns++; if (!boardSeg()) startLearn(); sync(); } });
   }
   /** the segment a deferOpen is still waiting for, if nothing has superseded it */
   function pendingSeg() { return waiting.run === store.session.learnRuns && store.session.mode === "learn" ? waiting.seg : null; }
 
   // --- 9.0 S3: 训练's segments ------------------------------------------------
 
-  /** The segment of what is on the board in 学习: 课程, 残局 or 名局 (null outside it). */
-  function learnSeg() {
-    if (store.session.mode !== "learn") return null;
+  /** The segment of what is on the board: 课程, 残局 or 名局 (null when nothing is). */
+  function boardSeg() {
     const l = store.session.learn;
     if (store.session.study || (l && l.gs)) return "classic";
-    if (l) return l.eg ? "endgame" : "course";
-    return pendingSeg() || "course";
+    return l ? (l.eg ? "endgame" : "course") : null;
+  }
+  /**
+   * 学习's segment: the one a load is waiting for first — a hot switch from a
+   * lesson on the board is that switch, not the lesson it is leaving (25.4) —
+   * else what is on the board; null outside 学习, or when neither says
+   * (shell.js then keeps the saved segment rather than writing 课程 over it).
+   */
+  function learnSeg() {
+    if (store.session.mode !== "learn") return null;
+    return pendingSeg() || boardSeg();
   }
   /** Read a classic, or guess it: 名局's one switch (store.ui.classicMode). */
   const guessing = () => store.ui.classicMode === "guess";
@@ -234,7 +247,10 @@ export function createLessonsUI(d) {
     // 25.2: "already there" needs something open — while a classic waits for its
     // chunk nothing is, learnSeg() reads 课程, and 课程 has to start a lesson (Codex on #142)
     if (seg === learnSeg() && (store.session.learn || store.session.study)) return;
-    if (seg === "course") startLesson(Math.max(0, Math.min(store.session.learnState.last || 0, LESSONS.length - 1)));
+    // 25.4: back to what is on the board while a switch away is still loading —
+    // the wait is called off, and the lesson stays where it was
+    if (pendingSeg() && seg === boardSeg()) store.session.learnRuns++;
+    else if (seg === "course") startLesson(Math.max(0, Math.min(store.session.learnState.last || 0, LESSONS.length - 1)));
     else if (seg === "endgame") {
       // review-25.2 §1: deferOpen's rule — a lesson picked while the
       // camp was loading was taken over by it on arrival
@@ -251,14 +267,22 @@ export function createLessonsUI(d) {
   function startLesson(i, stand, again) {
     if (!LESSONS[i]) return;
     store.session.study = null;
-    if (!stand) { store.session.learnState.last = i; saveLearnState(); Adv.want(-1); }
+    // (an advanced lesson still wanted is called off by the learnRuns token)
+    if (!stand) { store.session.learnState.last = i; saveLearnState(); }
     // an advanced lesson before its chunk: opened when it arrives; meanwhile,
     // and if it never does (lessons-adv.js), the nearest lesson before it
     // stands in, so 学习 is not a blank page — the bookmark stays (M2 review)
-    if (!LESSONS[i].n) { Adv.want(i); if (!store.session.learn) startLesson(Body.lessons.length - 1, true); return; }
+    // 25.4: by learnRuns, as deferOpen — a switch to 残局 or 名局 meanwhile
+    // is not taken back when the chunk comes; the stand-in shares the token
+    if (!LESSONS[i].n) {
+      const my = ++store.session.learnRuns;
+      Adv.want(i, () => my === store.session.learnRuns);
+      if (!store.session.learn) startLesson(Body.lessons.length - 1, true);
+      return;
+    }
     // 14.0 E: parts 1–2's bodies are a chunk too — the first lesson opened
     // waits for it, unless another run starts meanwhile (an endgame, a classic)
-    const my = ++store.session.learnRuns;
+    const my = stand ? store.session.learnRuns : ++store.session.learnRuns;
     if (!Body.ready()) { Body.want(() => { if (my === store.session.learnRuns && store.session.mode === "learn") { startLesson(i, stand, again); sync(); } }); return; }
     // 14.0 A3: the step it was left at, when it is this lesson's (a relaunch, or the lesson opened again)
     const at = store.session.learnState.at, ti0 = at && at.id === LESSONS[i].id && at.ti < LESSONS[i].tasks.length ? at.ti : 0;
@@ -583,9 +607,12 @@ export function createLessonsUI(d) {
       // a lesson retry is a correction, not a receipt — 25.0 (review-24.0 N4):
       // a capture task's hint is about a wrong capture (「b7 兵有 b8 车保护！吃它…」);
       // to a move that took nothing it describes a move you did not make
-      const own = task.goal === "capture" && !mv.captured ? null : taskText(curLesson(), store.session.learn.ti).retry;
-      nudge(tdot(why, own || t("lm.retry")));
+      const own = (task.goal === "capture" && !mv.captured ? null : taskText(curLesson(), store.session.learn.ti).retry) || t("lm.retry");
+      nudge(tdot(why, own));
       learnRegisterMiss();
+      // 25.4 (design-constraints §8): where the goal says nothing about the
+      // move, the board may — what it walks into, in the review's words
+      if (!why) { const lr = store.session.learn, n = lr.misses; whyOf(g.fen(), mv.san, lr, () => lr.misses === n, (s) => nudge(tdot(s, own))); }
       sync();
       return;
     }
@@ -648,6 +675,21 @@ export function createLessonsUI(d) {
       return v == null ? null : (r.turn === "w" ? v : -v);
     }, () => null);
   }
+  /**
+   * 25.4: why `san` from `fen` went wrong — explain.js's sentence (the
+   * review's), read off the engine's line after it: what it hangs, the
+   * tactic it walks into. Nothing that reveals the answer, and nothing at
+   * all when the line proves nothing. `say` runs only while `lr`'s try is
+   * the one on the board and `still()` holds.
+   */
+  function whyOf(fen, san, lr, still, say) {
+    const g = new Chess(fen), tok = lr.token;
+    if (!g.move(san)) return;
+    ChessEngine.analyze(g.fen(), EG_BUDGET).then((r) => {
+      const s = r && explainText(explainMistake({ fen, played: san, line: r.pv }, Chess), t);
+      if (s && store.session.learn === lr && lr.token === tok && still()) say(s);
+    }, () => {});
+  }
   function egSlipCheck(g, task) {
     const lr = store.session.learn, token = lr.token;
     // the start's search may have run before the engine was up: then the
@@ -664,6 +706,8 @@ export function createLessonsUI(d) {
       lr.egHelped = true; // a try that needed the stop is not a clean one
       toast(t("eg.slipWin"), "fix");
       sync();
+      // 25.4: and why, when the line after it shows a reason
+      whyOf(undoneCopy(g, task.fen).fen(), g.history().pop(), lr, () => !!lr.slip, (s) => { lr.slip = tf("eg.slip", [tf("eg.slipWhy", [s]), rule]); sync(); });
     });
   }
 

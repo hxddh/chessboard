@@ -74,7 +74,11 @@ export function createShell(d) {
   function trainSeg() {
     const m = store.session.mode;
     if (m === "puzzle") return OPENING_CATS.includes(store.session.puzzleState.cat) ? "opening" : "puzzle";
-    return m === "learn" ? (learnSeg && learnSeg()) || "course" : null;
+    if (m !== "learn") return null;
+    // 25.4: nothing on the board yet and nothing loading (a relaunch, a body
+    // chunk on its way) — the saved segment, not 课程 written over it
+    const ui = store.ui.trainSeg;
+    return learnSeg() || (ui === "endgame" || ui === "classic" ? ui : "course");
   }
   /**
    * Into segment `seg`: 谜题 is the puzzle mode; the other three are the
@@ -86,7 +90,7 @@ export function createShell(d) {
     if (want === "puzzle" || want === "opening") openPuzzles(want);
     else {
       if (store.session.mode !== "learn") switchMode("learn");
-      if (openSeg) openSeg(want);
+      openSeg(want);
     }
     show("train");
     saveSettings();

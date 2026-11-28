@@ -240,6 +240,64 @@ const IDS = shell.ADV_IDS;
   assert(!bad.length, "第 7 课起的七道战术题：三种语言的提示都不写答案的落点和着法", bad.join(" | "));
 }
 
+// ------------------------------------------------------------------ 7 换段（25.4）
+// An advanced lesson asked for before its chunk, then the player goes to
+// 残局 or 名局: the runner's learnRuns token says it is no longer wanted, so
+// the chunk's arrival only repaints (onReady(-1)) and a failure says nothing.
+{
+  let got = null, failedN = 0, alive = true;
+  delete shell.CHESS_LESSONS_ADV;
+  const a = shell.createAdvLessons((i) => { got = i; }, () => { failedN++; });
+  a.want(100, () => alive);
+  alive = false; // 换到了残局
+  await new Promise((r) => setTimeout(r, 20));
+  assert(failedN === 0 && got === null, "25.4：换段之后进阶课的分块取不到，不再提示失败", JSON.stringify({ failedN, got }));
+  shell.CHESS_LESSONS_ADV = ADV;
+  const b = shell.createAdvLessons((i) => { got = i; }, () => { failedN++; });
+  alive = true;
+  b.want(100, () => alive);
+  alive = false;
+  await new Promise((r) => setTimeout(r, 20));
+  assert(got === -1 && b.ready(), "25.4：换段之后分块到了只重画，不把第 101 课抢回棋盘", got);
+}
+
+// ------------------------------------------------------------------ 8 分块加载器（25.4）
+// chunk.js: a failed load takes its dead <script> with it; a load that never
+// answers is given up after a time-out (the next call tries afresh, never
+// stuck on a promise that cannot settle); a script that turns up late is harmless.
+{
+  const ck = { console, Math, Date, Error, Promise, Map, setTimeout, clearTimeout };
+  ck.globalThis = ck; ck.window = ck;
+  const head = { kids: [], appendChild(el) { el.parentNode = head; head.kids.push(el); return el; } };
+  ck.document = { head, createElement: () => ({ remove() { const i = head.kids.indexOf(this); if (i >= 0) head.kids.splice(i, 1); } }) };
+  vm.createContext(ck);
+  vm.runInContext(compileModuleSync(path.join(ROOT, "src/web/js/chunk.js")), ck);
+  const settle = (p, ms) => Promise.race([p.then((v) => ["ok", v], (e) => ["err", String(e && e.message)]), new Promise((r) => setTimeout(() => r(["pending"]), ms))]);
+  // a 404
+  const p1 = ck.loadChunk("chunk-x.js", "X_GLOBAL", 5000);
+  const el1 = head.kids[0];
+  el1.onerror();
+  const r1 = await settle(p1, 50);
+  assert(r1[0] === "err" && !head.kids.length, "25.4 chunk.js：载入失败时拒绝，并删掉那个死掉的 <script>", JSON.stringify(r1) + " / " + head.kids.length);
+  // no answer at all
+  const p2 = ck.loadChunk("chunk-x.js", "X_GLOBAL", 30);
+  const el2 = head.kids[0];
+  assert(el2 && el2 !== el1, "25.4 chunk.js：失败之后再要，重新插一个 <script>");
+  const r2 = await settle(p2, 300);
+  assert(r2[0] === "err" && /timed out/.test(r2[1]) && !head.kids.length, "25.4 chunk.js：既不 onload 也不 onerror 的载入到时限就拒绝并清掉（inflight 不会永远卡住）", JSON.stringify(r2));
+  const p3 = ck.loadChunk("chunk-x.js", "X_GLOBAL", 5000);
+  assert(p3 !== p2 && head.kids.length === 1, "25.4 chunk.js：超时之后再要，是一次新的载入");
+  // the first one turns up after its time-out: its global lands, nothing throws
+  let threw = null;
+  ck.X_GLOBAL = { ok: 1 };
+  try { if (el2.onload) el2.onload(); } catch (e) { threw = e; }
+  head.kids[0].onload();
+  const r3 = await settle(p3, 50);
+  const r4 = await settle(ck.loadChunk("chunk-x.js", "X_GLOBAL"), 50);
+  assert(!threw && r3[0] === "ok" && r4[0] === "ok" && r4[1].ok === 1, "25.4 chunk.js：超时后才到的脚本无害，之后的调用直接拿到全局", JSON.stringify([threw && threw.message, r3, r4]));
+  assert(typeof ck.CHUNK_MS === "number" && ck.CHUNK_MS >= 10000 && ck.CHUNK_MS <= 60000, "25.4 chunk.js：默认时限 10–60 秒（" + ck.CHUNK_MS + "）");
+}
+
 if (failed) { console.error(failed + " failure(s)"); process.exit(1); }
 console.log("all advanced-lesson tests passed");
 // the ADV_WAIT_MS timers of the wants above would hold the process open

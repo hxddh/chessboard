@@ -320,6 +320,40 @@ const occ = (page, sq) => page.evaluate((q) => {
   await ctx.close();
 }
 
+// --- 25.4 (design-constraints §8): a wrong move is answered with why, as the
+// opening drills answer theirs — explain.js's sentence, read off the engine's
+// line after the move. In the camp: 车的残局「串击」 (Ra8, Pa7 v Ke7, Ra1),
+// 1.Rf8? puts the rook next to the king — the stop says the win went, and now
+// also that …Kxf8 takes the rook. In a course lesson: 第 56 课 (mg-trade),
+// 1.Qd6?? — the lesson's own hint was all it said; now it says the queen was left unguarded.
+{
+  const { ctx, page, errs } = await openPage({ mode: "learn" });
+  assert(await openEndgame(page, "rp-skewer"), "25.4：打开「串击」");
+  await page.waitForTimeout(1500);
+  await clickMove(page, "a8", "f8");
+  const said = await until(() => page.evaluate(() => { const t = document.getElementById("lesson-task").textContent; return /走成了和棋：/.test(t) && /xf8/.test(t) ? t : null; }), 20000);
+  assert(!!said && /Z/.test(said), "25.4 残局：1.Rf8? 叫停时说出为什么——对方 …Kxf8 吃掉车（explain.js 的句子），仍复述要领、说按 Z 退回",
+    said || await page.evaluate(() => document.getElementById("lesson-task").textContent));
+  assert(errs.length === 0, "25.4 残局：没有页面异常 — " + errs.join(" / "));
+  await ctx.close();
+}
+{
+  const { ctx, page, errs } = await openPage({ mode: "learn", view: "train", trainSeg: "course" },
+    { "chess.learn": JSON.stringify({ v: 1, done: { "mg-trade": true }, last: 55 }) });
+  const title = await until(() => page.evaluate(() => { const t = document.getElementById("lesson-title").textContent; return /^第 56 课/.test(t) ? t : null; }), 10000);
+  assert(!!title, "25.4：(打开第 56 课)", title);
+  await page.waitForTimeout(800);
+  await clickMove(page, "d1", "d6");
+  const fbText = () => page.evaluate(() => [(document.getElementById("lesson-fb") || {}).textContent || "", ...(window.__toasts || [])].join(" | "));
+  const said = await until(async () => { const s = await fbText(); return /xd6，后没有保护住/.test(s) ? s : null; }, 20000);
+  assert(!!said, "25.4 课程：1.Qd6?? 走错时说出为什么——对方 …xd6 吃掉没保护的后（不只是课的提示）", said || await fbText());
+  // the explanation is about the move made; the answer is the lesson's own hint's business
+  const why = (said || "").split(" | ")[0].split(" · ")[0];
+  assert(!!why && !/Qxd8|♕xd8/.test(why), "25.4 课程：解释本身不报答案（Qxd8）", said);
+  assert(errs.length === 0, "25.4 课程：没有页面异常 — " + errs.join(" / "));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 if (failed) { console.error(failed + " 项失败"); process.exit(1); }
