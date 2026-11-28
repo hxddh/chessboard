@@ -1899,7 +1899,7 @@ for (const appearance of ["light", "dark"]) {
     page.on("pageerror", (e) => errs.push(e.message));
     await page.goto(`http://127.0.0.1:${PORT}/`);
     await page.waitForTimeout(1200);
-    await page.evaluate(() => document.querySelectorAll("#pick-list .pick-item")[1].click());
+    await page.evaluate(() => document.querySelectorAll("#pick-list .pick-item")[2].click());
     await page.waitForTimeout(1200);
     const head = () => page.evaluate(() => (document.getElementById("pz-run-head") || {}).textContent || "");
     for (let i = 0; i < 2; i++) { await page.keyboard.press("h"); await page.waitForTimeout(1300); }
@@ -1929,10 +1929,31 @@ for (const appearance of ["light", "dark"]) {
     const guide = await page.evaluate(() => [...document.querySelectorAll("#pick-list .pick-item")].map((b) => b.textContent));
     assert(guide.length === 3 && /没下过棋/.test(guide[0]) && /会走子/.test(guide[1]) && /常下棋/.test(guide[2]),
       `T1 新安装:引导里三档自评(${guide.length})`);
+    // 25.4: 「会走子」 is a game at once — no six-puzzle test between the question and the board
     await page.evaluate(() => document.querySelectorAll("#pick-list .pick-item")[1].click());
     await page.waitForTimeout(1200);
+    const knows = await page.evaluate(() => ({ view: document.getElementById("app").getAttribute("data-view"),
+      pz: JSON.parse(localStorage.getItem("chess.puzzles") || "{}"), set: JSON.parse(localStorage.getItem("chess.settings") || "{}"),
+      run: (document.getElementById("pz-run-head") || {}).textContent || "" }));
+    assert(knows.view === "play" && knows.set.mode === "ai" && !/定级/.test(knows.run),
+      "25.4 选「会走子」:直接到棋盘上下人机,不先做定级题", JSON.stringify({ view: knows.view, mode: knows.set.mode, run: knows.run }));
+    assert(knows.pz.placed && knows.pz.placed.soft === true && knows.pz.placed.r === 900 && knows.pz.rating && knows.pz.rating.r === 900 && knows.pz.rating.rd >= 300,
+      "25.4 「会走子」:按 900 暂定(rd 大),标成 soft —— 不冒充定级", JSON.stringify([knows.pz.placed, knows.pz.rating]));
+    assert(/直接开一盘/.test(guide[1]) && /6 道题定级/.test(guide[2]), "25.4 引导里写明:会走子直接开下,常下棋做 6 题定级", JSON.stringify(guide));
+    await ctx.close();
+  }
+  // (b2) 「常下棋」 keeps the placement: six misses from 1400 place at 525
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 }, locale: "zh-CN" });
+    const page = await ctx.newPage();          // nothing seeded: a new install
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await page.goto(`http://127.0.0.1:${PORT}/`);
+    await page.waitForTimeout(1200);
+    await page.evaluate(() => document.querySelectorAll("#pick-list .pick-item")[2].click());
+    await page.waitForTimeout(1200);
     const head = () => page.evaluate(() => document.getElementById("pz-run-head").textContent);
-    assert(/定级 · 第 1 题，共 6 题/.test(await head()), "T1 选「会走子」:进入定级,第 1 题", await head());
+    assert(/定级 · 第 1 题，共 6 题/.test(await head()), "T1 选「常下棋」:进入定级,第 1 题", await head());
     for (let i = 0; i < 6; i++) { await page.keyboard.press("h"); await page.waitForTimeout(1300); }
     const done = await head();
     const st = await page.evaluate(() => ({ pz: JSON.parse(localStorage.getItem("chess.puzzles") || "{}"), set: JSON.parse(localStorage.getItem("chess.settings") || "{}") }));
@@ -1940,8 +1961,8 @@ for (const appearance of ["light", "dark"]) {
     const sub = await page.evaluate(() => document.getElementById("pz-run-best").textContent);
     const primaries = await page.evaluate(() => [...document.querySelectorAll("#sec-puzzle button.primary")].filter((b) => b.offsetParent).map((b) => b.id));
     assert(primaries.join() === "pz-run-again", "22.0 A5:定级结束后这一屏只有一个主按钮「去今天」", primaries.join());
-    assert(/^你的水平约 400$/.test(done) && /定级完成。先配一位好上手的对手：皮普/.test(sub) && st.pz.rating && st.pz.rating.r === 400 && st.pz.placed &&
-      st.set.difficulty === "beginner", "T1 六题之后:谜题等级分 400 起步、对手配成皮普(新手)", done + " " + JSON.stringify(st.pz.rating) + " " + st.set.difficulty);
+    assert(/^你的水平约 525$/.test(done) && /定级完成。先配一位好上手的对手：皮普/.test(sub) && st.pz.rating && st.pz.rating.r === 525 && st.pz.placed && !st.pz.placed.soft &&
+      st.set.difficulty === "beginner", "T1 六题之后:谜题等级分 525 起步(1400 起、六题全错)、对手配成皮普(新手)", done + " " + JSON.stringify(st.pz.rating) + " " + st.set.difficulty);
     // 18.0 R3: and the puzzles open near it — 战术 serves near the rating;
     // through 17.0 the category stayed 一步杀, served from #1 in list order
     assert(st.pz.cat === "grp:tactic", "18.0 R3 定级之后:谜题从「战术」按等级分出，不再从一步杀 #1 起", st.pz.cat);

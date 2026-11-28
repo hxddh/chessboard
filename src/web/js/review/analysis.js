@@ -41,7 +41,7 @@ export function createAnalysis(d) {
   const {
     store, game, Persist, t, tf, toast, sync, sanHistory, baseGame, bootEngine, saveSettings,
     setAnalyzeUI, stopLiveAnalysis, LibraryUI, boardDrillSource, saveMines, savePuzzleState, saveProgress,
-    naturalGameOver, ruleTerminated, loadStats, saveStats, renderStats,
+    naturalGameOver, ruleTerminated, loadStats, saveStats, renderStats, earlyNote,
   } = d;
   const Host = ChessHost;
   const Mistakes = ChessMistakes;
@@ -229,7 +229,9 @@ export function createAnalysis(d) {
     const you = youSide(store), bad = you ? km[you].length : km.w.length + km.b.length;
     // Stop while deepening (p.deepCut): graded and filed all the same (review of PR #87)
     const done = tdot(bad ? tf("msg.analysis.doneMoments", [bad]) : t("msg.analysis.doneClean"), mined ? tf("msg.mined", [mined]) : "",
-      revised ? tf("msg.minesRevised", [revised]) : "", withdrawn ? tf("msg.minesWithdrawn", [withdrawn]) : "", p.deepCut && t("msg.analysis.deepStopped"));
+      revised ? tf("msg.minesRevised", [revised]) : "", withdrawn ? tf("msg.minesWithdrawn", [withdrawn]) : "", p.deepCut && t("msg.analysis.deepStopped"),
+      // 25.4: the first game's review and the fifth say where the loop has got to
+      hasYou && earlyNote ? earlyNote() : "");
     toast(done);
     // A deep pass is 400ms a ply — over half a minute on a long game, which is
     // long enough that people go and do something else. A toast behind another
@@ -418,7 +420,8 @@ export function createAnalysis(d) {
     document.getElementById("an-run").onclick = () => {
       if (store.session.analyzing) {
         store.session.analyzeAbort = true;
-        if (ChessEngine) ChessEngine.cancel();
+        // 25.4: the pass's own searches too, at once (engine.js cancel)
+        if (ChessEngine) ChessEngine.cancel(true);
         return;
       }
       analyzeGame(SCAN_BUDGET);

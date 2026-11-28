@@ -284,6 +284,17 @@ export async function run() {
       const d = O.thinkPlan(E.TIERS.beginner, 600000, 0);
       assert(d.search === 0 && d.pace > 0, "B4: a depth rung is not given a movetime, only a pace");
       // M3 评审: …but a ceiling from the clock, so a deep rung on a nearly flagged 1+0 cannot outlast it
+      // 25.4: under 4.8 s without increment a depth rung's ceiling falls
+      // below the 120 ms pace floor — the pace, and the most a reply may be
+      // held, stay under the ceiling, on every clock down to the last second
+      const over = [];
+      for (let ms = 1000; ms <= 6000; ms += 100) for (const id of ["beginner", "normal", "master"]) {
+        const pl = O.thinkPlan(E.TIERS[id], ms, 0);
+        if (pl.pace > pl.ceil || pl.most > pl.ceil || pl.most > ms / 20 || pl.pace > pl.most) over.push(id + "@" + ms + ":" + pl.pace + "/" + pl.most + "/" + pl.ceil);
+      }
+      assert(over.length === 0, "25.4: in time trouble a depth rung's pace and `most` never pass its ceiling" + (over.length ? " — " + over.slice(0, 4).join(", ") : ""));
+      const long = O.thinkPlan(easy, 1800000, 0);
+      assert(long.most === O.PACE_CAP_MS && long.pace <= long.most, "25.4: in a long game the most a reply may be held is the pace cap (" + long.most + ")");
       const flag = O.thinkPlan(E.TIERS.master, 2000, 0);
       assert(flag.ceil > 0 && flag.ceil <= 2000 / 40 + 1 && flag.pace <= 2000 / 20 && O.thinkPlan(E.TIERS.extreme, 2000, 0).ceil === 0,
         "M3: a depth rung with 2 s left is bounded by the clock (" + JSON.stringify(flag) + ")");
@@ -491,7 +502,9 @@ export async function run() {
     assert(ms(600, "not a fen", "e4", Chess) === 600, "N13: a position it cannot read holds the rung's minimum");
     const eng = fs.readFileSync(path.join(root, "src/web/js/engine.js"), "utf8");
     const chunk = fs.readFileSync(path.join(root, "src/web/js/opponents-chunk.js"), "utf8");
-    assert(/const hold = pace != null \? pace : P && P\.thinkMs/.test(eng) && !/^import .*think-time/m.test(eng) && /thinkMs \}/.test(chunk),
-      "N13: a clocked game keeps thinkPlan's pace; the module comes with the opponents chunk, not the bundle");
+    // 25.4: a clocked game's pace is a mean too, held under thinkPlan's `most`
+    assert(/const mean = pace != null \? pace : tier\.minMs;/.test(eng) && /P\.thinkMs\(mean,/.test(eng) &&
+      /if \(plan\) hold = Math\.min\(hold, plan\.most/.test(eng) && !/^import .*think-time/m.test(eng) && /thinkMs \}/.test(chunk),
+      "N13 / 25.4: a clocked game's pace breathes too, never past thinkPlan's `most`; the module comes with the opponents chunk, not the bundle");
   }
 }

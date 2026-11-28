@@ -355,6 +355,12 @@ pub const App = struct {
             lines.append(arena, '\n') catch return;
         }
         if (lines.items.len == 0) lines.append(arena, '\n') catch return;
+        // v25.4 (review-25.3 §1): the directory first. The running instance
+        // creates it only when the page first saves, so a document opened
+        // into a fresh install's window found no folder, the create below
+        // failed, and the file was dropped without a word. Already there is
+        // fine (createDirPath).
+        @import("bridge.zig").fsMakePath(self.io, self.appdata_dir);
         var file = std.Io.Dir.createFileAbsolute(self.io, path, .{ .truncate = false, .lock = .exclusive }) catch return;
         defer file.close(self.io);
         const at = file.length(self.io) catch return;

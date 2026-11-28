@@ -36,12 +36,14 @@ export const ADV_WAIT_MS = 8000;
  *   open lesson `wanted` (a course index, -1 for none) that was asked for early
  * @param {() => void} onFail a wanted lesson's chunk failed to load, or took
  *   longer than ADV_WAIT_MS: the lesson standing in stays (M2 review)
- * @returns {{stubs: object[], ensure: () => void, want: (i: number) => void, ready: () => boolean}}
+ * @returns {{stubs: object[], ensure: () => void, want: (i: number, alive?: () => boolean) => void, ready: () => boolean}}
  */
 export function createAdvLessons(onReady, onFail) {
   let byId = null;
   let asked = null;
   let wanted = -1;
+  /** 25.4: is the wanted lesson still wanted — the runner's learnRuns token */
+  let still = null;
   /**
    * Start the fetch once. After the frame that asked, not during it — the
    * endgame camp's rule (trainer/endgames.js): a session restored into 学习
@@ -55,15 +57,16 @@ export function createAdvLessons(onReady, onFail) {
       .then(() => loadChunk(ADV_CHUNK.file, ADV_CHUNK.global))
       .then((m) => {
         byId = new Map(m.lessons.map((L) => [L.id, L]));
-        const i = wanted;
+        const i = wanted, ok = !still || still();
         wanted = -1;
-        onReady(i);
+        onReady(ok ? i : -1);
       }, () => { asked = null; give(); }); // a failed load is retried next time something asks
   }
   function give() {
     if (wanted < 0) return;
     wanted = -1;
-    if (onFail) onFail();
+    // the player moved on (残局, 名局, another lesson): nothing to say
+    if (onFail && (!still || still())) onFail();
   }
   const src = (id) => (byId ? byId.get(id) : (ensure(), null));
   const stub = (id) => ({
@@ -75,9 +78,15 @@ export function createAdvLessons(onReady, onFail) {
     get n() { const L = src(id); return L ? L.tasks.length : 0; },
     get fen0() { const L = src(id); return L && L.tasks[0] ? L.tasks[0].fen : null; },
   });
-  /** open course lesson `i` once the chunk is here; -1 forgets one asked for */
-  const want = (i) => {
+  /**
+   * open course lesson `i` once the chunk is here; -1 forgets one asked for.
+   * 25.4: `alive` says whether it is still wanted when the chunk comes — the
+   * runner's learnRuns rule (trainer/lessons.js deferOpen), so a lesson asked
+   * for before the player went to 残局 or 名局 does not take the board back
+   */
+  const want = (i, alive) => {
     wanted = i;
+    still = alive;
     if (i < 0) return;
     ensure();
     setTimeout(() => { if (wanted === i && !byId) give(); }, ADV_WAIT_MS);

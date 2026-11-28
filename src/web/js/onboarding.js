@@ -11,7 +11,12 @@
  * know the moves, play often — and the latter two go through a placement:
  * six puzzles whose difficulty follows the answers (trainer/runs.js
  * 「定级」), whose estimate becomes the puzzle rating and picks the opponent.
- * The never-played answer goes to lesson 1, as before. Dismissing the dialog
+ * The never-played answer goes to lesson 1, as before. 25.4: 会走子 is no
+ * longer a test before the first move — it sits down to a game at once,
+ * against the rung its placement would have started from, with the same
+ * provisional rating the first answers and games then move (startAtBoard);
+ * 常下棋 keeps the placement, which is what a regular player wants matched.
+ * Dismissing the dialog
  * leaves the player on the board against the default rung (休闲, not the
  * 1700 中级 it was through 9.0), so this can never trap anyone.
  *
@@ -40,7 +45,7 @@ export const NEW_RATING = { r: 800, rd: 350, vol: 0.06 };
 export function createOnboarding(d) {
   const {
     t, store, pickFromList, startLearn, startPlacement, setPanelOpen, panelCoversBoard,
-    saveSettings, maybeEngineTurn, goHome, savePuzzleState,
+    saveSettings, maybeEngineTurn, goHome, savePuzzleState, startAtBoard, goPlay,
   } = d;
 
   async function run() {
@@ -64,8 +69,9 @@ export function createOnboarding(d) {
       const st = store.session.puzzleState;
       if (st && !st.rating && savePuzzleState) { st.rating = Object.assign({}, NEW_RATING); savePuzzleState(); }
       startLearn();
-    } else if (choice !== 1 && choice !== 2) {
+    } else if (choice !== 2) {
       store.session.mode = "ai";
+      if (choice === 1) startAtBoard(PLACE_BASE.knows);
     }
     store.ui.ob.done = choice === 0 || choice === 1 || choice === 2;
     // …but not where the panel is a full-height sheet over the board: ending
@@ -74,7 +80,8 @@ export function createOnboarding(d) {
     setPanelOpen(!panelCoversBoard());
     saveSettings();
     store.commit("session", "sync");
-    if (choice === 1 || choice === 2) startPlacement(choice === 1 ? PLACE_BASE.knows : PLACE_BASE.often);
+    if (choice === 2) startPlacement(PLACE_BASE.often);
+    else if (choice === 1) { maybeEngineTurn(); goPlay(); }
     else if (choice !== 0) { maybeEngineTurn(); if (goHome) goHome(); }
   }
 

@@ -647,6 +647,113 @@ const gosOf = (w) => w.cmds.filter((c) => /^(go|stop|ucinewgame|position)\b/.tes
   await clock.advance(6000); await n;
 }
 
+// --- 25.4: the player's Hash reaches the game search -------------------------
+// The game search sets no Hash of its own: through 25.3 it played at
+// Stockfish's default 16 MB whatever the setting said.
+{
+  const { E, clock, state } = boot();
+  const p = E.init(); await clock.advance(1); await p;
+  const w = state.last();
+  const hashAt = (i) => w.cmds.slice(0, i).filter((c) => /Hash value/.test(c)).pop() || null;
+  assert(hashAt(w.cmds.length) === "setoption name Hash value 32", "25.4: the boot sends the player's Hash (" + hashAt(w.cmds.length) + ")");
+  E.setOptions({ hash: 64 });
+  assert(!w.cmds.includes("setoption name Hash value 64"), "…a change is not sent at once (a setoption Hash waits for the search on the worker)");
+  const m = E.bestMove(FEN, "extreme"); await clock.advance(2000); await m;
+  const goAt = w.cmds.map((c, i) => (/^go\b/.test(c) ? i : -1)).filter((i) => i >= 0).pop();
+  assert(hashAt(goAt) === "setoption name Hash value 64", "…but the next game search plays at it (" + hashAt(goAt) + ")");
+}
+
+// --- 25.4: a wedged worker is rebuilt within two timeouts, whatever their kinds
+{
+  const cfg = {};
+  const { E, clock, state } = boot(cfg);
+  const p = E.init(); await clock.advance(1); await p;
+  cfg.deafSearch = true;
+  const a = E.analyze(FEN, 50).catch(() => "timeout");
+  await clock.advance(20000); await a;
+  assert(E.isReady(), "25.4: one hung search is one strike");
+  cfg.deafReady = true; // and now it does not answer isready either
+  const b = E.analyze(FEN2, 50).catch(() => "timeout");
+  await clock.advance(6000); await b;
+  assert(!E.isReady() && !state.last().alive, "25.4: …a missed isready after it is the second, not a fresh first: the worker is rebuilt");
+}
+
+// --- 25.4: the review's Stop cuts its searches at once ------------------------
+{
+  // on a lane (engine-bg.js)
+  const { E, clock, state } = boot({ cores: 4, goDelay: 5000 });
+  const p = E.init(); await clock.advance(1); await p;
+  let got = "pending";
+  const r = E.analyze(FEN, 100, { bg: true, wide: true }).then((x) => { got = x; });
+  await clock.advance(10);
+  const lane = state.last();
+  assert(state.workers.length === 2 && lane.cmds.some((c) => /^go nodes/.test(c)), "25.4: a review search runs on a lane");
+  E.cancel(true);
+  await clock.advance(10); await r;
+  assert(got === null && lane.cmds.includes("stop"), "25.4: cancel(true) stops the lane's search, and it answers null at once (" + got + ")");
+  let again = "pending";
+  const r2 = E.analyze(FEN2, 100, { bg: true, wide: true }).then((x) => { again = x; });
+  await clock.advance(6000); await r2;
+  assert(state.workers.length === 2 && again && again.cp === 30, "…the lane stays up and serves the next search whole");
+  const r3 = E.analyze(FEN3, 100, { bg: true, wide: true }); await clock.advance(6000); await r3;
+  const cached = E.analyze(FEN, 100, { bg: true, wide: true });
+  await clock.advance(6000);
+  assert(lane.cmds.filter((c) => /^go nodes/.test(c)).length === 4 && (await cached).cp === 30,
+    "…and the cut search is not cached: asked again, it is searched again");
+}
+{
+  // on the shared worker, and a library run (not `wide`) is left alone
+  const { E, clock, state } = boot({ cores: 1, goDelay: 5000 });
+  const p = E.init(); await clock.advance(1); await p;
+  const w = state.last();
+  let got = "pending";
+  const r = E.analyze(FEN, 100, { bg: true, wide: true }).then((x) => { got = x; });
+  await clock.advance(10);
+  E.cancel(true);
+  await clock.advance(10); await r;
+  assert(got === null && w.cmds.includes("stop"), "25.4: on the shared worker too, cancel(true) cuts the review's search (" + got + ")");
+  let lib = "pending";
+  const l = E.analyze(FEN2, 100, { bg: true }).then((x) => { lib = x; });
+  await clock.advance(10);
+  const stops = w.cmds.filter((c) => c === "stop").length;
+  E.cancel(true);
+  await clock.advance(6000); await l;
+  assert(w.cmds.filter((c) => c === "stop").length === stops && lib && lib.cp === 30, "…while a library run's search is not cut");
+}
+
+// --- 25.4: under 4.8 s without increment, a Maia rung stays inside its ceiling
+// thinkPlan's ceiling is a 40th of the clock: 75 ms at 3 s. The net's 100 ms
+// bound and the hold's 120 ms floor both used to sit above it.
+{
+  const { E, clock, state } = boot({ hangHuman: true, clockDate: true, honorMovetime: true, goDelay: 10 });
+  const p = E.init(); await clock.advance(1); await p;
+  const t0 = clock.now();
+  let at = null;
+  const m = E.bestMove(FEN, "normal", { search: 0, pace: 120, ceil: 75 }, { id: "off", Chess: function () {}, fens: [FEN] }).then(() => { at = clock.now(); });
+  for (let i = 0; i < 40 && at == null; i++) await clock.advance(5);
+  await m;
+  assert(at != null && at - t0 <= 80, "25.4: the net, the fallback and the hold all fit a 75 ms ceiling (" + (at - t0) + " ms)");
+}
+
+// --- 25.4: a clock's pace breathes with the position, never past `most` -------
+{
+  const { E, clock } = boot({ clockDate: true });
+  const p = E.init(); await clock.advance(1); await p;
+  const timeOf = async (factor, plan) => {
+    const t0 = clock.now();
+    let at = null;
+    const persona = { id: "off", Chess: function () {}, fens: [FEN], style: { thinkMs: (m) => Math.round(m * factor) } };
+    const m = E.bestMove(FEN, "hard", plan, persona).then(() => { at = clock.now(); });
+    for (let i = 0; i < 400 && at == null; i++) await clock.advance(10);
+    await m;
+    return at - t0;
+  };
+  const quick = await timeOf(0.4, { search: 0, pace: 1000, ceil: 5000, most: 1500 });
+  const slow = await timeOf(1.7, { search: 0, pace: 1000, ceil: 5000, most: 1500 });
+  assert(quick >= 390 && quick <= 420 && slow >= 1490 && slow <= 1520,
+    "25.4: an obvious reply is quicker than the pace, a busy one longer, held to `most` (" + quick + " / " + slow + " ms)");
+}
+
 if (failed) {
   console.error(failed + " test(s) failed");
   process.exit(1);

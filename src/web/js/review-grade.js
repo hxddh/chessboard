@@ -85,10 +85,15 @@ const MISS_FLOOR = 40;
 /**
  * Book (谱着): the position after the move is in the ECO table and every move
  * before it was too (a game that leaves the book and transposes back later
- * is not "still in theory"), and the move is not a `?` / `??` — the table
+ * is not "still in theory"), and the move carries no mark — the table
  * carries some dubious gambits, and a book name must not excuse a mistake.
+ *
+ * 25.4: no mark at all, `?!` included. Through 25.3 a `?!` book move was
+ * 谱着 by its grade and 小失误 by its mark — two verdicts on one move, and
+ * two tallies (the grade counts, the marks' counts) that disagreed. The
+ * same rule holds for 仅此一着 and 妙着: a grade never contradicts the mark.
  */
-const BOOK_MAX_DROP = Review.WIN_MISTAKE;
+const BOOK_MAX_DROP = Review.WIN_INACCURACY;
 
 /**
  * Which positions the pass searches again, deeper, with MultiPV 3: both
@@ -104,6 +109,14 @@ const DEEP_MULTIPV = 3;
 
 /** Key moments per side, ranked by win % swing, none under the `?!` line. */
 const MOMENTS_PER_SIDE = 3;
+/**
+ * 25.4: one of them is a good move of that side's when it has one — an only
+ * move, a brilliancy, or the engine's best move cashing the opponent's `?`
+ * / `??` (the chance a 错失良机 lets go, taken: the opponent dropped ≥ 10
+ * and left the mover ≥ 65). Ranked by what it saved or took; it takes the
+ * last of the three places only when none of the three is good already, so
+ * a lost game's review still names something done well.
+ */
 const MOMENT_MIN = Review.WIN_INACCURACY;
 
 /** Every grade, strongest praise first. */
@@ -249,7 +262,9 @@ function gradeMoves(p, Chess) {
     const second = p.seconds ? p.seconds[i] : null;
     const gap = second == null ? null : before - sideWin(second, side);
     let unique = false;
-    if (confirmed && isBest && gap != null && gap >= ONLY_GAP) {
+    // (25.4: not a marked move — the search after it read it as a ? and
+    // the move list shows that mark, whatever the line before it said)
+    if (confirmed && isBest && !tag && gap != null && gap >= ONLY_GAP) {
       const legal = new Chess(p.fens[i]).moves().length;
       unique = legal > 1 && !isRecapture(p.fens, p.sans, i, Chess);
     }
@@ -323,20 +338,27 @@ function keyMoments(p, grades, firstMover, moveNo) {
     const g = grades ? grades[i] : gradeOfTag(Review.classifyByWinPct(Review.winPctDrop(a, b, side)));
     if (!g) continue;
     const before = sideWin(a, side), after = sideWin(b, side);
-    let swing = 0;
-    if (g === "only" || g === "brilliant") swing = before - sideWin(p.seconds[i], side);
-    else swing = Review.winPctDrop(a, b, side);
-    if (!(swing >= MOMENT_MIN)) continue;
+    const good = g === "only" || g === "brilliant";
+    // (25.4: an only move's swing is the gap to the second line — with no
+    // second line on record there is no gap, not one of 0 points)
+    const second = good && p.seconds ? sideWin(p.seconds[i], side) : null;
+    const took = g === "best" && before >= MISS_FROM && i > 0 ? Review.winPctDrop(p.scalars[i - 1], a, side === "w" ? "b" : "w") : null;
+    const hl = took >= MISS_OPP_DROP;
+    const swing = good ? (second == null ? null : before - second) : hl ? took : Review.winPctDrop(a, b, side);
+    if (!(swing >= MOMENT_MIN) || (g === "best" && !hl)) continue;
     const r1 = (x) => Math.round(x * 10) / 10;
     all.push({ ply: i, side, san: p.sans[i], moveNo: moveNo(i), grade: g,
-      tag: Review.classifyByWinPct(Review.winPctDrop(a, b, side)),
+      tag: Review.classifyByWinPct(Review.winPctDrop(a, b, side)), good: good || hl, hl,
       swing: r1(swing), before: r1(before), after: r1(after), best: p.bests ? p.bests[i] || null : null });
   }
   all.sort((x, y) => y.swing - x.swing || x.ply - y.ply);
-  return {
-    w: all.filter((m) => m.side === "w").slice(0, MOMENTS_PER_SIDE),
-    b: all.filter((m) => m.side === "b").slice(0, MOMENTS_PER_SIDE),
+  const of = (s) => {
+    const mine = all.filter((m) => m.side === s), top = mine.filter((m) => !m.hl).slice(0, MOMENTS_PER_SIDE);
+    const h = !top.some((m) => m.good) && mine.find((m) => m.good);
+    if (h) top.splice(Math.min(top.length, MOMENTS_PER_SIDE - 1), 1, h);
+    return top.sort((x, y) => y.swing - x.swing || x.ply - y.ply);
   };
+  return { w: of("w"), b: of("b") };
 }
 
 export const ChessReviewGrade = {

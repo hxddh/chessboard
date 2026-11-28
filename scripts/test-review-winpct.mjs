@@ -264,8 +264,9 @@ assert(R.summarizeWinPct([], [], "w") === null, "empty → null");
   assert(grade1("d4", 4.99) === "good" && grade1("d4", 5) === "inaccuracy", "良好 below 5, 小失误 (?!) from 5 — the ?! line");
   assert(grade1("d4", 9.99) === "inaccuracy" && grade1("d4", 10) === "mistake" && grade1("d4", 19.99) === "mistake" &&
     grade1("d4", 20) === "blunder", "失误 (?) from 10, 严重失误 (??) from 20 — review.js's cut-offs, unchanged");
-  assert(grade1("d4", 9.99, { book: [true] }) === "book" && grade1("d4", 10, { book: [true] }) === "mistake",
-    "a book move is 谱着 unless it is a ? or worse");
+  assert(grade1("d4", 4.99, { book: [true] }) === "book" && grade1("d4", 5, { book: [true] }) === "inaccuracy" &&
+    grade1("d4", 10, { book: [true] }) === "mistake",
+    "a book move is 谱着 unless it carries a mark — 25.4: a ?! too, or the grade and the mark disagree");
   assert(G.gradeMoves(pass(["e4"], [null, 0]), Chess)[0] === null, "an unmeasured move has no grade");
 
   // 谱着 is a prefix: out of the book once, out for good
@@ -359,6 +360,45 @@ assert(R.summarizeWinPct([], [], "w") === null, "empty → null");
     assert(c.w.only === 1 && Object.values(c.w).reduce((a, b) => a + b, 0) === 5 && Object.values(c.b).reduce((a, b) => a + b, 0) === 5,
       "the grade counts split by side and add up to the plies");
   }
+
+  // 25.4: a grade never contradicts the mark — an only move whose search
+  // after it reads a 12-point drop is a ? (失误), not 仅此一着
+  {
+    const p = pass(mid, [0, 0, 0, cpFor(72), cpFor(72), cpFor(60)], { bests: [null, null, null, null, "d2d4", null],
+      seconds: [null, null, null, null, cpFor(40), null], deep: new Array(6).fill(true) });
+    const g = G.gradeMoves(p, Chess)[4];
+    assert(g === "mistake", "25.4: the engine's first choice the next search reads as a ? is graded 失误, not 仅此一着 (" + g + ")");
+  }
+  // 25.4: keyMoments — an only move with no second line on record is not a
+  // moment of `before` points (null was read as 0 % for the second line)
+  {
+    const sans = ["e4", "e5", "Nf3", "Nc6"];
+    const p = pass(sans, [0, 0, 0, 0, 0].map((x, i) => cpFor(i === 2 ? 60 : 55)));
+    const graded = ["best", "best", "only", "best"];
+    const km = G.keyMoments(p, graded, "w", (i) => i);
+    assert(!km.w.some((m) => m.ply === 2), "25.4: an only move without a second line is no key moment (" + JSON.stringify(km.w.map((m) => [m.ply, m.swing])) + ")");
+    p.seconds[2] = cpFor(40);
+    assert(G.keyMoments(p, graded, "w", (i) => i).w.some((m) => m.ply === 2 && m.swing === 20), "…and with one it is, by the gap (60 − 40)");
+  }
+  // 25.4: a lost game still names a good move — White's three mistakes
+  // outweigh its 1…Nc6?? cashed, which still takes the third place
+  {
+    const sans = ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "c3", "Nf6", "d4", "exd4"];
+    // White-view win %: 1.e4 −12, 2…Nc6 drops Black 37, 3.Bc4 (best) holds 75, 4.c3 −20, 5.d4 −25
+    const wins = [50, 38, 38, 38, 75, 75, 75, 55, 55, 30, 30];
+    const p = pass(sans, wins.map(cpFor));
+    const graded = G.gradeMoves(p, Chess);
+    graded[4] = "best";
+    const km = G.keyMoments(p, graded, "w", (i) => i);
+    const plies = km.w.map((m) => m.ply).join(",");
+    const hl = km.w.find((m) => m.ply === 4);
+    assert(km.w.length === 3 && hl && hl.good && hl.hl && hl.swing === 37 && km.w.filter((m) => !m.good).length === 2,
+      "25.4: three moments for White, the last place its good move — 3.Bc4 taking what 2…Nc6 dropped (" + plies + ")");
+    const none = G.keyMoments(p, graded.map((g, i) => (i === 4 ? "excellent" : g)), "w", (i) => i);
+    assert(none.w.every((m) => !m.good) && none.w.length === 3, "…a move that is not the engine's best cashes nothing: three mistakes as before");
+    const calm = G.keyMoments(pass(sans, [50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50].map(cpFor)), graded, "w", (i) => i);
+    assert(calm.w.length === 0, "…and a quiet game has no moments at all");
+  }
 }
 
 // --- v8-0-plan B2: the pass — quick scan, then deeper — and determinism ------
@@ -437,6 +477,36 @@ assert(R.summarizeWinPct([], [], "w") === null, "empty → null");
   const kept = wideCut.scalars.map((x) => x != null);
   assert(wideCut.halted === "abort" && kept.slice(0, wideCut.at).every(Boolean) && !kept.slice(wideCut.at).some(Boolean),
     "…a stop keeps a prefix without holes, and says where it ends (" + wideCut.at + ", " + kept.map(Number).join("") + ")");
+}
+
+// --- 25.4: a deep search that fails is not counted as deepened ------------
+{
+  const sans = ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6"];
+  const g = new Chess();
+  const fens = [g.fen()];
+  for (const s of sans) { g.move(s); fens.push(g.fen()); }
+  const asked = [];
+  const analyze = async (fen, budget) => {
+    const k = fens.indexOf(fen), turn = fen.split(" ")[1];
+    asked.push([k, budget]);
+    if (budget > 200 && k === 4) return null; // the deep search at 4 fails
+    const white = k === 4 ? 110 : 20, cp = turn === "w" ? white : -white;
+    const m = new Chess(fen).moves({ verbose: true })[0], uci = m.from + m.to;
+    return { cp, mate: null, turn, best: uci, pv: [uci], lines: [{ cp, mate: null, pv: [uci], depth: 13 }, { cp: cp - 90, mate: null, pv: [uci], depth: 13 }] };
+  };
+  const evalScalar = (e) => (e ? (e.turn === "w" ? e.cp : -e.cp) : null);
+  const r = await P.runPass({ fens, sans, budget: 200, lines: 1, analyze, evalScalar });
+  assert(!r.deep[4] && r.deep[3] && r.scalars[4] === 110,
+    "25.4: the failed deep search keeps the quick numbers and is not counted as deepened (deep[4] " + r.deep[4] + ")");
+  assert(asked.filter(([k, b]) => k === 4 && b > 200).length === 1, "…and is asked once, not again every round");
+  // the review's Stop cuts the search in flight (engine.js cancel(true)): it
+  // answers null, and the kept prefix ends before it — no hole
+  let stopped = false;
+  const cut = await P.runPass({ fens, sans, budget: 200, lines: 1, evalScalar,
+    analyze: async (fen, b, o) => { if (fens.indexOf(fen) === 3) { stopped = true; return null; } return analyze(fen, b, o); },
+    halt: () => (stopped ? "abort" : null) });
+  assert(cut.halted === "abort" && cut.at === 3 && cut.scalars.slice(0, 3).every((x) => x != null),
+    "25.4: a quick-scan search cut by Stop is not a measured position: the pass stops before it (" + cut.at + ")");
 }
 
 // --- v8-2-plan T3: 名局猜着 grades on the review's scale ---------------------

@@ -24,7 +24,7 @@ export function createTodayUI(d) {
     avail, bookNow, el, loadStats, motifKeyOf, owedNow, puzzlesInCat,
     runLibraryPass, sanHistory, saveLearnState, saveProgress, savePuzzleState,
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
-    sync, t, tf, toast, pieceSrc, game, isOver, isLive, rep, ecoName, lessonText,
+    sync, t, tf, toast, pieceSrc, game, isOver, isLive, rep, ecoName, lessonText, diagAll, diagCount,
   } = d;
   const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -71,8 +71,34 @@ export function createTodayUI(d) {
    * evidence, and two different floors is how those two start to disagree.
    */
   function libWeakMotif() {
-    const d = Library.diagnose(store.session.library, LIB_MIN_GAMES);
+    if (analysedAll() < LIB_MIN_GAMES) return null;
+    const d = Library.diagnose(diagAll(), LIB_MIN_GAMES);
     return d.enough && d.motifs.length ? d.motifs[0].motif : null;
+  }
+
+  /**
+   * 25.4 (一本账): the player's analysed games, imported and 本机 alike — a
+   * game played here and reviewed counts toward the twenty as one imported
+   * does. Cheap on purpose: a 本机 game is analysed when its record has its
+   * accuracy (library-local.js localAnalysis), so this needs no chunk.
+   */
+  function analysedAll() {
+    let local = 0;
+    try { local = loadStats().games.filter((g) => g && Number.isFinite(g.acc)).length; } catch (_) { local = 0; }
+    return store.session.library.filter((g) => g.an && g.side).length + local;
+  }
+  /** 25.4: what the first games already say (focus.js early). */
+  const earlyNow = () => Focus.early(analysedAll(), store.session.mines, LIB_MIN_GAMES);
+  /**
+   * 25.4: the line the review's toast adds on the first game and the fifth —
+   * the loop made visible on day one: the drills are queued for today, and
+   * at five a first lean, said to be a thin sample.
+   */
+  function earlyNote() {
+    const e = earlyNow();
+    if (e.games === 1) return e.mines ? t("early.why.mines") : "";
+    if (e.games === Focus.EARLY_LEAN && e.lean) return tf("early.lean", [t("motif." + e.lean), e.games, LIB_MIN_GAMES]);
+    return "";
   }
 
   // --- v10-0-plan T3: 本周重点 (focus.js) --------------------------------------
@@ -90,8 +116,10 @@ export function createTodayUI(d) {
   /** This week's focus — composed once a week from the diagnosis, then kept with the puzzle state. */
   function weekFocus() {
     const st = store.session.puzzleState;
-    const have = store.session.library.filter((g) => g.an && g.side).length;
-    const r = Focus.weekOf(st.focus, Progress.weekKey(Date.now()), () => Library.diagnose(store.session.library, LIB_MIN_GAMES),
+    // what diagAll() can see right now: 本机 entries arrive with the library
+    // chunk, and a week asked before they did is asked again once they have
+    const have = diagCount();
+    const r = Focus.weekOf(st.focus, Progress.weekKey(Date.now()), () => Library.diagnose(diagAll(), LIB_MIN_GAMES),
       { opDrills: (f) => ALL_PUZZLES.filter((p) => inFamily(p, f)).length }, focusCounters(), have);
     if (r.fresh) { st.focus = r.focus; savePuzzleState(); }
     return r.focus;
@@ -130,21 +158,30 @@ export function createTodayUI(d) {
     const sec = el("today-focus-sec"), ol = el("today-focus");
     if (!sec || !ol) return;
     const f = focusNow();
-    const analysed = store.session.library.some((g) => g.an && g.side);
-    const rows = f.items.length ? f.items : f.need && analysed ? [{ kind: "need", n: f.need }] : [];
+    // 25.4: before the twenty, the card is not empty from the first game on —
+    // the drills it banked, a first lean from the fifth, then what is still wanted
+    const e = f.items.length ? null : earlyNow();
+    const rows = f.items.length ? f.items : !e.games ? [] : [
+      { kind: "early", n: e.mines },
+      ...(e.lean ? [{ kind: "lean", motif: e.lean, n: e.leanN }] : []),
+      ...(e.need ? [{ kind: "need", n: e.need, have: e.games }] : []),
+    ];
     sec.hidden = !rows.length;
     const sig = JSON.stringify(rows) + "|" + store.ui.langId;
     if (ol.dataset.sig === sig) return;
     ol.dataset.sig = sig;
     ol.replaceChildren(...rows.map((it, i) => {
       const li = document.createElement("li");
-      const done = it.kind !== "need" && it.at >= it.n;
+      const soft = it.kind === "need" || it.kind === "early" || it.kind === "lean";
+      const done = !soft && it.at >= it.n;
       li.className = "daily-step" + (done ? " done" : "");
       const row = document.createElement("button");
       row.type = "button";
       row.className = "daily-row";
       row.dataset.focus = String(i);
-      row.onclick = () => (it.kind === "need" ? Shell.go("me") : focusJump(it));   // 19.0 S1: the library is on 我的
+      row.onclick = () => (it.kind === "need" ? Shell.go("me")   // 19.0 S1: the library is on 我的
+        : it.kind === "early" ? (it.n ? dailyJump({ kind: "review" }) : Shell.go("me"))
+        : it.kind === "lean" ? dailyJump({ kind: "motif", motif: it.motif }) : focusJump(it));
       const dot = document.createElement("span");
       dot.className = "daily-dot";
       dot.setAttribute("aria-hidden", "true");
@@ -154,10 +191,13 @@ export function createTodayUI(d) {
       txt.className = "daily-txt";
       const what = document.createElement("span");
       what.className = "daily-what";
-      what.textContent = it.kind === "need" ? tf("focus.need", [it.n]) : focusLabel(it);
+      what.textContent = it.kind === "need" ? tf("focus.need", [it.n]) : it.kind === "early" ? tf(it.n ? "early.mines" : "early.clean", [it.n])
+        : it.kind === "lean" ? tf("early.leanRow", [t("motif." + it.motif)]) : focusLabel(it);
       const why = document.createElement("span");
       why.className = "daily-why";
-      why.textContent = it.kind === "need" ? t("focus.why.need") : tdot(focusWhy(it), done ? t("focus.done") : it.at + "/" + it.n);
+      why.textContent = it.kind === "need" ? tdot(t("focus.why.need"), it.have + "/" + LIB_MIN_GAMES)
+        : it.kind === "early" ? t(it.n ? "early.why.mines" : "early.why.clean")
+        : it.kind === "lean" ? tf("early.why.lean", [it.n]) : tdot(focusWhy(it), done ? t("focus.done") : it.at + "/" + it.n);
       txt.append(what, why);
       const arrow = document.createElement("span");
       arrow.className = "daily-arrow";
@@ -503,7 +543,7 @@ export function createTodayUI(d) {
   }
   return {
     wireDaily,
-    libPlayedAt, dailySignals, dailyStepLabel, syncDailyUI,
+    libPlayedAt, dailySignals, dailyStepLabel, syncDailyUI, earlyNote,
     dailyStepIsHere, dailyJump,
   };
 }

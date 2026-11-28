@@ -132,6 +132,9 @@ const assert = (cond, msg, extra) => {
   assert(JSON.stringify(ctx.syncMessage({ pgn: "", count: 0 }, true)) === '{"key":"sync.none"}', "增量同步零局：没有新对局");
   assert(JSON.stringify(ctx.syncMessage({ pgn: "", count: 0 }, false)) === '{"key":"sync.empty"}', "第一次零局：还没有对局");
   assert(JSON.stringify(ctx.syncMessage({ error: "busy" }, true)) === '{"key":"sync.busy"}', "原生层忙（上一次还在外面）：说上一次同步还没结束");
+  // 25.4: past 16 MiB the native side says so (sync.zig too_large), and a partial answer still imports
+  assert(JSON.stringify(ctx.syncMessage({ error: "too_large" })) === '{"key":"sync.tooLarge"}', "25.4 回答超过 16 MiB：说太大了，不说 parse / ?");
+  assert(ctx.syncMessage({ pgn: "[Event \"x\"]\n\n1. e4 *", count: 1, partial: true, stopped: "rate_limited" }) === null, "25.4 中途停下的回答：取到的照样进棋谱库");
 
   // 选项的字只由分块读（sync-ui.js → chunk-sync.js），首屏包里没有读它们的代码
   const fs = await import("fs");

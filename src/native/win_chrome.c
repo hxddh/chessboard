@@ -93,7 +93,11 @@ typedef BOOL (WINAPI *ChessPreferredUiLangsFn)(DWORD, PULONG, PZZWSTR, PULONG);
 #define CHESS_MUI_LANGUAGE_NAME 0x8
 
 static int chess_lang_code_of(const WCHAR *tag) {
-    /* "zh-CN", "zh-Hant-TW", "ja-JP", "en-US" … : the primary subtag decides */
+    /* "zh-CN", "zh-Hant-TW", "ja-JP", "en-US" … : the primary subtag decides.
+     * v25.4 (review-25.3 §4): stop at the terminator — a one-letter entry
+     * ("x\0") had tag[2] read past its end (the next entry's first letter, or
+     * past the list's double NUL when it was the last). */
+    if (!tag || tag[0] == 0 || tag[1] == 0) return -1;
     WCHAR a = tag[0] | 0x20, b = tag[1] | 0x20, c = tag[2];
     if (c != 0 && c != L'-' && c != L'_') return -1;
     if (a == L'z' && b == L'h') return 0;

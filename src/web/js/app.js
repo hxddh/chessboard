@@ -1437,7 +1437,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     dailyStepIsHere: (s) => dailyStepIsHere(s),
     renderPuzzleTally: () => renderPuzzleTally(), goHome: () => Shell.go("home"),
     // the opponent sits 300 below the placed puzzle rating: a puzzle rating runs ahead of a whole game's
-    onPlaced: (r) => { const lv = OppUI.levelNear(r - 300); if (!lv) return ""; const st = OppUI.styleOf(lv) || "off"; store.session.difficulty = lv; store.session.personaId = st; saveSettings(); const o = OppUI.strip(lv, st); return tdot(o.name, o.level); }, // 25.0 N3: the rung's own persona, styled or not
+    onPlaced: (r) => placeOpponent(r),
   });
   const {
     onMinedArrived, ALL_PUZZLES, Library, Mistakes, loadMines, saveMines, Progress, Planner,
@@ -1487,7 +1487,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     setAnalyzeUI: () => setAnalyzeUI(), stopLiveAnalysis,
     LibraryUI: { adoptBoardAnalysis: (...args) => LibraryUI.adoptBoardAnalysis(...args) },
     boardDrillSource, saveMines, savePuzzleState, saveProgress,
-    naturalGameOver, ruleTerminated, loadStats, saveStats, renderStats,
+    naturalGameOver, ruleTerminated, loadStats, saveStats, renderStats, earlyNote: () => TodayUI.earlyNote(),
   });
   const {
     evalScalar, analysisFor, SCAN_BUDGET, analyzeGame, recallAnalysis, restoreAnalysis, plyLosses, withMotifs,
@@ -1742,6 +1742,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
     sync, t, tf, toast, lessonText, pieceSrc: (k, px) => BoardView.pieceSrc(k, px), game, isOver: () => appGameOver(), isLive: () => isLive(),
     Shell: { go: (id) => Shell.go(id), openTrain: (g) => Shell.openTrain(g) }, rep: { due: () => (RepUI.booted() ? RepUI.dueDrills().length : 0), start: () => startRepDrills(true) }, ecoName: (e, n) => LibraryUI.libEcoName(e, n),
+    diagAll: () => LibraryUI.diagAll(), diagCount: () => LibraryUI.diagCount(),
   });
   const {
     libPlayedAt, dailySignals, dailyStepLabel, syncDailyUI,
@@ -2058,7 +2059,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
 
   function statusText() {
     if (store.session.editor) {
-      const reason = ChessEditor.validate(store.session.editor, Chess);
+      const reason = EdLazy.ui && EdLazy.ui.reason();
       return tdot(t("st.editing"), t(reason || "st.editingReady"));
     }
     if (store.session.mode === "learn") {
@@ -2963,7 +2964,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     store.subscribe("game", syncStudyUI);
     store.subscribe("session", syncPuzzleUI);
     store.subscribe("session", TrainBar.sync); // after both trainers: it reads their buttons
-    store.subscribe("session", syncEditorUI);
+    store.subscribe("session", () => EdLazy.ui && EdLazy.ui.syncUI());
     store.subscribe("session", syncDailyUI);
     store.subscribe("game", syncDailyUI);
     store.subscribe("session", syncSettingsUI);
@@ -3179,7 +3180,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   }
 
   function onSquareClick(sq) {
-    if (store.session.editor) { editorClick(sq); return; }
+    if (store.session.editor) { EdLazy.ui.click(sq); return; }
     if (store.session.mode === "learn" && store.session.learn) { learnClick(sq); return; }
     if (store.session.mode === "puzzle") { puzzleClick(sq); return; }
     if (store.session.retry) { retryClick(sq); return; }
@@ -3248,21 +3249,36 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     gameResultToken, resultFromFile, clearEndingFlags, forgetFileResult, adoptHeaderResult,
   } = GameCtl;
 
+  // the opponent sits 300 below the placed puzzle rating: a puzzle rating runs ahead of a whole game's
+  function placeOpponent(r) {
+    const lv = OppUI.levelNear(r - 300);
+    if (!lv) return "";
+    const st = OppUI.styleOf(lv) || "off"; // 25.0 N3: the rung's own persona, styled or not
+    store.session.difficulty = lv; store.session.personaId = st; saveSettings();
+    const o = OppUI.strip(lv, st);
+    return tdot(o.name, o.level);
+  }
   // v10-0-plan T1: the first-run question and its placement (onboarding.js, chunk-onboarding.js)
   const runOnboarding = () => loadChunk("chunk-onboarding.js", "createOnboarding").then((create) => create({
     t, store, startLearn, setPanelOpen, panelCoversBoard, saveSettings, maybeEngineTurn,
-    pickFromList: (...a) => pickFromList(...a), startPlacement, savePuzzleState, goHome: () => Shell.go("home"),
+    pickFromList: (...a) => pickFromList(...a), startPlacement, savePuzzleState, goHome: () => Shell.go("home"), goPlay: () => Shell.go("play"),
+    // 25.4: 会走子 starts where its placement would have — a provisional guess (runs.js PLACE_RD's spread), then a game
+    startAtBoard: (r) => { const st = store.session.puzzleState; if (!st.rating) st.rating = { r, rd: 350, vol: 0.06 }; st.placed = { r, at: Date.now(), soft: true }; savePuzzleState(); placeOpponent(r); },
   }).run(), () => {});
 
   // --- position editor + FEN loading ---
-  const PALETTE = [
-    ["w", "k"], ["w", "q"], ["w", "r"], ["w", "b"], ["w", "n"], ["w", "p"], ["", ""],
-    ["b", "k"], ["b", "q"], ["b", "r"], ["b", "b"], ["b", "n"], ["b", "p"], ["", ""],
-  ];
-  const PALETTE_GLYPH = {
-    wk: "♔", wq: "♕", wr: "♖", wb: "♗", wn: "♘", wp: "♙",
-    bk: "♚", bq: "♛", br: "♜", bb: "♝", bn: "♞", bp: "♟",
-  };
+  // 25.4: the panel, palette and FEN dialog are chunk-editor.js (editor-ui.js),
+  // fetched on either door's first press; the editor can only be open once it is in
+  const EdLazy = { ui: null, asked: null };
+  function withEditorUI(then) {
+    if (EdLazy.ui) { then(EdLazy.ui); return; }
+    EdLazy.asked = EdLazy.asked || loadChunk("chunk-editor.js", "createEditorUI").then((create) => {
+      EdLazy.ui = create({ doc: document, store, t, toast, Chess, ChessEditor, Icons, Dlg, Host, viewGame, invalidateEngine,
+        cancelAnim: () => BoardView.cancelAnim(), sync, draw, stopEditor, loadFenAsGame });
+      return EdLazy.ui;
+    }, () => { EdLazy.asked = null; toast(t("msg.editor.unavailable"), "fault"); });
+    EdLazy.asked.then((ui) => ui && then(ui));
+  }
 
   function editorModel() {
     return {
@@ -3278,19 +3294,6 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
       // the drag is part of the picture, not a thing pushed in beforehand
       drag: store.ui.dragging,
     };
-  }
-
-  function startEditor() {
-    const Ed = ChessEditor;
-    if (!Ed) { toast(t("msg.editor.unavailable"), "fault"); return; }
-    invalidateEngine();
-    store.session.editor = Ed.fromFen(viewGame().fen(), Chess);
-    store.session.editor.brush = { color: "w", type: "p" };
-    store.game.selection = null;
-    BoardView.cancelAnim();
-    renderEditorPalette();
-    sync();
-    toast(t("msg.editor.hint"), "fix");
   }
 
   /**
@@ -3319,81 +3322,10 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   function stopEditor(note) {
     if (!store.session.editor) return false;
     store.session.editor = null;
-    syncEditorUI();
+    if (EdLazy.ui) EdLazy.ui.syncUI();
     draw();
     if (note) toast(note);
     return true;
-  }
-
-  function renderEditorPalette() {
-    const el = document.getElementById("editor-palette");
-    if (!el || !store.session.editor) return;
-    el.replaceChildren();
-    for (const [color, type] of PALETTE) {
-      const b = document.createElement("button");
-      b.type = "button";
-      if (!color) {
-        b.dataset.erase = "1";
-        b.appendChild(Icons.icon("x"));
-        b.title = t("ed.eraser");
-        b.classList.toggle("active", store.session.editor.brush.type === "");
-      } else {
-        b.dataset.color = color;
-        b.dataset.type = type;
-        b.textContent = PALETTE_GLYPH[color + type];
-        b.classList.toggle("active", store.session.editor.brush.color === color && store.session.editor.brush.type === type);
-      }
-      el.appendChild(b);
-    }
-  }
-
-  function editorClick(sq) {
-    const Ed = ChessEditor;
-    const { r, c } = Ed.indexOf(sq);
-    const cur = store.session.editor.board[r][c];
-    if (store.session.editor.brush.type === "") {
-      store.session.editor.board[r][c] = null;
-    } else if (cur && cur.color === store.session.editor.brush.color && cur.type === store.session.editor.brush.type) {
-      store.session.editor.board[r][c] = null; // tapping the same piece again clears the square
-    } else {
-      store.session.editor.board[r][c] = { type: store.session.editor.brush.type, color: store.session.editor.brush.color };
-    }
-    syncEditorUI();
-    draw();
-  }
-
-  function syncEditorUI() {
-    const sec = document.getElementById("sec-editor");
-    if (!sec) return;
-    sec.hidden = !store.session.editor;
-    if (!store.session.editor) return;
-    document.querySelectorAll("#editor-turn button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.turn === store.session.editor.turn);
-    });
-    document.querySelectorAll("#editor-castling button").forEach((b) => {
-      b.classList.toggle("active", !!store.session.editor.castling[b.dataset.cr]);
-    });
-    const epRow = document.getElementById("row-ed-ep");
-    const epSeg = document.getElementById("editor-ep");
-    const cands = ChessEditor.epCandidates(store.session.editor);
-    if (epRow) epRow.hidden = !cands.length;
-    if (epSeg && cands.length) {
-      epSeg.replaceChildren();
-      for (const sqName of [null, ...cands]) {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.dataset.ep = sqName || "";
-        b.textContent = sqName || t("ed.epNone");
-        b.classList.toggle("active", (store.session.editor.ep || null) === sqName);
-        epSeg.appendChild(b);
-      }
-    }
-    if (!cands.length && store.session.editor.ep) store.session.editor.ep = null;
-    const err = document.getElementById("editor-error");
-    const reason = ChessEditor.validate(store.session.editor, Chess);
-    if (err) err.textContent = reason ? t(reason) : "";
-    const apply = document.getElementById("editor-apply");
-    if (apply) apply.disabled = !!reason;
   }
 
   /** Load `fen` as a fresh game whose history starts from that position. */
@@ -3416,57 +3348,6 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     saveGame();
     toast(note || t("mm.positionLoaded"));
     maybeEngineTurn();
-  }
-
-  function applyEditor() {
-    const Ed = ChessEditor;
-    const reason = Ed.validate(store.session.editor, Chess);
-    if (reason) { toast(t(reason)); return; }
-    const fen = Ed.toFen(store.session.editor);
-    stopEditor();
-    loadFenAsGame(fen, t("msg.editor.started"));
-  }
-
-  const fenModal = document.getElementById("fen-modal");
-  /** The FEN field's one way of saying no. The red ring is what you see, the
-      sentence under it is the reason, and aria-invalid is what a screen reader
-      is told; all three were set by hand at three call sites, which is three
-      chances to set two of them. Pass nothing to clear all three. */
-  function setFenError(msg) {
-    const input = document.getElementById("fen-input");
-    const err = document.getElementById("fen-error");
-    if (err) err.textContent = msg || "";
-    if (input) {
-      input.classList.toggle("bad", !!msg);
-      input.setAttribute("aria-invalid", msg ? "true" : "false");
-    }
-  }
-  function openFenModal() {
-    if (!fenModal) return;
-    const input = document.getElementById("fen-input");
-    if (input) input.value = viewGame().fen();
-    setFenError("");
-    Dlg.open(fenModal, input);
-    if (input) input.select();
-  }
-  function closeFenModal() { Dlg.close(fenModal); }
-
-  function submitFen() {
-    const input = document.getElementById("fen-input");
-    const raw = (input && input.value || "").trim();
-    const show = setFenError;
-    if (!raw) { show(t("msg.fen.empty")); return; }
-    const v = new Chess().validate_fen(raw);
-    if (!v.valid) { show(v.error || t("msg.fen.invalid")); return; }
-    // chess.js accepts positions no game could reach (no kings, a side already
-    // in check while its opponent moves) — reuse the editor's stricter rules,
-    // then load the ORIGINAL fen so its en-passant square and clocks survive.
-    const reason = ChessEditor
-      ? ChessEditor.validate(ChessEditor.fromFen(raw, Chess), Chess)
-      : null;
-    if (reason) { show(t(reason)); return; }
-    closeFenModal();
-    loadFenAsGame(new Chess(raw).fen(), t("msg.fen.loaded"));
   }
 
   /** "1 move" / "12 moves" — a count needs its own plural form in English. */
@@ -3537,7 +3418,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     renderStats();
     renderAchievements();
     renderRecordEntry();
-    if (store.session.editor) renderEditorPalette();
+    if (store.session.editor) EdLazy.ui.palette();
     sync();
   }
 
@@ -3593,10 +3474,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     const p = canvasPoint(ev);
     const sq = BoardView.cellAt(p.x, p.y);
     if (!sq) return;
-    const { r, c } = ChessEditor.indexOf(sq);
-    store.session.editor.board[r][c] = null;
-    syncEditorUI();
-    draw();
+    EdLazy.ui.erase(sq);
   });
   canvas.addEventListener("pointerdown", (ev) => {
     const p = canvasPoint(ev);
@@ -3630,7 +3508,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     }
     if (store.ui.painting) {
       const sq = BoardView.cellAt(p.x, p.y);
-      if (sq && sq !== store.ui.painting) { store.ui.painting = sq; editorClick(sq); }
+      if (sq && sq !== store.ui.painting) { store.ui.painting = sq; EdLazy.ui.click(sq); }
       return;
     }
     if (!store.ui.dragging) {
@@ -4249,7 +4127,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
 
   // 9.0 S5: the settings page's look pickers and sync switch (prefs-ui.js);
   // a pick goes to settings-ui.js
-  const PrefsUI = createPrefsUI({ doc: document, t, getLook: () => store.ui, setLook: (p) => SettingsUI.applyLook(p), pieceSvgs: BoardView.setSvgs, netSync: { store, Persist, tf, lib: LibraryUI } });
+  const PrefsUI = createPrefsUI({ doc: document, t, getLook: () => store.ui, setLook: (p) => SettingsUI.applyLook(p), pieceSvgs: BoardView.setSvgs, netSync: { store, Persist, tf, toast, lib: LibraryUI } });
   PrefsUI.wire();
   // v8-0-plan F4: the settings page (settings-ui.js) — its view, the look
   // and the handlers behind its controls
@@ -4282,7 +4160,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   const Palette = createPaletteLazy({ doc: document, t, tf, tdot, Dlg, store, LESSONS, lessonText, THEME_IDS, Endgames: LessonsUI.Endgames,
     SETTING_CATS, run: {
       newGame: () => { Shell.go("play"); requestNewGame(); }, analyse: () => AnalyseEntry.open(), blank: () => document.getElementById("an-board").click(),
-      paste: () => pastePgn(), editor: () => { Shell.go("play"); document.getElementById("editor-open").click(); }, fen: () => openFenModal(),
+      paste: () => pastePgn(), editor: () => { Shell.go("play"); document.getElementById("editor-open").click(); }, fen: () => document.getElementById("fen-load-open").click(),
       exportPgn: () => downloadPgn(), flip: () => { Shell.go("play"); setFlipped(!store.game.flipped); }, go: (v) => Shell.go(v),
       train: (s) => Shell.openTrain(s), settings: (c) => { store.ui.setCat = c; Shell.go("settings"); }, lesson: (i) => dailyJump({ kind: "lesson", i }),
       theme: (id) => goTheme(id), endgame: (id) => LessonsUI.startEndgame(id), libGame: (e) => loadLibraryEntry(e) } });
@@ -4373,84 +4251,34 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     maybeEngineTurn();
   };
 
-  // --- editor + FEN wiring ---
-  document.getElementById("editor-open").onclick = () => {
-    if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
-    startEditor();
-  };
+  // --- editor + FEN wiring (the rest is editor-ui.js's) ---
+  const needPlay = () => (store.session.mode === "learn" || store.session.mode === "puzzle") && (toast(t("msg.mode.needPlay"), "fix"), true);
+  document.getElementById("editor-open").onclick = () => { if (!needPlay()) withEditorUI((ui) => ui.start()); };
+  // the FEN dialog opens at once, filled and guarded; what its buttons do arrives with the chunk
+  const fenModal = document.getElementById("fen-modal"), fenInput = document.getElementById("fen-input");
+  const closeFen = () => Dlg.close(fenModal);
   document.getElementById("fen-load-open").onclick = () => {
-    if (store.session.mode === "learn" || store.session.mode === "puzzle") { toast(t("msg.mode.needPlay"), "fix"); return; }
-    openFenModal();
+    if (needPlay()) return;
+    fenInput.value = viewGame().fen();
+    fenInput.classList.remove("bad");
+    fenInput.setAttribute("aria-invalid", "false");
+    document.getElementById("fen-error").textContent = "";
+    Dlg.open(fenModal, fenInput);
+    fenInput.select();
+    withEditorUI(() => {});
   };
-  document.getElementById("editor-palette").onclick = (ev) => {
-    const b = ev.target.closest("button");
-    if (!b || !store.session.editor) return;
-    store.session.editor.brush = b.dataset.erase ? { color: "", type: "" }
-      : { color: b.dataset.color, type: b.dataset.type };
-    renderEditorPalette();
-  };
-  document.getElementById("editor-turn").onclick = (ev) => {
-    const b = ev.target.closest("button[data-turn]");
-    if (!b || !store.session.editor) return;
-    store.session.editor.turn = b.dataset.turn;
-    syncEditorUI();
-  };
-  document.getElementById("editor-ep").onclick = (ev) => {
-    const b = ev.target.closest("button[data-ep]");
-    if (!b || !store.session.editor) return;
-    store.session.editor.ep = b.dataset.ep || null;
-    syncEditorUI();
-  };
-  document.getElementById("editor-castling").onclick = (ev) => {
-    const b = ev.target.closest("button[data-cr]");
-    if (!b || !store.session.editor) return;
-    store.session.editor.castling[b.dataset.cr] = !store.session.editor.castling[b.dataset.cr];
-    syncEditorUI();
-  };
-  document.getElementById("editor-clear").onclick = () => {
-    if (!store.session.editor) return;
-    store.session.editor.board = ChessEditor.emptyBoard();
-    store.session.editor.castling = { K: false, Q: false, k: false, q: false };
-    syncEditorUI();
-    draw();
-  };
-  document.getElementById("editor-reset").onclick = () => {
-    if (!store.session.editor) return;
-    store.session.editor = Object.assign(
-      ChessEditor.fromFen(new Chess().fen(), Chess),
-      { brush: store.session.editor.brush }
-    );
-    syncEditorUI();
-    draw();
-  };
-  document.getElementById("editor-cancel").onclick = () => {
-    stopEditor();
-    sync();
-    toast(t("msg.editor.cancelled"));
-  };
-  document.getElementById("editor-apply").onclick = () => { applyEditor(); };
-
-  if (fenModal) {
-    document.getElementById("fen-cancel").onclick = closeFenModal;
-    document.getElementById("fen-load").onclick = submitFen;
-    document.getElementById("fen-from-clip").onclick = async () => {
-      try {
-        const clip = await Host.readClipboard();
-        const input = document.getElementById("fen-input");
-        if (input) input.value = (clip || "").trim();
-        setFenError("");
-      } catch (_) { toast(t("msg.clipboard.readFailed"), "fault"); }
-    };
-    document.getElementById("fen-input").addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") { ev.preventDefault(); submitFen(); }
-      // Typing a FEN must not trigger board shortcuts — but Escape and Tab are
-      // not shortcuts, they are how you leave the dialog. Swallowing them here
-      // meant the one control this dialog auto-focuses was also the one place
-      // Escape could not close it from.
-      if (ev.key !== "Escape" && ev.key !== "Tab") ev.stopPropagation();
-    });
-    fenModal.onclick = (ev) => { if (ev.target === fenModal) closeFenModal(); };
-  }
+  document.getElementById("fen-load").onclick = () => withEditorUI((ui) => ui.submitFen());
+  document.getElementById("fen-from-clip").onclick = () => withEditorUI((ui) => ui.fromClip());
+  document.getElementById("fen-cancel").onclick = closeFen;
+  fenModal.onclick = (ev) => { if (ev.target === fenModal) closeFen(); };
+  fenInput.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") { ev.preventDefault(); withEditorUI((ui) => ui.submitFen()); }
+    // Typing a FEN must not trigger board shortcuts — but Escape and Tab are
+    // not shortcuts, they are how you leave the dialog. Swallowing them here
+    // meant the one control this dialog auto-focuses was also the one place
+    // Escape could not close it from.
+    if (ev.key !== "Escape" && ev.key !== "Tab") ev.stopPropagation();
+  });
 
   // 19.0 S7: the save slots are gone; games left in them go into the library
   // once, when it is in, after the launch's quiet. 21.0 E: save-slots.js is a
@@ -4630,7 +4458,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     Dlg.register(document.getElementById("lib-list-modal"), closeLibList);
     Dlg.register(document.getElementById("theme-modal"), () => PuzzlesUI.closeThemes());
     Dlg.register(pickModal, () => finishPick(null));
-    Dlg.register(fenModal, closeFenModal);
+    Dlg.register(fenModal, closeFen);
     Dlg.register(document.getElementById("analyse-modal"), () => AnalyseEntry.close());
     Dlg.register(document.getElementById("palette-modal"), () => Palette.close());
     Dlg.register(confirmModal, () => finishConfirm(false));
@@ -4693,7 +4521,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     // clock preset chosen but no saved clock state → fresh clocks
     if (store.game.timeControl !== "off" && !store.game.clock) resetClocks();
     syncAutoFlip(); // a resumed pvp game must face whoever is on move
-    if (store.session.mode === "learn") startLearn();
+    if (store.session.mode === "learn") startLearn(store.ui.trainSeg); // 25.4: the segment it was left on
     if (store.session.mode === "puzzle") startPuzzles();
     BoardView.resizeCanvas();
     applyLanguage(); // 15.0 P: it renders the stats, badges and record entry and syncs; the boot did all four again

@@ -2477,9 +2477,16 @@ let t5Export = "";
   const read = () => page.evaluate(() => ({
     on: [...document.querySelectorAll("#diag-src-seg button")].filter((b) => b.classList.contains("active")).map((b) => b.dataset.dsrc + ":" + b.getAttribute("aria-pressed")),
     text: document.getElementById("lib-diag").innerText.replace(/\s+/g, " ") }));
+  // 25.4 (一本账): 全部 by default — the 本机 games are your games as much as the import
+  await page.waitForFunction(() => /21 局已复盘的棋/.test(document.getElementById("lib-diag").innerText), null, { timeout: 8000 }).catch(() => {});
+  const all0 = await read();
+  assert(all0.on.join() === "all:true" && /21 局已复盘的棋/.test(all0.text),
+    `25.4 诊断默认读「全部」：本机和导入的是一本账，21 局(${all0.on}；${all0.text.slice(0, 60)})`);
+  await page.click('#diag-src-seg [data-dsrc="import"]');
+  await page.waitForTimeout(300);
   const imp = await read();
   assert(imp.on.join() === "import:true" && /还差 19 局才够给诊断（已复盘 1\/20）/.test(imp.text) && !/逐手复盘/.test(imp.text),
-    `T5 诊断默认读「导入的」：还差 19 局(${imp.on}；${imp.text.slice(0, 60)})`);
+    `T5 选「导入的」：还差 19 局(${imp.on}；${imp.text.slice(0, 60)})`);
   // by keyboard: Tab to 本机, Enter
   await page.focus('#diag-src-seg [data-dsrc="local"]');
   await page.keyboard.press("Enter");
@@ -2528,7 +2535,7 @@ let t5Export = "";
   await c1Ready(page);
   await page.waitForTimeout(400);
   await toDiag(page);
-  assert((await read()).on.join() === "import:true", "T5 重启之后，诊断的来源回到默认的「导入的」");
+  assert((await read()).on.join() === "all:true", "T5 重启之后，诊断的来源回到默认的「全部」");
 
   // --- T5.4 导出 PGN with the 本机 games, into an empty profile, and back ---------
   await page.evaluate(() => window.__chess.libDb().openList(null, { src: "import" }));
@@ -2622,6 +2629,35 @@ let t5Export = "";
   if (before && C1.cold) figures.coldStartBefore82 = Object.assign({ ref: before }, C1.cold, { noSummary: C1.coldBase });
   console.log("C1 measured: " + JSON.stringify(figures));
   if (RECORDING && C1.api && C1.ui) record("libraryDb", before ? Object.assign({}, had, { coldStartBefore82: figures.coldStartBefore82 }) : figures);
+}
+
+// --- 25.4: 清除全部存档 before the library's chunk is in. Its port could only
+// clear a library it had loaded, so the games stayed in IndexedDB
+// ("chessboard.games") and the next launch read every one of them back.
+{
+  const ctx = await c1Context({ "chess.library": V1.plain });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(e.message));
+  await page.route(/chunk-libdb\.js/, (r) => r.abort());
+  await page.goto(`http://127.0.0.1:${PORT}/`);
+  await page.waitForTimeout(900);
+  await page.click("#pick-cancel", { timeout: 1500 }).catch(() => {});
+  const early = await page.evaluate(() => !window.__chess.library().ready);
+  await page.evaluate(() => document.getElementById("clear-save").click());
+  await page.waitForSelector("#confirm-ok", { state: "visible", timeout: 5000 }).catch(() => {});
+  await page.click("#confirm-ok").catch(() => {});
+  await page.waitForTimeout(800);
+  await page.unroute(/chunk-libdb\.js/);
+  await page.reload();
+  await page.waitForTimeout(900);
+  await c1Ready(page);
+  const lib = await libOf(page);
+  const stored = await storedLib(page);
+  assert(early && lib && lib.games.length === 0 && stored.games && stored.games.length === 0,
+    `25.4 棋谱库的块没到时清除全部存档：IndexedDB 里的棋也删了，重开不回来(库里 ${lib && lib.games.length} 局、库存 ${stored.games && stored.games.length} 局)`);
+  assert(!errs.length, "25.4 …全程零 JS 异常", errs.join(" | "));
+  await ctx.close();
 }
 
 await browser.close();

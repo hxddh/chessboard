@@ -111,6 +111,8 @@ export const CHUNKS = [
   { entry: "src/web/js/save-slots.js", out: "src/web/js/chunk-slots.js", global: "migrateSlots", min: 500 },
   // 21.0 E: 关于, on its button's first click (about-lazy.js)
   { entry: "src/web/js/about-ui.js", out: "src/web/js/chunk-about.js", global: "wireAbout", min: 1000 },
+  // 25.4: 编辑局面 and 载入 FEN, on either door's first press (editor-ui.js)
+  { entry: "src/web/js/editor-ui.js", out: "src/web/js/chunk-editor.js", global: "createEditorUI", min: 2000 },
   // 22.0 C1: the sounds' code — asked for once the page is up (audio-lazy.js)
   { entry: "src/web/js/audio.js", out: "src/web/js/chunk-audio.js", global: "ChessAudio", min: 8000 },
   // v10-0-plan A3: the ⌘K panel, on the key's first press (palette-lazy.js)

@@ -36,7 +36,7 @@ import { ChessProgress } from "./progress.js";
 import { ChessReview } from "./review.js";
 import { motifOf } from "./motif.js";
 import { reconcile } from "./keyed.js";
-import { prefetchSummary, LIBDB_CHUNK } from "./library-sum.js";
+import { prefetchSummary, LIBDB_CHUNK, DB_NAME as LIBDB_NAME } from "./library-sum.js";
 import { tdot } from "./tdot.js";
 
 /**
@@ -193,7 +193,16 @@ export function createLibraryUI(d) {
     names: () => (libDb ? libDb.shardNames() : null),
     read: (name) => (libDb ? libDb.shardText(name) : null),
     restore: (texts) => libDbReady.then((c) => c && c.restoreShards(texts)),
-    clear: () => { store.session.library = []; if (libDb) libDb.clear(); },
+    clear: () => {
+      store.session.library = [];
+      if (libDb) { libDb.clear(); return; }
+      // 25.4: before the chunk is in, the database by name (the repertoire's
+      // rule) — left alone, the chunk's boot read every game back — and the
+      // games it may have read meanwhile, once it is here
+      libEarly = null;
+      try { indexedDB.deleteDatabase(LIBDB_NAME); } catch (_) { /* no IndexedDB here */ }
+      libDbReady.then((c) => c && c.clear());
+    },
   });
   if (typeof window !== "undefined" && window.__chess) {
     // the e2e's view of the library (the games are no longer in localStorage)
@@ -922,6 +931,7 @@ export function createLibraryUI(d) {
     // 19.0 S2: what 我的's diagnosis reads (me-page.js)
     diagCount, prepDiag, charts: () => charts,
     diagView: () => (libDb ? libDb.diagView() : { games: store.session.library, note: "" }),
+    diagAll: () => (libDb ? libDb.diagAll() : store.session.library),
     reclaimLibrary, renderLibList, renderLibrary, runLibraryPass, saveLibrary,
     // v8-0-plan C1: the query API (library-query.js), over imported + 本机
     // games, once the chunk is in — the seam C3's explorer reads

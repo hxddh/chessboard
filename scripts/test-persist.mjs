@@ -1004,6 +1004,108 @@ for (const how of ["restore", "clear"]) {
   assert(pgn && pgn.name === H.FILE_TOO_LARGE && pgn.limit === 16 * 1024 * 1024, "P2-3: …while any other file read stops at 16 MiB");
 }
 
+// 25.4: 清除全部存档 early in a launch — before recover() has read the
+// manifest and before the library's chunk can name its shards. The store's
+// shards must leave the manifest and their files must go anyway, or the old
+// games come back with the next restore.
+{
+  const h = withStore();
+  const t1 = JSON.stringify({ v: 1, games: [{ id: "lib:q", sans: "d4", plies: 1 }] });
+  h.m.set(LS("save"), JSON.stringify({ v: 1, pgn: "1. e4 *" }));
+  h.m.set(LS("library"), JSON.stringify({ v: 1, games: [], names: [], db: 2, n: 1 }));
+  h.m.set("chess.writtenAt", "5000");
+  h.store.set("save", JSON.stringify({ v: 1, pgn: "1. e4 *" }));
+  h.store.set("lib05", t1);
+  h.store.set("rep1", "R1");
+  h.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 5000, keys: ["save", "lib05", "rep1"], files: { save: "save", lib05: "lib05", rep1: "rep1" } }));
+  const P = createPersist(h, () => {});
+  P.load();
+  let cleared = 0;
+  // the library's chunk is not in: it cannot name its shards
+  P.attachBulk({ names: () => null, read: () => null, restore: async () => {}, clear: () => { cleared++; } });
+  P.clearAll();                 // before recover() — committed is not known yet
+  const r = await P.recover();
+  await P.flushMirror();
+  const meta = metaOf(h);
+  assert(cleared === 1 && !meta.keys.some((k) => BULK.test(k)) && h.store.get("lib05") === "null" && h.store.get("rep1") === "null",
+    "25.4: a clear before the manifest is read and the library is loaded still takes the store's shards (" + r + "; " + meta.keys.join(",") + ")");
+  assert(!h.writes.includes("lib3f") && !h.writes.includes("lib3f-b"), "25.4: …without writing files for shards no manifest listed");
+}
+// …and a clear before recover() on a cache found empty: the file is not
+// restored over the clear
+{
+  const h = withStore();
+  h.store.set("lib07", "L7");
+  h.store.set(STORE_META, JSON.stringify({ app: "chessboard", schema: 3, writtenAt: 5000, keys: ["lib07"], files: { lib07: "lib07" } }));
+  const P = createPersist(h, () => {});
+  P.load();
+  P.clearAll();
+  const r = await P.recover();
+  await P.flushMirror();
+  assert(r !== "restored" && !metaOf(h).keys.includes("lib07"), "25.4: a clear before recover() is not undone by a restore from the file (" + r + ")");
+}
+
+// 25.4: a full localStorage does not stop the native mirror. The value the
+// cache refused still reaches the store, whose manifest is stamped newer
+// than the cache, so the next launch takes the file's copy.
+{
+  const h = withStore();
+  const P = createPersist(h, () => {});
+  P.load();
+  await P.recover();
+  P.set("save", "s1");
+  await tick(600);
+  const realSet = h.storageSet;
+  h.storageSet = (k, v) => (k === LS("learn") || k === "chess.writtenAt" ? false : realSet(k, v));
+  const ok = P.set("learn", JSON.stringify({ v: 1, done: { a: 1 }, last: 3 }));
+  await tick(600);
+  h.storageSet = realSet;
+  const meta = metaOf(h);
+  assert(!ok && P.isBroken() && valOf(h, "learn") === JSON.stringify({ v: 1, done: { a: 1 }, last: 3 }),
+    "25.4: a write the cache refused (quota) is still mirrored to the native store");
+  assert(meta.writtenAt > Number(h.m.get("chess.writtenAt")), "25.4: …and the store's manifest reads newer than the cache (" + meta.writtenAt + " > " + h.m.get("chess.writtenAt") + ")");
+}
+// touchBulk under a full cache: the shards still go out
+{
+  const h = withStore();
+  const P = createPersist(h, () => {});
+  P.load();
+  const shards = new Map([["lib02", "L2"]]);
+  P.attachBulk({ names: () => [...shards.keys()], read: (n) => shards.get(n) || null });
+  await P.recover();
+  P.set("save", "s1");
+  await tick(600);
+  shards.set("lib02", "L2'");
+  const realSet = h.storageSet;
+  h.storageSet = () => false;
+  P.touchBulk(["lib02"]);
+  await tick(600);
+  h.storageSet = realSet;
+  assert(valOf(h, "lib02") === "L2'", "25.4: touched shards reach the store even when the cache refuses the stamp");
+}
+
+// 25.4: restoreAll is all or nothing. A key the cache refuses puts every key
+// back as it was; IndexedDB (the port) and memory are not touched.
+{
+  const h = withStore();
+  h.m.set(LS("save"), "old-save");
+  h.m.set(LS("stats"), "old-stats");
+  h.m.set("chess.writtenAt", "1000");
+  const P = createPersist(h, () => {});
+  P.load();
+  let restored = null;
+  P.attachBulk({ names: () => [], read: () => null, restore: async (t) => { restored = t; } });
+  const realSet = h.storageSet;
+  // no room for the incoming statistics (the old ones fit back, as they did before)
+  h.storageSet = (k, v) => (v === "new-stats" ? false : realSet(k, v));
+  const ok = P.restoreAll({ app: "chessboard", schema: 3, writtenAt: 9000, keys: { save: "new-save", learn: "new-learn", stats: "new-stats", lib03: "L3" } });
+  h.storageSet = realSet;
+  await tick(10);
+  assert(ok === false && h.m.get(LS("save")) === "old-save" && h.m.get(LS("stats")) === "old-stats" && !h.m.has(LS("learn")) && h.m.get("chess.writtenAt") === "1000",
+    "25.4: a refused restore leaves the cache exactly as it was (" + [h.m.get(LS("save")), h.m.get(LS("learn")), h.m.get("chess.writtenAt")].join(",") + ")");
+  assert(restored === null && P.get("save") === "old-save" && P.isBroken(), "25.4: …IndexedDB is not handed the document's games, memory keeps the old profile, and the failure is reported");
+}
+
 // 2z. the shard keys are tokens the native store accepts (main.zig
 // storeKeyValid: [A-Za-z0-9_-], ≤ STORE_KEY_MAX), with room for the "-b" slot
 {
