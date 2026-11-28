@@ -7,7 +7,7 @@ v8-2-plan F2。这个仓库有两份从 Native SDK 抄来、再自己改过的�
 | `src/runner.zig` | `src/app_runner/root.zig` | 0.1.0 时分叉，之后手动跟 |
 | `build.zig` | `build/app.zig` | 手抄本，只留这个应用用得到的 |
 | `src/window_placement.zig` | `src/app_runner/window_placement.zig` | 8.2 M4 起原样抄入（runner.zig 的恢复窗口要它，见 R15），登记表里没有差异 |
-| `src/native/webview2_host.cpp` | `src/platform/windows/webview2_host.cpp` | 24.0 起抄入，只多一段关 DevTools 的代码（B16） |
+| `src/native/webview2_host.cpp` | `src/platform/windows/webview2_host.cpp` | 24.0 起抄入：关 DevTools（B16）；25.4 起新窗口请求按导航策略处理、桥消息读不到来源就丢弃（B17） |
 
 每次升 SDK 都要拿新上游和这两个文件对 diff。0.8.0 就栽在这里：上游多编了一个源文件（`gpu_surface_renderer.cpp`），手抄本没跟上，Windows 构建链接失败（`release.yml` 的注释）。直接看 diff 是 174 块、三千多行，几乎全是有意的，真正要看的那几行淹在里面。
 
@@ -101,12 +101,13 @@ node scripts/sdk-diff.mjs <SDK 目录> --suggest   # 另外把每个没登记的
 | 组 | 类 | 内容与理由 |
 |---|---|---|
 | B16 | ours | **WebView2 主机的副本：没有检查能力的构建关掉 DevTools**（24.0，`review-23.0-and-v24-plan.md` §2.2）。<br>SDK 0.11 的 `webview_inspection`（#690）只接进了 macOS 主机；Windows 主机从不碰 `ICoreWebView2Settings`，WebView2 的默认是 DevTools 开，所以 23.0 及以前的 Windows 发布件按 F12 就能打开 DevTools、改页面和存档。<br>我们编译这份副本而不是 SDK 的：`get_CoreWebView2` 之后多一段 `put_AreDevToolsEnabled(FALSE)`，用 `#ifndef CHESS_WEBVIEW_INSPECTION` 包住；`build.zig` 的 `linkPlatform` 多一个 `inspect` 参数（与 runner 的 `webview_inspection` 同一规则：`-Dwebview-inspect`，不给时 Debug 开、发布关），开时传这个宏。文件头加了出处与 Apache-2.0 说明。`"gpu_surface_renderer.h"` 仍从 SDK 目录取（加了一条 include 路径）。<br>`build.zig` 里对应的三行改动登记在它们原来所在的组里（linkPlatform 的签名与两处调用、编译这份副本的那一行）。<br>上游哪天让 `webview_inspection` 也管 WebView2，就整组删掉、改回编译 SDK 的文件。<br>真机核对：`docs/manual-check.md`「24.0 真机核对」。 |
+| B17 | ours | **新窗口请求按导航策略处理；桥消息读不到来源就丢弃**（25.4，评审 25.3 §3）。<br>上游只挂了 `NavigationStarting`：`window.open`、`target=_blank`、中键点链接走的是 `NewWindowRequested`，没人处理时 WebView2 自己开一个弹窗，绕过 `allowed_origins` / `external_links`。我们多挂一个 `add_NewWindowRequested`（`ICoreWebView2NewWindowRequestedEventHandler` 的 IID 照 `WebView2.h` 补在那排 GUID 后面，`WebView2HandlerIid` 多一个特化）：一律 `put_Handled(TRUE)`、不给 `NewWindow`，所以永远不出弹窗；只有 `external_links` 是 `open` 且网址在允许列表里时才交给系统浏览器，与 `NavigationStarting` 的写法一致。`app.zon` 是 `deny`，所以什么也不开。<br>`WebMessageReceived` 里上游先把来源设成 `"zero://inline"`，`get_Source` 失败才不改它——而 `zero://inline` 在我们的 `allowed_origins` 里，读不到来源反倒成了最受信任的来源。改成读不到就丢掉这条消息（fail closed）。<br>上游哪天自己处理了新窗口、或 `get_Source` 失败不再落到受信来源，就删掉对应的块。<br>真机核对：`docs/manual-check.md`「25.4 真机核对」。 |
 
 ## 数字（登记于 0.11.1）
 
-- **32 组**：ours 21 组、unused 4 组、lag 7 组（24.0 加了 B16；23.0 按 0.11.1 重新切块；0.10.1 时是 31 组 177 块）。块数以 `test-sdk-diff` 的输出为准。
+- **33 组**：ours 22 组、unused 4 组、lag 7 组（25.4 加了 B17；24.0 加了 B16；23.0 按 0.11.1 重新切块；0.10.1 时是 31 组 177 块）。块数以 `test-sdk-diff` 的输出为准。
 - **runner.zig**：16 组，96 块，上游 1,424 行对我们 904 行。
 - **build.zig**：14 组，84 块，上游 3,191 行对我们 774 行。
 - **window_placement.zig**：没有差异。
-- **webview2_host.cpp**：1 组（B16），上游 8,095 行，我们多 19 行。
+- **webview2_host.cpp**：2 组（B16、B17），上游 8,095 行，我们 8,147 行。
 - 23.0 唯一采纳的上游改动是 `webview_inspection`（#690）：`build.zig` 的 `-Dwebview-inspect`（B05）与 `runner.zig` appInfo 的同名字段（R08 只登记我们多写的那段注释）。0.10.1 的 macOS 主机无条件打开 WKWebView 的检查器，所以 22.0 及以前的发布件都能被检查；0.11.1 默认关，跟 exe 的构建模式走。

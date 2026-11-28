@@ -1,9 +1,10 @@
 // Copied from @native-sdk/cli 0.11.1, src/platform/windows/webview2_host.cpp
 // (Apache-2.0, Copyright the Native SDK authors; see its LICENSE). Modified
 // by chessboard: one block after get_CoreWebView2 turns WebView2's DevTools
-// off in builds without inspection. Every difference from upstream is
-// registered in docs/sdk-fork.json (group B16) and checked by
-// scripts/sdk-diff.mjs, like src/runner.zig and build.zig.
+// off in builds without inspection (B16); new-window requests are held to
+// the navigation policy and a bridge message without a source is dropped
+// (B17). Every difference from upstream is registered in docs/sdk-fork.json
+// and checked by scripts/sdk-diff.mjs, like src/runner.zig and build.zig.
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -4975,6 +4976,8 @@ static const GUID kNativeSdkIID_AcceleratorKeyPressedHandler = {0xb29c7e28, 0xfa
 static const GUID kNativeSdkIID_FocusChangedHandler = {0x05ea24bd, 0x6452, 0x4926, {0x90, 0x14, 0x4b, 0x82, 0xb4, 0x98, 0x13, 0x5d}};
 static const GUID kNativeSdkIID_WebResourceRequestedHandler = {0xab00b74c, 0x15f1, 0x4646, {0x80, 0xe8, 0xe7, 0x63, 0x41, 0xd2, 0x5d, 0x71}};
 static const GUID kNativeSdkIID_NavigationStartingHandler = {0x9adbe429, 0xf36d, 0x432b, {0x9d, 0xdc, 0xf8, 0x88, 0x1f, 0xbd, 0x76, 0xe3}};
+// chessboard (v25.4, B17): ICoreWebView2NewWindowRequestedEventHandler
+static const GUID kNativeSdkIID_NewWindowRequestedHandler = {0xd4c185fe, 0xc81c, 0x4989, {0x97, 0xaf, 0x2d, 0x3f, 0xa7, 0xab, 0x56, 0x51}};
 
 template <typename Interface> struct WebView2HandlerIid;
 template <> struct WebView2HandlerIid<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler> {
@@ -4997,6 +5000,9 @@ template <> struct WebView2HandlerIid<ICoreWebView2WebResourceRequestedEventHand
 };
 template <> struct WebView2HandlerIid<ICoreWebView2NavigationStartingEventHandler> {
     static const GUID &value() { return kNativeSdkIID_NavigationStartingHandler; }
+};
+template <> struct WebView2HandlerIid<ICoreWebView2NewWindowRequestedEventHandler> {
+    static const GUID &value() { return kNativeSdkIID_NewWindowRequestedHandler; }
 };
 
 /* Every handler interface above declares a two-argument Invoke; this
@@ -5379,17 +5385,19 @@ static bool createChildWebView(Host *host, const std::string &key) {
                                     CoTaskMemFree(message_bytes);
                                     std::string message = narrow(message_wide);
 
-                                    std::string origin = "zero://inline";
+                                    // chessboard (v25.4, review-25.3 §3): a message whose source
+                                    // cannot be read is dropped. Upstream answers it as
+                                    // "zero://inline", which app.zon allows — a failed read
+                                    // was the most trusted origin there is.
                                     LPWSTR source_bytes = nullptr;
-                                    if (SUCCEEDED(args->get_Source(&source_bytes)) && source_bytes) {
-                                        std::wstring source_wide(source_bytes);
-                                        CoTaskMemFree(source_bytes);
-                                        std::string source_url = narrow(source_wide);
-                                        auto source_webview = host->webviews.find(key);
-                                        origin = source_webview == host->webviews.end()
-                                            ? originForUrl(source_url)
-                                            : bridgeOriginForWebViewUrl(source_webview->second, source_url);
-                                    }
+                                    if (FAILED(args->get_Source(&source_bytes)) || !source_bytes) return S_OK;
+                                    std::wstring source_wide(source_bytes);
+                                    CoTaskMemFree(source_bytes);
+                                    std::string source_url = narrow(source_wide);
+                                    auto source_webview = host->webviews.find(key);
+                                    std::string origin = source_webview == host->webviews.end()
+                                        ? originForUrl(source_url)
+                                        : bridgeOriginForWebViewUrl(source_webview->second, source_url);
 
                                     host->bridge_callback(
                                         host->bridge_context,
@@ -5466,6 +5474,31 @@ static bool createChildWebView(Host *host, const std::string &key) {
                                 args->put_Cancel(TRUE);
                                 return S_OK;
                             }).Get(), &token);
+                        // chessboard (v25.4, review-25.3 §3): window.open, target=_blank
+                        // and a middle click raise NewWindowRequested, not
+                        // NavigationStarting, and left unhandled WebView2 opens a popup
+                        // of its own — outside the policy above. Always handled: no
+                        // popup is made, and the external-link policy alone decides
+                        // whether the system browser gets the URL (`deny` in app.zon:
+                        // never).
+                        EventRegistrationToken chess_new_window_token = {};
+                        found->second.webview->add_NewWindowRequested(Callback<ICoreWebView2NewWindowRequestedEventHandler>(
+                            [host, lifetime](ICoreWebView2 *, ICoreWebView2NewWindowRequestedEventArgs *args) -> HRESULT {
+                                if (!args) return S_OK;
+                                args->put_Handled(TRUE);
+                                auto token = lifetime.lock();
+                                if (!token) return S_OK;
+                                std::lock_guard<std::recursive_mutex> guard(token->mutex);
+                                if (!token->alive || host->external_link_action != 1) return S_OK;
+                                LPWSTR uri_bytes = nullptr;
+                                if (FAILED(args->get_Uri(&uri_bytes)) || !uri_bytes) return S_OK;
+                                std::wstring uri_wide(uri_bytes);
+                                CoTaskMemFree(uri_bytes);
+                                if (policyListMatches(host->allowed_external_urls, narrow(uri_wide))) {
+                                    ShellExecuteW(nullptr, L"open", uri_wide.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+                                }
+                                return S_OK;
+                            }).Get(), &chess_new_window_token);
                         loadWebViewSource(found->second);
                     }
                     return S_OK;
