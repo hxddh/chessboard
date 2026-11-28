@@ -895,7 +895,9 @@ async function bootLibrary(d) {
   }
 
   // --- v8-1-plan T5: the diagnosis's source row, and the clock of old games --
-  const diagSrc = () => (["import", "local", "all"].includes(store.ui.diagSrc) ? store.ui.diagSrc : "import");
+  // 25.4 (一本账): 全部 by default — a game played here is one of your games as
+  // much as one imported; 导入的 and 本机 stay on the row for whoever asks
+  const diagSrc = () => (["import", "local", "all"].includes(store.ui.diagSrc) ? store.ui.diagSrc : "all");
   /**
    * The 本机 entries the diagnosis can read, each with its `an`
    * (LibraryLocal.localAnalysis) — hung on the entry itself, so a diagnosis
@@ -995,6 +997,8 @@ async function bootLibrary(d) {
     exportPgn,
     // v8-1-plan T5: the diagnosis's sources
     diagView,
+    // 25.4: 今天's 本周重点 reads every game of yours, as the diagnosis now does
+    diagAll: () => LibraryLocal.diagGames("all", store.session.library, localDiag()),
     localAnalysed: () => st.local.filter((g) => typeof g.acc === "number").length,
     last,
     indexing,

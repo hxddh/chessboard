@@ -170,8 +170,10 @@ export function createOpponentsUI(d) {
     if (pickEl) { pickEl.hidden = !full || !on; if (full && on) setText(pickEl, on ? grid.querySelector('[data-op="' + on.id + '"]').getAttribute("aria-label") : ""); }
     const r = d.rating();
     // 25.0 (review-24.0 N6): before the first game the placement is the level Today already shows
+    // 25.4: a 会走子 start (`soft`) is a guess, not a placement — nothing to quote
     const pl = !r && d.placed && d.placed();
-    setText(el("op-you"), r ? tf("ng.yourRating", [fmtRating(r)]) : pl && Number.isFinite(pl.r) ? tf("ng.placedRating", [Math.round(pl.r)]) : t("ng.noRating"));
+    const plR = pl && !pl.soft && Number.isFinite(pl.r) ? pl.r : null;
+    setText(el("op-you"), r ? tf("ng.yourRating", [fmtRating(r)]) : plR != null ? tf("ng.placedRating", [Math.round(plR)]) : t("ng.noRating"));
   }
 
   /** the persona whose rung's rating is nearest `r` */

@@ -1437,7 +1437,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     dailyStepIsHere: (s) => dailyStepIsHere(s),
     renderPuzzleTally: () => renderPuzzleTally(), goHome: () => Shell.go("home"),
     // the opponent sits 300 below the placed puzzle rating: a puzzle rating runs ahead of a whole game's
-    onPlaced: (r) => { const lv = OppUI.levelNear(r - 300); if (!lv) return ""; const st = OppUI.styleOf(lv) || "off"; store.session.difficulty = lv; store.session.personaId = st; saveSettings(); const o = OppUI.strip(lv, st); return tdot(o.name, o.level); }, // 25.0 N3: the rung's own persona, styled or not
+    onPlaced: (r) => placeOpponent(r),
   });
   const {
     onMinedArrived, ALL_PUZZLES, Library, Mistakes, loadMines, saveMines, Progress, Planner,
@@ -1487,7 +1487,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     setAnalyzeUI: () => setAnalyzeUI(), stopLiveAnalysis,
     LibraryUI: { adoptBoardAnalysis: (...args) => LibraryUI.adoptBoardAnalysis(...args) },
     boardDrillSource, saveMines, savePuzzleState, saveProgress,
-    naturalGameOver, ruleTerminated, loadStats, saveStats, renderStats,
+    naturalGameOver, ruleTerminated, loadStats, saveStats, renderStats, earlyNote: () => TodayUI.earlyNote(),
   });
   const {
     evalScalar, analysisFor, SCAN_BUDGET, analyzeGame, recallAnalysis, restoreAnalysis, plyLosses, withMotifs,
@@ -1742,6 +1742,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     saveSettings, setSideTab, setText, startLesson, startPuzzleAt, startPuzzles, store, switchMode,
     sync, t, tf, toast, lessonText, pieceSrc: (k, px) => BoardView.pieceSrc(k, px), game, isOver: () => appGameOver(), isLive: () => isLive(),
     Shell: { go: (id) => Shell.go(id), openTrain: (g) => Shell.openTrain(g) }, rep: { due: () => (RepUI.booted() ? RepUI.dueDrills().length : 0), start: () => startRepDrills(true) }, ecoName: (e, n) => LibraryUI.libEcoName(e, n),
+    diagAll: () => LibraryUI.diagAll(), diagCount: () => LibraryUI.diagCount(),
   });
   const {
     libPlayedAt, dailySignals, dailyStepLabel, syncDailyUI,
@@ -3248,10 +3249,21 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     gameResultToken, resultFromFile, clearEndingFlags, forgetFileResult, adoptHeaderResult,
   } = GameCtl;
 
+  // the opponent sits 300 below the placed puzzle rating: a puzzle rating runs ahead of a whole game's
+  function placeOpponent(r) {
+    const lv = OppUI.levelNear(r - 300);
+    if (!lv) return "";
+    const st = OppUI.styleOf(lv) || "off"; // 25.0 N3: the rung's own persona, styled or not
+    store.session.difficulty = lv; store.session.personaId = st; saveSettings();
+    const o = OppUI.strip(lv, st);
+    return tdot(o.name, o.level);
+  }
   // v10-0-plan T1: the first-run question and its placement (onboarding.js, chunk-onboarding.js)
   const runOnboarding = () => loadChunk("chunk-onboarding.js", "createOnboarding").then((create) => create({
     t, store, startLearn, setPanelOpen, panelCoversBoard, saveSettings, maybeEngineTurn,
-    pickFromList: (...a) => pickFromList(...a), startPlacement, savePuzzleState, goHome: () => Shell.go("home"),
+    pickFromList: (...a) => pickFromList(...a), startPlacement, savePuzzleState, goHome: () => Shell.go("home"), goPlay: () => Shell.go("play"),
+    // 25.4: 会走子 starts where its placement would have — a provisional guess (runs.js PLACE_RD's spread), then a game
+    startAtBoard: (r) => { const st = store.session.puzzleState; if (!st.rating) st.rating = { r, rd: 350, vol: 0.06 }; st.placed = { r, at: Date.now(), soft: true }; savePuzzleState(); placeOpponent(r); },
   }).run(), () => {});
 
   // --- position editor + FEN loading ---
@@ -4242,7 +4254,31 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
   // --- editor + FEN wiring (the rest is editor-ui.js's) ---
   const needPlay = () => (store.session.mode === "learn" || store.session.mode === "puzzle") && (toast(t("msg.mode.needPlay"), "fix"), true);
   document.getElementById("editor-open").onclick = () => { if (!needPlay()) withEditorUI((ui) => ui.start()); };
-  document.getElementById("fen-load-open").onclick = () => { if (!needPlay()) withEditorUI((ui) => ui.openFen()); };
+  // the FEN dialog opens at once, filled and guarded; what its buttons do arrives with the chunk
+  const fenModal = document.getElementById("fen-modal"), fenInput = document.getElementById("fen-input");
+  const closeFen = () => Dlg.close(fenModal);
+  document.getElementById("fen-load-open").onclick = () => {
+    if (needPlay()) return;
+    fenInput.value = viewGame().fen();
+    fenInput.classList.remove("bad");
+    fenInput.setAttribute("aria-invalid", "false");
+    document.getElementById("fen-error").textContent = "";
+    Dlg.open(fenModal, fenInput);
+    fenInput.select();
+    withEditorUI(() => {});
+  };
+  document.getElementById("fen-load").onclick = () => withEditorUI((ui) => ui.submitFen());
+  document.getElementById("fen-from-clip").onclick = () => withEditorUI((ui) => ui.fromClip());
+  document.getElementById("fen-cancel").onclick = closeFen;
+  fenModal.onclick = (ev) => { if (ev.target === fenModal) closeFen(); };
+  fenInput.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") { ev.preventDefault(); withEditorUI((ui) => ui.submitFen()); }
+    // Typing a FEN must not trigger board shortcuts — but Escape and Tab are
+    // not shortcuts, they are how you leave the dialog. Swallowing them here
+    // meant the one control this dialog auto-focuses was also the one place
+    // Escape could not close it from.
+    if (ev.key !== "Escape" && ev.key !== "Tab") ev.stopPropagation();
+  });
 
   // 19.0 S7: the save slots are gone; games left in them go into the library
   // once, when it is in, after the launch's quiet. 21.0 E: save-slots.js is a
@@ -4422,8 +4458,7 @@ import { ChessProgressMetrics } from "./progress-metrics.js";
     Dlg.register(document.getElementById("lib-list-modal"), closeLibList);
     Dlg.register(document.getElementById("theme-modal"), () => PuzzlesUI.closeThemes());
     Dlg.register(pickModal, () => finishPick(null));
-    const fenModal = document.getElementById("fen-modal");
-    Dlg.register(fenModal, () => Dlg.close(fenModal));
+    Dlg.register(fenModal, closeFen);
     Dlg.register(document.getElementById("analyse-modal"), () => AnalyseEntry.close());
     Dlg.register(document.getElementById("palette-modal"), () => Palette.close());
     Dlg.register(confirmModal, () => finishConfirm(false));

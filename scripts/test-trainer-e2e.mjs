@@ -1693,8 +1693,8 @@ const visMoves = (page, ms = 20000) => page.waitForFunction(() => document.getEl
   await ctx.close();
 }
 // the first-run question: 没下过棋 starts the puzzle rating near 800
-// (provisional), 会走子 still goes through the placement
-for (const [pick, want] of [[0, "new"], [1, "place"]]) {
+// (provisional); 25.4: 会走子 sits down to a game, 常下棋 goes through the placement
+for (const [pick, want] of [[0, "new"], [1, "board"], [2, "place"]]) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: "zh-CN" });
   const page = await ctx.newPage(); // nothing seeded: a new install
   page.on("pageerror", (e) => errs.push(e.message));
@@ -1707,8 +1707,10 @@ for (const [pick, want] of [[0, "new"], [1, "place"]]) {
   if (want === "new") {
     const r = got.pz.rating;
     assert(!!r && Math.abs(r.r - 800) <= 50 && r.rd > 110, "19.0 S6: 新档案选「没下过棋」，谜题等级分从 800 附近起（暂定）", JSON.stringify(r));
+  } else if (want === "board") {
+    assert(!/定级/.test(got.run) && got.pz.placed && got.pz.placed.soft, "25.4: 选「会走子」不做定级题,直接下棋(暂定 soft)", got.run + " " + JSON.stringify(got.pz.placed));
   } else {
-    assert(/定级/.test(got.run), "19.0 S6: 选「会走子」还是走定级", got.run);
+    assert(/定级/.test(got.run), "19.0 S6: 选「常下棋」走定级", got.run);
   }
   await ctx.close();
 }

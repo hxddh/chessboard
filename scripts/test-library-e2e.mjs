@@ -2477,9 +2477,16 @@ let t5Export = "";
   const read = () => page.evaluate(() => ({
     on: [...document.querySelectorAll("#diag-src-seg button")].filter((b) => b.classList.contains("active")).map((b) => b.dataset.dsrc + ":" + b.getAttribute("aria-pressed")),
     text: document.getElementById("lib-diag").innerText.replace(/\s+/g, " ") }));
+  // 25.4 (一本账): 全部 by default — the 本机 games are your games as much as the import
+  await page.waitForFunction(() => /21 局已复盘的棋/.test(document.getElementById("lib-diag").innerText), null, { timeout: 8000 }).catch(() => {});
+  const all0 = await read();
+  assert(all0.on.join() === "all:true" && /21 局已复盘的棋/.test(all0.text),
+    `25.4 诊断默认读「全部」：本机和导入的是一本账，21 局(${all0.on}；${all0.text.slice(0, 60)})`);
+  await page.click('#diag-src-seg [data-dsrc="import"]');
+  await page.waitForTimeout(300);
   const imp = await read();
   assert(imp.on.join() === "import:true" && /还差 19 局才够给诊断（已复盘 1\/20）/.test(imp.text) && !/逐手复盘/.test(imp.text),
-    `T5 诊断默认读「导入的」：还差 19 局(${imp.on}；${imp.text.slice(0, 60)})`);
+    `T5 选「导入的」：还差 19 局(${imp.on}；${imp.text.slice(0, 60)})`);
   // by keyboard: Tab to 本机, Enter
   await page.focus('#diag-src-seg [data-dsrc="local"]');
   await page.keyboard.press("Enter");
@@ -2528,7 +2535,7 @@ let t5Export = "";
   await c1Ready(page);
   await page.waitForTimeout(400);
   await toDiag(page);
-  assert((await read()).on.join() === "import:true", "T5 重启之后，诊断的来源回到默认的「导入的」");
+  assert((await read()).on.join() === "all:true", "T5 重启之后，诊断的来源回到默认的「全部」");
 
   // --- T5.4 导出 PGN with the 本机 games, into an empty profile, and back ---------
   await page.evaluate(() => window.__chess.libDb().openList(null, { src: "import" }));

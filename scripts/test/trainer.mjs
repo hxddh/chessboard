@@ -991,6 +991,15 @@ export async function run() {
       const e1 = F.weekOf(null, "2026-W41", () => ({ enough: false, have: 5, need: 20 }), {}, cnt, 5);
       assert(!F.weekOf(e1.focus, "2026-W41", dx, {}, cnt, 5).fresh && F.weekOf(e1.focus, "2026-W41", dx, { opDrills: () => 0 }, cnt, 6).fresh,
         "T3:没排出来的一周,分析的局数变了才再问");
+      // 25.4: the first games are not a vacuum — drills from game one, a lean
+      // (marked thin) from game five once a motif repeats, the twenty unchanged
+      const mines = [{ motif: "fork" }, { motif: "pin" }, { motif: "fork" }, {}];
+      const g1 = F.early(1, mines, 20), g4 = F.early(4, mines, 20), g5 = F.early(5, mines, 20);
+      assert(g1.games === 1 && g1.mines === 4 && g1.lean === null && g1.need === 19, "25.4 第 1 局复盘完:报收了几道错题,不报倾向", JSON.stringify(g1));
+      assert(g4.lean === null && g5.lean === "fork" && g5.leanN === 2 && g5.need === 15, "25.4 攒到 5 局才说初步倾向(同一母题至少两道)", JSON.stringify(g5));
+      assert(F.early(5, [{ motif: "fork" }, { motif: "pin" }], 20).lean === null && F.early(0, [], 20).games === 0,
+        "25.4 每个母题只一道时不说倾向;没有复盘过的棋就什么都不说");
+      assert(F.EARLY_LEAN === 5 && F.compose({ enough: false, have: 5, need: 20 }).items.length === 0, "25.4 20 局仍是完整诊断的门槛");
     }
     // T1: placed on the first run — the game against the chosen opponent first
     const placed = PL.plan({ owed: 0, mineUnsolved: 0, lessonNext: 0, opUnsolved: true, playedToday: false, placed: true });
@@ -1082,8 +1091,11 @@ export async function run() {
       "在别处下的棋也是今天下过棋 —— 7.0 只读本地战绩，导进来今早的快棋还被劝去下一盘");
     assert(/libMotif: libWeakMotif\(\)/.test(appSrc) && /libQueued: Library\.pending\(/.test(appSrc),
       "日课读得到棋谱库说的弱项和还欠着的分析");
-    assert(/const d = Library\.diagnose\(store\.session\.library, LIB_MIN_GAMES\);\s*return d\.enough/.test(appSrc),
+    // 25.4 (一本账): the same floor, over the same games — imported and 本机 alike
+    assert(/if \(analysedAll\(\) < LIB_MIN_GAMES\) return null;\s*const d = Library\.diagnose\(diagAll\(\), LIB_MIN_GAMES\);\s*return d\.enough/.test(appSrc),
       "教练用的是诊断页同一个门槛 —— 两个门槛就是两张嘴");
+    assert(/Library\.diagnose\(diagAll\(\), LIB_MIN_GAMES\),/.test(appSrc) && /const have = diagCount\(\);/.test(appSrc),
+      "25.4 本周重点和诊断读同一本账：本机复盘过的棋也算进 20 局");
     // 19.0 S3: the accuracy line went with 进步; the calendar is what counts the library's games
     assert(/\.concat\(\(store\.session\.library \|\| \[\]\)\.filter\(\(g\) => g\.side\)\.map\(libPlayedAt\)\)/.test(appSrc),
       "练习日历把棋谱库里的棋并进同一张日历");

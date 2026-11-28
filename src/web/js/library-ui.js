@@ -922,6 +922,7 @@ export function createLibraryUI(d) {
     // 19.0 S2: what 我的's diagnosis reads (me-page.js)
     diagCount, prepDiag, charts: () => charts,
     diagView: () => (libDb ? libDb.diagView() : { games: store.session.library, note: "" }),
+    diagAll: () => (libDb ? libDb.diagAll() : store.session.library),
     reclaimLibrary, renderLibList, renderLibrary, runLibraryPass, saveLibrary,
     // v8-0-plan C1: the query API (library-query.js), over imported + 本机
     // games, once the chunk is in — the seam C3's explorer reads

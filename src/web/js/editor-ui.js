@@ -4,7 +4,9 @@
  * Both are opened a handful of times in an app's life, and their wiring sat
  * in every first paint and in app.js's line budget. They are a chunk now
  * (chunk-editor.js), fetched the first time either door is pressed —
- * about-lazy.js's rule. The rules of what makes a position playable stay in
+ * about-lazy.js's rule. The FEN dialog itself opens at once from app.js
+ * (its field filled, its keys guarded, before anything has arrived); what
+ * its buttons do is here. The rules of what makes a position playable stay in
  * editor.js, which the importer needs at first paint anyway; app.js keeps
  * the board model (editorModel), the one way out (stopEditor) and
  * loadFenAsGame, which the analysis board uses without opening either.
@@ -120,7 +122,6 @@ export function createEditorUI(d) {
     d.loadFenAsGame(fen, t("msg.editor.started"));
   }
 
-  const fenModal = $("fen-modal");
   /** The FEN field's one way of saying no. The red ring is what you see, the
       sentence under it is the reason, and aria-invalid is what a screen reader
       is told; all three were set by hand at three call sites, which is three
@@ -134,15 +135,7 @@ export function createEditorUI(d) {
       input.setAttribute("aria-invalid", msg ? "true" : "false");
     }
   }
-  function openFen() {
-    if (!fenModal) return;
-    const input = $("fen-input");
-    if (input) input.value = d.viewGame().fen();
-    setFenError("");
-    d.Dlg.open(fenModal, input);
-    if (input) input.select();
-  }
-  const closeFen = () => d.Dlg.close(fenModal);
+  const closeFen = () => d.Dlg.close($("fen-modal"));
 
   function submitFen() {
     const input = $("fen-input");
@@ -197,27 +190,14 @@ export function createEditorUI(d) {
   };
   $("editor-apply").onclick = apply;
 
-  if (fenModal) {
-    $("fen-cancel").onclick = closeFen;
-    $("fen-load").onclick = submitFen;
-    $("fen-from-clip").onclick = async () => {
-      try {
-        const clip = await d.Host.readClipboard();
-        const input = $("fen-input");
-        if (input) input.value = (clip || "").trim();
-        setFenError("");
-      } catch (_) { toast(t("msg.clipboard.readFailed"), "fault"); }
-    };
-    $("fen-input").addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") { ev.preventDefault(); submitFen(); }
-      // Typing a FEN must not trigger board shortcuts — but Escape and Tab are
-      // not shortcuts, they are how you leave the dialog. Swallowing them here
-      // meant the one control this dialog auto-focuses was also the one place
-      // Escape could not close it from.
-      if (ev.key !== "Escape" && ev.key !== "Tab") ev.stopPropagation();
-    });
-    fenModal.onclick = (ev) => { if (ev.target === fenModal) closeFen(); };
+  async function fromClip() {
+    try {
+      const clip = await d.Host.readClipboard();
+      const input = $("fen-input");
+      if (input) input.value = (clip || "").trim();
+      setFenError("");
+    } catch (_) { toast(t("msg.clipboard.readFailed"), "fault"); }
   }
 
-  return { start, palette, click, erase: (sq) => setSquare(sq, null), syncUI, reason, openFen };
+  return { start, palette, click, erase: (sq) => setSquare(sq, null), syncUI, reason, submitFen, fromClip };
 }

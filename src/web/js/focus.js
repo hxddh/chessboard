@@ -101,4 +101,26 @@ export function weekOf(kept, week, diagnose, avail, c, have) {
   return { focus: { week, items, base: snapshot(c, items), need, have }, fresh: true };
 }
 
-export const ChessFocus = { FOCUS_DOSE, familyOf, compose, snapshot, progressOf, weekOf };
+/** 25.4: games before a first lean is named — and still marked as thin. */
+export const EARLY_LEAN = 5;
+
+/**
+ * 25.4: what the first games already say, before the diagnosis has its
+ * twenty. Not a diagnosis: the drills banked from them, and — from the fifth
+ * game, when one motif has caught the player at least twice — a first lean,
+ * which the card labels as a thin sample. The twenty stay the floor for
+ * anything called a weakness (today.js libWeakMotif).
+ * @param {number} games analysed games of the player's (imported + 本机)
+ * @param {object[]} mines the banked drills (`motif` set by review/analysis.js withMotifs)
+ * @param {number} floor the diagnosis's floor (library-ui.js LIB_MIN_GAMES)
+ * @returns {{games: number, mines: number, lean: string|null, leanN: number, need: number}}
+ */
+export function early(games, mines, floor) {
+  const n = {};
+  for (const m of mines || []) if (m && typeof m.motif === "string" && m.motif) n[m.motif] = (n[m.motif] || 0) + 1;
+  const top = Object.entries(n).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0];
+  const lean = games >= EARLY_LEAN && top && top[1] >= 2 ? top[0] : null;
+  return { games, mines: (mines || []).length, lean, leanN: lean ? top[1] : 0, need: Math.max(0, floor - games) };
+}
+
+export const ChessFocus = { FOCUS_DOSE, EARLY_LEAN, familyOf, compose, snapshot, progressOf, weekOf, early };
