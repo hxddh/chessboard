@@ -1913,18 +1913,27 @@ if (scenario()) {
     await page.reload();
     await page.waitForTimeout(900);
     await page.click("#pick-cancel", { timeout: 600 }).catch(() => {});
-    const rows = await page.evaluate(() =>
-      [...document.querySelectorAll(".stat-row")].filter((e) => e.offsetParent).map((e) => ({
-        h: Math.round(e.getBoundingClientRect().height),
-        k: (e.querySelector(".stat-k") || {}).textContent || "",
-      })));
+    // 25.4: one list at a time — with the 本机 games counted (诊断 reads 全部), 我的
+    // also shows the diagnosis, whose opening rows are a list of their own (buttons)
+    const lists = await page.evaluate(() => {
+      const by = new Map();
+      for (const e of document.querySelectorAll(".stat-row")) {
+        if (!e.offsetParent || e.closest("#lib-diag")) continue;
+        const k = e.parentElement;
+        if (!by.has(k)) by.set(k, []);
+        by.get(k).push({ h: Math.round(e.getBoundingClientRect().height), k: (e.querySelector(".stat-k") || {}).textContent || "" });
+      }
+      return [...by.values()];
+    });
     // 19.0 S3: 统计's six difficulty rows left 我的 with the block; the list
     // left on the page is the camp's five themes, and the rule still holds of it
-    assert(rows.length >= 5, lang + ": the record's rows are on screen (" + rows.length + " rows)");
-    const heights = [...new Set(rows.map((r) => r.h))];
-    assert(heights.length === 1,
+    const all = lists.flat();
+    assert(all.length >= 5 && lists.some((l) => l.length >= 5), lang + ": the record's rows are on screen (" + all.length + " rows)");
+    const bad = lists.find((l) => new Set(l.map((r) => r.h)).size > 1) || null;
+    const heights = bad ? [...new Set(bad.map((r) => r.h))] : [];
+    assert(!bad,
       lang + ": every row in the list is the same height (" + heights.join(", ") + ") — tallest is 「" +
-      (rows.find((r) => r.h === Math.max(...heights)) || {}).k + "」");
+      (bad ? (bad.find((r) => r.h === Math.max(...heights)) || {}).k : "") + "」");
     await ctx.close();
   }
 }
